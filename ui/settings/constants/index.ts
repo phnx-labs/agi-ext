@@ -161,7 +161,10 @@ export function createBuiltInAgents(icons: {
   return [
     { key: 'claude', name: 'Claude', icon: icons.claude },
     { key: 'codex', name: 'Codex', icon: icons.codex },
-    { key: 'gemini', name: 'Gemini', icon: icons.gemini },
+    // gemini is hard-deprecated (Antigravity is the replacement) — the extension
+    // registers no `agents.newGemini` command, so it must never be offered as a
+    // launchable agent. supported:false filters it out of the spawn menus.
+    { key: 'gemini', name: 'Gemini', icon: icons.gemini, supported: false },
     { key: 'antigravity', name: 'Antigravity', icon: icons.antigravity },
     { key: 'grok', name: 'Grok', icon: icons.grok },
     { key: 'kimi', name: 'Kimi', icon: icons.kimi },

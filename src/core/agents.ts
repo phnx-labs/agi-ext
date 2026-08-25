@@ -64,6 +64,37 @@ export const BUILT_IN_AGENTS: BuiltInAgentDef[] = PRESENTED_AGENTS.map((p) => ({
   commandId: p.commandId,
 }));
 
+// Agents the extension deliberately no longer registers a launch command for.
+// Gemini is hard-deprecated — Antigravity is the replacement — so `agents.newGemini`
+// is never registered (extension.ts) and the webview must not present or fire it.
+// Session parsing/watching for a gemini transcript stays intact; only the launch
+// path is gone. This is the ONE canonical source: the registration loop, the
+// webview spawn/execute guards, and the command allowlist all read it, so a
+// deprecation can never be enforced in one place and leak in another.
+export const DEPRECATED_AGENT_KEYS: ReadonlySet<string> = new Set(['gemini']);
+
+// True when `key` names an agent the extension no longer offers a launch command
+// for. A webview message that tries to spawn one must be refused with a clear
+// warning, not fired at an unregistered command (which throws "command not found").
+export function isDeprecatedAgentKey(key: string): boolean {
+  return DEPRECATED_AGENT_KEYS.has(key);
+}
+
+// The exact set of VS Code command ids a dashboard webview message is allowed to
+// dispatch. It is derived from the registered agents — every non-deprecated,
+// non-shell harness `agents.new<Harness>` id — plus the fixed non-launch commands
+// the webview legitimately fires. `shell` is excluded because the webview spawns
+// it via its own commandId only through the explicit registry path, and the
+// theme toggle is a built-in VS Code command, added separately by the caller.
+// Anything NOT in this set (an unregistered id, a deprecated harness, an
+// arbitrary VS Code command) must be refused so a single injected message cannot
+// run a command the extension never registered.
+export function webviewLaunchCommandIds(): string[] {
+  return BUILT_IN_AGENTS
+    .filter(a => a.key !== 'shell' && !isDeprecatedAgentKey(a.key))
+    .map(a => a.commandId);
+}
+
 // Lookup built-in agent by key (e.g., "claude", "codex")
 export function getBuiltInByKey(key: string): BuiltInAgentDef | undefined {
   return BUILT_IN_AGENTS.find(a => a.key === key);

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote } from '../core/agents';
+import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
 import { resolveProjectForCwd } from '../core/managedProjects';
 import { parseSpawnRequest, resolveSpawnSurface, SpawnRequest } from '../core/spawn';
 import {
@@ -905,11 +905,6 @@ export async function activate(context: vscode.ExtensionContext) {
   // Store context for deactivate
   extensionContext = context;
 
-  // Revive any AGI EXT dashboard tab VS Code restored from the previous
-  // session. Must be registered before any await so the restored webview
-  // doesn't sit blank while activation runs.
-  settings.registerPanelSerializer(context);
-
   // Prompt to install agents-cli if missing. Don't block activation —
   // resolveAgentsBin runs in the background; if it throws AgentsBinNotFoundError
   // we surface a notification with a one-click installer.
@@ -1214,15 +1209,6 @@ export async function activate(context: vscode.ExtensionContext) {
   // Run lightweight first-setup if needed
   await maybeRunFirstSetup(context);
 
-  // Open Dashboard on startup if enabled (welcome screen)
-  const agentSettings = settings.getSettings(context);
-  if (agentSettings.showWelcomeScreen) {
-    // Delay slightly to allow VS Code to fully initialize
-    setTimeout(() => {
-      settings.openPanel(context);
-    }, 500);
-  }
-
   // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.open', () => openAgentTerminals(context))
@@ -1314,6 +1300,30 @@ export async function activate(context: vscode.ExtensionContext) {
       if (agentConfig) {
         openSingleAgent(context, agentConfig);
       }
+    })
+  );
+
+  // Persist the primary/secondary quick-launch slot titles the dashboard dials
+  // set. The webview's setDefaultAgent/setSecondaryAgent handlers fire these
+  // (settings.vscode.ts), and getDefaultAgent/getSecondaryAgent read them back
+  // from the SAME globalState keys — so each command MUST write both the
+  // module-level variable (so an in-window launch sees the change without a
+  // reload) and globalState under the exact key the reads use. Without these
+  // registrations the webview fired an unregistered command → "command not
+  // found" toast, and the slot title never changed (PHNX-3249).
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agents.setDefaultAgentTitle', async (title?: string) => {
+      if (typeof title !== 'string' || !title.trim()) return;
+      defaultAgentTitle = title;
+      await context.globalState.update('agents.defaultAgentTitle', title);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agents.setSecondaryAgentTitle', async (title?: string) => {
+      if (typeof title !== 'string' || !title.trim()) return;
+      secondaryAgentTitle = title;
+      await context.globalState.update('agents.secondaryAgentTitle', title);
     })
   );
 
@@ -1529,9 +1539,11 @@ export async function activate(context: vscode.ExtensionContext) {
       );
       continue;
     }
-    if (def.key === 'gemini') {
-      // Gemini is deprecated; Antigravity is the replacement. Don't register
-      // launch commands for it, but keep session parsing/watching intact.
+    if (isDeprecatedAgentKey(def.key)) {
+      // Deprecated harness (gemini → Antigravity). Don't register launch
+      // commands for it, but keep session parsing/watching intact. The same
+      // DEPRECATED_AGENT_KEYS set gates the webview spawn/execute guards and the
+      // command allowlist, so a deprecation can't be enforced here and leak there.
       continue;
     }
     // Where a bare `New <Harness>` runs is read at press time, so a settings
@@ -1842,6 +1854,24 @@ export async function activate(context: vscode.ExtensionContext) {
       if (tabChangeTimer) clearTimeout(tabChangeTimer);
     },
   });
+
+  // Revive/open the dashboard webview ONLY after every command above is
+  // registered. A restored or freshly opened panel posts webview messages
+  // (spawnAgent, executeCommand, setDefaultAgent, …) that dispatch `agents.*`
+  // commands the instant it loads; doing this before the registration block
+  // above raced the panel against its own commands and produced "command not
+  // found" toasts (PHNX-3249). The panel reviving a beat later is a fine
+  // trade for never firing at an unregistered command.
+  settings.registerPanelSerializer(context);
+
+  // Open Dashboard on startup if enabled (welcome screen).
+  const agentSettings = settings.getSettings(context);
+  if (agentSettings.showWelcomeScreen) {
+    // Delay slightly to allow VS Code to fully initialize.
+    setTimeout(() => {
+      settings.openPanel(context);
+    }, 500);
+  }
 
   // Auto-open terminals on startup if any agents have login enabled
   const startupSettings = settings.getSettings(context);

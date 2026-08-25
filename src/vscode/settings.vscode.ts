@@ -25,7 +25,7 @@ import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '..
 import { CLAUDE_TITLE } from '../core/utils';
 import { discoverRecentSessions, getSessionPathBySessionId } from './sessions.vscode';
 import { formatTerminalTitle, parseTerminalName, getSessionChunk } from '../core/utils';
-import { getBuiltInByKey, getBuiltInDefByTitle } from '../core/agents';
+import { getBuiltInByKey, getBuiltInDefByTitle, isDeprecatedAgentKey } from '../core/agents';
 import { FORK_LINEAGE_KEY, type ForkEdge } from '../core/forkLineage';
 import {
   mapInventoriesToInstalledAgents,
@@ -2121,7 +2121,17 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           const commandId = `agents.new${agentKey.replace(/[^a-zA-Z0-9]/g, '')}`;
           vscode.commands.executeCommand(commandId);
         } else {
-          // Built-in agent - prefer explicit commandId from registry (handles casing like OpenCode)
+          // Built-in agent. A deprecated harness (e.g. gemini → Antigravity) has NO
+          // registered `agents.new<Harness>` command, so firing its commandId would
+          // surface a "command not found" toast. Refuse it with a clear message
+          // instead of dispatching at nothing.
+          if (isDeprecatedAgentKey(agentKey)) {
+            void vscode.window.showWarningMessage(
+              `${agentKey} is deprecated and can no longer be launched from AGI EXT. Use Antigravity instead.`
+            );
+            break;
+          }
+          // Prefer explicit commandId from registry (handles casing like OpenCode)
           const builtIn = getBuiltInByKey(agentKey);
           const commandId = builtIn?.commandId || `agents.new${agentKey.charAt(0).toUpperCase() + agentKey.slice(1)}`;
           vscode.commands.executeCommand(commandId);
@@ -3075,8 +3085,18 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         break;
       }
       case 'executeCommand':
-        if (message.command && typeof message.command === 'string' && isAllowedWebviewCommand(message.command)) {
-          await vscode.commands.executeCommand(message.command);
+        if (message.command && typeof message.command === 'string') {
+          if (isAllowedWebviewCommand(message.command)) {
+            await vscode.commands.executeCommand(message.command);
+          } else {
+            // Not on the allowlist — an unregistered id (a deprecated harness,
+            // a typo) or an arbitrary VS Code command. Refuse it rather than
+            // firing it, which would either surface a "command not found" toast
+            // or run something the webview was never meant to trigger. Warn so
+            // the drop is visible instead of a silent no-op.
+            console.warn(`[SETTINGS] Blocked webview executeCommand for disallowed command: ${message.command}`);
+            void vscode.window.showWarningMessage(`Blocked an unsupported command: ${message.command}`);
+          }
         }
         break;
       case 'getWatchdogStatus': {

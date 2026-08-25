@@ -4,6 +4,30 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.337] - 2026-08-25
+
+- **No more "command not found" toasts from the dashboard (PHNX-3249).** Opening
+  or restoring the dashboard webview could surface up to three `command 'agents.*'
+  not found` toasts (the reported one was `agents.newClaude`). Three root causes,
+  all fixed at the source:
+  - **Registration ordered after the panel could fire.** `activate()` registered
+    the webview panel serializer and opened the welcome-screen panel *before* the
+    `agents.*` commands were registered, so a restored/opened panel raced its own
+    commands. Both now run after every command is registered.
+  - **Deprecated Gemini was still offered.** The extension deliberately never
+    registers `agents.newGemini` (Antigravity is the replacement), yet the webview
+    still listed Gemini in its spawn menus. Deprecated harnesses
+    (`DEPRECATED_AGENT_KEYS`) are now filtered out of the menus, and the
+    `spawnAgent`/`executeCommand` handlers refuse a deprecated/unregistered agent
+    with a clear warning instead of firing an unregistered command.
+  - **Two title commands were fired but never registered.**
+    `agents.setDefaultAgentTitle` and `agents.setSecondaryAgentTitle` (fired by the
+    quick-launch title dials) are now registered and persist the slot title to
+    `globalState` plus the in-window module variable, so the title actually changes.
+  - The webview command allowlist (`isAllowedWebviewCommand`) is now an exact set of
+    the real registered command ids instead of a `startsWith('agents.new')` prefix,
+    so an unregistered id can no longer slip through to `executeCommand`.
+
 ## [0.9.336] - 2026-08-25
 
 - **Agent tabs stop hopping — the extension never steals focus to rename a tab (#3019).**
