@@ -97,7 +97,6 @@ export interface EditorTerminal {
   statusAccount?: string;   // Display-only account from agents-cli metadata
   identitySessionId?: string; // Session id whose version/account are cached above AND both fields resolved; retry gate — re-fetch while the live id differs (rerun / /clear, or account not yet indexed)
   identityAppliedSessionId?: string; // Session id the cached version/account were applied for (even if a field is null); display gate — the status bar shows them only for THIS session, never a prior binding's leftover
-  identityAttempts?: number; // Bounded backfill counter: successful identity fetches that returned no account for this session. After IDENTITY_MAX_ATTEMPTS the session is marked resolved so it stops re-fetching on every focus event (#3019 CPU churn)
   approvalStatus?: 'pending' | 'approved' | 'running' | 'complete'; // Swarm approval status
   autoLabelPollerId?: NodeJS.Timeout; // Poller for auto-label fetch (cleared once label is set)
   appliedTitle?: string;    // Tab title last written via renameWithArg — dedupe guard so an unchanged title is never re-applied (and never disturbs focus)

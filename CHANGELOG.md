@@ -18,10 +18,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   every few seconds. `renameTerminal` now renames **only the tab that is already
   focused**; a background tab stores its title and applies it the next time you
   focus it (`applyPendingTitle`), and an unchanged title is a no-op. The
-  previously-focused tab is no longer renamed. The status-bar identity fetch is
-  also bounded, so a session that carries no account (remote / Grok / Kimi) stops
-  re-fetching after a few tries instead of on every focus event. The daemon-side
-  rework of tab naming is tracked separately.
+  previously-focused tab is no longer renamed. Removing the focus loop also stops
+  the per-tab subprocess storm it drove, since the status-bar identity fetch now
+  runs only on a real tab switch, not on a self-generated flood of focus events.
+  The daemon-side rework of tab naming is tracked separately.
 
 - **A dropped `--device` agent tab no longer dead-ends at a cryptic crash line.**
   When the SSH link to a peer dropped and the CLI's bounded reconnect loop then
