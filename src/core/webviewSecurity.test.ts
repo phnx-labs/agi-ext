@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { isAllowedExternalUrl, isAllowedWebviewCommand } from './webviewSecurity';
+import { isDeprecatedAgentKey } from './agents';
 
 describe('isAllowedExternalUrl', () => {
   it('allows the web + mail schemes the UI uses', () => {
@@ -39,5 +40,15 @@ describe('isAllowedWebviewCommand', () => {
     expect(isAllowedWebviewCommand('agents.deleteEverything')).toBe(false);
     expect(isAllowedWebviewCommand('workbench.action.tasks.runTask')).toBe(false);
     expect(isAllowedWebviewCommand('')).toBe(false);
+  });
+
+  // PHNX-3249: the old allowlist matched any `agents.new*` prefix, so it passed
+  // an UNREGISTERED command — a deprecated harness (`agents.newGemini`, never
+  // registered) or a typo — straight through to executeCommand, which then
+  // surfaced a "command not found" toast. The tightened allowlist rejects them.
+  it('rejects an unregistered agents.new* command (deprecated harness / typo)', () => {
+    expect(isDeprecatedAgentKey('gemini')).toBe(true);
+    expect(isAllowedWebviewCommand('agents.newGemini')).toBe(false);
+    expect(isAllowedWebviewCommand('agents.newTotallyMadeUp')).toBe(false);
   });
 });

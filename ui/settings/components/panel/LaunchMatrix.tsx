@@ -72,7 +72,9 @@ export function LaunchMatrix({
     return () => window.removeEventListener('message', onMsg)
   }, [])
 
-  const assignable = builtInAgents.filter(a => a.key !== 'shell')
+  // Deprecated harnesses (supported === false) are not launchable, so keep them
+  // out of the assignable quick-launch agents just as the panel dials do.
+  const assignable = builtInAgents.filter(a => a.key !== 'shell' && a.supported !== false)
 
   const writeSlot = (key: QuickLaunchSlotKey, slot: QuickLaunchSlot | undefined) => {
     onSaveSettings({

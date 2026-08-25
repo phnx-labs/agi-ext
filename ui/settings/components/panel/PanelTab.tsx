@@ -259,7 +259,10 @@ export function PanelTab({
   }
 
   const dialOptions = builtInAgents
-    .filter(agent => agent.key !== 'shell')
+    // Never present a deprecated harness (supported === false) — its
+    // `agents.new<Harness>` command is unregistered, so spawning it would
+    // surface a "command not found" toast. Also drop the plain shell terminal.
+    .filter(agent => agent.key !== 'shell' && agent.supported !== false)
     .map(agent => ({
       key: agent.key,
       label: agent.name,

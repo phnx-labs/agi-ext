@@ -468,6 +468,13 @@ export interface BuiltInAgentConfig {
   key: string
   name: string
   icon: string | ThemedIcon
+  // False for a hard-deprecated harness the extension no longer registers a
+  // launch command for (e.g. gemini → Antigravity). The webview must NOT present
+  // it in a spawn menu — firing its unregistered `agents.new<Harness>` command
+  // surfaces a "command not found" toast. Mirrors DEPRECATED_AGENT_KEYS in
+  // src/core/agents.ts (the webview bundle is isolated from src/core, so the flag
+  // is carried here rather than imported). Absent/true means launchable.
+  supported?: boolean
 }
 
 // Prewarm pool types
