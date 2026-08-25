@@ -6,8 +6,9 @@ become their lifecycle owner.
 
 ```mermaid
 flowchart LR
-  FEED[CLI feed facts] --> STORE[Presentation store]
+  FEED[CLI feed: sessions, attention, activity] --> STORE[Presentation store]
   STORE --> VM[Dashboard view model]
+  QUERY[Bounded CLI reads: devices, projects, tickets] --> VM
   VM --> FLOOR[Agent and device floor]
   VM --> ATT[Needs-you lane]
   VM --> ACT[Activity and outputs]
@@ -20,10 +21,11 @@ flowchart LR
 
 ## Composition model
 
-Session rows describe interactive conversations and progress. Execution rows cover work
-that may not have a conversation. Device facts provide placement and availability.
-Attention facts preserve the exact question, choices, and resolution lifecycle. Activity
-facts provide chronological evidence such as plans, pull requests, teams, and artifacts.
+Feed session rows describe interactive conversations and progress. Attention facts
+preserve the exact question, choices, and resolution lifecycle. Activity facts provide
+chronological evidence such as plans, pull requests, teams, and artifacts. Device,
+project, and ticket views currently arrive through separate bounded CLI reads; they do
+not live in `SessionPresentationStore`.
 
 The dashboard may group, filter, sort, and decorate those facts. It must not infer a new
 canonical session status from transcript text or process scans. Background work can be
@@ -50,12 +52,13 @@ sequenceDiagram
 
 ## Cross-window behavior
 
-All dashboard windows consume the same broadcast stream and pure presentation store.
-Opening a second dashboard must not double CLI watchers, transcript parsing, or action
-schedulers. A follower that misses history requests replay from the elected leader or
-waits for a reset; it does not independently reconstruct fleet state.
+All dashboard windows consume the same broadcast stream and pure presentation store for
+feed-backed facts. Opening a second dashboard must not double long-lived CLI watchers,
+transcript parsing, or action schedulers. A follower recovers replayable session and
+attention state from the elected leader or waits for a reset; activity replay is known
+debt. Devices, projects, and tickets remain explicit bounded query paths until the CLI
+stream owns those projections too.
 
 The webview bridge serializes a bounded view model and receives typed user messages.
 Native VS Code APIs and CLI execution remain in the extension host. This keeps the
 webview sandbox presentation-only and makes the same core model reusable by agents-dbg.
-
