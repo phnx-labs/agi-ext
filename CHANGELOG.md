@@ -4,7 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.335] - 2026-08-25
+## [0.9.336] - 2026-08-25
+
+- **Agent tabs stop hopping — the extension never steals focus to rename a tab (#3019).**
+  With several agent tabs open (especially remote `--device` tabs), the active
+  editor tab could cycle between sessions on its own, hands off the keyboard, and
+  the machine's load climbed. Cause: renaming a VS Code terminal tab requires
+  focusing it (VS Code exposes no rename-without-focus API,
+  [microsoft/vscode#171175](https://github.com/microsoft/vscode/issues/171175)),
+  and the title code ran on every focus change and renamed the tab you had just
+  left — so each rename stole focus and triggered another rename, a self-sustaining
+  loop that also re-spawned a per-tab `agents sessions <id> --device <host> --json`
+  every few seconds. `renameTerminal` now renames **only the tab that is already
+  focused**; a background tab stores its title and applies it the next time you
+  focus it (`applyPendingTitle`), and an unchanged title is a no-op. The
+  previously-focused tab is no longer renamed. The status-bar identity fetch is
+  also bounded, so a session that carries no account (remote / Grok / Kimi) stops
+  re-fetching after a few tries instead of on every focus event. The daemon-side
+  rework of tab naming is tracked separately.
 
 - **A dropped `--device` agent tab no longer dead-ends at a cryptic crash line.**
   When the SSH link to a peer dropped and the CLI's bounded reconnect loop then
