@@ -284,10 +284,6 @@
         "title": "Agents: Setup Codex"
       },
       {
-        "command": "agents.enableNotifications",
-        "title": "Agents: Enable Notifications"
-      },
-      {
         "command": "agents.newTask",
         "title": "Agents: New Task"
       },

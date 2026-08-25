@@ -29,7 +29,6 @@ import {
 } from './watchdog.vscode';
 import { startWatchdogBridge } from '../mcp/watchdog-bridge';
 import { ensureWatchdogMcpInstalled } from '../mcp/watchdogInstall';
-import * as notifications from './notifications.vscode';
 import * as terminals from './terminals.vscode';
 import { fetchRemoteSessionLabelSource, fetchSessionIdentity, fetchRecapSessions, LOCAL_LABEL, LOCAL_MACHINE_ID, mapWithConcurrency } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -1357,10 +1356,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.setupCodex', () => swarm.setupSwarmIntegrationForAgent('codex', context))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.enableNotifications', () => notifications.enableNotifications(context))
   );
 
   context.subscriptions.push(
