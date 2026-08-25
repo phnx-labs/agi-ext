@@ -4035,14 +4035,6 @@ function formatAgentStatusBarText(
 // default install, which is unrelated to a specific terminal and was the cause of
 // the status bar showing a wrong version/account (esp. under Remote-SSH, where the
 // remote box's default differs from what the session actually ran).
-//
-// Bounded backfill: a successful fetch that returns a record with no account is
-// a REAL state (remote rows, Grok/Kimi carry no account), not "not indexed yet".
-// We retry a few times to catch a Claude/Codex account that indexes a beat after
-// the version, then stop — otherwise the re-fetch guard at the call sites fires
-// on every focus event forever, spawning a per-tab `agents sessions <id> --device
-// <host> --json` each time (the #3019 CPU churn).
-const IDENTITY_MAX_ATTEMPTS = 3;
 async function tryHydrateSessionIdentity(
   terminal: vscode.Terminal,
   entry: terminals.EditorTerminal,
@@ -4054,10 +4046,6 @@ async function tryHydrateSessionIdentity(
   // terminal produces a new id (often a different balanced version/account), and
   // the stale cache must be replaced, not kept.
   if (entry.identitySessionId === sessionId && entry.version && entry.account) return;
-
-  // A new session id in this terminal (rerun / /clear) resets the bounded
-  // backfill counter; a re-invoke for the SAME session keeps counting.
-  if (entry.identityAppliedSessionId !== sessionId) entry.identityAttempts = 0;
 
   const inflightKey = `${sessionId}@${entry.host ?? 'local'}`;
   if (statusIdentityInFlight.has(inflightKey)) return;
@@ -4093,18 +4081,7 @@ async function tryHydrateSessionIdentity(
     //     indexes a beat after the version (Claude/Codex) is still filled by a
     //     later fetch instead of freezing blank.
     entry.identityAppliedSessionId = sessionId;
-    if (identity.version && identity.account) {
-      entry.identitySessionId = sessionId;
-      entry.identityAttempts = undefined;
-    } else {
-      // Successful fetch, but no account (or no version): a real, terminal state
-      // for remote/Grok/Kimi. Retry a bounded few times for a late-indexing
-      // Claude/Codex account, then mark resolved so this stops re-fetching on
-      // every focus event.
-      const attempts = (entry.identityAttempts ?? 0) + 1;
-      entry.identityAttempts = attempts;
-      if (attempts >= IDENTITY_MAX_ATTEMPTS) entry.identitySessionId = sessionId;
-    }
+    if (identity.version && identity.account) entry.identitySessionId = sessionId;
 
     if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
     const rawLabel = entry.label;
