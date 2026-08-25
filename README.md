@@ -2,6 +2,8 @@
 
 Orchestrate Claude, Codex, Antigravity, and Cursor in parallel — from one IDE. Open source. Free.
 
+Technical design: [AGI EXT architecture](docs/README.md).
+
 Turn your editor into a command center for orchestrating Claude, Codex, Antigravity, and Cursor in parallel. Each agent runs as a full-screen editor tab. Each agent can spawn sub-agents. You orchestrate — approving plans, monitoring execution, shipping faster.
 
 ## Why an IAE?

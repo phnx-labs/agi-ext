@@ -13,6 +13,10 @@ session index, and every mechanism live in agi-cli.
 
 ## The one architecture rule — thin client, single stream
 
+Staff-level component and data-flow documentation lives in [`docs/`](docs/README.md).
+Keep extension-owned design here; the CLI repository documents only the cross-repository
+ownership contract.
+
 agents-cli owns all state and all mechanisms: sessions, devices, accounts,
 teams, watchdog, routines, lifecycle, scheduling. This extension is a
 presentation layer. Concretely:
