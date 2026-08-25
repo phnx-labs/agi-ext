@@ -1,0 +1,98 @@
+# AGI EXT
+
+The VS Code / VSCodium extension for [agents-cli](https://github.com/phnx-labs/agi-cli):
+agent terminals as editor tabs, the Fleet dashboard, dispatch, and the
+`swarm-ext://` endpoint. This repo is ONLY the extension. The CLI, daemon,
+session index, and every mechanism live in agi-cli.
+
+> Publisher identity is FROZEN: publisher `swarmify`, name `swarm-ext`
+> (`package.json`). Never change either — it would orphan the Marketplace
+> listing, and `swarmify.swarm-ext` is the authority in the `swarm-ext://` URI
+> the CLI emits. Display name ("Agents"), dashboard name (AGI EXT), and
+> everything else may change freely.
+
+## The one architecture rule — thin client, single stream
+
+agents-cli owns all state and all mechanisms: sessions, devices, accounts,
+teams, watchdog, routines, lifecycle, scheduling. This extension is a
+presentation layer. Concretely:
+
+1. **One subprocess owns live state.** The elected leader window spawns exactly
+   one `agents feed watch --json` child (`src/monitor/sessionCliStream.ts`);
+   every window and tab reads its broadcast projection
+   (`src/core/sessionPresentationStore.ts`). No other code may poll session
+   state. If a field you need is missing from the stream, add it to the CLI's
+   `SessionWatchRow` (backfill from the index, the way `version` landed) — do
+   NOT add a side-channel fetch here. That side channel is how the 2026-08-25
+   CPU incident happened (agi-cli#3019, RUSH-3184).
+2. **User actions are one-shot CLI verbs.** Resume, fork, stop, dispatch,
+   merge: build the command with the owning CLI noun, run it once per user
+   action, done. No retries-on-a-timer, no caches of CLI output beyond a
+   short-TTL in-flight guard.
+3. **The extension must never own**: an action scheduler or timer that acts
+   (spawn/resume/kill/inject/rotate — the CLI daemon is the only scheduler),
+   a transcript parser or watcher, a lifecycle/readiness classifier, a
+   candidate/session-id cache, or a raw agents-config reader.
+4. **Fail loud.** A missing CLI noun is an upgrade error, never a filesystem
+   fallback.
+
+## Known debt — scheduled for deletion, do NOT extend
+
+These violate the rule above. They exist; they are tracked; touching one means
+deleting it or shrinking it, never adding to it.
+
+| Path | Violation | Fate |
+|---|---|---|
+| `src/vscode/extension.ts` `tryHydrateSessionIdentity` + `src/vscode/remoteSessions.vscode.ts` `fetchSessionIdentity` | per-tab `agents sessions <id> --device --json` spawn loop | DELETE once `account` rides the stream (RUSH-3184) |
+| `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | label/topic are already on the stream | DELETE now |
+| `src/vscode/prewarm.vscode.ts`, `src/core/prewarm.simple.ts` | spawns harness binaries to mint session ids (candidate cache); superseded by SessionStart hooks + `claude --session-id`; still contains hard-deprecated gemini | DELETE |
+| `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
+| `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
+| `src/monitor/readinessDetector.ts` | ext-invented lifecycle classifier (ps/pgrep loops) | move the signal into the CLI daemon, project it on the stream |
+| `src/vscode/agentPanel.vscode.ts` 4s `buildSnapshot` | re-parses transcripts + spawns `agents sessions --include tools` per tick | bind to stream fields; `toolCallCount` belongs on the stream |
+| `src/vscode/foreman.sources.ts` `runJson` | second agents-bin resolver bypassing `src/core/agentsBin.ts` | fold into `agentsBin.ts` |
+| gemini anywhere (`src/core/agents.ts` `newGemini`, prewarm config) | harness is hard-deprecated in the CLI | DELETE |
+
+## Layout
+
+```
+src/core       Presentation-only pure functions (no vscode import)
+src/monitor    Elected stream leader + cross-window broadcast
+src/vscode     VS Code commands, terminals, URI endpoint, webview bridge
+ui/settings    React dashboard (webview)
+ui/editor      Custom document viewers
+app/           agents-dbg Electron debug app
+assets/ icons/ Extension artwork
+scripts/       build.sh / install.sh / release.sh — the ONLY entry points
+```
+
+## Build, test, release — scripts are the contract
+
+```bash
+bun install
+bun run compile:ext        # typecheck + bundle
+bun test                   # suite (vscode double: src/testing/vscodeDouble.ts)
+
+scripts/build.sh <version>              # packaged .vsix
+scripts/install.sh                      # local dev install
+scripts/release.sh <x.y.z> [--confirm]  # Marketplace + Open VSX (dry-run without --confirm)
+```
+
+Never hand-roll `vsce publish` / `ovsx publish` — `release.sh` owns version
+stamping, gates, and self-routing to the box holding the `vs-marketplace`
+secrets bundle (`--device <name>` pins it, `--here` refuses to route).
+
+Tests sit beside source and exercise real command boundaries — no mocking
+beyond the shared `vscodeDouble` (a hand-rolled partial double breaks OTHER
+files in the same bun run; `src/testing/vscodeDouble.test.ts` enforces this).
+
+## Conventions
+
+- `AGENTS.md` (this file) is canonical; `CLAUDE.md` is a symlink to it. Edit
+  AGENTS.md only.
+- Every user-visible change updates `CHANGELOG.md` and, when behavior changes,
+  this file and `README.md`.
+- Closing an agent tab tears the agent down via `agents sessions stop <id>` —
+  only on a real user close (`TerminalExitReason.User`); reload/restore must
+  not kill sessions (`src/vscode/terminalReadiness.ts`).
+- Worktree + PR for every change; never commit to `main` directly.
