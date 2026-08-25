@@ -25,8 +25,10 @@ sequenceDiagram
 
 Exactly one elected extension window starts the long-lived CLI feed child. The leader
 normalizes newline-delimited events and broadcasts them to follower windows. It retains
-the latest reset and subsequent facts per scope so a newly opened window can become
-consistent without starting another CLI process.
+the latest session rows, attention rows, and scope status so a newly opened window can
+recover those views without starting another CLI process. Activity events are forwarded
+live but are not currently included in leader replay; a late follower does not receive a
+complete historical activity lane until the CLI/store contract grows that snapshot.
 
 If the child exits, the stream owner reports the fault and restarts the read channel.
 That restart is not an agent action and does not mutate fleet state. Consumers remain on
@@ -70,4 +72,3 @@ When identity is absent from the stream, the correct fix is a CLI projection cha
 
 The concrete stream owner is `src/monitor/sessionCliStream.ts`; the pure cross-surface
 model is `src/core/sessionPresentationStore.ts`.
-
