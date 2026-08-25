@@ -97,8 +97,11 @@ export interface EditorTerminal {
   statusAccount?: string;   // Display-only account from agents-cli metadata
   identitySessionId?: string; // Session id whose version/account are cached above AND both fields resolved; retry gate — re-fetch while the live id differs (rerun / /clear, or account not yet indexed)
   identityAppliedSessionId?: string; // Session id the cached version/account were applied for (even if a field is null); display gate — the status bar shows them only for THIS session, never a prior binding's leftover
+  identityAttempts?: number; // Bounded backfill counter: successful identity fetches that returned no account for this session. After IDENTITY_MAX_ATTEMPTS the session is marked resolved so it stops re-fetching on every focus event (#3019 CPU churn)
   approvalStatus?: 'pending' | 'approved' | 'running' | 'complete'; // Swarm approval status
   autoLabelPollerId?: NodeJS.Timeout; // Poller for auto-label fetch (cleared once label is set)
+  appliedTitle?: string;    // Tab title last written via renameWithArg — dedupe guard so an unchanged title is never re-applied (and never disturbs focus)
+  pendingTitle?: string;    // Desired title for a tab that is NOT currently focused; applied on next focus. Renaming a background tab would steal focus, which we never do.
 }
 
 const STATUS_BAR_LABELS_KEY = 'agentStatusBarLabels';
@@ -561,29 +564,50 @@ export function flushQueue(terminal: vscode.Terminal): string[] {
   return [];
 }
 
-// Rename a terminal tab title.
+// Rename a terminal tab title — WITHOUT ever stealing focus.
 //
 // `workbench.action.terminal.renameWithArg` only operates on the active
-// terminal, so we have to briefly make `terminal` active. That forcibly
-// switches the visible editor tab — if we don't restore the previously
-// active terminal afterwards, every async rename (auto-label LLM finishing,
-// session-change handler, etc.) yanks focus to a random tab.
+// terminal, and VS Code exposes no API to rename a terminal tab without
+// focusing it (microsoft/vscode #171175). The old code worked around that by
+// `terminal.show()`ing the target and then showing the previous one back — but
+// every programmatic `.show()` is indistinguishable from a user focus change,
+// so with the focus handlers renaming tabs on every focus event it produced a
+// self-sustaining hop that cycled the active tab with no user input (#3019).
+//
+// The rule now: a tab is renamed only while it is ALREADY the active terminal.
+// A background tab stores its desired title in `pendingTitle` and picks it up
+// the next time the user focuses it (see applyPendingTitle) — the extension
+// never switches the visible tab to rename it.
 export async function renameTerminal(terminal: vscode.Terminal, newName: string): Promise<void> {
-  const previouslyActiveTerminal = vscode.window.activeTerminal;
+  const entry = getByTerminal(terminal);
+  // Already showing this exact title → nothing to do (and never re-issue a
+  // command that could disturb focus).
+  if (entry?.appliedTitle === newName) return;
+  // Not the focused tab → defer. Applying it now would require `.show()`, which
+  // steals focus. Store it; applyPendingTitle renders it on next focus.
+  if (vscode.window.activeTerminal !== terminal) {
+    if (entry) entry.pendingTitle = newName;
+    return;
+  }
   try {
-    terminal.show(false);
     await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name: newName });
+    if (entry) {
+      entry.appliedTitle = newName;
+      entry.pendingTitle = undefined;
+    }
   } catch (err) {
     console.error('[TERMINALS] Failed to rename terminal', err);
-  } finally {
-    if (
-      previouslyActiveTerminal &&
-      previouslyActiveTerminal !== terminal &&
-      previouslyActiveTerminal.exitStatus === undefined
-    ) {
-      previouslyActiveTerminal.show(false);
-    }
   }
+}
+
+// Apply a title deferred while the tab was in the background. Called when a tab
+// gains focus: it is now the active terminal, so renameTerminal can write the
+// stored title without stealing focus from anyone.
+export async function applyPendingTitle(terminal: vscode.Terminal): Promise<void> {
+  const entry = getByTerminal(terminal);
+  const pending = entry?.pendingTitle;
+  if (!pending) return;
+  await renameTerminal(terminal, pending);
 }
 
 // Lifecycle
