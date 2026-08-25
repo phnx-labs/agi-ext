@@ -6,6 +6,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.337] - 2026-08-25
 
+- **Removed the obsolete Claude notifications installer.** The extension no longer
+  contributes `Agents: Enable Notifications`, bundles the macOS-only `alerter`
+  executable, or ships a private notifications MCP that mutates Claude's user-level
+  MCP configuration. Fleet waiting/approval notifications and their settings remain
+  unchanged; they use the extension's current notifier path.
+
 - **No more "command not found" toasts from the dashboard (PHNX-3249).** Opening
   or restoring the dashboard webview could surface up to three `command 'agents.*'
   not found` toasts (the reported one was `agents.newClaude`). Three root causes,
