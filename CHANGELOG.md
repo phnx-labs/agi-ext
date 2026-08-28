@@ -6,6 +6,20 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.342] - 2026-08-28
 
+- **Removed dead client-side re-derivation left by the zero-dup cleanup (PHNX-2484).**
+  The Phase-0 slice of the zero-duplication audit: pure deletions of extension code with
+  zero non-test callers, superseded by canonical agents-cli JSON. Gone are the floorModel
+  question heuristics the PHNX-2975 rebuild orphaned — `parseStructuredQuestion`,
+  `structuredQuestionFromToolCalls`, `structuredQuestionFromRemote` and their private
+  helpers (`slugifyQuestion`, `extractChoiceOptions`, `questionCore`, `stripLeadIn`,
+  `cleanOption`) plus the `RemoteQuestionInput` type — the adapter now sources the
+  structured question from `structuredQuestionFromAttention` (CLI attention stream). Also
+  gone: the device-probe parsers superseded by `agents devices status --json` —
+  `deriveHostLoad` / `parseRemoteCpuRatio` (`dispatchRanking.ts`) and `parseUptime` /
+  `parseVmStat` / `parseLinuxMemInfo` (`deviceHealth.ts`). No behavior change; the live
+  question path, `latestTodos`, `isDeviceOnline`, `DeviceStats`, and the `StructuredQuestion`
+  type are untouched. Source: `floorModel.ts`, `dispatchRanking.ts`, `deviceHealth.ts`.
+
 - **Rebuilt the Fleet "Needs you" surface on the CLI attention stream (PHNX-2975).** The
   extension used to re-derive "needs you", stall, and the section's order client-side, and
   got it wrong (a wall-clock "stalled" guess could sort above a session actually awaiting
