@@ -6,6 +6,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.340] - 2026-08-28
 
+- **Fleet detail panel now distinguishes loading, empty, and error states (PHNX-2976).**
+  The detail pane used to render a blank area when upstream data was slow, genuinely
+  empty, or failed. It now derives state from the same stream/props it already receives
+  (`tasksLoading`, `unifiedTasksLoading`, `remoteSyncError`, and local/remote sync
+  staleness) and surfaces a skeleton/spinner for loading, an explicit "No details yet"
+  message for real empty states, and dedicated error/degraded states for upstream failure
+  or stale snapshots. The fallback summary for cross-host agents also shows an inline
+  loading/error/degraded banner while full details arrive.
+
 - **Fork commands now delegate to `agents sessions fork` (PHNX-3409).** `Agents: Fork`,
   `Agents: Fork (Recap)`, and `Agents: Fork (Pick Host)` all run the CLI verb, which
   resolves the source across the fleet and launches a recap-seeded same-harness sibling.

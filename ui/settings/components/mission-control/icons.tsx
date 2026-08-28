@@ -4,7 +4,7 @@ type IconName =
   | 'radar' | 'terminal' | 'plus' | 'chevD' | 'chevR' | 'chevL' | 'search' | 'moon' | 'sun' | 'cog'
   | 'check' | 'x' | 'copy' | 'refresh' | 'play' | 'pause' | 'gitBranch' | 'folder'
   | 'dispatch' | 'inbox' | 'zap' | 'clipboard' | 'external' | 'alert' | 'paperclip' | 'clock'
-  | 'pin' | 'grip' | 'sparkles'
+  | 'pin' | 'grip' | 'sparkles' | 'loader'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   radar: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" /></>,
@@ -36,6 +36,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   pin: <><line x1="12" y1="17" x2="12" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z" /></>,
   grip: <><circle cx="9" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="18" r="1" /></>,
   sparkles: <><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z" /><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z" /></>,
+  loader: <><path d="M12 2v4" /><path d="M12 18v4" /><path d="M4.93 4.93l2.83 2.83" /><path d="M16.24 16.24l2.83 2.83" /><path d="M2 12h4" /><path d="M18 12h4" /><path d="M4.93 19.07l2.83-2.83" /><path d="M16.24 7.76l2.83-2.83" /></>,
 }
 
 export function Icon({ name, size = 14, className, style }: {
