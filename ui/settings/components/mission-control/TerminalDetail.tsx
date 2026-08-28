@@ -26,7 +26,7 @@ export function filePillColor(touchedAtMs: number | undefined, now: number): str
   return `rgb(${r},${g},${b})`
 }
 
-export function TerminalExpandedDetail({ terminal }: { terminal: TerminalInfo }) {
+export function TerminalExpandedDetail({ terminal, hideActivityStats = false }: { terminal: TerminalInfo; hideActivityStats?: boolean }) {
   const now = useNow(5000)
   const todos = latestTodos(terminal.recentToolCalls)
   const timelineEvents = terminal.recentEvents ?? (terminal.recentToolCalls ?? []).map((call) => ({ kind: 'tool' as const, call, timestamp: call.timestamp }))
@@ -129,7 +129,11 @@ export function TerminalExpandedDetail({ terminal }: { terminal: TerminalInfo })
           </div>
         </div>
       )}
-      {(terminal.quickSummary || terminal.messageCount) && (
+      {/* Activity counts + Recent files are suppressed when the picker-parity
+          preview card owns them (PHNX-2973): the CLI digest is then the single
+          source for msgs/tools/changes, so the pane doesn't show two counts and
+          two file lists from different capture windows. */}
+      {!hideActivityStats && (terminal.quickSummary || terminal.messageCount) && (
         <div className="sw-unified-detail-section">
           <div className="sw-section-label">Activity</div>
           <div className="sw-unified-detail-stats">
@@ -140,7 +144,7 @@ export function TerminalExpandedDetail({ terminal }: { terminal: TerminalInfo })
           </div>
         </div>
       )}
-      {terminal.recentFiles && terminal.recentFiles.length > 0 && (
+      {!hideActivityStats && terminal.recentFiles && terminal.recentFiles.length > 0 && (
         <div className="sw-unified-detail-section">
           <div className="sw-section-label">Recent files</div>
           <div className="sw-unified-detail-files">

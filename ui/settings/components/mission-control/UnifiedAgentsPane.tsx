@@ -1966,7 +1966,19 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     // Dirs the CLI computes. Rendered inside BOTH detail branches so local and
     // remote sessions read at parity with `agents sessions`.
     const previewState = a.sessionId ? sessionPreviews[a.sessionId] : undefined
-    const previewCard = previewState?.data ? <SessionPreviewCard preview={previewState.data} /> : null
+    // Suppress the terminal detail's own msgs/tools/recent-files ONLY once the
+    // card's digest data is present (not merely loading), so those sections
+    // don't flicker out-and-in during the ~1s fetch.
+    const hasPreviewData = !!previewState?.data?.digest
+    const previewCard = previewState?.data
+      ? <SessionPreviewCard preview={previewState.data} />
+      : previewState?.state === 'loading'
+        ? (
+          <div className="sw-unified-detail-section">
+            <div className="sw-preview-note" style={{ color: 'var(--ds-text-muted)' }}>Loading session preview…</div>
+          </div>
+        )
+        : null
     return (
       <>
         {decision}
@@ -1974,6 +1986,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           <DetailPane
             item={u}
             previewCard={previewCard}
+            hasPreviewData={hasPreviewData}
             onClose={() => setSelectedAgentId(null)}
             onFocusTerminal={handleFocusTerminal}
             onRetry={handleRetry}
@@ -3210,10 +3223,13 @@ function DetailStatusRow({ item, onFocusTerminal }: { item: UnifiedAgent; onFocu
   )
 }
 
-export function DetailPane({ item, previewCard, onClose, onFocusTerminal, onRetry, onKill, loading, degraded, error }: {
+export function DetailPane({ item, previewCard, hasPreviewData = false, onClose, onFocusTerminal, onRetry, onKill, loading, degraded, error }: {
   item: UnifiedAgent
   /** Picker-parity preview card (PHNX-2973), rendered at the top of the body. */
   previewCard?: React.ReactNode
+  /** True once the card's digest is loaded — suppresses the terminal detail's
+   *  own duplicate msgs/tools/recent-files so there's one source of truth. */
+  hasPreviewData?: boolean
   onClose: () => void
   onFocusTerminal: (t: TerminalInfo) => void
   onRetry: (taskName: string) => void
@@ -3278,7 +3294,7 @@ export function DetailPane({ item, previewCard, onClose, onFocusTerminal, onRetr
 
         {previewCard}
         {item.kind === 'watchdog' && <WatchdogDetail events={item.watchdogEvents ?? []} />}
-        {item.terminal && <TerminalExpandedDetail terminal={item.terminal} />}
+        {item.terminal && <TerminalExpandedDetail terminal={item.terminal} hideActivityStats={hasPreviewData} />}
         {item.kind === 'team' && item.swarm && <TeamDetail swarm={item.swarm} onRetry={onRetry} onKill={onKill} />}
         {(item.kind === 'headless' || item.kind === 'cloud') && item.agent && (
           <AgentDetailView agent={item.agent} swarm={item.swarm} onRetry={onRetry} onKill={onKill} />
