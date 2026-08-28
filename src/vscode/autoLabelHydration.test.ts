@@ -78,7 +78,9 @@ describe('RUSH-2411 auto-label-after-remote-hydration wiring', () => {
 
   test('session lookups use --device, never the retired --host flag', () => {
     const vscodeSource = fs.readFileSync(path.join(import.meta.dir, 'remoteSessions.vscode.ts'), 'utf8');
-    expect(vscodeSource).toMatch(/\['sessions', sessionId, '--device', host, '--json'\]/);
+    // The per-tab identity fetch (`['sessions', sessionId, '--device', host, '--json']`)
+    // was deleted with the RUSH-3184 side channel; the remaining LABEL-source
+    // lookup still targets the owning box with --device (never the retired --host).
     expect(vscodeSource).toMatch(/args\.push\('--device', host\)/);
     expect(vscodeSource).not.toMatch(/\['sessions', sessionId, '--host'/);
     expect(extensionSource).toContain('sessionPresentationStore.liveSession');

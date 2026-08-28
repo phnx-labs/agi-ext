@@ -95,8 +95,7 @@ export interface EditorTerminal {
   account?: string;         // Resolved account email for this terminal when known
   statusVersion?: string;   // Display-only version from agents-cli metadata
   statusAccount?: string;   // Display-only account from agents-cli metadata
-  identitySessionId?: string; // Session id whose version/account are cached above AND both fields resolved; retry gate — re-fetch while the live id differs (rerun / /clear, or account not yet indexed)
-  identityAppliedSessionId?: string; // Session id the cached version/account were applied for (even if a field is null); display gate — the status bar shows them only for THIS session, never a prior binding's leftover
+  identityAppliedSessionId?: string; // Session id the version/account (from the broadcast watch row) were applied for (even if a field is null); display gate — the status bar shows them only for THIS session, never a prior binding's leftover
   approvalStatus?: 'pending' | 'approved' | 'running' | 'complete'; // Swarm approval status
   autoLabelPollerId?: NodeJS.Timeout; // Poller for auto-label fetch (cleared once label is set)
   appliedTitle?: string;    // Tab title last written via renameWithArg — dedupe guard so an unchanged title is never re-applied (and never disturbs focus)
@@ -423,8 +422,16 @@ export function setSessionId(terminal: vscode.Terminal, sessionId: string): void
   if (entry) {
     const prevSessionId = entry.sessionId;
     entry.sessionId = sessionId;
-    if (prevSessionId && prevSessionId !== sessionId) {
-      entry.autoLabel = undefined;
+    if (prevSessionId !== sessionId) {
+      // Drop a stale auto-label only when a PRIOR real session owned it (a
+      // rerun / /clear rebinds the tab to a new id whose label differs).
+      if (prevSessionId) entry.autoLabel = undefined;
+      // Clear the fast id-resolve poller on ANY id change — crucially including
+      // the no-id -> UUID transition (RUSH-3184). That poller was spun up to
+      // resolve the id; once the id lands it has done its job. The old guard
+      // (`prevSessionId && …`) skipped this case, so the poller kept firing
+      // every few seconds for the life of the tab even after the id was known,
+      // and applyHydratedSessionId's re-arm stacked a second poller on top.
       if (entry.autoLabelPollerId) {
         clearInterval(entry.autoLabelPollerId);
         entry.autoLabelPollerId = undefined;

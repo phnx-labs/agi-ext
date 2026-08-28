@@ -4,6 +4,25 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.341] - 2026-08-28
+
+- **The status bar no longer spawns a per-tab `agents sessions` process every few seconds (PHNX-3184).**
+  Version + account hydration for a remote (`--device`) tab used to run
+  `agents sessions <id> --device <host> --json` — one Node+SSH process per remote tab — re-fired
+  by an event-pumped gate with no cache or backoff, so N remote tabs meant N subprocesses every
+  ~4–5s (the 2026-08-25 CPU incident, load 10.2/18 cores; agi-cli#3019). That side channel is
+  **deleted**. Version and account now ride the single `agents sessions watch --json` stream
+  (`version` was already on the wire per RUSH-2205; `account` was added to the CLI backfill), and
+  the status bar reads them from the broadcast row via `SessionPresentationStore.liveSession()` —
+  zero per-tab subprocesses, and the account fills in on the next stream event with no polling.
+  Also fixes a stuck fast id-resolve poller: `setSessionId` now clears it on the no-id→UUID
+  transition, not only on a rerun/`/clear` id change. Requires the companion agents-cli change
+  that projects `account` onto the watch row; until it lands the account renders blank (never
+  wrong). Source: `src/core/sessionPresentationStore.ts` (`liveSession`),
+  `src/core/statusIdentity.ts` (`resolveStreamIdentityStamp`), `src/vscode/extension.ts`
+  (`applyStreamIdentity` replaces `tryHydrateSessionIdentity`), `src/vscode/remoteSessions.vscode.ts`
+  (`fetchSessionIdentity` deleted), `src/vscode/terminals.vscode.ts` (`setSessionId`).
+
 ## [0.9.340] - 2026-08-28
 
 - **Fork commands now delegate to `agents sessions fork` (PHNX-3409).** `Agents: Fork`,

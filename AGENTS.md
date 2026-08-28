@@ -47,7 +47,6 @@ deleting it or shrinking it, never adding to it.
 
 | Path | Violation | Fate |
 |---|---|---|
-| `src/vscode/extension.ts` `tryHydrateSessionIdentity` + `src/vscode/remoteSessions.vscode.ts` `fetchSessionIdentity` | per-tab `agents sessions <id> --device --json` spawn loop | DELETE once `account` rides the stream (RUSH-3184) |
 | `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | label/topic are already on the stream | DELETE now |
 | `src/vscode/prewarm.vscode.ts`, `src/core/prewarm.simple.ts` | spawns harness binaries to mint session ids (candidate cache); superseded by SessionStart hooks + `claude --session-id`; still contains hard-deprecated gemini | DELETE |
 | `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
