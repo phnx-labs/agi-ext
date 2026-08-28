@@ -75,12 +75,34 @@ interface AgentsCliSessionEvent {
   text?: string;
 }
 
-function runAgentsSessions(args: string[], cwd?: string): Promise<string> {
+// Bound every one-shot `agents` spawn. Without a deadline a wedged CLI child —
+// exactly what a sleep/wake transition or a stuck FS/network read can produce —
+// is never killed: it orphans (untracked, reparented) and, because callers
+// coalesce onto one subprocess (`toolStatsInFlight`), it also leaves the
+// in-flight guard latched forever so that session's stats never recover
+// (PHNX-3467). Every other agents-CLI runner in this repo already passes a
+// timeout (agentsBin.ts `runAgentsArgs` 30s, foreman.sources.ts 3s,
+// tasks.vscode.ts 15s); this one was the outlier. Node's `execFile` timeout
+// SIGTERMs the child on expiry, matching those siblings. Exported (with an
+// injectable timeout) so a regression test can prove a hung child is killed
+// without waiting the full production budget.
+export const AGENTS_SESSIONS_TIMEOUT_MS = 15_000;
+
+export function runAgentsSessions(
+  args: string[],
+  cwd?: string,
+  timeoutMs: number = AGENTS_SESSIONS_TIMEOUT_MS,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('agents', args, { cwd, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(stdout);
-    });
+    execFile(
+      'agents',
+      args,
+      { cwd, maxBuffer: 8 * 1024 * 1024, timeout: timeoutMs, killSignal: 'SIGTERM' },
+      (err, stdout) => {
+        if (err) reject(err);
+        else resolve(stdout);
+      },
+    );
   });
 }
 
