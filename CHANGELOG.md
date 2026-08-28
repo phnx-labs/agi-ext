@@ -39,6 +39,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   (`applyStreamIdentity` replaces `tryHydrateSessionIdentity`), `src/vscode/remoteSessions.vscode.ts`
   (`fetchSessionIdentity` deleted), `src/vscode/terminals.vscode.ts` (`setSessionId`).
 
+- **The Fleet detail panel now shows what `agents sessions` shows (PHNX-2973).** Selecting a
+  session fetches its rich preview digest once — a one-shot `agents sessions preview <id>
+  --json` verb (a user action, not a poll) — and renders a picker-parity card at the top of
+  the detail pane: the version · shortId · model · account header, cwd · branch · created ·
+  active · lasted, msgs · tokens · cost, then **Changes** (＋~− counts, files read, tool
+  count, and a per-file diff list), **Tools** (Bash 280 · Edit 11 …), **Tests**, **Errors**,
+  **Links** (PR/ticket), **Skills**, **Hooks**, **Repos**, and **Dirs** — in the CLI picker's
+  order. The panel previously rendered only cwd/branch, the prompt, progress, checklist,
+  latest, and a recent-files list. The CLI already computed every field; the per-file paths
+  it used to discard now ride the digest (companion agents-cli change). No transcript parsing
+  in the extension — the CLI computes it, the panel renders it (`SessionPreviewCard`,
+  `sessionPreview.ts`, `fetchSessionPreview` verb).
+
 ## [0.9.340] - 2026-08-28
 
 - **Fleet detail panel now distinguishes loading, empty, and error states (PHNX-2976).**

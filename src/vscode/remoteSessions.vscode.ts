@@ -282,3 +282,56 @@ export async function fetchHostSessionDetail(
     };
   }
 }
+
+/** The rich preview envelope `agents sessions preview <id> --json` emits. The
+ *  CLI owns the shape (renderSessionPreview / buildSessionPreviewDigest); this
+ *  is the boundary type the panel consumes. `session`/`preview` stay `unknown`
+ *  here — the webview mirrors and reads them field by field, the same
+ *  contract RemoteSession/RemoteSessionLike already follow. */
+export interface SessionPreviewResult {
+  host: string;
+  sessionId: string;
+  /** The parsed `{ schemaVersion, session, active, preview, error }` envelope. */
+  envelope?: unknown;
+  error?: string;
+}
+
+/**
+ * Tier-2: fetch one session's rich preview digest on demand. A one-shot,
+ * user-action CLI verb (`agents sessions preview <id> --json`) — NOT a poll —
+ * fired when the operator opens a session's detail pane, over SSH via --device
+ * for remote machines. The CLI computes the whole digest (file deltas, tool
+ * mix, tests, errors, PR/ticket links, cost/token header); the panel only
+ * renders it. Returns an error string rather than throwing.
+ */
+export async function fetchSessionPreview(
+  host: string,
+  sessionId: string
+): Promise<SessionPreviewResult> {
+  const agentsBin = await findAgentsCli();
+  const isLocal = host === LOCAL_HOST || host === LOCAL_LABEL;
+  const args = ['sessions', 'preview', sessionId, '--json'];
+  if (!isLocal) args.push('--device', host);
+  try {
+    const { stdout } = await execFileAsync(agentsBin, args, {
+      timeout: DETAIL_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
+      env: pathAugmentedEnv(),
+    });
+    // stdout is the JSON envelope; a remote fleet run may prepend
+    // "<host>: unreachable …" skip lines, so take the first line that opens an
+    // object rather than assuming the whole buffer parses.
+    const jsonText =
+      stdout.trimStart().startsWith('{')
+        ? stdout
+        : stdout.split('\n').find((l) => l.trimStart().startsWith('{')) ?? '';
+    if (!jsonText) return { host, sessionId, error: 'no preview JSON in CLI output' };
+    return { host, sessionId, envelope: JSON.parse(jsonText) };
+  } catch (err) {
+    return {
+      host,
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
