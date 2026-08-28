@@ -11,6 +11,7 @@ import type { TerminalDetail } from '../../types'
 import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 
 const { UnifiedAgentsPane } = await import('./UnifiedAgentsPane')
+const { SessionsPane } = await import('./SessionsPane')
 
 // Source-level regression guards: the Floor must not reintroduce 3s local /
 // 45s remote setInterval polls or the 140ms throughput React timer.
@@ -88,6 +89,7 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
 
   test('empty / CLI-unavailable copy and per-host freshness are present', () => {
     expect(source).toContain('data-testid="zero-sessions"')
+    expect(source).toContain('data-testid="stream-degraded"')
     expect(source).toContain('data-testid="zero-hosts"')
     expect(source).toContain('data-testid="cli-unavailable"')
     expect(source).toContain('data-testid="per-host-freshness"')
@@ -165,4 +167,53 @@ test('does not derive a Needs-You question from local tool calls', () => {
   expect(html).not.toContain('Drop the old table?')
   expect(html).not.toContain('Drop it')
   expect(html).not.toContain('Keep it')
+})
+
+test('follower with no reset renders degraded, not zero sessions', () => {
+  const html = renderToStaticMarkup(React.createElement(UnifiedAgentsPane, {
+    terminals: [],
+    tasks: [],
+    tasksLoading: false,
+    unifiedTasks: [],
+    unifiedTasksLoading: false,
+    onDispatch: () => {},
+    search: '',
+    onSearch: () => {},
+    sessionStreamDegraded: true,
+  }))
+
+  expect(html).toContain('Session data unavailable')
+  expect(html).toContain('Waiting for the first snapshot')
+  expect(html).not.toContain('No running sessions')
+})
+
+test('follower with a reset renders the genuine empty state', () => {
+  const html = renderToStaticMarkup(React.createElement(UnifiedAgentsPane, {
+    terminals: [],
+    tasks: [],
+    tasksLoading: false,
+    unifiedTasks: [],
+    unifiedTasksLoading: false,
+    onDispatch: () => {},
+    search: '',
+    onSearch: () => {},
+    sessionStreamDegraded: false,
+  }))
+
+  expect(html).toContain('No sessions match')
+  expect(html).not.toContain('Session data unavailable')
+})
+
+test('SessionsPane shows degraded copy when stream is degraded and empty', () => {
+  const html = renderToStaticMarkup(React.createElement(SessionsPane, {
+    agents: [],
+    onToggleStar: () => {},
+    onResume: () => {},
+    onResumeMany: () => {},
+    onSelect: () => {},
+    streamDegraded: true,
+  }))
+
+  expect(html).toContain('Session data unavailable')
+  expect(html).not.toContain('No sessions match')
 })

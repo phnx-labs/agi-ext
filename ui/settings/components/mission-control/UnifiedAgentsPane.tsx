@@ -562,6 +562,8 @@ interface UnifiedAgentsPaneProps {
   watchdogEnabled?: boolean
   watchdogEvents?: WatchdogEventUI[]
   projectRules?: ProjectRule[]
+  /** True while the follower has not yet observed a CLI stream reset. */
+  sessionStreamDegraded?: boolean
 }
 
 // Preserve object identity for unchanged agents across renders so memoized
@@ -670,7 +672,7 @@ function MeasuredRow({ vKey, onMeasure, children }: { vKey: string; onMeasure: (
   return <div className="vrow" style={{ display: 'flow-root' }} ref={ref}>{children}</div>
 }
 
-export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks, unifiedTasksLoading, onDispatch, onNavigate, onOpenInBench, openDispatchTrigger, quickSpawnTrigger, openDetailTaskId, onDetailTaskConsumed, onThroughputChange, search: floorSearch, onSearch: setFloorSearch, githubRepo, watchdogEnabled = false, watchdogEvents = [], projectRules = [] }: UnifiedAgentsPaneProps) {
+export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks, unifiedTasksLoading, onDispatch, onNavigate, onOpenInBench, openDispatchTrigger, quickSpawnTrigger, openDetailTaskId, onDetailTaskConsumed, onThroughputChange, search: floorSearch, onSearch: setFloorSearch, githubRepo, watchdogEnabled = false, watchdogEvents = [], projectRules = [], sessionStreamDegraded = false }: UnifiedAgentsPaneProps) {
   const panelVisible = usePanelVisibility()
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const [statPopover, setStatPopover] = useState<'shipped' | 'open' | 'running' | 'nextup' | 'files' | null>(null)
@@ -1788,7 +1790,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       out.push({ kind: 'statusMessage', node: null, height: measuredHeightsRef.current.get('zero-hosts') ?? defaultHeight('statusMessage'), key: 'zero-hosts' })
     }
     if (floorAgents.length === 0 && !syncingHosts && !cliUnavailable) {
-      out.push({ kind: 'statusMessage', node: null, height: measuredHeightsRef.current.get('zero-sessions') ?? defaultHeight('statusMessage'), key: 'zero-sessions' })
+      // A follower whose stream has not established (or is still waiting on an
+      // online peer) shows a distinct "connecting" state, never the confident
+      // "No running sessions" (PHNX-2735) — the empty feed is not yet trustworthy.
+      const emptyKey = sessionStreamDegraded ? 'stream-degraded' : 'zero-sessions'
+      out.push({ kind: 'statusMessage', node: null, height: measuredHeightsRef.current.get(emptyKey) ?? defaultHeight('statusMessage'), key: emptyKey })
     }
     const hostFreshnessEntries = Object.entries(hostFreshness)
     if (hostFreshnessEntries.length > 0) {
@@ -1830,7 +1836,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     }
 
     return out
-  }, [needsAgents.length, pendingPlans, questionClusters, failedAgents, reviewNeedsAgents, feedActivity, floorGroup, idleFeed, runningFeed, groupedFeed, doneFeed, recentAgents, hostHasNoActive, hostFilter, cliUnavailable, hostRoster.length, syncingHosts, lastRemoteSync, floorAgents.length, hostFreshness, floorSubgroup, managedProjects, heightTick])
+  }, [needsAgents.length, pendingPlans, questionClusters, failedAgents, reviewNeedsAgents, feedActivity, floorGroup, idleFeed, runningFeed, groupedFeed, doneFeed, recentAgents, hostHasNoActive, hostFilter, cliUnavailable, hostRoster.length, syncingHosts, lastRemoteSync, floorAgents.length, hostFreshness, floorSubgroup, managedProjects, sessionStreamDegraded, heightTick])
 
   const { scrollRef, onScroll, visibleItems, totalHeight, padTop, padBottom } = useVirtualList(feedItems, { overscan: FEED_OVERSCAN })
 
@@ -1984,6 +1990,13 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           return (
             <div className="feed-empty" role="status" data-testid="zero-hosts">
               No hosts registered. Add a device with <span className="mono">agents devices</span>, or open Dispatch once devices are online.
+            </div>
+          )
+        }
+        if (it.key === 'stream-degraded') {
+          return (
+            <div className="feed-empty feed-empty-warn" role="status" data-testid="stream-degraded">
+              Session stream connecting. Fleet status is not available yet.
             </div>
           )
         }
@@ -2562,6 +2575,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       onResumeMany={resumeManyAgents}
       onSelect={(a) => selectFloorAgent(a.id)}
       selectedId={selectedAgentId}
+      streamDegraded={sessionStreamDegraded}
     />
   ) : center === 'backlog' ? (
     <BacklogCenter

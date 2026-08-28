@@ -63,6 +63,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   in the extension — the CLI computes it, the panel renders it (`SessionPreviewCard`,
   `sessionPreview.ts`, `fetchSessionPreview` verb).
 
+- **A follower with no session reset shows degraded, never "0 sessions" (PHNX-2735).**
+  `SessionPresentationStore` now tracks whether it has observed a CLI stream `reset`.
+  Until the first reset arrives, the Floor feed and Sessions pane render a distinct
+  connecting/degraded state instead of the confident empty copy. The signal rides the
+  existing `allTerminalsData` broadcast, so no side channel is introduced.
+
 ## [0.9.340] - 2026-08-28
 
 - **Fleet detail panel now distinguishes loading, empty, and error states (PHNX-2976).**

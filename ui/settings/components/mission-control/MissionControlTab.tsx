@@ -23,9 +23,11 @@ interface MissionControlTabProps {
   watchdogEnabled?: boolean
   watchdogEvents?: WatchdogEventUI[]
   projectRules?: ProjectRule[]
+  /** True while the follower has not yet observed a CLI stream reset. */
+  sessionStreamDegraded?: boolean
 }
 
-export function MissionControlTab({ tasks, tasksLoading, terminals, unifiedTasks, unifiedTasksLoading, onDispatch, onNavigate, onOpenInBench, openDispatchTrigger, quickSpawnTrigger, openDetailTaskId, onDetailTaskConsumed, onThroughputChange, search, onSearch, githubRepo, watchdogEnabled, watchdogEvents, projectRules }: MissionControlTabProps) {
+export function MissionControlTab({ tasks, tasksLoading, terminals, unifiedTasks, unifiedTasksLoading, onDispatch, onNavigate, onOpenInBench, openDispatchTrigger, quickSpawnTrigger, openDetailTaskId, onDetailTaskConsumed, onThroughputChange, search, onSearch, githubRepo, watchdogEnabled, watchdogEvents, projectRules, sessionStreamDegraded }: MissionControlTabProps) {
   return (
     <UnifiedAgentsPane
       terminals={terminals}
@@ -47,6 +49,7 @@ export function MissionControlTab({ tasks, tasksLoading, terminals, unifiedTasks
       watchdogEnabled={watchdogEnabled}
       watchdogEvents={watchdogEvents}
       projectRules={projectRules}
+      sessionStreamDegraded={sessionStreamDegraded}
     />
   )
 }

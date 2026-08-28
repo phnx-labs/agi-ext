@@ -54,7 +54,7 @@ export type FloorInboundType = FloorInbound['type']
 export type FloorOutbound =
   | { type: 'panelVisibility'; visible: boolean }
   | { type: 'tasksData'; tasks: unknown[] }
-  | { type: 'allTerminalsData'; terminals: unknown[] }
+  | { type: 'allTerminalsData'; terminals: unknown[]; /** True when the follower has not yet observed a CLI stream reset. */ degraded?: boolean }
   | { type: 'unifiedTasksData'; tasks: unknown[]; cycleInfo: unknown | null }
   | { type: 'taskSourcesData'; sources: { linear: boolean; github: boolean } }
   | { type: 'floorThroughputData'; tokensPerSec: number }

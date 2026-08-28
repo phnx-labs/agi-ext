@@ -60,6 +60,17 @@ describe('SessionPresentationStore', () => {
     expect(store.presentedSessions('zion', 'this-mac')[0]?.host).toBe('yosemite-s1');
   });
 
+  test('reports not having seen a reset until a reset event arrives', () => {
+    const store = new SessionPresentationStore();
+    expect(store.hasSeenReset()).toBe(false);
+    store.apply({ v: 1, type: 'agent.upsert', streamId: 's', sequence: 1, capturedAt: 1, scope: 'zion', rowKey: 'a', agent: { rowKey: 'a' } });
+    expect(store.hasSeenReset()).toBe(false);
+    store.apply({ v: 1, type: 'reset', streamId: 's', sequence: 2, capturedAt: 2, scope: 'zion', agents: [], attention: [] });
+    expect(store.hasSeenReset()).toBe(true);
+    store.clear();
+    expect(store.hasSeenReset()).toBe(false);
+  });
+
   test('orders each stream independently and resets only its scope', () => {
     const store = new SessionPresentationStore();
     store.apply({ v: 1, type: 'reset', streamId: 'a', sequence: 5, capturedAt: 1, scope: 'zion', agents: [{ rowKey: 'z', sourceDevice: 'zion' }], attention: [] });
