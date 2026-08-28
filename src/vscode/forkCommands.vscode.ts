@@ -1,10 +1,8 @@
-import { buildForkSessionRequest, type ForkSessionSource } from '../core/forkSession';
-import type { RunStrategy } from '../core/agents';
+import { buildForkSessionRequest, forkCommand, type ForkSessionSource } from '../core/forkSession';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 
 export interface ForkPickHostLaunch<ViewColumn> {
-  prompt: string;
-  strategy?: RunStrategy;
+  command: string;
   host?: string;
   local: boolean;
   viewColumn: ViewColumn;
@@ -104,8 +102,7 @@ export async function handleForkPickHost<ViewColumn>(opts: {
   }
 
   const fork = await opts.openFork({
-    prompt: request.prompt,
-    strategy: request.strategy,
+    command: forkCommand(request.sessionId, request.host),
     host: request.host,
     local: request.local,
     viewColumn: opts.viewColumn,

@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { buildAgentLaunchCommand } from './agents';
-import { buildForkSessionRequest } from './forkSession';
+import { buildForkSessionRequest, forkCommand } from './forkSession';
+
+describe('forkCommand', () => {
+  test('builds the bare fork verb when the source runs here', () => {
+    expect(forkCommand('s1', undefined)).toBe("agents sessions fork 's1'");
+  });
+
+  test('carries the device when the source lives on another box', () => {
+    expect(forkCommand('s1', 'yosemite-s0')).toContain("--device 'yosemite-s0'");
+  });
+});
 
 describe('buildForkSessionRequest', () => {
   test('builds a local same-harness fork with balanced account selection', () => {
