@@ -529,7 +529,12 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   if (automatic) armShellAdoptionForTerminal(terminal, context);
   await sendCommandWhenReady(terminal, command);
   if (opts.agentKey) {
-    readiness.armAgentReady(terminal, {});
+    // Arm the fast session-file-watch readiness path with the minted id (matching
+    // openSingleAgent), not the slower process-state probe. Without the id the
+    // monitor broadcast never learns the session id either (PHNX-2553).
+    readiness.armAgentReady(terminal, opts.agentKey && sessionId
+      ? { agentKey: opts.agentKey, sessionId, cwd }
+      : {});
   }
 }
 
