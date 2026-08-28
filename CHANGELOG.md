@@ -18,7 +18,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   the stream changes instead of pulled by the webview. The Issues Panel re-fetches on
   view-visible and on VS Code window focus regained instead of on a blind interval —
   Linear/GitHub tickets are intentionally NOT agents-cli daemon state (PHNX-2932), so a
-  companion CLI stream isn't the right fix there; owning no timer is.
+  companion CLI stream isn't the right fix there; owning no timer is. Trade-off: tickets
+  no longer refresh during a long, continuously-focused session with no alt-tab — the
+  manual refresh button covers that gap.
 
 ## [0.9.340] - 2026-08-28
 

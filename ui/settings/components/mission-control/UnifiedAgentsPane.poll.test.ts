@@ -40,6 +40,15 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
     expect(source).toContain('data-tick-ms={THROUGHPUT_TICK_MS}')
   })
 
+  // PHNX-2833: the extension must not own a timer that fetches. Throughput
+  // used to be pulled by polling the host every 2.5s; it is now pushed by the
+  // host whenever the session CLI stream changes (settings.vscode.ts
+  // pushFloorThroughput). Guard against reintroducing that poll.
+  test('does not poll the host for floor throughput', () => {
+    expect(source).not.toContain("postMessage({ type: 'getFloorThroughput' })")
+    expect(source).not.toMatch(/setInterval\(\s*poll\s*,\s*2_?500\s*\)/)
+  })
+
   test('seeds hosts once on visibility; remote refresh is manual', () => {
     expect(source).toContain("postMessage({ type: 'fetchLocalSessions' })")
     expect(source).toContain('data-testid="host-freshness-chip"')
