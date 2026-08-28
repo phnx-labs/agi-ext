@@ -1138,7 +1138,7 @@ async function pushFloorUpdate(workspacePath?: string): Promise<void> {
     // RUSH-2039: page the user when a session (Codex included) enters the
     // approval-waiting state. Edge-triggered so it fires once per wait.
     notifyNewlyWaiting(floorTerminals);
-    settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals });
+    settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals, degraded: !sessionPresentationStore.hasSeenReset() });
     settingsPanel.webview.postMessage({ type: 'feedActivity', activity: sessionPresentationStore.activityEvents() });
 
     // Tasks arrive in their own message whenever they are ready. fetchTasks

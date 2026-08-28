@@ -11,12 +11,15 @@ export class SessionPresentationStore {
   private activity: unknown[] = [];
   private sequences = new Map<string, number>();
   private scopes = new Map<string, { status: 'available' | 'unavailable'; reason?: string }>();
+  /** True once a `reset` has been observed from the elected CLI stream. */
+  private resetSeen = false;
 
   apply(event: SessionCliFactPayload): boolean {
     const previous = this.sequences.get(event.streamId) ?? 0;
     if (event.sequence <= previous) return false;
     this.sequences.set(event.streamId, event.sequence);
     if (event.type === 'reset') {
+      this.resetSeen = true;
       for (const [rowKey, scope] of this.rowScopes) {
         if (scope === event.scope) {
           this.rows.delete(rowKey);
@@ -99,7 +102,10 @@ export class SessionPresentationStore {
   scope(scope: string): { status: 'available' | 'unavailable'; reason?: string } | undefined {
     return this.scopes.get(scope);
   }
-  clear(): void { this.rows.clear(); this.rowScopes.clear(); this.attention.clear(); this.attentionScopes.clear(); this.activity = []; this.sequences.clear(); this.scopes.clear(); }
+  clear(): void { this.rows.clear(); this.rowScopes.clear(); this.attention.clear(); this.attentionScopes.clear(); this.activity = []; this.sequences.clear(); this.scopes.clear(); this.resetSeen = false; }
+
+  /** True once a `reset` has been observed from the elected CLI stream. */
+  hasSeenReset(): boolean { return this.resetSeen; }
 
   /** Normalize the CLI stream rows for UI rendering without starting another query. */
   presentedSessions(

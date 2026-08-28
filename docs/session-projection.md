@@ -68,6 +68,8 @@ When identity is absent from the stream, the correct fix is a CLI projection cha
 - A malformed feed event is rejected and reported without corrupting the current scope.
 - Loss of the leader triggers election/replay, not one poller per follower.
 - Missing facts render as unknown or degraded; zero is reserved for known zero.
+  The presentation store records whether it has ever observed a `reset`; a follower
+  that has not is rendered as degraded rather than as an authoritative empty state.
 - Resolved attention cannot reappear from an older session snapshot.
 
 The concrete stream owner is `src/monitor/sessionCliStream.ts`; the pure cross-surface

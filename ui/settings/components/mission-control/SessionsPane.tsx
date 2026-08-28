@@ -120,6 +120,8 @@ interface SessionsPaneProps {
   onSelect: (a: FloorAgent) => void
   /** Currently selected session id (detail pane). */
   selectedId?: string | null
+  /** True while the follower has not yet observed a CLI stream reset. */
+  streamDegraded?: boolean
 }
 
 type VItem =
@@ -146,7 +148,7 @@ const GROUP_OPTS: { value: SessionGroup; label: string }[] = [
   { value: 'flat', label: 'Flat' },
 ]
 
-export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, selectedId }: SessionsPaneProps) {
+export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [project, setProject] = useState<string | null>(null)
   const [host, setHost] = useState<string | null>(null)
@@ -257,7 +259,11 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
 
       <div className="sx-scroll" ref={scrollRef} onScroll={onScroll}>
         {items.length === 0 ? (
-          <div className="sx-empty">No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setProject(null); setHost(null); setSearch('') }}>Clear filters</button>}</div>
+          <div className="sx-empty">
+            {streamDegraded && agents.length === 0
+              ? 'Session data unavailable. Waiting for the first snapshot…'
+              : <>No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setProject(null); setHost(null); setSearch('') }}>Clear filters</button>}</>}
+          </div>
         ) : (
           <div style={{ height: totalHeight, position: 'relative' }}>
             <div style={{ transform: `translateY(${padTop}px)` }}>

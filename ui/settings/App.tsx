@@ -137,6 +137,8 @@ export default function App() {
 
   // All terminals (for Floor tab)
   const [allTerminals, setAllTerminals] = useState<TerminalDetail[]>([])
+  // True while the follower has not yet observed a CLI stream reset.
+  const [sessionStreamDegraded, setSessionStreamDegraded] = useState(false)
 
   // Default agent and installed agents
   const [defaultAgent, setDefaultAgent] = useState<string>('CC')
@@ -280,6 +282,7 @@ export default function App() {
           break
         case 'allTerminalsData':
           setAllTerminals(message.terminals || [])
+          if (typeof message.degraded === 'boolean') setSessionStreamDegraded(message.degraded)
           break
         case 'installedAgentsData':
           setInstalledAgents(message.installedAgents)
@@ -813,6 +816,7 @@ export default function App() {
           watchdogEnabled={watchdogEnabled}
           watchdogEvents={watchdogEvents}
           projectRules={settings?.projectRules ?? []}
+          sessionStreamDegraded={sessionStreamDegraded}
         />
       )}
 
