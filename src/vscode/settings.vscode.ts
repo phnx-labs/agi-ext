@@ -1151,14 +1151,44 @@ async function pushFloorUpdate(workspacePath?: string): Promise<void> {
   });
 }
 
+// Throughput rides the CLI payload (ActiveSession.tokPerSec, issue #741): sum
+// the rows belonging to this window's live terminals instead of re-reading
+// and re-parsing each transcript here. The presentation store read does not
+// create a recurring CLI subprocess.
+function computeFloorThroughput(): number {
+  let total = 0;
+  try {
+    const windowSessionIds = new Set(
+      terminals.getAllTerminals()
+        .filter((t) => t.terminal.exitStatus === undefined && t.sessionId)
+        .map((t) => t.sessionId as string),
+    );
+    const sessions = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
+      .filter((session) => session.host === LOCAL_LABEL);
+    for (const s of sessions) {
+      if (windowSessionIds.has(s.sessionId)) total += s.tokPerSec;
+    }
+  } catch { /* CLI unavailable — report 0, same as an unreadable session file before */ }
+  return Math.round(total);
+}
+
+// Pushed proactively rather than pulled — the webview used to poll
+// 'getFloorThroughput' every 2.5s (PHNX-2833); now the host pushes a fresh
+// value whenever the session stream actually changes.
+function pushFloorThroughput(): void {
+  settingsPanel?.webview.postMessage({ type: 'floorThroughputData', tokensPerSec: computeFloorThroughput() });
+}
+
 /** Called by the window's session-stream follower; no filesystem watcher. */
 export async function refreshFloorFromSessionStream(): Promise<void> {
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  pushFloorThroughput();
   await Promise.all([pushSubscribedAgentTerminalUpdate(workspacePath), pushFloorUpdate(workspacePath)]);
 }
 
 async function subscribeFloor(workspacePath?: string): Promise<void> {
   floorSubscribed = true;
+  pushFloorThroughput();
   await pushFloorUpdate(workspacePath);
 }
 
@@ -2394,27 +2424,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             error: err instanceof Error ? err.message : String(err),
           });
         }
-        break;
-      }
-      case 'getFloorThroughput': {
-        // Throughput now rides the CLI payload (ActiveSession.tokPerSec, issue
-        // #741): sum the rows belonging to this window's live terminals instead
-        // of re-reading and re-parsing each transcript here. The presentation
-        // store read does not create a recurring CLI subprocess.
-        let total = 0;
-        try {
-          const windowSessionIds = new Set(
-            terminals.getAllTerminals()
-              .filter((t) => t.terminal.exitStatus === undefined && t.sessionId)
-              .map((t) => t.sessionId as string),
-          );
-          const sessions = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
-            .filter((session) => session.host === LOCAL_LABEL);
-          for (const s of sessions) {
-            if (windowSessionIds.has(s.sessionId)) total += s.tokPerSec;
-          }
-        } catch { /* CLI unavailable — report 0, same as an unreadable session file before */ }
-        settingsPanel?.webview.postMessage({ type: 'floorThroughputData', tokensPerSec: Math.round(total) });
         break;
       }
       case 'dispatchTask': {

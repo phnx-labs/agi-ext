@@ -1404,40 +1404,34 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     return Math.max(0, todoCount - queueTasks.length)
   }, [unifiedTasks, queueTasks.length])
 
-  // Real LLM output tok/s -- extension parses active Claude session JSONL files
-  // and sums usage.output_tokens over the last 60s rolling window.
+  // Real LLM output tok/s, computed host-side from ActiveSession.tokPerSec
+  // (which already rides the agents-cli session stream). The host pushes a
+  // fresh 'floorThroughputData' message whenever that stream actually changes
+  // (settings.vscode.ts refreshFloorFromSessionStream) — no poll here
+  // (PHNX-2833: the extension must not own a timer that fetches).
   const [liveThroughput, setLiveThroughput] = useState(0)
   useEffect(() => {
-    if (activeItems.length === 0) {
+    if (activeItems.length === 0 || !panelVisible) {
+      // Panel hidden or nothing active: zero the value. ThroughputCounter
+      // early-returns its 1s sparkline interval when tokensPerSec <= 0, so
+      // resetting here clears the animation instead of letting it run
+      // off-screen against the last frozen value.
       setLiveThroughput(0)
       onThroughputChange?.(0)
-      return
     }
-    if (!panelVisible) {
-      // Panel hidden: stop host throughput probes AND zero the value.
-      // ThroughputCounter early-returns its 1s sparkline interval when
-      // tokensPerSec <= 0, so resetting here clears the animation instead of
-      // letting it run off-screen against the last frozen value.
-      setLiveThroughput(0)
-      onThroughputChange?.(0)
-      return
-    }
-    const poll = () => postMessage({ type: 'getFloorThroughput' })
-    poll()
-    const id = setInterval(poll, 2500)
-    return () => clearInterval(id)
   }, [activeItems.length, onThroughputChange, panelVisible])
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data
       if (msg?.type === 'floorThroughputData' && typeof msg.tokensPerSec === 'number') {
+        if (activeItems.length === 0 || !panelVisible) return
         setLiveThroughput(msg.tokensPerSec)
         onThroughputChange?.(msg.tokensPerSec)
       }
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [onThroughputChange])
+  }, [onThroughputChange, activeItems.length, panelVisible])
 
   // Draft-prompt result from the host. Stamp a nonce so the DispatchPanel effect
   // fires on every delivery (React would skip an object with unchanged fields).

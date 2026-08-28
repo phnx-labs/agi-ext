@@ -21,7 +21,6 @@ export type FloorInbound =
   | { type: 'fetchAllTerminals' }
   | { type: 'fetchUnifiedTasks' }
   | { type: 'detectTaskSources' }
-  | { type: 'getFloorThroughput' }
   /**
    * Fleet host sessions. `force: true` runs one bare `agents sessions --active
    * --json`. Omit force (or false) to receive last-good immediately without a

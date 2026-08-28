@@ -21,7 +21,8 @@
 //   onDidChangeActiveTerminal               -> re-render immediately
 //   onDidCloseTerminal / onDidOpenTerminal  -> re-render
 //   fs.watch on PLAN.md                     -> re-render
-//   4s poll while visible                   -> teams + git freshness
+//   session CLI stream fact (agents-cli daemon) -> re-render, trailing-coalesced
+//     (PHNX-2833: no local poll timer — the daemon is the only scheduler)
 
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -42,6 +43,7 @@ import {
   type WorktreeRef as SharedWorktreeRef,
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 
 export const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
 
@@ -84,7 +86,8 @@ type AgentState =
   | 'idle_clean_wt'     // idle, clean tree, terminal is in a worktree
   | 'idle_clean';       // idle, clean tree, no worktree
 
-// "Streaming" window: panel polls every 4s, so this is ~2 polls.
+// "Streaming" window: how recently the session file must have been touched
+// to still count as actively producing output.
 const STREAMING_MS = 10_000;
 
 // Re-export shared types so the rest of this file doesn't need to switch on
@@ -165,7 +168,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   // refresh, or a slow local-fallback `agents view`) coalesce onto one running
   // build so two snapshot computations never run concurrently.
   private buildInFlight: Promise<PanelSnapshot> | undefined;
-  private pollTimer: NodeJS.Timeout | undefined;
+  private visible = false;
   private planWatcher: vscode.FileSystemWatcher | undefined;
   private lastWatchedDir: string | undefined;
   // The webview script signals 'ready' once its message listener is attached.
@@ -195,22 +198,18 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((msg) => this.handleMessage(msg));
 
     webviewView.onDidChangeVisibility(() => {
-      if (webviewView.visible) {
-        void this.refresh();
-        this.startPolling();
-      } else {
-        this.stopPolling();
-      }
+      this.visible = webviewView.visible;
+      if (webviewView.visible) void this.refresh();
     });
 
     webviewView.onDidDispose(() => {
-      this.stopPolling();
       this.disposePlanWatcher();
       this.view = undefined;
+      this.visible = false;
     });
 
+    this.visible = webviewView.visible;
     void this.refresh();
-    if (webviewView.visible) this.startPolling();
   }
 
   private async handleMessage(msg: any): Promise<void> {
@@ -346,18 +345,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     // If not ready, snapshot stays cached; the 'ready' handler will push it.
   }
 
-  private startPolling(): void {
-    if (this.pollTimer) return;
-    this.pollTimer = setInterval(() => {
-      void this.refresh();
-    }, 4000);
-  }
-
-  private stopPolling(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
-    }
+  // Called from the session CLI stream fact handler (PHNX-2833) — skip the
+  // rebuild when nothing is on screen to see it, same gate the removed 4s
+  // poll timer used to apply via startPolling/stopPolling.
+  async refreshIfVisible(): Promise<void> {
+    if (!this.visible) return;
+    await this.refresh();
   }
 
   private disposePlanWatcher(): void {
@@ -1783,8 +1776,28 @@ function randomNonce(): string {
   return s;
 }
 
+// Set once by registerAgentPanel; consumed by notifyAgentPanelSessionUpdate so
+// the extension.ts session-stream fact handler has a single call site instead
+// of threading the provider instance through.
+let activeProvider: AgentPanelProvider | undefined;
+const streamRefreshCoalesce = createTrailingCoalesce();
+const STREAM_REFRESH_KEY = 'agentPanel';
+
+// Called by extension.ts whenever sessionPresentationStore.apply() reports a
+// change (a fact arrived off the agents-cli daemon's session stream). This
+// replaces the old 4s setInterval poll (PHNX-2833) — the panel now redraws
+// only when the daemon says something actually changed, trailing-coalesced so
+// a burst of facts (many tool calls in a row) collapses into one rebuild plus
+// exactly one catch-up run for whatever arrived mid-flight.
+export function notifyAgentPanelSessionUpdate(): void {
+  if (!activeProvider) return;
+  void coalesceTrailing(streamRefreshCoalesce, STREAM_REFRESH_KEY, () => activeProvider!.refreshIfVisible());
+}
+
 export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanelProvider {
   const provider = new AgentPanelProvider(context.extensionUri);
+  activeProvider = provider;
+  context.subscriptions.push({ dispose: () => { if (activeProvider === provider) activeProvider = undefined; } });
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(AGENT_PANEL_VIEW_ID, provider, {
