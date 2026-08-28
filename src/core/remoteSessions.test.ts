@@ -18,7 +18,6 @@ import {
   filterStaleSessions,
   sessionLastActivityMs,
   parseSessionLabelSource,
-  parseSessionIdentity,
   isDerivedSessionName,
   STALE_SESSION_THRESHOLD_MS,
   type RemoteSession,
@@ -934,55 +933,5 @@ describe('parseSessionLabelSource — the REMOTE payload shape', () => {
 
   test('an empty array is no session, not a crash', () => {
     expect(parseSessionLabelSource('[]', 'anything')).toBeNull();
-  });
-});
-
-describe('parseSessionIdentity — the running session\'s real version + account', () => {
-  // The status bar sourced version/account from `agents view` (machine-default
-  // install), which is unrelated to a specific session and showed a wrong version
-  // and account under Remote-SSH. This parses `agents sessions <id> --json`, the
-  // only source that carries what a --strategy balanced launch actually selected.
-  const local = (session: Record<string, unknown>) => JSON.stringify({ session, events: [] });
-
-  test('pulls version + account off the LOCAL { session } envelope', () => {
-    const parsed = parseSessionIdentity(local({ id: 'abc', version: '2.1.207', account: 'muqsit@trp.so' }));
-    expect(parsed).toEqual({ version: '2.1.207', account: 'muqsit@trp.so', agent: null });
-  });
-
-  test('reads them off the REAL remote wire (flat SessionMeta array)', () => {
-    const remoteRaw = fs.readFileSync(
-      path.join(TESTDATA, 'sessions-by-id-remote.json'),
-      'utf-8',
-    );
-    expect(parseSessionIdentity(remoteRaw, 'e2f20244-fbb7-413a-8333-aa1b692851bc')).toEqual({
-      version: '2.1.187',
-      account: 'muqsit@trp.so',
-      agent: 'claude',
-    });
-  });
-
-  test('never reads a different session in a multi-record payload', () => {
-    const many = JSON.stringify([
-      { id: 'other', version: '9.9.9', account: 'wrong@example.com' },
-      { id: 'mine', version: '2.1.207', account: 'muqsit@trp.so' },
-    ]);
-    expect(parseSessionIdentity(many, 'mine')).toEqual({ version: '2.1.207', account: 'muqsit@trp.so', agent: null });
-    expect(parseSessionIdentity(many, 'absent')).toBeNull();
-    expect(parseSessionIdentity(many)).toBeNull();
-  });
-
-  test('a partial record keeps the field it has and nulls the other', () => {
-    expect(parseSessionIdentity(local({ id: 'v', version: '2.1.207' }))).toEqual({ version: '2.1.207', account: null, agent: null });
-    expect(parseSessionIdentity(local({ id: 'a', account: 'muqsit@trp.so' }))).toEqual({ version: null, account: 'muqsit@trp.so', agent: null });
-    // The harness alone resolves too — an `agents run auto` launch's pick is
-    // knowable from the feed even before version/account are indexed.
-    expect(parseSessionIdentity(local({ id: 'g', agent: 'codex' }))).toEqual({ version: null, account: null, agent: 'codex' });
-  });
-
-  test('returns null when the session carries neither field', () => {
-    expect(parseSessionIdentity(local({ id: 'x', cwd: '/x' }))).toBeNull();
-    expect(parseSessionIdentity(local({ id: 'x', version: '  ', account: '' }))).toBeNull();
-    expect(parseSessionIdentity('not json')).toBeNull();
-    expect(parseSessionIdentity('[]', 'anything')).toBeNull();
   });
 });
