@@ -482,9 +482,16 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   // `--device auto` is for, so it must NOT be treated as local. Device choice
   // stays with the CLI rather than being scored here, per the thin-client contract.
   const isLocal = opts.local === true || (opts.pickHost === true && !host);
+  // Mint Claude's session id up front, exactly as openSingleAgent does (see the
+  // docblock there). Without it launchAgent emitted no `--session-id`, so a LOCAL
+  // New Claude — the flagship `agents.newClaude` command — armed neither auto-label
+  // branch in registerAgentTerminal (no sessionId, no host) and the tab kept its bare
+  // prefix until something else hydrated it (PHNX-2553). Id-minting now lives on both
+  // creation paths so they cannot drift again.
+  const sessionId = opts.agentKey === 'claude' ? generateClaudeSessionId() : undefined;
   const command = buildNewAgentLaunchCommand(
     { ...opts, host, local: isLocal },
-    { defaultModel, projectSlug, cwd },
+    { defaultModel, projectSlug, cwd, sessionId },
   );
 
   // Tab identity must be established AT createTerminal: iconPath and name are
@@ -500,10 +507,10 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   // agent, which is the opposite of the policy in core/terminals.ts.
   const isUserShell = opts.agentKey === 'shell';
   const terminal = vscode.window.createTerminal({
-    name: automatic ? 'Agents Auto' : buildTerminalTitle(agentConfig.title, undefined, context, null),
+    name: automatic ? 'Agents Auto' : buildTerminalTitle(agentConfig.title, undefined, context, sessionId ?? null),
     iconPath: agentConfig.iconPath,
     location: { viewColumn: vscode.ViewColumn.Active },
-    env: buildAgentTerminalEnv(terminalId, undefined, cwd, undefined, {
+    env: buildAgentTerminalEnv(terminalId, sessionId, cwd, undefined, {
       scrubSensitive: !isUserShell,
       kind: isUserShell ? 'shell' : 'agent',
     }),
@@ -514,6 +521,7 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
     terminalId,
     agentConfig,
     agentKey: opts.agentKey,
+    sessionId,
     host,
   });
   // The harness is unknown until the runner starts, so let adoption re-key the

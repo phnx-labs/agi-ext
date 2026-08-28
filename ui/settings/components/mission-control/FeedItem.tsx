@@ -321,6 +321,8 @@ function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, on
           <StructuredReply
             question={a.question}
             phase={a.phase}
+            replyKind={a.reply.kind}
+            replyReason={a.reply.reason}
             error={error}
             onOption={(o) => onOption(a, o)}
             onFreeText={(t) => onFreeText(a, t)}
