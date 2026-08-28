@@ -146,12 +146,21 @@ export class SessionPresentationStore {
   }
 
   /**
-   * Live stream row for one session id — machine + topic + label, no extra
-   * CLI subprocess. `--device auto` tabs never learn their host at launch;
-   * this is how they recover it (and a title) once the watch stream indexes
-   * the session.
+   * Live stream row for one session id — machine + topic + label + cwd, plus
+   * the session's real `version` + `account`, all from the single watch stream
+   * with NO extra CLI subprocess. `--device auto` tabs never learn their host
+   * at launch; this is how they recover it (and a title) once the watch stream
+   * indexes the session.
+   *
+   * `version` and `account` are what the status bar renders as the session's
+   * identity. They ride the stream (`version` per RUSH-2205, `account` per
+   * RUSH-3184) so the status bar reads a broadcast row instead of spawning a
+   * per-tab `agents sessions <id> --device <host> --json` — the event-pumped
+   * respawn that caused the 2026-08-25 CPU incident (agi-cli#3019). Both are
+   * `null` for a harness the CLI records no identity for (Kimi has neither,
+   * Grok/Cursor a version but no account) or before the CLI has indexed them.
    */
-  liveSession(sessionId: string): { machine: string; topic: string; label: string; cwd: string } | undefined {
+  liveSession(sessionId: string): { machine: string; topic: string; label: string; cwd: string; version: string | null; account: string | null } | undefined {
     const wanted = sessionId.trim();
     if (!wanted) return undefined;
     for (const value of this.sessions()) {
@@ -166,6 +175,8 @@ export class SessionPresentationStore {
         firstUserMessage?: unknown;
         label?: unknown;
         cwd?: unknown;
+        version?: unknown;
+        account?: unknown;
       };
       const id = typeof row.sessionId === 'string' ? row.sessionId
         : typeof row.id === 'string' ? row.id : '';
@@ -179,7 +190,9 @@ export class SessionPresentationStore {
         : '';
       const label = typeof row.label === 'string' ? row.label : '';
       const cwd = typeof row.cwd === 'string' ? row.cwd : '';
-      return { machine, topic, label, cwd };
+      const version = typeof row.version === 'string' && row.version.trim() ? row.version.trim() : null;
+      const account = typeof row.account === 'string' && row.account.trim() ? row.account.trim() : null;
+      return { machine, topic, label, cwd, version, account };
     }
     return undefined;
   }

@@ -30,7 +30,7 @@ import {
 import { startWatchdogBridge } from '../mcp/watchdog-bridge';
 import { ensureWatchdogMcpInstalled } from '../mcp/watchdogInstall';
 import * as terminals from './terminals.vscode';
-import { fetchRemoteSessionLabelSource, fetchSessionIdentity, fetchRecapSessions, LOCAL_LABEL, LOCAL_MACHINE_ID, mapWithConcurrency } from './remoteSessions.vscode';
+import { fetchRemoteSessionLabelSource, fetchRecapSessions, LOCAL_LABEL, LOCAL_MACHINE_ID, mapWithConcurrency } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   isScaffoldingSessionTopic,
@@ -157,7 +157,7 @@ import {
   planActiveMapHydration,
   type RemoteAutoLabelHooks,
 } from '../core/remoteAutoLabel';
-import { displayIdentity } from '../core/statusIdentity';
+import { displayIdentity, resolveStreamIdentityStamp } from '../core/statusIdentity';
 import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo } from './sessions.vscode';
 import * as tasksImport from './tasks.vscode';
 import { SOURCE_BADGES } from '../core/tasks';
@@ -171,7 +171,6 @@ let agentStatusBarItem: vscode.StatusBarItem | undefined;
 let defaultAgentTitle: string = CLAUDE_TITLE;
 let secondaryAgentTitle: string = CODEX_TITLE;
 let lastFocusedTerminal: vscode.Terminal | null = null;
-const statusIdentityInFlight = new Set<string>();
 
 // BUILT_IN_AGENTS is now imported from ./agents
 
@@ -4069,76 +4068,46 @@ function formatAgentStatusBarText(
   return text;
 }
 
-// Resolve the running session's REAL version + account from the CLI session feed
-// (`agents sessions <id> --json`, host-aware) and stamp them on the entry. This is
-// the only source that knows which version/account a `--strategy balanced` launch
-// actually selected for this session — `agents view` reports only the box-wide
-// default install, which is unrelated to a specific terminal and was the cause of
-// the status bar showing a wrong version/account (esp. under Remote-SSH, where the
-// remote box's default differs from what the session actually ran).
-async function tryHydrateSessionIdentity(
+// Stamp the running session's REAL version + account onto the tab from the
+// broadcast watch row — the single-stream projection (SessionPresentationStore),
+// NOT a per-tab CLI subprocess. The stream is the only source that knows which
+// version/account a `--strategy balanced` launch actually selected for THIS
+// session (`agents view` reports only the box-wide default install, unrelated to
+// a specific terminal — the wrong-identity bug this originally fixed).
+//
+// This REPLACED `tryHydrateSessionIdentity`, whose event-pumped
+// `agents sessions <id> --device <host> --json` fetch respawned one Node+SSH
+// process per remote tab every ~4–5s — the dominant drain in the 2026-08-25 CPU
+// incident (RUSH-3184, agi-cli#3019). Rule #1 of this repo: identity rides the
+// stream, never a side channel. Synchronous, allocation-cheap, and idempotent —
+// safe to call on every status-bar refresh, including the ones the stream itself
+// pumps via syncCanonicalSessionTabLabels, so an account the CLI indexes a beat
+// after the version fills in on the next stream event with no polling.
+function applyStreamIdentity(
   terminal: vscode.Terminal,
   entry: terminals.EditorTerminal,
-  prefix: string,
   sessionId: string,
-): Promise<void> {
-  // The cached version/account belong to a specific session. Skip only when they
-  // are already resolved for THIS session id — a rerun or /clear in the same
-  // terminal produces a new id (often a different balanced version/account), and
-  // the stale cache must be replaced, not kept.
-  if (entry.identitySessionId === sessionId && entry.version && entry.account) return;
-
-  const inflightKey = `${sessionId}@${entry.host ?? 'local'}`;
-  if (statusIdentityInFlight.has(inflightKey)) return;
-  statusIdentityInFlight.add(inflightKey);
-
-  try {
-    const identity = await fetchSessionIdentity(sessionId, entry.host);
-    if (!identity) return;
-    // The terminal may have moved on to another session while this was queued;
-    // never stamp a stale session's identity over the current one.
-    if (entry.sessionId && entry.sessionId !== sessionId) return;
-    // Apply the resolved record AUTHORITATIVELY, clearing a field the session does
-    // not carry. A Kimi/Grok session has no version or account, so a value left
-    // over from a prior binding in this terminal (e.g. a stale 2.1.218) must be
-    // cleared, not preserved by an `if (identity.version)` guard. The early return
-    // above protects an already-resolved identity from a transient partial fetch.
-    terminals.setVersion(terminal, identity.version);
-    terminals.setAccount(terminal, identity.account);
-    // An `agents run auto` rotate spawns with the harness unknown (the CLI
-    // picks it at launch) and the outgoing harness stamped as a prior — the
-    // feed's record is the truth, so correct the stamp when they differ.
-    if (identity.agent && identity.agent !== entry.agentType) {
-      terminals.setAgentType(terminal, identity.agent as SessionAgentType);
-    }
-    // Two distinct markers, because "displayable" and "fully resolved" differ:
-    //   - identityAppliedSessionId: the version/account cached above were applied
-    //     FOR this session (even if a field is null — Grok has a version but no
-    //     account, Kimi has neither). displayIdentity gates on this, so the status
-    //     bar shows only the current session's identity and a prior binding's
-    //     leftover is withheld.
-    //   - identitySessionId: BOTH fields present. The call sites re-invoke this
-    //     function while it differs from the live id, so an account that the CLI
-    //     indexes a beat after the version (Claude/Codex) is still filled by a
-    //     later fetch instead of freezing blank.
-    entry.identityAppliedSessionId = sessionId;
-    if (identity.version && identity.account) entry.identitySessionId = sessionId;
-
-    if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
-    const rawLabel = entry.label;
-    const displayLabel = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : null;
-    const { version, account } = displayIdentity(entry, entry.sessionId);
-    agentStatusBarItem.text = formatAgentStatusBarText(
-      getExpandedAgentName(prefix),
-      version,
-      account,
-      displayLabel,
-      entry.sessionId,
-      entry.agentType === 'codex',
-    );
-  } finally {
-    statusIdentityInFlight.delete(inflightKey);
+): void {
+  const live = sessionPresentationStore.liveSession(sessionId);
+  const stamp = resolveStreamIdentityStamp(live, sessionId, entry.sessionId);
+  // Not yet indexed on the stream, or the tab has moved on to another session:
+  // leave it untouched (blank-until-resolved beats a prior binding's leftover).
+  // The next stream event retries.
+  if (!stamp) return;
+  // Apply AUTHORITATIVELY, clearing a field the session does not carry. A
+  // Kimi/Grok row has no account (and Kimi no version), so a value left over from
+  // a prior binding in this terminal (e.g. a stale 2.1.218) must be cleared, not
+  // preserved. setVersion/setAccount treat null as "clear".
+  if ((entry.version ?? undefined) !== (stamp.version ?? undefined)) {
+    terminals.setVersion(terminal, stamp.version);
   }
+  if ((entry.account ?? undefined) !== (stamp.account ?? undefined)) {
+    terminals.setAccount(terminal, stamp.account);
+  }
+  // displayIdentity gates the status bar on this marker, so it shows only the
+  // current session's identity — even when a field is null (Grok has a version
+  // but no account) — and withholds a prior binding's leftover.
+  entry.identityAppliedSessionId = stamp.identityAppliedSessionId;
 }
 
 const liveSessionInFlight = new Set<string>();
@@ -4170,9 +4139,7 @@ function applyHydratedSessionId(
     // no-ops when a poller is already running or a real label already exists.
     armLabelingAfterHydration(terminal, entry);
   }
-  if (entry.identitySessionId !== liveId) {
-    void tryHydrateSessionIdentity(terminal, entry, prefix, liveId);
-  }
+  applyStreamIdentity(terminal, entry, liveId);
   if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
   const rawLabel = entry.label;
   const displayLabel = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : null;
@@ -4296,7 +4263,19 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
     const expandedName = getExpandedAgentName(info.prefix);
     const sessionId = entry?.sessionId;
 
-    // Show immediate status bar with current data
+    // When we already know the session id (e.g. an offloaded --device tab, where the
+    // live-id lookup below can't reach the remote box), stamp its real
+    // version/account from the broadcast watch row BEFORE rendering the bar, so the
+    // identity shows immediately from the stream projection. No side-channel spawn:
+    // this is the single-stream read that replaced the per-tab `agents sessions`
+    // fetch (RUSH-3184). We deliberately do NOT fall back to `agents view` machine
+    // defaults when there is no id — that showed a version and account unrelated to
+    // the running session (the reported bug).
+    if (entry && sessionId) {
+      applyStreamIdentity(terminal, entry, sessionId);
+    }
+
+    // Show status bar with the current (now stream-stamped) identity.
     const rawLabel = entry?.label;
     const displayLabel = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : null;
     const { version, account } = displayIdentity(entry, sessionId);
@@ -4309,15 +4288,6 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
       entry?.agentType === 'codex',
     );
 
-    // When we already know the session id (e.g. an offloaded --device tab, where the
-    // live-id lookup below can't reach the remote box), resolve its real
-    // version/account from the session feed (host-aware), re-fetching when the
-    // cached identity is for a different session. We deliberately do NOT fall back
-    // to `agents view` machine defaults when there is no id — that showed a version
-    // and account unrelated to the running session (the reported bug).
-    if (entry && sessionId && entry.identitySessionId !== sessionId) {
-      void tryHydrateSessionIdentity(terminal, entry, info.prefix, sessionId);
-    }
     // Async-resolve the live session id from the SessionStart hook's state file,
     // then hydrate its identity. Catches the case where the user exited and reran
     // the agent in the same terminal, fired /clear, or ran the agent by hand so
