@@ -26,6 +26,20 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   `floorAdapter.ts`, `UnifiedAgentsPane.tsx`, `FeedItem.tsx`, `AgentDecision.tsx`,
   `sessionsModel.ts`, `docs/session-projection.md`.
 
+- **Bounded the one-shot `agents` refresh spawn so a hung child can't orphan (PHNX-3467).**
+  `src/core/handoff.ts` `runAgentsSessions` was the only agents-CLI runner in the
+  extension without a timeout (siblings `agentsBin.ts` 30s, `foreman.sources.ts` 3s,
+  `tasks.vscode.ts` 15s all bound theirs). Driven by the agent panel's session-tool-stats
+  refresh and per-terminal handoff, a wedged `agents sessions` child — the sleep/wake or
+  stuck-read failure mode — was never killed: it orphaned (reparented, untracked) and,
+  because callers coalesce onto one subprocess via `toolStatsInFlight`, latched the
+  in-flight guard so that session's stats never recovered. Added a 15s deadline
+  (`killSignal: 'SIGTERM'`); Node's `execFile` timeout SIGTERMs the child on expiry, and
+  the three callers already degrade to null/empty/zeroed stats on rejection. Regression
+  test `src/core/handoff.timeout.test.ts` proves a hung child is killed near the deadline.
+
+## [0.9.341] - 2026-08-28
+
 - **Removed the settings dashboard's last three ACTING poll timers (PHNX-3447, PHNX-3435).**
   Finishes the one-scheduler cleanup PHNX-2833 started (the agents-cli daemon, or a CLI
   command it drives, is the only scheduler). `ui/settings/App.tsx` still owned three
