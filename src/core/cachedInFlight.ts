@@ -43,3 +43,63 @@ export async function cachedInFlight<T>(
     store.inFlight.delete(key);
   }
 }
+
+// Leading + TRAILING coalescer, keyed by a string. Unlike cachedInFlight (which is
+// leading-edge only — a caller arriving mid-flight joins the running promise and no
+// further run is ever scheduled), this GUARANTEES one more run after the last call in
+// a burst. That trailing run is what stops the final fact — structurally the
+// running -> idle transition, the one with no follow-up event to rescue it — from
+// being observed-but-never-rendered until an unrelated later trigger fires (PHNX-2978).
+//
+// A burst of N calls collapses to a leading run + exactly one trailing run; the
+// trailing run itself absorbs any calls that arrive while IT is in flight, so a
+// steady stream converges to "always one more run pending", never a dropped tail.
+export interface TrailingCoalesce {
+  inFlight: Map<string, Promise<void>>;
+  pending: Set<string>;
+}
+
+export function createTrailingCoalesce(): TrailingCoalesce {
+  return { inFlight: new Map(), pending: new Set() };
+}
+
+export function coalesceTrailing(
+  store: TrailingCoalesce,
+  key: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const active = store.inFlight.get(key);
+  if (active) {
+    // A run is already in flight — flag that its result may be stale by the time it
+    // settles, so a trailing run must follow to capture this call's state.
+    store.pending.add(key);
+    return active;
+  }
+  const start = (): Promise<void> => {
+    const p = (async () => {
+      try {
+        await fn();
+      } finally {
+        if (store.pending.has(key)) {
+          store.pending.delete(key);
+          // Chain exactly one more run for the state that arrived mid-flight, and
+          // keep inFlight pointing at it so concurrent callers still coalesce.
+          const trailing = start();
+          store.inFlight.set(key, trailing);
+          // The leading caller has already returned, so nobody awaits this trailing
+          // run. Attach a handler so a rejecting fn() (e.g. the floor scan throwing)
+          // is a caught, no-op rejection here rather than a process-level unhandled
+          // rejection. A caller that DOES arrive mid-trailing still gets `trailing`
+          // and sees the rejection itself.
+          trailing.catch(() => { /* trailing floor rebuild failed; next fact re-runs it */ });
+        } else {
+          store.inFlight.delete(key);
+        }
+      }
+    })();
+    return p;
+  };
+  const p = start();
+  store.inFlight.set(key, p);
+  return p;
+}

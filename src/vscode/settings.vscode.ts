@@ -18,7 +18,7 @@ import { fetchAllTasks, detectAvailableSources } from './tasks.vscode';
 import { getBuiltInByTitle, configFromDef } from './agents.vscode';
 import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById } from './extension';
 import { generateClaudeSessionId } from '../core/prewarm.simple';
-import { cachedInFlight, createTimedCache } from '../core/cachedInFlight';
+import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { nudgeSession } from '../mcp/watchdog-bridge';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '../core/agents';
@@ -1118,13 +1118,16 @@ let lastFloorTasks: swarm.TaskSummary[] = [];
 // Coalesces concurrent floor rebuilds. Every session-stream fact triggers one
 // (extension.ts), and twenty live agents emit constantly, so without this the
 // rebuilds stack on top of each other and each one re-does the whole scan.
-// A zero TTL means a snapshot is never re-served stale — only genuinely
-// overlapping callers share a run.
-const floorPushes = createTimedCache<void>();
+// Trailing-aware (PHNX-2978): a fact that arrives while a rebuild is in flight —
+// including the last one in a burst, structurally the running -> idle transition —
+// gets its own trailing rebuild instead of being silently coalesced away and left to
+// the 30s backstop. Leading-edge-only coalescing (plain cachedInFlight, ttl 0) dropped
+// exactly that final transition, so a session rendered `running` after it went idle.
+const floorPushes = createTrailingCoalesce();
 
 async function pushFloorUpdate(workspacePath?: string): Promise<void> {
   if (!settingsPanel || !floorSubscribed) return;
-  await cachedInFlight(floorPushes, workspacePath ?? '', 0, async () => {
+  await coalesceTrailing(floorPushes, workspacePath ?? '', async () => {
     // Terminals and tasks are posted independently. They used to be awaited
     // together, which meant the detail panel — whose data is entirely in
     // `terminals` — waited on `swarm.fetchTasks`, and that ends in an HTTP
