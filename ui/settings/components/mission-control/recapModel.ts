@@ -450,7 +450,7 @@ function liveOf(agent: FloorAgent, status?: string | null): SessionLive {
   // LEFT pdot + group band — matching the approved mockup, where a reconnecting
   // row can still be green/amber/grey.
   const st = (status ?? agent.phase).toLowerCase()
-  if (st === 'running' || st === 'stalled') return 'run'
+  if (st === 'running') return 'run'
   if (st === 'done' || st === 'completed' || st === 'stopped') return 'done'
   if (st === 'idle' || st === 'waiting') return 'idle'
   const ls = (agent.liveStatus ?? '').toLowerCase()
