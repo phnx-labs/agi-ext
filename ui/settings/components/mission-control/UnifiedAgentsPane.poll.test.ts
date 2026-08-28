@@ -93,6 +93,21 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
     expect(source).toContain('data-testid="per-host-freshness"')
   })
 
+  test('session-preview fetch is one-shot per selection, never a poll (PHNX-2973)', () => {
+    // The digest fetch fires on selection and is guarded so re-renders (from
+    // floorAgents rebuilding selectedFloorAgent's identity on every stream tick)
+    // do NOT re-spawn the CLI — exactly the per-tab spawn-loop the 2026-08-25
+    // CPU incident (agi-cli#3019 / RUSH-3184) warns against.
+    // The in-flight/ready guard: return early once the sessionId is recorded.
+    expect(source).toContain('if (sessionPreviews[sid]) return')
+    // Its only trigger is the effect above — no setInterval around it.
+    expect(source).not.toMatch(/setInterval\([\s\S]{0,40}fetchSessionPreview/)
+    expect(source).toContain("postMessage({ type: 'fetchSessionPreview', host: selectedFloorAgent!.host, sessionId: sid })")
+    // Exactly one fetchSessionPreview dispatch site in the pane.
+    const previewFetches = source.match(/type:\s*'fetchSessionPreview'/g)
+    expect(previewFetches?.length).toBe(1)
+  })
+
   test('managedProjectsData.error retains last-good projects', () => {
     // Failure path surfaces error and returns before setManagedProjects.
     expect(source).toMatch(
