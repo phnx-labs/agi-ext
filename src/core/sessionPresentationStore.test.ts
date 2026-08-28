@@ -71,6 +71,39 @@ describe('SessionPresentationStore', () => {
     expect(store.hasSeenReset()).toBe(false);
   });
 
+  test('tracks reset per scope — one device resetting does not claim another has (PHNX-2735)', () => {
+    const store = new SessionPresentationStore();
+    // The near-instant local scope resets first.
+    store.apply({ v: 1, type: 'reset', streamId: 'local', sequence: 1, capturedAt: 1, scope: 'zion', agents: [], attention: [] });
+    // Bare hasSeenReset() is true (the stream established), but a specific remote
+    // box that has NOT reported must still read false — the global-boolean bug
+    // was that this returned true for every scope the moment the fastest reset.
+    expect(store.hasSeenReset()).toBe(true);
+    expect(store.hasSeenReset('zion')).toBe(true);
+    expect(store.hasSeenReset('yosemite-s1')).toBe(false);
+    // The remote scope reports later, on its own SSH timeline.
+    store.apply({ v: 1, type: 'reset', streamId: 'peer', sequence: 1, capturedAt: 2, scope: 'yosemite-s1', agents: [], attention: [] });
+    expect(store.hasSeenReset('yosemite-s1')).toBe(true);
+    store.clear();
+    expect(store.hasSeenReset('zion')).toBe(false);
+  });
+
+  test('pendingScopes waits only on expected online peers, and clears on reset or unavailable (PHNX-2735)', () => {
+    const store = new SessionPresentationStore();
+    const expected = ['yosemite-s0', 'yosemite-s1'];
+    // Local reset only: the whole expected peer set is still pending, so a merged
+    // floor stays "connecting" instead of flipping to a confident "0 sessions".
+    store.apply({ v: 1, type: 'reset', streamId: 'local', sequence: 1, capturedAt: 1, scope: 'zion', agents: [], attention: [] });
+    expect(store.pendingScopes(expected).sort()).toEqual(['yosemite-s0', 'yosemite-s1']);
+    // One peer delivers its reset → settled; the other stays pending.
+    store.apply({ v: 1, type: 'reset', streamId: 'p0', sequence: 1, capturedAt: 2, scope: 'yosemite-s0', agents: [], attention: [] });
+    expect(store.pendingScopes(expected)).toEqual(['yosemite-s1']);
+    // The last peer is unreachable → the stream marks it unavailable, which also
+    // settles it (so this can never hang "connecting" on a box that won't answer).
+    store.apply({ v: 1, type: 'scope', streamId: 'p1', sequence: 1, capturedAt: 3, scope: 'yosemite-s1', status: 'unavailable', reason: 'ssh failed' });
+    expect(store.pendingScopes(expected)).toEqual([]);
+  });
+
   test('orders each stream independently and resets only its scope', () => {
     const store = new SessionPresentationStore();
     store.apply({ v: 1, type: 'reset', streamId: 'a', sequence: 5, capturedAt: 1, scope: 'zion', agents: [{ rowKey: 'z', sourceDevice: 'zion' }], attention: [] });

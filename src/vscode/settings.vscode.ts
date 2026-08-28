@@ -1138,7 +1138,20 @@ async function pushFloorUpdate(workspacePath?: string): Promise<void> {
     // RUSH-2039: page the user when a session (Codex included) enters the
     // approval-waiting state. Edge-triggered so it fires once per wait.
     notifyNewlyWaiting(floorTerminals);
-    settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals, degraded: !sessionPresentationStore.hasSeenReset() });
+    // Degraded = the merged floor is still establishing. True until the stream
+    // has reset at all AND every ONLINE peer the device registry lists has
+    // reported (delivered its reset or been marked unavailable). Waiting only on
+    // roster-listed online peers is what keeps this from flipping to a confident
+    // "0 sessions" the instant the near-instant local scope resets while a real
+    // remote box is still en route (PHNX-2735) — and, because an unreachable peer
+    // emits `scope unavailable` and an offline one drops off the roster, it cannot
+    // hang "connecting" forever on a box that will never answer.
+    const expectedPeerScopes = (getRegisteredDevicesCache() ?? [])
+      .filter((device) => device.online && normalizeHost(device.name) !== LOCAL_MACHINE_ID)
+      .map((device) => normalizeHost(device.name));
+    const degraded = !sessionPresentationStore.hasSeenReset()
+      || sessionPresentationStore.pendingScopes(expectedPeerScopes).length > 0;
+    settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals, degraded });
     settingsPanel.webview.postMessage({ type: 'feedActivity', activity: sessionPresentationStore.activityEvents() });
 
     // Tasks arrive in their own message whenever they are ready. fetchTasks

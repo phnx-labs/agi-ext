@@ -64,10 +64,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   `sessionPreview.ts`, `fetchSessionPreview` verb).
 
 - **A follower with no session reset shows degraded, never "0 sessions" (PHNX-2735).**
-  `SessionPresentationStore` now tracks whether it has observed a CLI stream `reset`.
-  Until the first reset arrives, the Floor feed and Sessions pane render a distinct
-  connecting/degraded state instead of the confident empty copy. The signal rides the
-  existing `allTerminalsData` broadcast, so no side channel is introduced.
+  `SessionPresentationStore` now tracks CLI stream `reset`s **per scope** (a `Set`,
+  not a single global boolean). The elected stream fans out across the fleet and each
+  device is its own scope that resets on its own SSH timeline, so the old global flag
+  flipped `true` the instant the near-instant local scope reset and claimed the whole
+  fleet had reported — flipping the merged Floor to a confident "No running sessions"
+  while a real remote box was still en route. The `degraded` signal on the existing
+  `allTerminalsData` broadcast now stays true until the stream has reset AND every
+  ONLINE peer in the device registry has reported (delivered its reset or been marked
+  `unavailable`). Waiting only on roster-listed online peers — and treating an
+  `unavailable` scope as settled — is what keeps it from flipping too early without
+  ever hanging "connecting" on a box that will never answer. `hasSeenReset(scope?)`
+  is now per-scope and a new `pendingScopes(expected)` returns the peers still en
+  route; no side channel is introduced.
 
 ## [0.9.340] - 2026-08-28
 
