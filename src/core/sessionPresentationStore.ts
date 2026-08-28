@@ -11,15 +11,24 @@ export class SessionPresentationStore {
   private activity: unknown[] = [];
   private sequences = new Map<string, number>();
   private scopes = new Map<string, { status: 'available' | 'unavailable'; reason?: string }>();
-  /** True once a `reset` has been observed from the elected CLI stream. */
-  private resetSeen = false;
+  /**
+   * The set of stream scopes that have delivered a `reset`. Per-scope, NOT a
+   * single global flag: the elected CLI stream fans out across the fleet and
+   * each device is its own scope with an independent reset on its own SSH
+   * timeline (`watchFleetFeed`, agents-cli). A single boolean flipped `true` on
+   * the FIRST (near-instant, in-process local) reset and then claimed the whole
+   * fleet had reported — so `hasSeenReset('a-remote-box')` could never be asked,
+   * and a follower could read "reset seen" for a scope it had not heard from
+   * (PHNX-2735).
+   */
+  private resetScopes = new Set<string>();
 
   apply(event: SessionCliFactPayload): boolean {
     const previous = this.sequences.get(event.streamId) ?? 0;
     if (event.sequence <= previous) return false;
     this.sequences.set(event.streamId, event.sequence);
     if (event.type === 'reset') {
-      this.resetSeen = true;
+      this.resetScopes.add(event.scope);
       for (const [rowKey, scope] of this.rowScopes) {
         if (scope === event.scope) {
           this.rows.delete(rowKey);
@@ -102,10 +111,34 @@ export class SessionPresentationStore {
   scope(scope: string): { status: 'available' | 'unavailable'; reason?: string } | undefined {
     return this.scopes.get(scope);
   }
-  clear(): void { this.rows.clear(); this.rowScopes.clear(); this.attention.clear(); this.attentionScopes.clear(); this.activity = []; this.sequences.clear(); this.scopes.clear(); this.resetSeen = false; }
+  clear(): void { this.rows.clear(); this.rowScopes.clear(); this.attention.clear(); this.attentionScopes.clear(); this.activity = []; this.sequences.clear(); this.scopes.clear(); this.resetScopes.clear(); }
 
-  /** True once a `reset` has been observed from the elected CLI stream. */
-  hasSeenReset(): boolean { return this.resetSeen; }
+  /**
+   * Whether a `reset` has been observed — for one `scope` when given, or for
+   * ANY scope when called bare (the "has the stream established at all" gate the
+   * follower-degraded banner reads). Per-scope so a caller can ask specifically
+   * whether a given device has reported yet, instead of trusting a global flag
+   * that the fastest scope flips for the whole fleet (PHNX-2735).
+   */
+  hasSeenReset(scope?: string): boolean {
+    return scope === undefined ? this.resetScopes.size > 0 : this.resetScopes.has(scope);
+  }
+
+  /**
+   * The scopes still not settled out of a set the caller KNOWS to expect (its
+   * online device roster, normalized the same way `watchFleetFeed` scopes a peer
+   * — `normalizeHost(device.name)`). A scope is settled once it has delivered a
+   * `reset` OR the stream marked it `unavailable`. This lets a merged multi-device
+   * view stay "connecting" while a real, expected peer is still en route instead
+   * of flipping to a confident "0 sessions" the moment the local scope resets —
+   * without ever waiting on a device the roster does not list, which is what
+   * bounds it against hanging "connecting" forever. Returns the pending subset so
+   * the caller can decide (and surface which boxes it is waiting on).
+   */
+  pendingScopes(expectedScopes: readonly string[]): string[] {
+    return expectedScopes.filter((scope) =>
+      !this.resetScopes.has(scope) && this.scopes.get(scope)?.status !== 'unavailable');
+  }
 
   /** Normalize the CLI stream rows for UI rendering without starting another query. */
   presentedSessions(
