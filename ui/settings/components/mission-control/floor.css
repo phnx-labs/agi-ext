@@ -778,6 +778,19 @@
 .swarmify-root .sw-attachment-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .swarmify-root .sw-attachment-name { font-family: "Geist Mono", monospace; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Picker-parity session preview card (PHNX-2973): header + Changes/Tools/Tests/
+   Errors/Links/Skills/Hooks/Repos/Dirs, at parity with `agents sessions`. */
+.swarmify-root .sw-preview-card { display: contents; }
+.swarmify-root .sw-preview-head { font-size: 11px; color: var(--ds-text-dim); line-height: 1.5; display: flex; flex-direction: column; gap: 2px; }
+.swarmify-root .sw-preview-head-id { color: var(--ds-text-muted); font-weight: 600; overflow-wrap: anywhere; }
+.swarmify-root .sw-preview-head-meta { color: var(--ds-text-faint); overflow-wrap: anywhere; }
+.swarmify-root .sw-preview-link { background: transparent; border: none; padding: 0; margin: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.swarmify-root .sw-preview-link:hover { color: var(--ds-text); }
+.swarmify-root .sw-preview-note { font-size: 11.5px; }
+.swarmify-root .sw-preview-more { font-family: "Geist Mono", monospace; font-size: 10.5px; color: var(--ds-text-faint); align-self: center; }
+.swarmify-root .sw-preview-linkchip { color: var(--brand); text-decoration: none; }
+.swarmify-root .sw-preview-linkchip:hover { text-decoration: underline; }
+
 /* Markdown blocks in the detail (Task / Activity). */
 .swarmify-root .sw-unified-detail-section .md { font-size: 12.5px; color: var(--ds-text); line-height: 1.55; }
 .swarmify-root .sw-unified-detail-section .md .todo-md { margin: 0; }

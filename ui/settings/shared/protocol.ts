@@ -31,6 +31,9 @@ export type FloorInbound =
   /** Local sessions only. `force` bypasses the 60s local-only backstop. */
   | { type: 'fetchLocalSessions'; force?: boolean }
   | { type: 'fetchHostSessionDetail'; host: string; sessionId: string }
+  // One-shot rich preview digest for the detail panel (PHNX-2973). Fired when a
+  // session is selected — a user action, not a poll.
+  | { type: 'fetchSessionPreview'; host: string; sessionId: string }
   | { type: 'fetchDispatchData' }
   | { type: 'dismissTask'; taskId: string }
   // Focus a session: open/attach a real terminal on it (`agents sessions focus <id>`).
@@ -74,6 +77,9 @@ export type FloorOutbound =
       fromCache?: boolean
     }
   | { type: 'hostSessionDetail'; host: string; sessionId: string; markdown?: string; error?: string }
+  // The rich preview envelope from `agents sessions preview <id> --json`. The
+  // CLI owns the shape; the panel mirrors + reads `envelope` field by field.
+  | { type: 'sessionPreview'; host: string; sessionId: string; envelope?: unknown; error?: string }
   | { type: 'dispatchData'; agents: unknown[]; hosts: unknown[]; targets: unknown[] }
   | { type: 'updateRunningCounts'; counts: unknown }
   // Managed projects (curated sidebar list + Projects pane).

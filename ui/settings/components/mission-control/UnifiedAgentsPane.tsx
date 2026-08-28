@@ -11,6 +11,8 @@ import { CloudActivityFeed } from './CloudActivityFeed'
 import { VerticalTimeline } from './Timeline'
 import { TodoChecklist } from './TodoChecklist'
 import { TerminalExpandedDetail } from './TerminalDetail'
+import { SessionPreviewCard } from './SessionPreviewCard'
+import { normalizeSessionPreview, type SessionPreview } from './sessionPreview'
 import { useNow } from './useNow'
 import {
   isTerminalActive,
@@ -656,6 +658,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [openTaskTabs, setOpenTaskTabs] = useState<TaskTab[]>([])
   const [activeTaskTab, setActiveTaskTab] = useState<string | null>(null)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  // Rich per-session preview digests (PHNX-2973), keyed by sessionId. Fetched
+  // once when a session is selected (a user action, not a poll) via the one-shot
+  // `sessions preview --json` CLI verb; the detail panel renders them at parity
+  // with the CLI picker. `loading` guards against a duplicate in-flight fetch.
+  const [sessionPreviews, setSessionPreviews] = useState<Record<string, { state: 'loading' | 'ready'; data?: SessionPreview }>>({})
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [projFilter, setProjFilter] = useState<string | null>(null)
   // Host scope: click a HOSTS row to filter the feed to that machine; click again to clear.
@@ -1661,6 +1668,32 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     [selectedTicketId, floorTickets]
   )
 
+  // Fetch the rich preview digest once when a session with an id is selected — a
+  // one-shot user-action CLI verb (`sessions preview --json`), NOT a poll. The
+  // in-flight/ready guard means re-selecting the same session doesn't re-spawn.
+  useEffect(() => {
+    const sid = selectedFloorAgent?.sessionId
+    if (!sid) return
+    if (sessionPreviews[sid]) return
+    setSessionPreviews((prev) => (prev[sid] ? prev : { ...prev, [sid]: { state: 'loading' } }))
+    postMessage({ type: 'fetchSessionPreview', host: selectedFloorAgent!.host, sessionId: sid })
+  }, [selectedFloorAgent, sessionPreviews])
+
+  // Receive the one-shot preview envelope and normalize it into the typed model.
+  // A dedicated listener (not the big session reducer) keeps this isolated.
+  useEffect(() => {
+    const onMsg = (event: MessageEvent) => {
+      const msg = event.data
+      if (msg?.type !== 'sessionPreview') return
+      const sid = typeof msg.sessionId === 'string' ? msg.sessionId : ''
+      if (!sid) return
+      const data = normalizeSessionPreview(msg.envelope, typeof msg.error === 'string' ? msg.error : undefined)
+      setSessionPreviews((prev) => ({ ...prev, [sid]: { state: 'ready', data: data ?? undefined } }))
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [])
+
   // Real hosts for the dispatch panel: this machine + every reachable remote.
   const floorHosts = useMemo(() => {
     const set = new Set<string>(['this-mac'])
@@ -1927,12 +1960,19 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       ) : null
     ) : null
 
+    // The picker-parity preview card (PHNX-2973): the version/account/token
+    // header + Changes(+per-file)/Tools/Tests/Errors/Links/Skills/Hooks/Repos/
+    // Dirs the CLI computes. Rendered inside BOTH detail branches so local and
+    // remote sessions read at parity with `agents sessions`.
+    const previewState = a.sessionId ? sessionPreviews[a.sessionId] : undefined
+    const previewCard = previewState?.data ? <SessionPreviewCard preview={previewState.data} /> : null
     return (
       <>
         {decision}
         {u ? (
           <DetailPane
             item={u}
+            previewCard={previewCard}
             onClose={() => setSelectedAgentId(null)}
             onFocusTerminal={handleFocusTerminal}
             onRetry={handleRetry}
@@ -2032,6 +2072,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
                 )}
               </div>
             </div>
+            {/* Picker-parity preview card (PHNX-2973): the CLI-computed header +
+                Changes/Tools/Tests/Errors/Links/Skills/Hooks/Repos/Dirs. */}
+            {previewCard}
             {/* Task anchor: the ORIGINAL prompt (markdown), distinct from the last message.
                 Falls back through sessionTaskLine (prompt -> summary -> resp -> slug/branch)
                 so the detail rail always shows a task, even for a promptless session. */}
@@ -3166,8 +3209,10 @@ function DetailStatusRow({ item, onFocusTerminal }: { item: UnifiedAgent; onFocu
   )
 }
 
-export function DetailPane({ item, onClose, onFocusTerminal, onRetry, onKill, loading, degraded, error }: {
+export function DetailPane({ item, previewCard, onClose, onFocusTerminal, onRetry, onKill, loading, degraded, error }: {
   item: UnifiedAgent
+  /** Picker-parity preview card (PHNX-2973), rendered at the top of the body. */
+  previewCard?: React.ReactNode
   onClose: () => void
   onFocusTerminal: (t: TerminalInfo) => void
   onRetry: (taskName: string) => void
@@ -3227,6 +3272,7 @@ export function DetailPane({ item, onClose, onFocusTerminal, onRetry, onKill, lo
       <>
         <DetailStatusRow item={item} onFocusTerminal={onFocusTerminal} />
 
+        {previewCard}
         {item.kind === 'watchdog' && <WatchdogDetail events={item.watchdogEvents ?? []} />}
         {item.terminal && <TerminalExpandedDetail terminal={item.terminal} />}
         {item.kind === 'team' && item.swarm && <TeamDetail swarm={item.swarm} onRetry={onRetry} onKill={onKill} />}
