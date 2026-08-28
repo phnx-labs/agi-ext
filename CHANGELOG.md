@@ -4,7 +4,27 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.341] - 2026-08-28
+## [0.9.342] - 2026-08-28
+
+- **Rebuilt the Fleet "Needs you" surface on the CLI attention stream (PHNX-2975).** The
+  extension used to re-derive "needs you", stall, and the section's order client-side, and
+  got it wrong (a wall-clock "stalled" guess could sort above a session actually awaiting
+  input). The client classifiers are deleted — `derivePhase` (multi-signal phase
+  re-computation), `deriveNeeds`, `deriveStalled`, `STALL_THRESHOLD_MS` + `heartbeatLevel`
+  (the invented 90s "stuck" heuristic), and `PHASE_RANK`-as-needs-ranker. The "Needs you"
+  section's membership, per-row reason, and order now come entirely from the CLI attention
+  rows (`RemoteAttention` on `agents feed watch --json`): membership is
+  `attention.state === 'open'`, and order is the attention KIND — question → permission →
+  plan_review → declared → failure → stall → review (`ATTENTION_KIND_RANK`,
+  most-stuck-first within a kind). Stall is now the CLI's `attention.kind === 'stall'`, not
+  a client heartbeat; `FloorPhase` no longer carries a `stalled` member (it is a straight
+  rename of the CLI status via `phaseFromStatus` for an unindexed local tab, else
+  `RemotePhase`). The phase-progress ordering the Sessions surface and idle/running/done
+  lanes use is preserved as `PHASE_PROGRESS_RANK` (still shared with `sessionsModel` to
+  avoid the RUSH-2838 drift) — it orders a CLI-provided field and is not the needs-you
+  ranker. Idle-above-running invariant preserved. Source: `floorModel.ts`,
+  `floorAdapter.ts`, `UnifiedAgentsPane.tsx`, `FeedItem.tsx`, `AgentDecision.tsx`,
+  `sessionsModel.ts`, `docs/session-projection.md`.
 
 - **Removed the settings dashboard's last three ACTING poll timers (PHNX-3447, PHNX-3435).**
   Finishes the one-scheduler cleanup PHNX-2833 started (the agents-cli daemon, or a CLI

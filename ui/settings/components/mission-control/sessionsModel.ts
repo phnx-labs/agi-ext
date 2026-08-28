@@ -7,7 +7,7 @@
 import {
   needsReconnect,
   sessionBand,
-  PHASE_RANK,
+  PHASE_PROGRESS_RANK,
   type FloorAgent,
   type SessionBand,
   type SessionFilter,
@@ -69,15 +69,15 @@ export function scopeSessions(all: FloorAgent[], scope: SessionScope): FloorAgen
 
 // Lower rank sorts first under 'status'. reconnect is the acute case (detached but
 // alive, or crashed), so it takes rank 0; everything else defers to the shared
-// PHASE_RANK, shifted by one to leave room for it. PHASE_RANK is the single ordering
-// the whole floor ranks by — progress, not liveness (root AGENTS.md "Purpose") — so
-// `Sort: Status` puts idle-but-unfinished work above running and leaves `done`
-// terminal, matching BAND_ORDER below instead of contradicting it. This table used to
-// be a second, hand-maintained copy, which is how the two drifted into opposite
+// PHASE_PROGRESS_RANK, shifted by one to leave room for it. That table is the single
+// phase ordering the whole floor ranks by — progress, not liveness (root AGENTS.md
+// "Purpose") — so `Sort: Status` puts idle-but-unfinished work above running and leaves
+// `done` terminal, matching BAND_ORDER below instead of contradicting it. This table
+// used to be a second, hand-maintained copy, which is how the two drifted into opposite
 // orders (RUSH-2838).
 function statusRank(a: FloorAgent): number {
   if (needsReconnect(a)) return 0
-  return PHASE_RANK[a.phase] + 1
+  return PHASE_PROGRESS_RANK[a.phase] + 1
 }
 
 /**

@@ -14,7 +14,7 @@ import { renderMarkdown } from '../../utils/markdown'
 export function decisionReason(a: FloorAgent): { label: string; chip: { text: string; cls: string } | null } {
   const label =
     a.phase === 'failed' ? 'FAILED — NEEDS YOU'
-    : a.phase === 'stalled' ? 'STALLED — NEEDS YOU'
+    : a.attentionKind === 'stall' ? 'STALLED — NEEDS YOU'
     : a.question?.reason === 'permission' ? 'PERMISSION — NEEDS YOU'
     : a.question?.reason === 'plan_review' ? 'PLAN REVIEW — NEEDS YOU'
     : 'WAITING ON YOU'
@@ -42,7 +42,7 @@ export function AgentDecision({ agent: a, error, onOption, onFreeText, onAttach,
   const showTask = !!origTask && origTask !== (a.question?.text ?? a.resp)?.trim()
   return (
     <div style={{ padding: '14px 16px 0' }}>
-      <div className={`decide${a.phase === 'stalled' ? ' stall' : ''}`}>
+      <div className={`decide${a.attentionKind === 'stall' ? ' stall' : ''}`}>
         <div className="ql">
           {label}
           {chip && <span className={chip.cls}>{chip.text}</span>}
@@ -57,7 +57,7 @@ export function AgentDecision({ agent: a, error, onOption, onFreeText, onAttach,
             so only show .qt (the last turn) when there's no such question, avoiding a
             duplicated question line. */}
         {!a.question && <div className="qt md">{renderMarkdown(a.resp)}</div>}
-        {a.phase === 'stalled' && (
+        {a.attentionKind === 'stall' && (
           <div className="opts">
             <button className="opt primary" onClick={onNudge}>
               <Icon name="refresh" size={12} /> Nudge

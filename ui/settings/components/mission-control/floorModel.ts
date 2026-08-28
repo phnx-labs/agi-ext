@@ -32,18 +32,30 @@ export type { ProjectRule }
 // ---------- agent view-model ----------
 
 /**
- * Single field everything keys off. Precedence when deriving from raw signals:
- *   failed > waiting > running > done(unreviewed) > done(settled) > idle
- * A FINISHED agent (completed / stopped / failed) can no longer consume an answer,
- * so a stale waitingForInput flag never lifts it back into Needs-You (RUSH-1522) —
- * waiting wins only for statuses that can still take input (running / idle).
- * Prototype: factory-floor.html:330,363-364.
- *
- * 'stalled' is a running agent that has gone quiet past STALL_THRESHOLD_MS — the
- * process may be wedged, so it surfaces in Needs-You. Derived live from a heartbeat
- * (deriveStalled), not reported by the CLI.
+ * The session's lifecycle phase, a straight presentation rename of the CLI-provided
+ * status (`RemotePhase` on the stream; `phaseFromStatus` for an as-yet-unprojected
+ * local tab). The extension does NOT classify this — a wedged/stalled agent is not a
+ * phase but a CLI attention row (`attentionKind === 'stall'`), and needs-you membership
+ * comes from `attention.state === 'open'`, never from phase. Matches `RemotePhase`
+ * one-to-one so a session cannot present a phase the CLI never reported.
  */
-export type FloorPhase = 'running' | 'idle' | 'waiting' | 'failed' | 'done' | 'stalled'
+export type FloorPhase = 'running' | 'idle' | 'waiting' | 'failed' | 'done'
+
+/**
+ * Why the CLI raised an attention row for a session, carried verbatim from the stream
+ * (`RemoteAttention.kind`). The needs-you surface's membership, per-row reason, and
+ * ORDER all key off this — the extension classifies nothing. Ordering priority is
+ * `ATTENTION_KIND_RANK`: question → permission → plan_review → declared → failure →
+ * stall → review.
+ */
+export type AttentionKind =
+  | 'question'
+  | 'permission'
+  | 'plan_review'
+  | 'declared'
+  | 'failure'
+  | 'stall'
+  | 'review'
 
 /** Terminal-tab prefix per agent CLI (ui utils is the reference map). */
 export type AgentAbbr = 'CC' | 'CX' | 'GX' | 'CR' | 'AG' | 'GK' | 'KM' | 'DR' | 'OC' | 'SH'
@@ -172,6 +184,10 @@ export interface FloorAgent {
   topic?: string         // the session's task/label line from the roster (topic/label/prompt). The Sessions surface's row title + search field. Falls back to prompt/name when absent.
   messages: string[]     // the last few assistant messages (from the CLI's last_messages window); [] when none. Drives the detail-pane Activity feed.
   question: StructuredQuestion | null
+  /** The CLI attention row's kind, carried verbatim from the stream. Drives the
+   *  needs-you section's per-row reason and its ORDER (ATTENTION_KIND_RANK).
+   *  Undefined when the CLI raised no attention for this session. */
+  attentionKind?: AttentionKind
   attentionSource?: 'hook' | 'declared' | 'lifecycle' | 'heuristic' | 'system'
   attentionState?: 'open' | 'answered' | 'consumed' | 'continued' | 'resolved'
   attentionFingerprint?: string
@@ -472,29 +488,40 @@ export type TicketSort = 'priority' | 'id'
 
 // ---------- stable rank constants (data — final, not stubs) ----------
 
-/** Needs-you first ordering, ranked by PROGRESS rather than liveness (root AGENTS.md
+/** Phase-progress ordering, ranked by PROGRESS rather than liveness (root AGENTS.md
  *  "Purpose"). Every phase that has STOPPED progressing outranks `running` — a running
  *  agent is making progress and needs nothing from the operator — and `done` is the
- *  terminal state below both. Within the stopped set, an explicit question or a hard
- *  failure outranks a wedged agent, which outranks a silently-idle one; but `idle`
- *  still sits ABOVE `running` and `done`, because idle-but-unfinished work is the
- *  highest-abandonment risk, not the lowest.
+ *  terminal state below both; `idle` still sits ABOVE `running`, because idle-but-
+ *  unfinished work is the highest-abandonment risk, not the lowest.
  *
- *  `idle` means unfinished by construction — `derivePhase` maps a finished agent to
- *  'done' (status 'completed') and only a stopped/dead-process one to 'idle' — so no
- *  extra signal is needed to tell a finished idle session from an abandoned one.
- *  Prototype: factory-floor.html:364. */
-export const PHASE_RANK: Record<FloorPhase, number> = {
+ *  This orders a CLI-provided field (`phase`) for the Sessions surface (Sort: Status)
+ *  and the feed's idle/running/done lanes. It is NOT the needs-you ranker — the
+ *  needs-you section orders by CLI attention KIND (`ATTENTION_KIND_RANK`), because a
+ *  question, a permission, a plan-review, and a stall are distinct attention rows that
+ *  a single phase cannot express. Shared with `sessionsModel` so the two never drift
+ *  into opposite orders (RUSH-2838). */
+export const PHASE_PROGRESS_RANK: Record<FloorPhase, number> = {
   waiting: 0,
   failed: 1,
-  stalled: 2,
-  idle: 3,
-  running: 4,
-  done: 5,
+  idle: 2,
+  running: 3,
+  done: 4,
 }
 
-/** A running agent silent this long is treated as stalled (amber). 2x -> dead (red). */
-export const STALL_THRESHOLD_MS = 90_000
+/** Needs-you ordering, sourced entirely from the CLI attention row's `kind`. The
+ *  extension classifies nothing: an explicit interactive hand-back (question →
+ *  permission → plan_review → declared) leads, then a hard failure, then a genuine
+ *  stall the CLI detected, then a review request. This is the ONLY ranker the
+ *  needs-you surface sorts on. */
+export const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
+  question: 0,
+  permission: 1,
+  plan_review: 2,
+  declared: 3,
+  failure: 4,
+  stall: 5,
+  review: 6,
+}
 
 /** Prototype: factory-floor.html:396. */
 export const PRI_RANK: Record<TicketPriority, number> = {
@@ -570,8 +597,8 @@ export function visibleFloorAgents(agents: FloorAgent[], showBackground: boolean
  *
  * `idle` is its own bucket and is never folded into `active`: an idle session is
  * unfinished work that has stopped progressing, the state most likely to be silently
- * abandoned, while a running one needs nothing from the operator. `derivePhase` maps a
- * finished agent to 'done', so every agent landing in `idle` here is unfinished.
+ * abandoned, while a running one needs nothing from the operator. The CLI maps a
+ * finished agent to phase 'done', so every agent landing in `idle` here is unfinished.
  */
 export function partitionFloorAgents(agents: FloorAgent[]): {
   needs: FloorAgent[]
@@ -628,61 +655,26 @@ export function sessionKey(input: SessionKeyInput): string {
 
 // ---------- pure logic (LOGIC fills bodies; signatures are the contract) ----------
 
-/** Raw signals -> FloorPhase, applying the precedence documented on FloorPhase. */
-export function derivePhase(input: {
-  status: 'running' | 'completed' | 'failed' | 'stopped' | 'idle'
-  waitingForInput: boolean
-  active: boolean
-  prOpenUnreviewed: boolean
-}): FloorPhase {
-  // Precedence: failed > waiting > running > done > idle. Finished statuses are
-  // checked FIRST: a completed/stopped/failed agent cannot consume an answer, so a
-  // stale waitingForInput flag must not resurrect it into Needs-You (RUSH-1522).
-  if (input.status === 'failed') return 'failed'
-  if (input.status === 'completed') return 'done'
-  if (input.status === 'stopped') return 'idle'
-  if (input.waitingForInput) return 'waiting'
-  // A stale 'running' whose process is no longer alive is really idle.
-  if (input.status === 'running') return input.active ? 'running' : 'idle'
-  return 'idle'
-}
-
 /**
- * waiting || failed || stalled || (open PR that needs a human decision).
- *
- * Self-promotion: an agent with an open, unreviewed PR climbs into Needs You the
- * moment CI settles — passed (ready to merge) or failed (needs a look) — even if
- * the agent process is still running. While CI is still running it stays in the
- * live lane. When CI status is unknown (gh unavailable, or a PR with no checks),
- * fall back to the prior rule: a completed agent with an open PR needs review.
+ * A straight one-to-one rename of the CLI-reported session status into a FloorPhase,
+ * for a LOCAL editor tab the stream has not indexed yet (the transient window before a
+ * projection arrives). It invents nothing — no waitingForInput/PR/heartbeat heuristics:
+ * needs-you and the awaiting-input/stall states all ride the CLI attention stream, and
+ * an indexed session takes its phase straight from `RemotePhase`. Once the stream
+ * indexes the tab, the projected path replaces this entirely.
  */
-export function deriveNeeds(phase: FloorPhase, prOpenUnreviewed: boolean, ci: CiStatus = null): boolean {
-  if (phase === 'waiting' || phase === 'failed' || phase === 'stalled') return true
-  if (!prOpenUnreviewed) return false
-  if (ci === 'passed' || ci === 'failed') return true
-  if (ci === 'running') return false
-  return phase === 'done'
-}
-
-/**
- * Is a running agent stalled? True when it has been silent past STALL_THRESHOLD_MS.
- * Only a running (or already-stalled) agent can stall — a waiting/failed/done/idle
- * agent is already categorized, and an idle agent is quiet on purpose. lastActivityMs
- * of 0 (unknown) never stalls, so a missing heartbeat can't raise a false alarm.
- * Pure so both the adapter (promote phase at poll time) and the live card agree.
- */
-export function deriveStalled(lastActivityMs: number, phase: FloorPhase, now: number): boolean {
-  if (phase !== 'running' && phase !== 'stalled') return false
-  if (!Number.isFinite(lastActivityMs) || lastActivityMs <= 0) return false
-  return now - lastActivityMs >= STALL_THRESHOLD_MS
-}
-
-/** Heartbeat severity from a silence age: live < threshold <= stale (amber) < 2x <= dead (red). */
-export type HeartbeatLevel = 'live' | 'stale' | 'dead'
-export function heartbeatLevel(ageMs: number): HeartbeatLevel {
-  if (!Number.isFinite(ageMs) || ageMs < STALL_THRESHOLD_MS) return 'live'
-  if (ageMs >= 2 * STALL_THRESHOLD_MS) return 'dead'
-  return 'stale'
+export function phaseFromStatus(status: 'running' | 'completed' | 'failed' | 'stopped' | 'idle'): FloorPhase {
+  switch (status) {
+    case 'completed':
+      return 'done'
+    case 'failed':
+      return 'failed'
+    case 'running':
+      return 'running'
+    // 'stopped' and 'idle' are both a quiet, unfinished tab.
+    default:
+      return 'idle'
+  }
 }
 
 /** Minimal shape of a parsed tool call the checklist reads (name + raw input). */
@@ -946,12 +938,34 @@ export function groupAgents(agents: FloorAgent[], by: FloorGroupBy): Map<string,
   return groups
 }
 
-/** Sort within a group. 'needs' uses PHASE_RANK. Prototype: agentsCenter():624-630. */
+/** Attention priority of one agent: its CLI attention kind's rank, or last when the
+ *  CLI raised no attention. The needs-you surface sorts on this alone. */
+export function attentionRank(a: Pick<FloorAgent, 'attentionKind'>): number {
+  return a.attentionKind ? ATTENTION_KIND_RANK[a.attentionKind] : Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * Order needs-you rows by the CLI attention kind (question → permission → plan_review →
+ * declared → failure → stall → review), tie-broken most-stuck-first (oldest activity)
+ * so the highest-abandonment-risk row leads within a kind, then by id for stability.
+ * The whole order comes from the CLI attention rows — the extension classifies nothing.
+ */
+export function sortByAttention(agents: FloorAgent[]): FloorAgent[] {
+  return [...agents].sort((a, b) => {
+    const rank = attentionRank(a) - attentionRank(b)
+    if (rank !== 0) return rank
+    const stuck = (a.lastActivityMs || 0) - (b.lastActivityMs || 0)
+    if (stuck !== 0) return stuck
+    return a.id.localeCompare(b.id)
+  })
+}
+
+/** Sort within a group. 'needs' uses the phase-progress rank. Prototype: agentsCenter():624-630. */
 export function sortAgents(agents: FloorAgent[], by: FloorSort): FloorAgent[] {
   const arr = [...agents]
   switch (by) {
     case 'needs':
-      return arr.sort((a, b) => PHASE_RANK[a.phase] - PHASE_RANK[b.phase])
+      return arr.sort((a, b) => PHASE_PROGRESS_RANK[a.phase] - PHASE_PROGRESS_RANK[b.phase])
     case 'recent':
       return arr.sort((a, b) => sinceSeconds(a.since) - sinceSeconds(b.since))
     case 'tok':

@@ -12,7 +12,7 @@
 // here as RemoteSessionLike, matching the fields settings.vscode.ts sends over postMessage.
 
 import {
-  derivePhase,
+  phaseFromStatus,
   toFloorTicket,
   latestTodos,
   todosWithFallback,
@@ -479,15 +479,13 @@ export function toFloorAgentFromUnified(
       recentEvents: u.terminal?.recentEvents ?? [],
     }
   }
-  const waitingForInput = u.terminal?.waitingForInput === true || u.agent?.status === 'input_required'
-  const prOpenUnreviewed = !!u.prUrl
   const ci = u.ci ?? null
-  const phase = derivePhase({
-    status: u.status,
-    waitingForInput,
-    active: u.active,
-    prOpenUnreviewed,
-  })
+  // A local tab the CLI stream has not indexed yet: rename its reported status into a
+  // phase (no client classification). needs-you / awaiting-input / stall all ride the
+  // CLI attention stream, so an unprojected tab carries no attention and never enters
+  // needs-you here — the projected path (above) takes over the moment the stream indexes
+  // it and hands us the real phase + attention.
+  const phase = phaseFromStatus(u.status)
   const attention: RemoteSessionLike['attention'] = undefined
   const needs = false
   const lastMsgs = u.agent?.last_messages
@@ -559,6 +557,7 @@ export function toFloorAgentFromUnified(
     messages,
     // A tab without a matching feed projection never invents a decision.
     question: structuredQuestionFromAttention(attention),
+    attentionKind: attention?.kind,
     attentionSource: attention?.source,
     attentionState: attention?.state,
     attentionFingerprint: attention?.fingerprint,
@@ -697,6 +696,7 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     messages: r.tail && r.tail.length ? r.tail : r.lastResponse ? [r.lastResponse] : [],
     // Exact CLI-projected attention; no transcript, tool-call, or prose parsing.
     question: structuredQuestionFromAttention(r.attention),
+    attentionKind: r.attention?.kind,
     attentionSource: r.attention?.source,
     attentionState: r.attention?.state,
     attentionFingerprint: r.attention?.fingerprint,

@@ -47,6 +47,7 @@ import { AgentDecision } from './AgentDecision'
 import {
   clusterByQuestion,
   sortAgents,
+  sortByAttention,
   groupAgents,
   partitionFloorAgents,
   sessionTaskLine,
@@ -613,6 +614,10 @@ const DEFAULT_STATUS_H = 45
 const DEFAULT_HOST_FRESHNESS_H = 35
 const DEFAULT_RECENT_EMPTY_H = 45
 const FEED_OVERSCAN = 6
+
+/** CLI attention kinds that are an interactive hand-back the operator answers, so they
+ *  render as a decision card (clustered) rather than a failure or a plain review row. */
+const DECISION_KINDS: ReadonlySet<FloorAgent['attentionKind']> = new Set(['question', 'permission', 'plan_review', 'declared'])
 
 type FeedVItem = VirtualListItem & (
   | { kind: 'savedViews'; height: number; key: 'savedViews' }
@@ -1714,15 +1719,24 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
 
   const feedPartition = useMemo(() => partitionFloorAgents(scopedAgents), [scopedAgents])
   const needsAgents = feedPartition.needs
-  const waitingAgents = useMemo(() => needsAgents.filter((a) => a.phase === 'waiting'), [needsAgents])
-  const failedAgents = useMemo(() => needsAgents.filter((a) => a.phase === 'failed'), [needsAgents])
-  const questionClusters = useMemo(() => clusterByQuestion(waitingAgents), [waitingAgents])
-  // Needs-you agents that aren't a waiting question or a failure: a stalled agent,
-  // or a completed agent whose PR is open and unreviewed (the "Review & merge"
-  // row). Previously these were counted in the header but never rendered.
+  // The needs-you section's membership, per-row reason, and ORDER all come from the CLI
+  // attention rows — the extension classifies nothing. An interactive hand-back the
+  // operator answers (question / permission / plan_review / declared) renders as a
+  // decision card, a failure renders as a failure card, and the rest (stall / review /
+  // an attention with no kind) render as plain rows. Ordering within each group is the
+  // CLI attention-kind rank (sortByAttention), never a client phase/heartbeat guess.
+  const decisionAgents = useMemo(
+    () => sortByAttention(needsAgents.filter((a) => DECISION_KINDS.has(a.attentionKind))),
+    [needsAgents]
+  )
+  const failedAgents = useMemo(() => needsAgents.filter((a) => a.attentionKind === 'failure'), [needsAgents])
+  const questionClusters = useMemo(() => clusterByQuestion(decisionAgents), [decisionAgents])
+  // Needs-you agents that aren't an interactive decision or a failure: a genuine CLI
+  // stall, a review request, or an open attention the CLI raised with no kind. Ordered
+  // by the CLI attention-kind rank (stall before review), most-stuck first within a kind.
   const reviewNeedsAgents = useMemo(
-    () => sortAgents(needsAgents.filter((a) => a.phase !== 'waiting' && a.phase !== 'failed'), floorSort),
-    [needsAgents, floorSort]
+    () => sortByAttention(needsAgents.filter((a) => !DECISION_KINDS.has(a.attentionKind) && a.attentionKind !== 'failure')),
+    [needsAgents]
   )
   // One attention-ordered stream: NEEDS YOU -> IDLE -> RUNNING -> DONE, where status
   // is a position, not a filter. Idle leads the live lane because an idle session is
@@ -2499,7 +2513,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
                     <div key={i} className="sw-activity-msg md">{renderMarkdown(m)}</div>
                   ))}
                   {(a.verb || a.target) && (
-                    <div className={`sw-activity-now nowline ${a.phase === 'stalled' ? 'stall' : ''}`}>
+                    <div className={`sw-activity-now nowline ${a.attentionKind === 'stall' ? 'stall' : ''}`}>
                       <span className="sw-activity-dot" />
                       <span className="v">{a.verb}</span> {a.target}
                     </div>
