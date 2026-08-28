@@ -1881,6 +1881,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
 
   // Right-pane detail for the selected agent: a decision block when it needs you, then
   // the reused rich DetailPane (local) or a light remote summary (cross-host).
+  // PHNX-2976: the detail panel must never present a blank pane for loading, empty,
+  // or upstream-failed states. We derive these from the same stream/props the pane
+  // already receives (no new fetches) and surface them inside DetailPane and the
+  // cross-host fallback.
   const renderAgentDetail = () => {
     const a = selectedFloorAgent
     if (!a) {
@@ -1901,6 +1905,28 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     ) : null
 
     const u = unifiedById.get(a.id)
+    const detailLoading = tasksLoading || unifiedTasksLoading || syncingHosts
+    const detailError = remoteSyncError
+    const detailDegraded = !detailError && (
+      (lastRemoteSync > 0 && nowMs - lastRemoteSync > REMOTE_STALE_MS) ||
+      (lastLocalSync > 0 && nowMs - lastLocalSync > REMOTE_STALE_MS)
+    )
+    const fallbackBanner = !u ? (
+      detailError ? (
+        <div className="sw-detail-fallback-banner error" role="alert" data-testid="detail-fallback-error">
+          <Icon name="alert" size={12} /> Upstream failed: {detailError}
+        </div>
+      ) : detailDegraded ? (
+        <div className="sw-detail-fallback-banner degraded" role="status" data-testid="detail-fallback-degraded">
+          <Icon name="clock" size={12} /> Snapshot is stale; retrying when the connection recovers.
+        </div>
+      ) : detailLoading ? (
+        <div className="sw-detail-fallback-banner" role="status" aria-busy="true" data-testid="detail-fallback-loading">
+          <Icon name="loader" size={12} style={{ animation: 'sw-spin 1s linear infinite' }} /> Loading full details…
+        </div>
+      ) : null
+    ) : null
+
     return (
       <>
         {decision}
@@ -1911,9 +1937,13 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
             onFocusTerminal={handleFocusTerminal}
             onRetry={handleRetry}
             onKill={handleKill}
+            loading={detailLoading}
+            degraded={detailDegraded}
+            error={detailError}
           />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'auto' }}>
+            {fallbackBanner}
             <div className="dhead" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <div className="title">{a.project} / {a.name}</div>
               <div className="sub">host <b>{a.hostLabel ?? a.host}</b>{(a.worktreeSlug || a.branch) ? ` · ${a.worktreeSlug || a.branch}` : ''} · {a.phase}{a.tok ? ` · ${a.tok} tok/s` : ''}{a.ticket ? ` · ${a.ticket}` : ''}</div>
@@ -3136,14 +3166,76 @@ function DetailStatusRow({ item, onFocusTerminal }: { item: UnifiedAgent; onFocu
   )
 }
 
-function DetailPane({ item, onClose, onFocusTerminal, onRetry, onKill }: {
+export function DetailPane({ item, onClose, onFocusTerminal, onRetry, onKill, loading, degraded, error }: {
   item: UnifiedAgent
   onClose: () => void
   onFocusTerminal: (t: TerminalInfo) => void
   onRetry: (taskName: string) => void
   onKill: (taskName: string) => void
+  loading?: boolean
+  degraded?: boolean
+  error?: string | null
 }) {
   const isActive = item.active
+  const hasBodyContent = Boolean(
+    item.kind === 'watchdog' ||
+    item.terminal ||
+    (item.kind === 'team' && item.swarm) ||
+    ((item.kind === 'headless' || item.kind === 'cloud') && item.agent)
+  )
+
+  let bodyContent: React.ReactNode
+  if (error && !hasBodyContent) {
+    bodyContent = (
+      <div className="sw-detail-state sw-detail-state-error" data-testid="detail-error" role="alert">
+        <span className="sw-detail-state-icon"><Icon name="alert" size={14} /></span>
+        <span className="sw-detail-state-title">Detail unavailable</span>
+        <span className="sw-detail-state-body">{error}</span>
+      </div>
+    )
+  } else if (degraded && !hasBodyContent) {
+    bodyContent = (
+      <div className="sw-detail-state sw-detail-state-degraded" data-testid="detail-degraded" role="status">
+        <span className="sw-detail-state-icon"><Icon name="clock" size={14} /></span>
+        <span className="sw-detail-state-title">Data is stale</span>
+        <span className="sw-detail-state-body">The upstream snapshot is out of date. Details will refresh when the connection recovers.</span>
+      </div>
+    )
+  } else if (loading && !hasBodyContent) {
+    bodyContent = (
+      <div className="sw-detail-state sw-detail-state-loading" data-testid="detail-loading" role="status" aria-busy="true">
+        <span className="sw-detail-state-icon"><Icon name="loader" size={14} /></span>
+        <span className="sw-detail-state-title">Loading details…</span>
+        <div className="sw-detail-skeleton" style={{ width: '100%', maxWidth: 280, marginTop: 4 }}>
+          <div className="sw-detail-skeleton-row long" />
+          <div className="sw-detail-skeleton-row medium" />
+          <div className="sw-detail-skeleton-row short" />
+          <div className="sw-detail-skeleton-row long" />
+        </div>
+      </div>
+    )
+  } else if (!hasBodyContent) {
+    bodyContent = (
+      <div className="sw-detail-state" data-testid="detail-empty" role="status">
+        <span className="sw-detail-state-icon"><Icon name="inbox" size={14} /></span>
+        <span className="sw-detail-state-title">No details yet</span>
+        <span className="sw-detail-state-body">This agent has no recorded activity. Details will appear once it starts working.</span>
+      </div>
+    )
+  } else {
+    bodyContent = (
+      <>
+        <DetailStatusRow item={item} onFocusTerminal={onFocusTerminal} />
+
+        {item.kind === 'watchdog' && <WatchdogDetail events={item.watchdogEvents ?? []} />}
+        {item.terminal && <TerminalExpandedDetail terminal={item.terminal} />}
+        {item.kind === 'team' && item.swarm && <TeamDetail swarm={item.swarm} onRetry={onRetry} onKill={onKill} />}
+        {(item.kind === 'headless' || item.kind === 'cloud') && item.agent && (
+          <AgentDetailView agent={item.agent} swarm={item.swarm} onRetry={onRetry} onKill={onKill} />
+        )}
+      </>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, height: '100%', flex: 1 }}>
@@ -3181,14 +3273,7 @@ function DetailPane({ item, onClose, onFocusTerminal, onRetry, onKill }: {
       </div>
 
       <div className="sw-mc-pane-body">
-        <DetailStatusRow item={item} onFocusTerminal={onFocusTerminal} />
-
-        {item.kind === 'watchdog' && <WatchdogDetail events={item.watchdogEvents ?? []} />}
-        {item.terminal && <TerminalExpandedDetail terminal={item.terminal} />}
-        {item.kind === 'team' && item.swarm && <TeamDetail swarm={item.swarm} onRetry={onRetry} onKill={onKill} />}
-        {(item.kind === 'headless' || item.kind === 'cloud') && item.agent && (
-          <AgentDetailView agent={item.agent} swarm={item.swarm} onRetry={onRetry} onKill={onKill} />
-        )}
+        {bodyContent}
       </div>
     </div>
   )
