@@ -14,6 +14,7 @@ import {
   dedupeSessions,
   groupByHost,
   reconcileHosts,
+  dialablePeerScopes,
   isStaleSession,
   filterStaleSessions,
   sessionLastActivityMs,
@@ -651,6 +652,38 @@ describe('reconcileHosts — scope the roster to the device registry + local mac
     const zions = hosts.filter((h) => h.name === 'zion');
     expect(zions.length).toBe(1);
     expect(zions[0]).toEqual({ name: 'zion', address: '', online: true, isLocal: true });
+  });
+});
+
+describe('dialablePeerScopes — the peers the follower-degraded gate may wait on (PHNX-2735)', () => {
+  test('includes online POSIX/Windows peers, normalized, excluding the local machine', () => {
+    const scopes = dialablePeerScopes([
+      { name: 'zion', online: true, platform: 'macos' },        // local — excluded
+      { name: 'yosemite-s0', online: true, platform: 'linux' },
+      { name: 'Win-Mini', online: true, platform: 'windows' },  // normalized
+    ], 'zion');
+    expect(scopes.sort()).toEqual(['win-mini', 'yosemite-s0']);
+  });
+
+  test('excludes an offline peer — the CLI never dials it, so we must not wait on it', () => {
+    const scopes = dialablePeerScopes([
+      { name: 'yosemite-s0', online: true, platform: 'linux' },
+      { name: 'macbook-air', online: false, platform: 'macos' },
+    ], 'zion');
+    expect(scopes).toEqual(['yosemite-s0']);
+  });
+
+  // The regression the re-review caught: an approved Tailscale device with an
+  // unrecognized OS (an iPad → platform 'unknown') reads online but the CLI feed
+  // never dials it, so it emits neither a reset nor `scope unavailable`. Waiting
+  // on it would hang the merged Floor at "connecting" forever. It MUST NOT appear.
+  test('excludes an online device on a non-dialable platform (iPad → unknown)', () => {
+    const scopes = dialablePeerScopes([
+      { name: 'yosemite-s0', online: true, platform: 'linux' },
+      { name: 'ipad165', online: true, platform: 'unknown' },
+      { name: 'iphone182', online: true, platform: undefined },
+    ], 'zion');
+    expect(scopes).toEqual(['yosemite-s0']);
   });
 });
 

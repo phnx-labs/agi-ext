@@ -68,7 +68,7 @@ import {
   type Device,
 } from './deviceHealth.vscode';
 import { inferProjectCandidates } from '../core/projectIndex';
-import { normalizeHost, groupByHost, type HostInfo } from '../core/remoteSessions';
+import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
 import { rankRepos } from '../core/repoIndex';
@@ -1139,16 +1139,15 @@ async function pushFloorUpdate(workspacePath?: string): Promise<void> {
     // approval-waiting state. Edge-triggered so it fires once per wait.
     notifyNewlyWaiting(floorTerminals);
     // Degraded = the merged floor is still establishing. True until the stream
-    // has reset at all AND every ONLINE peer the device registry lists has
-    // reported (delivered its reset or been marked unavailable). Waiting only on
-    // roster-listed online peers is what keeps this from flipping to a confident
-    // "0 sessions" the instant the near-instant local scope resets while a real
-    // remote box is still en route (PHNX-2735) — and, because an unreachable peer
-    // emits `scope unavailable` and an offline one drops off the roster, it cannot
-    // hang "connecting" forever on a box that will never answer.
-    const expectedPeerScopes = (getRegisteredDevicesCache() ?? [])
-      .filter((device) => device.online && normalizeHost(device.name) !== LOCAL_MACHINE_ID)
-      .map((device) => normalizeHost(device.name));
+    // has reset at all AND every peer the CLI fan-out will actually dial has
+    // reported (delivered its reset or been marked unavailable). `dialablePeerScopes`
+    // mirrors the CLI's own peer selection (online + POSIX/Windows), so we never
+    // wait on a device the stream will never report for — an approved iPad reads
+    // `online` but is never dialed, and waiting on it would hang "connecting"
+    // forever. This keeps the floor from flipping to a confident "0 sessions" the
+    // instant the near-instant local scope resets while a real remote box is
+    // still en route (PHNX-2735).
+    const expectedPeerScopes = dialablePeerScopes(getRegisteredDevicesCache() ?? [], LOCAL_MACHINE_ID);
     const degraded = !sessionPresentationStore.hasSeenReset()
       || sessionPresentationStore.pendingScopes(expectedPeerScopes).length > 0;
     settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals, degraded });

@@ -71,12 +71,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   fleet had reported — flipping the merged Floor to a confident "No running sessions"
   while a real remote box was still en route. The `degraded` signal on the existing
   `allTerminalsData` broadcast now stays true until the stream has reset AND every
-  ONLINE peer in the device registry has reported (delivered its reset or been marked
-  `unavailable`). Waiting only on roster-listed online peers — and treating an
-  `unavailable` scope as settled — is what keeps it from flipping too early without
-  ever hanging "connecting" on a box that will never answer. `hasSeenReset(scope?)`
-  is now per-scope and a new `pendingScopes(expected)` returns the peers still en
-  route; no side channel is introduced.
+  peer the CLI fan-out will actually dial has reported (delivered its reset or been
+  marked `unavailable`). The expected peer set (`dialablePeerScopes`) mirrors the
+  CLI's own selection — online devices on a POSIX/Windows platform — so an approved
+  Tailscale device the CLI never dials (an iPad / phone registered as
+  `platform: 'unknown'`) is not waited on, and the gate cannot hang "connecting"
+  forever on a box that will never answer. `hasSeenReset(scope?)` is now per-scope
+  and a new `pendingScopes(expected)` returns the peers still en route; no side
+  channel is introduced.
 
 ## [0.9.340] - 2026-08-28
 

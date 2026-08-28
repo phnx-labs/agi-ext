@@ -135,6 +135,41 @@ export function reconcileHosts(devices: RegisteredDeviceInput[], localHost: stri
   return [...byName.values()];
 }
 
+/** Minimal device-registry shape the dialable-scope filter reads. */
+export interface RosterDeviceLite {
+  name: string;
+  online?: boolean;
+  platform?: string;
+}
+
+/**
+ * Platforms the CLI feed fan-out actually dials — POSIX + Windows. A Tailscale
+ * peer whose OS is unrecognized (iPad / phone / empty) is registered as
+ * `platform: 'unknown'`, which the CLI skips. Mirrors the set in the CLI's
+ * `watchFleetFeed` so the two stay in lockstep.
+ */
+export const DIALABLE_PEER_PLATFORMS: ReadonlySet<string> = new Set(['windows', 'linux', 'macos']);
+
+/**
+ * The peer scopes the elected CLI feed will actually dial and therefore resolve
+ * — online devices on a dialable platform, excluding the local machine —
+ * normalized the same way `watchFleetFeed` scopes a peer (`normalizeHost(name)`).
+ *
+ * The follower-degraded gate (PHNX-2735) waits on exactly these scopes: waiting
+ * on a device the stream will never report for (an approved iPad reads `online`
+ * but is never dialed, so it emits neither a `reset` nor a `scope unavailable`)
+ * would leave the merged Floor stuck at "connecting" forever. This filter must
+ * match the CLI's own peer selection, or the two drift and re-open that hang.
+ */
+export function dialablePeerScopes(devices: readonly RosterDeviceLite[], localMachineId: string): string[] {
+  const local = normalizeHost(localMachineId);
+  return devices
+    .filter((device) => device.online === true
+      && DIALABLE_PEER_PLATFORMS.has(device.platform ?? '')
+      && normalizeHost(device.name) !== local)
+    .map((device) => normalizeHost(device.name));
+}
+
 /**
  * The cross-host analog of a local agent. One record per active session on one
  * machine. `host` is the machine we queried ('this-mac' locally, an ssh/tailscale
