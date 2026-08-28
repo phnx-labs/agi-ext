@@ -121,8 +121,14 @@ export function SessionPreviewCard({ preview }: { preview: SessionPreview }) {
                       <span style={{ opacity: 0.8 }}>{OP_SYMBOL[f.op]}</span> {f.path.split('/').pop()}
                     </button>
                   ))}
-                  {d.changedFiles.length > FILES_SHOWN && (
-                    <span className="sw-preview-more">+{d.changedFiles.length - FILES_SHOWN} more</span>
+                  {/* Remainder is off the true change total (d.changes), not the
+                      per-file list — the CLI caps changedFiles at 200 while the
+                      counts stay the real totals, so a >200-file session would
+                      otherwise undercount here. */}
+                  {d.changes.created + d.changes.modified + d.changes.deleted > FILES_SHOWN && (
+                    <span className="sw-preview-more">
+                      +{d.changes.created + d.changes.modified + d.changes.deleted - FILES_SHOWN} more
+                    </span>
                   )}
                 </div>
               )}
