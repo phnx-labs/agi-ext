@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { buildAgentLaunchCommand, usesManagedAgentLaunch } from '../core/agents';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   handleForkPickHost,
@@ -35,7 +34,7 @@ describe('fork command contributions', () => {
 
   test('Agents: Fork (Recap) forks the active tab instead of opening the session browser', () => {
     expect(extensionSource).toContain(
-      "vscode.commands.registerCommand('agents.forkRecap', () => forkCurrentSession(context, { intent: 'recap' }))",
+      "vscode.commands.registerCommand('agents.forkRecap', () => forkCurrentSession(context))",
     );
     expect(extensionSource).not.toContain("forkPickedSession(context, 'recap')");
   });
@@ -44,7 +43,6 @@ describe('fork command contributions', () => {
     let command = '';
     let callback!: () => Promise<void>;
     let launch: unknown;
-    let queuedCommand = '';
     let edge: unknown;
     let rejection: unknown;
 
@@ -57,19 +55,6 @@ describe('fork command contributions', () => {
       pickHost: async () => ({ host: 'chosen-host', cancelled: false }),
       openFork: async (value) => {
         launch = value;
-        // `openSingleAgentWithQueue` gives ordinary remote launches the portable
-        // workspace cwd; the launch builder must preserve that form, not turn it
-        // into an exact path that belongs to another machine.
-        queuedCommand = `${buildAgentLaunchCommand(
-          'claude',
-          'sibling-id',
-          undefined,
-          undefined,
-          undefined,
-          value.strategy,
-          undefined,
-          { host: value.host, local: value.local, cwd: '/Users/muqsit/src/agents-cli' },
-        )} && queue ${value.prompt}`;
         return { terminalId: 'sibling-terminal', sessionId: 'sibling-id' };
       },
       recordFork: (value) => { edge = value; },
@@ -82,15 +67,11 @@ describe('fork command contributions', () => {
 
     expect(command).toBe('agents.forkPickHost');
     expect(launch).toEqual({
-      prompt: '/continue source-id --device source-machine',
-      strategy: 'balanced',
+      command: "agents sessions fork 'source-id' --device 'chosen-host'",
       host: 'chosen-host',
       local: false,
       viewColumn: 'Active',
     });
-    expect(queuedCommand).toContain("--device 'chosen-host' --cwd '/Users/muqsit/src/agents-cli'");
-    expect(queuedCommand).not.toContain('--remote-cwd');
-    expect(queuedCommand).toEndWith('queue /continue source-id --device source-machine');
     expect(edge).toEqual({
       sourceSessionId: 'source-id',
       sourceHost: 'source-machine',
@@ -103,18 +84,13 @@ describe('fork command contributions', () => {
     expect(rejection).toBeUndefined();
   });
 
-  test('a remote Grok source brought back local keeps the managed balanced launch', async () => {
+  test('a remote Grok source brought back local carries the bare fork verb', async () => {
     let launch: unknown;
     await handleForkPickHost({
       source: { sessionId: 'source-id', agentKey: 'grok', host: 'source-host', localHost: 'this-host' },
       pickHost: async () => ({ host: undefined, cancelled: false }),
       openFork: async (value) => {
         launch = value;
-        expect(usesManagedAgentLaunch('grok', value.host)).toBe(true);
-        expect(buildAgentLaunchCommand(
-          'grok', null, undefined, undefined, undefined, value.strategy, undefined,
-          { host: value.host, local: value.local },
-        )).toBe('agents run grok --interactive --strategy balanced --mode auto');
         return { terminalId: 'GR-remote-to-local', sessionId: null };
       },
       recordFork: () => {},
@@ -123,8 +99,7 @@ describe('fork command contributions', () => {
       now: () => 123,
     });
     expect(launch).toEqual({
-      prompt: '/continue source-id --device source-host',
-      strategy: 'balanced',
+      command: "agents sessions fork 'source-id'",
       host: undefined,
       local: true,
       viewColumn: 'Active',

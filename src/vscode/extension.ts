@@ -84,7 +84,7 @@ import { spawn } from 'child_process';
 import { DEFAULT_DISPLAY_PREFERENCES } from '../core/settings';
 import * as readiness from './terminalReadiness';
 import { resolveAlias, isAgentInstalled, checkInstalledAgentsViaCli } from '../core/agentModels';
-import { buildForkSessionRequest, type ForkSessionIntent } from '../core/forkSession';
+import { buildForkSessionRequest, forkCommand } from '../core/forkSession';
 import { handleForkPickHost, registerForkPickHostCommand, remoteForkSessionId, resolveForkSessionId } from './forkCommands.vscode';
 import { FORK_LINEAGE_KEY, recordForkEdge, type ForkEdge } from '../core/forkLineage';
 import {
@@ -1435,7 +1435,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.forkRecap', () => forkCurrentSession(context, { intent: 'recap' }))
+    vscode.commands.registerCommand('agents.forkRecap', () => forkCurrentSession(context))
   );
 
   context.subscriptions.push(
@@ -4774,9 +4774,53 @@ async function spawnWithContext(context: vscode.ExtensionContext): Promise<void>
  * is the machine. The pair is recorded as a fork edge so the Recap ledger can
  * show parent and fork side by side once they finish.
  */
+/**
+ * Open a TRACKED editor terminal that runs an arbitrary agent command — the fork
+ * verb (`agents sessions fork <id> [--device <host>]`). The tracked terminal's
+ * AGENT_TERMINAL_ID env propagates into the verb's `agents run` child (the verb
+ * inherits the env), so the sibling session publishes under this terminalId and
+ * lineage / restore / Fleet tracking keep working. Mirrors the tracked-terminal
+ * setup in openSingleAgentWithQueue, minus the message queue and id-minting the
+ * fork verb owns itself.
+ */
+async function openForkTerminal(
+  context: vscode.ExtensionContext,
+  agentConfig: Omit<AgentConfig, 'count'>,
+  command: string,
+  opts: { forkHost?: string; viewColumn?: vscode.ViewColumn },
+): Promise<{ terminalId: string; sessionId: string | null }> {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+  const terminalId = terminals.nextId(agentConfig.prefix);
+  const builtInDef = getBuiltInByPrefix(agentConfig.prefix);
+  const agentKey = builtInDef?.key;
+
+  const terminal = vscode.window.createTerminal({
+    iconPath: agentConfig.iconPath,
+    location: { viewColumn: opts.viewColumn ?? vscode.ViewColumn.Active, preserveFocus: false },
+    name: buildTerminalTitle(agentConfig.title, undefined, context, null),
+    env: buildAgentTerminalEnv(terminalId, null, workspaceFolder),
+    isTransient: true,
+  });
+
+  const pid = await terminal.processId;
+  terminals.register(terminal, terminalId, agentConfig, pid, context);
+  // Stamp the host so the label poller / remote id resolution reads the sibling
+  // from that box's active feed rather than looking it up locally.
+  if (opts.forkHost) terminals.setHost(terminal, opts.forkHost);
+  readiness.registerTerminal(terminal);
+
+  const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
+  if (resumeKey) terminals.setAgentType(terminal, resumeKey);
+
+  terminal.show(false);
+  await sendCommandWhenReady(terminal, wrapNativeAgentCommand(command, false));
+
+  return { terminalId, sessionId: null };
+}
+
 async function forkCurrentSession(
   context: vscode.ExtensionContext,
-  opts: { pickHost?: boolean; intent?: ForkSessionIntent } = {},
+  opts: { pickHost?: boolean } = {},
 ): Promise<void> {
   const activeTerminal = vscode.window.activeTerminal;
   if (!activeTerminal) {
@@ -4811,11 +4855,11 @@ async function forkCurrentSession(
         const harness = getBuiltInByKey(agentKey)?.title ?? agentKey;
         return pickLaunchHost(context, `Fork this ${harness} session — run on…`, agentKey);
       },
-      openFork: async ({ prompt, strategy, host, local, viewColumn }) => openSingleAgentWithQueue(
+      openFork: async ({ command, host, viewColumn }) => openForkTerminal(
         context,
         entry.agentConfig!,
-        [prompt],
-        { strategy, host, local, viewColumn },
+        command,
+        { forkHost: host, viewColumn },
       ),
       recordFork: (edge) => { void recordFork(context, edge); },
       showRejection: showForkRejection,
@@ -4828,24 +4872,20 @@ async function forkCurrentSession(
   }
 
   // The standard command keeps the source session on its own host.
-  const request = buildForkSessionRequest(source, undefined, opts.intent);
+  const request = buildForkSessionRequest(source);
   if (!request.ok) {
     showForkRejection(request.reason);
     return;
   }
 
-  // Fork identity/copy semantics belong to agents-cli. Keep only the editor
-  // terminal that presents the command and its result.
-  const terminal = vscode.window.createTerminal({
-    name: `Fork ${shortSessionId(request.sessionId)}`,
-    location: { viewColumn: vscode.ViewColumn.Active },
-    isTransient: true,
+  // Fork identity/copy semantics belong to agents-cli — the verb resolves the
+  // source cross-fleet and launches a recap-seeded same-harness sibling. The
+  // extension only opens the tracked terminal that presents the command and
+  // whose AGENT_TERMINAL_ID the verb's child inherits for lineage tracking.
+  await openForkTerminal(context, entry.agentConfig, forkCommand(request.sessionId, request.host), {
+    forkHost: request.host,
+    viewColumn: vscode.ViewColumn.Active,
   });
-  terminal.show(false);
-  await sendCommandWhenReady(
-    terminal,
-    `agents sessions fork ${shquote(request.sessionId)}${opts.intent === 'recap' ? ' --name recap' : ''}`,
-  );
   vscode.window.setStatusBarMessage(`Forking ${shortSessionId(request.sessionId)} through agents-cli`, 5000);
 }
 

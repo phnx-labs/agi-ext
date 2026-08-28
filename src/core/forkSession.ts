@@ -1,4 +1,13 @@
-import { isAgentRunner, type RunStrategy } from './agents';
+import { isAgentRunner, shquote, type RunStrategy } from './agents';
+
+/** The one-shot fork verb: `agents sessions fork <id> [--device <host>]`. agents-cli
+ *  resolves the source cross-fleet and launches a recap-seeded same-harness sibling,
+ *  so the extension only presents the command and tracks its terminal. */
+export function forkCommand(sessionId: string, host: string | undefined): string {
+  const parts = ['agents', 'sessions', 'fork', shquote(sessionId)];
+  if (host) parts.push('--device', shquote(host));
+  return parts.join(' ');
+}
 
 export interface ForkSessionSource {
   sessionId?: string;
