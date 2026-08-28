@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Icon } from './icons'
-import type { FloorPhase, StructuredQuestion } from './floorModel'
+import type { FloorPhase, ReplyKind, StructuredQuestion } from './floorModel'
 import { renderMarkdown } from '../../utils/markdown'
 
 // Option-button reply block. Prototype structuredReply(): factory-floor.html:591-597.
@@ -22,11 +22,19 @@ export interface ReplyCallbacks {
 interface StructuredReplyProps extends ReplyCallbacks {
   question: StructuredQuestion | null
   phase: FloorPhase
+  /**
+   * How a reply reaches this agent (`FloorAgent.reply.kind`). When `'none'` there is no
+   * injectable channel, so the input controls are replaced up front with the reason —
+   * never a chip/Send that only reveals its unreachability after a click (PHNX-2980).
+   */
+  replyKind: ReplyKind
+  /** Human reason a `'none'` channel is unreachable (`FloorAgent.reply.reason`). */
+  replyReason?: string
   /** Inline delivery error (no reachable channel, or the CLI send failed). Shown red. */
   error?: string
 }
 
-export function StructuredReply({ question, phase, onOption, onFreeText, onAttach, error }: StructuredReplyProps) {
+export function StructuredReply({ question, phase, replyKind, replyReason, onOption, onFreeText, onAttach, error }: StructuredReplyProps) {
   const [text, setText] = useState('')
   const danger = question?.kind === 'destructive'
   const options = question?.options ?? []
@@ -43,6 +51,22 @@ export function StructuredReply({ question, phase, onOption, onFreeText, onAttac
   // message). Shown right above the options so the choice has its prompt attached —
   // skipped for 'retry', where the failure message is already the card body.
   const questionText = question && question.kind !== 'retry' ? question.text.trim() : ''
+
+  // No injectable channel: state the reason up front instead of rendering chips + a
+  // free-text box + Send that only fail after a click (PHNX-2980). The reason is already
+  // computed by deriveReplyTargetFromRemote / the local adapter — we surface it, we don't
+  // invent a transport. The question text is still shown so you can see what it's asking.
+  if (replyKind === 'none') {
+    return (
+      <>
+        {questionText && <div className="qtext md">{renderMarkdown(questionText)}</div>}
+        <div className="reply-unreachable" role="note" data-testid="reply-unreachable">
+          <Icon name="terminal" size={12} />
+          <span>{replyReason ?? 'No reply channel here — open the terminal to answer.'}</span>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>

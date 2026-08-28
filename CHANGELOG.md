@@ -12,6 +12,25 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   rendered until a 30s backstop. Rebuild coalescing is now trailing-aware: a fact that
   lands mid-rebuild gets its own trailing rebuild, so the settled state always paints.
 
+## [0.9.338] - 2026-08-28
+
+- **Unreachable agents state the reason before you type, not after (PHNX-2980).** A
+  "needs you" row whose reply channel is `none` (a raw non-tmux TTY on another box, a
+  headless run with no live tab) used to render option chips, a free-text box, and a
+  Send button — all non-functional. You only learned it was unreachable *after*
+  clicking Send. The reply block now shows the already-computed reason up front ("Runs
+  on `<host>` — open it there to reply") in place of the dead controls. Reachable
+  channels (a live terminal, tmux, cloud, team) keep their full controls, and a genuine
+  delivery failure on one of those still surfaces its error.
+
+- **A local "New Claude" now labels its tab from the first tick (PHNX-2553).** The
+  flagship `Agents: New Claude` command (`launchAgent`) minted no session id, so it
+  emitted no `--session-id` and the auto-label poller never armed — the tab kept its
+  bare `CC` prefix until something else hydrated it. It now mints the Claude session id
+  up front and threads it through the launch command, the terminal env, and the tab
+  registration, exactly as the other creation path (`openSingleAgent`) already did, so
+  the two paths can no longer drift.
+
 ## [0.9.337] - 2026-08-25
 
 - **Removed the obsolete Claude notifications installer.** The extension no longer

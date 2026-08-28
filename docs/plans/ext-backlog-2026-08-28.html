@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AGI EXT — Backlog Audit &amp; Fix Plan</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --panel:#141414; --sunken:#050505; --inset:#1a1a1a; --recessed:#0f0f0f;
+    --border:rgba(255,255,255,0.08); --border-strong:rgba(255,255,255,0.15); --border-subtle:rgba(255,255,255,0.04);
+    --text:#E7E5E4; --muted:#A8A29E; --dim:#6E6A63; --faint:#44403C;
+    --brand:#a3e635; --brand-600:#84cc16; --brand-700:#65a30d; --brand-ring:rgba(163,230,53,0.25);
+    --running:#22C55E; --running-bg:rgba(34,197,94,0.1);
+    --pending:#D4A72C; --pending-bg:rgba(212,167,44,0.12);
+    --failed:#EF4444; --failed-bg:rgba(239,68,68,0.1);
+    --idle:#6B7280; --idle-bg:rgba(255,255,255,0.04);
+    --mono:ui-monospace,"SF Mono","Geist Mono",Menlo,monospace;
+    --sans:"Geist",-apple-system,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;
+    font-size:15px;-webkit-font-smoothing:antialiased;background-image:radial-gradient(1200px 600px at 80% -10%,rgba(163,230,53,0.06),transparent 60%);}
+  .wrap{max-width:1100px;margin:0 auto;padding:48px 28px 120px}
+  header.hero{border-bottom:1px solid var(--border);padding-bottom:28px;margin-bottom:36px}
+  .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand);margin:0 0 10px}
+  h1{font-size:34px;line-height:1.1;margin:0 0 12px;letter-spacing:-0.02em}
+  h1 .thin{color:var(--muted);font-weight:400}
+  .lede{font-size:16px;color:var(--muted);max-width:820px;margin:0}
+  .lede b{color:var(--text);font-weight:600}
+  h2{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--dim);
+    margin:56px 0 18px;padding-bottom:8px;border-bottom:1px solid var(--border-subtle)}
+  h3{font-size:19px;margin:34px 0 6px;letter-spacing:-0.01em}
+  h3 .id{font-family:var(--mono);font-size:13px;color:var(--brand);margin-right:8px}
+  p{margin:10px 0}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--inset);border:1px solid var(--border-subtle);
+    border-radius:5px;padding:1px 6px;color:#d6d3d1}
+  a{color:var(--brand-600);text-decoration:none}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+  .stat .n{font-size:32px;font-weight:700;font-family:var(--mono);letter-spacing:-0.02em}
+  .stat .n.green{color:var(--running)} .stat .n.amber{color:var(--pending)} .stat .n.brand{color:var(--brand)}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border-subtle);vertical-align:top}
+  th{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  td .tid{font-family:var(--mono);color:var(--text);font-weight:600;white-space:nowrap}
+  tr:hover td{background:rgba(255,255,255,0.015)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;
+    padding:2px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+  .pill.close{background:var(--running-bg);color:#4ade80;border:1px solid rgba(34,197,94,0.3)}
+  .pill.fix{background:var(--pending-bg);color:#e6b84a;border:1px solid rgba(212,167,44,0.3)}
+  .pill.new{background:rgba(163,230,53,0.1);color:var(--brand);border:1px solid var(--brand-ring)}
+  .pill.p2{background:rgba(239,68,68,0.08);color:#f87171} .pill.p3{background:var(--inset);color:var(--muted)}
+  .epic{background:linear-gradient(180deg,var(--panel),var(--recessed));border:1px solid var(--border);
+    border-radius:16px;padding:4px 26px 26px;margin:22px 0;position:relative;overflow:hidden}
+  .epic::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--brand)}
+  .epic .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;color:var(--brand);
+    letter-spacing:.1em;text-transform:uppercase;margin-top:22px}
+  .epic h3{margin-top:4px}
+  .epic ul{margin:14px 0 0;padding-left:0;list-style:none}
+  .epic li{padding:9px 0 9px 26px;border-top:1px solid var(--border-subtle);position:relative;font-size:14px}
+  .epic li::before{content:"→";position:absolute;left:0;color:var(--brand-700);font-family:var(--mono)}
+  .epic li b{color:var(--text)} .epic li .m{color:var(--muted)}
+
+  /* ---- Mockups ---- */
+  .mock-wrap{margin:22px 0 8px}
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media(max-width:820px){.ba{grid-template-columns:1fr}.grid3{grid-template-columns:1fr}}
+  .ba .label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+  .ba .label.before{color:var(--failed)} .ba .label.after{color:var(--running)}
+  .ba .label .dot{width:8px;height:8px;border-radius:50%} .before .dot{background:var(--failed)} .after .dot{background:var(--running)}
+  .device{background:var(--sunken);border:1px solid var(--border);border-radius:12px;overflow:hidden;font-size:13px;box-shadow:0 12px 40px rgba(0,0,0,0.5)}
+  .device .chrome{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--border)}
+  .device .chrome .tl{width:9px;height:9px;border-radius:50%;background:#333}
+  .device .chrome .ttl{margin-left:8px;font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.05em}
+  .device .body{padding:12px}
+  .cap{font-size:12.5px;color:var(--muted);margin:12px 0 0;padding-left:14px;border-left:2px solid var(--brand-700)}
+
+  /* fleet row */
+  .frow{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:9px;border:1px solid transparent}
+  .frow+.frow{margin-top:5px}
+  .frow.sel{background:var(--inset);border-color:var(--border)}
+  .frow .glyph{font-family:var(--mono);font-size:13px;margin-top:1px}
+  .g-run{color:var(--running)} .g-wait{color:var(--pending)} .g-stall{color:#d97706} .g-fail{color:var(--failed)} .g-idle{color:var(--idle)} .g-done{color:var(--muted)}
+  .frow .main{flex:1;min-width:0}
+  .frow .t{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .frow .sub{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:2px}
+  .badge{font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:4px;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
+  .b-wait{background:var(--pending-bg);color:#e6b84a} .b-run{background:var(--running-bg);color:#4ade80}
+  .b-stall{background:rgba(217,119,6,0.14);color:#f59e0b} .b-fail{background:var(--failed-bg);color:#f87171}
+  .sectlbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:12px 2px 6px}
+  .sectlbl.hot{color:var(--pending)}
+
+  /* detail pane */
+  .dp .dp-h{display:flex;align-items:center;gap:9px;padding-bottom:9px;border-bottom:1px solid var(--border-subtle)}
+  .dp .av{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--brand-700),#3f6212);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#0a0a0a}
+  .dp .nm{font-weight:600;font-size:14px} .dp .kb{margin-left:auto}
+  .dp-line{display:flex;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);padding:7px 0;flex-wrap:wrap}
+  .dp-line .k{color:var(--faint);min-width:62px;display:inline-block}
+  .dp-line .v{color:#d6d3d1}
+  .dp-sparse{color:var(--faint);font-style:italic;font-family:var(--mono);font-size:11.5px;padding:16px 0;text-align:center}
+  .skel{height:9px;border-radius:4px;background:linear-gradient(90deg,var(--inset),#242424,var(--inset));background-size:200% 100%;animation:sh 1.3s infinite}
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .diffadd{color:#4ade80} .diffdel{color:#f87171} .difford{color:var(--pending)}
+
+  /* reply block */
+  .reply{margin-top:9px;background:var(--recessed);border:1px solid var(--border-subtle);border-radius:9px;padding:10px}
+  .reply .q{font-size:12.5px;margin-bottom:8px}
+  .chip{display:inline-block;font-size:11.5px;padding:4px 10px;border:1px solid var(--border-strong);border-radius:7px;margin:0 5px 5px 0;background:var(--inset)}
+  .reply .txt{display:flex;gap:6px;margin-top:4px}
+  .reply .txt input{flex:1;background:var(--sunken);border:1px solid var(--border);border-radius:7px;padding:6px 9px;color:var(--muted);font-size:11.5px;font-family:var(--sans)}
+  .reply .send{background:var(--inset);border:1px solid var(--border-strong);border-radius:7px;padding:6px 12px;font-size:11.5px;color:var(--text)}
+  .reply.dead{border-style:dashed;border-color:rgba(239,68,68,0.25)}
+  .reply .unreach{display:flex;gap:9px;align-items:center;font-size:12px;color:var(--muted)}
+  .reply .unreach .ic{color:var(--dim)}
+  .strike{position:relative;opacity:.5}
+  .strike::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(-45deg,transparent,transparent 6px,rgba(239,68,68,0.12) 6px,rgba(239,68,68,0.12) 12px)}
+  .ptr{font-family:var(--mono);font-size:10px;color:var(--failed);margin-top:6px}
+
+  /* arch diagram */
+  .arch{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px;margin:18px 0;overflow-x:auto}
+  .node{fill:var(--panel);stroke:var(--border-strong)} .node.bad{stroke:var(--failed)} .node.good{stroke:var(--brand)}
+  .ntext{fill:var(--text);font-family:var(--mono);font-size:11px} .nsub{fill:var(--dim);font-family:var(--mono);font-size:9px}
+  .edge{stroke:var(--dim);stroke-width:1.4;fill:none} .edge.bad{stroke:var(--failed);stroke-dasharray:4 3} .edge.good{stroke:var(--brand);stroke-width:2}
+  .elabel{fill:var(--muted);font-family:var(--mono);font-size:9px}
+
+  .callout{background:var(--recessed);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:10px;padding:14px 18px;margin:18px 0}
+  .callout .h{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand);margin-bottom:6px}
+  .foot{margin-top:60px;padding-top:20px;border-top:1px solid var(--border);color:var(--dim);font-size:12.5px;font-family:var(--mono)}
+  .seq{counter-reset:s;list-style:none;padding:0;margin:16px 0}
+  .seq li{counter-increment:s;position:relative;padding:12px 0 12px 44px;border-top:1px solid var(--border-subtle)}
+  .seq li::before{content:counter(s);position:absolute;left:0;top:11px;width:28px;height:28px;border-radius:8px;background:var(--inset);
+    border:1px solid var(--border-strong);color:var(--brand);font-family:var(--mono);font-size:13px;display:flex;align-items:center;justify-content:center;font-weight:600}
+  .seq li b{color:var(--text)}
+  .t>.tag{}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <p class="kicker">AGI EXT · Backlog Audit &amp; Fix Plan · 2026-08-28</p>
+  <h1>The extension keeps deriving what the CLI <span class="thin">already knows.</span></h1>
+  <p class="lede">I audited every open <b>AGI EXT</b> ticket against the code at HEAD (<code>7f3311f</code>) with four independent
+  code sweeps. <b>Five are already fixed</b> — close them. <b>Ten are real and open</b>, plus <b>seven new bugs</b> the sweeps
+  surfaced. Nearly all of them are the same root cause wearing different masks: the ext maintains its <b>own</b> session state
+  — transcript parsers, per-tab side-channel spawns, local staleness clocks, a homegrown preview — instead of riding the
+  single <code>agents feed watch</code> stream and the <code>agents sessions preview --json</code> verb the CLI already ships.
+  The plan collapses those masks into four epics.</p>
+</header>
+
+<div class="grid3">
+  <div class="stat"><div class="n green">5</div><div class="l">already done — close with evidence</div></div>
+  <div class="stat"><div class="n amber">10</div><div class="l">open tickets — grouped into 4 epics</div></div>
+  <div class="stat"><div class="n brand">7</div><div class="l">new bugs found by the audit</div></div>
+</div>
+
+<h2>Verdict — every ticket, decided</h2>
+<table>
+  <thead><tr><th>Ticket</th><th>Title</th><th style="width:92px">Verdict</th><th>Evidence at HEAD</th></tr></thead>
+  <tbody>
+    <tr><td class="tid">PHNX-3318</td><td>Remote sessions time out, need manual reconnect</td><td><span class="pill close">Close</span></td><td>Every remote tab is a single <code>agents run --device</code> / <code>sessions resume</code> verb that owns CLI auto-reconnect (RUSH-3125). No raw ssh/tmux stream survives.</td></tr>
+    <tr><td class="tid">PHNX-3175</td><td>Reconnect give-up dead-ends at a bare shell</td><td><span class="pill close">Close</span></td><td><code>wrapNativeAgentCommand</code> (agents.ts:326) keeps tab identity on exit 255/254 and prints a re-entry pointer.</td></tr>
+    <tr><td class="tid">PHNX-2783</td><td>Fleet Resume opens panel terminals, not editor tabs</td><td><span class="pill close">Close</span></td><td><code>focusRemoteSession</code>/<code>focusSession</code> now route through <code>openAgentSessionTerminal</code> → editor tab + <code>sessions resume</code>.</td></tr>
+    <tr><td class="tid">PHNX-2511</td><td>New &lt;preset&gt; slow; shim diagnostics every launch</td><td><span class="pill close">Close</span></td><td>Fixed CLI-side: <code>shim-heal.ts</code> gates the notice behind a persistent signature; no per-launch spam.</td></tr>
+    <tr><td class="tid">PHNX-2979</td><td>Screenshot attach button is an unconditional no-op</td><td><span class="pill close">Close</span></td><td>The no-op button was removed (<code>StructuredReply.tsx:66</code>). User-facing defect gone; dead <code>onAttach</code> plumbing folded into Epic 4 cleanup.</td></tr>
+    <tr><td class="tid">PHNX-3184</td><td>Status-bar identity spawns unbounded per-tab fetches</td><td><span class="pill fix">Fix</span> <span class="pill p2">P2</span></td><td><code>fetchSessionIdentity</code> side channel intact; <code>account</code> not on the stream. Epic 1.</td></tr>
+    <tr><td class="tid">PHNX-2973</td><td>Detail panel shows less than the CLI picker</td><td><span class="pill fix">Fix</span> <span class="pill p2">P2</span></td><td>DetailPane paints ~6 fields; the <code>preview --json</code> card carries 20+. Epic 2.</td></tr>
+    <tr><td class="tid">PHNX-2976</td><td>Detail panel has no loading / empty / error state</td><td><span class="pill fix">Fix</span> <span class="pill p3">P3</span></td><td>DetailPane takes no <code>loading</code>/<code>error</code> prop; slow upstream ≡ no data. Epic 2.</td></tr>
+    <tr><td class="tid">PHNX-2975</td><td>"Needs you first" toggle does not reorder the feed</td><td><span class="pill fix">Fix</span> <span class="pill p2">P2</span></td><td>Sort runs on phase-homogeneous buckets → comparator is a no-op; grouped path never consults it. Epic 3.</td></tr>
+    <tr><td class="tid">PHNX-2735</td><td>Follower with no reset shows "0 sessions" as fact</td><td><span class="pill fix">Fix</span> <span class="pill p2">P2</span></td><td>Store has no "reset seen" concept; empty ≡ idle. Epic 3.</td></tr>
+    <tr><td class="tid">PHNX-2978</td><td>Coalescing drops the trailing running→idle update</td><td><span class="pill fix">Fix</span> <span class="pill p3">P3</span></td><td><code>cachedInFlight</code> is leading-edge only; last fact in a burst never renders. Epic 3.</td></tr>
+    <tr><td class="tid">PHNX-2980</td><td>Reply controls render for unreachable agents</td><td><span class="pill fix">Fix</span> <span class="pill p3">P3</span></td><td><code>StructuredReply</code> never learns the channel; shows a working-looking Send that fails only after click. Epic 4.</td></tr>
+    <tr><td class="tid">PHNX-2553</td><td>New &lt;Agent&gt; mints no session id; auto-labels never arm</td><td><span class="pill fix">Fix</span> <span class="pill p3">P3</span></td><td><code>launchAgent</code> passes <code>sessionId=null</code>; hits the flagship <code>agents.newClaude</code> command. Epic 4.</td></tr>
+    <tr><td class="tid">PHNX-2833</td><td>UI still owns acting poll timers</td><td><span class="pill fix">Fix</span> <span class="pill p3">P3</span></td><td>2.5s Fleet poll now stream-fed (done); <code>agentPanel.vscode.ts</code> 4s tick still re-parses + spawns a CLI. Epic 1.</td></tr>
+    <tr><td class="tid">PHNX-2484</td><td>Zero-duplication agents-cli client (umbrella)</td><td><span class="pill fix">Fix</span> <span class="pill p2">P2</span></td><td>Transcript parsers, readiness classifiers, a duplicate agents-bin resolver, prewarm caches &amp; gemini machinery all still on disk. Epic 1.</td></tr>
+  </tbody>
+</table>
+
+<h2>New bugs the audit surfaced</h2>
+<table>
+  <thead><tr><th style="width:34px">#</th><th>Bug</th><th>Where</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pill new">N1</span></td><td>Attention orphaned on session-id re-key</td><td><code>sessionPresentationStore.ts:93</code></td><td>Provisional→UUID re-key leaves the "needs you" chip attached to the stale id — it silently detaches from its card.</td></tr>
+    <tr><td><span class="pill new">N2</span></td><td>Zero-state ignores active filters</td><td><code>UnifiedAgentsPane.tsx:2327</code></td><td>Empty state gated on global count, not the filtered feed — a filter with 0 hits renders a blank pane, no cards, no message.</td></tr>
+    <tr><td><span class="pill new">N3</span></td><td>Detail staleness clock disagrees with stream phase</td><td><code>DetailStatusRow</code></td><td>Pane re-derives idle on a 15s local timer; card shows "running", pane shows "idle" for the same agent.</td></tr>
+    <tr><td><span class="pill new">N4</span></td><td>Grouped view drops the needs-you partition</td><td><code>UnifiedAgentsPane.tsx:2292</code></td><td>Group-by-outcome/project omits needs-you agents → a waiting agent can vanish from the grouped view entirely.</td></tr>
+    <tr><td><span class="pill new">N5</span></td><td>Dead <code>onAttach</code> plumbing</td><td><code>StructuredReply/AgentDecision/FeedItem</code></td><td>8 call sites wired to a callback nothing fires — the "delete, don't carry" debt pattern.</td></tr>
+    <tr><td><span class="pill new">N6</span></td><td>Stale throughput comment invites re-adding a parser</td><td><code>UnifiedAgentsPane.tsx:1407</code></td><td>Comment still describes the deleted JSONL-parse path (PHNX-2833's own regression risk).</td></tr>
+    <tr><td><span class="pill new">N7</span></td><td>Stale ssh/tmux comments</td><td><code>spawn.ts:16, extension.ts:2054</code></td><td>Comments describe a raw-ssh path the live code no longer takes — misleads the next auditor.</td></tr>
+  </tbody>
+</table>
+
+<h2>The root cause, in one picture</h2>
+<div class="arch">
+<svg viewBox="0 0 900 300" width="100%" role="img" aria-label="Architecture: side channels collapse into one stream plus one verb">
+  <!-- BEFORE cluster -->
+  <text x="20" y="24" class="elabel" style="fill:var(--failed);font-size:11px">TODAY — every surface fetches its own truth</text>
+  <rect class="node good" x="20" y="120" width="150" height="52" rx="9"/>
+  <text class="ntext" x="34" y="143">agents feed watch</text><text class="nsub" x="34" y="159">the one stream (good)</text>
+
+  <rect class="node bad" x="250" y="40" width="168" height="46" rx="9"/>
+  <text class="ntext" x="264" y="60">status bar</text><text class="nsub" x="264" y="76">per-tab sessions --device</text>
+  <rect class="node bad" x="250" y="100" width="168" height="46" rx="9"/>
+  <text class="ntext" x="264" y="120">agentPanel 4s</text><text class="nsub" x="264" y="136">re-parse jsonl + CLI spawn</text>
+  <rect class="node bad" x="250" y="160" width="168" height="46" rx="9"/>
+  <text class="ntext" x="264" y="180">DetailPane</text><text class="nsub" x="264" y="196">homegrown transcript parse</text>
+  <rect class="node bad" x="250" y="220" width="168" height="46" rx="9"/>
+  <text class="ntext" x="264" y="240">readiness / staleness</text><text class="nsub" x="264" y="256">ps/pgrep + local 15s clock</text>
+
+  <path class="edge bad" d="M418 63 C 470 63, 470 63, 520 63"/>
+  <path class="edge bad" d="M418 123 C 470 123, 470 123, 520 123"/>
+  <path class="edge bad" d="M418 183 C 470 183, 470 183, 520 183"/>
+  <path class="edge bad" d="M418 243 C 470 243, 470 243, 520 243"/>
+  <text x="430" y="35" class="elabel">4 side channels · CPU storm · disagreeing state</text>
+
+  <!-- transcripts sink -->
+  <rect class="node bad" x="520" y="130" width="150" height="52" rx="9"/>
+  <text class="ntext" x="534" y="153">~/.claude jsonl</text><text class="nsub" x="534" y="169">+ ssh spawns</text>
+
+  <!-- arrow to AFTER -->
+  <path class="edge good" d="M690 156 C 730 156, 730 156, 770 156" marker-end="url(#a)"/>
+  <defs><marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--brand)"/></marker></defs>
+
+  <rect class="node good" x="770" y="96" width="118" height="46" rx="9"/>
+  <text class="ntext" x="784" y="116">stream row</text><text class="nsub" x="784" y="132">+account +model</text>
+  <rect class="node good" x="770" y="170" width="118" height="46" rx="9"/>
+  <text class="ntext" x="784" y="190">preview --json</text><text class="nsub" x="784" y="206">1 verb / selection</text>
+</svg>
+</div>
+<p class="cap">Epics 1 &amp; 2 delete the four red side channels. Always-on identity (<code>account</code>, <code>model</code>) rides the
+stream row; the rich card is one <code>agents sessions preview &lt;id&gt; --device &lt;host&gt; --json</code> per user selection —
+which the CLI already ships. No new transport is invented; the ext stops guessing.</p>
+
+<!-- ======================= EPIC 1 ======================= -->
+<h2>The four epics</h2>
+
+<div class="epic">
+  <span class="tag">Epic 1 — Delete the side channels</span>
+  <h3>Ride the stream, stop spawning per tab</h3>
+  <p class="m" style="color:var(--muted)">Kills the 2026-08-25 CPU-storm class at its root and shrinks the ext toward the thin-client contract.</p>
+  <ul>
+    <li><b>PHNX-3184</b> — add <code>account</code> to the CLI <code>SessionWatchRow</code> (backfilled from the index like <code>version</code>), project it through <code>sessionCliStream</code> → <code>sessionPresentationStore</code>, read it in the status bar, then <span class="m">delete <code>fetchSessionIdentity</code> + <code>tryHydrateSessionIdentity</code>.</span></li>
+    <li><b>PHNX-2833</b> — rewrite <code>agentPanel.vscode.ts</code> <code>buildSnapshot</code> to read <code>toolCallCount</code>/<code>todos</code>/topic from the store; demote the 4s interval to a render tick. Fix stale comment <b>N6</b>.</li>
+    <li><b>PHNX-2484</b> — fold the duplicate <code>foreman.sources.ts</code> resolver into <code>core/agentsBin.ts</code>; strip the gemini branch from <code>prewarm.simple.ts</code>; retire <code>sessionParse.ts</code>/<code>readinessDetector.ts</code> in favour of stream fields. <span class="m">Staged deletions, each its own PR.</span></li>
+  </ul>
+</div>
+
+<div class="epic">
+  <span class="tag">Epic 2 — The detail panel becomes the CLI card</span>
+  <h3>Picker parity, with real loading &amp; error states</h3>
+  <ul>
+    <li><b>PHNX-2973</b> — on selection, call <code>agents sessions preview &lt;id&gt; --device &lt;host&gt; --json</code> once; render version · model · account, token count, <span class="diffadd">+N</span> <span class="difford">~N</span> <span class="diffdel">-N</span> changes, skills, hooks, links/PRs, tool histogram, tests, errors. <span class="m">Retires the ext's homegrown <code>getSessionPreviewInfo</code>.</span></li>
+    <li><b>PHNX-2976</b> — thread <code>state: loading | ready | error</code> into <code>DetailPane</code>: skeleton while the verb is in flight, an explicit error row on failure — distinct from an empty section. Fixes <b>N3</b> (drop the local staleness clock; trust stream phase).</li>
+  </ul>
+</div>
+
+<div class="epic">
+  <span class="tag">Epic 3 — The feed tells the truth</span>
+  <h3>No confident-wrong states in the attention surface</h3>
+  <ul>
+    <li><b>PHNX-2975</b> — sort each rendered <em>mixed-phase</em> group by <code>floorSort</code> (<code>renderRows(sortAgents(arr, floorSort))</code>) so "Needs you first" actually floats waiting→failed→stalled above running. Fixes <b>N4</b> (include needs-you in grouping).</li>
+    <li><b>PHNX-2735</b> — add <code>resetSeen</code>/<code>lastResetAt</code> to the store; a follower with no reset arms a one-shot re-request and renders a distinct <code>stream-degraded</code> state — never "0 sessions". Fixes <b>N2</b> (filtered zero-state) and <b>N1</b> (re-key attention).</li>
+    <li><b>PHNX-2978</b> — make <code>cachedInFlight</code> trailing-aware (one guaranteed final run after an in-flight burst) so the running→idle transition always lands.</li>
+  </ul>
+</div>
+
+<div class="epic">
+  <span class="tag">Epic 4 — Reply &amp; launch correctness</span>
+  <h3>Every control does what it looks like it does</h3>
+  <ul>
+    <li><b>PHNX-2980</b> — thread the reply channel into <code>StructuredReply</code>; when <code>kind==='none'</code>, replace chips/Send with the already-computed reason <em>up front</em> ("Runs on yosemite-s1 — open it there to reply").</li>
+    <li><b>PHNX-2553</b> — mint a Claude session id in <code>launchAgent</code> and thread it through <code>buildNewAgentLaunchCommand</code> + <code>registerAgentTerminal</code>, consolidating id-minting so the two launch paths can't drift again.</li>
+    <li><b>N5/N7</b> — delete the dead <code>onAttach</code> chain and the stale ssh/tmux comments. <span class="m">Screenshot attach returns only when a CLI verb accepts an attachment — fail loud until then.</span></li>
+  </ul>
+</div>
+
+<!-- ======================= MOCKUPS ======================= -->
+<h2>UX mockups — before / after</h2>
+
+<h3><span class="id">PHNX-2973 / 2976</span>Detail panel → the CLI card</h3>
+<div class="mock-wrap"><div class="ba">
+  <div>
+    <p class="label before"><span class="dot"></span>Before — 6 fields, no state</p>
+    <div class="device"><div class="chrome"><span class="tl"></span><span class="tl"></span><span class="tl"></span><span class="ttl">AGI EXT · Fleet · detail</span></div>
+      <div class="body dp">
+        <div class="dp-h"><span class="av">C</span><span class="nm">CC · Traces</span><span class="badge b-run kb">running</span></div>
+        <div class="dp-line"><span class="k">status</span><span class="v">running · 3h ago</span></div>
+        <div class="dp-line"><span class="k">pr</span><span class="v">PR#2844</span></div>
+        <div class="dp-sparse">no version · no model · no account · no tokens<br>no changes · no skills · no hooks · no tools · no tests</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="label after"><span class="dot"></span>After — <code>preview --json</code> parity</p>
+    <div class="device"><div class="chrome"><span class="tl"></span><span class="tl"></span><span class="tl"></span><span class="ttl">AGI EXT · Fleet · detail</span></div>
+      <div class="body dp">
+        <div class="dp-h"><span class="av">C</span><span class="nm">CC · Traces</span><span class="badge b-run kb">running</span></div>
+        <div class="dp-line"><span class="k">agent</span><span class="v">Claude v2.1.218 · fable-5 · muqsit@getrush.ai</span></div>
+        <div class="dp-line"><span class="k">where</span><span class="v">yosemite-s1 · agents-cli · HEAD</span></div>
+        <div class="dp-line"><span class="k">activity</span><span class="v">201 msgs · 54.6m tok · 3h 36m · last 1s ago</span></div>
+        <div class="dp-line"><span class="k">changes</span><span class="v"><span class="diffadd">+3</span> <span class="difford">~3</span> <span class="diffdel">-7</span> · 9 read · 311 tools</span></div>
+        <div class="dp-line"><span class="k">skills</span><span class="v">fleet:mint-auth</span></div>
+        <div class="dp-line"><span class="k">hooks</span><span class="v">UserPromptSubmit ×60 · PreToolUse:Bash ×36 <span class="diffdel">(36 failed)</span></span></div>
+        <div class="dp-line"><span class="k">tools</span><span class="v">Bash 280 · Edit 11 · Read 9 · Write 6</span></div>
+        <div class="dp-line"><span class="k">links</span><span class="v">PR#2844 · PR#2849 · <span class="diffadd">tests 1 pass</span></span></div>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <p class="label after" style="margin-bottom:6px"><span class="dot"></span>Loading &amp; error states (PHNX-2976)</p>
+      <div class="device"><div class="body dp">
+        <div class="dp-h"><span class="av">C</span><span class="nm">CC · Traces</span><span class="badge b-run kb">running</span></div>
+        <div class="dp-line"><span class="k">agent</span><span class="skel" style="width:180px"></span></div>
+        <div class="dp-line"><span class="k">changes</span><span class="skel" style="width:120px"></span></div>
+        <div class="dp-line" style="color:var(--failed)"><span class="k" style="color:var(--failed)">error</span><span>preview unreachable on yosemite-s1 · <span style="text-decoration:underline">retry</span></span></div>
+      </div></div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">Left is today's pane — the same complaint Muqsit raised: "even the session preview in the CLI is much better." Right is the exact
+data the CLI already computes, now shown in the panel, plus a skeleton while the one-shot verb resolves and a real error row when a peer is unreachable.</p>
+
+<h3><span class="id">PHNX-2975</span>"Needs you first" actually floats the waiting sessions</h3>
+<div class="mock-wrap"><div class="ba">
+  <div>
+    <p class="label before"><span class="dot"></span>Before — toggle ON, nothing moves</p>
+    <div class="device"><div class="chrome"><span class="tl"></span><span class="tl"></span><span class="tl"></span><span class="ttl">Needs you first ▣ · badge 2</span></div>
+      <div class="body">
+        <div class="frow"><span class="glyph g-stall">◐</span><div class="main"><div class="t">CC · refactor prewarm</div><div class="sub">yosemite-m1 · stalled 9h 04m</div></div><span class="badge b-stall">stalled</span></div>
+        <div class="frow"><span class="glyph g-stall">◐</span><div class="main"><div class="t">Codex · migrate dispatch</div><div class="sub">mark-1 · stalled 8h 41m</div></div><span class="badge b-stall">stalled</span></div>
+        <div class="frow"><span class="glyph g-wait">◍</span><div class="main"><div class="t">CC · release attest</div><div class="sub">zion · waiting on you 2m</div></div><span class="badge b-wait">waiting</span></div>
+        <div class="frow"><span class="glyph g-wait">◍</span><div class="main"><div class="t">Grok · api audit</div><div class="sub">mac-mini · waiting on you 40s</div></div><span class="badge b-wait">waiting</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="label after"><span class="dot"></span>After — PHASE_RANK on a mixed list</p>
+    <div class="device"><div class="chrome"><span class="tl"></span><span class="tl"></span><span class="tl"></span><span class="ttl">Needs you first ▣ · badge 2</span></div>
+      <div class="body">
+        <div class="sectlbl hot">▲ waiting on you</div>
+        <div class="frow sel"><span class="glyph g-wait">◍</span><div class="main"><div class="t">Grok · api audit</div><div class="sub">mac-mini · waiting on you 40s</div></div><span class="badge b-wait">waiting</span></div>
+        <div class="frow"><span class="glyph g-wait">◍</span><div class="main"><div class="t">CC · release attest</div><div class="sub">zion · waiting on you 2m</div></div><span class="badge b-wait">waiting</span></div>
+        <div class="sectlbl">stalled</div>
+        <div class="frow"><span class="glyph g-stall">◐</span><div class="main"><div class="t">Codex · migrate dispatch</div><div class="sub">mark-1 · stalled 8h 41m</div></div><span class="badge b-stall">stalled</span></div>
+        <div class="frow"><span class="glyph g-stall">◐</span><div class="main"><div class="t">CC · refactor prewarm</div><div class="sub">yosemite-m1 · stalled 9h 04m</div></div><span class="badge b-stall">stalled</span></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<p class="cap">The rank table (<code>waiting:0, failed:1, stalled:2, idle:3, running:4, done:5</code>) was already correct — the fix is to apply it to
+a phase-mixed list instead of pre-partitioned buckets where every comparison is a tie. The two sessions actually blocked on you rise to the top.</p>
+
+<h3><span class="id">PHNX-2980</span>Unreachable agents state the reason before the click</h3>
+<div class="mock-wrap"><div class="ba">
+  <div>
+    <p class="label before"><span class="dot"></span>Before — a Send that fails after you type</p>
+    <div class="device"><div class="body">
+      <div class="frow"><span class="glyph g-wait">◍</span><div class="main"><div class="t">Kimi · scrape leads</div><div class="sub">yosemite-s1 · raw tty · waiting</div>
+        <div class="reply">
+          <div class="q">Proceed with the 200-row batch?</div>
+          <span class="chip">Yes, all 200</span><span class="chip">First 20 only</span>
+          <div class="txt"><input value="only the verified ones" readonly><span class="send">Send</span></div>
+          <div class="ptr">✗ click Send → "Runs on yosemite-s1 — open it there to reply"</div>
+        </div>
+      </div></div>
+    </div></div>
+  </div>
+  <div>
+    <p class="label after"><span class="dot"></span>After — honest state, no dead input</p>
+    <div class="device"><div class="body">
+      <div class="frow"><span class="glyph g-wait">◍</span><div class="main"><div class="t">Kimi · scrape leads</div><div class="sub">yosemite-s1 · raw tty · waiting</div>
+        <div class="reply dead">
+          <div class="q">Proceed with the 200-row batch?</div>
+          <div class="unreach"><span class="ic">⌘</span><span>No reply channel here — <b style="color:var(--text)">open the terminal on yosemite-s1</b> to answer.</span></div>
+          <div style="margin-top:8px"><span class="chip" style="border-color:var(--brand-ring);color:var(--brand)">Open on yosemite-s1 →</span></div>
+        </div>
+      </div></div>
+    </div></div>
+  </div>
+</div></div>
+<p class="cap">The reason string is already computed in <code>deriveReplyTargetFromRemote</code> — today it only appears <em>after</em> a failed Send.
+The fix threads <code>reply.kind</code> into <code>StructuredReply</code> and shows it up front, with a real "open it there" affordance instead of a fake text box.
+The four genuinely-reachable channels (terminal · tmux · cloud · team) keep their full controls.</p>
+
+<h3><span class="id">PHNX-2735</span>"No data" is not the same as "nothing running"</h3>
+<div class="mock-wrap"><div class="ba">
+  <div>
+    <p class="label before"><span class="dot"></span>Before — confident &amp; wrong</p>
+    <div class="device"><div class="body" style="text-align:center;padding:34px 12px">
+      <div style="font-size:24px;color:var(--idle)">◍</div>
+      <div style="font-size:13px;margin-top:8px">No running sessions.</div>
+      <div style="font-size:11.5px;color:var(--dim);margin-top:4px">Dispatch an agent to get started.</div>
+      <div style="font-family:var(--mono);font-size:9.5px;color:var(--failed);margin-top:12px">(follower never received a reset — the fleet is actually busy)</div>
+    </div></div>
+  </div>
+  <div>
+    <p class="label after"><span class="dot"></span>After — degraded, self-healing</p>
+    <div class="device"><div class="body" style="text-align:center;padding:34px 12px">
+      <div class="skel" style="width:44px;height:44px;border-radius:12px;margin:0 auto"></div>
+      <div style="font-size:13px;margin-top:12px">Reconnecting to the fleet stream…</div>
+      <div style="font-size:11.5px;color:var(--dim);margin-top:4px">No snapshot yet — re-requesting. This isn't an empty fleet.</div>
+      <div style="margin-top:12px"><span class="chip" style="border-color:var(--brand-ring);color:var(--brand)">Retry now</span></div>
+    </div></div>
+  </div>
+</div></div>
+<p class="cap">A surface whose job is noticing stalled work must never report "nothing running" from an <em>absence</em> of data. The store learns
+whether it has ever seen a reset; a follower that hasn't re-requests one on a one-shot timer and shows this degraded state meanwhile.</p>
+
+<!-- ======================= SEQUENCING ======================= -->
+<h2>Sequencing</h2>
+<ol class="seq">
+  <li><b>Close the 5 done tickets</b> with a file:line evidence comment on each. <span style="color:var(--muted)">— reversible, and each was independently verified at HEAD.</span></li>
+  <li><b>Epic 4 first (ext-only, self-contained):</b> PHNX-2980 + PHNX-2553 + N5/N7 cleanup — one PR, fast win, no CLI dependency. <span style="color:var(--muted)">Ships the "every control works" story with a screen recording.</span></li>
+  <li><b>Epic 3:</b> PHNX-2975 + N4, then PHNX-2735 + N1/N2, then PHNX-2978 — feed-truth fixes, ext-only, each with a floorModel test.</li>
+  <li><b>Epic 1 CLI half:</b> add <code>account</code> (+ any missing card fields) to <code>SessionWatchRow</code> in agents-cli — one PR there, since it's a fleet-wide stream change.</li>
+  <li><b>Epic 1 ext half + Epic 2:</b> consume the enriched stream, wire <code>preview --json</code> into DetailPane, then delete the side channels (3184, 2833, 2484) and the homegrown preview. <span style="color:var(--muted)">Deletions land only once their replacement is proven.</span></li>
+</ol>
+
+<div class="callout">
+  <div class="h">Guardrails carried through</div>
+  Every change is a worktree + PR under <code>.agents/worktrees/</code>; non-author review before merge; each behavior ships with a real-path test (no mocking beyond the shared vscode double); CHANGELOG + AGENTS.md/README updated when behavior changes. CLI stream changes go through agents-cli's own release train. No new scheduler, no new side channel — the ext only ever renders CLI state and calls CLI verbs.
+</div>
+
+<div class="foot">
+  AGI EXT backlog audit · HEAD 7f3311f · 4 independent code sweeps · 5 close · 10 fix · 7 new · 2026-08-28
+</div>
+
+</div>
+</body>
+</html>

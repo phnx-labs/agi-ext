@@ -135,13 +135,20 @@ export function buildNewAgentLaunchCommand(
     defaultModel?: string;
     cwd?: string;
     projectSlug?: string;
+    /**
+     * Caller-minted session id (Claude only). buildAgentLaunchCommand emits
+     * `--session-id` for it, which is what arms the auto-label poller and lets the
+     * status bar / Resume / Fork key off the tab from the first tick (PHNX-2553).
+     * Left null for harnesses that coin their own id.
+     */
+    sessionId?: string | null;
   } = {},
 ): string {
   const agent = options.agentKey ?? 'auto';
   const isLocal = options.local === true || (options.pickHost === true && !options.host);
   return buildAgentLaunchCommand(
     agent,
-    null,
+    context.sessionId ?? null,
     context.defaultModel,
     undefined,
     undefined,
