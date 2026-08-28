@@ -52,7 +52,7 @@ deleting it or shrinking it, never adding to it.
 | `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | ext-invented lifecycle classifier (ps/pgrep loops) | move the signal into the CLI daemon, project it on the stream |
-| `src/vscode/agentPanel.vscode.ts` 4s `buildSnapshot` | re-parses transcripts + spawns `agents sessions --include tools` per tick | bind to stream fields; `toolCallCount` belongs on the stream |
+| `src/vscode/agentPanel.vscode.ts` `buildSnapshot` | the 4s poll timer is gone (PHNX-2833: rebuilds now ride the session CLI stream, trailing-coalesced), but each rebuild still re-parses transcripts + spawns `agents sessions --include tools` | bind to stream fields; `toolCallCount` belongs on the stream |
 | `src/vscode/foreman.sources.ts` `runJson` | second agents-bin resolver bypassing `src/core/agentsBin.ts` | fold into `agentsBin.ts` |
 | gemini anywhere (`src/core/agents.ts` `newGemini`, prewarm config) | harness is hard-deprecated in the CLI | DELETE |
 

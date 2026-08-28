@@ -6,6 +6,26 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.341] - 2026-08-28
 
+- **Removed the settings dashboard's last three ACTING poll timers (PHNX-3447, PHNX-3435).**
+  Finishes the one-scheduler cleanup PHNX-2833 started (the agents-cli daemon, or a CLI
+  command it drives, is the only scheduler). `ui/settings/App.tsx` still owned three
+  `setInterval` fetch loops: the Linear/GitHub backlog (30s `fetchUnifiedTasks`), the floor
+  tasks + terminals (30s `fetchTasks`/`fetchAllTerminals`, PHNX-3435), and the watchdog log
+  (15s `getWatchdogLog`). All three are gone. The floor is already streamed from the host
+  on every session-CLI-stream change (`refreshFloorFromSessionStream`), so the live path
+  needs no poll; the ticket backlog and watchdog log — neither of which is agents-cli daemon
+  state fed by that stream — now refresh on real signals instead: panel-visible and VS Code
+  window-focus-regained, the same Issues Panel precedent PR #9 set. The host forwards focus
+  via `vscode.window.onDidChangeWindowState` → a new `windowFocusRegained` message, consumed
+  by the `useWindowFocusRegained` hook. Trade-off (same as the Issues Panel): the backlog and
+  watchdog log no longer tick during a long, continuously-focused session with no alt-tab —
+  the visible/focus signals and the manual refresh cover that gap. Also adds regression
+  coverage for PR #9's previously-untested replacement paths
+  (`notifyAgentPanelSessionUpdate`, `refreshIfVisible`/`armFocusRefresh`,
+  `computeFloorThroughput`/`pushFloorThroughput`). Source: `ui/settings/App.tsx`,
+  `ui/settings/hooks/useWindowFocusRegained.ts`, `src/vscode/settings.vscode.ts`,
+  `ui/settings/shared/protocol.ts`.
+
 - **The Agents feed is virtualized so a long fleet no longer renders every row (PHNX-2458).**
   The Floor feed used to mount a DOM node per session/activity row; a busy fleet made the
   panel janky and slow to scroll. It now reuses the Sessions tab's windowing primitive
