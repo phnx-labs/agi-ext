@@ -4,7 +4,6 @@ import { sessionPresentationStore } from '../core/sessionPresentationStore';
 export interface ForkPickHostLaunch<ViewColumn> {
   command: string;
   host?: string;
-  local: boolean;
   viewColumn: ViewColumn;
 }
 
@@ -104,7 +103,6 @@ export async function handleForkPickHost<ViewColumn>(opts: {
   const fork = await opts.openFork({
     command: forkCommand(request.sessionId, request.host),
     host: request.host,
-    local: request.local,
     viewColumn: opts.viewColumn,
   });
   opts.recordFork({

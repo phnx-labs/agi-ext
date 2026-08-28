@@ -27,8 +27,6 @@ export interface ForkSessionTarget {
   host?: string;
 }
 
-export type ForkSessionIntent = 'continue' | 'recap';
-
 export type ForkSessionRequest =
   | {
       ok: true;
@@ -80,7 +78,6 @@ function forkPrompt(sessionId: string, moved: boolean, sourceMachine: string | u
 export function buildForkSessionRequest(
   source: ForkSessionSource,
   target?: ForkSessionTarget,
-  intent: ForkSessionIntent = 'continue',
 ): ForkSessionRequest {
   const sessionId = source.sessionId?.trim();
   if (!sessionId) return { ok: false, reason: 'no_session' };
@@ -104,8 +101,6 @@ export function buildForkSessionRequest(
     moved,
     local: !host,
     strategy: strategyForForkAgent(agentKey),
-    prompt: intent === 'recap'
-      ? `/recap ${sessionId}`
-      : forkPrompt(sessionId, moved, sourceMachine),
+    prompt: forkPrompt(sessionId, moved, sourceMachine),
   };
 }

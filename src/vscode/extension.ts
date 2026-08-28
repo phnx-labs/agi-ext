@@ -1434,6 +1434,9 @@ export async function activate(context: vscode.ExtensionContext) {
     registerForkPickSessionCommand(vscode.commands.registerCommand, () => forkPickedSession(context))
   );
 
+  // Now an alias of Fork: the `agents sessions fork` verb is always recap-seeded,
+  // so there is no separate non-recap fork. Kept as a distinct command because the
+  // user actively invokes Fork (Recap).
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.forkRecap', () => forkCurrentSession(context))
   );
@@ -4780,8 +4783,8 @@ async function spawnWithContext(context: vscode.ExtensionContext): Promise<void>
  * AGENT_TERMINAL_ID env propagates into the verb's `agents run` child (the verb
  * inherits the env), so the sibling session publishes under this terminalId and
  * lineage / restore / Fleet tracking keep working. Mirrors the tracked-terminal
- * setup in openSingleAgentWithQueue, minus the message queue and id-minting the
- * fork verb owns itself.
+ * setup in openSingleAgentWithQueue — including arming agentReady — minus the
+ * message queue and the up-front session id, which the fork verb mints itself.
  */
 async function openForkTerminal(
   context: vscode.ExtensionContext,
@@ -4808,6 +4811,9 @@ async function openForkTerminal(
   // from that box's active feed rather than looking it up locally.
   if (opts.forkHost) terminals.setHost(terminal, opts.forkHost);
   readiness.registerTerminal(terminal);
+  // Arm agentReady like the launcher this mirrors; the verb mints the session id,
+  // so none is supplied here (the id-carrying fast path arms once it publishes).
+  readiness.armAgentReady(terminal, agentKey ? { agentKey, cwd: workspaceFolder } : {});
 
   const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
   if (resumeKey) terminals.setAgentType(terminal, resumeKey);

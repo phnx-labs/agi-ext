@@ -4,6 +4,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.340] - 2026-08-28
+
+- **Fork commands now delegate to `agents sessions fork` (PHNX-3409).** `Agents: Fork`,
+  `Agents: Fork (Recap)`, and `Agents: Fork (Pick Host)` all run the CLI verb, which
+  resolves the source across the fleet and launches a recap-seeded same-harness sibling.
+  Fork and Fork (Recap) now behave identically since the verb is always recap-seeded. The
+  extension only presents the command and tracks its terminal, so fork lineage, restore,
+  and Fleet tracking keep working.
+
 ## [0.9.339] - 2026-08-28
 
 - **A session that goes idle stops rendering as "running" (PHNX-2978).** Floor rebuilds

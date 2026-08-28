@@ -69,7 +69,6 @@ describe('fork command contributions', () => {
     expect(launch).toEqual({
       command: "agents sessions fork 'source-id' --device 'chosen-host'",
       host: 'chosen-host',
-      local: false,
       viewColumn: 'Active',
     });
     expect(edge).toEqual({
@@ -101,7 +100,6 @@ describe('fork command contributions', () => {
     expect(launch).toEqual({
       command: "agents sessions fork 'source-id'",
       host: undefined,
-      local: true,
       viewColumn: 'Active',
     });
   });
