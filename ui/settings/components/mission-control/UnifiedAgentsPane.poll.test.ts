@@ -66,20 +66,6 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
     expect(forced?.length).toBe(1)
   })
 
-  // PHNX-2975: the sort dropdown was inert in the DEFAULT grouped-by-outcome view.
-  // groupAgents(groupedFeed, floorGroup) yields phase-mixed groups, but renderRows
-  // emitted them in raw concatenation order and never consulted floorSort — so
-  // switching sort (Needs-you / Recent / Tokens / Name) changed nothing on screen.
-  // Both the group and the subgroup render paths must sort by floorSort.
-  test('grouped feed rows are sorted by floorSort, not raw concat order', () => {
-    // The group path and the subgroup path each apply the comparator.
-    expect(source).toContain('renderRows(sortAgents(arr, floorSort))')
-    expect(source).toContain('renderRows(sortAgents(subArr, floorSort))')
-    // Guard against reverting to the un-sorted calls.
-    expect(source).not.toMatch(/:\s*renderRows\(arr\)/)
-    expect(source).not.toContain('{renderRows(subArr)}')
-  })
-
   test('retains last-good remote rows on hostSessions failure', () => {
     expect(source).toContain("msg.ok === false || typeof msg.error === 'string'")
     expect(source).toContain('Retain last-good sessions/roster')

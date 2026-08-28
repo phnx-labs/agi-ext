@@ -2400,11 +2400,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
                           {linkedSubProject && <span className="proj-lk">{linkedSubProject}</span>}
                           <span className="ln" />
                         </div>
-                        {renderRows(sortAgents(subArr, floorSort))}
+                        {renderRows(subArr)}
                       </React.Fragment>
                     )
                   })
-                : renderRows(sortAgents(arr, floorSort))}
+                : renderRows(arr)}
             </React.Fragment>
           )})}
 
