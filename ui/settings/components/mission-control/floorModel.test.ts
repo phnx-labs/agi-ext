@@ -1,10 +1,8 @@
 import { describe, test, expect } from 'bun:test'
 import type { UnifiedTask, ProjectRule } from '../../types'
 import {
-  derivePhase,
-  deriveNeeds,
-  deriveStalled,
-  heartbeatLevel,
+  phaseFromStatus,
+  sortByAttention,
   latestTodos,
   todoProgress,
   parseStructuredQuestion,
@@ -28,10 +26,9 @@ import {
   todosWithFallback,
   linearIssueLabel,
   linearIssueUrl,
-  PHASE_RANK,
-  STALL_THRESHOLD_MS,
+  PHASE_PROGRESS_RANK,
+  ATTENTION_KIND_RANK,
   type FloorAgent,
-  type FloorPhase,
   type StructuredQuestion,
   type ManagedProject,
   type TodoItem,
@@ -143,145 +140,41 @@ function makeTask(overrides: Partial<UnifiedTask> = {}): UnifiedTask {
   }
 }
 
-describe('derivePhase — precedence failed > waiting > running > done > idle', () => {
-  test('a failed agent stays failed even with a stale waiting flag (it cannot take input)', () => {
-    expect(
-      derivePhase({ status: 'failed', waitingForInput: true, active: true, prOpenUnreviewed: false }),
-    ).toBe('failed')
+describe('phaseFromStatus — a straight CLI-status rename, no classification', () => {
+  // The extension classifies nothing: this only renames the CLI-reported status of a
+  // local tab the stream has not indexed yet. needs-you / awaiting-input / stall all ride
+  // the CLI attention stream, so there is no waitingForInput/PR/heartbeat promotion here.
+  test('completed -> done, failed -> failed, running -> running', () => {
+    expect(phaseFromStatus('completed')).toBe('done')
+    expect(phaseFromStatus('failed')).toBe('failed')
+    expect(phaseFromStatus('running')).toBe('running')
   })
 
-  test('a completed agent lands in done, never needs-you, despite a stale waiting flag (RUSH-1522)', () => {
-    expect(
-      derivePhase({ status: 'completed', waitingForInput: true, active: false, prOpenUnreviewed: false }),
-    ).toBe('done')
-  })
-
-  test('a stopped agent settles to idle despite a stale waiting flag (RUSH-1522)', () => {
-    expect(
-      derivePhase({ status: 'stopped', waitingForInput: true, active: false, prOpenUnreviewed: false }),
-    ).toBe('idle')
-  })
-
-  test('a real pending ask on a live agent still classifies as waiting', () => {
-    expect(
-      derivePhase({ status: 'running', waitingForInput: true, active: true, prOpenUnreviewed: false }),
-    ).toBe('waiting')
-    // An open-but-quiet tab with an unanswered ask is still answerable.
-    expect(
-      derivePhase({ status: 'idle', waitingForInput: true, active: false, prOpenUnreviewed: false }),
-    ).toBe('waiting')
-  })
-
-  test('failed wins over a running status', () => {
-    expect(
-      derivePhase({ status: 'failed', waitingForInput: false, active: true, prOpenUnreviewed: false }),
-    ).toBe('failed')
-  })
-
-  test('running requires the process to be active', () => {
-    expect(
-      derivePhase({ status: 'running', waitingForInput: false, active: true, prOpenUnreviewed: false }),
-    ).toBe('running')
-  })
-
-  test('a stale running (process gone) settles to idle', () => {
-    expect(
-      derivePhase({ status: 'running', waitingForInput: false, active: false, prOpenUnreviewed: false }),
-    ).toBe('idle')
-  })
-
-  test('completed maps to done', () => {
-    expect(
-      derivePhase({ status: 'completed', waitingForInput: false, active: false, prOpenUnreviewed: true }),
-    ).toBe('done')
-  })
-
-  test('stopped and idle both settle to idle', () => {
-    expect(
-      derivePhase({ status: 'stopped', waitingForInput: false, active: false, prOpenUnreviewed: false }),
-    ).toBe('idle')
-    expect(
-      derivePhase({ status: 'idle', waitingForInput: false, active: true, prOpenUnreviewed: false }),
-    ).toBe('idle')
+  test('stopped and idle both settle to idle (a quiet, unfinished tab)', () => {
+    expect(phaseFromStatus('stopped')).toBe('idle')
+    expect(phaseFromStatus('idle')).toBe('idle')
   })
 })
 
-describe('deriveNeeds', () => {
-  test('waiting and failed always need attention', () => {
-    expect(deriveNeeds('waiting', false)).toBe(true)
-    expect(deriveNeeds('failed', false)).toBe(true)
+describe('sortByAttention — needs-you order comes from the CLI attention kind', () => {
+  test('orders question -> permission -> plan_review -> declared -> failure -> stall -> review', () => {
+    const kinds = ['review', 'stall', 'failure', 'declared', 'plan_review', 'permission', 'question'] as const
+    const agents = kinds.map((k, i) => makeAgent({ id: `${k}-${i}`, needs: true, attentionKind: k }))
+    expect(sortByAttention(agents).map((a) => a.attentionKind)).toEqual([
+      'question', 'permission', 'plan_review', 'declared', 'failure', 'stall', 'review',
+    ])
+    // The rank table is the single source of that order.
+    expect(ATTENTION_KIND_RANK.question).toBeLessThan(ATTENTION_KIND_RANK.permission)
+    expect(ATTENTION_KIND_RANK.permission).toBeLessThan(ATTENTION_KIND_RANK.plan_review)
+    expect(ATTENTION_KIND_RANK.failure).toBeLessThan(ATTENTION_KIND_RANK.stall)
+    expect(ATTENTION_KIND_RANK.stall).toBeLessThan(ATTENTION_KIND_RANK.review)
   })
 
-  test('done needs attention only when its PR is unreviewed', () => {
-    expect(deriveNeeds('done', true)).toBe(true)
-    expect(deriveNeeds('done', false)).toBe(false)
-  })
-
-  test('running and idle never need attention', () => {
-    expect(deriveNeeds('running', true)).toBe(false)
-    expect(deriveNeeds('idle', true)).toBe(false)
-  })
-
-  test('a stalled agent needs attention', () => {
-    expect(deriveNeeds('stalled', false)).toBe(true)
-  })
-
-  test('self-promotion: an open PR climbs into needs-you once CI settles', () => {
-    // Still running, but CI went green -> promote (the "ready to review" moment).
-    expect(deriveNeeds('running', true, 'passed')).toBe(true)
-    // Running with a red PR -> promote (needs a look).
-    expect(deriveNeeds('running', true, 'failed')).toBe(true)
-    // CI still running -> stay in the live lane, not needs-you.
-    expect(deriveNeeds('running', true, 'running')).toBe(false)
-    // Done + green -> needs review.
-    expect(deriveNeeds('done', true, 'passed')).toBe(true)
-    // Done + CI still running -> not yet.
-    expect(deriveNeeds('done', true, 'running')).toBe(false)
-  })
-
-  test('unknown CI falls back to the prior done+PR rule', () => {
-    expect(deriveNeeds('done', true, null)).toBe(true)
-    expect(deriveNeeds('running', true, null)).toBe(false)
-    expect(deriveNeeds('done', false, null)).toBe(false)
-  })
-})
-
-describe('deriveStalled — a running agent gone quiet', () => {
-  const now = 1_000_000_000_000
-
-  test('running past the threshold is stalled; just under is not', () => {
-    expect(deriveStalled(now - STALL_THRESHOLD_MS, 'running', now)).toBe(true)
-    expect(deriveStalled(now - (STALL_THRESHOLD_MS - 1), 'running', now)).toBe(false)
-  })
-
-  test('an already-stalled agent that is still quiet stays stalled', () => {
-    expect(deriveStalled(now - 5 * STALL_THRESHOLD_MS, 'stalled', now)).toBe(true)
-  })
-
-  test('waiting / failed / done / idle never become stalled', () => {
-    const old = now - 10 * STALL_THRESHOLD_MS
-    for (const phase of ['waiting', 'failed', 'done', 'idle'] as const) {
-      expect(deriveStalled(old, phase, now)).toBe(false)
-    }
-  })
-
-  test('unknown last-activity (0 or non-finite) never raises a false stall', () => {
-    expect(deriveStalled(0, 'running', now)).toBe(false)
-    expect(deriveStalled(Number.NaN, 'running', now)).toBe(false)
-  })
-})
-
-describe('heartbeatLevel — live / stale / dead by silence age', () => {
-  test('fresh is live, past 1x is stale (amber), past 2x is dead (red)', () => {
-    expect(heartbeatLevel(0)).toBe('live')
-    expect(heartbeatLevel(STALL_THRESHOLD_MS - 1)).toBe('live')
-    expect(heartbeatLevel(STALL_THRESHOLD_MS)).toBe('stale')
-    expect(heartbeatLevel(2 * STALL_THRESHOLD_MS - 1)).toBe('stale')
-    expect(heartbeatLevel(2 * STALL_THRESHOLD_MS)).toBe('dead')
-  })
-
-  test('a non-finite age reads as live', () => {
-    expect(heartbeatLevel(Number.NaN)).toBe('live')
+  test('within one kind, the most-stuck (oldest activity) leads; no-kind rows sort last', () => {
+    const fresh = makeAgent({ id: 'fresh', attentionKind: 'question', lastActivityMs: 2000 })
+    const stuck = makeAgent({ id: 'stuck', attentionKind: 'question', lastActivityMs: 1000 })
+    const noKind = makeAgent({ id: 'nokind', attentionKind: undefined })
+    expect(sortByAttention([fresh, noKind, stuck]).map((a) => a.id)).toEqual(['stuck', 'fresh', 'nokind'])
   })
 })
 
@@ -464,32 +357,31 @@ describe('sortAgents', () => {
   // Root AGENTS.md "Purpose": rank by PROGRESS, not liveness. Every phase that has
   // STOPPED progressing outranks `running`, and `done` is the terminal state below
   // both — so idle-but-unfinished work is never the bottom of the list (RUSH-2838).
-  test("'needs' orders by PHASE_RANK (waiting < failed < stalled < idle < running < done)", () => {
+  test("'needs' orders by PHASE_PROGRESS_RANK (waiting < failed < idle < running < done)", () => {
     const agents = [
       makeAgent({ id: 'idle', phase: 'idle' }),
       makeAgent({ id: 'done', phase: 'done' }),
       makeAgent({ id: 'running', phase: 'running' }),
-      makeAgent({ id: 'stalled', phase: 'stalled' }),
       makeAgent({ id: 'failed', phase: 'failed' }),
       makeAgent({ id: 'waiting', phase: 'waiting' }),
     ]
     const ordered = sortAgents(agents, 'needs').map((a) => a.id)
-    expect(ordered).toEqual(['waiting', 'failed', 'stalled', 'idle', 'running', 'done'])
-    const ranks = sortAgents(agents, 'needs').map((a) => PHASE_RANK[a.phase])
+    expect(ordered).toEqual(['waiting', 'failed', 'idle', 'running', 'done'])
+    const ranks = sortAgents(agents, 'needs').map((a) => PHASE_PROGRESS_RANK[a.phase])
     expect(ranks).toEqual([...ranks].sort((x, y) => x - y))
   })
 
   test('idle-but-unfinished outranks running, and done is terminal below both', () => {
     // The invariant itself, independent of the exact permutation above: an idle agent
-    // is unfinished work that stopped progressing (derivePhase sends a FINISHED agent
-    // to 'done'), so it is the one to raise — a running agent needs nothing.
-    expect(PHASE_RANK.idle).toBeLessThan(PHASE_RANK.running)
-    expect(PHASE_RANK.running).toBeLessThan(PHASE_RANK.done)
-    for (const stopped of ['waiting', 'failed', 'stalled', 'idle'] as const) {
-      expect(PHASE_RANK[stopped]).toBeLessThan(PHASE_RANK.running)
+    // is unfinished work that stopped progressing (the CLI maps a FINISHED agent to
+    // 'done'), so it is the one to raise — a running agent needs nothing.
+    expect(PHASE_PROGRESS_RANK.idle).toBeLessThan(PHASE_PROGRESS_RANK.running)
+    expect(PHASE_PROGRESS_RANK.running).toBeLessThan(PHASE_PROGRESS_RANK.done)
+    for (const stopped of ['waiting', 'failed', 'idle'] as const) {
+      expect(PHASE_PROGRESS_RANK[stopped]).toBeLessThan(PHASE_PROGRESS_RANK.running)
     }
-    expect(derivePhase({ status: 'completed', waitingForInput: false, active: false, prOpenUnreviewed: false })).toBe('done')
-    expect(derivePhase({ status: 'running', waitingForInput: false, active: false, prOpenUnreviewed: false })).toBe('idle')
+    expect(phaseFromStatus('completed')).toBe('done')
+    expect(phaseFromStatus('stopped')).toBe('idle')
   })
 
   test("'tok' orders by throughput descending", () => {

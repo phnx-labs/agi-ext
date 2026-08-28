@@ -3,7 +3,7 @@ import { Icon } from './icons'
 import { FileIcon, ImageIcon } from './dispatchIcons'
 import { AgentAvatar, agentIdFromPrefix } from './AgentAvatar'
 import { StructuredReply, type ReplyCallbacks } from './StructuredReply'
-import { heartbeatLevel, linearIssueLabel, linearIssueUrl, NO_TOPIC, sessionTaskLine, todoProgress, type FloorAgent, type FloorAttachment, type FloorTicket } from './floorModel'
+import { linearIssueLabel, linearIssueUrl, NO_TOPIC, sessionTaskLine, todoProgress, type FloorAgent, type FloorAttachment, type FloorTicket } from './floorModel'
 import { sinceFromMs } from './floorAdapter'
 import { useNow } from './useNow'
 import { CardChecklist } from './TodoChecklist'
@@ -91,13 +91,14 @@ interface FeedItemProps {
 }
 
 function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, onFreeText, onAttach, onOpenPlan, onOpenAttachment, onOpenTerminal }: FeedItemProps) {
-  // Live heartbeat: only a running / stalled agent with a known last-activity stamp ticks.
-  // The shared 1s ticker re-renders just this leaf, never the parent list.
+  // Live "since" ticker: only a running agent with a known last-activity stamp ticks.
+  // The shared 1s ticker re-renders just this leaf, never the parent list. Staleness is
+  // NOT invented here from a wall-clock threshold — a genuine stall is a CLI attention
+  // row (`attentionKind === 'stall'`), so the stall styling keys off that alone.
   const now = useNow(1000)
-  const beats = a.lastActivityMs > 0 && (a.phase === 'running' || a.phase === 'stalled')
+  const beats = a.lastActivityMs > 0 && a.phase === 'running'
   const ageMs = beats ? Math.max(0, now - a.lastActivityMs) : NaN
-  const level = beats ? heartbeatLevel(ageMs) : 'live'
-  const stalled = a.phase === 'stalled' || level !== 'live'
+  const stalled = a.attentionKind === 'stall'
   const liveSince = beats ? sinceFromMs(ageMs) : a.since
 
   const tok = plainTok(a.tok, plain)
@@ -166,10 +167,10 @@ function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, on
     // and that question is the line that matters.
     !(plain && (!!a.resp.trim() || (a.needs && !!a.question)))
   // The now-line is a LIVE-activity indicator — only meaningful while the agent is
-  // actively working (running) or stuck mid-action (stalled). For an idle / needs-you /
+  // actively working (running) or stuck mid-action (a CLI stall). For an idle / needs-you /
   // done agent there's no live activity, and the verb is just the "Thinking..." fallback,
   // so showing it reads as a contextless "Thinking..." on a paused card.
-  const isActive = a.phase === 'running' || a.phase === 'stalled'
+  const isActive = a.phase === 'running' || stalled
   const showNowline = !plain && isActive && !!a.verb && !(showSummary && taskLine === nowlineText)
 
   const marker =
@@ -245,7 +246,7 @@ function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, on
           {tok && (
             <span className="tps">{!plain && <Icon name="zap" size={11} />}{tok}</span>
           )}
-          <span className={`hb ${level}`}>
+          <span className={`hb${stalled ? ' stall' : ''}`}>
             {beats && <Icon name="clock" size={10} />}{liveSince} ago
           </span>
         </span>

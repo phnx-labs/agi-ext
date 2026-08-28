@@ -61,8 +61,8 @@ describe('needsReconnect / sessionBand', () => {
   test('reconnect wins even over a done phase (a crashed session is resumable, not finished)', () => {
     expect(sessionBand(mk({ liveStatus: 'crashed', phase: 'done' }))).toBe('reconnect')
   })
-  test('attention band = live but not progressing (idle / stalled / waiting / failed)', () => {
-    for (const phase of ['idle', 'stalled', 'waiting', 'failed'] as const) {
+  test('attention band = live but not progressing (idle / waiting / failed)', () => {
+    for (const phase of ['idle', 'waiting', 'failed'] as const) {
       expect(sessionBand(mk({ phase }))).toBe('attention')
     }
     // a running session IS progressing, so it stays in the active band, not attention
@@ -135,13 +135,12 @@ describe('sortSessions — recency vs creation are distinct', () => {
       mk({ id: 'done', phase: 'done' }),
       mk({ id: 'run', phase: 'running' }),
       mk({ id: 'idle', phase: 'idle' }),
-      mk({ id: 'stalled', phase: 'stalled' }),
       mk({ id: 'failed', phase: 'failed' }),
       mk({ id: 'waiting', phase: 'waiting' }),
       mk({ id: 'orph', liveStatus: 'orphaned', phase: 'idle' }),
     ]
     expect(sortSessions(rows, 'status', true).map((a) => a.id))
-      .toEqual(['orph', 'waiting', 'failed', 'stalled', 'idle', 'run', 'done'])
+      .toEqual(['orph', 'waiting', 'failed', 'idle', 'run', 'done'])
   })
   test('the status sort agrees with the band grouping it sits next to', () => {
     // `Sort: Status` and the default `Group: state` are two views of one ranking, so a
@@ -192,11 +191,11 @@ describe('groupSessions — starred pinned to a single top section', () => {
 })
 
 describe('groupSessions — attention band ranks progress-stopped work above running', () => {
-  test('idle/stalled sessions surface in "Needs attention" ABOVE the running band', () => {
+  test('idle sessions surface in "Needs attention" ABOVE the running band', () => {
     const list = [
       mk({ id: 'run', phase: 'running', lastActivityMs: 9_000 }),
       mk({ id: 'idle', phase: 'idle', lastActivityMs: 5_000 }),
-      mk({ id: 'stall', phase: 'stalled', lastActivityMs: 1_000 }),
+      mk({ id: 'stall', phase: 'idle', lastActivityMs: 1_000 }),
     ]
     const secs = groupSessions(list, 'state', 'recent', true)
     expect(secs.map((s) => s.label)).toEqual(['Needs attention', 'Running'])

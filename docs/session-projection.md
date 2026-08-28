@@ -62,6 +62,31 @@ The extension may retain presentation metadata needed to restore a tab, but it d
 cache a candidate harness session or parse transcript directories to manufacture one.
 When identity is absent from the stream, the correct fix is a CLI projection change.
 
+## Needs-you attention
+
+The Fleet "Needs you" section is a pure projection of the CLI attention rows the stream
+carries (`RemoteAttention` in `src/core/remoteSessions.ts`, joined onto their session in
+`sessionPresentationStore.sessions()`). The extension classifies nothing:
+
+- **Membership** is `attention.state === 'open'`, never a client heuristic. An
+  as-yet-unindexed local tab carries no attention and so never enters the section from the
+  client side — the moment the stream indexes it, the projected row supplies the real
+  attention.
+- **Per-row reason and order** come from `attention.kind`. `ATTENTION_KIND_RANK`
+  (`floorModel.ts`) is the single ranker: question → permission → plan_review → declared →
+  failure → stall → review, most-stuck-first within a kind. An interactive hand-back
+  (question / permission / plan_review / declared) renders as a decision card, a failure as
+  a failure card, and a stall / review as a plain row.
+- **Stall is a CLI signal, not a client guess.** A wedged agent is `attention.kind ===
+  'stall'` on the stream. The extension does not run a wall-clock heartbeat threshold to
+  invent a "stalled" state, and `FloorPhase` carries no `stalled` member — phase is a
+  straight rename of the CLI-reported status (`RemotePhase`; `phaseFromStatus` for an
+  unindexed local tab). `PHASE_PROGRESS_RANK` orders that CLI-provided phase on the
+  Sessions surface and the feed's idle/running/done lanes; it is not the needs-you ranker.
+
+If a field the section needs is ever absent from the stream, the fix is a CLI projection
+change (add it to the attention row), never a client re-derivation.
+
 ## Failure semantics
 
 - A missing CLI binary is a visible prerequisite failure.

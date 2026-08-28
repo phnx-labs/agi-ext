@@ -30,9 +30,11 @@ describe('decisionReason — why-blocked label + chip', () => {
     expect(r.label).toBe('WAITING ON YOU')
     expect(r.chip?.text).toBe('question')
   })
-  test('failed / stalled phases keep their own labels and no chip', () => {
+  test('failed phase and a CLI stall keep their own labels and no chip', () => {
     expect(decisionReason(agent({ phase: 'failed', question: null })).label).toBe('FAILED — NEEDS YOU')
-    expect(decisionReason(agent({ phase: 'stalled', question: null })).chip).toBeNull()
+    const stalled = decisionReason(agent({ attentionKind: 'stall', question: null }))
+    expect(stalled.label).toBe('STALLED — NEEDS YOU')
+    expect(stalled.chip).toBeNull()
   })
   test('no question ⇒ plain waiting label, no chip', () => {
     const r = decisionReason(agent({ question: null }))

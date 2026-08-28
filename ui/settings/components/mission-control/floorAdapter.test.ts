@@ -257,7 +257,7 @@ describe('toFloorAgentFromUnified', () => {
     expect(a.pinned).toBe(true)
   })
 
-  test('a headless agent does not parse its last message into a question', () => {
+  test('an unprojected headless agent defers waiting/needs to the CLI attention stream', () => {
     const a = toFloorAgentFromUnified(
       baseUnified({
         id: 'agent-x',
@@ -274,10 +274,14 @@ describe('toFloorAgentFromUnified', () => {
       }),
       { pinned: new Set(), workspaceRepo: null, nowMs: NOW },
     )
-    expect(a.phase).toBe('waiting')
+    // The ext no longer re-derives 'waiting' from the raw agent status — phase is a
+    // straight rename of the reported status (idle), and needs-you / the parsed question
+    // ride the CLI attention stream, which has not indexed this tab yet.
+    expect(a.phase).toBe('idle')
     expect(a.project).toBe('prix-api')
     expect(a.branch).toBe('feat-rl')
     expect(a.needs).toBe(false)
+    expect(a.attentionKind).toBeUndefined()
     expect(a.question).toBeNull()
   })
 
@@ -423,6 +427,7 @@ describe('toFloorAgentFromRemote', () => {
     expect(a.tok).toBe(88)
     expect(a.since).toBe('42s')
     expect(a.needs).toBe(true)
+    expect(a.attentionKind).toBe('question')
     expect(a.pr).toBe('#50')
     expect(a.ticket).toBe('RUSH-812')
     expect(a.createdTickets).toEqual(['RUSH-901'])
