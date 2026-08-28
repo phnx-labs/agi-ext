@@ -46,6 +46,11 @@ const vscode = getVsCodeApi()
 const icons = getIcons() as IconConfig
 const BUILT_IN_AGENTS = createBuiltInAgents(icons)
 const UNIFIED_TASKS_REFRESH_MS = 30_000
+// De-dup window for the focus/visible-entry backstop refetches (floor tasks +
+// terminals, watchdog log). A window-restore fires BOTH the panel-visible effect
+// and `windowFocusRegained` — without a shared guard they double-fire a real CLI
+// subprocess on the host, the exact redundant-spawn class PHNX-3447 removes.
+const BACKSTOP_REFETCH_DEDUP_MS = 1_500
 
 function getAgentWithHighestRunningCount(runningCounts: RunningCounts): string | null {
   const candidates: Array<[string, number]> = [
@@ -117,6 +122,13 @@ export default function App() {
   const [unifiedTasksLoading, setUnifiedTasksLoading] = useState(false)
   const [unifiedTasksLoaded, setUnifiedTasksLoaded] = useState(false)
   const unifiedTasksRefreshAtRef = useRef(0)
+  // Shared de-dup timestamps so the panel-visible effect and the focus-regained
+  // backstop can't double-fire the same floor/watchdog refetch (PHNX-3447).
+  // Seeded to -Infinity (not 0) so the FIRST refetch always passes the window
+  // regardless of the wall clock's magnitude — `Date.now() - (-Infinity)` is
+  // always ≥ the window, so a low/mocked clock can't suppress the initial fetch.
+  const floorBackstopAtRef = useRef(-Infinity)
+  const watchdogBackstopAtRef = useRef(-Infinity)
   const [cycleInfo, setCycleInfo] = useState<CycleInfo | null>(null)
   const [availableSources, setAvailableSources] = useState<{ linear: boolean; github: boolean }>({
     linear: false, github: false
@@ -453,6 +465,8 @@ export default function App() {
   // look-at-it signal drives the refresh instead of a poll.
   useEffect(() => {
     if (activeTab !== 'floor' || !watchdogEnabled || !panelVisible) return
+    if (Date.now() - watchdogBackstopAtRef.current < BACKSTOP_REFETCH_DEDUP_MS) return
+    watchdogBackstopAtRef.current = Date.now()
     vscode.postMessage({ type: 'getWatchdogLog' })
   }, [activeTab, watchdogEnabled, panelVisible])
 
@@ -466,11 +480,15 @@ export default function App() {
         && Date.now() - unifiedTasksRefreshAtRef.current >= UNIFIED_TASKS_REFRESH_MS) {
       fetchUnifiedTasks()
     }
-    if (activeTab === 'floor' && tasksLoaded) {
+    if (activeTab === 'floor' && tasksLoaded
+        && Date.now() - floorBackstopAtRef.current >= BACKSTOP_REFETCH_DEDUP_MS) {
+      floorBackstopAtRef.current = Date.now()
       vscode.postMessage({ type: 'fetchTasks' })
       vscode.postMessage({ type: 'fetchAllTerminals' })
     }
-    if (activeTab === 'floor' && watchdogEnabled && panelVisible) {
+    if (activeTab === 'floor' && watchdogEnabled && panelVisible
+        && Date.now() - watchdogBackstopAtRef.current >= BACKSTOP_REFETCH_DEDUP_MS) {
+      watchdogBackstopAtRef.current = Date.now()
       vscode.postMessage({ type: 'getWatchdogLog' })
     }
   })

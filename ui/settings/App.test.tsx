@@ -177,4 +177,23 @@ describe('App unified task refresh', () => {
 
     await act(async () => { root.unmount() })
   })
+
+  // The window-restore case names two triggers (panel-visible + focus-regained)
+  // that can land together; the shared de-dup guard must collapse them to ONE
+  // real host refetch (PHNX-3447 — the redundant-spawn class this ticket removes).
+  test('a second focus-regained inside the de-dup window does not re-fire the floor backstop', async () => {
+    const root = await mountApp()
+    await dispatch({ type: 'tasksData', tasks: [] })
+
+    await dispatch({ type: 'windowFocusRegained' })
+    const tasksAfterFirst = count('fetchTasks')
+    const terminalsAfterFirst = count('fetchAllTerminals')
+
+    // Same mocked clock (`now` unchanged) → within BACKSTOP_REFETCH_DEDUP_MS → skipped.
+    await dispatch({ type: 'windowFocusRegained' })
+    expect(count('fetchTasks')).toBe(tasksAfterFirst)
+    expect(count('fetchAllTerminals')).toBe(terminalsAfterFirst)
+
+    await act(async () => { root.unmount() })
+  })
 })

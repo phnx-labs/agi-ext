@@ -69,8 +69,15 @@ describe('settings.vscode — floor throughput pushed, not polled (PHNX-2833/PHN
     expect(settings).toMatch(/refreshFloorFromSessionStream\(\)[\s\S]*?pushFloorThroughput\(\);/);
   });
 
-  test('window-focus-regained is forwarded to the webview (PHNX-3447/PHNX-3435)', () => {
+  test('window-focus-regained is forwarded to the webview only on focus GAINED (PHNX-3447/PHNX-3435)', () => {
     expect(settings).toContain('vscode.window.onDidChangeWindowState');
-    expect(settings).toContain("type: 'windowFocusRegained'");
+    // Must be CONNECTED, not just present: the `windowFocusRegained` post is
+    // gated on `state.focused` inside the onDidChangeWindowState handler. An
+    // inverted condition (posting on focus LOST) would refetch at the wrong time
+    // and must fail this test rather than ship — the weak "both substrings exist
+    // somewhere" form the review flagged could not catch that.
+    expect(settings).toMatch(
+      /onDidChangeWindowState\(\(state\)\s*=>\s*\{[\s\S]*?if\s*\(state\.focused\)[\s\S]*?type:\s*'windowFocusRegained'/,
+    );
   });
 });
