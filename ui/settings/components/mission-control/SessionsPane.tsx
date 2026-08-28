@@ -15,7 +15,7 @@ import {
   type SessionScope,
 } from './sessionsModel'
 import { sessionRowView, type SessionRowView } from './recapModel'
-import { useVirtualList, type VirtualListItem } from './useVirtualList'
+import { useVirtualList } from './useVirtualList'
 
 // The Sessions surface: one place to see every session you own — local + remote,
 // active + orphaned — and resume any of them, or a whole project's worth after a
