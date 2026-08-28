@@ -28,7 +28,7 @@ import {
   SESSIONS_PER_PAGE,
   createBuiltInAgents,
 } from './constants'
-import { useSystemTheme, getVsCodeApi, getIcons, postMessage, usePanelVisibility } from './hooks'
+import { useSystemTheme, getVsCodeApi, getIcons, postMessage, usePanelVisibility, useWindowFocusRegained } from './hooks'
 import { validateAliasName } from './utils'
 
 // New layout shell
@@ -398,16 +398,21 @@ export default function App() {
     }
   }, [activeTab, tasksLoaded, tasksLoading, unifiedTasksLoaded, unifiedTasksLoading, contextLoaded, contextLoading])
 
+  // Refresh the Linear/GitHub backlog on a real signal, never a blind cadence
+  // (PHNX-3447 / one-scheduler rule). Tickets are intentionally NOT agents-cli
+  // daemon state (PHNX-2932), so a session-stream trigger isn't the right fix —
+  // re-fetch when the panel becomes visible again (this effect) and when the
+  // window regains focus (the shared useWindowFocusRegained handler below),
+  // exactly the Issues Panel precedent PR #9 set (PHNX-2833).
+  // UNIFIED_TASKS_REFRESH_MS is no longer a poll interval — it is a de-dup
+  // window so the visible+focus pair (and rapid tab toggling) collapses to at
+  // most one fetch.
   useEffect(() => {
     if ((activeTab !== 'floor' && activeTab !== 'bench') || !unifiedTasksLoaded) return
-    const interval = setInterval(() => {
-      if (unifiedTasksLoading) return
-      const now = Date.now()
-      if (now - unifiedTasksRefreshAtRef.current < UNIFIED_TASKS_REFRESH_MS) return
-      fetchUnifiedTasks()
-    }, UNIFIED_TASKS_REFRESH_MS)
-    return () => clearInterval(interval)
-  }, [activeTab, unifiedTasksLoaded, unifiedTasksLoading])
+    if (!panelVisible || unifiedTasksLoading) return
+    if (Date.now() - unifiedTasksRefreshAtRef.current < UNIFIED_TASKS_REFRESH_MS) return
+    fetchUnifiedTasks()
+  }, [activeTab, unifiedTasksLoaded, unifiedTasksLoading, panelVisible])
 
   // Refetch agent inventories when Panel tab is active and any are missing.
   // The init fetch can fail when agents-cli isn't on PATH yet; this self-heals
@@ -424,40 +429,51 @@ export default function App() {
     vscode.postMessage({ type: 'refreshAgentInventories' })
   }, [activeTab, agentInventories])
 
-  // Stream Floor updates while the floor tab is active. The host watches session
-  // files of all floor terminals + the teams config and pushes
-  // allTerminalsData/tasksData on change (debounced), so activity shows in
-  // near-real-time. The fs-watch subscription is the expensive path, so it stays
-  // gated on visibility — no point watching for a UI nobody is looking at.
-  //
-  // The 30s backstop poll, however, must run whenever the floor is the active
-  // tab, regardless of panelVisible: a webview restored behind another editor
-  // seeds panelVisible=false and onDidChangeViewState only fires on a
-  // transition, so gating the poll on visibility froze the feed until the user
-  // clicked into it. The poll is cheap; run it so a visible-but-mis-seeded floor
-  // still refreshes.
+  // Stream Floor updates while the floor tab is active. While subscribed the
+  // host pushes allTerminalsData/tasksData on every session-stream change
+  // (settings.vscode.ts refreshFloorFromSessionStream), so the live path is
+  // event-driven and needs no poll (PHNX-3435 / one-scheduler rule). The
+  // subscription stays gated on visibility — no point streaming to a UI nobody
+  // is looking at. The mis-seeded case (a webview restored behind another editor
+  // reads panelVisible=false and onDidChangeViewState fires only on a
+  // transition, so it never subscribes) is covered by the focus-regained
+  // backstop below instead of a 30s interval.
   useEffect(() => {
     if (activeTab !== 'floor' || !tasksLoaded) return
     if (panelVisible) vscode.postMessage({ type: 'subscribeFloor' })
-    const interval = setInterval(() => {
-      vscode.postMessage({ type: 'fetchTasks' })
-      vscode.postMessage({ type: 'fetchAllTerminals' })
-    }, 30_000)
     return () => {
-      clearInterval(interval)
       if (panelVisible) vscode.postMessage({ type: 'unsubscribeFloor' })
     }
   }, [activeTab, tasksLoaded, panelVisible])
 
-  // Poll watchdog log when floor tab is active and watchdog is enabled
+  // Fetch the watchdog log when the floor first shows it (this effect) and again
+  // when the window regains focus (the shared handler below) — never on a fixed
+  // cadence (PHNX-3447 / one-scheduler rule). The log is agents-cli daemon state
+  // with no dedicated stream field, so — like the ticket backlog — a real
+  // look-at-it signal drives the refresh instead of a poll.
   useEffect(() => {
     if (activeTab !== 'floor' || !watchdogEnabled || !panelVisible) return
     vscode.postMessage({ type: 'getWatchdogLog' })
-    const interval = setInterval(() => {
-      vscode.postMessage({ type: 'getWatchdogLog' })
-    }, 15_000)
-    return () => clearInterval(interval)
   }, [activeTab, watchdogEnabled, panelVisible])
+
+  // Focus-regained backstop for the three surfaces that a fixed-cadence timer
+  // used to refresh (PHNX-3447 / PHNX-3435). None are fed continuously by the
+  // session CLI stream while the window is unfocused, so re-fetch each the
+  // moment the user tabs back in — the sanctioned replacement for the removed
+  // setInterval polls (PHNX-2833, mirroring the Issues Panel).
+  useWindowFocusRegained(() => {
+    if ((activeTab === 'floor' || activeTab === 'bench') && unifiedTasksLoaded && !unifiedTasksLoading
+        && Date.now() - unifiedTasksRefreshAtRef.current >= UNIFIED_TASKS_REFRESH_MS) {
+      fetchUnifiedTasks()
+    }
+    if (activeTab === 'floor' && tasksLoaded) {
+      vscode.postMessage({ type: 'fetchTasks' })
+      vscode.postMessage({ type: 'fetchAllTerminals' })
+    }
+    if (activeTab === 'floor' && watchdogEnabled && panelVisible) {
+      vscode.postMessage({ type: 'getWatchdogLog' })
+    }
+  })
 
   // Global ⌘K / Ctrl+K opens the new-agent composer. This listener only
   // fires when focus is inside the webview; when VS Code's keybinding

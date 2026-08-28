@@ -53,6 +53,10 @@ export type FloorInboundType = FloorInbound['type']
 
 export type FloorOutbound =
   | { type: 'panelVisibility'; visible: boolean }
+  // Posted when the VS Code window regains focus. Drives the focus-regained
+  // refresh backstop for surfaces not fed by the session CLI stream (PHNX-3447 /
+  // PHNX-3435) — see useWindowFocusRegained.
+  | { type: 'windowFocusRegained' }
   | { type: 'tasksData'; tasks: unknown[] }
   | { type: 'allTerminalsData'; terminals: unknown[]; /** True when the follower has not yet observed a CLI stream reset. */ degraded?: boolean }
   | { type: 'unifiedTasksData'; tasks: unknown[]; cycleInfo: unknown | null }

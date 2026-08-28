@@ -3533,11 +3533,23 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
     });
   });
 
+  // Forward window-focus-regained to the webview so the surfaces that aren't
+  // fed by the session CLI stream (the Linear/GitHub backlog, the floor
+  // backstop, the watchdog log) can refresh the moment the user tabs back in,
+  // instead of on a fixed-cadence poll (PHNX-3447 / PHNX-3435, mirroring the
+  // Issues Panel's onDidChangeWindowState refresh from PR #9 / PHNX-2833). This
+  // is an event listener, not a scheduler — it never acts, it only nudges a
+  // read the webview owns.
+  const windowFocusListener = vscode.window.onDidChangeWindowState((state) => {
+    if (state.focused) settingsPanel?.webview.postMessage({ type: 'windowFocusRegained' });
+  });
+
   settingsPanel.onDidDispose(() => {
     settingsPanel = undefined;
     terminalListener.dispose();
     terminalCloseListener.dispose();
     visibilityListener.dispose();
+    windowFocusListener.dispose();
     if (terminalUpdateTimeout) clearTimeout(terminalUpdateTimeout);
     cleanupSessionWatchers();
     cleanupFloorWatchers();
