@@ -87,6 +87,7 @@ import {
 import { PlanReview } from './PlanReview'
 import { FailureCard } from './FailureCard'
 import { ticketKey } from './dispatchInput'
+import { useVirtualList, type VirtualListItem } from './useVirtualList'
 import type {
   InstalledAgent, DispatchHost, DispatchTarget, DispatchRequest, PendingPlan, PlanStep,
 } from './dispatch.types'
@@ -594,6 +595,81 @@ function FeedRow({ onOpenTask, ...props }: React.ComponentProps<typeof FeedItem>
   )
 }
 
+// ---------- Agents feed virtualization (PHNX-2458) ----------
+// Reuses the same fixed-offset windowing primitive as SessionsPane. Rows are
+// variable-height, so we measure rendered rows with ResizeObserver and fall back
+// to type-specific estimates for rows that have not mounted yet.
+
+const DEFAULT_ROW_H = 140
+const DEFAULT_HEADER_H = 45
+const DEFAULT_SAVED_VIEWS_H = 70
+const DEFAULT_PLAN_REVIEW_H = 130
+const DEFAULT_NEEDS_CLUSTER_H = 80
+const DEFAULT_FAILURE_CARD_H = 120
+const DEFAULT_ATTENTION_RECEIPT_H = 45
+const DEFAULT_STATUS_H = 45
+const DEFAULT_HOST_FRESHNESS_H = 35
+const DEFAULT_RECENT_EMPTY_H = 45
+const FEED_OVERSCAN = 6
+
+type FeedVItem = VirtualListItem & (
+  | { kind: 'savedViews'; height: number; key: 'savedViews' }
+  | { kind: 'needsHeader'; count: number; height: number; key: 'needsHeader' }
+  | { kind: 'planReview'; plan: PendingPlan; height: number; key: string }
+  | { kind: 'needsCluster'; cluster: FloorAgent[]; height: number; key: string }
+  | { kind: 'feedRow'; agent: FloorAgent; height: number; key: string }
+  | { kind: 'failureCard'; agent: FloorAgent; height: number; key: string }
+  | { kind: 'activityHeader'; count: number; height: number; key: 'activityHeader' }
+  | { kind: 'attentionReceipt'; event: { type?: string; key?: string; state?: string; source?: string; question?: string | { text?: string } }; index: number; height: number; key: string }
+  | { kind: 'idleHeader'; count: number; height: number; key: 'idleHeader' }
+  | { kind: 'runningHeader'; count: number; grouped: boolean; height: number; key: 'runningHeader' }
+  | { kind: 'groupHeader'; label: string; count: number; projectPill?: string; height: number; key: string }
+  | { kind: 'subgroupHeader'; label: string; count: number; projectPill?: string; height: number; key: string }
+  | { kind: 'statusMessage'; node: React.ReactNode; height: number; key: string }
+  | { kind: 'hostFreshnessLine'; hosts: Array<[string, number]>; height: number; key: 'hostFreshnessLine' }
+  | { kind: 'doneHeader'; count: number; height: number; key: 'doneHeader' }
+  | { kind: 'recentHeader'; count: number; hostFilter: string | null; height: number; key: 'recentHeader' }
+  | { kind: 'recentEmpty'; height: number; key: 'recentEmpty' }
+)
+
+function defaultHeight(kind: FeedVItem['kind']): number {
+  switch (kind) {
+    case 'savedViews': return DEFAULT_SAVED_VIEWS_H
+    case 'needsHeader':
+    case 'activityHeader':
+    case 'idleHeader':
+    case 'runningHeader':
+    case 'doneHeader':
+    case 'recentHeader':
+    case 'groupHeader':
+    case 'subgroupHeader':
+      return DEFAULT_HEADER_H
+    case 'planReview': return DEFAULT_PLAN_REVIEW_H
+    case 'needsCluster': return DEFAULT_NEEDS_CLUSTER_H
+    case 'failureCard': return DEFAULT_FAILURE_CARD_H
+    case 'feedRow': return DEFAULT_ROW_H
+    case 'attentionReceipt': return DEFAULT_ATTENTION_RECEIPT_H
+    case 'statusMessage': return DEFAULT_STATUS_H
+    case 'hostFreshnessLine': return DEFAULT_HOST_FRESHNESS_H
+    case 'recentEmpty': return DEFAULT_RECENT_EMPTY_H
+  }
+}
+
+/** Wrapper that measures a rendered virtual row and reports its pixel height. */
+function MeasuredRow({ vKey, onMeasure, children }: { vKey: string; onMeasure: (key: string, height: number) => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => onMeasure(vKey, el.offsetHeight)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [vKey, onMeasure])
+  return <div className="vrow" style={{ display: 'flow-root' }} ref={ref}>{children}</div>
+}
+
 export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks, unifiedTasksLoading, onDispatch, onNavigate, onOpenInBench, openDispatchTrigger, quickSpawnTrigger, openDetailTaskId, onDetailTaskConsumed, onThroughputChange, search: floorSearch, onSearch: setFloorSearch, githubRepo, watchdogEnabled = false, watchdogEvents = [], projectRules = [] }: UnifiedAgentsPaneProps) {
   const panelVisible = usePanelVisibility()
   const [newMenuOpen, setNewMenuOpen] = useState(false)
@@ -699,6 +775,18 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [abbrChips, setAbbrChips] = useState<AgentAbbr[]>([])
   const [showBackground, setShowBackground] = useState(false)
   const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews())
+  // Per-row measured heights for the virtualized Agents feed. Stored in a ref so
+  // rapid ResizeObserver callbacks don't churn React state; a tick increments when
+  // a height actually changes so the virtual list recomputes offsets.
+  const measuredHeightsRef = useRef<Map<string, number>>(new Map())
+  const [heightTick, setHeightTick] = useState(0)
+  const recordHeight = useCallback((key: string, height: number) => {
+    const prev = measuredHeightsRef.current.get(key)
+    if (prev === undefined || Math.abs(prev - height) > 1) {
+      measuredHeightsRef.current.set(key, height)
+      setHeightTick((t) => t + 1)
+    }
+  }, [])
 
   const activeViewName = useMemo(() => {
     const cur = { sort: floorSort, status: statusChips, abbrs: abbrChips, search: floorSearch }
@@ -1653,6 +1741,276 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   )
   const groupedFeed = useMemo(() => [...idleFeed, ...runningFeed, ...doneFeed], [idleFeed, runningFeed, doneFeed])
 
+  // Flatten the Agents center into a single windowable item list. Ordering mirrors the
+  // original non-virtualized feed exactly so behavior (selection, scroll, attention rows)
+  // stays identical — only the RENDER path is windowed.
+  const feedItems: FeedVItem[] = useMemo(() => {
+    const out: FeedVItem[] = []
+    const addRow = (a: FloorAgent) => out.push({ kind: 'feedRow', agent: a, height: measuredHeightsRef.current.get(a.id) ?? defaultHeight('feedRow'), key: a.id })
+    const addHeader = (kind: FeedVItem['kind'] & `${string}Header`, key: string, count: number) => out.push({ kind, count, height: measuredHeightsRef.current.get(key) ?? defaultHeight(kind), key } as FeedVItem)
+
+    out.push({ kind: 'savedViews', height: measuredHeightsRef.current.get('savedViews') ?? defaultHeight('savedViews'), key: 'savedViews' })
+
+    if (needsAgents.length > 0 || pendingPlans.length > 0) {
+      addHeader('needsHeader', 'needsHeader', needsAgents.length + pendingPlans.length)
+      for (const plan of pendingPlans) {
+        out.push({ kind: 'planReview', plan, height: measuredHeightsRef.current.get(`plan:${plan.sessionId}`) ?? defaultHeight('planReview'), key: `plan:${plan.sessionId}` })
+      }
+      for (const cluster of questionClusters.filter((c) => c.length > 1)) {
+        const key = `cluster:${cluster[0]?.question?.clusterKey ?? cluster.map((a) => a.id).join(',')}`
+        out.push({ kind: 'needsCluster', cluster, height: measuredHeightsRef.current.get(key) ?? defaultHeight('needsCluster'), key })
+      }
+      for (const c of questionClusters.filter((c) => c.length === 1)) addRow(c[0])
+      for (const a of failedAgents) out.push({ kind: 'failureCard', agent: a, height: measuredHeightsRef.current.get(`fail:${a.id}`) ?? defaultHeight('failureCard'), key: `fail:${a.id}` })
+      for (const a of reviewNeedsAgents) addRow(a)
+    }
+
+    const attentionEvents = feedActivity.filter((event) => event.type === 'attention.receipt')
+    if (attentionEvents.length > 0) {
+      addHeader('activityHeader', 'activityHeader', attentionEvents.length)
+      attentionEvents.forEach((event, index) => {
+        const key = event.key ?? `attention-receipt-${index}`
+        out.push({ kind: 'attentionReceipt', event, index, height: measuredHeightsRef.current.get(key) ?? defaultHeight('attentionReceipt'), key })
+      })
+    }
+
+    if (floorGroup === 'none' && idleFeed.length > 0) {
+      addHeader('idleHeader', 'idleHeader', idleFeed.length)
+      for (const a of idleFeed) addRow(a)
+    }
+
+    const runningLabel = floorGroup === 'none' ? `RUNNING · ${runningFeed.length}` : `GROUPED BY ${floorGroup.toUpperCase()}${floorSubgroup !== 'none' && floorSubgroup !== floorGroup ? ` / ${floorSubgroup.toUpperCase()}` : ''} · ${groupedFeed.length}`
+    out.push({ kind: 'runningHeader', count: floorGroup === 'none' ? runningFeed.length : groupedFeed.length, grouped: floorGroup !== 'none', height: measuredHeightsRef.current.get('runningHeader') ?? defaultHeight('runningHeader'), key: 'runningHeader' })
+    if (cliUnavailable) {
+      out.push({ kind: 'statusMessage', node: null, height: measuredHeightsRef.current.get('cli-unavailable') ?? defaultHeight('statusMessage'), key: 'cli-unavailable' })
+    }
+    if (hostRoster.length === 0 && !syncingHosts && lastRemoteSync > 0) {
+      out.push({ kind: 'statusMessage', node: null, height: measuredHeightsRef.current.get('zero-hosts') ?? defaultHeight('statusMessage'), key: 'zero-hosts' })
+    }
+    if (floorAgents.length === 0 && !syncingHosts && !cliUnavailable) {
+      out.push({ kind: 'statusMessage', node: null, height: measuredHeightsRef.current.get('zero-sessions') ?? defaultHeight('statusMessage'), key: 'zero-sessions' })
+    }
+    const hostFreshnessEntries = Object.entries(hostFreshness)
+    if (hostFreshnessEntries.length > 0) {
+      out.push({ kind: 'hostFreshnessLine', hosts: hostFreshnessEntries, height: measuredHeightsRef.current.get('hostFreshnessLine') ?? defaultHeight('hostFreshnessLine'), key: 'hostFreshnessLine' })
+    }
+    if (floorGroup === 'none') {
+      for (const a of runningFeed) addRow(a)
+    } else {
+      for (const [k, arr] of groupAgents(groupedFeed, floorGroup)) {
+        const linkedProject = managedProjects.find((p) => p.name === k)?.linearProjectName
+        const groupKey = `group:${k}`
+        out.push({ kind: 'groupHeader', label: k, count: arr.length, projectPill: linkedProject, height: measuredHeightsRef.current.get(groupKey) ?? defaultHeight('groupHeader'), key: groupKey })
+        const subgroupActive = floorSubgroup !== 'none' && floorSubgroup !== floorGroup
+        if (subgroupActive) {
+          for (const [subKey, subArr] of groupAgents(arr, floorSubgroup)) {
+            const linkedSubProject = managedProjects.find((p) => p.name === subKey)?.linearProjectName
+            const sgKey = `subgroup:${k}:${subKey}`
+            out.push({ kind: 'subgroupHeader', label: subKey, count: subArr.length, projectPill: linkedSubProject, height: measuredHeightsRef.current.get(sgKey) ?? defaultHeight('subgroupHeader'), key: sgKey })
+            for (const a of subArr) addRow(a)
+          }
+        } else {
+          for (const a of arr) addRow(a)
+        }
+      }
+    }
+
+    if (floorGroup === 'none' && doneFeed.length > 0) {
+      addHeader('doneHeader', 'doneHeader', doneFeed.length)
+      for (const a of doneFeed) addRow(a)
+    }
+
+    if (hostHasNoActive) {
+      addHeader('recentHeader', `recentHeader:${hostFilter}`, recentAgents.length)
+      if (recentAgents.length === 0) {
+        out.push({ kind: 'recentEmpty', height: measuredHeightsRef.current.get('recentEmpty') ?? defaultHeight('recentEmpty'), key: 'recentEmpty' })
+      } else {
+        for (const a of recentAgents) addRow(a)
+      }
+    }
+
+    return out
+  }, [needsAgents.length, pendingPlans, questionClusters, failedAgents, reviewNeedsAgents, feedActivity, floorGroup, idleFeed, runningFeed, groupedFeed, doneFeed, recentAgents, hostHasNoActive, hostFilter, cliUnavailable, hostRoster.length, syncingHosts, lastRemoteSync, floorAgents.length, hostFreshness, floorSubgroup, managedProjects, heightTick])
+
+  const { scrollRef, onScroll, visibleItems, totalHeight, padTop, padBottom } = useVirtualList(feedItems, { overscan: FEED_OVERSCAN })
+
+  // Render one virtual feed item. Kept as a plain closure so every callback used
+  // by a row stays current without a giant dependency list.
+  const renderFeedItem = (it: FeedVItem): React.ReactNode => {
+    switch (it.kind) {
+      case 'savedViews':
+        return (
+          <SavedViews
+            views={savedViews}
+            activeName={activeViewName}
+            onApply={applyView}
+            onSave={saveView}
+            onDelete={deleteView}
+            feedFilters={{
+              group: floorGroup,
+              onGroup: handleFloorGroup,
+              subgroup: floorSubgroup,
+              onSubgroup: setFloorSubgroup,
+              status: statusChips,
+              onToggleStatus: (s) => setStatusChips((cur) => (
+                cur.includes(s) ? cur.filter((c) => c !== s) : [...cur, s]
+              )),
+              abbrs: abbrChips,
+              availableAbbrs: Array.from(new Set(floorAgents.map((a) => a.abbr))).sort(),
+              onToggleAbbr: (a) => setAbbrChips((cur) => (
+                cur.includes(a) ? cur.filter((c) => c !== a) : [...cur, a]
+              )),
+              showBackground,
+              openAttentionCount: needsAgents.length,
+              onToggleBackground: () => setShowBackground((current) => !current),
+            }}
+          />
+        )
+      case 'needsHeader':
+        return (
+          <div className="feed-sec attn">
+            <Icon name="alert" size={11} /> NEEDS YOU · {it.count}{projFilter ? ` · ${projFilter}` : ''}
+            <span className="ln" />
+          </div>
+        )
+      case 'planReview':
+        return (
+          <PlanReview
+            plan={it.plan}
+            onApprove={(edited) => approvePlan(it.plan.sessionId, edited)}
+            onSendBack={(note) => sendBackPlan(it.plan.sessionId, note)}
+          />
+        )
+      case 'needsCluster':
+        return (
+          <NeedsYouClusters
+            clusters={[it.cluster]}
+            onBatchReply={onBatchReply}
+            onReplyOne={selectFloorAgent}
+          />
+        )
+      case 'feedRow':
+        return (
+          <FeedRow onOpenTask={openTaskFromAgent}
+            agent={it.agent}
+            selected={selectedFloorAgent?.id === it.agent.id}
+            plain={plain}
+            onSelect={selectFloorAgent}
+            error={replyErrors.get(it.agent.id)}
+            onOption={onAgentOption}
+            onFreeText={replyToAgent}
+            onAttach={onAttachScreenshot}
+            onOpenPlan={openPlanPreview}
+            onOpenAttachment={openAttachmentPreview}
+            onOpenTerminal={openTerminalForAgent}
+          />
+        )
+      case 'failureCard':
+        return (
+          <FailureCard
+            agent={it.agent}
+            agents={dispatchAgents}
+            onRetry={() => retryFloorAgent(it.agent)}
+            onReassign={(toAgent) => reassignFloorAgent(it.agent, toAgent)}
+          />
+        )
+      case 'activityHeader':
+        return <div className="feed-sec">ACTIVITY<span className="ln" /></div>
+      case 'attentionReceipt':
+        return (
+          <div className="fitem">
+            <AttentionReceipt
+              state={it.event.state ?? 'resolved'}
+              source={it.event.source}
+              question={typeof it.event.question === 'string' ? it.event.question : it.event.question?.text}
+            />
+          </div>
+        )
+      case 'idleHeader':
+        return <div className="feed-sec" title="Unfinished work that has stopped progressing — the highest abandonment risk">IDLE · {it.count}<span className="ln" /></div>
+      case 'runningHeader':
+        return (
+          <div className="feed-sec">{it.grouped ? `GROUPED BY ${floorGroup.toUpperCase()}${floorSubgroup !== 'none' && floorSubgroup !== floorGroup ? ` / ${floorSubgroup.toUpperCase()}` : ''} · ${it.count}` : `RUNNING · ${it.count}`}<span className="ln" />
+            <span
+              className={`fresh${syncingHosts ? ' syncing' : ''}${!syncingHosts && (remoteSyncError || (lastRemoteSync > 0 && nowMs - lastRemoteSync > REMOTE_STALE_MS)) ? ' stale' : ''}`}
+              title={remoteSyncError
+                ? `Last sync failed: ${remoteSyncError}. Click to retry (cached rows stay visible).`
+                : 'Last cross-host sync. Click to refresh remote hosts now.'}
+              onClick={() => { if (!syncingHosts) { setSyncingHosts(true); setRemoteSyncError(null); postMessage({ type: 'fetchHostSessions', force: true }) } }}
+              role="button"
+              data-testid="host-freshness-chip"
+            >
+              <span className="rot"><Icon name="refresh" size={11} /></span>
+              {syncingHosts
+                ? 'refreshing hosts…'
+                : remoteSyncError
+                  ? `sync failed · retry`
+                  : lastRemoteSync > 0
+                    ? `hosts ${sinceFromMs(Math.max(0, nowMs - lastRemoteSync))} ago`
+                    : 'refresh hosts'}
+            </span>
+            {lastLocalSync > 0 && (
+              <span className="fresh local-fresh" title="Last local session seed / event update" data-testid="local-freshness-chip">
+                local {sinceFromMs(Math.max(0, nowMs - lastLocalSync))} ago
+              </span>
+            )}
+          </div>
+        )
+      case 'groupHeader':
+        return (
+          <div className="feed-sec">
+            {it.label} · {it.count}
+            {it.projectPill && <span className="proj-lk">{it.projectPill}</span>}
+            <span className="ln" />
+          </div>
+        )
+      case 'subgroupHeader':
+        return (
+          <div className="feed-sec feed-subsec">
+            {it.label} · {it.count}
+            {it.projectPill && <span className="proj-lk">{it.projectPill}</span>}
+            <span className="ln" />
+          </div>
+        )
+      case 'statusMessage':
+        if (it.key === 'cli-unavailable') {
+          return (
+            <div className="feed-empty feed-empty-warn" role="status" data-testid="cli-unavailable">
+              <strong>agents CLI unavailable.</strong> Cached floor rows stay visible. Install or fix PATH with <span className="mono">agents --version</span>, then refresh hosts.
+            </div>
+          )
+        }
+        if (it.key === 'zero-hosts') {
+          return (
+            <div className="feed-empty" role="status" data-testid="zero-hosts">
+              No hosts registered. Add a device with <span className="mono">agents devices</span>, or open Dispatch once devices are online.
+            </div>
+          )
+        }
+        return (
+          <div className="feed-empty" role="status" data-testid="zero-sessions">
+            No running sessions. Dispatch an agent from the strip above, or refresh hosts if work is running on another machine.
+          </div>
+        )
+      case 'hostFreshnessLine':
+        return (
+          <div className="host-freshness-line" data-testid="per-host-freshness">
+            {it.hosts.map(([host, at]) => (
+              <span key={host} className="host-fresh-pill" title={`Last good data for ${host}`}>
+                {host} · {sinceFromMs(Math.max(0, nowMs - at))}
+              </span>
+            ))}
+          </div>
+        )
+      case 'doneHeader':
+        return <div className="feed-sec">DONE TODAY · {it.count}<span className="ln" /></div>
+      case 'recentHeader':
+        return <div className="feed-sec">RECENT · {it.count}{hostFilter ? ` · ${hostFilter}` : ''}<span className="ln" /></div>
+      case 'recentEmpty':
+        return <div className="detail-empty" style={{ padding: '10px 16px' }}>No recent sessions for this host.</div>
+    }
+  }
+
   const floorRunning = useMemo(() => floorAgents.filter((a) => a.phase === 'running').length, [floorAgents])
   const floorTok = useMemo(() => floorAgents.reduce((s, a) => s + a.tok, 0) + liveThroughput, [floorAgents, liveThroughput])
 
@@ -2241,299 +2599,18 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       onSelectAgent={selectFloorAgent}
     />
   ) : (
-    <div className="feed">
-      <SavedViews
-        views={savedViews}
-        activeName={activeViewName}
-        onApply={applyView}
-        onSave={saveView}
-        onDelete={deleteView}
-        feedFilters={{
-          group: floorGroup,
-          onGroup: handleFloorGroup,
-          subgroup: floorSubgroup,
-          onSubgroup: setFloorSubgroup,
-          status: statusChips,
-          onToggleStatus: (s) => setStatusChips((cur) => (
-            cur.includes(s) ? cur.filter((c) => c !== s) : [...cur, s]
-          )),
-          abbrs: abbrChips,
-          availableAbbrs: Array.from(new Set(floorAgents.map((a) => a.abbr))).sort(),
-          onToggleAbbr: (a) => setAbbrChips((cur) => (
-            cur.includes(a) ? cur.filter((c) => c !== a) : [...cur, a]
-          )),
-          showBackground,
-          openAttentionCount: needsAgents.length,
-          onToggleBackground: () => setShowBackground((current) => !current),
-        }}
-      />
-      {(needsAgents.length > 0 || pendingPlans.length > 0) && (
-        <>
-          <div className="feed-sec attn">
-            <Icon name="alert" size={11} /> NEEDS YOU · {needsAgents.length + pendingPlans.length}{projFilter ? ` · ${projFilter}` : ''}
-            <span className="ln" />
-          </div>
-          {pendingPlans.map((plan) => (
-            <PlanReview
-              key={plan.sessionId}
-              plan={plan}
-              onApprove={(edited) => approvePlan(plan.sessionId, edited)}
-              onSendBack={(note) => sendBackPlan(plan.sessionId, note)}
-            />
+    <div className="feed-col" ref={scrollRef} onScroll={onScroll}>
+      <div className="feed" style={{ height: totalHeight, position: 'relative' }}>
+        <div style={{ transform: `translateY(${padTop}px)` }}>
+          {visibleItems.map((it) => (
+            <MeasuredRow key={it.key} vKey={it.key} onMeasure={recordHeight}>
+              {renderFeedItem(it)}
+            </MeasuredRow>
           ))}
-          <NeedsYouClusters
-            clusters={questionClusters.filter((c) => c.length > 1)}
-            onBatchReply={onBatchReply}
-            onReplyOne={selectFloorAgent}
-          />
-          {questionClusters.filter((c) => c.length === 1).map((c) => (
-            <FeedRow onOpenTask={openTaskFromAgent}
-              key={c[0].id}
-              agent={c[0]}
-              selected={selectedFloorAgent?.id === c[0].id}
-              plain={plain}
-              onSelect={selectFloorAgent}
-              error={replyErrors.get(c[0].id)}
-              onOption={onAgentOption}
-              onFreeText={replyToAgent}
-              onAttach={onAttachScreenshot}
-              onOpenPlan={openPlanPreview}
-              onOpenAttachment={openAttachmentPreview}
-              onOpenTerminal={openTerminalForAgent}
-            />
-          ))}
-          {failedAgents.map((a) => (
-            <FailureCard
-              key={a.id}
-              agent={a}
-              agents={dispatchAgents}
-              onRetry={() => retryFloorAgent(a)}
-              onReassign={(toAgent) => reassignFloorAgent(a, toAgent)}
-            />
-          ))}
-          {reviewNeedsAgents.map((a) => (
-            <FeedRow onOpenTask={openTaskFromAgent}
-              key={a.id}
-              agent={a}
-              selected={selectedFloorAgent?.id === a.id}
-              plain={plain}
-              onSelect={selectFloorAgent}
-              error={replyErrors.get(a.id)}
-              onOption={onAgentOption}
-              onFreeText={replyToAgent}
-              onAttach={onAttachScreenshot}
-              onOpenPlan={openPlanPreview}
-              onOpenAttachment={openAttachmentPreview}
-              onOpenTerminal={openTerminalForAgent}
-            />
-          ))}
-        </>
-      )}
-
-      {feedActivity.some((event) => event.type === 'attention.receipt') && (
-        <>
-          <div className="feed-sec">ACTIVITY<span className="ln" /></div>
-          {feedActivity.filter((event) => event.type === 'attention.receipt').map((event, index) => (
-            <div className="fitem" key={event.key ?? `attention-receipt-${index}`}>
-              <AttentionReceipt
-                state={event.state ?? 'resolved'}
-                source={event.source}
-                question={typeof event.question === 'string' ? event.question : event.question?.text}
-              />
-            </div>
-          ))}
-        </>
-      )}
-
-      {/* Idle sits ABOVE running: unfinished work that stopped progressing is the
-          state most likely to be silently abandoned, so the floor never buries it
-          below the agents that are fine on their own (root AGENTS.md "Purpose"). */}
-      {floorGroup === 'none' && idleFeed.length > 0 && (
-        <>
-          <div className="feed-sec" title="Unfinished work that has stopped progressing — the highest abandonment risk">IDLE · {idleFeed.length}<span className="ln" /></div>
-          {idleFeed.map((a) => (
-            <FeedRow onOpenTask={openTaskFromAgent}
-              key={a.id}
-              agent={a}
-              selected={selectedFloorAgent?.id === a.id}
-              plain={plain}
-              onSelect={selectFloorAgent}
-              error={replyErrors.get(a.id)}
-              onOption={onAgentOption}
-              onFreeText={replyToAgent}
-              onAttach={onAttachScreenshot}
-              onOpenPlan={openPlanPreview}
-              onOpenAttachment={openAttachmentPreview}
-              onOpenTerminal={openTerminalForAgent}
-            />
-          ))}
-        </>
-      )}
-
-      <div className="feed-sec">{floorGroup === 'none' ? `RUNNING · ${runningFeed.length}` : `GROUPED BY ${floorGroup.toUpperCase()}${floorSubgroup !== 'none' && floorSubgroup !== floorGroup ? ` / ${floorSubgroup.toUpperCase()}` : ''} · ${groupedFeed.length}`}<span className="ln" />
-        <span
-          className={`fresh${syncingHosts ? ' syncing' : ''}${!syncingHosts && (remoteSyncError || (lastRemoteSync > 0 && nowMs - lastRemoteSync > REMOTE_STALE_MS)) ? ' stale' : ''}`}
-          title={remoteSyncError
-            ? `Last sync failed: ${remoteSyncError}. Click to retry (cached rows stay visible).`
-            : 'Last cross-host sync. Click to refresh remote hosts now.'}
-          onClick={() => { if (!syncingHosts) { setSyncingHosts(true); setRemoteSyncError(null); postMessage({ type: 'fetchHostSessions', force: true }) } }}
-          role="button"
-          data-testid="host-freshness-chip"
-        >
-          <span className="rot"><Icon name="refresh" size={11} /></span>
-          {syncingHosts
-            ? 'refreshing hosts…'
-            : remoteSyncError
-              ? `sync failed · retry`
-              : lastRemoteSync > 0
-                ? `hosts ${sinceFromMs(Math.max(0, nowMs - lastRemoteSync))} ago`
-                : 'refresh hosts'}
-        </span>
-        {lastLocalSync > 0 && (
-          <span className="fresh local-fresh" title="Last local session seed / event update" data-testid="local-freshness-chip">
-            local {sinceFromMs(Math.max(0, nowMs - lastLocalSync))} ago
-          </span>
-        )}
+          {/* bottom spacer keeps the scrollbar honest */}
+          <div style={{ height: padBottom }} aria-hidden />
+        </div>
       </div>
-      {cliUnavailable && (
-        <div className="feed-empty feed-empty-warn" role="status" data-testid="cli-unavailable">
-          <strong>agents CLI unavailable.</strong> Cached floor rows stay visible. Install or fix PATH with <span className="mono">agents --version</span>, then refresh hosts.
-        </div>
-      )}
-      {hostRoster.length === 0 && !syncingHosts && lastRemoteSync > 0 && (
-        <div className="feed-empty" role="status" data-testid="zero-hosts">
-          No hosts registered. Add a device with <span className="mono">agents devices</span>, or open Dispatch once devices are online.
-        </div>
-      )}
-      {floorAgents.length === 0 && !syncingHosts && !cliUnavailable && (
-        <div className="feed-empty" role="status" data-testid="zero-sessions">
-          No running sessions. Dispatch an agent from the strip above, or refresh hosts if work is running on another machine.
-        </div>
-      )}
-      {Object.keys(hostFreshness).length > 0 && (
-        <div className="host-freshness-line" data-testid="per-host-freshness">
-          {Object.entries(hostFreshness).map(([host, at]) => (
-            <span key={host} className="host-fresh-pill" title={`Last good data for ${host}`}>
-              {host} · {sinceFromMs(Math.max(0, nowMs - at))}
-            </span>
-          ))}
-        </div>
-      )}
-      {floorGroup === 'none'
-        ? runningFeed.map((a) => (
-            <FeedRow onOpenTask={openTaskFromAgent}
-              key={a.id}
-              agent={a}
-              selected={selectedFloorAgent?.id === a.id}
-              plain={plain}
-              onSelect={selectFloorAgent}
-              error={replyErrors.get(a.id)}
-              onOption={onAgentOption}
-              onFreeText={replyToAgent}
-              onAttach={onAttachScreenshot}
-              onOpenPlan={openPlanPreview}
-              onOpenAttachment={openAttachmentPreview}
-              onOpenTerminal={openTerminalForAgent}
-            />
-          ))
-        : [...groupAgents(groupedFeed, floorGroup).entries()].map(([k, arr]) => {
-            // When grouped by project, enrich the header: "N agents" + a Linear project
-            // link pill (mockup: "agents-cli · 8 agents · RUSH · Agents CLI").
-            const projectPill = (axis: FloorGroupBy | 'none', key: string) => (
-              axis === 'project' ? managedProjects.find((p) => p.name === key)?.linearProjectName : undefined
-            )
-            const linkedProject = projectPill(floorGroup, k)
-            const countLabel = floorGroup === 'project'
-              ? `${arr.length} agent${arr.length === 1 ? '' : 's'}`
-              : `${arr.length}`
-            const subgroupActive = floorSubgroup !== 'none' && floorSubgroup !== floorGroup
-            const subgroups = subgroupActive ? [...groupAgents(arr, floorSubgroup).entries()] : []
-            const renderRows = (rows: FloorAgent[]) => rows.map((a) => (
-              <FeedRow onOpenTask={openTaskFromAgent}
-                key={a.id}
-                agent={a}
-                selected={selectedFloorAgent?.id === a.id}
-                plain={plain}
-                onSelect={selectFloorAgent}
-                error={replyErrors.get(a.id)}
-                onOption={onAgentOption}
-                onFreeText={replyToAgent}
-                onAttach={onAttachScreenshot}
-                onOpenPlan={openPlanPreview}
-                onOpenAttachment={openAttachmentPreview}
-                onOpenTerminal={openTerminalForAgent}
-              />
-            ))
-            return (
-            <React.Fragment key={k}>
-              <div className="feed-sec">
-                {k} · {countLabel}
-                {linkedProject && <span className="proj-lk">{linkedProject}</span>}
-                <span className="ln" />
-              </div>
-              {subgroupActive
-                ? subgroups.map(([subKey, subArr]) => {
-                    const linkedSubProject = projectPill(floorSubgroup, subKey)
-                    return (
-                      <React.Fragment key={`${k}:${subKey}`}>
-                        <div className="feed-sec feed-subsec">
-                          {subKey} · {subArr.length}
-                          {linkedSubProject && <span className="proj-lk">{linkedSubProject}</span>}
-                          <span className="ln" />
-                        </div>
-                        {renderRows(subArr)}
-                      </React.Fragment>
-                    )
-                  })
-                : renderRows(arr)}
-            </React.Fragment>
-          )})}
-
-      {floorGroup === 'none' && doneFeed.length > 0 && (
-        <>
-          <div className="feed-sec">DONE TODAY · {doneFeed.length}<span className="ln" /></div>
-          {doneFeed.map((a) => (
-            <FeedRow onOpenTask={openTaskFromAgent}
-              key={a.id}
-              agent={a}
-              selected={selectedFloorAgent?.id === a.id}
-              plain={plain}
-              onSelect={selectFloorAgent}
-              error={replyErrors.get(a.id)}
-              onOption={onAgentOption}
-              onFreeText={replyToAgent}
-              onAttach={onAttachScreenshot}
-              onOpenPlan={openPlanPreview}
-              onOpenAttachment={openAttachmentPreview}
-              onOpenTerminal={openTerminalForAgent}
-            />
-          ))}
-        </>
-      )}
-
-      {hostHasNoActive && (
-        <>
-          <div className="feed-sec">RECENT · {recentAgents.length}{hostFilter ? ` · ${hostFilter}` : ''}<span className="ln" /></div>
-          {recentAgents.length === 0 ? (
-            <div className="detail-empty" style={{ padding: '10px 16px' }}>No recent sessions for this host.</div>
-          ) : recentAgents.map((a) => (
-            <FeedRow onOpenTask={openTaskFromAgent}
-              key={a.id}
-              agent={a}
-              selected={selectedFloorAgent?.id === a.id}
-              plain={plain}
-              onSelect={selectFloorAgent}
-              error={replyErrors.get(a.id)}
-              onOption={onAgentOption}
-              onFreeText={replyToAgent}
-              onAttach={onAttachScreenshot}
-              onOpenPlan={openPlanPreview}
-              onOpenAttachment={openAttachmentPreview}
-              onOpenTerminal={openTerminalForAgent}
-            />
-          ))}
-        </>
-      )}
     </div>
   )
 
@@ -2661,7 +2738,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
             onSidebarWidthChange={(width) => setSidebarWidth(clampSidebarWidth(width))}
           />
         ))}
-        <div className="feed-col">{centerContent}</div>
+        {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
         {rightOpen && <div className="detail-col">{rightContent}</div>}
       </div>
 
