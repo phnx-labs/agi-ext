@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.339] - 2026-08-28
+
+- **The Fleet sort control actually re-sorts the feed (PHNX-2975).** In the default
+  grouped-by-outcome view, switching Sort (Needs-you / Recent / Tokens / Name) changed
+  nothing: each outcome group was rendered in raw idle→running→done concatenation order
+  and never consulted the sort. Each group (and subgroup) is now ordered by the selected
+  sort, so "Needs you first" floats waiting/failed/stalled to the top of every group and
+  "Recent"/"Tokens" order across phases as expected.
+
+- **A session that goes idle stops rendering as "running" (PHNX-2978).** Floor rebuilds
+  were coalesced leading-edge only, so the *last* fact in a burst — structurally the
+  running→idle transition, the one with no follow-up event — was observed but never
+  rendered until a 30s backstop. Rebuild coalescing is now trailing-aware: a fact that
+  lands mid-rebuild gets its own trailing rebuild, so the settled state always paints.
+
 ## [0.9.337] - 2026-08-25
 
 - **Removed the obsolete Claude notifications installer.** The extension no longer

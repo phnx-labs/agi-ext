@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'bun:test';
-import { createTimedCache, cachedInFlight } from './cachedInFlight';
+import { createTimedCache, cachedInFlight, createTrailingCoalesce, coalesceTrailing } from './cachedInFlight';
+
+/** Resolve after the current microtask + timer queue drains. */
+const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe('cachedInFlight', () => {
   test('coalesces concurrent calls for the same key into ONE invocation', async () => {
@@ -74,5 +77,75 @@ describe('cachedInFlight', () => {
     expect(a).toBe('a');
     expect(b).toBe('b');
     expect(seen.sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('coalesceTrailing (PHNX-2978 — never drop the trailing run)', () => {
+  // A controllable fn: each invocation parks on a deferred the test resolves by hand,
+  // so we can land a "mid-flight" call precisely while a run is in progress.
+  function controllable() {
+    let calls = 0;
+    const releases: Array<() => void> = [];
+    const fn = () => {
+      calls++;
+      return new Promise<void>((resolve) => releases.push(resolve));
+    };
+    return {
+      fn,
+      get calls() { return calls; },
+      releaseNext() { const r = releases.shift(); if (r) r(); },
+    };
+  }
+
+  test('a call arriving mid-flight forces exactly one trailing run', async () => {
+    const store = createTrailingCoalesce();
+    const c = controllable();
+
+    coalesceTrailing(store, 'k', c.fn);          // leading run starts
+    await settle();
+    expect(c.calls).toBe(1);
+
+    coalesceTrailing(store, 'k', c.fn);          // arrives mid-flight -> flags pending
+    coalesceTrailing(store, 'k', c.fn);          // also mid-flight -> still one trailing
+    await settle();
+    expect(c.calls).toBe(1);                      // no new run yet; the leading one owns it
+
+    c.releaseNext();                              // leading run settles
+    await settle();
+    expect(c.calls).toBe(2);                      // exactly one trailing run fires
+
+    c.releaseNext();                              // trailing run settles
+    await settle();
+    expect(c.calls).toBe(2);                      // no pending left -> converges, no extra run
+  });
+
+  test('a quiet burst with no overlap does NOT schedule a trailing run', async () => {
+    const store = createTrailingCoalesce();
+    const c = controllable();
+
+    const first = coalesceTrailing(store, 'k', c.fn);
+    c.releaseNext();                              // settles before the next call arrives
+    await first;
+    await settle();
+    expect(c.calls).toBe(1);
+
+    const second = coalesceTrailing(store, 'k', c.fn);   // idle again -> a fresh leading run
+    c.releaseNext();
+    await second;
+    await settle();
+    expect(c.calls).toBe(2);                      // two discrete runs, no phantom trailing
+  });
+
+  test('keys are independent', async () => {
+    const store = createTrailingCoalesce();
+    const a = controllable();
+    const b = controllable();
+    coalesceTrailing(store, 'a', a.fn);
+    coalesceTrailing(store, 'b', b.fn);
+    await settle();
+    expect(a.calls).toBe(1);
+    expect(b.calls).toBe(1);
+    a.releaseNext();
+    b.releaseNext();
   });
 });
