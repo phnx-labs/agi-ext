@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useCallback, useLayoutEffect } from 'react'
+import React, { useMemo, useState, useCallback } from 'react'
 import { Icon } from './icons'
 import {
   needsReconnect,
@@ -15,6 +15,7 @@ import {
   type SessionScope,
 } from './sessionsModel'
 import { sessionRowView, type SessionRowView } from './recapModel'
+import { useVirtualList, type VirtualListItem } from './useVirtualList'
 
 // The Sessions surface: one place to see every session you own — local + remote,
 // active + orphaned — and resume any of them, or a whole project's worth after a
@@ -122,8 +123,8 @@ interface SessionsPaneProps {
 }
 
 type VItem =
-  | { kind: 'header'; section: SessionSection; height: number }
-  | { kind: 'row'; agent: FloorAgent; section: SessionSection; height: number }
+  | { kind: 'header'; section: SessionSection; height: number; key: string }
+  | { kind: 'row'; agent: FloorAgent; section: SessionSection; height: number; key: string }
 
 function rowHeight(expanded: boolean, lastFull: string): number {
   if (!expanded) return ROW_H
@@ -170,60 +171,17 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   const items: VItem[] = useMemo(() => {
     const out: VItem[] = []
     for (const s of sections) {
-      out.push({ kind: 'header', section: s, height: HEADER_H })
+      out.push({ kind: 'header', section: s, height: HEADER_H, key: `h:${s.key}` })
       for (const a of s.agents) {
         const open = expanded.has(a.id)
         const lastFull = open ? sessionRowView(a).lastFull : ''
-        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(open, lastFull) })
+        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(open, lastFull), key: a.id })
       }
     }
     return out
   }, [sections, expanded])
 
-  // Prefix-sum offsets: offsets[i] = pixel top of item i; offsets[n] = total height.
-  const offsets = useMemo(() => {
-    const o = new Array(items.length + 1)
-    o[0] = 0
-    for (let i = 0; i < items.length; i++) o[i + 1] = o[i] + items[i]!.height
-    return o
-  }, [items])
-  const totalH = offsets[items.length] ?? 0
-
-  const scrollRef = useRef<HTMLDivElement | null>(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [viewportH, setViewportH] = useState(600)
-
-  useLayoutEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const measure = () => setViewportH(el.clientHeight)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  // Binary-search the first visible item, then walk to the last — O(log n) + O(visible).
-  const [start, end] = useMemo(() => {
-    const top = scrollTop - OVERSCAN * ROW_H
-    const bottom = scrollTop + viewportH + OVERSCAN * ROW_H
-    if (items.length === 0) return [0, 0]
-    // first i with offsets[i+1] > top
-    let lo = 0
-    let hi = items.length - 1
-    let first = 0
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1
-      if (offsets[mid + 1] > top) { first = mid; hi = mid - 1 } else lo = mid + 1
-    }
-    let last = first
-    while (last < items.length && offsets[last] < bottom) last++
-    return [first, Math.min(last, items.length)]
-  }, [scrollTop, viewportH, offsets, items.length])
-
-  const visible = items.slice(start, end)
-  const padTop = offsets[start] ?? 0
-  const padBottom = totalH - (offsets[end] ?? totalH)
+  const { scrollRef, onScroll, visibleItems: visible, totalHeight, padTop, padBottom } = useVirtualList(items, { overscan: OVERSCAN })
 
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
@@ -297,11 +255,11 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
         </button>
       </div>
 
-      <div className="sx-scroll" ref={scrollRef} onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}>
+      <div className="sx-scroll" ref={scrollRef} onScroll={onScroll}>
         {items.length === 0 ? (
           <div className="sx-empty">No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setProject(null); setHost(null); setSearch('') }}>Clear filters</button>}</div>
         ) : (
-          <div style={{ height: totalH, position: 'relative' }}>
+          <div style={{ height: totalHeight, position: 'relative' }}>
             <div style={{ transform: `translateY(${padTop}px)` }}>
               {visible.map((it, i) =>
                 it.kind === 'header' ? (

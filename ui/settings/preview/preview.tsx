@@ -295,13 +295,30 @@ const linearProjectList: LinearProjectLite[] = [
 // Agents center feed — cache-first host freshness (issue #2030): manual refresh chip,
 // stale styling, per-host last-good pills, and cached running rows (never a blank canvas).
 // URL: ?view=agents | ?view=subtabs&center=agents | default feed with freshness.
-function AgentsFeed(props: { stale?: boolean; showNeeds?: boolean } = {}) {
-  const { stale = true, showNeeds = false } = props
+function AgentsFeed(props: { stale?: boolean; showNeeds?: boolean; bulk?: number } = {}) {
+  const { stale = true, showNeeds = false, bulk = 0 } = props
   const [grp, setGrp] = useState<FloorGroupBy | 'none'>('project')
   const [subgrp, setSubgrp] = useState<FloorGroupBy | 'none'>('host')
   const [srt, setSrt] = useState<'needs' | 'recent' | 'tok' | 'name'>('needs')
   const [showBackground, setShowBackground] = useState(false)
-  const visibleRunning = showBackground ? running : running.filter((a) => a.context !== 'headless')
+  const bulkRows = React.useMemo(() => {
+    if (bulk <= 0) return []
+    return Array.from({ length: bulk }, (_, i) => agent({
+      id: `bulk-${i}`,
+      abbr: (['CC', 'CX', 'KM', 'AG', 'DR'] as const)[i % 5],
+      project: (['rush', 'agents-cli', 'artifacts-cli'])[i % 3],
+      phase: i % 7 === 0 ? 'idle' : 'running',
+      name: `bulk-session-${i}`,
+      verb: i % 3 === 0 ? 'Reading' : 'Editing',
+      target: `src/module-${i % 20}.ts`,
+      tok: i % 4 === 0 ? 10 + i : 0,
+      since: `${i}m`,
+      lastActivityMs: Date.now() - i * 1000,
+    }))
+  }, [bulk])
+  const visibleRunning = showBackground
+    ? [...running, ...bulkRows]
+    : [...running, ...bulkRows].filter((a) => a.context !== 'headless')
   // Per-host last-good ages for the freshness line (cached rows stay visible).
   const hostFresh = [
     { host: 'zion', age: '12s' },
@@ -410,7 +427,10 @@ function AgentsFeed(props: { stale?: boolean; showNeeds?: boolean } = {}) {
 
 function Feed() {
   // Legacy feed URL still works; Agents surface proof uses ?view=agents (cache-first).
-  return <AgentsFeed showNeeds stale={false} />
+  // ?view=feed&bulk=250 renders a large roster so virtualization behavior can be
+  // inspected manually in the browser preview.
+  const bulk = Number(new URLSearchParams(location.search).get('bulk')) || 0
+  return <AgentsFeed showNeeds stale={false} bulk={bulk} />
 }
 
 // Full Agents center: sidebar host grid (cached counts) + agents feed with freshness.
