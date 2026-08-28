@@ -8,8 +8,13 @@
 //              (see extractRepoNameFromLabels in core/tasks.ts).
 //
 // Refresh signals:
-//   onDidChangeVisibility -> immediate fetch when the view becomes visible
-//   60s poll while visible
+//   onDidChangeVisibility  -> immediate fetch when the view becomes visible
+//   onDidChangeWindowState -> re-fetch when the VS Code window regains focus
+//                             (PHNX-2833: no blind interval poll — Linear/
+//                             GitHub tickets are explicitly NOT agents-cli
+//                             daemon state (PHNX-2932: "tickets is a
+//                             duplicate surface"), so re-fetching here is
+//                             fine; a fixed-cadence timer driving it isn't)
 //   manual refresh button
 
 import * as vscode from 'vscode';
@@ -35,8 +40,8 @@ class IssuesPanelProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private snapshot: IssuesSnapshot = EMPTY_SNAPSHOT;
   private webviewReady = false;
-  private pollTimer?: NodeJS.Timeout;
   private inFlight = false;
+  private focusListener?: vscode.Disposable;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -50,21 +55,37 @@ class IssuesPanelProvider implements vscode.WebviewViewProvider {
     view.onDidChangeVisibility(() => {
       if (view.visible) {
         void this.refresh();
-        this.startPolling();
+        this.armFocusRefresh();
       } else {
-        this.stopPolling();
+        this.disarmFocusRefresh();
       }
     });
 
     view.onDidDispose(() => {
-      this.stopPolling();
+      this.disarmFocusRefresh();
       this.view = undefined;
       this.webviewReady = false;
     });
 
     if (view.visible) {
-      this.startPolling();
+      this.armFocusRefresh();
     }
+  }
+
+  // Re-fetch when the window regains focus (the user tabbed back in) instead
+  // of on a fixed cadence — the panel is only stale while the user isn't
+  // looking, and window focus is a real signal for "might be looking again"
+  // (PHNX-2833: no blind interval poll).
+  private armFocusRefresh(): void {
+    if (this.focusListener) return;
+    this.focusListener = vscode.window.onDidChangeWindowState((state) => {
+      if (state.focused) void this.refresh();
+    });
+  }
+
+  private disarmFocusRefresh(): void {
+    this.focusListener?.dispose();
+    this.focusListener = undefined;
   }
 
   private onMessage(msg: any): void {
@@ -126,18 +147,6 @@ class IssuesPanelProvider implements vscode.WebviewViewProvider {
   private postSnapshot(): void {
     if (this.view && this.webviewReady) {
       this.view.webview.postMessage({ type: 'snapshot', data: this.snapshot });
-    }
-  }
-
-  private startPolling(): void {
-    if (this.pollTimer) return;
-    this.pollTimer = setInterval(() => void this.refresh(), 60_000);
-  }
-
-  private stopPolling(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
     }
   }
 }

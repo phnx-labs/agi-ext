@@ -5466,6 +5466,8 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
       if (sessionPresentationStore.apply(event.payload)) {
         void settings.refreshFloorFromSessionStream();
         void syncCanonicalSessionTabLabels(context);
+        const { notifyAgentPanelSessionUpdate } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
+        notifyAgentPanelSessionUpdate();
       }
     }
   });

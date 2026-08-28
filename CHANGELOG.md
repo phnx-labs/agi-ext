@@ -4,6 +4,22 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.341] - 2026-08-28
+
+- **Removed the extension's ACTING poll timers (PHNX-2833).** Three timers fetched or
+  re-parsed on a fixed cadence, violating the one-scheduler rule (the agents-cli daemon,
+  or a CLI command it drives, is the only scheduler): the Agent Panel's 4s
+  `setInterval(refresh)` (spawned CLI subprocesses + re-read the session transcript every
+  tick), the Fleet dashboard's 2.5s `getFloorThroughput` poll from the webview, and the
+  Issues Panel's 60s `setInterval(refresh)` (re-shelled to `gh`/`linear`). The Agent Panel
+  now redraws only when the session CLI stream actually reports a change
+  (`notifyAgentPanelSessionUpdate`, trailing-coalesced so a burst collapses to one rebuild
+  plus a guaranteed catch-up run). Fleet throughput is now pushed from the host whenever
+  the stream changes instead of pulled by the webview. The Issues Panel re-fetches on
+  view-visible and on VS Code window focus regained instead of on a blind interval —
+  Linear/GitHub tickets are intentionally NOT agents-cli daemon state (PHNX-2932), so a
+  companion CLI stream isn't the right fix there; owning no timer is.
+
 ## [0.9.340] - 2026-08-28
 
 - **Fork commands now delegate to `agents sessions fork` (PHNX-3409).** `Agents: Fork`,
