@@ -6,14 +6,55 @@
 /** The subset of a terminal registry entry the status bar reads for identity. */
 export interface StatusIdentitySource {
   /** Session id the version/account below were APPLIED for (the display gate).
-   * Distinct from the entry's retry gate (`identitySessionId`, which requires both
-   * fields present): a version-only harness (Grok/Cursor/Droid) has this set with
-   * a null account, so its version still shows. */
+   * The version/account come from the broadcast watch row (SessionPresentationStore),
+   * not a per-tab CLI fetch (RUSH-3184). A version-only harness (Grok/Cursor/Droid)
+   * has this set with a null account, so its version still shows. */
   identityAppliedSessionId?: string;
   version?: string;
   statusVersion?: string;
   account?: string;
   statusAccount?: string;
+}
+
+/** The identity fields a stream row carries for a session. Both null when the
+ * CLI records no identity (Kimi) or has not indexed it yet. */
+export interface StreamIdentity {
+  version: string | null;
+  account: string | null;
+}
+
+/** What the status bar should stamp on a tab from a broadcast watch row.
+ * `null` when the row is missing (session not yet indexed) — leave the tab
+ * untouched, blank-until-resolved. */
+export interface StreamIdentityStamp {
+  version: string | null;
+  account: string | null;
+  identityAppliedSessionId: string;
+}
+
+/**
+ * Decide the version/account to stamp on a tab from its live stream row — the
+ * single-stream projection that replaced the per-tab `agents sessions <id>
+ * --device <host> --json` respawn (RUSH-3184). Pure so the no-spawn guarantee is
+ * unit-tested directly.
+ *
+ * Returns null when the session is not on the stream yet (do not stamp; the next
+ * stream event retries) OR when the tab has already moved on to another session.
+ * Otherwise returns the row's identity AUTHORITATIVELY — a null field CLEARS a
+ * value left over from a prior binding in the same terminal, never preserves it.
+ */
+export function resolveStreamIdentityStamp(
+  live: StreamIdentity | undefined,
+  liveSessionId: string,
+  currentEntrySessionId: string | undefined,
+): StreamIdentityStamp | null {
+  if (!live) return null;
+  if (currentEntrySessionId && currentEntrySessionId !== liveSessionId) return null;
+  return {
+    version: live.version,
+    account: live.account,
+    identityAppliedSessionId: liveSessionId,
+  };
 }
 
 /** Strip angle brackets/whitespace from an account email; empty -> undefined. */

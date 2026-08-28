@@ -99,7 +99,49 @@ describe('SessionPresentationStore', () => {
       topic: 'Compact the PageHeader across every page',
       label: '',
       cwd: '/home/muqsit/src/github.com/muqsitnawaz/svatlas',
+      version: null,
+      account: null,
     });
     expect(store.liveSession('missing')).toBeUndefined();
+  });
+
+  // RUSH-3184: the status bar reads a session's version + account off THIS
+  // broadcast row instead of spawning a per-tab `agents sessions <id> --device
+  // <host> --json`. `version` rides the stream per RUSH-2205; `account` was added
+  // to the CLI backfill for RUSH-3184.
+  test('liveSession projects version + account off the broadcast row for the status bar', () => {
+    const store = new SessionPresentationStore();
+    store.apply({
+      v: 1, type: 'reset', streamId: 's', sequence: 1, capturedAt: 1, scope: 'yosemite-s1', attention: [],
+      agents: [{
+        rowKey: 'r',
+        sessionId: '022fe0a8-7674-402a-a5e0-248195894663',
+        kind: 'claude',
+        machine: 'yosemite-s1',
+        version: '2.1.207',
+        account: 'muqsit@getrush.ai',
+        sourceDevice: 'yosemite-s1',
+        status: 'running',
+      }],
+    });
+    const live = store.liveSession('022fe0a8-7674-402a-a5e0-248195894663');
+    expect(live?.version).toBe('2.1.207');
+    expect(live?.account).toBe('muqsit@getrush.ai');
+  });
+
+  // A harness the CLI records no account for (or a session the CLI has indexed a
+  // version for but not yet the account) yields null, so the status bar shows the
+  // version alone rather than a prior binding's leftover.
+  test('liveSession yields null version/account when the row omits or blanks them', () => {
+    const store = new SessionPresentationStore();
+    store.apply({
+      v: 1, type: 'reset', streamId: 's', sequence: 1, capturedAt: 1, scope: 'local', attention: [],
+      agents: [
+        { rowKey: 'a', sessionId: 'grok-1', kind: 'grok', version: '1.0.0', account: '   ', sourceDevice: 'local' },
+        { rowKey: 'b', sessionId: 'kimi-1', kind: 'kimi', sourceDevice: 'local' },
+      ],
+    });
+    expect(store.liveSession('grok-1')).toMatchObject({ version: '1.0.0', account: null });
+    expect(store.liveSession('kimi-1')).toMatchObject({ version: null, account: null });
   });
 });

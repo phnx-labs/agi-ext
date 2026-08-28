@@ -18,8 +18,6 @@ import {
   reconcileHosts,
   parseSessionLabelSource,
   SessionLabelSource,
-  parseSessionIdentity,
-  SessionIdentity,
 } from '../core/remoteSessions';
 import type { ProjectRule } from '../core/settings';
 import {
@@ -215,35 +213,14 @@ export async function fetchRemoteSessionLabelSource(
   }
 }
 
-/**
- * Resolve a running session's real `version` + `account` via
- * `agents sessions <id> [--device <device>] --json`. `host` is passed for an
- * offloaded (`--device`) tab whose session lives on another machine; omitted for a
- * local session. This is the authoritative source for the status bar's
- * version/account — `agents view` reports only machine-default install metadata.
- *
- * Returns null when the host is unreachable or the session is not indexed yet;
- * the status-bar hydration simply retries on its next tick.
- */
-export async function fetchSessionIdentity(
-  sessionId: string,
-  host?: string,
-): Promise<SessionIdentity | null> {
-  const agentsBin = await findAgentsCli();
-  const args = host
-    ? ['sessions', sessionId, '--device', host, '--json']
-    : ['sessions', sessionId, '--json'];
-  try {
-    const { stdout } = await execFileAsync(
-      agentsBin,
-      args,
-      { timeout: DETAIL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: pathAugmentedEnv() },
-    );
-    return parseSessionIdentity(stdout, sessionId);
-  } catch {
-    return null;
-  }
-}
+// A session's real `version` + `account` used to be resolved here by spawning
+// `agents sessions <id> [--device <device>] --json` per tab. That side channel
+// was DELETED (RUSH-3184, agi-cli#3019): its event-pumped respawn — one Node+SSH
+// process per remote tab every ~4–5s — was the 2026-08-25 CPU incident. Identity
+// now rides the single watch stream (`version` per RUSH-2205, `account` added to
+// the backfill for RUSH-3184) and the status bar reads it from the broadcast row
+// via `SessionPresentationStore.liveSession()`. Do not reintroduce a per-tab
+// fetch: rule #1 of AGENTS.md.
 
 /**
  * Recap fan-out: recent (historical) sessions across the WHOLE fleet — the local
