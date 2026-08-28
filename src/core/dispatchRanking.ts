@@ -91,49 +91,6 @@ export function mapInventoriesToInstalledAgents(
   return out;
 }
 
-// ---- host load -------------------------------------------------------------
-
-/**
- * Derive the load bucket from the number of active agents on a host and its
- * normalized CPU load (1-min loadavg / core count). Offline hosts are 'off'
- * (handled by the caller). Thresholds mirror the prototype's states:
- *   idle  no agents and quiet CPU
- *   free  ~one agent / light CPU — safe to add work
- *   busy  several agents / loaded CPU — will feel it
- *   hot   CPU saturated (>= ~1.0 per core) — avoid piling on
- * `cpuRatio` is null when unknown (remote probe failed) — then load is derived
- * from agent count alone.
- */
-export function deriveHostLoad(agents: number, cpuRatio: number | null): HostLoad {
-  const ratio = cpuRatio == null ? -1 : cpuRatio;
-  if (ratio >= 1.0 || agents >= 4) return 'hot';
-  if (agents >= 2 || ratio >= 0.6) return 'busy';
-  if (agents >= 1 || ratio >= 0.25) return 'free';
-  return 'idle';
-}
-
-/**
- * Parse the CPU load ratio (1-min loadavg / core count) out of the combined
- * output of `uptime; getconf _NPROCESSORS_ONLN` run on a remote host. Handles
- * both Linux ("load average:") and macOS ("load averages:") uptime formats.
- * Returns null when either the load line or the core count is missing, so the
- * caller falls back to agent-count-only load derivation rather than a
- * half-normalized number.
- */
-export function parseRemoteCpuRatio(output: string): number | null {
-  const loadMatch = output.match(/load averages?:\s*([\d.]+)/i);
-  if (!loadMatch) return null;
-  const load = parseFloat(loadMatch[1]);
-  if (!Number.isFinite(load)) return null;
-  let cores = 0;
-  for (const line of output.split(/\r?\n/)) {
-    const t = line.trim();
-    if (/^\d+$/.test(t)) cores = parseInt(t, 10); // last standalone integer wins
-  }
-  if (cores <= 0) return null;
-  return load / cores;
-}
-
 /** Static cloud dispatch targets — always available, no live load. Mirrors the
  *  prototype's cloud HOSTS (dispatch.html:207-208). */
 const CLOUD_HOSTS: DispatchHost[] = [

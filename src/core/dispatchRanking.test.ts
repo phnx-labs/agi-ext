@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'bun:test';
 import {
   mapInventoriesToInstalledAgents,
-  deriveHostLoad,
   buildDispatchHosts,
   rankTargets,
   rankHostUses,
-  parseRemoteCpuRatio,
   buildManagedTargets,
 } from './dispatchRanking';
 import type { ManagedProject } from './managedProjects';
@@ -117,31 +115,6 @@ describe('mapInventoriesToInstalledAgents', () => {
   });
 });
 
-// --- deriveHostLoad ---------------------------------------------------------
-
-describe('deriveHostLoad', () => {
-  it('is idle with no agents and quiet cpu', () => {
-    expect(deriveHostLoad(0, 0.1)).toBe('idle');
-    expect(deriveHostLoad(0, null)).toBe('idle');
-  });
-  it('is free with one agent or light cpu', () => {
-    expect(deriveHostLoad(1, 0.1)).toBe('free');
-    expect(deriveHostLoad(0, 0.3)).toBe('free');
-  });
-  it('is busy with a couple agents or loaded cpu', () => {
-    expect(deriveHostLoad(2, 0.1)).toBe('busy');
-    expect(deriveHostLoad(1, 0.7)).toBe('busy');
-  });
-  it('is hot when cpu is saturated or many agents', () => {
-    expect(deriveHostLoad(1, 1.2)).toBe('hot');
-    expect(deriveHostLoad(4, null)).toBe('hot');
-  });
-  it('derives from agent count alone when cpu ratio is unknown', () => {
-    expect(deriveHostLoad(2, null)).toBe('busy');
-    expect(deriveHostLoad(1, null)).toBe('free');
-  });
-});
-
 // --- buildDispatchHosts -----------------------------------------------------
 
 describe('buildDispatchHosts', () => {
@@ -228,28 +201,6 @@ describe('rankHostUses', () => {
       session({ host: 'zion', sessionId: 'c' }),
     ]);
     expect(uses).toEqual({ 'this-mac': 2, zion: 1 });
-  });
-});
-
-// --- parseRemoteCpuRatio ----------------------------------------------------
-
-describe('parseRemoteCpuRatio', () => {
-  it('parses a Linux uptime + nproc output', () => {
-    const out = ' 14:23:01 up 10 days,  3:21,  2 users,  load average: 2.00, 1.10, 0.98\n4\n';
-    expect(parseRemoteCpuRatio(out)).toBeCloseTo(0.5, 5);
-  });
-
-  it('parses a macOS uptime (space-separated averages) output', () => {
-    const out = '14:23  up 5 days,  2:11, 3 users, load averages: 4.00 3.35 2.40\n8\n';
-    expect(parseRemoteCpuRatio(out)).toBeCloseTo(0.5, 5);
-  });
-
-  it('returns null when the core count is missing', () => {
-    expect(parseRemoteCpuRatio('load average: 1.00, 0.5, 0.3\n')).toBeNull();
-  });
-
-  it('returns null when the load line is missing', () => {
-    expect(parseRemoteCpuRatio('8\n')).toBeNull();
   });
 });
 
