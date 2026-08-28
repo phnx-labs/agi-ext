@@ -96,9 +96,12 @@ describe('wiring guard — infra must stay wired (issue 5 was dead code)', () =>
   // reach it (rendering the pane needs React), so pin it at the source: the idle rows
   // must be emitted before the running rows, or the Fleet panel is burying
   // idle-but-unfinished work below running again (root AGENTS.md "Purpose").
+  // The feed is now virtualized (PHNX-2458): rows are pushed into the windowed
+  // `feedItems` builder rather than mapped inline, but the ordering invariant is
+  // the same — idle rows are appended before running rows.
   test('UnifiedAgentsPane renders the IDLE section ABOVE the RUNNING section', () => {
-    const idleAt = pane.indexOf('idleFeed.map(')
-    const runningAt = pane.indexOf('runningFeed.map(')
+    const idleAt = pane.indexOf('for (const a of idleFeed)')
+    const runningAt = pane.indexOf('for (const a of runningFeed)')
     expect(idleAt).toBeGreaterThan(-1)
     expect(runningAt).toBeGreaterThan(-1)
     expect(idleAt).toBeLessThan(runningAt)

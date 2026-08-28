@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 /** One windowable item. Height is the pixel footprint in the scroll region;
  *  callers that need variable heights can measure rendered rows and re-derive. */
@@ -13,7 +13,10 @@ export interface UseVirtualListOptions {
 }
 
 export interface UseVirtualListResult<T extends VirtualListItem> {
-  scrollRef: React.RefObject<HTMLDivElement | null>
+  /** Callback ref for the scroll container. A callback (not a RefObject) because
+   *  the container can mount long after this hook first runs — see the note in
+   *  the hook body. Pass it straight to `<div ref={scrollRef} …>`. */
+  scrollRef: (el: HTMLDivElement | null) => void
   onScroll: (e: React.UIEvent<HTMLDivElement>) => void
   visibleItems: T[]
   totalHeight: number
@@ -34,18 +37,33 @@ export function useVirtualList<T extends VirtualListItem>(
   options: UseVirtualListOptions = {},
 ): UseVirtualListResult<T> {
   const { overscan = 4 } = options
-  const scrollRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(600)
+  const roRef = useRef<ResizeObserver | null>(null)
 
-  useLayoutEffect(() => {
-    const el = scrollRef.current
+  // Callback ref, NOT a mount-time `useLayoutEffect([])`. The scroll container is
+  // rendered only while its tab is active — the Agents feed mounts when
+  // `center === 'agents'`, which is not the default tab — so it attaches to the
+  // DOM long after this hook first runs. A mount-time effect would read a null
+  // ref, bail, and leave `viewportH` frozen at the fallback forever, so the feed
+  // under-renders rows (blank space) on any viewport taller than the fallback the
+  // first time the tab is opened (PHNX-2458). A callback ref instead fires the
+  // moment the element attaches (tab switch) or detaches, so the observer always
+  // binds the live element and re-measures on resize.
+  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect()
+    roRef.current = null
     if (!el) return
-    const measure = () => setViewportH(el.clientHeight)
+    const measure = () => {
+      const h = el.clientHeight
+      // Keep the fallback until a real measurement arrives — a transient 0 during
+      // attach must not collapse the window to zero rows.
+      if (h > 0) setViewportH(h)
+    }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
-    return () => ro.disconnect()
+    roRef.current = ro
   }, [])
 
   // Prefix-sum offsets: offsets[i] = pixel top of item i; offsets[n] = total height.

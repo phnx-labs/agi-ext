@@ -6,6 +6,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.341] - 2026-08-28
 
+- **The Agents feed is virtualized so a long fleet no longer renders every row (PHNX-2458).**
+  The Floor feed used to mount a DOM node per session/activity row; a busy fleet made the
+  panel janky and slow to scroll. It now reuses the Sessions tab's windowing primitive
+  (`useVirtualList`) to render only the rows intersecting the viewport plus overscan, with
+  spacer divs keeping the scrollbar honest. The idle-above-running ordering is unchanged.
+  The window binds its `ResizeObserver` through a callback ref, not a mount-time effect, so
+  it measures correctly even though the feed's scroll container only mounts when its tab
+  becomes active (the mount-time effect saw a null ref and froze the viewport at a fallback,
+  under-rendering rows on taller panels). Source: `ui/settings/components/mission-control/useVirtualList.ts`,
+  `UnifiedAgentsPane.tsx`.
+
 - **Removed the extension's ACTING poll timers (PHNX-2833).** Three timers fetched or
   re-parsed on a fixed cadence, violating the one-scheduler rule (the agents-cli daemon,
   or a CLI command it drives, is the only scheduler): the Agent Panel's 4s
