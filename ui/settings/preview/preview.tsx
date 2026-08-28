@@ -33,6 +33,8 @@ import { buildPrBoard, type PrStatusLike } from '../components/mission-control/p
 import { TicketDetail } from '../components/mission-control/TicketDetail'
 import { ProjectsPane } from '../components/mission-control/ProjectsPane'
 import { TerminalExpandedDetail } from '../components/mission-control/TerminalDetail'
+import { SessionPreviewCard } from '../components/mission-control/SessionPreviewCard'
+import { normalizeSessionPreview } from '../components/mission-control/sessionPreview'
 import { AgentDecision } from '../components/mission-control/AgentDecision'
 import { ticketWorkers, type FloorAgent, type FloorTicket, type StructuredQuestion, type FloorGroupBy, type FloorSort, type TicketGroupBy, type TicketSort, type CenterMode, type ManagedProject, type LinearProjectLite } from '../components/mission-control/floorModel'
 import { RecapPane } from '../components/mission-control/RecapPane'
@@ -763,6 +765,64 @@ function Detail() {
   )
 }
 
+// ?view=preview-card — the picker-parity SessionPreviewCard (PHNX-2973) on its
+// own, fed a representative `sessions preview --json` envelope, so the panel's
+// new field set can be screenshotted without the VS Code host.
+const previewEnvelope = {
+  schemaVersion: 1,
+  session: {
+    id: '3c7cb529aa', shortId: '3c7cb529', agent: 'claude', version: '2.1.218',
+    model: 'fable-5', account: 'muqsit@getrush.ai', machine: 'yosemite-m1',
+    cwd: '/home/muqsit/src/github.com/muqsitnawaz', project: 'muqsitnawaz', gitBranch: 'HEAD',
+    createdAt: new Date(Date.now() - 3.6 * 3600_000).toISOString(),
+    lastActivity: new Date(Date.now() - 1000).toISOString(),
+    durationMs: 3.6 * 3600_000, messageCount: 201, tokenCount: 54_600_000, costUsd: 4.21,
+    label: 'agents-cli-fe', topic: '', ticketId: 'PHNX-3409', prUrl: 'https://github.com/phnx-labs/agents-cli/pull/2844',
+  },
+  active: { status: 'running', activity: 'editing sessions-picker.ts', lastActivityMs: 1, startedAtMs: 1, pid: 1 },
+  preview: {
+    schemaVersion: 1,
+    firstUser: 'Converge the active-tab fork commands onto the agents sessions fork verb.',
+    lastAssistant: 'Landed the converge + trimmed the vestigial local path.',
+    filesRead: 9, toolCalls: 311, planFile: '', subAgentCount: 0, toolTags: [],
+    changes: { created: 3, modified: 3, deleted: 7 },
+    changedFiles: [
+      { path: 'cli/src/commands/sessions-picker.ts', op: 'modified' },
+      { path: 'cli/src/lib/session/digest.ts', op: 'modified' },
+      { path: 'cli/src/commands/fork.ts', op: 'created' },
+      { path: 'cli/src/commands/fork-active.ts', op: 'deleted' },
+    ],
+    dirs: ['~/src/github.com/muqsitnawaz'], repos: ['agents-cli'],
+    artifacts: [], plugins: [],
+    skills: [{ name: 'fleet:mint-auth', count: 1 }],
+    hooks: [
+      { name: 'UserPromptSubmit', event: 'UserPromptSubmit', count: 60, failed: 0 },
+      { name: 'PreToolUse:Bash', event: 'PreToolUse', count: 36, failed: 36 },
+    ],
+    links: [
+      { kind: 'other', url: 'https://github.com/phnx-labs/agents-cli/pull/2844', label: 'PR#2844' },
+      { kind: 'other', url: 'https://github.com/phnx-labs/agents-cli/pull/2849', label: 'PR#2849' },
+    ],
+    errorCount: 37, firstError: 'Bash',
+    toolHistogram: [{ tool: 'Bash', count: 280 }, { tool: 'Edit', count: 11 }, { tool: 'Read', count: 9 }, { tool: 'Write', count: 6 }],
+    test: { runner: 'tests', ok: true, passed: 1 },
+  },
+  error: null,
+}
+
+function PreviewCard() {
+  const preview = normalizeSessionPreview(previewEnvelope)!
+  return (
+    <div className="feed-col" style={{ maxWidth: 440 }}>
+      <div className="sw-unified-detail">
+        <div className="sw-mc-pane-body">
+          <SessionPreviewCard preview={preview} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // The three NEEDS-YOU decision-block shapes (RUSH-1521/1546): the real question + its
 // options + a why-blocked chip, extracted at the CLI source. Renders the exact markup the
 // right detail pane uses.
@@ -1032,6 +1092,7 @@ function Preview() {
             : view === 'subtabs' ? <Subtabs />
             : view === 'projects' ? <div className="feed-col"><Projects /></div>
             : view === 'detail' ? <Detail />
+            : view === 'preview-card' ? <PreviewCard />
             : view === 'decision' ? <Decision />
             : view === 'prs' ? <PrBoard />
             : view === 'ticket' ? <Ticket />

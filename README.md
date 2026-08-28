@@ -98,6 +98,12 @@ session attachments appear as thumbnail artifacts that click through to the host
 preview. The expanded project and host sidebar can be resized by dragging its
 right edge.
 
+Selecting a session opens a detail card at parity with the CLI's `agents sessions`
+picker: the version · model · account header, timing and cost, per-file changes,
+the tool mix, tests, errors, and PR/ticket links. It is fetched once per selection
+via a one-shot `agents sessions preview --json` — the CLI computes every field; the
+extension only renders it, never parsing a transcript itself.
+
 ### Foreman Voice Orb
 
 Talk to your fleet. Tap the orb in the dashboard and ask "what's running?", "what's left this cycle?", or "dispatch RUSH-557 to the cloud" — a realtime voice model answers out loud with live floor state, and it can dispatch tickets, spawn agents, and file Linear issues for you. Tap to talk, tap again to stop, or press-and-hold to talk only while pressed. A silent-mode toggle under the orb switches replies to text-only transcript.
