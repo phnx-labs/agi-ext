@@ -165,7 +165,7 @@ export interface FloorAgent {
   startedAtMs?: number   // epoch ms the session started; 0/undefined when unknown. Drives the Sessions "Started" (creation-time) sort, distinct from lastActivityMs. Set by the adapters; fixtures may omit it.
   files: number
   tools: number
-  needs: boolean         // waiting || failed || (done && unreviewed)
+  needs: boolean         // has an open CLI attention row (attention.state === 'open'); the CLI decides needs-you, the ext no longer re-derives it (PHNX-2975)
   pinned: boolean        // user-pinned (persisted in globalState)
   pr: string | null      // "#142" when a PR is open
   prUrl: string | null   // full PR URL (https://github.com/…/pull/N) — the real external link to open
