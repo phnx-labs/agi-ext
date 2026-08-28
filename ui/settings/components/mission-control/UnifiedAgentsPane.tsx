@@ -1970,7 +1970,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
               )}
               {/* Actions: give a selected agent something to DO (issue: clicking a card
                   offered nothing). Focus opens the session's terminal — local via the
-                  live vscode terminal, remote via an ssh + tmux-attach terminal.
+                  live vscode terminal, remote via an editor-tab `agents sessions resume`
+                  (the CLI owns fleet routing + reconnect; no raw ssh/tmux here).
                   Headless (background) runs have no reply terminal/tmux, so they get a
                   dedicated Focus (attach a fresh terminal via `agents sessions focus`)
                   plus a Stop that kills the run's pid. */}

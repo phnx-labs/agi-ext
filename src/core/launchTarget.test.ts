@@ -125,4 +125,23 @@ describe('registered harness launch commands', () => {
       "agents run claude --interactive --device 'worker-box' --strategy balanced --mode auto",
     );
   });
+
+  // PHNX-2553: a LOCAL New Claude used to emit no --session-id, so the auto-label
+  // poller never armed and the tab kept its bare prefix. launchAgent now mints the id
+  // up front and threads it through context.sessionId.
+  it('emits a caller-minted Claude session id on the local path', () => {
+    const [local] = harnessLaunchRegistrations('claude', 'agents.newClaude', () => 'local');
+    expect(buildNewAgentLaunchCommand(local.launchOptions(), { sessionId: 'sess-abc' })).toBe(
+      'agents run claude --interactive --session-id sess-abc --strategy balanced --mode auto',
+    );
+  });
+
+  it('does not emit --session-id for a non-Claude harness even when one is supplied', () => {
+    // buildAgentLaunchCommand gates --session-id on claude; a Grok id would be a lie
+    // the CLI never pinned. The builder must drop it, not forward it.
+    const [local] = harnessLaunchRegistrations('grok', 'agents.newGrok', () => 'local');
+    expect(buildNewAgentLaunchCommand(local.launchOptions(), { sessionId: 'sess-abc' })).toBe(
+      'agents run grok --interactive --strategy balanced --mode auto',
+    );
+  });
 });

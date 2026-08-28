@@ -134,11 +134,47 @@ describe('compact (plain) row preview line', () => {
   })
 })
 
-// A "needs you" row whose reply cannot be delivered used to look identical to one
-// that worked: replyToAgent set an inline error, but the feed never passed it to
-// StructuredReply, so the click produced no visible change at all.
-describe('reply delivery failure is visible on the feed row', () => {
-  const asking = (over = {}) => agent({
+// A reachable "needs you" row whose reply the CLI failed to deliver used to look
+// identical to one that worked: replyToAgent set an inline error, but the feed never
+// passed it to StructuredReply, so the click produced no visible change at all.
+describe('reply delivery failure is visible on a reachable feed row', () => {
+  // A tmux channel IS reachable, so it renders the full controls (chips + Send) and can
+  // surface a post-send delivery error.
+  const askingReachable = (over = {}) => agent({
+    phase: 'waiting',
+    needs: true,
+    question: { kind: 'choice', text: 'Drop the old table?', options: ['Drop it', 'Keep it'], clusterKey: 'k' },
+    reply: { kind: 'tmux', host: 'yosemite-s1', muxSocket: '/tmp/s', muxTarget: 'w0' },
+    ...over,
+  })
+
+  test('renders the options and the delivery error when one is supplied', () => {
+    const html = render(askingReachable() as FloorAgent, false)
+    expect(html).toContain('Drop it')  // the options render for a reachable channel
+    const withErr = renderToStaticMarkup(
+      <FeedItem
+        agent={askingReachable() as FloorAgent}
+        selected={false}
+        plain={false}
+        error="tmux send-keys failed on yosemite-s1"
+        onSelect={noop} onOption={noop} onFreeText={noop} onAttach={noop}
+        onOpenPlan={noop} onOpenTerminal={noop}
+      />,
+    )
+    expect(withErr).toContain('tmux send-keys failed on yosemite-s1')
+  })
+
+  test('the same row without an error shows no error text', () => {
+    const html = render(askingReachable() as FloorAgent, false)
+    expect(html).not.toContain('send-keys failed')
+  })
+})
+
+// PHNX-2980: an agent with no injectable reply channel (kind: 'none') must state the
+// reason UP FRONT — never a chip/free-text/Send that only reveals unreachability after
+// a click. The reason is already computed by the adapter; the UI just surfaces it.
+describe('an unreachable asking row shows the reason, not dead controls', () => {
+  const askingUnreachable = (over = {}) => agent({
     phase: 'waiting',
     needs: true,
     question: { kind: 'choice', text: 'Drop the old table?', options: ['Drop it', 'Keep it'], clusterKey: 'k' },
@@ -146,30 +182,24 @@ describe('reply delivery failure is visible on the feed row', () => {
     ...over,
   })
 
-  test('renders the delivery error when one is supplied', () => {
-    const html = render({ ...asking(), } as FloorAgent, false)
-    expect(html).toContain('Drop it')  // the options render
-    const withErr = renderToStaticMarkup(
-      <FeedItem
-        agent={asking() as FloorAgent}
-        selected={false}
-        plain={false}
-        error="Runs on yosemite-s1 — open it there to reply"
-        onSelect={noop} onOption={noop} onFreeText={noop} onAttach={noop}
-        onOpenPlan={noop} onOpenTerminal={noop}
-      />,
-    )
-    expect(withErr).toContain('Runs on yosemite-s1')
+  test('shows the reason up front and suppresses the options + free-text box', () => {
+    const html = render(askingUnreachable() as FloorAgent, false)
+    expect(html).toContain('data-testid="reply-unreachable"')
+    expect(html).toContain('Runs on yosemite-s1 — open it there to reply')
+    // No dead controls: the choice chips and the "reply in your own words" box are gone.
+    expect(html).not.toContain('Drop it')
+    expect(html).not.toContain('reply in your own words')
   })
 
-  test('the same row without an error shows no error text', () => {
-    const html = render(asking() as FloorAgent, false)
-    expect(html).not.toContain('open it there to reply')
+  test('falls back to a generic reason when the adapter supplied none', () => {
+    const html = render(askingUnreachable({ reply: { kind: 'none', host: 'yosemite-s1' } }) as FloorAgent, false)
+    expect(html).toContain('data-testid="reply-unreachable"')
+    expect(html).toContain('open the terminal to answer')
   })
 
   test('a compact asking row does not also render a prose preview line', () => {
     // The question IS the row's line; a summary above it makes two prose blocks.
-    const html = render(asking({ prompt: 'Migrate the policy_v1 RLS rules' }) as FloorAgent, true)
+    const html = render(askingUnreachable({ prompt: 'Migrate the policy_v1 RLS rules' }) as FloorAgent, true)
     expect(html).not.toContain('class="summary')
   })
 })

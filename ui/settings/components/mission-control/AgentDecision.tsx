@@ -67,6 +67,8 @@ export function AgentDecision({ agent: a, error, onOption, onFreeText, onAttach,
         <StructuredReply
           question={a.question}
           phase={a.phase}
+          replyKind={a.reply.kind}
+          replyReason={a.reply.reason}
           error={error}
           onOption={onOption}
           onFreeText={onFreeText}
