@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.345] - 2026-08-30
+
+- **Fix the Active-Terminal sidebar stuck forever on "Loading…" (PHNX-3517).** The
+  panel's webview never rendered — on every session, silently — because a single
+  mis-escaped regex in the inline script (`/^[/\\]/` written inside a template
+  literal shipped as the malformed `/^[/\]/`) threw a `SyntaxError` that crashed the
+  ENTIRE webview script on parse, so it never attached its message listener or asked
+  the host for a snapshot. The instant/todo-forward work in 0.9.344 was correct but
+  had no effect because the script was dead on arrival. Replaced the regex with a
+  backslash-free char-code check (so template-literal escaping can never mangle it
+  again) and added a regression test that compiles every `<script>` block renderShell
+  emits and fails on any syntax error. The sidebar now renders the session preview
+  (agent, activity, checklist, PR, recent files). Source:
+  `src/vscode/agentPanel.vscode.ts`, `src/vscode/agentPanel.webview-syntax.test.ts`.
+
 ## [0.9.344] - 2026-08-30
 
 - **Instant, todo-forward session preview in the Active-Terminal sidebar (PHNX-3517).**
