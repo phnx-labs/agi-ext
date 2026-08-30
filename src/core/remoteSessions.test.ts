@@ -496,6 +496,30 @@ describe('live signals from the CLI payload (issue #741)', () => {
     const s = normalizeActiveSession({ ...base, awaitingReason: null }, 'this-mac', 1_000_000);
     expect(s.awaitingReason).toBe('');
   });
+
+  test('carries outcome-card metrics, artifacts, and subagent count from the CLI row (PHNX-3574)', () => {
+    const s = normalizeActiveSession({
+      ...base,
+      tokenCount: '163000000' as unknown as number,
+      durationMs: 12_960_000,
+      planFile: '/repo/.agents/plans/plan-sidebar.md',
+      subAgentCount: 34,
+      artifacts: [
+        { path: '/repo/.agents/plans/plan-sidebar.html', basename: 'plan-sidebar.html', bucket: 'plans' },
+        { path: '/repo/.agents/artifacts/sidebar.png', basename: 'sidebar.png', bucket: 'artifacts' },
+        { path: '', basename: 'bad', bucket: 'docs' },
+      ],
+    }, 'this-mac', 1_000_000);
+
+    expect(s.tokenCount).toBe(163_000_000);
+    expect(s.durationMs).toBe(12_960_000);
+    expect(s.planFile).toBe('/repo/.agents/plans/plan-sidebar.md');
+    expect(s.subAgentCount).toBe(34);
+    expect(s.artifacts).toEqual([
+      { path: '/repo/.agents/plans/plan-sidebar.html', basename: 'plan-sidebar.html', bucket: 'plans' },
+      { path: '/repo/.agents/artifacts/sidebar.png', basename: 'sidebar.png', bucket: 'artifacts' },
+    ]);
+  });
 });
 
 describe('groupByHost', () => {

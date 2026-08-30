@@ -42,7 +42,7 @@ import {
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
-import type { RemoteSession } from '../core/remoteSessions';
+import type { RemoteAttachment, RemoteSession, RemoteSessionArtifact } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 
 export const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
@@ -127,6 +127,13 @@ interface PanelSnapshot {
   // Fine-grained task checklist + done/total, from the agent's latest plan write.
   // Rides the transcript tail already read for recentActivity (no extra I/O).
   todoProgress?: TodoProgress;
+  durationMs?: number;
+  tokenCount?: number;
+  tokPerSec?: number;
+  subAgentCount?: number;
+  spawnedTeam?: string;
+  artifacts?: RemoteSessionArtifact[];
+  attachments?: RemoteAttachment[];
   // Linked artifacts — multi-PR (the agent may have opened several in one session)
   linearIssue?: string;
   pullRequests?: PullRequestRef[];
@@ -500,6 +507,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (live.prUrl) snapshot.pullRequests = extractPrUrls([live.prUrl]);
 
         if (live.branch) snapshot.git = { branch: live.branch };
+        snapshot.durationMs = live.durationMs ?? live.sinceMs;
+        snapshot.tokenCount = live.tokenCount;
+        snapshot.tokPerSec = live.tokPerSec;
+        snapshot.subAgentCount = live.subAgentCount;
+        snapshot.spawnedTeam = live.spawnedTeam || live.teamName || undefined;
+        snapshot.artifacts = live.artifacts;
+        snapshot.attachments = live.attachments;
       }
 
       // version + account aren't on the normalized RemoteSession; the store
@@ -595,6 +609,20 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     padding: 8px 10px;
     background: var(--vscode-sideBar-background);
     margin-top: 4px;
+  }
+  .session-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 7px 0 0;
+  }
+  .session-stats span {
+    border: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 9px;
+    padding: 1px 6px;
+    color: var(--vscode-descriptionForeground);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 10px;
   }
   .agent-head {
     display: flex;
@@ -764,6 +792,49 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     color: var(--vscode-descriptionForeground);
     font-size: 11px;
   }
+  .request-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+  }
+  .attachment-link {
+    border: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 4px;
+    padding: 2px 5px;
+  }
+  .deliverables { padding: 4px 10px; }
+  .deliverable {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--vscode-widget-border, transparent);
+    color: var(--vscode-textLink-foreground);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .deliverable:last-child { border-bottom: none; }
+  .deliverable-kind {
+    color: var(--vscode-descriptionForeground);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .deliverable-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+  }
+  .recent-files-disclosure { padding: 6px 0; color: var(--vscode-descriptionForeground); }
+  .recent-files-disclosure summary { cursor: pointer; font-size: 11px; }
+  .recent-files-disclosure a { display: block; margin: 5px 0 0 61px; }
+  .team-summary { display: flex; align-items: center; gap: 8px; }
+  .team-summary-name { color: var(--vscode-foreground); font-weight: 600; }
+  .team-summary-count { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; }
   .activity {
     display: flex;
     align-items: baseline;
@@ -1115,6 +1186,21 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+function compactTokens(value) {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (value >= 1000000) return (value / 1000000).toFixed(value >= 10000000 ? 0 : 1) + 'm tok';
+  if (value >= 1000) return Math.round(value / 1000) + 'k tok';
+  return Math.round(value) + ' tok';
+}
+
+function compactDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  const totalMinutes = Math.max(1, Math.floor(ms / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? hours + 'h ' + minutes + 'm' : minutes + 'm';
+}
+
 function renderTerminalCard(s) {
   const logo = s.agentIconUri
     ? '<img class="agent-logo" src="' + esc(s.agentIconUri) + '" alt="" />'
@@ -1165,6 +1251,18 @@ function renderTerminalCard(s) {
       '</div>' +
     '</div>'
   );
+}
+
+function renderSessionStats(s) {
+  const stats = [];
+  const duration = compactDuration(s.durationMs);
+  const tokens = compactTokens(s.tokenCount);
+  if (duration) stats.push(duration);
+  if (tokens) stats.push(tokens);
+  if (s.tokPerSec > 0) stats.push(Math.round(s.tokPerSec) + ' tok/s');
+  if (s.subAgentCount > 0) stats.push(s.subAgentCount + ' subagent' + (s.subAgentCount === 1 ? '' : 's'));
+  if (!stats.length) return '';
+  return '<div class="session-stats">' + stats.map((stat) => '<span>' + esc(stat) + '</span>').join('') + '</div>';
 }
 
 function renderActionsCard(s) {
@@ -1271,10 +1369,70 @@ function renderConversationCard(s) {
   if (c.messageCount) meta.push(c.messageCount + ' message' + (c.messageCount === 1 ? '' : 's'));
   if (c.lastActivityMs) meta.push(relTime(c.lastActivityMs));
   return (
-    '<h2>Conversation</h2>' +
+    '<h2>Request</h2>' +
     '<div class="card">' +
       (topic ? '<div class="conv-topic">' + renderMarkdownPreview(truncate(topic, 420)) + '</div>' : '') +
+      ((s.attachments || []).length ? '<div class="request-attachments">' + s.attachments.map((a) =>
+        '<a class="path-link attachment-link" data-path="' + esc(a.path) + '">' + esc(a.label || a.path) + '</a>'
+      ).join('') + '</div>' : '') +
       (meta.length ? '<div class="conv-meta">' + esc(meta.join(' · ')) + '</div>' : '') +
+    '</div>'
+  );
+}
+
+function renderDeliverablesCard(s) {
+  const rows = [];
+  for (const artifact of (s.artifacts || [])) {
+    rows.push(
+      '<a class="deliverable path-link" data-path="' + esc(artifact.path) + '">' +
+        '<span class="deliverable-kind">' + esc(artifact.bucket) + '</span>' +
+        '<span class="deliverable-name">' + esc(artifact.basename) + '</span>' +
+      '</a>'
+    );
+  }
+  if (s.plan && !(s.artifacts || []).some((artifact) => artifact.path === s.plan.path)) {
+    rows.push(
+      '<a class="deliverable path-link" data-path="' + esc(s.plan.path) + '">' +
+        '<span class="deliverable-kind">plan</span><span class="deliverable-name">PLAN.md</span>' +
+      '</a>'
+    );
+  }
+  if (s.linearIssue) {
+    rows.push(
+      '<a class="deliverable" data-url="' + esc('https://linear.app/issue/' + encodeURIComponent(s.linearIssue)) + '">' +
+        '<span class="deliverable-kind">ticket</span><span class="deliverable-name">' + esc(s.linearIssue) + '</span>' +
+      '</a>'
+    );
+  }
+  for (const pr of (s.pullRequests || [])) {
+    rows.push(
+      '<a class="deliverable" data-url="' + esc(pr.url) + '">' +
+        '<span class="deliverable-kind">pr</span><span class="deliverable-name">' + esc(pr.ownerRepo) + ' #' + pr.number + '</span>' +
+      '</a>'
+    );
+  }
+  const files = s.recentFiles || [];
+  if (files.length) {
+    rows.push(
+      '<details class="recent-files-disclosure"><summary>' + files.length + ' recent file' + (files.length === 1 ? '' : 's') + '</summary>' +
+      files.map((f) => '<a class="path-link" data-path="' + esc(f.path) + '">' + esc(f.path.split('/').pop() || f.path) + '</a>').join('') +
+      '</details>'
+    );
+  }
+  if (!rows.length) return '';
+  return '<h2>Deliverables</h2><div class="card deliverables">' + rows.join('') + '</div>';
+}
+
+function renderSpawnedTeamCard(s) {
+  if (!s.spawnedTeam && !s.subAgentCount) return '';
+  const count = s.subAgentCount > 0
+    ? s.subAgentCount + ' subagent' + (s.subAgentCount === 1 ? '' : 's')
+    : 'team spawned';
+  return (
+    '<h2>Team</h2><div class="card team-summary">' +
+      '<span class="pulse-dot"></span>' +
+      '<span class="team-summary-name">' + esc(s.spawnedTeam || 'Subagents') + '</span>' +
+      '<span class="team-summary-count">' + esc(count) + '</span>' +
     '</div>'
   );
 }
@@ -1540,22 +1698,16 @@ function render(snap) {
     );
     return;
   }
-  // Todo-forward order (PHNX-3517): the header, then what the agent is doing
-  // NOW (activity) and its checklist (todos) come FIRST — the at-a-glance signal
-  // when scanning 200+ tabs — before actions, links, and the rest.
+  // Outcome-oriented order (PHNX-3574): what was asked, how far along it is,
+  // what the session produced, who it delegated to, and what is happening now.
   root.innerHTML = (
     renderTerminalCard(snap) +
-    renderActivityCard(snap) +
-    renderChecklistCard(snap) +
-    renderActionsCard(snap) +
-    renderLinksCard(snap) +
+    renderSessionStats(snap) +
     renderConversationCard(snap) +
-    renderRecentFilesCard(snap) +
-    renderWorktreesCard(snap) +
-    renderPromptsCard(snap) +
-    renderCwdCard(snap) +
-    renderPlanCard(snap) +
-    renderTeamsCard(snap) +
+    renderChecklistCard(snap) +
+    renderDeliverablesCard(snap) +
+    renderSpawnedTeamCard(snap) +
+    renderActivityCard(snap) +
     '<div class="footer"><button id="refresh-btn">Refresh</button></div>'
   );
   for (const el of root.querySelectorAll('.path-link')) {
