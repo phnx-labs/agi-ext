@@ -4,6 +4,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.347] - 2026-08-30
+
+- **Repair the Sessions browser and reload restoration (PHNX-3580).** Session
+  recap rows now use the same 108px box geometry as the virtualizer, constrain
+  transcript text to the available width, and collapse secondary controls in a
+  narrow VS Code view instead of rendering 140px clipped bands. Window reload
+  no longer mistakes an unresolved terminal-editor input for a live agent tab:
+  a scanned terminal without a backing process is left to the persisted-session
+  path, which recreates and resumes the actual Claude/Codex terminal.
+
 ## [0.9.346] - 2026-08-30
 
 - **Replace the Active Terminal utility stack with an outcome-oriented Active

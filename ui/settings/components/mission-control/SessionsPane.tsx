@@ -23,14 +23,15 @@ import { useVirtualList } from './useVirtualList'
 // sort / group runs client-side, and the list is virtualized (fixed-offset
 // windowing below), so hundreds of rows render like twenty.
 
-const ROW_H = 140
+const ROW_H = 108
 const ROW_EXPANDED_EXTRA = 56
-const HEADER_H = 36
+const HEADER_H = 32
 const OVERSCAN = 4
 
 export const SESSION_ROW_CSS = `
 .sw-sessions .sx-band {
   display: flex; align-items: center; gap: 9px; padding: 9px 14px; height: auto;
+  box-sizing: border-box;
   font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace;
   font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
   color: #8b94a6; background: #111828; border-bottom: 1px solid #1b2334; border-top: 0;
@@ -46,6 +47,7 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-row {
   display: flex; align-items: flex-start; gap: 11px;
   padding: 12px 14px; cursor: default; overflow: hidden;
+  box-sizing: border-box; width: 100%;
   border-top: 0; border-bottom: 1px solid #1b2334;
   grid-template-columns: none;
 }
@@ -70,7 +72,7 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-roletag { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; font-weight: 700; flex: none; width: 62px; text-align: right; padding-top: 1px; letter-spacing: .2px; white-space: nowrap; }
 .sw-sessions .sx-roletag.you { color: #6ea8fe; }
 .sw-sessions .sx-roletag.agent { color: #d97757; }
-.sw-sessions .sx-rolebody { min-width: 0; color: #8b94a6; }
+.sw-sessions .sx-rolebody { min-width: 0; flex: 1; color: #8b94a6; }
 .sw-sessions .sx-rolebody.clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sw-sessions .sx-expand { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 11px; color: #5eead4; cursor: pointer; margin-left: 6px; background: none; border: 0; padding: 0; }
 .sw-sessions .sx-expand:hover { color: #a3e635; }
@@ -106,6 +108,16 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-live.idle { background: #f5b544; box-shadow: 0 0 6px #f5b54455; }
 .sw-sessions .sx-live.done { background: #5c6675; box-shadow: none; }
 .sw-sessions .sx-live.orphan { background: #a78bfa; box-shadow: 0 0 6px #a78bfa66; }
+@media (max-width: 720px) {
+  .sw-sessions .sx-row { gap: 7px; padding: 9px 10px; }
+  .sw-sessions .sx-cb, .sw-sessions .sx-star { display: none; }
+  .sw-sessions .sx-roletag { width: 48px; }
+  .sw-sessions .sx-metarow { padding-left: 57px; }
+  .sw-sessions .sx-rowactions { gap: 6px; }
+  .sw-sessions .sx-resumebtn { padding: 3px 6px; font-size: 0; }
+  .sw-sessions .sx-resumebtn::first-letter { font-size: 12px; }
+  .sw-sessions .sx-age { width: 28px; font-size: 10px; }
+}
 `
 
 interface SessionsPaneProps {

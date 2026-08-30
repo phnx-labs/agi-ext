@@ -3214,9 +3214,9 @@
 }
 
 /* ============================================================================
- * Sessions surface (SessionsPane) — a dense, virtualized, manage/recover list.
- * Fixed row/header heights (34/30) mirror ROW_H / HEADER_H in SessionsPane.tsx.
- * Token-based so it adapts to light + dark automatically.
+ * Sessions surface shell (SessionsPane). Rich row geometry lives beside the
+ * component because the virtualizer and the rendered height are one contract.
+ * Shared filter, scroll, bulk-action, and theme tokens remain here.
  * ========================================================================== */
 .sw-sessions { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 13px; }
 
@@ -3278,15 +3278,7 @@
   padding: 2px 9px; border-radius: var(--r-sm); background: var(--brand); color: #0a0a0a; font-weight: 600; border: 0; cursor: pointer;
 }
 
-/* --- session row --- */
-.sx-row {
-  display: grid; grid-template-columns: 20px 16px 18px 18px 1fr minmax(120px, 200px) 74px 62px;
-  align-items: center; gap: 9px; padding: 0 14px; cursor: default;
-  border-top: 1px solid var(--ds-border-subtle);
-}
-.sx-row:hover { background: var(--ds-bg-hover); }
-.sx-row.sel { background: rgba(163, 230, 53, 0.08); }
-.sx-row.active { background: var(--ds-bg-active); }
+/* --- controls shared with the component-owned rich session row --- */
 .sx-cb {
   width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--ds-border-strong);
   background: transparent; cursor: pointer; padding: 0; position: relative;
@@ -3299,37 +3291,6 @@
 .sx-star { background: none; border: 0; color: var(--ds-text-faint); font-size: 15px; line-height: 1; cursor: pointer; padding: 0; }
 .sx-star:hover { color: #d4a72c; }
 .sx-star.on { color: #f5c518; }
-.sx-dot { width: 9px; height: 9px; border-radius: 50%; justify-self: center; }
-.sx-dot.run { background: var(--status-running); box-shadow: 0 0 6px rgba(34, 197, 94, .5); }
-.sx-dot.wait { background: var(--status-pending); box-shadow: 0 0 6px rgba(212, 167, 44, .45); }
-.sx-dot.idle { background: var(--status-idle); }
-.sx-dot.fail { background: var(--status-failed); box-shadow: 0 0 6px rgba(239, 68, 68, .5); }
-.sx-dot.done { background: var(--ds-text-faint); }
-.sx-dot.orphan { background: #c084fc; box-shadow: 0 0 7px rgba(192, 132, 252, .5); }
-.sx-topic { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text); }
-.sx-meta {
-  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--ds-text-dim);
-}
-.sx-meta .proj { color: var(--ds-text-muted); }
-.sx-meta .sep { color: var(--ds-text-faint); }
-.sx-badge.rem {
-  margin-left: 6px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px;
-  padding: 1px 5px; border-radius: 3px; border: 1px solid rgba(91, 141, 239, .4); color: #4A7DFF;
-}
-.theme-dark .sx-badge.rem { color: #9dbcff; }
-.sx-age {
-  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--ds-text-dim); text-align: right;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.sx-age .tps { color: var(--status-running); }
-.sx-age .needs { color: var(--status-pending); }
-.sx-resume {
-  justify-self: end; font-size: 10.5px; padding: 3px 8px; border-radius: var(--r-sm);
-  border: 1px solid var(--ds-border); background: var(--ds-bg-inset); color: var(--ds-text-muted); cursor: pointer;
-}
-.sx-resume:hover { background: var(--ds-bg-hover); color: var(--ds-text); }
-.sx-resume.pri { background: var(--brand); color: #0a0a0a; border-color: var(--brand); font-weight: 600; }
 
 /* --- bulk action bar --- */
 .sx-bulk {

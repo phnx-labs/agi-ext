@@ -8,7 +8,7 @@ import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { FloorAgent } from './floorModel'
 
-const { SessionRow, SessionsPane } = await import('./SessionsPane')
+const { SessionRow, SessionsPane, SESSION_ROW_CSS } = await import('./SessionsPane')
 
 const noop = () => {}
 
@@ -180,6 +180,16 @@ describe('SessionsPane bulk Resume all', () => {
     expect(html).toContain('sx-metarow')
     expect(html).toContain('.sx-metarow .sx-chip')
     expect(html).toContain('sx-chip repo')
+  })
+
+  test('virtual row CSS keeps the declared height and clips long content to the viewport', () => {
+    expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-row {')
+    expect(SESSION_ROW_CSS).toContain('box-sizing: border-box; width: 100%;')
+    expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-rolebody { min-width: 0; flex: 1;')
+    expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-band {')
+    expect(SESSION_ROW_CSS).toContain('box-sizing: border-box;')
+    expect(SESSION_ROW_CSS).toContain('@media (max-width: 720px)')
+    expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-cb, .sw-sessions .sx-star { display: none; }')
   })
 
   test('reconnect group exposes Resume all N', () => {
