@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { TerminalDetail } from '../../types'
 import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 
-const { UnifiedAgentsPane } = await import('./UnifiedAgentsPane')
+const { UnifiedAgentsPane, defaultFloorPrefs, loadFloorPrefs, FLOOR_PREFS_LAYOUT_VERSION } = await import('./UnifiedAgentsPane')
 const { SessionsPane } = await import('./SessionsPane')
 
 // Source-level regression guards: the Floor must not reintroduce 3s local /
@@ -202,6 +202,58 @@ test('follower with a reset renders the genuine empty state', () => {
 
   expect(html).toContain('No sessions match')
   expect(html).not.toContain('Session data unavailable')
+})
+
+test('Fleet omits fixed counter tabs while keeping Dispatch in its header', () => {
+  const html = renderToStaticMarkup(React.createElement(UnifiedAgentsPane, {
+    terminals: [],
+    tasks: [],
+    tasksLoading: false,
+    unifiedTasks: [],
+    unifiedTasksLoading: false,
+    onDispatch: () => {},
+    search: '',
+    onSearch: () => {},
+  }))
+
+  expect(source).not.toContain('const fixedTabs')
+  expect(html).not.toContain('class="fsubtab-cnt"')
+  expect(html).toContain('class="disp"')
+  expect(html).toContain('Dispatch')
+})
+
+test('Fleet layout defaults and legacy prefs keep both side panels closed', () => {
+  expect(defaultFloorPrefs()).toMatchObject({
+    layoutVersion: FLOOR_PREFS_LAYOUT_VERSION,
+    sidebar: false,
+    rail: true,
+    right: false,
+  })
+
+  localStorage.setItem('swarmify.floorPrefs.v1', JSON.stringify({
+    sidebar: true,
+    rail: false,
+    right: true,
+    pinned: ['keep-me'],
+    sidebarWidth: 320,
+  }))
+  try {
+    expect(loadFloorPrefs()).toMatchObject({
+      layoutVersion: FLOOR_PREFS_LAYOUT_VERSION,
+      sidebar: false,
+      rail: true,
+      right: false,
+      pinned: ['keep-me'],
+      sidebarWidth: 320,
+    })
+  } finally {
+    localStorage.removeItem('swarmify.floorPrefs.v1')
+  }
+
+  expect(source).toContain('sessionsAgents.find((a) => a.id === selectedAgentId)')
+  expect(source).toContain('onSelect={(a) => selectSession(a.id)}')
+  expect(source).toContain('{rightOpen && <div className="detail-col">')
+  expect(source).not.toContain("rightOpen && center !== 'sessions'")
 })
 
 test('SessionsPane shows degraded copy when stream is degraded and empty', () => {

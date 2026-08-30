@@ -97,6 +97,7 @@ import type {
 // ---------- Floor shell persisted prefs ----------
 
 const FLOOR_PREFS_KEY = 'swarmify.floorPrefs.v1'
+export const FLOOR_PREFS_LAYOUT_VERSION = 2
 
 // Floor session refresh is event-driven + manual — no recurring local/remote
 // polling (issue #2030). Local tab agents stream via the extension's monitor /
@@ -106,9 +107,10 @@ export { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 
 interface FloorPrefs {
+  layoutVersion: number
   plain: boolean
   sidebar: boolean
-  // Collapsed icon rail (true, the default) vs the full text sidebar.
+  // Collapsed icon rail (true) vs the full text sidebar when sidebar is open.
   rail: boolean
   right: boolean
   pinned: string[]
@@ -118,8 +120,17 @@ interface FloorPrefs {
   sidebarWidth: number
 }
 
-function defaultFloorPrefs(): FloorPrefs {
-  return { plain: false, sidebar: true, rail: true, right: true, pinned: [], hostPins: null, sidebarWidth: FLOOR_SIDEBAR_DEFAULT_WIDTH }
+export function defaultFloorPrefs(): FloorPrefs {
+  return {
+    layoutVersion: FLOOR_PREFS_LAYOUT_VERSION,
+    plain: false,
+    sidebar: false,
+    rail: true,
+    right: false,
+    pinned: [],
+    hostPins: null,
+    sidebarWidth: FLOOR_SIDEBAR_DEFAULT_WIDTH,
+  }
 }
 
 function clampSidebarWidth(width: unknown): number {
@@ -128,12 +139,16 @@ function clampSidebarWidth(width: unknown): number {
   return Math.max(FLOOR_SIDEBAR_MIN_WIDTH, Math.min(FLOOR_SIDEBAR_MAX_WIDTH, Math.round(n)))
 }
 
-function loadFloorPrefs(): FloorPrefs {
+export function loadFloorPrefs(): FloorPrefs {
   try {
     const raw = localStorage.getItem(FLOOR_PREFS_KEY)
     if (!raw) return defaultFloorPrefs()
-    const parsed = { ...defaultFloorPrefs(), ...JSON.parse(raw) }
-    return { ...parsed, sidebarWidth: clampSidebarWidth(parsed.sidebarWidth) }
+    const saved = JSON.parse(raw) as Partial<FloorPrefs>
+    const parsed = { ...defaultFloorPrefs(), ...saved }
+    const migrated = saved.layoutVersion === FLOOR_PREFS_LAYOUT_VERSION
+      ? parsed
+      : { ...parsed, layoutVersion: FLOOR_PREFS_LAYOUT_VERSION, sidebar: false, rail: true, right: false }
+    return { ...migrated, sidebarWidth: clampSidebarWidth(migrated.sidebarWidth) }
   } catch {
     return defaultFloorPrefs()
   }
@@ -881,7 +896,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
 
   // Persist the durable Floor prefs (pinned set, plain/sidebar/right toggles, group-by, host pins).
   useEffect(() => {
-    saveFloorPrefs({ plain, sidebar: sidebarOpen, rail: railCollapsed, right: rightOpen, pinned: [...pinned], hostPins, sidebarWidth })
+    saveFloorPrefs({ layoutVersion: FLOOR_PREFS_LAYOUT_VERSION, plain, sidebar: sidebarOpen, rail: railCollapsed, right: rightOpen, pinned: [...pinned], hostPins, sidebarWidth })
   }, [plain, sidebarOpen, railCollapsed, rightOpen, pinned, hostPins, sidebarWidth])
 
   // Effective HOSTS pins: default to pinning just the local machine until the user
@@ -2073,8 +2088,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Selected agent: only when the user explicitly picks one. No auto-select — the right
   // rail must not slam to a "WAITING ON YOU" agent nobody clicked.
   const selectedFloorAgent: FloorAgent | null = useMemo(
-    () => (selectedAgentId ? floorAgents.find((a) => a.id === selectedAgentId) ?? null : null),
-    [selectedAgentId, floorAgents]
+    () => (selectedAgentId ? sessionsAgents.find((a) => a.id === selectedAgentId) ?? null : null),
+    [selectedAgentId, sessionsAgents]
   )
 
   const selectedFloorTicket = useMemo(
@@ -2315,6 +2330,13 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // rightOpen). Keep them symmetric.
   const selectFloorAgent = useCallback((id: string) => {
     setCenter('agents')
+    setSelectedAgentId(id)
+    setRightOpen(true)
+  }, [])
+
+  // A Sessions row opens detail in place; it must not navigate the center away from
+  // the session list just to reveal the selected session (PHNX-3593).
+  const selectSession = useCallback((id: string) => {
     setSelectedAgentId(id)
     setRightOpen(true)
   }, [])
@@ -2615,8 +2637,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       onToggleStar={(a) => togglePin(a.id)}
       onResume={openTerminalForAgent}
       onResumeMany={resumeManyAgents}
-      onSelect={(a) => selectFloorAgent(a.id)}
-      onView={(a) => selectFloorAgent(a.id)}
+      onSelect={(a) => selectSession(a.id)}
+      onView={(a) => selectSession(a.id)}
       selectedId={selectedAgentId}
       streamDegraded={sessionStreamDegraded}
     />
@@ -2747,9 +2769,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       )}
 
       <div className="page" style={{ flex: 1, minHeight: 0, height: 'auto', '--floor-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
-        {/* PHNX-3594 declutter: the Sessions surface is full-width — no left icon rail /
-            sidebar. Other centers keep theirs. */}
-        {center !== 'sessions' && sidebarOpen && (railCollapsed ? (
+        {sidebarOpen && (railCollapsed ? (
           <FloorRail
             agents={floorAgents}
             tickets={floorTickets}
@@ -2801,9 +2821,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           />
         ))}
         {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
-        {/* PHNX-3594 declutter: never auto-open the right detail/Foreman panel on the
-            Sessions surface — a row expands inline instead of paging a side panel. */}
-        {rightOpen && center !== 'sessions' && <div className="detail-col">{rightContent}</div>}
+        {rightOpen && <div className="detail-col">{rightContent}</div>}
       </div>
 
       {cardDragActive && (
