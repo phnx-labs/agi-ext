@@ -824,6 +824,27 @@ export function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteReco
   return cwd ? { command, args, cwd } : { command, args };
 }
 
+/** Single-quote a shell argument only when it isn't already a safe bare token. */
+function shellQuoteArg(value: string): string {
+  return /^[A-Za-z0-9._:@/-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Build the CLI's device-targeted resume command for a PREVIOUS (crashed/ended)
+ * session (PHNX-3593): `agents sessions resume <id> [--device <device>] --vscodium`.
+ * Host-owned so a webview payload can only pick the session, never inject — every
+ * interpolated value is single-quote escaped. `--device` is included only when a
+ * real (non-local) device is given; `--vscodium` opens the resumed session as an
+ * editor tab. Pure so the built command is unit-tested and quotable.
+ */
+export function buildRecoveryResumeCommand(sessionId: string, device?: string): string {
+  const parts = ['agents', 'sessions', 'resume', shellQuoteArg(sessionId)];
+  const d = (device || '').trim();
+  if (d) parts.push('--device', shellQuoteArg(d));
+  parts.push('--vscodium');
+  return parts.join(' ');
+}
+
 /** Map a recent (historical, non-active) SessionMeta onto RemoteSession. Recent =
  *  not live, so phase is always 'idle'; lastActivity drives the "…ago" stamp. */
 export function normalizeRecentSession(
