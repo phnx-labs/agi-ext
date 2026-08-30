@@ -1,7 +1,9 @@
 import React, { useMemo, useState, useCallback } from 'react'
 import { Icon } from './icons'
 import {
-  needsReconnect,
+  isPrevious,
+  resumeCommand,
+  todoProgress,
   type FloorAgent,
   type SessionFilter,
   type SessionGroup,
@@ -9,13 +11,17 @@ import {
 } from './floorModel'
 import {
   scopeSessions,
-  groupSessions,
+  buildSessionSections,
   sessionChipCounts,
+  orderedPrevious,
+  previousInitialCount,
+  PREVIOUS_PAGE,
   type SessionSection,
   type SessionScope,
 } from './sessionsModel'
 import { sessionRowView, type SessionRowView } from './recapModel'
 import { useVirtualList } from './useVirtualList'
+import { useNow } from './useNow'
 import { AgentAvatar, agentIdFromPrefix } from './AgentAvatar'
 
 // The Sessions surface: one place to see every session you own — local + remote,
