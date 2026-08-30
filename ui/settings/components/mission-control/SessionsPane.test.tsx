@@ -206,6 +206,10 @@ describe('SessionsPane', () => {
     expect(html).toContain('>Favorites<')
     expect(html).not.toContain('>Orphaned<')
     expect(html).not.toContain('>Starred<')
+    expect(html).not.toContain('All projects')
+    expect(html).not.toContain('All hosts')
+    expect(html).not.toContain('Filter by project')
+    expect(html).not.toContain('Filter by machine')
   })
 
   test('meta chips live under sx-metarow', () => {
