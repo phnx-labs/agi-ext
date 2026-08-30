@@ -34,13 +34,15 @@ import { extractLinearTicketId } from '../core/utils';
 import { readPrompts } from './settings.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { openExternalUrl } from './webviewSecurity';
-import { parseLineForActivity, formatActivity, todoProgressFromCli, type TodoProgress } from '../core/session.activity';
+import { parseLineForActivity, formatActivity, type TodoProgress } from '../core/session.activity';
 import {
   extractPrUrls as extractPrUrlsHelper,
   type PullRequestRef as SharedPullRequestRef,
   type WorktreeRef as SharedWorktreeRef,
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
+import type { RemoteSession, RemoteTodoItem } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 
 export const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
@@ -460,65 +462,55 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       quickPrompts: pickQuickPrompts(),
     };
 
-    // ── Warm fill from the live session stream (PHNX-3517) ──────────────────
-    // Everything a tab-switch needs to paint — what the agent is doing right
-    // now, its todo checklist, topic, PR, version/account, branch — is already
-    // in memory from the `agents sessions watch --json` stream that the Fleet
-    // already consumes (sessionPresentationStore, kept live by apply()). Read it
-    // SYNCHRONOUSLY so switching among 200+ tabs repaints instantly. This path
-    // spawns NOTHING. The old path spawned `agents sessions … --include tools`
-    // (for todos) and `agents teams status` per team on EVERY switch — 2-8
-    // subprocesses per render — which, behind the all-or-nothing snapshot, is
-    // what left the panel wedged on "Loading…" for seconds.
+    // ── Fill from the CLI-normalized session stream (PHNX-3517) ─────────────
+    // Everything a tab-switch needs to paint — what the agent is doing now, its
+    // todo checklist, topic, last message, PR, branch — is already in memory,
+    // NORMALIZED by the CLI-mirror (`presentedSessions` → RemoteSession), off the
+    // `agents sessions watch --json` stream the Fleet already consumes. Read it
+    // SYNCHRONOUSLY (no subprocess) and reuse the SAME normalized fields every
+    // other surface reads — the ext never re-derives them from the raw row. The
+    // old path spawned `agents sessions … --include tools` + `agents teams
+    // status` per team on EVERY switch (2-8 subprocesses), which behind the
+    // all-or-nothing snapshot wedged the panel on "Loading…" for seconds.
     if (sessionId) {
-      const warm = findWarmSessionRow(sessionId);
-      if (warm) {
-        const topic = firstString(warm.topic, warm.firstUserMessage, warm.prompt);
-        const lastMessage = firstString(warm.lastResponse);
+      const live = findLiveSession(sessionId);
+      if (live) {
         snapshot.conversation = {
-          topic,
-          lastMessage,
+          topic: live.topic || undefined,
+          lastMessage: live.lastResponse || undefined,
           messageCount: 0,
-          lastActivityMs: typeof warm.lastActivityMs === 'number' ? warm.lastActivityMs : undefined,
+          lastActivityMs: live.lastActivityMs || undefined,
         };
-        const linear = extractLinearTicketId(topic) || extractLinearTicketId(lastMessage);
+        const linear = extractLinearTicketId(live.topic) || extractLinearTicketId(live.lastResponse);
         if (linear) snapshot.linearIssue = linear;
 
-        // The checklist rides the stream (CLI ActiveSession.todos, RUSH-1380) —
-        // the same shape the tool-stats spawn used to return, now free.
-        const todos = todoProgressFromCli(warm.todos);
+        // Checklist — already the CLI-normalized RemoteTodoItem[]; just tally it.
+        const todos = todoProgressFromRemote(live.todos);
         if (todos) snapshot.todoProgress = todos;
 
-        // "What's being worked on" from the streamed tail / activity — no
-        // transcript read. Prefer the recent-turn tail; fall back to the live
-        // one-line `activity`.
-        const tail = Array.isArray(warm.tail)
-          ? warm.tail.map((t) => String(t)).filter(Boolean)
-          : [];
-        if (tail.length && entry.agentType) {
-          snapshot.recentActivity = collectRecentActivity(tail, entry.agentType, 5);
-        } else if (typeof warm.activity === 'string' && warm.activity.trim()) {
-          snapshot.recentActivity = [{ kind: 'working', summary: warm.activity.trim(), ts: Date.now() }];
+        // "What's being worked on": the CLI's computed one-line `activity`, else
+        // the recent-turn tail.
+        if (live.activity && live.activity.trim()) {
+          snapshot.recentActivity = [{ kind: 'working', summary: live.activity.trim(), ts: Date.now() }];
+        } else if (live.tail.length && entry.agentType) {
+          snapshot.recentActivity = collectRecentActivity(live.tail, entry.agentType, 5);
         }
 
-        // PRs: the stream carries prUrl; also scan the tail so a PR mentioned in
-        // a wrap-up turn isn't dropped. extractPrUrls dedupes.
-        const prUrl = firstString(warm.prUrl);
-        snapshot.pullRequests = extractPrUrls([prUrl ?? '', ...tail, topic ?? '', lastMessage ?? '']);
+        // PR: the CLI already extracted the url — structure it, don't re-scan.
+        if (live.prUrl) snapshot.pullRequests = extractPrUrls([live.prUrl]);
 
-        const warmBranch = firstString(warm.branch, warm.worktree?.branch);
-        if (warmBranch) snapshot.git = { branch: warmBranch };
+        if (live.branch) snapshot.git = { branch: live.branch };
       }
 
-      // version + account ride the stream too (RUSH-2205 / RUSH-3184), moved off
-      // a per-tab spawn precisely to kill the 2026-08-25 CPU incident. Prefer the
-      // broadcast identity over the terminal entry's cached copy.
-      const live = sessionPresentationStore.liveSession(sessionId);
-      if (live) {
-        if (live.version) snapshot.version = live.version;
-        if (live.account) snapshot.account = live.account;
-        if (!snapshot.conversation?.topic && live.topic) {
-          snapshot.conversation = { ...(snapshot.conversation ?? { messageCount: 0 }), topic: live.topic };
+      // version + account aren't on the normalized RemoteSession; the store
+      // exposes them per id from the same stream (RUSH-2205 / RUSH-3184), moved
+      // off a per-tab spawn to kill the 2026-08-25 CPU incident.
+      const identity = sessionPresentationStore.liveSession(sessionId);
+      if (identity) {
+        if (identity.version) snapshot.version = identity.version;
+        if (identity.account) snapshot.account = identity.account;
+        if (!snapshot.conversation?.topic && identity.topic) {
+          snapshot.conversation = { ...(snapshot.conversation ?? { messageCount: 0 }), topic: identity.topic };
         }
       }
     }
@@ -1754,28 +1746,24 @@ async function getWorktreesRouted(
   return [...byPath.values()];
 }
 
-/** The raw warm stream row for a session id, or undefined when the watch stream
- *  has not indexed it yet. Loosely typed — the sidebar reads only the fields it
- *  paints, all already in memory (no subprocess). PHNX-3517. */
-interface WarmSessionRow {
-  topic?: unknown; firstUserMessage?: unknown; prompt?: unknown;
-  lastResponse?: unknown; lastActivityMs?: unknown;
-  todos?: unknown; tail?: unknown[]; activity?: unknown;
-  prUrl?: unknown; branch?: unknown; worktree?: { branch?: unknown } | null;
-}
-function findWarmSessionRow(sessionId: string): WarmSessionRow | undefined {
-  return sessionPresentationStore.sessions().find((value) => {
-    const c = value as { id?: unknown; sessionId?: unknown };
-    return c.id === sessionId || c.sessionId === sessionId;
-  }) as WarmSessionRow | undefined;
+/** The CLI-normalized RemoteSession for a session id, from the warm
+ *  `agents sessions watch --json` stream, or undefined until the stream indexes
+ *  it. Reuses `presentedSessions` — the ext's mirror of the CLI shape — so the
+ *  sidebar reads the SAME normalized fields (`lastResponse`, `todos`, `activity`,
+ *  `prUrl`, `branch`) every other surface does, never re-deriving them from the
+ *  raw row. Synchronous, in-memory: no subprocess (PHNX-3517). */
+function findLiveSession(sessionId: string): RemoteSession | undefined {
+  return sessionPresentationStore
+    .presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
+    .find((s) => s.sessionId === sessionId);
 }
 
-/** First non-empty trimmed string among the args, else undefined. */
-function firstString(...vals: unknown[]): string | undefined {
-  for (const v of vals) {
-    if (typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return undefined;
+/** Tally the already-normalized checklist into the panel's done/total shape.
+ *  Not a re-parse — `RemoteSession.todos` is the CLI-normalized RemoteTodoItem[]
+ *  (same item shape as TodoProgressItem). */
+function todoProgressFromRemote(todos: RemoteTodoItem[] | undefined): TodoProgress | undefined {
+  if (!todos || !todos.length) return undefined;
+  return { todos, done: todos.filter((t) => t.status === 'completed').length, total: todos.length };
 }
 
 /** Read the session's CLI-provided throttle state without probing account state. */
