@@ -259,11 +259,9 @@ interface SessionsPaneProps {
   onResume: (a: FloorAgent) => void
   /** Resume many at once (bulk). Parent loops the resume path. */
   onResumeMany: (agents: FloorAgent[]) => void
-  /** Select a session for the detail pane. */
+  /** Select a session (reserved; the surface expands rows inline rather than paging
+   *  a detail panel, so this is currently unused by the row interactions). */
   onSelect: (a: FloorAgent) => void
-  /** View a non-resumable session's transcript (recovery: null harnesses).
-   *  Defaults to onSelect (open the detail pane) when the parent supplies none. */
-  onView?: (a: FloorAgent) => void
   /** Currently selected session id (detail pane). */
   selectedId?: string | null
   /** True while the follower has not yet observed a CLI stream reset. */
@@ -302,7 +300,7 @@ const GROUP_OPTS: { value: SessionGroup; label: string }[] = [
   { value: 'flat', label: 'Flat' },
 ]
 
-export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, onView, selectedId, streamDegraded = false }: SessionsPaneProps) {
+export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [project, setProject] = useState<string | null>(null)
   const [host, setHost] = useState<string | null>(null)
@@ -448,7 +446,6 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
                     onToggleSelect={toggleSelect}
                     onToggleStar={onToggleStar}
                     onResume={onResume}
-                    onView={onView ?? onSelect}
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
                   />
@@ -518,7 +515,6 @@ interface RowProps {
   onToggleSelect: (id: string) => void
   onToggleStar: (a: FloorAgent) => void
   onResume: (a: FloorAgent) => void
-  onView: (a: FloorAgent) => void
   onSelect: (a: FloorAgent) => void
   onToggleExpand: (id: string) => void
 }
@@ -572,8 +568,8 @@ function clockLabel(ms: number): string {
   try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' }
 }
 
-function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
-  a: FloorAgent; row: SessionRowView; nowMs: number; onResume: (a: FloorAgent) => void; onView: (a: FloorAgent) => void
+function ExpandedDetail({ a, row, nowMs, onResume }: {
+  a: FloorAgent; row: SessionRowView; nowMs: number; onResume: (a: FloorAgent) => void
 }) {
   const ask = row.you.text || a.prompt || ''
   const segments = activitySegments(a)
@@ -628,11 +624,8 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
         <div className="sx-catch">
           {a.ticket && <span className="lnk">◇ {a.ticket}</span>}
           {row.repo && <span className="lnk">▪ {row.repo}{a.files ? ` · ${a.files} files` : ''}</span>}
-          <span className="lnk" onClick={() => onView(a)}>Session ↗</span>
           {device && <span className="lnk">◈ {device}</span>}
-          {canResume
-            ? <span className="lnk go" onClick={() => onResume(a)}>↻ Resume here</span>
-            : <span className="lnk" onClick={() => onView(a)}>View transcript</span>}
+          {canResume && <span className="lnk go" onClick={() => onResume(a)}>↻ Resume here</span>}
         </div>
       </div>
     </div>
@@ -641,7 +634,7 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
 
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onView, onSelect, onToggleExpand,
+  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand,
 }: RowProps) {
   const prev = isPrevious(a)
   // A LIVE session is always resumable/focusable via the normal path; only a PREVIOUS
@@ -716,7 +709,7 @@ function SessionRowImpl({
           {device && <span className="sx-chip device">◈ {device}</span>}
           {!row.pr && !a.ticket && <span className="sx-chip nopr">no PR</span>}
         </div>
-        {expanded && <ExpandedDetail a={a} row={row} nowMs={nowMs} onResume={onResume} onView={onView} />}
+        {expanded && <ExpandedDetail a={a} row={row} nowMs={nowMs} onResume={onResume} />}
       </span>
       <span className="sx-rowactions">
         {canResume ? (
@@ -726,10 +719,14 @@ function SessionRowImpl({
             onClick={(e) => { e.stopPropagation(); onResume(a) }}
           ><span aria-hidden>↻</span><span className="sx-resumelabel">Resume</span></button>
         ) : (
+          // Non-resumable harness (grok/gemini/droid/cursor): View opens the session's
+          // detail INLINE (the ask / activity / checklist), never a right panel or a
+          // center switch — the Sessions surface is fully self-contained, so there is no
+          // way to strand navigation (PHNX-3594).
           <button
             className="sx-viewbtn"
-            title="View the session transcript (this harness has no resume path)"
-            onClick={(e) => { e.stopPropagation(); onView(a) }}
+            title="View this session's detail"
+            onClick={(e) => { e.stopPropagation(); onToggleExpand(a.id) }}
           ><span aria-hidden>↗</span><span className="sx-resumelabel">View</span></button>
         )}
         <span className="sx-age">{row.age}</span>

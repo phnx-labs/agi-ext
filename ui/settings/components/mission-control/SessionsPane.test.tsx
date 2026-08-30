@@ -73,7 +73,6 @@ const rowProps = {
   onToggleSelect: noop,
   onToggleStar: noop,
   onResume: noop,
-  onView: noop,
   onSelect: noop,
   onToggleExpand: noop,
 }
@@ -161,8 +160,8 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
-  test('a non-resumable harness (recovery null) shows View, never a dead Resume', () => {
-    const seen: string[] = []
+  test('a non-resumable harness (recovery null) shows View, and View expands inline — never resumes or navigates', () => {
+    const expanded: string[] = []
     const host = document.createElement('div')
     document.body.appendChild(host)
     const root = createRoot(host)
@@ -172,7 +171,8 @@ describe('SessionRow — compact card', () => {
           agent={prevAgent({ id: 'grok1', abbr: 'GK', resumable: false, recovery: null })}
           {...rowProps}
           onResume={() => { throw new Error('must not resume a non-resumable harness') }}
-          onView={(a) => { seen.push(a.id) }}
+          onSelect={() => { throw new Error('View must not navigate/select — it expands inline') }}
+          onToggleExpand={(id) => { expanded.push(id) }}
         />,
       )
     })
@@ -180,10 +180,22 @@ describe('SessionRow — compact card', () => {
     const view = host.querySelector('.sx-viewbtn') as HTMLButtonElement
     expect(view).toBeTruthy()
     expect(view.querySelector('.sx-resumelabel')?.textContent).toBe('View')
+    // View opens the detail INLINE (no right panel, no center switch): it toggles the
+    // row's own expand state — the fix for the PHNX-3594 navigation dead-end.
     act(() => { view.click() })
-    expect(seen).toEqual(['grok1'])
+    expect(expanded).toEqual(['grok1'])
     act(() => root.unmount())
     host.remove()
+  })
+
+  test('the expanded detail carries no panel-opening / navigating links (fully inline)', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'p1' })} {...rowProps} expanded />)
+    expect(html).toContain('Catch up')
+    // no "Session ↗" / "View transcript" links that would page a right panel and strand nav
+    expect(html).not.toContain('Session ↗')
+    expect(html).not.toContain('View transcript')
+    // a resumable Previous row still offers Resume here inline
+    expect(html).toContain('Resume here')
   })
 })
 
@@ -228,7 +240,6 @@ describe('SessionsPane', () => {
         onResume={noop}
         onResumeMany={noop}
         onSelect={noop}
-        onView={noop}
       />,
     )
     expect(html).toContain('Previous · resumable')
