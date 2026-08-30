@@ -3218,7 +3218,12 @@
  * component because the virtualizer and the rendered height are one contract.
  * Shared filter, scroll, bulk-action, and theme tokens remain here.
  * ========================================================================== */
-.sw-sessions { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 13px; }
+/* width:100% + min-width:0 are load-bearing: the host .feed-col is a
+ * `display:flex; justify-content:center` row, so a width-auto child shrink-wraps to
+ * its widest row and gets centered off-screen (measured left:-10044px, width:20506px)
+ * in the narrow list+detail column — the whole list paints as an empty black band.
+ * Filling the column keeps every row clamped to the container instead. */
+.sw-sessions { display: flex; flex-direction: column; width: 100%; min-width: 0; height: 100%; min-height: 0; font-size: 13px; }
 
 /* --- filter / group / sort bar --- */
 .sx-filters {
