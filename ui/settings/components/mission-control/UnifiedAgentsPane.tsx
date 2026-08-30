@@ -2724,8 +2724,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
 
   return (
     <div className="sw-floor-dashboard" style={{ padding: 0, overflow: 'hidden' }}>
+      {/* PHNX-3594 declutter: drop the center counter bar (Sessions/Agents/Backlog/
+          …) — the Fleet view IS the session list. Dispatch stays pinned in the header,
+          and open task tabs still render. */}
       <FloorSubtabs
-        fixed={fixedTabs}
+        fixed={[]}
         center={center}
         taskTabs={openTaskTabs}
         activeTaskTab={activeTaskTab}
@@ -2759,7 +2762,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       )}
 
       <div className="page" style={{ flex: 1, minHeight: 0, height: 'auto', '--floor-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
-        {sidebarOpen && (railCollapsed ? (
+        {/* PHNX-3594 declutter: the Sessions surface is full-width — no left icon rail /
+            sidebar. Other centers keep theirs. */}
+        {center !== 'sessions' && sidebarOpen && (railCollapsed ? (
           <FloorRail
             agents={floorAgents}
             tickets={floorTickets}
@@ -2811,7 +2816,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           />
         ))}
         {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
-        {rightOpen && <div className="detail-col">{rightContent}</div>}
+        {/* PHNX-3594 declutter: never auto-open the right detail/Foreman panel on the
+            Sessions surface — a row expands inline instead of paging a side panel. */}
+        {rightOpen && center !== 'sessions' && <div className="detail-col">{rightContent}</div>}
       </div>
 
       {cardDragActive && (
