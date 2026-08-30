@@ -52,21 +52,25 @@ export interface SessionScope {
 
 const hostOf = (a: FloorAgent): string => a.hostLabel ?? a.host
 
-/** True when a session is in one of the live "active" states (not reconnect, not done). */
+/** Epoch ms of a session's last activity, falling back to its start. 0 when unknown. */
+function activityMs(a: FloorAgent): number {
+  return a.lastActivityMs || a.startedAtMs || 0
+}
+
+/** True when a session is a live, still-going one — not Previous, not finished. */
 function isActive(a: FloorAgent): boolean {
-  return !needsReconnect(a) && a.phase !== 'done'
+  return !isPrevious(a) && a.phase !== 'done'
 }
 
 /**
  * Apply the status chip + project + host + search filters. Pure; order-independent.
- * 'starred' keeps only pinned rows; 'orphaned' keeps only needs-reconnect rows;
- * 'active' drops reconnect + done; 'all' keeps everything.
+ * 'favorites' keeps only pinned rows; 'active' keeps only live still-going sessions
+ * (drops Previous + done); 'all' keeps everything (Previous rows land in the bottom band).
  */
 export function scopeSessions(all: FloorAgent[], scope: SessionScope): FloorAgent[] {
   const q = scope.search.trim().toLowerCase()
   return all.filter((a) => {
-    if (scope.filter === 'starred' && !a.pinned) return false
-    if (scope.filter === 'orphaned' && !needsReconnect(a)) return false
+    if (scope.filter === 'favorites' && !a.pinned) return false
     if (scope.filter === 'active' && !isActive(a)) return false
     if (scope.project && a.project !== scope.project) return false
     if (scope.host && hostOf(a) !== scope.host) return false
@@ -78,17 +82,13 @@ export function scopeSessions(all: FloorAgent[], scope: SessionScope): FloorAgen
   })
 }
 
-// Lower rank sorts first under 'status'. reconnect is the acute case (detached but
-// alive, or crashed), so it takes rank 0; everything else defers to the shared
-// PHASE_PROGRESS_RANK, shifted by one to leave room for it. That table is the single
-// phase ordering the whole floor ranks by — progress, not liveness (root AGENTS.md
-// "Purpose") — so `Sort: Status` puts idle-but-unfinished work above running and leaves
-// `done` terminal, matching BAND_ORDER below instead of contradicting it. This table
-// used to be a second, hand-maintained copy, which is how the two drifted into opposite
-// orders (RUSH-2838).
+// Lower rank sorts first under 'status'. Live sessions defer to the shared
+// PHASE_PROGRESS_RANK (progress, not liveness — root AGENTS.md "Purpose"), so
+// `Sort: Status` puts idle-but-unfinished work above running and leaves `done`
+// terminal. PREVIOUS (ended, resumable) rows rank last, matching the bottom band.
 function statusRank(a: FloorAgent): number {
-  if (needsReconnect(a)) return 0
-  return PHASE_PROGRESS_RANK[a.phase] + 1
+  if (isPrevious(a)) return PHASE_PROGRESS_RANK.done + 1
+  return PHASE_PROGRESS_RANK[a.phase]
 }
 
 /**
@@ -131,42 +131,49 @@ export function sortSessions(list: FloorAgent[], sort: SessionSort, desc: boolea
 }
 
 const BAND_LABEL: Record<SessionBand, string> = {
-  reconnect: 'Needs reconnecting',
   attention: 'Needs attention',
   active: 'Running',
   done: 'Recently finished',
+  previous: 'Previous · resumable',
 }
-// Ranked by progress (root AGENTS.md "Purpose"): detached work first, then live work
-// that has STOPPED progressing (attention), then healthy running work, then done —
-// so idle-but-unfinished sessions surface above running, never buried below it.
-const BAND_ORDER: SessionBand[] = ['reconnect', 'attention', 'active', 'done']
+// Ranked by progress (root AGENTS.md "Purpose"): live work that has STOPPED
+// progressing (attention) first, then healthy running work, then done. PREVIOUS
+// is never in this list — it is appended as a bounded bottom band by
+// buildSessionSections, always last.
+const BAND_ORDER: SessionBand[] = ['attention', 'active', 'done']
 
 /**
- * Group a scoped list into ordered sections. Starred sessions are lifted into a
- * single "Starred" section at the very top (so they are always one glance away),
- * and are NOT repeated below — EXCEPT when the filter is already 'starred', where
- * the whole list is starred and a separate band would be noise. Everything else is
- * grouped by `group`, and every section is sorted by (`sort`,`desc`).
+ * Group the LIVE (non-Previous) scoped list into ordered sections. Favorite sessions
+ * are lifted into a single "Favorites" section at the very top (so they are always
+ * one glance away), and are NOT repeated below — EXCEPT when the filter is already
+ * 'favorites', where the whole list is pinned and a separate band would be noise.
+ * Everything else is grouped by `group`, and every section is sorted by (`sort`,`desc`).
+ *
+ * PREVIOUS rows are NOT grouped here — buildSessionSections appends them as a bounded
+ * bottom band. A caller that wants the whole surface (live + Previous) uses
+ * buildSessionSections, not this directly.
  */
 export function groupSessions(
   scoped: FloorAgent[],
   group: SessionGroup,
   sort: SessionSort,
   desc: boolean,
-  /** True when the active status filter is already 'starred' — then the whole list
-   *  is starred, so a separate top "Starred" section would be pure noise. Keyed off
+  /** True when the active status filter is already 'favorites' — then the whole list
+   *  is pinned, so a separate top "Favorites" section would be pure noise. Keyed off
    *  the actual filter, NOT "every visible row happens to be pinned" (which would
-   *  also drop the section for a user whose only sessions are all starred on the
+   *  also drop the section for a user whose only sessions are all favorited on the
    *  'all' filter — the exact case the top section exists for). */
-  filterIsStarred = false,
+  filterIsFavorites = false,
 ): SessionSection[] {
   const sections: SessionSection[] = []
 
-  const starred = filterIsStarred ? [] : scoped.filter((a) => a.pinned)
-  const rest = filterIsStarred ? scoped : scoped.filter((a) => !a.pinned)
+  // Previous rows never enter the grouped live sections — they are the bottom band.
+  const live = scoped.filter((a) => !isPrevious(a))
+  const favorites = filterIsFavorites ? [] : live.filter((a) => a.pinned)
+  const rest = filterIsFavorites ? live : live.filter((a) => !a.pinned)
 
-  if (starred.length) {
-    sections.push({ key: 'starred', label: 'Starred', kind: 'starred', agents: sortSessions(starred, sort, desc) })
+  if (favorites.length) {
+    sections.push({ key: 'favorites', label: 'Favorites', kind: 'favorites', agents: sortSessions(favorites, sort, desc) })
   }
 
   if (group === 'flat') {
@@ -194,9 +201,9 @@ export function groupSessions(
     return sections
   }
 
-  // group === 'project' | 'host': bucket by key, order buckets by "needs
-  // reconnecting first, then most rows", so the projects/machines with lost work
-  // rise to the top.
+  // group === 'project' | 'host': bucket by key, order buckets by "most rows first"
+  // so the busiest projects/machines rise to the top (Previous work is the bottom band,
+  // not folded in here).
   const keyOf = group === 'project' ? (a: FloorAgent) => a.project : hostOf
   const buckets = new Map<string, FloorAgent[]>()
   for (const a of rest) {
@@ -206,9 +213,6 @@ export function groupSessions(
     else buckets.set(k, [a])
   }
   const ordered = [...buckets.entries()].sort((a, b) => {
-    const ra = a[1].some(needsReconnect) ? 0 : 1
-    const rb = b[1].some(needsReconnect) ? 0 : 1
-    if (ra !== rb) return ra - rb
     if (b[1].length !== a[1].length) return b[1].length - a[1].length
     return a[0].localeCompare(b[0])
   })
@@ -226,12 +230,61 @@ export function groupSessions(
 /** Counts for the filter chips — computed once over the full (unscoped-by-chip) list. */
 export function sessionChipCounts(all: FloorAgent[]): Record<SessionFilter, number> {
   let active = 0
-  let orphaned = 0
-  let starred = 0
+  let favorites = 0
   for (const a of all) {
-    if (a.pinned) starred++
-    if (needsReconnect(a)) orphaned++
-    else if (a.phase !== 'done') active++
+    if (a.pinned) favorites++
+    if (!isPrevious(a) && a.phase !== 'done') active++
   }
-  return { all: all.length, active, orphaned, starred }
+  return { all: all.length, active, favorites }
+}
+
+// ---------- Previous · resumable bottom band ----------
+
+/** Every PREVIOUS (ended, resumable) row, newest activity first. */
+export function orderedPrevious(scoped: FloorAgent[]): FloorAgent[] {
+  return scoped.filter(isPrevious).sort((a, b) => activityMs(b) - activityMs(a))
+}
+
+/**
+ * How many Previous rows to show by default: those active within the last 7 days,
+ * capped at 50. When everything resumable is older than the window (nothing recent),
+ * still seed the band with the newest page so a reboot's recoverable work is never
+ * fully hidden — "Show 10 more" then pages further back through the rest.
+ */
+export function previousInitialCount(ordered: FloorAgent[], nowMs: number): number {
+  const withinWindow = ordered.filter((a) => {
+    const t = activityMs(a)
+    return t > 0 && nowMs - t <= PREVIOUS_WINDOW_MS
+  }).length
+  if (withinWindow > 0) return Math.min(withinWindow, PREVIOUS_DEFAULT_LIMIT)
+  return Math.min(ordered.length, PREVIOUS_PAGE)
+}
+
+/**
+ * The whole Sessions surface: the grouped LIVE sections, then — unless the filter is
+ * 'active' — a single bounded "Previous · resumable" band appended LAST. `shown`
+ * caps the band's rows (the component grows it via "Show 10 more"); the section
+ * carries the full resumable `total` so the header can offer paging + Resume all N.
+ */
+export function buildSessionSections(
+  scoped: FloorAgent[],
+  group: SessionGroup,
+  sort: SessionSort,
+  desc: boolean,
+  opts: { filter: SessionFilter; nowMs: number; previousShown?: number },
+): SessionSection[] {
+  const sections = groupSessions(scoped, group, sort, desc, opts.filter === 'favorites')
+  if (opts.filter === 'active') return sections
+  const ordered = orderedPrevious(scoped)
+  if (ordered.length === 0) return sections
+  const shown = opts.previousShown ?? previousInitialCount(ordered, opts.nowMs)
+  sections.push({
+    key: 'band:previous',
+    label: BAND_LABEL.previous,
+    kind: 'band',
+    band: 'previous',
+    agents: ordered.slice(0, Math.max(0, shown)),
+    total: ordered.length,
+  })
+  return sections
 }
