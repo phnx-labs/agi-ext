@@ -161,6 +161,20 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
+  test('clicking a session row selects it for the right detail panel', () => {
+    const seen: string[] = []
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(<SessionRow agent={agent({ id: 'select-me' })} {...rowProps} onSelect={(a) => { seen.push(a.id) }} />)
+    })
+    act(() => { (host.querySelector('.sx-row') as HTMLDivElement).click() })
+    expect(seen).toEqual(['select-me'])
+    act(() => root.unmount())
+    host.remove()
+  })
+
   test('a non-resumable harness (recovery null) shows View, never a dead Resume', () => {
     const seen: string[] = []
     const host = document.createElement('div')

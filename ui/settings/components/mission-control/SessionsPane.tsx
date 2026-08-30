@@ -675,7 +675,7 @@ function SessionRowImpl({
     <div
       className={`sx-row${selected ? ' sel' : ''}${active ? ' active' : ''}`}
       style={{ height }}
-      onClick={() => onToggleExpand(a.id)}
+      onClick={() => { onToggleExpand(a.id); onSelect(a) }}
     >
       <button
         className={`sx-cb${selected ? ' on' : ''}`}
