@@ -114,8 +114,8 @@ export const SESSION_ROW_CSS = `
   .sw-sessions .sx-roletag { width: 48px; }
   .sw-sessions .sx-metarow { padding-left: 57px; }
   .sw-sessions .sx-rowactions { gap: 6px; }
-  .sw-sessions .sx-resumebtn { padding: 3px 6px; font-size: 0; }
-  .sw-sessions .sx-resumebtn::first-letter { font-size: 12px; }
+  .sw-sessions .sx-resumebtn { padding: 3px 6px; }
+  .sw-sessions .sx-resumelabel { display: none; }
   .sw-sessions .sx-age { width: 28px; font-size: 10px; }
 }
 `
@@ -447,7 +447,7 @@ function SessionRowImpl({
           className="sx-resumebtn"
           title={resumeTitle}
           onClick={(e) => { e.stopPropagation(); onResume(a) }}
-        >↻ Resume</button>
+        ><span aria-hidden>↻</span><span className="sx-resumelabel">Resume</span></button>
         <span className="sx-age">{row.age}</span>
         <span className={`sx-live${liveClass ? ` ${liveClass}` : ''}`} title={a.liveStatus || a.phase} />
       </span>

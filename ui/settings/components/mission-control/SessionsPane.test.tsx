@@ -76,7 +76,8 @@ describe('SessionRow — mockup contract', () => {
     expect(html).toContain('PR #418')
     expect(html).toContain('▪ svatlas')
     expect(html).toContain('yosemite-s1')
-    expect(html).toContain('↻ Resume')
+    expect(html).toContain('aria-hidden="true">↻</span>')
+    expect(html).toContain('class="sx-resumelabel">Resume</span>')
     expect(html).toContain('⌄ more')
     expect(html).toContain('sx-roletag you')
     expect(html).toContain('sx-roletag agent')
@@ -158,6 +159,8 @@ describe('SessionRow — mockup contract', () => {
     const btn = html.querySelector('.sx-resumebtn') as HTMLButtonElement
     expect(btn).toBeTruthy()
     expect(btn.textContent).toContain('Resume')
+    expect(btn.querySelector('span[aria-hidden]')?.textContent).toBe('↻')
+    expect(btn.querySelector('.sx-resumelabel')?.textContent).toBe('Resume')
     act(() => { btn.click() })
     expect(seen).toEqual(['resume-me'])
     act(() => root.unmount())
