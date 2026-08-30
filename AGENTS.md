@@ -40,6 +40,14 @@ presentation layer. Concretely:
 4. **Fail loud.** A missing CLI noun is an upgrade error, never a filesystem
    fallback.
 
+The `agentsPanel.terminal` activity-bar view is the focused session's work card,
+not a command catalog or tracker browser. It renders request/attachments,
+runtime and tokens, checklist progress, artifacts/delivery links, delegated-team
+summary, and current activity from the normalized session stream. Keep recent
+files secondary. Do not reintroduce Quick Actions, Quick Prompts, worktree/CWD
+navigation, an Issues view, or a filesystem/transcript fallback to fill missing
+card fields; add missing facts to the CLI row instead.
+
 ## Known debt — scheduled for deletion, do NOT extend
 
 These violate the rule above. They exist; they are tracked; touching one means

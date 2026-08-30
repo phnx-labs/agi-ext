@@ -44,3 +44,25 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
     expect(() => new Function(script)).not.toThrow();
   }
 });
+
+test('Active Session render is outcome-oriented and drops utility-stack cards (PHNX-3574)', () => {
+  const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
+  const renderStart = src.indexOf('root.innerHTML = (', src.indexOf('function render(snap)'));
+  const renderEnd = src.indexOf("'<div class=\"footer\"", renderStart);
+  const renderOrder = src.slice(renderStart, renderEnd);
+
+  expect(renderOrder).toContain('renderSessionStats(snap)');
+  expect(renderOrder).toContain('renderConversationCard(snap)');
+  expect(renderOrder).toContain('renderChecklistCard(snap)');
+  expect(renderOrder).toContain('renderDeliverablesCard(snap)');
+  expect(renderOrder).toContain('renderSpawnedTeamCard(snap)');
+  expect(renderOrder).toContain('renderActivityCard(snap)');
+  expect(renderOrder.indexOf('renderConversationCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
+  expect(renderOrder).not.toContain('renderActionsCard');
+  expect(renderOrder).not.toContain('renderPromptsCard');
+  expect(renderOrder).not.toContain('renderWorktreesCard');
+  expect(renderOrder).not.toContain('renderCwdCard');
+
+  const manifest = fs.readFileSync(path.join(import.meta.dir, '../../package.json'), 'utf8');
+  expect(manifest).not.toContain('agentsPanel.issues');
+});

@@ -82,6 +82,17 @@ the harness generates a name or the session is renamed; a label set with
 - **Agents: Resume** - The picker performs one bounded CLI listing when opened, then sends only the chosen canonical IDs to `agents sessions resume <id> --vscodium`.
 - **Resume variants** - `Agents: Resume (Pick Session)` lists only abandoned sessions — detached, backgrounded, parked, or idle, nothing currently open anywhere — and resumes each on the device it was created on. `Agents: Resume (Pick Host)` reopens the active tab's session on a device you pick (same harness, same version). `Agents: Resume (Pick Harness)` continues the active tab's session in a different harness on the same device, replaying the transcript through the universal `/continue` flow. `Agents: Resume (Best Profile)` rotates the active tab to the signed-in account with the most usage headroom (`Cmd+Shift+J`).
 
+### Active Session sidebar
+
+The activity-bar sidebar is a work brief for the focused agent: the original
+request and attachments, runtime and token usage, checklist progress, created
+plans/artifacts, ticket and PR links, spawned-team summary, and current activity.
+Recent files are available as a compact disclosure under Deliverables. Generic
+slash-command buttons, saved prompts, duplicate worktree/CWD navigation, and the
+separate Issues view are deliberately absent; those belong to their owning
+command, dashboard, Source Control, or tracker surfaces. All live facts ride the
+CLI session stream, so switching tabs does not start a transcript scan or poll.
+
 ### Fleet
 
 The dashboard's mission control. A live grid of interactive agents and cloud dispatches beside your Linear cycle. Background/headless runs are hidden by default; use the **Background** feed toggle when you need them. Compose and dispatch work with the Cmd+K composer, drag issue cards onto agents, or send a ticket straight to the cloud.

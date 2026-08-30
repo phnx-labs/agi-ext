@@ -184,6 +184,12 @@ export interface RemoteTodoItem {
   activeForm?: string;
 }
 
+export interface RemoteSessionArtifact {
+  path: string;
+  basename: string;
+  bucket: 'artifacts' | 'plans' | 'reports' | 'docs';
+}
+
 export interface RemoteSession {
   host: string;
   sessionId: string;
@@ -213,6 +219,12 @@ export interface RemoteSession {
   activity: string;
   /** Output-token throughput from the CLI payload (`ActiveSession.tokPerSec`), rounded. */
   tokPerSec: number;
+  /** Agent-created plans, reports, visuals, and other durable documents. */
+  artifacts: RemoteSessionArtifact[];
+  /** Plan file singled out by the CLI preview digest. */
+  planFile: string;
+  /** Number of subagents launched by this session. */
+  subAgentCount: number;
   waitingForInput: boolean;
   /** Per-session rate/usage limit from the CLI transcript (RUSH-1523). */
   rateLimited: boolean;
@@ -305,9 +317,8 @@ export interface RemoteSession {
   /** Where the session is currently being viewed, pre-formatted by the CLI (e.g.
    *  "Codium tab 3", "Ghostty tab 2", "detached"). '' when the CLI supplies none. */
   viewingIn: string;
-  /** Outcome fields, populated only for RECENT (historical) sessions — the flat
-   *  `agents sessions --json` payload carries them; the --active payload does not.
-   *  0 when unknown. These drive the Recap ledger (duration/cost per session). */
+  /** Outcome metrics from either a live CLI row or a RECENT (historical) row.
+   *  Undefined when the owning CLI cannot compute them. */
   durationMs?: number;
   costUsd?: number;
   tokenCount?: number;
@@ -389,6 +400,11 @@ export interface RawActiveSession {
   /** Output-token throughput (tokens/sec, rolling 60s window) computed by the CLI.
    *  Absent when no transcript is resolvable or the agent reports no usage. */
   tokPerSec?: number;
+  tokenCount?: number;
+  durationMs?: number;
+  artifacts?: unknown[];
+  planFile?: string;
+  subAgentCount?: number;
   /** Why the agent is waiting, when activity is waiting_input. */
   awaitingReason?: string | null;
   /** Structured decision the agent is waiting on (CLI ActiveSession.question). Present
@@ -462,6 +478,20 @@ function normalizeTodos(raw: RawActiveSession['todos']): RemoteTodoItem[] {
     out.push(activeForm ? { content, status, activeForm } : { content, status });
   }
   return out;
+}
+
+function normalizeSessionArtifacts(raw: unknown): RemoteSessionArtifact[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const value = entry as Record<string, unknown>;
+    const path = asStr(value.path);
+    const basename = asStr(value.basename);
+    const bucket = value.bucket;
+    if (!path || !basename) return [];
+    if (bucket !== 'artifacts' && bucket !== 'plans' && bucket !== 'reports' && bucket !== 'docs') return [];
+    return [{ path, basename, bucket }];
+  });
 }
 
 /**
@@ -658,6 +688,11 @@ export function normalizeActiveSession(
     // or waiting session must not keep showing its last tool action as current.
     activity: raw.activity === 'working' ? preview : '',
     tokPerSec: Math.round(asNum(raw.tokPerSec)),
+    tokenCount: raw.tokenCount === undefined ? undefined : asNum(raw.tokenCount),
+    durationMs: raw.durationMs === undefined ? undefined : asNum(raw.durationMs),
+    artifacts: normalizeSessionArtifacts(raw.artifacts),
+    planFile: asStr(raw.planFile),
+    subAgentCount: Math.max(0, Math.round(asNum(raw.subAgentCount))),
     waitingForInput: phase === 'waiting',
     rateLimited: raw.rateLimited === true,
     awaitingReason: asStr(raw.awaitingReason),
@@ -766,6 +801,9 @@ export function normalizeRecentSession(
     pidAlive: false,
     activity: '',
     tokPerSec: 0,
+    artifacts: [],
+    planFile: '',
+    subAgentCount: 0,
     waitingForInput: false,
     rateLimited: false,
     awaitingReason: '',

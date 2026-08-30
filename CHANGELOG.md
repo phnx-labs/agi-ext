@@ -4,6 +4,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.346] - 2026-08-30
+
+- **Replace the Active Terminal utility stack with an outcome-oriented Active
+  Session work card (PHNX-3574).** The focused-agent sidebar now leads with the
+  original request and attachments, then renders session metrics, checklist
+  progress, created plans/artifacts, ticket and PR links, spawned-team summary,
+  current activity, and a compact recent-files disclosure. Removed the generic
+  Quick Actions, Quick Prompts, worktree/CWD navigation, empty Plan card, and the
+  separate Issues webview so the sidebar answers what the agent was asked to do,
+  how far it is, and what it produced. New live fields remain a projection of the
+  canonical `agents feed watch --json` row; the extension adds no transcript scan,
+  polling loop, or filesystem fallback.
+
 ## [0.9.345] - 2026-08-30
 
 - **Fix the Active-Terminal sidebar stuck forever on "Loading…" (PHNX-3517).** The
