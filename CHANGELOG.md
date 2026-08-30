@@ -4,15 +4,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.350] - 2026-08-30
+## [0.9.351] - 2026-08-30
 
 - **Fix a Sessions-surface navigation dead-end (PHNX-3594).** After the FLEET
-  declutter removed the center tab bar, opening a session's detail (**View** / the
-  **Session ↗** catch-up link) switched the view to the agents center with no tab
-  bar to get back. The Sessions surface now never leaves its own center: the detail
-  opens in the right panel in place (and only when you explicitly open one — still
-  no auto-open on load), resolves for Previous sessions too instead of painting an
-  empty panel, and closing it returns to the full-width list.
+  declutter removed the center tab bar, opening a session's detail (**View** on a
+  non-resumable row, or a catch-up link) switched the view to the agents center
+  with no tab bar to get back. The Sessions surface is now fully self-contained:
+  rows expand their detail **inline** (the ask / activity / checklist / catch-up),
+  **View** toggles that inline detail instead of paging a side panel, and the
+  surface never switches center or opens the right panel — so navigation can't be
+  stranded.
 
 ## [0.9.349] - 2026-08-30
 
