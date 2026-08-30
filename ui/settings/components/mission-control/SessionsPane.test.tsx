@@ -200,11 +200,10 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
-  test('Previous rows omit the redundant phase pill; live rows keep it', () => {
-    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row', phase: 'idle' })} {...rowProps} />)
-    // The Previous band header already names the lifecycle, so a resumable-index
-    // row renders no phase pill even when it carries a phase.
+  test('Previous rows omit redundant phase and recap-source badges', () => {
+    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row' })} {...rowProps} />)
     expect(previous).not.toContain('sx-phase')
+    expect(previous).not.toContain('sx-src')
 
     const live = renderToStaticMarkup(<SessionRow agent={agent({ id: 'live-row', phase: 'idle' })} {...rowProps} />)
     expect(live).toContain('class="sx-phase idle"')
@@ -283,7 +282,6 @@ describe('SessionsPane', () => {
     expect(html).toContain('Resume all 50')
     expect(html).not.toContain('Resume all 60')
   })
-
   test('clicking a metadata pill copies its value and does NOT toggle the row expand', () => {
     const copied: string[] = []
     const orig = Object.getOwnPropertyDescriptor(globalThis.navigator, 'clipboard')
