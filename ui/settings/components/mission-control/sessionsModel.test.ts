@@ -1,7 +1,17 @@
 import { describe, test, expect } from 'bun:test'
 import type { FloorAgent } from './floorModel'
-import { needsReconnect, sessionBand } from './floorModel'
-import { scopeSessions, sortSessions, groupSessions, sessionChipCounts, type SessionScope } from './sessionsModel'
+import { isPrevious, sessionBand, resumeCommand, mergeSessionAgents } from './floorModel'
+import {
+  scopeSessions,
+  sortSessions,
+  groupSessions,
+  buildSessionSections,
+  sessionChipCounts,
+  orderedPrevious,
+  previousInitialCount,
+  PREVIOUS_DEFAULT_LIMIT,
+  type SessionScope,
+} from './sessionsModel'
 
 function mk(over: Partial<FloorAgent> = {}): FloorAgent {
   return {
@@ -42,52 +52,85 @@ function mk(over: Partial<FloorAgent> = {}): FloorAgent {
   } as FloorAgent
 }
 
+/** A resumable PREVIOUS (index) row: state 'inactive', resumable, with a recovery command. */
+function prevRow(over: Partial<FloorAgent> = {}): FloorAgent {
+  return mk({
+    context: 'recent',
+    sessionState: 'inactive',
+    resumable: true,
+    sourceDevice: 'yosemite-s0',
+    recovery: { command: 'agents', args: ['sessions', 'resume', over.id ?? 'p1', '--device', 'yosemite-s0'] },
+    ...over,
+  })
+}
+
 const EMPTY: SessionScope = { filter: 'all', project: null, host: null, search: '' }
 
-describe('needsReconnect / sessionBand', () => {
-  test('orphaned, crashed, abandoned all need reconnecting', () => {
-    for (const s of ['orphaned', 'crashed', 'abandoned', 'ORPHANED']) {
-      expect(needsReconnect(mk({ liveStatus: s }))).toBe(true)
-      expect(sessionBand(mk({ liveStatus: s, phase: 'idle' }))).toBe('reconnect')
-    }
+describe('isPrevious classification', () => {
+  test('an inactive index row is Previous', () => {
+    expect(isPrevious(prevRow({ id: 'p1' }))).toBe(true)
+    expect(isPrevious(mk({ sessionState: 'inactive' }))).toBe(true)
+    expect(isPrevious(mk({ context: 'recent' }))).toBe(true)
   })
-  test('a plain idle/running session is NOT reconnect', () => {
-    expect(needsReconnect(mk({ liveStatus: 'idle' }))).toBe(false)
-    expect(needsReconnect(mk({ liveStatus: '' }))).toBe(false)
-    expect(needsReconnect(mk({ liveStatus: undefined }))).toBe(false)
+  test('a live row is NOT Previous', () => {
+    expect(isPrevious(mk({ phase: 'running' }))).toBe(false)
+    expect(isPrevious(mk({ phase: 'idle', sessionState: 'idle' }))).toBe(false)
+    expect(isPrevious(mk({ sessionState: undefined, context: 'terminal' }))).toBe(false)
+  })
+  test('sessionBand routes a Previous row to the previous band', () => {
+    expect(sessionBand(prevRow({ id: 'p1' }))).toBe('previous')
     expect(sessionBand(mk({ phase: 'running' }))).toBe('active')
     expect(sessionBand(mk({ phase: 'done' }))).toBe('done')
-  })
-  test('reconnect wins even over a done phase (a crashed session is resumable, not finished)', () => {
-    expect(sessionBand(mk({ liveStatus: 'crashed', phase: 'done' }))).toBe('reconnect')
-  })
-  test('attention band = live but not progressing (idle / waiting / failed)', () => {
-    for (const phase of ['idle', 'waiting', 'failed'] as const) {
-      expect(sessionBand(mk({ phase }))).toBe('attention')
-    }
-    // a running session IS progressing, so it stays in the active band, not attention
-    expect(sessionBand(mk({ phase: 'running' }))).toBe('active')
+    expect(sessionBand(mk({ phase: 'idle' }))).toBe('attention')
   })
 })
 
-describe('scopeSessions — filter chips', () => {
+describe('resumeCommand', () => {
+  test('a resumable Previous row builds `agents sessions resume <id> --device <device>`', () => {
+    const cmd = resumeCommand(prevRow({ id: 'abc123', sourceDevice: 'yosemite-s0' }))
+    expect(cmd).toEqual({ command: 'agents', args: ['sessions', 'resume', 'abc123', '--device', 'yosemite-s0'] })
+  })
+  test('falls back to a built command when no recovery is present but the row is resumable', () => {
+    const cmd = resumeCommand(mk({ id: 'x9', sessionState: 'inactive', resumable: true, recovery: null, sourceDevice: 'zion' }))
+    expect(cmd).toEqual({ command: 'agents', args: ['sessions', 'resume', 'x9', '--device', 'zion'] })
+  })
+  test('a non-resumable harness (recovery null, resumable false) has no command -> View', () => {
+    expect(resumeCommand(mk({ id: 'g1', sessionState: 'inactive', resumable: false, recovery: null }))).toBeNull()
+  })
+})
+
+describe('mergeSessionAgents — live wins over the index row', () => {
+  test('dedup by sessionId keeps the LIVE row and drops the index duplicate', () => {
+    const live = [mk({ id: 'dup', phase: 'running', sessionState: 'running' })]
+    const previous = [prevRow({ id: 'dup' }), prevRow({ id: 'p2' })]
+    const merged = mergeSessionAgents(live, previous)
+    expect(merged.map((a) => a.id)).toEqual(['dup', 'p2'])
+    // the surviving 'dup' is the LIVE one (not Previous)
+    expect(isPrevious(merged.find((a) => a.id === 'dup')!)).toBe(false)
+    // p2 stays a Previous row
+    expect(isPrevious(merged.find((a) => a.id === 'p2')!)).toBe(true)
+  })
+  test('index rows with no sessionId are never coalesced away', () => {
+    const previous = [prevRow({ id: '', sessionId: undefined }), prevRow({ id: '', sessionId: undefined })]
+    expect(mergeSessionAgents([], previous)).toHaveLength(2)
+  })
+})
+
+describe('scopeSessions — filter chips are exactly All / Active / Favorites', () => {
   const list = [
-    mk({ id: 'run', phase: 'running', liveStatus: 'running' }),
-    mk({ id: 'orph', phase: 'idle', liveStatus: 'orphaned' }),
-    mk({ id: 'idle', phase: 'idle', liveStatus: 'idle' }),
-    mk({ id: 'done', phase: 'done', liveStatus: 'idle' }),
-    mk({ id: 'star', phase: 'running', liveStatus: 'running', pinned: true }),
+    mk({ id: 'run', phase: 'running' }),
+    mk({ id: 'idle', phase: 'idle' }),
+    mk({ id: 'done', phase: 'done' }),
+    prevRow({ id: 'prev' }),
+    mk({ id: 'fav', phase: 'running', pinned: true }),
   ]
-  test('orphaned keeps only reconnect rows', () => {
-    expect(scopeSessions(list, { ...EMPTY, filter: 'orphaned' }).map((a) => a.id)).toEqual(['orph'])
+  test('active keeps live still-going sessions, drops Previous + done', () => {
+    expect(scopeSessions(list, { ...EMPTY, filter: 'active' }).map((a) => a.id).sort()).toEqual(['fav', 'idle', 'run'])
   })
-  test('active drops reconnect and done', () => {
-    expect(scopeSessions(list, { ...EMPTY, filter: 'active' }).map((a) => a.id).sort()).toEqual(['idle', 'run', 'star'])
+  test('favorites keeps only pinned', () => {
+    expect(scopeSessions(list, { ...EMPTY, filter: 'favorites' }).map((a) => a.id)).toEqual(['fav'])
   })
-  test('starred keeps only pinned', () => {
-    expect(scopeSessions(list, { ...EMPTY, filter: 'starred' }).map((a) => a.id)).toEqual(['star'])
-  })
-  test('all keeps everything', () => {
+  test('all keeps everything (Previous included, lands in the bottom band)', () => {
     expect(scopeSessions(list, EMPTY)).toHaveLength(5)
   })
 })
@@ -100,7 +143,7 @@ describe('scopeSessions — project / host / search', () => {
   test('project filter', () => {
     expect(scopeSessions(list, { ...EMPTY, project: 'rush' }).map((a) => a.id)).toEqual(['b'])
   })
-  test('host filter uses hostLabel', () => {
+  test('host filter uses hostLabel (the Device label)', () => {
     expect(scopeSessions(list, { ...EMPTY, host: 'zion' }).map((a) => a.id)).toEqual(['a'])
   })
   test('search matches topic', () => {
@@ -108,134 +151,108 @@ describe('scopeSessions — project / host / search', () => {
   })
 })
 
-describe('sortSessions — recency vs creation are distinct', () => {
-  // s1 started long ago but was active recently; s2 started recently but is now quiet.
-  const s1 = mk({ id: 's1', startedAtMs: 1_000, lastActivityMs: 9_000 })
-  const s2 = mk({ id: 's2', startedAtMs: 8_000, lastActivityMs: 2_000 })
-  test('recent orders by lastActivityMs (s1 first)', () => {
-    expect(sortSessions([s2, s1], 'recent', true).map((a) => a.id)).toEqual(['s1', 's2'])
+describe('sortSessions — status puts Previous last, done terminal above it', () => {
+  test('Previous ranks below every live phase incl. done', () => {
+    const rows = [
+      prevRow({ id: 'prev' }),
+      mk({ id: 'done', phase: 'done' }),
+      mk({ id: 'run', phase: 'running' }),
+      mk({ id: 'idle', phase: 'idle' }),
+    ]
+    expect(sortSessions(rows, 'status', true).map((a) => a.id)).toEqual(['idle', 'run', 'done', 'prev'])
   })
-  test('started orders by startedAtMs (s2 first) — a different order than recent', () => {
+  test('recent vs started remain distinct', () => {
+    const s1 = mk({ id: 's1', startedAtMs: 1_000, lastActivityMs: 9_000 })
+    const s2 = mk({ id: 's2', startedAtMs: 8_000, lastActivityMs: 2_000 })
+    expect(sortSessions([s2, s1], 'recent', true).map((a) => a.id)).toEqual(['s1', 's2'])
     expect(sortSessions([s1, s2], 'started', true).map((a) => a.id)).toEqual(['s2', 's1'])
   })
-  // Root AGENTS.md "Purpose": rank by PROGRESS, not liveness. Idle-but-unfinished is
-  // the highest-abandonment-risk state, so it surfaces ABOVE running, never below it,
-  // and `done` is a distinct terminal state at the bottom (RUSH-2838).
-  test('status never buries idle below running, and done is terminal', () => {
-    const rows = [
-      mk({ id: 'done', phase: 'done' }),
-      mk({ id: 'run', phase: 'running' }),
-      mk({ id: 'idle', phase: 'idle' }),
-      mk({ id: 'orph', liveStatus: 'orphaned', phase: 'idle' }),
-    ]
-    expect(sortSessions(rows, 'status', true).map((a) => a.id)).toEqual(['orph', 'idle', 'run', 'done'])
-  })
-  test('status puts every stopped phase above running, most acute first', () => {
-    const rows = [
-      mk({ id: 'done', phase: 'done' }),
-      mk({ id: 'run', phase: 'running' }),
-      mk({ id: 'idle', phase: 'idle' }),
-      mk({ id: 'failed', phase: 'failed' }),
-      mk({ id: 'waiting', phase: 'waiting' }),
-      mk({ id: 'orph', liveStatus: 'orphaned', phase: 'idle' }),
-    ]
-    expect(sortSessions(rows, 'status', true).map((a) => a.id))
-      .toEqual(['orph', 'waiting', 'failed', 'idle', 'run', 'done'])
-  })
-  test('the status sort agrees with the band grouping it sits next to', () => {
-    // `Sort: Status` and the default `Group: state` are two views of one ranking, so a
-    // row cannot lead under one and trail under the other. Both are driven off
-    // PHASE_RANK / BAND_ORDER; this pins them together.
-    const rows = [
-      mk({ id: 'run', phase: 'running' }),
-      mk({ id: 'idle', phase: 'idle' }),
-      mk({ id: 'orph', liveStatus: 'orphaned', phase: 'idle' }),
-      mk({ id: 'done', phase: 'done' }),
-    ]
-    const bySort = sortSessions(rows, 'status', true).map((a) => sessionBand(a))
-    const byBand = groupSessions(rows, 'state', 'status', true).map((s) => s.band)
-    expect(bySort).toEqual(['reconnect', 'attention', 'active', 'done'])
-    expect(byBand).toEqual(['reconnect', 'attention', 'active', 'done'])
-  })
-  test('name sorts A→Z when desc (the shared default direction)', () => {
-    const rows = [mk({ id: 'z', topic: 'zebra' }), mk({ id: 'a', topic: 'apple' })]
-    expect(sortSessions(rows, 'name', true).map((a) => a.id)).toEqual(['a', 'z'])
-  })
 })
 
-describe('groupSessions — starred pinned to a single top section', () => {
+describe('groupSessions — Favorites pinned to a single top section, Previous excluded', () => {
   const list = [
-    mk({ id: 'star', pinned: true, phase: 'running' }),
-    mk({ id: 'orph', liveStatus: 'orphaned', phase: 'idle' }),
+    mk({ id: 'fav', pinned: true, phase: 'running' }),
     mk({ id: 'run', phase: 'running' }),
+    prevRow({ id: 'prev' }),
   ]
-  test('state group: Starred first, then Needs reconnecting, then Running — no duplication', () => {
+  test('state group leads with Favorites; Previous is NOT a live band here', () => {
     const secs = groupSessions(list, 'state', 'recent', true)
-    expect(secs.map((s) => s.label)).toEqual(['Starred', 'Needs reconnecting', 'Running'])
-    // The starred row appears ONLY in Starred, never again in Running.
+    expect(secs.map((s) => s.label)).toEqual(['Favorites', 'Running'])
     const allIds = secs.flatMap((s) => s.agents.map((a) => a.id))
-    expect(allIds.filter((id) => id === 'star')).toHaveLength(1)
-    expect(secs.find((s) => s.label === 'Running')!.agents.map((a) => a.id)).toEqual(['run'])
+    expect(allIds).not.toContain('prev')
+    expect(allIds.filter((id) => id === 'fav')).toHaveLength(1)
   })
-  test('filter=starred: no separate Starred band (the whole list is starred)', () => {
-    const onlyStar = [mk({ id: 's1', pinned: true }), mk({ id: 's2', pinned: true })]
-    const secs = groupSessions(onlyStar, 'state', 'recent', true, /* filterIsStarred */ true)
-    expect(secs.some((s) => s.kind === 'starred')).toBe(false)
+  test('filter=favorites: no separate Favorites band (the whole list is pinned)', () => {
+    const onlyFav = [mk({ id: 'f1', pinned: true }), mk({ id: 'f2', pinned: true })]
+    const secs = groupSessions(onlyFav, 'state', 'recent', true, /* filterIsFavorites */ true)
+    expect(secs.some((s) => s.kind === 'favorites')).toBe(false)
   })
-  test('all-pinned on a non-starred filter STILL renders the Starred band (keyed off filter, not pin ratio)', () => {
-    const onlyStar = [mk({ id: 's1', pinned: true, phase: 'running' }), mk({ id: 's2', pinned: true, phase: 'idle' })]
-    const secs = groupSessions(onlyStar, 'state', 'recent', true, /* filterIsStarred */ false)
-    expect(secs[0]!.kind).toBe('starred')
-    expect(secs[0]!.agents.map((a) => a.id).sort()).toEqual(['s1', 's2'])
-  })
-})
-
-describe('groupSessions — attention band ranks progress-stopped work above running', () => {
-  test('idle sessions surface in "Needs attention" ABOVE the running band', () => {
-    const list = [
-      mk({ id: 'run', phase: 'running', lastActivityMs: 9_000 }),
-      mk({ id: 'idle', phase: 'idle', lastActivityMs: 5_000 }),
-      mk({ id: 'stall', phase: 'idle', lastActivityMs: 1_000 }),
-    ]
-    const secs = groupSessions(list, 'state', 'recent', true)
-    expect(secs.map((s) => s.label)).toEqual(['Needs attention', 'Running'])
-    // Within attention, MOST-stuck (oldest activity) first — stall(1s) before idle(5s).
-    expect(secs.find((s) => s.label === 'Needs attention')!.agents.map((a) => a.id)).toEqual(['stall', 'idle'])
-    expect(secs.find((s) => s.label === 'Running')!.agents.map((a) => a.id)).toEqual(['run'])
-  })
-  test('attention leads most-stuck-first even under a recency sort that would reverse it', () => {
-    // Under 'recent' desc the most-recent (idle2 @ 8s) would sort first; the band's
-    // staleness override must instead put the most-stuck (idle1 @ 2s) at the top.
-    const list = [
-      mk({ id: 'idle1', phase: 'idle', lastActivityMs: 2_000 }),
-      mk({ id: 'idle2', phase: 'idle', lastActivityMs: 8_000 }),
-    ]
-    const secs = groupSessions(list, 'state', 'recent', true)
-    expect(secs.find((s) => s.label === 'Needs attention')!.agents.map((a) => a.id)).toEqual(['idle1', 'idle2'])
+  test('all-pinned on a non-favorites filter STILL renders the Favorites band', () => {
+    const onlyFav = [mk({ id: 'f1', pinned: true, phase: 'running' }), mk({ id: 'f2', pinned: true, phase: 'idle' })]
+    const secs = groupSessions(onlyFav, 'state', 'recent', true, /* filterIsFavorites */ false)
+    expect(secs[0]!.kind).toBe('favorites')
   })
 })
 
-describe('groupSessions — project grouping surfaces lost work first', () => {
+describe('buildSessionSections — Previous · resumable band is always LAST', () => {
+  const now = 5_000_000
   const list = [
-    mk({ id: 'r1', project: 'rush', phase: 'running' }),
-    mk({ id: 'r2', project: 'rush', phase: 'idle' }),
-    mk({ id: 'a1', project: 'agents-cli', liveStatus: 'orphaned', phase: 'idle' }),
+    mk({ id: 'run', phase: 'running' }),
+    mk({ id: 'idle', phase: 'idle' }),
+    prevRow({ id: 'prev1', lastActivityMs: now - 1000 }),
+    prevRow({ id: 'prev2', lastActivityMs: now - 2000 }),
   ]
-  test('a project with an orphaned session sorts above a larger all-active project', () => {
-    const secs = groupSessions(list, 'project', 'recent', true)
-    expect(secs.map((s) => s.label)).toEqual(['agents-cli', 'rush'])
+  test('band ordering places Previous last, sorted by last activity', () => {
+    const secs = buildSessionSections(list, 'state', 'recent', true, { filter: 'all', nowMs: now })
+    const last = secs[secs.length - 1]!
+    expect(last.band).toBe('previous')
+    expect(last.label).toBe('Previous · resumable')
+    expect(last.agents.map((a) => a.id)).toEqual(['prev1', 'prev2'])
+    expect(last.total).toBe(2)
+    // no earlier section is the previous band
+    expect(secs.slice(0, -1).some((s) => s.band === 'previous')).toBe(false)
+  })
+  test('the Active filter hides the Previous band entirely', () => {
+    const secs = buildSessionSections(list, 'state', 'recent', true, { filter: 'active', nowMs: now })
+    expect(secs.some((s) => s.band === 'previous')).toBe(false)
+  })
+  test('the band is bounded: previousShown caps rows while total reports the full count', () => {
+    const many = Array.from({ length: 60 }, (_, i) => prevRow({ id: `p${i}`, lastActivityMs: now - i * 1000 }))
+    const secs = buildSessionSections(many, 'flat', 'recent', true, { filter: 'all', nowMs: now, previousShown: 50 })
+    const band = secs.find((s) => s.band === 'previous')!
+    expect(band.agents).toHaveLength(50)
+    expect(band.total).toBe(60)
   })
 })
 
-describe('sessionChipCounts', () => {
-  test('counts all / active / orphaned / starred', () => {
+describe('previous band bounds', () => {
+  const now = 10_000_000
+  test('default window shows sessions within the last 7 days, capped at 50', () => {
+    const recent = Array.from({ length: 3 }, (_, i) => prevRow({ id: `r${i}`, lastActivityMs: now - i * 1000 }))
+    const old = [prevRow({ id: 'old', lastActivityMs: now - 30 * 24 * 60 * 60 * 1000 })]
+    const ordered = orderedPrevious([...recent, ...old])
+    expect(previousInitialCount(ordered, now)).toBe(3)
+  })
+  test('when everything is older than the window, still seed the newest page', () => {
+    const old = Array.from({ length: 20 }, (_, i) => prevRow({ id: `o${i}`, lastActivityMs: now - (30 * 24 * 60 * 60 * 1000 + i) }))
+    const ordered = orderedPrevious(old)
+    expect(previousInitialCount(ordered, now)).toBe(10)
+  })
+  test('the cap never exceeds the default limit', () => {
+    const many = Array.from({ length: 80 }, (_, i) => prevRow({ id: `m${i}`, lastActivityMs: now - i * 1000 }))
+    expect(previousInitialCount(orderedPrevious(many), now)).toBe(PREVIOUS_DEFAULT_LIMIT)
+  })
+})
+
+describe('sessionChipCounts — all / active / favorites', () => {
+  test('counts each chip; Previous is not Active', () => {
     const list = [
       mk({ phase: 'running' }),
       mk({ phase: 'idle' }),
-      mk({ liveStatus: 'orphaned', phase: 'idle' }),
+      prevRow({ id: 'prev' }),
       mk({ phase: 'done' }),
       mk({ pinned: true, phase: 'running' }),
     ]
-    expect(sessionChipCounts(list)).toEqual({ all: 5, active: 3, orphaned: 1, starred: 1 })
+    expect(sessionChipCounts(list)).toEqual({ all: 5, active: 3, favorites: 1 })
   })
 })

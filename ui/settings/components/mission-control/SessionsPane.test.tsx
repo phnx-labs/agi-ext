@@ -46,58 +46,67 @@ function agent(over: Partial<FloorAgent> = {}): FloorAgent {
     todos: [],
     summary: '',
     recent: [],
-    liveStatus: 'orphaned',
+    liveStatus: 'running',
     ...over,
   }
 }
 
+/** A resumable PREVIOUS (index) row folded in from the durable transcript index. */
+function prevAgent(over: Partial<FloorAgent> = {}): FloorAgent {
+  return agent({
+    context: 'recent',
+    sessionState: 'inactive',
+    resumable: true,
+    sourceDevice: 'yosemite-s0',
+    recovery: { command: 'agents', args: ['sessions', 'resume', over.id ?? 'r1', '--device', 'yosemite-s0'] },
+    liveStatus: 'idle',
+    ...over,
+  })
+}
+
 const rowProps = {
+  nowMs: Date.parse('2026-08-25T12:00:00Z'),
   selected: false,
   active: false,
   expanded: false,
-  height: 108,
+  height: 122,
   onToggleSelect: noop,
   onToggleStar: noop,
   onResume: noop,
+  onView: noop,
   onSelect: noop,
   onToggleExpand: noop,
 }
 
-describe('SessionRow — mockup contract', () => {
-  test('renders title, provenance, You ›, Claude ›, chips, Resume', () => {
+describe('SessionRow — compact card', () => {
+  test('renders title, You ›, Claude ›, the prompt chip, PR / repo / device chips, and Resume', () => {
     const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} />)
     expect(html).toContain('Redesigning the SVAtlas landscape hero section')
-    expect(html).toContain('agent recap')
     expect(html).toContain('You ›')
     expect(html).toContain('Claude ›')
     expect(html).toContain('screenshot')
+    // path noise is scrubbed out of the prompt line
     expect(html).not.toContain('/Users/muqsit')
     expect(html).not.toContain('CleanShot')
     expect(html).toContain('PR #418')
     expect(html).toContain('▪ svatlas')
+    // Host -> Device: every row is labelled with its device
+    expect(html).toContain('sx-chip device')
     expect(html).toContain('yosemite-s1')
-    expect(html).toContain('aria-hidden="true">↻</span>')
+    // a live session is always resumable
     expect(html).toContain('class="sx-resumelabel">Resume</span>')
-    expect(html).toContain('⌄ more')
-    expect(html).toContain('sx-roletag you')
-    expect(html).toContain('sx-roletag agent')
+    expect(html).not.toContain('sx-viewbtn')
   })
 
-  test('skill prompt renders /continue chip without the skill path', () => {
+  test('skill prompt renders the /continue chip without the skill path', () => {
     const html = renderToStaticMarkup(
       <SessionRow
-        agent={{
-          ...agent({
-            prompt: 'Base directory for this skill: /home/muqsit/.agents/skills/continue\npick up the agents view cache work',
-            topic: 'Continuing the usage-cache fix from a prior session',
-            resp: 'Rebased onto main, re-ran the failing test — green. Opening the PR now.',
-            pr: '#2922',
-            ci: 'passed',
-            branch: 'fix-usage-cache',
-            project: 'agents-cli',
-          }),
-          recapSource: 'renamed',
-        } as FloorAgent}
+        agent={agent({
+          prompt: 'Base directory for this skill: /home/muqsit/.agents/skills/continue\npick up the agents view cache work',
+          topic: 'Continuing the usage-cache fix from a prior session',
+          branch: 'fix-usage-cache',
+          project: 'agents-cli',
+        })}
         {...rowProps}
       />,
     )
@@ -106,16 +115,14 @@ describe('SessionRow — mockup contract', () => {
     expect(html).not.toContain('Base directory')
     expect(html).not.toContain('/home/muqsit')
     expect(html).toContain('fix-usage-cache')
-    expect(html).toContain('renamed')
   })
 
-  test('command prompt renders $ chip', () => {
+  test('command prompt renders the $ chip', () => {
     const html = renderToStaticMarkup(
       <SessionRow
         agent={agent({
           prompt: '<bash-input>crabbox status</bash-input>\nHelping understand the currency I set up for the agency — does it use Crabbox?',
           topic: 'Explaining the Crabbox CI currency model',
-          resp: 'Yes — every run mints a per-repo credit against the microVM pool.',
           pr: null,
           project: 'agents-cli',
         })}
@@ -128,60 +135,76 @@ describe('SessionRow — mockup contract', () => {
     expect(html).not.toContain('<bash-input>')
   })
 
-  test('expanded row reveals the full last message', () => {
-    const full = 'Yes — every CI run mints a per-repo credit against the shared microVM pool, admitted under a CPU/memory fairness gate.'
-    const html = renderToStaticMarkup(
-      <SessionRow
-        agent={agent({ resp: full })}
-        {...rowProps}
-        expanded
-      />,
-    )
-    expect(html).toContain(full)
-    expect(html).toContain('⌃ less')
-    expect(html).toContain('sx-full')
+  test('clicking a row expands into the full detail card (the ask / activity / catch up)', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
+    expect(html).toContain('sx-detail')
+    expect(html).toContain('The ask')
+    expect(html).toContain('Activity')
+    expect(html).toContain('Catch up')
+    expect(html).toContain('The landscape mode looks cramped')
   })
 
   test('per-row Resume posts the same onResume the group control uses', () => {
     const seen: string[] = []
-    const html = document.createElement('div')
-    document.body.appendChild(html)
-    const root = createRoot(html)
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
     act(() => {
-      root.render(
-        <SessionRow
-          agent={agent({ id: 'resume-me' })}
-          {...rowProps}
-          onResume={(a) => { seen.push(a.id) }}
-        />,
-      )
+      root.render(<SessionRow agent={agent({ id: 'resume-me' })} {...rowProps} onResume={(a) => { seen.push(a.id) }} />)
     })
-    const btn = html.querySelector('.sx-resumebtn') as HTMLButtonElement
+    const btn = host.querySelector('.sx-resumebtn') as HTMLButtonElement
     expect(btn).toBeTruthy()
-    expect(btn.textContent).toContain('Resume')
-    expect(btn.querySelector('span[aria-hidden]')?.textContent).toBe('↻')
     expect(btn.querySelector('.sx-resumelabel')?.textContent).toBe('Resume')
     act(() => { btn.click() })
     expect(seen).toEqual(['resume-me'])
     act(() => root.unmount())
-    html.remove()
+    host.remove()
+  })
+
+  test('a non-resumable harness (recovery null) shows View, never a dead Resume', () => {
+    const seen: string[] = []
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(
+        <SessionRow
+          agent={prevAgent({ id: 'grok1', abbr: 'GK', resumable: false, recovery: null })}
+          {...rowProps}
+          onResume={() => { throw new Error('must not resume a non-resumable harness') }}
+          onView={(a) => { seen.push(a.id) }}
+        />,
+      )
+    })
+    expect(host.querySelector('.sx-resumebtn')).toBeNull()
+    const view = host.querySelector('.sx-viewbtn') as HTMLButtonElement
+    expect(view).toBeTruthy()
+    expect(view.querySelector('.sx-resumelabel')?.textContent).toBe('View')
+    act(() => { view.click() })
+    expect(seen).toEqual(['grok1'])
+    act(() => root.unmount())
+    host.remove()
   })
 })
 
-describe('SessionsPane bulk Resume all', () => {
-  test('filter chips keep sx-chip; meta chips live under sx-metarow', () => {
+describe('SessionsPane', () => {
+  test('filter chips are exactly All | Active | Favorites (no Orphaned, no Starred)', () => {
     const html = renderToStaticMarkup(
-      <SessionsPane
-        agents={[agent({ id: 'a', liveStatus: 'orphaned' })]}
-        onToggleStar={noop}
-        onResume={noop}
-        onResumeMany={noop}
-        onSelect={noop}
-      />,
+      <SessionsPane agents={[agent({ id: 'a' })]} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />,
+    )
+    expect(html).toContain('>All<')
+    expect(html).toContain('>Active<')
+    expect(html).toContain('>Favorites<')
+    expect(html).not.toContain('>Orphaned<')
+    expect(html).not.toContain('>Starred<')
+  })
+
+  test('meta chips live under sx-metarow', () => {
+    const html = renderToStaticMarkup(
+      <SessionsPane agents={[agent({ id: 'a' })]} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />,
     )
     expect(html).toContain('class="sx-chip on')
     expect(html).toContain('sx-metarow')
-    expect(html).toContain('.sx-metarow .sx-chip')
     expect(html).toContain('sx-chip repo')
   })
 
@@ -190,22 +213,25 @@ describe('SessionsPane bulk Resume all', () => {
     expect(SESSION_ROW_CSS).toContain('box-sizing: border-box; width: 100%;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-rolebody { min-width: 0; flex: 1;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-band {')
-    expect(SESSION_ROW_CSS).toContain('box-sizing: border-box;')
     expect(SESSION_ROW_CSS).toContain('@media (max-width: 720px)')
-    expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-cb, .sw-sessions .sx-star { display: none; }')
   })
 
-  test('reconnect group exposes Resume all N', () => {
+  test('the Previous · resumable band renders last and exposes Resume all N', () => {
+    const now = Date.now()
     const html = renderToStaticMarkup(
       <SessionsPane
-        agents={[agent({ id: 'a', liveStatus: 'orphaned' }), agent({ id: 'b', liveStatus: 'orphaned', topic: 'other' })]}
+        agents={[
+          prevAgent({ id: 'p1', lastActivityMs: now - 1000 }),
+          prevAgent({ id: 'p2', topic: 'other', lastActivityMs: now - 2000 }),
+        ]}
         onToggleStar={noop}
         onResume={noop}
         onResumeMany={noop}
         onSelect={noop}
+        onView={noop}
       />,
     )
+    expect(html).toContain('Previous · resumable')
     expect(html).toContain('Resume all 2')
-    expect(html).toContain('You ›')
   })
 })
