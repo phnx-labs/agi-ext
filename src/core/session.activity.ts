@@ -49,6 +49,19 @@ export interface TodoProgress {
 }
 
 /**
+ * Tally an ALREADY-NORMALIZED checklist into TodoProgress. The sidebar reads
+ * `RemoteSession.todos` (the CLI-normalized `RemoteTodoItem[]`, structurally a
+ * `TodoProgressItem[]`), so there's nothing to parse — only a done/total count.
+ * Distinct from `todoProgressFromCli`, which normalizes the RAW CLI payload.
+ * `done`/`total` are computed from the items so a bad upstream tally can't drive
+ * the progress bar. Returns null for an empty/absent checklist. Pure — unit-tested.
+ */
+export function todoProgressFromItems(items: TodoProgressItem[] | undefined | null): TodoProgress | null {
+  if (!items || !items.length) return null;
+  return { todos: items, done: items.filter((t) => t.status === 'completed').length, total: items.length };
+}
+
+/**
  * Map the CLI's computed checklist into the panel's TodoProgress shape (RUSH-1503).
  *
  * The CLI state engine derives the latest `TodoWrite` (Claude) / `update_plan`

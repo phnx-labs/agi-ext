@@ -52,7 +52,7 @@ deleting it or shrinking it, never adding to it.
 | `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | ext-invented lifecycle classifier (ps/pgrep loops) | move the signal into the CLI daemon, project it on the stream |
-| `src/vscode/agentPanel.vscode.ts` `buildSnapshot` | the 4s poll timer is gone (PHNX-2833: rebuilds now ride the session CLI stream, trailing-coalesced), but each rebuild still re-parses transcripts + spawns `agents sessions --include tools` | bind to stream fields; `toolCallCount` belongs on the stream |
+| `src/vscode/agentPanel.vscode.ts` `buildSnapshot` | the transcript re-parse + `agents sessions --include tools` / `agents teams status` spawns are gone (PHNX-3517: renders synchronously from the warm `sessionPresentationStore` stream) | remaining: `messageCount` + `recentFiles` are not on the stream, so they're dropped from the instant paint — bring them back as a lazy enrich of the active tab only (`fetchSessionPreview`), never on tab-switch |
 | `src/vscode/foreman.sources.ts` `runJson` | second agents-bin resolver bypassing `src/core/agentsBin.ts` | fold into `agentsBin.ts` |
 | gemini anywhere (`src/core/agents.ts` `newGemini`, prewarm config) | harness is hard-deprecated in the CLI | DELETE |
 
