@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { sessionPathUriString } from '../core/sessionPath';
 
 // The Active-Terminal panel's webview is a large inline <script> assembled inside
 // a TypeScript template literal. A single mis-escaped backslash — e.g. a regex
@@ -43,6 +44,12 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
     // on the pre-fix `/^[/\\]/` regex and passes on the fixed code.
     expect(() => new Function(script)).not.toThrow();
   }
+});
+
+test('remote deliverables open on the session host (PHNX-3574)', () => {
+  expect(sessionPathUriString('/repo/.agents/plans/sidebar.md', 'yosemite-m3')).toBe(
+    'vscode-remote://ssh-remote+yosemite-m3/repo/.agents/plans/sidebar.md',
+  );
 });
 
 test('Active Session render is outcome-oriented and drops utility-stack cards (PHNX-3574)', () => {

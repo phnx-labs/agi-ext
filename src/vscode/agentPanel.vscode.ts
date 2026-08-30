@@ -44,6 +44,7 @@ import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
 import type { RemoteAttachment, RemoteSession, RemoteSessionArtifact } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
+import { sessionPathUriString } from '../core/sessionPath';
 
 export const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
 
@@ -110,6 +111,8 @@ interface PanelSnapshot {
   agentIconUri?: string;     // webview URI to PNG logo
   sessionChunk?: string;     // first 8 of session UUID
   fullSessionId?: string;
+  /** Owning CLI device; remote paths must open over Remote SSH. */
+  sessionHost?: string;
   version?: string;
   label?: string;
   autoLabel?: string;
@@ -254,7 +257,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         return;
       case 'openPath':
         if (typeof msg.path === 'string') {
-          vscode.commands.executeCommand('vscode.open', vscode.Uri.file(msg.path));
+          vscode.commands.executeCommand('vscode.open', sessionPathUri(msg.path, this.snapshot.sessionHost));
         }
         return;
       case 'openWorktree':
@@ -482,6 +485,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     if (sessionId) {
       const live = findLiveSession(sessionId);
       if (live) {
+        snapshot.sessionHost = live.host;
         snapshot.conversation = {
           topic: live.topic || undefined,
           lastMessage: live.lastResponse || undefined,
@@ -1920,6 +1924,12 @@ function findLiveSession(sessionId: string): RemoteSession | undefined {
   return sessionPresentationStore
     .presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
     .find((s) => s.sessionId === sessionId);
+}
+
+/** Resolve a CLI-owned session path on the machine that produced it. */
+export function sessionPathUri(filePath: string, host: string | undefined): vscode.Uri {
+  const remote = sessionPathUriString(filePath, host, LOCAL_MACHINE_ID);
+  return remote ? vscode.Uri.parse(remote) : vscode.Uri.file(filePath);
 }
 
 
