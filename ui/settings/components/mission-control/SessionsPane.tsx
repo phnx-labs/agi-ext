@@ -16,6 +16,7 @@ import {
 } from './sessionsModel'
 import { sessionRowView, type SessionRowView } from './recapModel'
 import { useVirtualList } from './useVirtualList'
+import { AgentAvatar, agentIdFromPrefix } from './AgentAvatar'
 
 // The Sessions surface: one place to see every session you own — local + remote,
 // active + orphaned — and resume any of them, or a whole project's worth after a
@@ -23,7 +24,7 @@ import { useVirtualList } from './useVirtualList'
 // sort / group runs client-side, and the list is virtualized (fixed-offset
 // windowing below), so hundreds of rows render like twenty.
 
-const ROW_H = 108
+const ROW_H = 122
 const ROW_EXPANDED_EXTRA = 56
 const HEADER_H = 32
 const OVERSCAN = 4
@@ -120,6 +121,57 @@ export const SESSION_ROW_CSS = `
 }
 `
 
+// fleet-controlroom: light/dark-safe token overrides + the Control-Room card
+// elements (agent logo, project tag, phase pill, now-line). Injected AFTER
+// SESSION_ROW_CSS so these win on conflict without rewriting the base block.
+// Dark hex kept as var() fallbacks so a missing token still renders.
+export const SESSION_ROW_CSS2 = `
+.sw-sessions .sx-band { background: var(--ds-bg-sunken, #111828); color: var(--ds-text-dim, #8b94a6); border-bottom-color: var(--ds-border, #1b2334); }
+.sw-sessions .sx-band .lab { color: var(--ds-text, #e6e9ef); font-weight: 600; }
+.sw-sessions .sx-band .cnt { color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-band .g { background: var(--brand, #a3e635); border-radius: 3px; }
+.sw-sessions .sx-band.recon .g { background: #a78bfa; }
+.sw-sessions .sx-band-act { color: var(--brand, #a3e635); background: rgba(163,230,53,.12); border-color: var(--brand, #a3e635); }
+.sw-sessions .sx-row { border-bottom-color: var(--ds-border, #1b2334); }
+.sw-sessions .sx-row:hover { background: rgba(127,140,160,0.07); }
+.sw-sessions .sx-row.active { background: rgba(127,140,160,0.10); }
+.sw-sessions .sx-ttl { color: var(--ds-text, #e6e9ef); }
+.sw-sessions .sx-rolebody { color: var(--ds-text-dim, #8b94a6); }
+.sw-sessions .sx-full { background: var(--ds-bg-sunken, #0b101c); color: var(--ds-text-dim, #8b94a6); border-left-color: var(--ds-border, #223); margin-left: 49px; }
+.sw-sessions .sx-metarow { padding-left: 49px; }
+.sw-sessions .sx-metarow .sx-chip { background: var(--ds-bg-sunken, #0c1220); border-color: var(--ds-border, #1b2334); color: var(--ds-text-dim, #8b94a6); }
+.sw-sessions .sx-metarow .sx-chip.pr { color: var(--brand, #a3e635); background: rgba(163,230,53,.08); border-color: rgba(163,230,53,.3); }
+.sw-sessions .sx-metarow .sx-chip.ticket { color: #a78bfa; border-color: rgba(167,139,250,.3); }
+.sw-sessions .sx-metarow .sx-chip.repo { color: #2aa899; border-color: rgba(94,234,212,.3); }
+.sw-sessions .sx-metarow .sx-chip.branch { color: #a78bfa; border-color: rgba(167,139,250,.25); }
+.sw-sessions .sx-metarow .sx-chip.host, .sw-sessions .sx-metarow .sx-chip.nopr { color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-src.agent { background: rgba(74,222,128,.12); border-color: rgba(74,222,128,.3); }
+.sw-sessions .sx-src.last { background: rgba(110,168,254,.12); border-color: rgba(110,168,254,.3); }
+.sw-sessions .sx-src.rename { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.3); }
+.sw-sessions .sx-imgchip { background: rgba(94,234,212,.1); border-color: rgba(94,234,212,.28); }
+.sw-sessions .sx-cmdchip { background: rgba(245,181,68,.12); border-color: rgba(245,181,68,.3); }
+.sw-sessions .sx-slashchip { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.3); }
+.sw-sessions .sx-resumebtn { color: var(--brand, #a3e635); background: rgba(163,230,53,.12); border-color: var(--brand, #a3e635); }
+.sw-sessions .sx-resumebtn:hover { background: rgba(163,230,53,.2); }
+.sw-sessions .sx-age { color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-cb { border-color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-cb.on { background: var(--brand, #a3e635); border-color: var(--brand, #a3e635); }
+.sw-sessions .sx-star { color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-av { flex: none; margin-top: 1px; }
+.sw-sessions .sx-roletag { width: 40px; }
+.sw-sessions .sx-titleline { margin-bottom: 3px; gap: 7px; }
+.sw-sessions .sx-agent { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--ds-text-dim, #8b94a6); font-weight: 600; flex: none; }
+.sw-sessions .sx-proj { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--brand, #a3e635); font-weight: 700; letter-spacing: .4px; text-transform: uppercase; flex: none; }
+.sw-sessions .sx-phase { margin-left: auto; flex: none; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 9.5px; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--ds-border, #1b2334); color: var(--ds-text-dim, #8b94a6); white-space: nowrap; }
+.sw-sessions .sx-phase.running { color: #6ea8fe; border-color: rgba(110,168,254,.4); background: rgba(110,168,254,.10); }
+.sw-sessions .sx-phase.idle, .sw-sessions .sx-phase.waiting { color: #d98a2b; border-color: rgba(245,181,68,.45); background: rgba(245,181,68,.14); }
+.sw-sessions .sx-phase.failed { color: #dc4b4b; border-color: rgba(248,113,113,.45); background: rgba(248,113,113,.14); }
+.sw-sessions .sx-phase.done { color: #2f9e5a; border-color: rgba(74,222,128,.4); background: rgba(74,222,128,.10); }
+.sw-sessions .sx-phase.needs { color: #dc4b4b; border-color: rgba(248,113,113,.55); background: rgba(248,113,113,.16); font-weight: 700; }
+.sw-sessions .sx-now { font-size: 12px; color: var(--ds-text-dim, #8b94a6); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-sessions .sx-now b { color: var(--ds-text, #e6e9ef); font-weight: 600; }
+`
+
 interface SessionsPaneProps {
   agents: FloorAgent[]
   /** Toggle the star (pin) on a session — parent owns the persisted set. */
@@ -165,7 +217,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   const [project, setProject] = useState<string | null>(null)
   const [host, setHost] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [group, setGroup] = useState<SessionGroup>('state')
+  const [group, setGroup] = useState<SessionGroup>('project')
   const [sort, setSort] = useState<SessionSort>('recent')
   const [desc, setDesc] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
@@ -222,6 +274,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   return (
     <div className="sw-sessions">
       <style>{SESSION_ROW_CSS}</style>
+      <style>{SESSION_ROW_CSS2}</style>
       <div className="sx-filters">
         <div className="sx-chips">
           {(['all', 'active', 'orphaned', 'starred'] as SessionFilter[]).map((f) => (
@@ -373,6 +426,10 @@ function PromptChips({ you }: { you: SessionRowView['you'] }) {
   return <>{you.text}</>
 }
 
+const PHASE_LABEL: Record<string, string> = {
+  running: 'working', idle: 'idle', waiting: 'waiting', failed: 'failed', done: 'done',
+}
+
 function SessionRowImpl({
   agent: a, selected, active, expanded, height,
   onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand,
@@ -387,6 +444,13 @@ function SessionRowImpl({
     : 'Resume this session'
   const row = sessionRowView(a)
   const liveClass = row.live === 'run' ? '' : row.live
+  // Control-Room card fields — all straight off the streamed FloorAgent, no new CLI work.
+  const agentId = agentIdFromPrefix(a.abbr) ?? (row.harnessTag || 'agent').toLowerCase()
+  const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
+  const phaseLabel = a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
+  const step = (a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : '')
+  const todos = a.todos ?? []
+  const todoDone = todos.filter((t) => String(t.status) === 'completed').length
   return (
     <div
       className={`sx-row${selected ? ' sel' : ''}${active ? ' active' : ''}`}
@@ -403,12 +467,20 @@ function SessionRowImpl({
         title={a.pinned ? 'Unstar' : 'Star — pin to top'}
         onClick={(e) => { e.stopPropagation(); onToggleStar(a) }}
       >{a.pinned ? '★' : '☆'}</button>
-      <span className={`sx-pdot${reconnect ? '' : ' off'}`} title={a.liveStatus || a.phase} />
+      <span className="sx-av"><AgentAvatar id={agentId} size={24} title={row.harnessTag || agentId} /></span>
       <span className="sx-grow">
         <div className="sx-titleline">
+          <span className="sx-agent">{agentId}</span>
+          {a.project && <span className="sx-proj" title={a.project}>{a.project}</span>}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
-          <span className={`sx-src ${row.recapSourceClass}`}>{row.recapSource}</span>
+          {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>
+        {(step || todos.length > 0) && (
+          <div className="sx-now">
+            {step && <b>{step}</b>}
+            {todos.length > 0 && <span>{step ? ' · ' : ''}checklist {todoDone}/{todos.length}</span>}
+          </div>
+        )}
         <div className="sx-roleline">
           <span className="sx-roletag you">You ›</span>
           <span className="sx-rolebody clip"><PromptChips you={row.you} /></span>
@@ -437,9 +509,10 @@ function SessionRowImpl({
               {' '}{row.pr.label}
             </span>
           )}
+          {a.ticket && <span className="sx-chip ticket">◇ {a.ticket}</span>}
           {row.branch && <span className="sx-chip branch">⑂ {row.branch}</span>}
           {row.host && <span className="sx-chip host">{row.host}</span>}
-          {!row.pr && <span className="sx-chip nopr">no PR</span>}
+          {!row.pr && !a.ticket && <span className="sx-chip nopr">no PR</span>}
         </div>
       </span>
       <span className="sx-rowactions">
