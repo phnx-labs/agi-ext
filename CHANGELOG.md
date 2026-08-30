@@ -14,10 +14,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   duplicate the live roster). The row no longer draws a per-session `PREVIOUS`
   badge (the band header already says it), and the Resume/View action + age + dot
   now live in their own fixed column that can't overlap the title or the lone
-  "needs you" pill in a narrow panel. The FLEET view is decluttered to just the
-  session list: the center counter bar is gone (Dispatch stays pinned in the
-  header), the left icon rail/sidebar and the All-projects/All-hosts dropdowns are
-  removed, and neither the right detail panel nor the Foreman debug panel auto-opens.
+  phase pill in a narrow panel. Previous defaults to at most 50 rows from the last
+  seven days; its header reports “shown of total,” ten-row paging is explicit, and
+  both Resume-all actions count only shown resumable rows. The FLEET view is
+  decluttered to the session list: the center counter pills are gone (Dispatch stays
+  pinned in the header), the All-projects/All-hosts dropdowns are removed, and a
+  one-time preference migration defaults both the left rail and right detail panel
+  closed. Selecting a session opens its detail in place; the Foreman debug panel also
+  starts closed.
 
 ## [0.9.348] - 2026-08-30
 

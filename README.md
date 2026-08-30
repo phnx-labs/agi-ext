@@ -95,7 +95,14 @@ CLI session stream, so switching tabs does not start a transcript scan or poll.
 
 ### Fleet
 
-The dashboard's mission control. A live grid of interactive agents and cloud dispatches beside your Linear cycle. Background/headless runs are hidden by default; use the **Background** feed toggle when you need them. Compose and dispatch work with the Cmd+K composer, drag issue cards onto agents, or send a ticket straight to the cloud.
+The dashboard's mission control. Fleet opens on the session list with just
+**All · Active · Favorites**, search, sort, and a header-level **Dispatch** action.
+The Previous band defaults to at most 50 sessions active in the last seven days
+and pages older history ten rows at a time. Its count distinguishes shown rows
+from total history, and bulk Resume applies only to the shown resumable rows.
+The left navigation and right detail panel start closed; selecting a session opens
+its detail in place. Background/headless runs remain hidden by default in the agent
+feed; use the **Background** toggle when you need them.
 
 **Needs you** projects the CLI feed's canonical attention ledger. Cards retain
 the exact choices and source; answered items leave the count immediately while
