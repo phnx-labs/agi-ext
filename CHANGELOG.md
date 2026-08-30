@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.343] - 2026-08-30
+## [0.9.344] - 2026-08-30
 
 - **Instant, todo-forward session preview in the Active-Terminal sidebar (PHNX-3517).**
   The `agentsPanel.terminal` sidebar used to hang on "Loading…" and took seconds to switch
