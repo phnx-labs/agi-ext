@@ -2072,9 +2072,14 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
 
   // Selected agent: only when the user explicitly picks one. No auto-select — the right
   // rail must not slam to a "WAITING ON YOU" agent nobody clicked.
+  // Resolve from sessionsAgents (the live roster PLUS the folded-in resumable
+  // Previous rows), not just the live floorAgents — otherwise opening the detail
+  // for a Previous session on the Sessions surface would find nothing and paint an
+  // empty panel. sessionsAgents is a superset of floorAgents, so the agents feed is
+  // unaffected.
   const selectedFloorAgent: FloorAgent | null = useMemo(
-    () => (selectedAgentId ? floorAgents.find((a) => a.id === selectedAgentId) ?? null : null),
-    [selectedAgentId, floorAgents]
+    () => (selectedAgentId ? sessionsAgents.find((a) => a.id === selectedAgentId) ?? null : null),
+    [selectedAgentId, sessionsAgents]
   )
 
   const selectedFloorTicket = useMemo(
@@ -2314,7 +2319,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // clicking an agent card silently did nothing (the rail only renders when
   // rightOpen). Keep them symmetric.
   const selectFloorAgent = useCallback((id: string) => {
-    setCenter('agents')
+    // NEVER leave the Sessions surface: the declutter removed the center counter
+    // bar, so switching center to 'agents' here (from a row's View / Session ↗)
+    // would strand the user with no way back (PHNX-3594 nav dead-end). On Sessions,
+    // open the detail in the right panel in place; elsewhere behave as before.
+    setCenter((c) => (c === 'sessions' ? c : 'agents'))
     setSelectedAgentId(id)
     setRightOpen(true)
   }, [])
@@ -2816,9 +2825,13 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           />
         ))}
         {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
-        {/* PHNX-3594 declutter: never auto-open the right detail/Foreman panel on the
-            Sessions surface — a row expands inline instead of paging a side panel. */}
-        {rightOpen && center !== 'sessions' && <div className="detail-col">{rightContent}</div>}
+        {/* PHNX-3594 declutter: the right detail panel never AUTO-opens on the Sessions
+            surface (nothing selected on load → full-width list). It DOES open in place
+            when the user explicitly opens a session's detail (View / Session ↗), which
+            keeps navigation on Sessions instead of stranding it on the agents center
+            with no counter bar to return. Closing the DetailPane clears the selection
+            and the list goes full-width again. */}
+        {rightOpen && (center !== 'sessions' || !!selectedAgentId) && <div className="detail-col">{rightContent}</div>}
       </div>
 
       {cardDragActive && (
