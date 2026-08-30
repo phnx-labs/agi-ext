@@ -244,8 +244,8 @@ export const SESSION_ROW_CSS3 = `
   flex: 0 0 132px; width: 132px; box-sizing: border-box;
   justify-content: flex-end; align-self: flex-start; padding-left: 6px;
 }
-/* the lone attention pill rides beside the title, never pushed to the right edge */
-.sw-sessions .sx-phase.needs { margin-left: 6px; }
+/* live phase pills ride beside the title, never pushed into the action column */
+.sw-sessions .sx-phase { margin-left: 6px; }
 @media (max-width: 720px) {
   .sw-sessions .sx-rowactions { flex-basis: 76px; width: 76px; padding-left: 0; }
 }
@@ -352,16 +352,21 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   }, [])
 
   const selectedAgents = useMemo(() => scoped.filter((a) => selected.has(a.id)), [scoped, selected])
-  // Every resumable Previous row in scope — the bulk "Resume all N" default action.
+  // The visible Previous slice is authoritative for both bulk counts and actions.
+  // Hidden history only joins after an explicit "Show 10 more" page.
   const previousAll = useMemo(() => orderedPrevious(scoped), [scoped])
-  const previousResumable = useMemo(() => previousAll.filter((a) => !!resumeCommand(a)), [previousAll])
   const previousTotal = previousAll.length
-  const previousVisible = previousShown ?? previousInitialCount(previousAll, nowMs)
+  const previousVisible = Math.min(previousTotal, Math.max(0, previousShown ?? previousInitialCount(previousAll, nowMs)))
+  const previousVisibleRows = useMemo(() => previousAll.slice(0, previousVisible), [previousAll, previousVisible])
+  const previousResumable = useMemo(() => previousVisibleRows.filter((a) => !!resumeCommand(a)), [previousVisibleRows])
   const previousHasMore = previousTotal > previousVisible
+  const previousPageSize = Math.min(PREVIOUS_PAGE, Math.max(0, previousTotal - previousVisible))
 
   // A band's group Resume action resumes only the RESUMABLE rows it holds.
   const resumeSection = useCallback((s: SessionSection) => onResumeMany(s.agents.filter((a) => !!resumeCommand(a))), [onResumeMany])
-  const showMorePrevious = useCallback(() => setPreviousShown((s) => (s ?? previousInitialCount(previousAll, nowMs)) + PREVIOUS_PAGE), [previousAll, nowMs])
+  const showMorePrevious = useCallback(() => setPreviousShown((s) => (
+    Math.min(previousAll.length, (s ?? previousInitialCount(previousAll, nowMs)) + PREVIOUS_PAGE)
+  )), [previousAll, nowMs])
   const toggleExpand = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -433,7 +438,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
                     resumableCount={it.section.band === 'previous' ? it.section.agents.filter((a) => !!resumeCommand(a)).length : 0}
                     onResumeAll={() => resumeSection(it.section)}
                     hasMore={it.section.band === 'previous' && previousHasMore}
-                    moreCount={PREVIOUS_PAGE}
+                    moreCount={previousPageSize}
                     onShowMore={showMorePrevious}
                   />
                 ) : (
@@ -492,11 +497,14 @@ function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, more
   onShowMore: () => void
 }) {
   const isPrev = section.band === 'previous'
+  const countLabel = isPrev && section.total !== undefined && section.total !== section.agents.length
+    ? `${section.agents.length} shown of ${section.total}`
+    : String(section.agents.length)
   return (
     <div className={`sx-band${isPrev ? ' previous' : ''}${section.kind === 'favorites' ? ' star' : ''}`} style={{ height: HEADER_H }}>
       <span className="g" aria-hidden />
       <span className="lab">{section.label}</span>
-      <span className="cnt">{section.total ?? section.agents.length}</span>
+      <span className="cnt">{countLabel}</span>
       {hasMore && (
         <button className="sx-band-more" onClick={(e) => { e.stopPropagation(); onShowMore() }}>Show {moreCount} more</button>
       )}
@@ -657,10 +665,10 @@ function SessionRowImpl({
   const liveClass = row.live === 'run' ? '' : row.live
   // Control-Room card fields — all straight off the streamed FloorAgent, no new CLI work.
   const agentId = agentIdFromPrefix(a.abbr) ?? (row.harnessTag || 'agent').toLowerCase()
-  // A live session that needs the user still gets its one attention pill; every other
-  // state is carried by the right-edge live dot + the band header, so there is no
-  // per-row phase/PREVIOUS badge to collide with the action column (PHNX-3593).
-  const attention = !prev && a.needs
+  // The Previous band already names the lifecycle, so its rows carry no redundant
+  // PREVIOUS pill. Live rows keep their useful phase / needs-you state (PHNX-3593).
+  const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
+  const phaseLabel = prev ? '' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
   const step = prev ? '' : ((a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : ''))
   const todos = a.todos ?? []
   const todoDone = todos.filter((t) => String(t.status) === 'completed').length
@@ -687,7 +695,7 @@ function SessionRowImpl({
           <span className="sx-agent">{agentId}</span>
           {a.project && <span className="sx-proj" title={a.project}>{a.project}</span>}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
-          {attention && <span className="sx-phase needs" title={a.liveStatus || a.phase}>needs you</span>}
+          {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>
         {step || (!prev && todos.length > 0) ? (
           <div className="sx-now">

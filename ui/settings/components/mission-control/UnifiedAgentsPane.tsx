@@ -29,7 +29,7 @@ import {
 import { FloorControls, floorControlsMode, type StatusChip } from './FloorControls'
 import { FloorSidebar, FLOOR_SIDEBAR_DEFAULT_WIDTH, FLOOR_SIDEBAR_MAX_WIDTH, FLOOR_SIDEBAR_MIN_WIDTH } from './FloorSidebar'
 import { FloorRail } from './FloorRail'
-import { FloorSubtabs, openTaskTab, closeTaskTab, type FixedTab, type TaskTab } from './FloorSubtabs'
+import { FloorSubtabs, openTaskTab, closeTaskTab, type TaskTab } from './FloorSubtabs'
 import { BacklogCenter } from './BacklogCenter'
 import { PrBoardPane } from './PrBoardPane'
 import { buildPrBoard, type PrStatusLike } from './prBoardModel'
@@ -2575,21 +2575,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       </>
     )
   }
-
-  // The fixed sub-tabs: one per CenterMode, with a live count + (agents) needs badge.
-  const fixedTabs: FixedTab[] = useMemo(() => [
-    // Sessions leads: the manage/recover surface for every session you own (local +
-    // remote, active + orphaned). The needs badge counts sessions to reconnect.
-    { center: 'sessions', label: 'Sessions', count: sessionsAgents.length, needs: previousFloorAgents.filter(isPrevious).length },
-    { center: 'agents', label: 'Agents', count: floorAgents.length, needs: needsAgents.length },
-    { center: 'backlog', label: 'Backlog', count: floorTickets.length },
-    { center: 'projects', label: 'Projects', count: managedProjects.length },
-    { center: 'host', label: 'Hosts', count: fleetDevices.length },
-    // Recap count = today's finished sessions (0 until the lazy sweep has run).
-    { center: 'recap', label: 'Recap', count: recapDays[0]?.label === 'Today' ? recapDays[0].sessions : 0 },
-    // PRs count = open rows once fetched; before the first fetch, the URL count.
-    { center: 'prs', label: 'PRs', count: prRows.filter((r) => r.state === 'open').length },
-  ], [floorAgents, sessionsAgents.length, previousFloorAgents, needsAgents.length, floorTickets.length, managedProjects.length, fleetDevices.length, recapDays, prRows])
 
   // Resolve the active task tab (if any) back to a bench FlatTask so its detail renders.
   const activeTab = activeTaskTab ? openTaskTabs.find((t) => t.id === activeTaskTab) ?? null : null
