@@ -54,7 +54,8 @@ import {
   ticketWorkers,
   projectRollups,
   visibleFloorAgents,
-  needsReconnect,
+  isPrevious,
+  mergeSessionAgents,
   type FloorAgent,
   type FloorAttachment,
   type FloorTicket,
@@ -761,6 +762,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Fork edges recorded at launch by `Agents: Fork …` — what lets the ledger pair
   // a fork back up with the session it came from (their ids share nothing).
   const [recapForkEdges, setRecapForkEdges] = useState<RecapForkEdge[]>([])
+  // PREVIOUS (crashed/ended, resumable) sessions folded into the Sessions surface
+  // (PHNX-3593). null = not fetched yet — a one-shot fleet sweep runs when the
+  // Sessions center first opens, NOT on a timer. Reboots prune dead PIDs from the
+  // live roster, but the durable transcript index keeps these resumable.
+  const [previousSessions, setPreviousSessions] = useState<RemoteSessionLike[] | null>(null)
   const [floorSort, setFloorSort] = useState<FloorSort>('needs')
   // Group the live feed by an axis. Defaults to 'outcome' (ticket/PR/worktree) so a
   // fleet-scale floor shows deliverables, not ~1,100 agents (RUSH-1479). NEEDS YOU
@@ -982,6 +988,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       } else if (msg?.type === 'recapSessions') {
         setRecapSessions(Array.isArray(msg.sessions) ? (msg.sessions as RemoteSessionLike[]) : [])
         setRecapForkEdges(Array.isArray(msg.forkEdges) ? (msg.forkEdges as RecapForkEdge[]) : [])
+      } else if (msg?.type === 'previousSessions') {
+        setPreviousSessions(Array.isArray(msg.sessions) ? (msg.sessions as RemoteSessionLike[]) : [])
       }
     }
     window.addEventListener('message', onMsg)
@@ -1660,6 +1668,19 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     () => [...floorLocalAgents, ...floorRemoteAgents],
     [floorLocalAgents, floorRemoteAgents]
   )
+  // PREVIOUS (crashed/ended, resumable) sessions from the durable index, adapted
+  // through the SAME card path as live agents. Folded into the Sessions surface ONLY
+  // (never the live feed): merged with the live roster, deduped by sessionId so a
+  // LIVE row always wins over an index row (mergeSessionAgents). A one-shot fetch —
+  // no timer — seeds `previousSessions` when the Sessions center first opens.
+  const previousFloorAgents = useMemo(
+    () => (previousSessions ? adaptRemote(previousSessions, pinned, localHostName, projectRules) : []),
+    [previousSessions, pinned, localHostName, projectRules]
+  )
+  const sessionsAgents = useMemo(
+    () => mergeSessionAgents(floorAgents, previousFloorAgents),
+    [floorAgents, previousFloorAgents]
+  )
   const floorTickets = useMemo(() => adaptTickets(unifiedTasks), [unifiedTasks])
   // Ticket id -> agents carrying it: the backlog's in-flight chips and the ticket
   // detail's "In flight" block + double-dispatch guard all join on this.
@@ -1711,6 +1732,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   useEffect(() => {
     if (center === 'recap' && recapSessions === null) postMessage({ type: 'fetchRecap' })
   }, [center, recapSessions])
+  // One-shot fleet sweep for resumable PREVIOUS sessions the first time the Sessions
+  // center opens (thin-client rule: a user-triggered verb, never a poll).
+  useEffect(() => {
+    if (center === 'sessions' && previousSessions === null) postMessage({ type: 'fetchPreviousSessions' })
+  }, [center, previousSessions])
   const recapDays = useMemo(() => {
     if (!recapSessions) return []
     const liveIds = new Set(floorAgents.map((a) => a.sessionId).filter((id): id is string => !!id))
@@ -2537,7 +2563,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const fixedTabs: FixedTab[] = useMemo(() => [
     // Sessions leads: the manage/recover surface for every session you own (local +
     // remote, active + orphaned). The needs badge counts sessions to reconnect.
-    { center: 'sessions', label: 'Sessions', count: floorAgents.length, needs: floorAgents.filter(needsReconnect).length },
+    { center: 'sessions', label: 'Sessions', count: sessionsAgents.length, needs: previousFloorAgents.filter(isPrevious).length },
     { center: 'agents', label: 'Agents', count: floorAgents.length, needs: needsAgents.length },
     { center: 'backlog', label: 'Backlog', count: floorTickets.length },
     { center: 'projects', label: 'Projects', count: managedProjects.length },
@@ -2546,7 +2572,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     { center: 'recap', label: 'Recap', count: recapDays[0]?.label === 'Today' ? recapDays[0].sessions : 0 },
     // PRs count = open rows once fetched; before the first fetch, the URL count.
     { center: 'prs', label: 'PRs', count: prRows.filter((r) => r.state === 'open').length },
-  ], [floorAgents, needsAgents.length, floorTickets.length, managedProjects.length, fleetDevices.length, recapDays, prRows])
+  ], [floorAgents, sessionsAgents.length, previousFloorAgents, needsAgents.length, floorTickets.length, managedProjects.length, fleetDevices.length, recapDays, prRows])
 
   // Resolve the active task tab (if any) back to a bench FlatTask so its detail renders.
   const activeTab = activeTaskTab ? openTaskTabs.find((t) => t.id === activeTaskTab) ?? null : null
@@ -2583,11 +2609,12 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     </div>
   ) : center === 'sessions' ? (
     <SessionsPane
-      agents={floorAgents}
+      agents={sessionsAgents}
       onToggleStar={(a) => togglePin(a.id)}
       onResume={openTerminalForAgent}
       onResumeMany={resumeManyAgents}
       onSelect={(a) => selectFloorAgent(a.id)}
+      onView={(a) => selectFloorAgent(a.id)}
       selectedId={selectedAgentId}
       streamDegraded={sessionStreamDegraded}
     />

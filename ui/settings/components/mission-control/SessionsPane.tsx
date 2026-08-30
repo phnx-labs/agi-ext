@@ -178,16 +178,76 @@ export const SESSION_ROW_CSS2 = `
 .sw-sessions .sx-now b { color: var(--ds-text, #e6e9ef); font-weight: 600; }
 `
 
+// PHNX-3593: the Previous·resumable band, the device chip, the View action for
+// non-resumable harnesses, and the click-to-expand detail card (the ask / activity
+// bar / checklist / catch-up). Injected last so it wins on conflict.
+export const SESSION_ROW_CSS3 = `
+.sw-sessions .sx-band.previous .g { background: #a78bfa; }
+.sw-sessions .sx-band-more {
+  margin-left: 8px; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 11px;
+  color: var(--ds-text-dim, #8b94a6); background: none; border: 0; cursor: pointer; letter-spacing: 0; text-transform: none;
+}
+.sw-sessions .sx-band-more:hover { color: var(--brand, #a3e635); }
+.sw-sessions .sx-metarow .sx-chip.device { color: #6ea8fe; border-color: rgba(110,168,254,.3); }
+.sw-sessions .sx-metarow .sx-chip.attach { color: #5eead4; border-color: rgba(94,234,212,.28); }
+.sw-sessions .sx-metarow .sx-chip.art { color: #f5b544; border-color: rgba(245,181,68,.3); }
+.sw-sessions .sx-viewbtn {
+  font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 11px; color: var(--ds-text-dim, #8b94a6);
+  border: 1px solid var(--ds-border, #2a3550); background: transparent; border-radius: 6px; padding: 3px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+}
+.sw-sessions .sx-viewbtn:hover { color: var(--ds-text, #e6e9ef); border-color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-detail { margin: 6px 0 4px 49px; display: flex; flex-direction: column; gap: 12px; }
+.sw-sessions .sx-dsec { display: flex; flex-direction: column; gap: 6px; }
+.sw-sessions .sx-dcap { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-ask { color: var(--ds-text-dim, #8b94a6); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; padding: 8px 11px; border-left: 2px solid var(--ds-border, #223); background: var(--ds-bg-sunken, #0b101c); border-radius: 0 7px 7px 0; max-height: 140px; overflow-y: auto; }
+.sw-sessions .sx-goal { color: var(--ds-text-muted, #5c6675); font-size: 12px; font-style: italic; }
+.sw-sessions .sx-goal b { color: var(--ds-text-dim, #8b94a6); font-style: normal; }
+.sw-sessions .sx-actbar { display: flex; align-items: center; height: 8px; border-radius: 4px; overflow: hidden; background: var(--ds-bg-sunken, #0c1220); border: 1px solid var(--ds-border, #1b2334); }
+.sw-sessions .sx-actbar i { height: 100%; }
+.sw-sessions .sx-actbar i.reading { background: #6ea8fe; }
+.sw-sessions .sx-actbar i.editing { background: #a3e635; }
+.sw-sessions .sx-actbar i.agents { background: #a78bfa; }
+.sw-sessions .sx-actbar i.idle { background: #3a4560; }
+.sw-sessions .sx-actlegend { display: flex; gap: 12px; font-size: 10.5px; color: var(--ds-text-muted, #5c6675); margin-top: 2px; }
+.sw-sessions .sx-actlegend span { display: inline-flex; align-items: center; gap: 4px; }
+.sw-sessions .sx-actlegend .dot { width: 7px; height: 7px; border-radius: 2px; background: #3a4560; }
+.sw-sessions .sx-actlegend .dot.reading { background: #6ea8fe; }
+.sw-sessions .sx-actlegend .dot.editing { background: #a3e635; }
+.sw-sessions .sx-actlegend .dot.agents { background: #a78bfa; }
+.sw-sessions .sx-actlegend .dot.idle { background: #3a4560; }
+.sw-sessions .sx-actspan { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ds-text-muted, #5c6675); margin-top: 2px; }
+.sw-sessions .sx-todo { display: flex; flex-direction: column; gap: 3px; }
+.sw-sessions .sx-todo .it { display: flex; align-items: baseline; gap: 7px; font-size: 12.5px; color: var(--ds-text-dim, #8b94a6); }
+.sw-sessions .sx-todo .it .mk { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 12px; flex: none; width: 12px; }
+.sw-sessions .sx-todo .it.done .mk { color: #4ade80; } .sw-sessions .sx-todo .it.done .tx { text-decoration: line-through; color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-todo .it.cur .mk { color: #f5b544; } .sw-sessions .sx-todo .it.cur .tx { color: var(--ds-text, #e6e9ef); }
+.sw-sessions .sx-todo .it.pend .mk { color: #5c6675; }
+.sw-sessions .sx-catch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sw-sessions .sx-catch a, .sw-sessions .sx-catch .lnk {
+  font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 11px; color: var(--ds-text-dim, #8b94a6);
+  border: 1px solid var(--ds-border, #1b2334); border-radius: 5px; padding: 2px 8px; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+}
+.sw-sessions .sx-catch a:hover, .sw-sessions .sx-catch .lnk:hover { color: var(--ds-text, #e6e9ef); border-color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-catch .lnk.go { color: var(--brand, #a3e635); border-color: var(--brand, #a3e635); background: rgba(163,230,53,.1); }
+.sw-sessions .sx-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.sw-sessions .sx-thumbs .th { width: 46px; height: 46px; border-radius: 6px; border: 1px solid var(--ds-border, #1b2334); object-fit: cover; background: var(--ds-bg-sunken, #0c1220); }
+.sw-sessions .sx-thumbs .th.ph { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; color: var(--ds-text-muted, #5c6675); }
+`
+
 interface SessionsPaneProps {
   agents: FloorAgent[]
-  /** Toggle the star (pin) on a session — parent owns the persisted set. */
+  /** Toggle the favorite (pin) on a session — parent owns the persisted set. */
   onToggleStar: (a: FloorAgent) => void
   /** Resume / focus a single session — parent routes to the owning machine. */
   onResume: (a: FloorAgent) => void
-  /** Resume many at once (bulk reconnect). Parent loops the resume path. */
+  /** Resume many at once (bulk). Parent loops the resume path. */
   onResumeMany: (agents: FloorAgent[]) => void
   /** Select a session for the detail pane. */
   onSelect: (a: FloorAgent) => void
+  /** View a non-resumable session's transcript (recovery: null harnesses).
+   *  Defaults to onSelect (open the detail pane) when the parent supplies none. */
+  onView?: (a: FloorAgent) => void
   /** Currently selected session id (detail pane). */
   selectedId?: string | null
   /** True while the follower has not yet observed a CLI stream reset. */
@@ -198,10 +258,18 @@ type VItem =
   | { kind: 'header'; section: SessionSection; height: number; key: string }
   | { kind: 'row'; agent: FloorAgent; section: SessionSection; height: number; key: string }
 
-function rowHeight(expanded: boolean, lastFull: string): number {
+function rowHeight(agent: FloorAgent, expanded: boolean, ask: string): number {
   if (!expanded) return ROW_H
-  const lines = Math.max(2, lastFull.split(/\n/).length + Math.ceil(lastFull.length / 88))
-  return ROW_H + ROW_EXPANDED_EXTRA + Math.min(lines, 10) * 16
+  // The detail card: the ask (quoted prompt, capped), the activity bar + legend,
+  // the checklist (one line per todo), and the catch-up link row. Estimate each so
+  // the virtual list reserves enough space without clipping.
+  const askLines = Math.min(8, Math.max(1, ask.split(/\n/).length + Math.ceil(ask.length / 88)))
+  const askH = 34 + askLines * 18            // caption + goal + quoted block
+  const activityH = 58                        // caption + bar + legend + span
+  const todos = agent.todos ?? []
+  const todoH = todos.length > 0 ? 22 + todos.length * 20 : 0
+  const catchH = 40                           // caption + link row
+  return ROW_H + ROW_EXPANDED_EXTRA + askH + activityH + todoH + catchH
 }
 
 const SORT_OPTS: { value: SessionSort; label: string }[] = [
@@ -218,7 +286,7 @@ const GROUP_OPTS: { value: SessionGroup; label: string }[] = [
   { value: 'flat', label: 'Flat' },
 ]
 
-export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
+export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, onView, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [project, setProject] = useState<string | null>(null)
   const [host, setHost] = useState<string | null>(null)
@@ -228,6 +296,10 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   const [desc, setDesc] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  // How many Previous rows are shown; null = the default 7-day/50 bound. "Show 10
+  // more" bumps it, paging further back through the resumable history.
+  const [previousShown, setPreviousShown] = useState<number | null>(null)
+  const nowMs = useNow(30000)
 
   const counts = useMemo(() => sessionChipCounts(agents), [agents])
 
@@ -237,7 +309,10 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
 
   const scope: SessionScope = useMemo(() => ({ filter, project, host, search }), [filter, project, host, search])
   const scoped = useMemo(() => scopeSessions(agents, scope), [agents, scope])
-  const sections = useMemo(() => groupSessions(scoped, group, sort, desc, filter === 'starred'), [scoped, group, sort, desc, filter])
+  const sections = useMemo(
+    () => buildSessionSections(scoped, group, sort, desc, { filter, nowMs, previousShown: previousShown ?? undefined }),
+    [scoped, group, sort, desc, filter, nowMs, previousShown],
+  )
 
   // Flatten sections into a single windowable item list with per-item heights.
   const items: VItem[] = useMemo(() => {
@@ -246,8 +321,8 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
       out.push({ kind: 'header', section: s, height: HEADER_H, key: `h:${s.key}` })
       for (const a of s.agents) {
         const open = expanded.has(a.id)
-        const lastFull = open ? sessionRowView(a).lastFull : ''
-        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(open, lastFull), key: a.id })
+        const ask = open ? sessionRowView(a).you.text : ''
+        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, open, ask), key: a.id })
       }
     }
     return out
@@ -265,9 +340,16 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   }, [])
 
   const selectedAgents = useMemo(() => scoped.filter((a) => selected.has(a.id)), [scoped, selected])
-  const reconnectAll = useMemo(() => scoped.filter(needsReconnect), [scoped])
+  // Every resumable Previous row in scope — the bulk "Resume all N" default action.
+  const previousAll = useMemo(() => orderedPrevious(scoped), [scoped])
+  const previousResumable = useMemo(() => previousAll.filter((a) => !!resumeCommand(a)), [previousAll])
+  const previousTotal = previousAll.length
+  const previousVisible = previousShown ?? previousInitialCount(previousAll, nowMs)
+  const previousHasMore = previousTotal > previousVisible
 
-  const resumeSection = useCallback((s: SessionSection) => onResumeMany(s.agents), [onResumeMany])
+  // A band's group Resume action resumes only the RESUMABLE rows it holds.
+  const resumeSection = useCallback((s: SessionSection) => onResumeMany(s.agents.filter((a) => !!resumeCommand(a))), [onResumeMany])
+  const showMorePrevious = useCallback(() => setPreviousShown((s) => (s ?? previousInitialCount(previousAll, nowMs)) + PREVIOUS_PAGE), [previousAll, nowMs])
   const toggleExpand = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -281,12 +363,13 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
     <div className="sw-sessions">
       <style>{SESSION_ROW_CSS}</style>
       <style>{SESSION_ROW_CSS2}</style>
+      <style>{SESSION_ROW_CSS3}</style>
       <div className="sx-filters">
         <div className="sx-chips">
-          {(['all', 'active', 'orphaned', 'starred'] as SessionFilter[]).map((f) => (
+          {(['all', 'active', 'favorites'] as SessionFilter[]).map((f) => (
             <button
               key={f}
-              className={`sx-chip${filter === f ? ' on' : ''}${f === 'orphaned' ? ' orphan' : ''}`}
+              className={`sx-chip${filter === f ? ' on' : ''}`}
               onClick={() => setFilter(f)}
             >
               {f[0]!.toUpperCase() + f.slice(1)}
@@ -343,13 +426,17 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
                   <SectionHeader
                     key={it.section.key}
                     section={it.section}
-                    reconnectCount={it.section.band === 'reconnect' ? it.section.agents.length : 0}
+                    resumableCount={it.section.band === 'previous' ? it.section.agents.filter((a) => !!resumeCommand(a)).length : 0}
                     onResumeAll={() => resumeSection(it.section)}
+                    hasMore={it.section.band === 'previous' && previousHasMore}
+                    moreCount={PREVIOUS_PAGE}
+                    onShowMore={showMorePrevious}
                   />
                 ) : (
                   <SessionRow
                     key={it.agent.id}
                     agent={it.agent}
+                    nowMs={nowMs}
                     selected={selected.has(it.agent.id)}
                     active={selectedId === it.agent.id}
                     expanded={expanded.has(it.agent.id)}
@@ -357,6 +444,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
                     onToggleSelect={toggleSelect}
                     onToggleStar={onToggleStar}
                     onResume={onResume}
+                    onView={onView ?? onSelect}
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
                   />
@@ -369,20 +457,20 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
         )}
       </div>
 
-      {(selected.size > 0 || reconnectAll.length > 0) && (
+      {(selected.size > 0 || previousResumable.length > 0) && (
         <div className="sx-bulk">
           {selected.size > 0 ? (
             <>
               <span className="sx-bulk-n"><b>{selected.size}</b> selected</span>
               <button className="sx-ghost" onClick={() => setSelected(new Set(scoped.map((a) => a.id)))}>Select all ({scoped.length})</button>
               <button className="sx-ghost" onClick={() => setSelected(new Set())}>Clear</button>
-              <button className="sx-ghost" onClick={() => selectedAgents.forEach(onToggleStar)}>Star</button>
-              <button className="sx-primary" onClick={() => onResumeMany(selectedAgents)}>Resume {selected.size} selected</button>
+              <button className="sx-ghost" onClick={() => selectedAgents.forEach(onToggleStar)}>Favorite</button>
+              <button className="sx-primary" onClick={() => onResumeMany(selectedAgents.filter((a) => !!resumeCommand(a)))}>Resume {selected.size} selected</button>
             </>
           ) : (
             <>
-              <span className="sx-bulk-n"><b>{reconnectAll.length}</b> need reconnecting</span>
-              <button className="sx-primary" onClick={() => onResumeMany(reconnectAll)}>Resume all {reconnectAll.length}</button>
+              <span className="sx-bulk-n"><b>{previousResumable.length}</b> previous · resumable</span>
+              <button className="sx-primary" onClick={() => onResumeMany(previousResumable)}>Resume all {previousResumable.length}</button>
             </>
           )}
         </div>
@@ -391,15 +479,25 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   )
 }
 
-function SectionHeaderImpl({ section, reconnectCount, onResumeAll }: { section: SessionSection; reconnectCount: number; onResumeAll: () => void }) {
-  const isReconnect = section.band === 'reconnect'
+function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, moreCount, onShowMore }: {
+  section: SessionSection
+  resumableCount: number
+  onResumeAll: () => void
+  hasMore: boolean
+  moreCount: number
+  onShowMore: () => void
+}) {
+  const isPrev = section.band === 'previous'
   return (
-    <div className={`sx-band${isReconnect ? ' recon' : ''}${section.kind === 'starred' ? ' star' : ''}`} style={{ height: HEADER_H }}>
+    <div className={`sx-band${isPrev ? ' previous' : ''}${section.kind === 'favorites' ? ' star' : ''}`} style={{ height: HEADER_H }}>
       <span className="g" aria-hidden />
       <span className="lab">{section.label}</span>
-      <span className="cnt">{section.agents.length}</span>
-      {reconnectCount > 0 && (
-        <button className="sx-band-act" onClick={(e) => { e.stopPropagation(); onResumeAll() }}>Resume all {reconnectCount}</button>
+      <span className="cnt">{section.total ?? section.agents.length}</span>
+      {hasMore && (
+        <button className="sx-band-more" onClick={(e) => { e.stopPropagation(); onShowMore() }}>Show {moreCount} more</button>
+      )}
+      {resumableCount > 0 && (
+        <button className="sx-band-act" onClick={(e) => { e.stopPropagation(); onResumeAll() }}>Resume all {resumableCount}</button>
       )}
     </div>
   )
@@ -408,6 +506,7 @@ const SectionHeader = React.memo(SectionHeaderImpl)
 
 interface RowProps {
   agent: FloorAgent
+  nowMs: number
   selected: boolean
   active: boolean
   expanded: boolean
@@ -415,6 +514,7 @@ interface RowProps {
   onToggleSelect: (id: string) => void
   onToggleStar: (a: FloorAgent) => void
   onResume: (a: FloorAgent) => void
+  onView: (a: FloorAgent) => void
   onSelect: (a: FloorAgent) => void
   onToggleExpand: (id: string) => void
 }
@@ -436,32 +536,132 @@ const PHASE_LABEL: Record<string, string> = {
   running: 'working', idle: 'idle', waiting: 'waiting', failed: 'failed', done: 'done',
 }
 
+/** What a tool call was doing, for the activity bar. */
+type ActKind = 'reading' | 'editing' | 'agents' | 'idle'
+const ACT_LEGEND: { kind: ActKind; label: string }[] = [
+  { kind: 'reading', label: 'reading' },
+  { kind: 'editing', label: 'editing' },
+  { kind: 'agents', label: 'agents' },
+  { kind: 'idle', label: 'idle' },
+]
+function actKindOf(name: string): ActKind {
+  if (/^(Read|Grep|Glob|WebFetch|WebSearch|NotebookRead|LS)$/i.test(name)) return 'reading'
+  if (/^(Edit|Write|NotebookEdit|MultiEdit|Bash)$/i.test(name)) return 'editing'
+  if (/^(Task|Agent|SendMessage|Workflow)$/i.test(name)) return 'agents'
+  return 'idle'
+}
+/** Proportions of the activity bar by what the session was doing. Falls back to a
+ *  single idle span when there is no recent tool stream (every Previous row). */
+function activitySegments(a: FloorAgent): { kind: ActKind; pct: number }[] {
+  const calls = a.recent ?? []
+  if (calls.length === 0) return [{ kind: 'idle', pct: 100 }]
+  const tally: Record<ActKind, number> = { reading: 0, editing: 0, agents: 0, idle: 0 }
+  for (const c of calls) tally[actKindOf(c.name)] += 1
+  const total = calls.length
+  return (Object.keys(tally) as ActKind[])
+    .filter((k) => tally[k] > 0)
+    .map((k) => ({ kind: k, pct: Math.round((tally[k] / total) * 100) }))
+}
+/** Short "Aug 30, 3:12 PM" for the activity span labels. */
+function clockLabel(ms: number): string {
+  if (!ms) return ''
+  try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' }
+}
+
+function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
+  a: FloorAgent; row: SessionRowView; nowMs: number; onResume: (a: FloorAgent) => void; onView: (a: FloorAgent) => void
+}) {
+  const ask = row.you.text || a.prompt || ''
+  const segments = activitySegments(a)
+  const todos = a.todos ?? []
+  const { done, total } = todoProgress(todos)
+  const device = a.sourceDevice || row.host
+  const canResume = !!resumeCommand(a)
+  const startLabel = clockLabel(a.startedAtMs || 0)
+  const nowLabel = a.lastActivityMs ? clockLabel(a.lastActivityMs) : 'now'
+  const attachments = a.attachments ?? []
+  return (
+    <div className="sx-detail" onClick={(e) => e.stopPropagation()}>
+      <div className="sx-dsec">
+        <div className="sx-dcap">The ask</div>
+        {ask && <div className="sx-ask">{ask}</div>}
+        <div className="sx-goal">Goal, as a recap agent reads it: <b>{row.title}</b></div>
+        {attachments.length > 0 && (
+          <div className="sx-thumbs">
+            {attachments.slice(0, 6).map((att, i) =>
+              att.thumbnailUri
+                ? <img key={i} className="th" src={att.thumbnailUri} alt={att.label} title={att.label} />
+                : <span key={i} className="th ph" title={att.label}>{'\u{1F5BC}'}</span>,
+            )}
+          </div>
+        )}
+      </div>
+      <div className="sx-dsec">
+        <div className="sx-dcap">Activity</div>
+        <div className="sx-actbar">
+          {segments.map((s, i) => <i key={i} className={s.kind} style={{ width: `${s.pct}%` }} />)}
+        </div>
+        <div className="sx-actlegend">
+          {ACT_LEGEND.map((l) => <span key={l.kind}><span className={`dot ${l.kind}`} />{l.label}</span>)}
+        </div>
+        <div className="sx-actspan"><span>{startLabel || 'started'}</span><span>{nowLabel}</span></div>
+      </div>
+      {total > 0 && (
+        <div className="sx-dsec">
+          <div className="sx-dcap">Checklist — {done} of {total} done</div>
+          <div className="sx-todo">
+            {todos.map((t, i) => {
+              const st = String(t.status)
+              const cls = st === 'completed' ? 'done' : st === 'in_progress' ? 'cur' : 'pend'
+              const mk = st === 'completed' ? '✓' : st === 'in_progress' ? '▸' : '○'
+              return <div key={i} className={`it ${cls}`}><span className="mk">{mk}</span><span className="tx">{t.content}</span></div>
+            })}
+          </div>
+        </div>
+      )}
+      <div className="sx-dsec">
+        <div className="sx-dcap">Catch up</div>
+        <div className="sx-catch">
+          {a.ticket && <span className="lnk">◇ {a.ticket}</span>}
+          {row.repo && <span className="lnk">▪ {row.repo}{a.files ? ` · ${a.files} files` : ''}</span>}
+          <span className="lnk" onClick={() => onView(a)}>Session ↗</span>
+          {device && <span className="lnk">◈ {device}</span>}
+          {canResume
+            ? <span className="lnk go" onClick={() => onResume(a)}>↻ Resume here</span>
+            : <span className="lnk" onClick={() => onView(a)}>View transcript</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SessionRowImpl({
-  agent: a, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand,
+  agent: a, nowMs, selected, active, expanded, height,
+  onToggleSelect, onToggleStar, onResume, onView, onSelect, onToggleExpand,
 }: RowProps) {
-  const reconnect = needsReconnect(a)
-  // pidAlive (from the CLI) tells the user WHAT resume will do: an orphaned session
-  // whose process still runs is reattached; a crashed/dead one is relaunched from
-  // its transcript. The CLI decides the mechanism — this is the honest tooltip.
-  // Per-row Resume posts the SAME onResume the group "Resume all N" uses.
-  const resumeTitle = reconnect
-    ? (a.pidAlive === false ? 'Resume — relaunch from the transcript (process has exited)' : 'Reattach — the process is still running on its machine')
+  const prev = isPrevious(a)
+  const canResume = !!resumeCommand(a)
+  // For a Previous (ended) session, Resume relaunches from the transcript on its
+  // owning device; a non-resumable harness (recovery null) offers View instead of a
+  // dead Resume. The recovery command the row carries already targets --device.
+  const resumeTitle = prev
+    ? `Resume — relaunch from the transcript on ${a.sourceDevice || a.hostLabel || a.host}`
     : 'Resume this session'
   const row = sessionRowView(a)
   const liveClass = row.live === 'run' ? '' : row.live
   // Control-Room card fields — all straight off the streamed FloorAgent, no new CLI work.
   const agentId = agentIdFromPrefix(a.abbr) ?? (row.harnessTag || 'agent').toLowerCase()
-  const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
-  const phaseLabel = a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
-  const step = (a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : '')
+  const phaseClass = prev ? 'done' : a.needs ? 'needs' : (a.phase || 'running')
+  const phaseLabel = prev ? 'previous' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
+  const step = prev ? '' : ((a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : ''))
   const todos = a.todos ?? []
   const todoDone = todos.filter((t) => String(t.status) === 'completed').length
+  const device = a.sourceDevice || row.host
   return (
     <div
       className={`sx-row${selected ? ' sel' : ''}${active ? ' active' : ''}`}
       style={{ height }}
-      onClick={() => onSelect(a)}
+      onClick={() => onToggleExpand(a.id)}
     >
       <button
         className={`sx-cb${selected ? ' on' : ''}`}
@@ -470,7 +670,7 @@ function SessionRowImpl({
       />
       <button
         className={`sx-star${a.pinned ? ' on' : ''}`}
-        title={a.pinned ? 'Unstar' : 'Star — pin to top'}
+        title={a.pinned ? 'Remove from Favorites' : 'Favorite — pin to top'}
         onClick={(e) => { e.stopPropagation(); onToggleStar(a) }}
       >{a.pinned ? '★' : '☆'}</button>
       <span className="sx-av"><AgentAvatar id={agentId} size={24} title={row.harnessTag || agentId} /></span>
@@ -481,32 +681,18 @@ function SessionRowImpl({
           <span className="sx-ttl" title={row.title}>{row.title}</span>
           {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>
-        {(step || todos.length > 0) && (
+        {step || (!prev && todos.length > 0) ? (
           <div className="sx-now">
             {step && <b>{step}</b>}
-            {todos.length > 0 && <span>{step ? ' · ' : ''}checklist {todoDone}/{todos.length}</span>}
+            {!prev && todos.length > 0 && <span>{step ? ' · ' : ''}checklist {todoDone}/{todos.length}</span>}
           </div>
-        )}
+        ) : null}
+        {/* Collapsed row leads with the user's prompt (one line) — the important info. */}
         <div className="sx-roleline">
           <span className="sx-roletag you">You ›</span>
           <span className="sx-rolebody clip"><PromptChips you={row.you} /></span>
         </div>
-        {row.lastLine && (
-          <div className="sx-roleline">
-            <span className="sx-roletag agent">{row.harnessTag}</span>
-            <span className={`sx-rolebody${expanded ? '' : ' clip'}`}>
-              {row.lastLine}
-              {row.lastFull && (
-                <button
-                  className="sx-expand"
-                  aria-expanded={expanded}
-                  onClick={(e) => { e.stopPropagation(); onToggleExpand(a.id) }}
-                >{expanded ? '⌃ less' : '⌄ more'}</button>
-              )}
-            </span>
-          </div>
-        )}
-        {expanded && row.lastFull && <div className="sx-full">{row.lastFull}</div>}
+        {/* Compact chip row: attachments, artifacts, and links (PR / ticket / repo / device). */}
         <div className="sx-metarow">
           {row.repo && <span className="sx-chip repo">▪ {row.repo}</span>}
           {row.pr && (
@@ -517,16 +703,27 @@ function SessionRowImpl({
           )}
           {a.ticket && <span className="sx-chip ticket">◇ {a.ticket}</span>}
           {row.branch && <span className="sx-chip branch">⑂ {row.branch}</span>}
-          {row.host && <span className="sx-chip host">{row.host}</span>}
+          {(a.attachments?.length ?? 0) > 0 && <span className="sx-chip attach">{'\u{1F5BC}'} {a.attachments!.length}</span>}
+          {(a.plans?.length ?? 0) > 0 && <span className="sx-chip art">◆ {a.plans!.length}</span>}
+          {device && <span className="sx-chip device">◈ {device}</span>}
           {!row.pr && !a.ticket && <span className="sx-chip nopr">no PR</span>}
         </div>
+        {expanded && <ExpandedDetail a={a} row={row} nowMs={nowMs} onResume={onResume} onView={onView} />}
       </span>
       <span className="sx-rowactions">
-        <button
-          className="sx-resumebtn"
-          title={resumeTitle}
-          onClick={(e) => { e.stopPropagation(); onResume(a) }}
-        ><span aria-hidden>↻</span><span className="sx-resumelabel">Resume</span></button>
+        {canResume ? (
+          <button
+            className="sx-resumebtn"
+            title={resumeTitle}
+            onClick={(e) => { e.stopPropagation(); onResume(a) }}
+          ><span aria-hidden>↻</span><span className="sx-resumelabel">Resume</span></button>
+        ) : (
+          <button
+            className="sx-viewbtn"
+            title="View the session transcript (this harness has no resume path)"
+            onClick={(e) => { e.stopPropagation(); onView(a) }}
+          ><span aria-hidden>↗</span><span className="sx-resumelabel">View</span></button>
+        )}
         <span className="sx-age">{row.age}</span>
         <span className={`sx-live${liveClass ? ` ${liveClass}` : ''}`} title={a.liveStatus || a.phase} />
       </span>

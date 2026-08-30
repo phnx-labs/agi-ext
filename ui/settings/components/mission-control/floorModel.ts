@@ -628,6 +628,29 @@ export function visibleFloorAgents(agents: FloorAgent[], showBackground: boolean
 }
 
 /**
+ * Fold resumable PREVIOUS (index) rows into the LIVE roster for the Sessions
+ * surface, deduped by `sessionId` — a LIVE row always wins over an index row for
+ * the same session (PHNX-3593). A previous row that IS currently live is therefore
+ * dropped (the live one carries real activity); genuinely-ended sessions survive as
+ * the Previous·resumable band. Rows with no sessionId can't be keyed, so they pass
+ * through untouched. Pure so it is unit-tested; this merge feeds ONLY the Sessions
+ * surface — the live feed/needs-you must never see index rows.
+ */
+export function mergeSessionAgents(live: FloorAgent[], previous: FloorAgent[]): FloorAgent[] {
+  const liveIds = new Set(live.map((a) => a.sessionId).filter((id): id is string => !!id))
+  const seen = new Set<string>()
+  const extra: FloorAgent[] = []
+  for (const a of previous) {
+    if (a.sessionId) {
+      if (liveIds.has(a.sessionId) || seen.has(a.sessionId)) continue
+      seen.add(a.sessionId)
+    }
+    extra.push(a)
+  }
+  return [...live, ...extra]
+}
+
+/**
  * Partition every visible card exactly once so rendered sections and counts consume
  * the same collections. The buckets are in ATTENTION order — needs > idle > active >
  * done — because the floor ranks by progress, not by liveness (root AGENTS.md

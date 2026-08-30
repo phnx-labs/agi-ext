@@ -238,6 +238,20 @@ export function sessionChipCounts(all: FloorAgent[]): Record<SessionFilter, numb
   return { all: all.length, active, favorites }
 }
 
+/**
+ * Fold the resumable PREVIOUS index rows into the live roster for the Sessions
+ * surface only. Deduped by `sessionId` with the LIVE row always winning — a session
+ * that is both in the live stream and the durable index is shown once, as live, never
+ * as a stale Previous duplicate. Index rows with no sessionId (can't be keyed) and
+ * every live row are kept. Pure so the dedup is unit-tested; the merged list is passed
+ * ONLY to SessionsPane, never to the live feed (previous rows must not leak there).
+ */
+export function mergeSessionsWithPrevious(live: FloorAgent[], previous: FloorAgent[]): FloorAgent[] {
+  const liveIds = new Set(live.map((a) => a.sessionId).filter((id): id is string => !!id))
+  const extra = previous.filter((a) => !a.sessionId || !liveIds.has(a.sessionId))
+  return [...live, ...extra]
+}
+
 // ---------- Previous · resumable bottom band ----------
 
 /** Every PREVIOUS (ended, resumable) row, newest activity first. */
