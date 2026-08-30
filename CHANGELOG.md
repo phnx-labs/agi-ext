@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.348] - 2026-08-30
+
+- **Sessions list shows previous (crashed/ended) resumable sessions (PHNX-3593).**
+  After a reboot prunes dead PIDs, the durable transcript index still knows every
+  resumable session — the Sessions surface now folds those in from
+  `agents sessions --json` as a bounded **Previous · resumable** bottom band
+  (last 7 days / 50, with "Show 10 more" paging further back and a group
+  **Resume all N**). Live rows always win over an index row for the same session,
+  and previous rows never leak into the live feed. Every row is device-labelled;
+  per-row **Resume** runs the CLI's own recovery command
+  (`agents sessions resume <id> --device <device>`), while a non-resumable harness
+  (grok / gemini / droid / cursor) shows **View** instead of a dead Resume. The
+  filter chips are now exactly **All · Active · Favorites** (the Orphaned chip and
+  the tmux-era reconnect concept are gone; Starred is renamed Favorites). Rows are
+  compact by default and click to expand into a full detail card — the ask,
+  an activity bar, the checklist, and a catch-up row (ticket / files / session /
+  device / Resume here).
+
 ## [0.9.347] - 2026-08-30
 
 - **Repair the Sessions browser and reload restoration (PHNX-3580).** Session
