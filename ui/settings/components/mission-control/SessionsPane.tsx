@@ -576,7 +576,7 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
   const todos = a.todos ?? []
   const { done, total } = todoProgress(todos)
   const device = a.sourceDevice || row.host
-  const canResume = !!resumeCommand(a)
+  const canResume = !isPrevious(a) || !!resumeCommand(a)
   const startLabel = clockLabel(a.startedAtMs || 0)
   const nowLabel = a.lastActivityMs ? clockLabel(a.lastActivityMs) : 'now'
   const attachments = a.attachments ?? []
@@ -640,10 +640,12 @@ function SessionRowImpl({
   onToggleSelect, onToggleStar, onResume, onView, onSelect, onToggleExpand,
 }: RowProps) {
   const prev = isPrevious(a)
-  const canResume = !!resumeCommand(a)
+  // A LIVE session is always resumable/focusable via the normal path; only a PREVIOUS
+  // (index) row gates on a recovery command, so a non-resumable harness (recovery
+  // null — grok/gemini/droid/cursor) offers View instead of a dead Resume.
+  const canResume = !prev || !!resumeCommand(a)
   // For a Previous (ended) session, Resume relaunches from the transcript on its
-  // owning device; a non-resumable harness (recovery null) offers View instead of a
-  // dead Resume. The recovery command the row carries already targets --device.
+  // owning device; the recovery command the row carries already targets --device.
   const resumeTitle = prev
     ? `Resume — relaunch from the transcript on ${a.sourceDevice || a.hostLabel || a.host}`
     : 'Resume this session'

@@ -798,6 +798,52 @@ describe('normalizeRecentSession outcome metrics', () => {
   });
 });
 
+describe('normalizeRecentSession — SessionPickerJsonRow lifecycle/recovery fields (PHNX-3593)', () => {
+  const base = {
+    id: 'abc-123',
+    agent: 'Claude',
+    timestamp: '2026-08-30T10:00:00.000Z',
+    lastActivity: '2026-08-30T10:42:00.000Z',
+    cwd: '/repo',
+    topic: 'Fold in previous sessions',
+  };
+
+  test('carries state / resumable / sourceDevice + the CLI recovery command', () => {
+    const s = normalizeRecentSession(
+      {
+        ...base,
+        state: 'inactive',
+        resumable: true,
+        sourceDevice: 'yosemite-s0',
+        recovery: { command: 'agents', args: ['sessions', 'resume', 'abc-123', '--device', 'yosemite-s0'], cwd: '/repo' },
+      },
+      'yosemite-s0',
+      Date.parse('2026-08-30T11:00:00.000Z'),
+    );
+    expect(s.state).toBe('inactive');
+    expect(s.resumable).toBe(true);
+    expect(s.sourceDevice).toBe('yosemite-s0');
+    expect(s.recovery).toEqual({ command: 'agents', args: ['sessions', 'resume', 'abc-123', '--device', 'yosemite-s0'], cwd: '/repo' });
+  });
+
+  test('a non-resumable harness lands recovery null, resumable false', () => {
+    const s = normalizeRecentSession({ ...base, agent: 'grok', resumable: false, recovery: null }, 'zion', Date.now());
+    expect(s.resumable).toBe(false);
+    expect(s.recovery).toBeNull();
+  });
+
+  test('a malformed recovery (empty args) normalizes to null, never a dead command', () => {
+    const s = normalizeRecentSession({ ...base, resumable: true, recovery: { command: 'agents', args: [] } }, 'zion', Date.now());
+    expect(s.recovery).toBeNull();
+  });
+
+  test('state defaults to inactive and sourceDevice to the queried host when the CLI omits them', () => {
+    const s = normalizeRecentSession({ ...base }, 'mac-mini', Date.now());
+    expect(s.state).toBe('inactive');
+    expect(s.sourceDevice).toBe('mac-mini');
+  });
+});
+
 describe('normalizeActiveSession — todos plan progress (RUSH-1380)', () => {
   test('carries the CLI TodoWrite checklist through to the card', () => {
     const s = normalizeActiveSession(
