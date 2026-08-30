@@ -8,7 +8,7 @@ import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { FloorAgent } from './floorModel'
 
-const { SessionRow, SessionsPane, SESSION_ROW_CSS } = await import('./SessionsPane')
+const { SessionRow, SessionsPane, SESSION_ROW_CSS, SESSION_ROW_CSS3, ROW_H } = await import('./SessionsPane')
 
 const noop = () => {}
 
@@ -185,6 +185,15 @@ describe('SessionRow — compact card', () => {
     act(() => root.unmount())
     host.remove()
   })
+
+  test('Previous rows omit redundant phase and recap-source badges', () => {
+    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row' })} {...rowProps} />)
+    expect(previous).not.toContain('sx-phase')
+    expect(previous).not.toContain('sx-src')
+
+    const live = renderToStaticMarkup(<SessionRow agent={agent({ id: 'live-row', phase: 'idle' })} {...rowProps} />)
+    expect(live).toContain('class="sx-phase idle"')
+  })
 })
 
 describe('SessionsPane', () => {
@@ -209,11 +218,15 @@ describe('SessionsPane', () => {
   })
 
   test('virtual row CSS keeps the declared height and clips long content to the viewport', () => {
+    expect(ROW_H).toBe(146)
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-row {')
     expect(SESSION_ROW_CSS).toContain('box-sizing: border-box; width: 100%;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-rolebody { min-width: 0; flex: 1;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-band {')
     expect(SESSION_ROW_CSS).toContain('@media (max-width: 720px)')
+    expect(SESSION_ROW_CSS3).toContain('.sx-titleline { min-width: 0;')
+    expect(SESSION_ROW_CSS3).toContain('flex: 0 0 132px; width: 132px;')
+    expect(SESSION_ROW_CSS3).toContain('flex-basis: 76px; width: 76px;')
   })
 
   test('the Previous · resumable band renders last and exposes Resume all N', () => {
@@ -233,5 +246,22 @@ describe('SessionsPane', () => {
     )
     expect(html).toContain('Previous · resumable')
     expect(html).toContain('Resume all 2')
+  })
+
+  test('Previous defaults to 50 shown rows with consistent paging and resume counts', () => {
+    const now = Date.now()
+    const html = renderToStaticMarkup(
+      <SessionsPane
+        agents={Array.from({ length: 60 }, (_, i) => prevAgent({ id: `p-${i}`, lastActivityMs: now - i * 1000 }))}
+        onToggleStar={noop}
+        onResume={noop}
+        onResumeMany={noop}
+        onSelect={noop}
+      />,
+    )
+    expect(html).toContain('50 shown of 60')
+    expect(html).toContain('Show 10 more')
+    expect(html).toContain('Resume all 50')
+    expect(html).not.toContain('Resume all 60')
   })
 })

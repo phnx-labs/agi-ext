@@ -225,6 +225,14 @@ describe('buildSessionSections — Previous · resumable band is always LAST', (
     expect(band.agents).toHaveLength(50)
     expect(band.total).toBe(60)
   })
+  test('the default build never renders more than 50 recent Previous rows', () => {
+    const recent = Array.from({ length: 80 }, (_, i) => prevRow({ id: `recent-${i}`, lastActivityMs: now - i * 1000 }))
+    const old = Array.from({ length: 20 }, (_, i) => prevRow({ id: `old-${i}`, lastActivityMs: now - (8 * 24 * 60 * 60 * 1000 + i) }))
+    const band = buildSessionSections([...recent, ...old], 'flat', 'recent', true, { filter: 'all', nowMs: now })
+      .find((section) => section.band === 'previous')!
+    expect(band.agents).toHaveLength(PREVIOUS_DEFAULT_LIMIT)
+    expect(band.total).toBe(100)
+  })
 })
 
 describe('previous band bounds', () => {
@@ -235,10 +243,10 @@ describe('previous band bounds', () => {
     const ordered = orderedPrevious([...recent, ...old])
     expect(previousInitialCount(ordered, now)).toBe(3)
   })
-  test('when everything is older than the window, still seed the newest page', () => {
+  test('when everything is older than the window, require explicit paging', () => {
     const old = Array.from({ length: 20 }, (_, i) => prevRow({ id: `o${i}`, lastActivityMs: now - (30 * 24 * 60 * 60 * 1000 + i) }))
     const ordered = orderedPrevious(old)
-    expect(previousInitialCount(ordered, now)).toBe(10)
+    expect(previousInitialCount(ordered, now)).toBe(0)
   })
   test('the cap never exceeds the default limit', () => {
     const many = Array.from({ length: 80 }, (_, i) => prevRow({ id: `m${i}`, lastActivityMs: now - i * 1000 }))
