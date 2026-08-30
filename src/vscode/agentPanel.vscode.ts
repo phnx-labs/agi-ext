@@ -1377,7 +1377,19 @@ function renderRecentFilesCard(s) {
   // Show basename in the row and the full path in the title attr — the panel
   // is narrow and absolute paths line-wrap into unreadable ribbon.
   const rows = files.map((f) => {
-    const rel = s.cwd && f.path.startsWith(s.cwd) ? f.path.slice(s.cwd.length).replace(/^[/\\]/, '') : f.path;
+    // Show the path relative to cwd (strip the cwd prefix + its one leading
+    // separator); a path outside cwd is shown in full, untouched. IMPORTANT: this
+    // code is emitted INSIDE a template literal, so a regex char class matching a
+    // backslash gets mangled at generation (the double-backslash collapses to one,
+    // breaking the class), which throws "Invalid regular expression" and crashes
+    // the ENTIRE webview script on parse — the stuck-"Loading…" bug (PHNX-3517).
+    // Compare char codes (47 is forward slash, 92 is back slash) so no escaping can
+    // ever go wrong. The strip stays scoped to the cwd-relative branch only.
+    let rel = f.path;
+    if (s.cwd && f.path.startsWith(s.cwd)) {
+      rel = f.path.slice(s.cwd.length);
+      if (rel.charCodeAt(0) === 47 || rel.charCodeAt(0) === 92) rel = rel.slice(1);
+    }
     const ts = f.mtimeMs ? '<span class="recent-file-time">' + esc(relTime(f.mtimeMs)) + '</span>' : '';
     return (
       '<div class="recent-file">' +
