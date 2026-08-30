@@ -304,8 +304,6 @@ const GROUP_OPTS: { value: SessionGroup; label: string }[] = [
 
 export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, onView, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
-  const [project, setProject] = useState<string | null>(null)
-  const [host, setHost] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<SessionGroup>('project')
   const [sort, setSort] = useState<SessionSort>('recent')
@@ -319,7 +317,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
 
   const counts = useMemo(() => sessionChipCounts(agents), [agents])
 
-  const scope: SessionScope = useMemo(() => ({ filter, project, host, search }), [filter, project, host, search])
+  const scope: SessionScope = useMemo(() => ({ filter, project: null, host: null, search }), [filter, search])
   const scoped = useMemo(() => scopeSessions(agents, scope), [agents, scope])
   const sections = useMemo(
     () => buildSessionSections(scoped, group, sort, desc, { filter, nowMs, previousShown: previousShown ?? undefined }),
@@ -425,7 +423,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
           <div className="sx-empty">
             {streamDegraded && agents.length === 0
               ? 'Session data unavailable. Waiting for the first snapshot…'
-              : <>No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setProject(null); setHost(null); setSearch('') }}>Clear filters</button>}</>}
+              : <>No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setSearch('') }}>Clear filters</button>}</>}
           </div>
         ) : (
           <div style={{ height: totalHeight, position: 'relative' }}>
