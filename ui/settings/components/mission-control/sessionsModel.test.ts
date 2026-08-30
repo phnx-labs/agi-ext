@@ -67,15 +67,17 @@ function prevRow(over: Partial<FloorAgent> = {}): FloorAgent {
 const EMPTY: SessionScope = { filter: 'all', project: null, host: null, search: '' }
 
 describe('isPrevious classification', () => {
-  test('an inactive index row is Previous', () => {
+  test('only a genuinely-inactive index row is Previous', () => {
     expect(isPrevious(prevRow({ id: 'p1' }))).toBe(true)
     expect(isPrevious(mk({ sessionState: 'inactive' }))).toBe(true)
-    expect(isPrevious(mk({ context: 'recent' }))).toBe(true)
   })
-  test('a live row is NOT Previous', () => {
+  test('a live row is NOT Previous — even a picker row tagged context:recent while still running', () => {
     expect(isPrevious(mk({ phase: 'running' }))).toBe(false)
     expect(isPrevious(mk({ phase: 'idle', sessionState: 'idle' }))).toBe(false)
     expect(isPrevious(mk({ sessionState: undefined, context: 'terminal' }))).toBe(false)
+    // the load-bearing regression guard: a running session in the picker fetch
+    // (context 'recent', state 'running') must stay Active, never Previous.
+    expect(isPrevious(mk({ context: 'recent', sessionState: 'running', phase: 'running' }))).toBe(false)
   })
   test('sessionBand routes a Previous row to the previous band', () => {
     expect(sessionBand(prevRow({ id: 'p1' }))).toBe('previous')

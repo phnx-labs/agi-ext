@@ -109,8 +109,8 @@ export function sortSessions(list: FloorAgent[], sort: SessionSort, desc: boolea
         cmp = (b.startedAtMs || 0) - (a.startedAtMs || 0)
         break
       case 'status':
-        // Ascending rank (reconnect=0 first). At the shared default dir (desc:true
-        // -> +1) this reads "most urgent first".
+        // Ascending rank (most-stopped live phase first, Previous last). At the shared
+        // default dir (desc:true -> +1) this reads "most urgent first".
         cmp = statusRank(a) - statusRank(b)
         break
       case 'tok':

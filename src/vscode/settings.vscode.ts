@@ -16,7 +16,7 @@ import * as swarm from './swarm.vscode';
 import { notifyNewlyWaiting } from './waitingNotifier.vscode';
 import { fetchAllTasks, detectAvailableSources } from './tasks.vscode';
 import { getBuiltInByTitle, configFromDef } from './agents.vscode';
-import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById } from './extension';
+import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById, openAgentSessionByRecovery } from './extension';
 import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { nudgeSession } from '../mcp/watchdog-bridge';
@@ -3252,6 +3252,19 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         if (!sessionId) break;
         const host = typeof message.host === 'string' ? message.host : '';
         await openAgentSessionById(context, sessionId, isLocalDeviceHost(host) ? undefined : host);
+        break;
+      }
+      // Resume a PREVIOUS (crashed/ended) session from the CLI's own recovery command
+      // (PHNX-3593). Unlike focusSession, this does NOT depend on the local candidate
+      // list — a session recovered from a remote fleet device isn't in this machine's
+      // local history — and it targets the owning device via `--device`.
+      case 'resumePreviousSession': {
+        const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
+        if (!sessionId) break;
+        const agentType = typeof message.agentType === 'string' ? message.agentType : '';
+        const device = typeof message.device === 'string' && !isLocalDeviceHost(message.device) ? message.device : '';
+        const cwd = typeof message.cwd === 'string' && message.cwd ? message.cwd : undefined;
+        await openAgentSessionByRecovery(context, { sessionId, agentType, device, cwd });
         break;
       }
       // Stop a background (headless) run by killing its pid — sends it back to parked
