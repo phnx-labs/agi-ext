@@ -52,6 +52,10 @@ test('remote deliverables open on the session host (PHNX-3574)', () => {
   );
 });
 
+test('local deliverables stay local for the normalized this-mac label (PHNX-3574)', () => {
+  expect(sessionPathUriString('/repo/.agents/plans/sidebar.md', 'this-mac')).toBeUndefined();
+});
+
 test('Active Session render is outcome-oriented and drops utility-stack cards (PHNX-3574)', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
   const renderStart = src.indexOf('root.innerHTML = (', src.indexOf('function render(snap)'));
