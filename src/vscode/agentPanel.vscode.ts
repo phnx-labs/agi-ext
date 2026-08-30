@@ -29,14 +29,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as terminals from './terminals.vscode';
 import { buildAgentTerminalEnv } from '../core/terminals';
-import { listTeamsForCwd, TeamWithMates } from './foreman.sources';
-import { getSessionPathBySessionId, getSessionPreviewInfo, SessionPreviewInfo, readTailLines } from './sessions.vscode';
+import { TeamWithMates } from './foreman.sources';
 import { extractLinearTicketId } from '../core/utils';
 import { readPrompts } from './settings.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { openExternalUrl } from './webviewSecurity';
-import { parseLineForActivity, formatActivity, type TodoProgress } from '../core/session.activity';
-import { getSessionToolStatsViaAgentsCli } from '../core/handoff';
+import { parseLineForActivity, formatActivity, todoProgressFromCli, type TodoProgress } from '../core/session.activity';
 import {
   extractPrUrls as extractPrUrlsHelper,
   type PullRequestRef as SharedPullRequestRef,
@@ -175,8 +173,29 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   // Until then, postMessage calls race the iframe load and get dropped — so we
   // queue a single "send current snapshot when ready" flag.
   private webviewReady = false;
+  // Handshake-fallback timer (PHNX-3517): re-posts the snapshot until the webview
+  // acks, so a single dropped 'ready' can never wedge the panel on "Loading…".
+  private readyFallbackTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
+
+  // The webview signals 'ready' once its message listener attaches; every
+  // refresh() post is gated on it, and postMessage before that attach is
+  // silently dropped. If that single 'ready' is ever lost (a script exception,
+  // a re-resolve resetting the flag, a dropped message) the old code left
+  // "Loading…" up forever with no recovery. Re-post the current snapshot on a
+  // short timer, a bounded number of times, until the webview acks — bridging a
+  // lost handshake or a listener that attached a beat after our first post.
+  private scheduleReadyFallback(attempt = 0): void {
+    if (this.readyFallbackTimer) { clearTimeout(this.readyFallbackTimer); this.readyFallbackTimer = undefined; }
+    if (this.webviewReady || !this.view || attempt >= 8) return;
+    this.readyFallbackTimer = setTimeout(() => {
+      this.readyFallbackTimer = undefined;
+      if (this.webviewReady || !this.view) return;
+      this.view.webview.postMessage({ type: 'snapshot', data: this.snapshot });
+      this.scheduleReadyFallback(attempt + 1);
+    }, 250);
+  }
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -204,12 +223,15 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
     webviewView.onDidDispose(() => {
       this.disposePlanWatcher();
+      if (this.readyFallbackTimer) { clearTimeout(this.readyFallbackTimer); this.readyFallbackTimer = undefined; }
       this.view = undefined;
       this.visible = false;
     });
 
     this.visible = webviewView.visible;
     void this.refresh();
+    // Guarantee a paint even if the webview's 'ready' handshake is lost.
+    this.scheduleReadyFallback();
   }
 
   private async handleMessage(msg: any): Promise<void> {
@@ -217,6 +239,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     switch (msg.type) {
       case 'ready':
         this.webviewReady = true;
+        if (this.readyFallbackTimer) { clearTimeout(this.readyFallbackTimer); this.readyFallbackTimer = undefined; }
         this.view?.webview.postMessage({ type: 'snapshot', data: this.snapshot });
         void this.refresh();
         return;
@@ -437,91 +460,95 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       quickPrompts: pickQuickPrompts(),
     };
 
-    // Conversation summary + recent activity + linked artifacts come from
-    // the session JSONL. All best-effort; never block the panel on them.
-    // Resolved once and reused for the tool-stats mtime cache below (#94).
-    let sessionFilePath: string | undefined;
-    if (sessionId && entry.agentType) {
-      try {
-        sessionFilePath = await getSessionPathBySessionId(sessionId, entry.agentType);
-        const filePath = sessionFilePath;
-        if (filePath) {
-          const preview: SessionPreviewInfo = await getSessionPreviewInfo(filePath);
-          snapshot.conversation = {
-            topic: preview.firstUserMessage,
-            lastMessage: preview.lastUserMessage,
-            messageCount: preview.messageCount,
-            lastActivityMs: preview.lastActivityMs,
-          };
-          const linear =
-            extractLinearTicketId(preview.firstUserMessage) ||
-            extractLinearTicketId(preview.lastUserMessage);
-          if (linear) snapshot.linearIssue = linear;
+    // ── Warm fill from the live session stream (PHNX-3517) ──────────────────
+    // Everything a tab-switch needs to paint — what the agent is doing right
+    // now, its todo checklist, topic, PR, version/account, branch — is already
+    // in memory from the `agents sessions watch --json` stream that the Fleet
+    // already consumes (sessionPresentationStore, kept live by apply()). Read it
+    // SYNCHRONOUSLY so switching among 200+ tabs repaints instantly. This path
+    // spawns NOTHING. The old path spawned `agents sessions … --include tools`
+    // (for todos) and `agents teams status` per team on EVERY switch — 2-8
+    // subprocesses per render — which, behind the all-or-nothing snapshot, is
+    // what left the panel wedged on "Loading…" for seconds.
+    if (sessionId) {
+      const warm = findWarmSessionRow(sessionId);
+      if (warm) {
+        const topic = firstString(warm.topic, warm.firstUserMessage, warm.prompt);
+        const lastMessage = firstString(warm.lastResponse);
+        snapshot.conversation = {
+          topic,
+          lastMessage,
+          messageCount: 0,
+          lastActivityMs: typeof warm.lastActivityMs === 'number' ? warm.lastActivityMs : undefined,
+        };
+        const linear = extractLinearTicketId(topic) || extractLinearTicketId(lastMessage);
+        if (linear) snapshot.linearIssue = linear;
 
-          const tailLines = await readTailLines(filePath, 80);
-          snapshot.recentActivity = collectRecentActivity(tailLines, entry.agentType, 5);
-          // todoProgress now comes from the CLI's computed `session.todos` via the
-          // tool-stats call below (RUSH-1503) — no transcript re-parse here.
-          // Scan the full transcript-by-tail PLUS first/last user messages so a
-          // PR mentioned in a wrap-up message isn't dropped. extractPrUrls
-          // returns every match deduped, not just the first.
-          snapshot.pullRequests = extractPrUrls(tailLines.concat(
-            preview.firstUserMessage ?? '',
-            preview.lastUserMessage ?? '',
-          ));
+        // The checklist rides the stream (CLI ActiveSession.todos, RUSH-1380) —
+        // the same shape the tool-stats spawn used to return, now free.
+        const todos = todoProgressFromCli(warm.todos);
+        if (todos) snapshot.todoProgress = todos;
+
+        // "What's being worked on" from the streamed tail / activity — no
+        // transcript read. Prefer the recent-turn tail; fall back to the live
+        // one-line `activity`.
+        const tail = Array.isArray(warm.tail)
+          ? warm.tail.map((t) => String(t)).filter(Boolean)
+          : [];
+        if (tail.length && entry.agentType) {
+          snapshot.recentActivity = collectRecentActivity(tail, entry.agentType, 5);
+        } else if (typeof warm.activity === 'string' && warm.activity.trim()) {
+          snapshot.recentActivity = [{ kind: 'working', summary: warm.activity.trim(), ts: Date.now() }];
         }
-      } catch {
-        // Session preview is best-effort; never block the panel on it.
+
+        // PRs: the stream carries prUrl; also scan the tail so a PR mentioned in
+        // a wrap-up turn isn't dropped. extractPrUrls dedupes.
+        const prUrl = firstString(warm.prUrl);
+        snapshot.pullRequests = extractPrUrls([prUrl ?? '', ...tail, topic ?? '', lastMessage ?? '']);
+
+        const warmBranch = firstString(warm.branch, warm.worktree?.branch);
+        if (warmBranch) snapshot.git = { branch: warmBranch };
+      }
+
+      // version + account ride the stream too (RUSH-2205 / RUSH-3184), moved off
+      // a per-tab spawn precisely to kill the 2026-08-25 CPU incident. Prefer the
+      // broadcast identity over the terminal entry's cached copy.
+      const live = sessionPresentationStore.liveSession(sessionId);
+      if (live) {
+        if (live.version) snapshot.version = live.version;
+        if (live.account) snapshot.account = live.account;
+        if (!snapshot.conversation?.topic && live.topic) {
+          snapshot.conversation = { ...(snapshot.conversation ?? { messageCount: 0 }), topic: live.topic };
+        }
       }
     }
 
-    // Recent file edits — surfaces what the agent actually touched, beyond
-    // the "5 changed" chip. Best-effort: handoff helper shells out to
-    // `agents sessions <id> --json --include tools`. Never block on this.
-    if (sessionId && cwd) {
+    // git dirtyCount drives the idle_dirty state; branch came warm above. This is
+    // the in-process vscode.git API (no subprocess), so it stays on the fast path.
+    if (cwd) {
       try {
-        const stats = await getSessionToolStatsViaAgentsCli(sessionId, cwd, sessionFilePath);
-        // Live checklist rides the same CLI call — the state engine's computed
-        // `session.todos`, not a local transcript re-parse (RUSH-1503).
-        snapshot.todoProgress = stats.todos;
-        // recentFiles from the helper is chronological; the last entry is the
-        // newest edit. Reverse so the panel shows newest-first, then enrich
-        // with mtime where the file still exists.
-        const files = stats.recentFiles.slice().reverse().slice(0, 10);
-        snapshot.recentFiles = files.map((p) => {
-          let mtimeMs: number | undefined;
-          try { mtimeMs = fs.statSync(p).mtimeMs; } catch { /* file gone or unreadable */ }
-          return { path: p, mtimeMs };
-        });
+        const git = await readGitInfo(cwd);
+        snapshot.git = { branch: snapshot.git?.branch ?? git?.branch, dirtyCount: git?.dirtyCount };
       } catch { /* best-effort */ }
     }
 
-    snapshot.git = cwd ? await readGitInfo(cwd) : undefined;
-
-    // Worktrees attached to this workspace — `git worktree list --porcelain`
-    // emits the main checkout + every additional worktree. Lets the user see
-    // sibling agents working on parallel branches. Rendered from the broadcast
-    // snapshot when connected; computed locally only while disconnected (#71).
+    // Worktrees + usage are STORE reads (no spawn) — kept on the fast path.
     if (workspaceRoot) {
       try {
         snapshot.worktrees = await getWorktreesRouted(workspaceRoot, cwd);
       } catch { /* best-effort */ }
     }
-
-    // Usage status (rate-limited / out of credits) for the bound agent
-    // version. The signal is the same one `agents view --json` exposes per
-    // version. Rendered from the broadcast snapshot when connected (#71).
     if (entry.agentType) {
       try {
         snapshot.usageStatus = getUsageStatusFromCli(sessionId);
       } catch { /* best-effort */ }
     }
 
-    try {
-      snapshot.teams = await getTeamsRouted(cwd);
-    } catch (err) {
-      snapshot.teamsError = err instanceof Error ? err.message : String(err);
-    }
+    // The full teammate DAG is NOT on the warm stream, and its per-team
+    // `agents teams status` spawns are exactly what made a tab-switch slow. It is
+    // dropped from the hot render path (PHNX-3517): `spawnedTeam`/`teamName` on
+    // the stream already flag membership, and the Fleet panel owns the DAG view.
+    snapshot.teams = [];
 
     snapshot.agentState = computeAgentState(snapshot);
     return snapshot;
@@ -1509,13 +1536,16 @@ function render(snap) {
     );
     return;
   }
+  // Todo-forward order (PHNX-3517): the header, then what the agent is doing
+  // NOW (activity) and its checklist (todos) come FIRST — the at-a-glance signal
+  // when scanning 200+ tabs — before actions, links, and the rest.
   root.innerHTML = (
     renderTerminalCard(snap) +
+    renderActivityCard(snap) +
+    renderChecklistCard(snap) +
     renderActionsCard(snap) +
     renderLinksCard(snap) +
     renderConversationCard(snap) +
-    renderChecklistCard(snap) +
-    renderActivityCard(snap) +
     renderRecentFilesCard(snap) +
     renderWorktreesCard(snap) +
     renderPromptsCard(snap) +
@@ -1724,6 +1754,30 @@ async function getWorktreesRouted(
   return [...byPath.values()];
 }
 
+/** The raw warm stream row for a session id, or undefined when the watch stream
+ *  has not indexed it yet. Loosely typed — the sidebar reads only the fields it
+ *  paints, all already in memory (no subprocess). PHNX-3517. */
+interface WarmSessionRow {
+  topic?: unknown; firstUserMessage?: unknown; prompt?: unknown;
+  lastResponse?: unknown; lastActivityMs?: unknown;
+  todos?: unknown; tail?: unknown[]; activity?: unknown;
+  prUrl?: unknown; branch?: unknown; worktree?: { branch?: unknown } | null;
+}
+function findWarmSessionRow(sessionId: string): WarmSessionRow | undefined {
+  return sessionPresentationStore.sessions().find((value) => {
+    const c = value as { id?: unknown; sessionId?: unknown };
+    return c.id === sessionId || c.sessionId === sessionId;
+  }) as WarmSessionRow | undefined;
+}
+
+/** First non-empty trimmed string among the args, else undefined. */
+function firstString(...vals: unknown[]): string | undefined {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
 /** Read the session's CLI-provided throttle state without probing account state. */
 function getUsageStatusFromCli(sessionId: string | undefined): UsageStatus {
   if (!sessionId) return null;
@@ -1735,10 +1789,6 @@ function getUsageStatusFromCli(sessionId: string | undefined): UsageStatus {
     return row.usageStatus;
   }
   return row?.rateLimited === true ? 'rate_limited' : null;
-}
-
-async function getTeamsRouted(cwd: string | undefined): Promise<TeamWithMates[]> {
-  return listTeamsForCwd(cwd);
 }
 
 function pickQuickPrompts(): QuickPromptLite[] {

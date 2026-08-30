@@ -4,6 +4,23 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.343] - 2026-08-30
+
+- **Instant, todo-forward session preview in the Active-Terminal sidebar (PHNX-3517).**
+  The `agentsPanel.terminal` sidebar used to hang on "Loading…" and took seconds to switch
+  because `buildSnapshot` rendered all-or-nothing behind 2–8 serial CLI subprocess spawns
+  (`agents sessions … --include tools` for the checklist, `agents teams status` per team)
+  and a webview handshake with no timeout — unusable at 200+ open agent tabs. It now paints
+  **synchronously from the warm `sessionPresentationStore`** (the `agents sessions watch
+  --json` stream the Fleet already consumes): topic, the live todo checklist
+  (`ActiveSession.todos`), the "now" activity/tail, PR, branch, and version/account are all
+  read from memory with **zero subprocess**, so switching among hundreds of tabs repaints
+  instantly. The card is reordered todo-forward (header → what it's doing now → the
+  checklist → the rest), and a handshake fallback re-posts the snapshot until the webview
+  acks so a dropped `ready` can never wedge "Loading…" again. The teammate-DAG spawn is
+  dropped from the hot path (the Fleet panel owns that view). Source:
+  `src/vscode/agentPanel.vscode.ts`.
+
 ## [0.9.342] - 2026-08-28
 
 - **Removed dead client-side re-derivation left by the zero-dup cleanup (PHNX-2484).**
