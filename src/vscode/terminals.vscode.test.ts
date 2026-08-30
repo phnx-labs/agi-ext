@@ -39,6 +39,15 @@ function fakeTerm(name: string): vscode.Terminal {
   return { name, processId: Promise.resolve(undefined) } as unknown as vscode.Terminal;
 }
 
+function scannedTerm(name: string, processId: Promise<number | undefined>): vscode.Terminal {
+  return {
+    name,
+    processId,
+    exitStatus: undefined,
+    creationOptions: { env: { AGENT_TERMINAL_ID: 'CC-restored-1' } },
+  } as unknown as vscode.Terminal;
+}
+
 function fakeAgentConfig() {
   return {
     title: 'Claude',
@@ -96,6 +105,19 @@ describe('automatic-label persistence', () => {
         autoLabel: 'Release the project',
       }),
     ]);
+  });
+});
+
+describe('reload scan ignores terminal editor ghosts', () => {
+  test('an agent terminal without a backing process remains available for persisted restore', async () => {
+    const vscode = await import('vscode');
+    const ghost = scannedTerm('CC — stale restored editor', Promise.resolve(undefined));
+    (vscode.window.terminals as vscode.Terminal[]) = [ghost];
+
+    const count = await t.scanExisting(() => fakeAgentConfig());
+
+    expect(count).toBe(0);
+    expect(t.getByTerminal(ghost)).toBeUndefined();
   });
 });
 

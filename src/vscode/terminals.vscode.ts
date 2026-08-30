@@ -666,6 +666,19 @@ export async function scanExisting(
       console.log(`[TERMINALS] Could not retrieve PID for terminal "${terminal.name}"`);
     }
 
+    // A terminal-editor input can survive a window reload after its backing
+    // pseudo-terminal has gone away. VS Code still exposes that stale input in
+    // window.terminals, but processId resolves undefined (and the renderer logs
+    // "Unable to resolve resource vscode-terminal:..."). Registering it makes
+    // restoreAgentTerminals believe the persisted session already has a live
+    // tab, so it skips the real recreation and the user gets no terminal at all.
+    // Only a terminal with a backing process is an existing terminal; leave a
+    // stale editor input untracked so the persisted-session path recreates it.
+    if (pid === undefined) {
+      console.log(`[TERMINALS] No backing process for "${terminal.name}", leaving it for persisted-session restore`);
+      continue;
+    }
+
     const persistedByTerminalId = identOpts.terminalId
       ? persistedSessions.find(p => p.terminalId === identOpts.terminalId)
       : undefined;
