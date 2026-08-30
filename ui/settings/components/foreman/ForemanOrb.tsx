@@ -52,7 +52,7 @@ export function ForemanOrb({ vscode }: ForemanOrbProps) {
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([])
-  const [debugOpen, setDebugOpen] = useState(true)
+  const [debugOpen, setDebugOpen] = useState(false)
 
   const lastActivityAt = useRef<number>(Date.now())
   const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
