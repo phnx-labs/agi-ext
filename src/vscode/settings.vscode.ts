@@ -2349,6 +2349,22 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         }
         break;
       }
+      case 'fetchPreviousSessions': {
+        // PHNX-3593: resumable PREVIOUS (crashed/ended) sessions across the WHOLE
+        // fleet, folded into the Sessions surface so a reboot that prunes dead PIDs
+        // from the live roster never loses recoverable work. Same one-shot fleet
+        // sweep the Recap ledger uses (the durable transcript index carries the
+        // CLI's lifecycle/recovery fields); rides its own 'previousSessions' message.
+        try {
+          const { fetchRecapSessions } = await import('./remoteSessions.vscode');
+          const sessions = await fetchRecapSessions(50, getSettings(context).projectRules ?? []);
+          settingsPanel?.webview.postMessage({ type: 'previousSessions', sessions });
+        } catch (err) {
+          console.error('[SETTINGS] Error fetching previous sessions:', err);
+          settingsPanel?.webview.postMessage({ type: 'previousSessions', sessions: [] });
+        }
+        break;
+      }
       case 'fetchHostInventory': {
         // Host detail pane: installed agents/versions/accounts/usage/resources on
         // one host (over SSH for remotes) + registry metadata. Cached per host.
