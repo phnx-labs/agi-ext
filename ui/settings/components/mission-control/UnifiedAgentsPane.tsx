@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TaskSummary, TerminalDetail as TerminalInfo, AgentDetail, UnifiedTask, RecentToolCall, ProjectRule } from '../../types'
-import { AgentAvatar } from './AgentAvatar'
+import { AgentAvatar, agentIdFromPrefix } from './AgentAvatar'
 import { Icon } from './icons'
 import { relTime, taskNameToTitle, swarmOverallStatus, shortDuration } from './types'
 import { postMessage, usePanelVisibility } from '../../hooks'
@@ -1674,7 +1674,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // LIVE row always wins over an index row (mergeSessionAgents). A one-shot fetch —
   // no timer — seeds `previousSessions` when the Sessions center first opens.
   const previousFloorAgents = useMemo(
-    () => (previousSessions ? adaptRemote(previousSessions, pinned, localHostName, projectRules) : []),
+    // Keep ONLY genuinely-inactive rows: the picker fetch also returns currently-live
+    // sessions (state 'running'/'idle'), which must not enter the Sessions surface as
+    // Previous duplicates — the live roster already carries them (PHNX-3593).
+    () => (previousSessions ? adaptRemote(previousSessions, pinned, localHostName, projectRules).filter(isPrevious) : []),
     [previousSessions, pinned, localHostName, projectRules]
   )
   const sessionsAgents = useMemo(
@@ -2169,6 +2172,20 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
    * open local tab, then a remote tmux rail, then `agents sessions focus <id>`.
    */
   const openTerminalForAgent = useCallback((a: FloorAgent) => {
+    // A PREVIOUS (crashed/ended) session resumes from the CLI's OWN recovery command,
+    // device-targeted — never the local-only focusSession candidate lookup, which
+    // can't see a session recovered from a remote fleet device (PHNX-3593). The host
+    // rebuilds the command from the id + device, so this only picks the session.
+    if (isPrevious(a) && a.sessionId && a.resumable !== false) {
+      postMessage({
+        type: 'resumePreviousSession',
+        sessionId: a.sessionId,
+        agentType: agentIdFromPrefix(a.abbr) ?? '',
+        device: a.sourceDevice ?? (a.host !== 'this-mac' ? a.host : ''),
+        cwd: a.worktreePath || undefined,
+      })
+      return
+    }
     if (a.reply.kind === 'terminal' && a.reply.terminalId) {
       postMessage({ type: 'focusTerminal', terminalId: a.reply.terminalId })
       return

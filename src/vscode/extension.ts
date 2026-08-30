@@ -2653,6 +2653,11 @@ function agentKeyFromSession(agent: string): SessionAgentType | null {
 export async function openAgentSessionTerminal(
   context: vscode.ExtensionContext,
   session: { id: string; shortId: string; agent: string; version?: string; account?: string; cwd?: string; host?: string; terminalId?: string },
+  // When set, run THIS exact command in the resumed tab instead of the default
+  // `buildVersionedResumeCommand`. Used by the Sessions surface's PREVIOUS band to
+  // run the CLI's own device-targeted recovery command (PHNX-3593) — the default
+  // builder drops `--device`, which strands a cross-device crashed session.
+  resumeCommandOverride?: string,
 ): Promise<boolean> {
   const agentKey = agentKeyFromSession(session.agent);
   if (!agentKey) {
@@ -2677,7 +2682,7 @@ export async function openAgentSessionTerminal(
   // A resumed session belongs in ITS OWN directory, not whatever workspace this
   // window happens to have open — batch resume routinely spans several repos.
   const workspacePath = session.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  const resumeCmd = buildVersionedResumeCommand(agentKey, session.id, session.version, session.host);
+  const resumeCmd = resumeCommandOverride ?? buildVersionedResumeCommand(agentKey, session.id, session.version, session.host);
 
   const terminalId = session.terminalId || terminals.nextId(builtIn.prefix);
   const title = buildTerminalTitle(agentConfig.title, undefined, context, session.id);
@@ -2742,6 +2747,32 @@ export async function openAgentSessionById(
     return false;
   }
   return openAgentSessionTerminal(context, { ...session, host: host || session.host });
+}
+
+/**
+ * Resume a PREVIOUS (crashed/ended) session straight from the CLI's own recovery
+ * command (PHNX-3593), device-targeted, WITHOUT the local-only candidate lookup
+ * `openAgentSessionById` does. A session recovered from a remote fleet device is
+ * not in this machine's local `agents sessions --json` history, so the candidate
+ * find would fail with "no longer resumable" even though the row is resumable —
+ * and `buildVersionedResumeCommand` drops `--device`, stranding it on the wrong
+ * box. The command is rebuilt HOST-SIDE from the id + device (the extension owns
+ * the CLI noun), so a webview payload can only pick the session, never inject.
+ */
+export async function openAgentSessionByRecovery(
+  context: vscode.ExtensionContext,
+  opts: { sessionId: string; agentType: string; device?: string; cwd?: string },
+): Promise<boolean> {
+  const q = (v: string) => (/^[A-Za-z0-9._:@/-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`);
+  const parts = ['agents', 'sessions', 'resume', q(opts.sessionId)];
+  const device = (opts.device || '').trim();
+  if (device) parts.push('--device', q(device));
+  parts.push('--vscodium');
+  return openAgentSessionTerminal(
+    context,
+    { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, cwd: opts.cwd, host: device || undefined },
+    parts.join(' '),
+  );
 }
 
 async function resumeSession(context: vscode.ExtensionContext) {

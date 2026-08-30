@@ -233,6 +233,15 @@ export const SESSION_ROW_CSS3 = `
 .sw-sessions .sx-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .sw-sessions .sx-thumbs .th { width: 46px; height: 46px; border-radius: 6px; border: 1px solid var(--ds-border, #1b2334); object-fit: cover; background: var(--ds-bg-sunken, #0c1220); }
 .sw-sessions .sx-thumbs .th.ph { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; color: var(--ds-text-muted, #5c6675); }
+/* PHNX-3593 layout hardening: the row is two tracks — a clipping content column and a
+   fixed action column — so the Resume/View button + age + dot can never overlap the
+   title or any inline pill, even in a narrow VS Code panel. */
+.sw-sessions .sx-row { align-items: flex-start; gap: 10px; }
+.sw-sessions .sx-grow { min-width: 0; overflow: hidden; }
+.sw-sessions .sx-titleline { flex-wrap: nowrap; overflow: hidden; }
+.sw-sessions .sx-rowactions { flex: 0 0 auto; align-self: flex-start; padding-left: 6px; }
+/* the lone attention pill rides beside the title, never pushed to the right edge */
+.sw-sessions .sx-phase.needs { margin-left: 6px; }
 `
 
 interface SessionsPaneProps {
@@ -302,10 +311,6 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   const nowMs = useNow(30000)
 
   const counts = useMemo(() => sessionChipCounts(agents), [agents])
-
-  // Distinct projects / hosts for the selectors — from the live roster, cheap.
-  const projects = useMemo(() => [...new Set(agents.map((a) => a.project).filter(Boolean))].sort(), [agents])
-  const hosts = useMemo(() => [...new Set(agents.map((a) => a.hostLabel ?? a.host).filter(Boolean))].sort(), [agents])
 
   const scope: SessionScope = useMemo(() => ({ filter, project, host, search }), [filter, project, host, search])
   const scoped = useMemo(() => scopeSessions(agents, scope), [agents, scope])
@@ -377,14 +382,6 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
             </button>
           ))}
         </div>
-        <select className="sx-sel" value={project ?? ''} onChange={(e) => setProject(e.target.value || null)} title="Filter by project">
-          <option value="">All projects</option>
-          {projects.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select className="sx-sel" value={host ?? ''} onChange={(e) => setHost(e.target.value || null)} title="Filter by machine">
-          <option value="">All hosts</option>
-          {hosts.map((h) => <option key={h} value={h}>{h}</option>)}
-        </select>
         <div className="sx-search">
           <Icon name="search" size={12} />
           <input
@@ -653,8 +650,10 @@ function SessionRowImpl({
   const liveClass = row.live === 'run' ? '' : row.live
   // Control-Room card fields — all straight off the streamed FloorAgent, no new CLI work.
   const agentId = agentIdFromPrefix(a.abbr) ?? (row.harnessTag || 'agent').toLowerCase()
-  const phaseClass = prev ? 'done' : a.needs ? 'needs' : (a.phase || 'running')
-  const phaseLabel = prev ? 'previous' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
+  // A live session that needs the user still gets its one attention pill; every other
+  // state is carried by the right-edge live dot + the band header, so there is no
+  // per-row phase/PREVIOUS badge to collide with the action column (PHNX-3593).
+  const attention = !prev && a.needs
   const step = prev ? '' : ((a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : ''))
   const todos = a.todos ?? []
   const todoDone = todos.filter((t) => String(t.status) === 'completed').length
@@ -681,7 +680,7 @@ function SessionRowImpl({
           <span className="sx-agent">{agentId}</span>
           {a.project && <span className="sx-proj" title={a.project}>{a.project}</span>}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
-          {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
+          {attention && <span className="sx-phase needs" title={a.liveStatus || a.phase}>needs you</span>}
         </div>
         {step || (!prev && todos.length > 0) ? (
           <div className="sx-now">

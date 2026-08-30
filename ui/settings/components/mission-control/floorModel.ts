@@ -256,13 +256,15 @@ export type SessionBand = 'attention' | 'active' | 'done' | 'previous'
 
 /**
  * True for a resumable PREVIOUS session — a crashed/ended row folded in from the
- * durable transcript index (`agents sessions --json`, `state: 'inactive'`), not a
- * live-roster row. The Sessions surface bands these separately (bottom "Previous ·
- * resumable" band) and never lets them leak into the live feed. Keyed on the CLI's
- * own lifecycle word, so the extension classifies nothing.
+ * durable transcript index whose CLI lifecycle `state` is exactly `'inactive'`, not a
+ * live-roster row. Keyed ONLY on the CLI's own lifecycle word: a session that is still
+ * live (any non-inactive `state`, or a watch-stream row with no `state` at all) is
+ * NEVER previous, even though the picker fetch tags every fetched row `context:'recent'`
+ * — so a session active two seconds ago stays in Active, not Previous (PHNX-3593). The
+ * Sessions surface bands these separately and never lets them leak into the live feed.
  */
-export function isPrevious(a: Pick<FloorAgent, 'sessionState' | 'context'>): boolean {
-  return (a.sessionState ?? '').toLowerCase() === 'inactive' || a.context === 'recent'
+export function isPrevious(a: Pick<FloorAgent, 'sessionState'>): boolean {
+  return (a.sessionState ?? '').toLowerCase() === 'inactive'
 }
 
 /**
