@@ -1,11 +1,12 @@
 // Pure filter/sort/group model for the Sessions surface. No React, no DOM — every
 // function here is unit-tested (sessionsModel.test.ts). The surface's whole value is
-// recovering detached work fast, so the load-bearing rules are: starred sessions are
-// always reachable at the top, and sessions that need reconnecting (orphaned / crashed
-// / abandoned — alive or resumable, but detached) surface ahead of everything else.
+// recovering work fast, so the load-bearing rules are: favorite sessions are always
+// reachable at the top, and PREVIOUS sessions (crashed / ended but resumable, folded
+// in from the durable transcript index) surface in a bounded bottom band so a reboot
+// that prunes dead PIDs never loses them.
 
 import {
-  needsReconnect,
+  isPrevious,
   sessionBand,
   PHASE_PROGRESS_RANK,
   type FloorAgent,
@@ -22,12 +23,22 @@ export interface SessionSection {
   /** Header text. */
   label: string
   /** What kind of grouping produced this section (drives header styling). */
-  kind: 'starred' | 'band' | 'project' | 'host'
+  kind: 'favorites' | 'band' | 'project' | 'host'
   /** The state band, when kind === 'band'. */
   band?: SessionBand
   /** Rows in display order (already sorted). */
   agents: FloorAgent[]
+  /** For the Previous band: the total resumable rows behind a bounded view, so the
+   *  header can offer "Show 10 more". Absent for every other section. */
+  total?: number
 }
+
+/** Rolling window a Previous session must fall inside to appear by default. */
+export const PREVIOUS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+/** Default cap on Previous rows shown before "Show 10 more" pages further back. */
+export const PREVIOUS_DEFAULT_LIMIT = 50
+/** How many older rows each "Show 10 more" reveals. */
+export const PREVIOUS_PAGE = 10
 
 export interface SessionScope {
   filter: SessionFilter
