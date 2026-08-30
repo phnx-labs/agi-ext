@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.349] - 2026-08-30
+
+- **Fix the previous-sessions classification + declutter the FLEET view
+  (PHNX-3593 / PHNX-3594).** A session that is still live is no longer mislabelled
+  Previous — classification keys strictly on the CLI's `state: 'inactive'`, not the
+  `context: 'recent'` tag the picker fetch stamps on every row, and only
+  genuinely-inactive rows fold into the Sessions surface (so live picker rows never
+  duplicate the live roster). The row no longer draws a per-session `PREVIOUS`
+  badge (the band header already says it), and the Resume/View action + age + dot
+  now live in their own fixed column that can't overlap the title or the lone
+  "needs you" pill in a narrow panel. The FLEET view is decluttered to just the
+  session list: the center counter bar is gone (Dispatch stays pinned in the
+  header), the left icon rail/sidebar and the All-projects/All-hosts dropdowns are
+  removed, and neither the right detail panel nor the Foreman debug panel auto-opens.
+
 ## [0.9.348] - 2026-08-30
 
 - **Sessions list shows previous (crashed/ended) resumable sessions (PHNX-3593).**
