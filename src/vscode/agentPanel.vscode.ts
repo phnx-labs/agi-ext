@@ -34,7 +34,7 @@ import { extractLinearTicketId } from '../core/utils';
 import { readPrompts } from './settings.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { openExternalUrl } from './webviewSecurity';
-import { parseLineForActivity, formatActivity, type TodoProgress } from '../core/session.activity';
+import { parseLineForActivity, formatActivity, todoProgressFromItems, type TodoProgress } from '../core/session.activity';
 import {
   extractPrUrls as extractPrUrlsHelper,
   type PullRequestRef as SharedPullRequestRef,
@@ -42,7 +42,7 @@ import {
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
-import type { RemoteSession, RemoteTodoItem } from '../core/remoteSessions';
+import type { RemoteSession } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 
 export const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
@@ -485,7 +485,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (linear) snapshot.linearIssue = linear;
 
         // Checklist — already the CLI-normalized RemoteTodoItem[]; just tally it.
-        const todos = todoProgressFromRemote(live.todos);
+        const todos = todoProgressFromItems(live.todos);
         if (todos) snapshot.todoProgress = todos;
 
         // "What's being worked on": the CLI's computed one-line `activity`, else
@@ -1758,13 +1758,6 @@ function findLiveSession(sessionId: string): RemoteSession | undefined {
     .find((s) => s.sessionId === sessionId);
 }
 
-/** Tally the already-normalized checklist into the panel's done/total shape.
- *  Not a re-parse — `RemoteSession.todos` is the CLI-normalized RemoteTodoItem[]
- *  (same item shape as TodoProgressItem). */
-function todoProgressFromRemote(todos: RemoteTodoItem[] | undefined): TodoProgress | undefined {
-  if (!todos || !todos.length) return undefined;
-  return { todos, done: todos.filter((t) => t.status === 'completed').length, total: todos.length };
-}
 
 /** Read the session's CLI-provided throttle state without probing account state. */
 function getUsageStatusFromCli(sessionId: string | undefined): UsageStatus {
