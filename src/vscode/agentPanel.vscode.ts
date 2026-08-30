@@ -1089,6 +1089,15 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   <div class="empty">Loading...</div>
 </div>
 <script nonce="${nonce}">
+// PHNX-3517 DEBUG: surface any webview error (syntax or runtime) instead of a
+// silent stuck "Loading…". Separate block so a parse error in the main script
+// below still fires this already-registered handler.
+function __showErr(txt){ try { var r = document.getElementById('root'); if (r) r.innerHTML = '<div class="empty" style="white-space:pre-wrap">WEBVIEW ERROR:\n' + txt + '</div>'; } catch(x){} }
+window.onerror = function(m, s, l, c, e){ __showErr(m + ' [line ' + l + ':' + c + ']\n' + (e && e.stack ? e.stack : '')); return true; };
+window.addEventListener('error', function(ev){ __showErr((ev && ev.message) + ' @ ' + (ev && ev.filename) + ':' + (ev && ev.lineno) + '\n' + (ev && ev.error && ev.error.stack ? ev.error.stack : '')); }, true);
+window.addEventListener('unhandledrejection', function(ev){ __showErr('UNHANDLED REJECTION:\n' + String(ev && ev.reason)); });
+</script>
+<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 const root = document.getElementById('root');
 
