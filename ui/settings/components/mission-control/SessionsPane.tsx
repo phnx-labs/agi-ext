@@ -203,6 +203,10 @@ export const SESSION_ROW_CSS3 = `
 .sw-sessions .sx-ask { color: var(--ds-text-dim, #8b94a6); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; padding: 8px 11px; border-left: 2px solid var(--ds-border, #223); background: var(--ds-bg-sunken, #0b101c); border-radius: 0 7px 7px 0; max-height: 140px; overflow-y: auto; }
 .sw-sessions .sx-goal { color: var(--ds-text-muted, #5c6675); font-size: 12px; font-style: italic; }
 .sw-sessions .sx-goal b { color: var(--ds-text-dim, #8b94a6); font-style: normal; }
+.sw-sessions .sx-endedmeta { color: var(--ds-text-dim, #8b94a6); font-size: 12px; padding: 6px 10px; border-left: 2px solid var(--ds-border, #223); background: var(--ds-bg-sunken, #0b101c); border-radius: 0 7px 7px 0; }
+/* Copy-on-click metadata pills — clearly interactive, and they never expand the row. */
+.sw-sessions .sx-chip[role="button"], .sw-sessions .sx-catch .lnk[role="button"] { cursor: pointer; }
+.sw-sessions .sx-metarow .sx-chip[role="button"]:hover { border-color: var(--ds-text-muted, #5c6675); color: var(--ds-text, #e6e9ef); }
 .sw-sessions .sx-actbar { display: flex; align-items: center; height: 8px; border-radius: 4px; overflow: hidden; background: var(--ds-bg-sunken, #0c1220); border: 1px solid var(--ds-border, #1b2334); }
 .sw-sessions .sx-actbar i { height: 100%; }
 .sw-sessions .sx-actbar i.reading { background: #6ea8fe; }
@@ -578,6 +582,32 @@ function clockLabel(ms: number): string {
   try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return '' }
 }
 
+/** Copy a short value (ticket id, PR, repo, branch, device) to the clipboard and
+ *  STOP the click from bubbling to the row's expand handler — clicking a pill must
+ *  never toggle the row. Clipboard write is best-effort; a denied clipboard is a
+ *  no-op, never a thrown error. */
+function copyPill(e: React.MouseEvent, text: string): void {
+  e.stopPropagation()
+  try { void navigator.clipboard?.writeText(text) } catch { /* clipboard unavailable in this host */ }
+}
+
+/** Live sessions get an activity bar (it fills as tools run, even if momentarily
+ *  idle); ENDED (Previous / index) rows have no tool stream at all, so drawing a bar
+ *  for them is the all-grey "idle 100%" block the user saw — they get a meta line. */
+function hasLiveActivity(a: FloorAgent): boolean {
+  return !isPrevious(a)
+}
+
+/** One-line summary for an ended session, from fields the row already carries — no
+ *  empty activity bar, no missing thumbnails. */
+function endedMetaLine(a: FloorAgent, device: string, startLabel: string, nowLabel: string): string {
+  const parts: string[] = []
+  if (nowLabel) parts.push(`Last active ${nowLabel}`)
+  if (startLabel) parts.push(`started ${startLabel}`)
+  parts.push(resumeCommand(a) ? `resumable on ${device}` : 'transcript only')
+  return parts.join(' · ')
+}
+
 function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
   a: FloorAgent; row: SessionRowView; nowMs: number; onResume: (a: FloorAgent) => void; onView: (a: FloorAgent) => void
 }) {
@@ -595,7 +625,11 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
       <div className="sx-dsec">
         <div className="sx-dcap">The ask</div>
         {ask && <div className="sx-ask">{ask}</div>}
-        <div className="sx-goal">Goal, as a recap agent reads it: <b>{row.title}</b></div>
+        {/* Only show a summary when it genuinely differs from the prompt — otherwise
+            it just repeats the ask verbatim (the triple-duplicate bug). */}
+        {row.title && row.title.trim() && row.title.trim() !== ask.trim() && (
+          <div className="sx-goal">{row.title}</div>
+        )}
         {attachments.length > 0 && (
           <div className="sx-thumbs">
             {attachments.slice(0, 6).map((att, i) =>
@@ -606,16 +640,25 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
           </div>
         )}
       </div>
-      <div className="sx-dsec">
-        <div className="sx-dcap">Activity</div>
-        <div className="sx-actbar">
-          {segments.map((s, i) => <i key={i} className={s.kind} style={{ width: `${s.pct}%` }} />)}
+      {/* Live sessions have a tool stream to chart; ended (Previous) rows do not, so
+          they get a one-line meta instead of an all-grey "idle 100%" bar. */}
+      {hasLiveActivity(a) ? (
+        <div className="sx-dsec">
+          <div className="sx-dcap">Activity</div>
+          <div className="sx-actbar">
+            {segments.map((s, i) => <i key={i} className={s.kind} style={{ width: `${s.pct}%` }} />)}
+          </div>
+          <div className="sx-actlegend">
+            {ACT_LEGEND.map((l) => <span key={l.kind}><span className={`dot ${l.kind}`} />{l.label}</span>)}
+          </div>
+          <div className="sx-actspan"><span>{startLabel || 'started'}</span><span>{nowLabel}</span></div>
         </div>
-        <div className="sx-actlegend">
-          {ACT_LEGEND.map((l) => <span key={l.kind}><span className={`dot ${l.kind}`} />{l.label}</span>)}
+      ) : (
+        <div className="sx-dsec">
+          <div className="sx-dcap">Ended session</div>
+          <div className="sx-endedmeta">{endedMetaLine(a, device, startLabel, nowLabel)}</div>
         </div>
-        <div className="sx-actspan"><span>{startLabel || 'started'}</span><span>{nowLabel}</span></div>
-      </div>
+      )}
       {total > 0 && (
         <div className="sx-dsec">
           <div className="sx-dcap">Checklist — {done} of {total} done</div>
@@ -632,10 +675,10 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
       <div className="sx-dsec">
         <div className="sx-dcap">Catch up</div>
         <div className="sx-catch">
-          {a.ticket && <span className="lnk">◇ {a.ticket}</span>}
-          {row.repo && <span className="lnk">▪ {row.repo}{a.files ? ` · ${a.files} files` : ''}</span>}
-          <span className="lnk" onClick={() => onView(a)}>Session ↗</span>
-          {device && <span className="lnk">◈ {device}</span>}
+          {a.ticket && <span className="lnk" role="button" title={`Copy ${a.ticket}`} onClick={(e) => copyPill(e, a.ticket!)}>◇ {a.ticket}</span>}
+          {row.repo && <span className="lnk" role="button" title={`Copy ${row.repo}`} onClick={(e) => copyPill(e, row.repo!)}>▪ {row.repo}{a.files ? ` · ${a.files} files` : ''}</span>}
+          <span className="lnk" role="button" onClick={(e) => { e.stopPropagation(); onView(a) }}>Session ↗</span>
+          {device && <span className="lnk" role="button" title={`Copy ${device}`} onClick={(e) => copyPill(e, device)}>◈ {device}</span>}
           {canResume
             ? <span className="lnk go" onClick={() => onResume(a)}>↻ Resume here</span>
             : <span className="lnk" onClick={() => onView(a)}>View transcript</span>}
@@ -707,19 +750,22 @@ function SessionRowImpl({
           <span className="sx-rolebody clip"><PromptChips you={row.you} /></span>
         </div>
         {/* Compact chip row: attachments, artifacts, and links (PR / ticket / repo / device). */}
+        {/* Every metadata pill is copy-on-click and STOPS the click from bubbling to
+            the row's expand handler — clicking a ticket must copy it, never expand the
+            row (the reported bug). */}
         <div className="sx-metarow">
-          {row.repo && <span className="sx-chip repo">▪ {row.repo}</span>}
+          {row.repo && <span className="sx-chip repo" role="button" title={`Copy ${row.repo}`} onClick={(e) => copyPill(e, row.repo!)}>▪ {row.repo}</span>}
           {row.pr && (
-            <span className="sx-chip pr">
+            <span className="sx-chip pr" role="button" title={`Copy ${row.pr.label}`} onClick={(e) => copyPill(e, row.pr!.label)}>
               <span className={`ci${row.pr.ci === 'running' ? ' run' : row.pr.ci === 'failed' ? ' fail' : ''}`} />
               {' '}{row.pr.label}
             </span>
           )}
-          {a.ticket && <span className="sx-chip ticket">◇ {a.ticket}</span>}
-          {row.branch && <span className="sx-chip branch">⑂ {row.branch}</span>}
+          {a.ticket && <span className="sx-chip ticket" role="button" title={`Copy ${a.ticket}`} onClick={(e) => copyPill(e, a.ticket!)}>◇ {a.ticket}</span>}
+          {row.branch && <span className="sx-chip branch" role="button" title={`Copy ${row.branch}`} onClick={(e) => copyPill(e, row.branch!)}>⑂ {row.branch}</span>}
           {(a.attachments?.length ?? 0) > 0 && <span className="sx-chip attach">{'\u{1F5BC}'} {a.attachments!.length}</span>}
           {(a.plans?.length ?? 0) > 0 && <span className="sx-chip art">◆ {a.plans!.length}</span>}
-          {device && <span className="sx-chip device">◈ {device}</span>}
+          {device && <span className="sx-chip device" role="button" title={`Copy ${device}`} onClick={(e) => copyPill(e, device)}>◈ {device}</span>}
           {!row.pr && !a.ticket && <span className="sx-chip nopr">no PR</span>}
         </div>
         {expanded && <ExpandedDetail a={a} row={row} nowMs={nowMs} onResume={onResume} onView={onView} />}

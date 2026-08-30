@@ -4,6 +4,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.350] - 2026-08-30
+
+- **Sessions rows: clickable metadata pills + an expanded card that adapts to data
+  (PHNX-3593 follow-up).** Every metadata pill (ticket, PR, repo, branch, device) in
+  both the collapsed row and the expanded Catch-up now copies its value on click and
+  calls `stopPropagation`, so clicking a ticket copies it instead of toggling the row
+  (the reported bug — expand fires only from the row body). The expanded card shows
+  the prompt once (the duplicate `Goal` summary renders only when it genuinely differs
+  from the ask), and ENDED/Previous sessions — which have no tool stream — drop the
+  all-grey activity bar and empty attachment thumbnails for a one-line meta
+  (`Last active … · started … · resumable on <device>`). Live sessions keep the
+  activity bar and checklist.
+
 ## [0.9.349] - 2026-08-30
 
 - **Fix the previous-sessions classification + declutter the FLEET view
