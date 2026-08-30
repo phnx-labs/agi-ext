@@ -129,6 +129,14 @@ export interface RemoteSessionLike {
   liveStatus?: string
   /** Whether the OS process is still alive (`pidAlive` from the CLI). Absent -> treated alive. */
   pidAlive?: boolean
+  /** Lifecycle state from the CLI picker join ('inactive' for an ended/Previous row). */
+  state?: string
+  /** Whether an ended session can be resumed (`SessionPickerJsonRow.resumable`). */
+  resumable?: boolean
+  /** The CLI's own recovery command (`agents sessions resume <id> --device <device>`). */
+  recovery?: { command: string; args: string[]; cwd?: string } | null
+  /** Canonical device label the transcript lives on (`sourceDevice`). */
+  sourceDevice?: string
   activity: string
   tokPerSec: number
   waitingForInput: boolean
@@ -659,6 +667,14 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     // reconnect band; phase can't carry it. Undefined -> the session is attached.
     liveStatus: r.liveStatus,
     pidAlive: r.pidAlive,
+    // Lifecycle + recovery from the CLI picker join (PHNX-3593): `sessionState`
+    // 'inactive' marks a resumable PREVIOUS row; recovery is the CLI's own
+    // `sessions resume … --device <device>`; sourceDevice keeps every row
+    // device-accurate even when it's this-mac's own history.
+    sessionState: r.state,
+    resumable: r.resumable,
+    recovery: r.recovery ?? null,
+    sourceDevice: r.sourceDevice || (r.host === 'this-mac' ? localHostName : r.host) || undefined,
     verb,
     target,
     tok: r.tokPerSec,

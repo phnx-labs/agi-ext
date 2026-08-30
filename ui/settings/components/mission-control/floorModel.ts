@@ -216,47 +216,85 @@ export interface FloorAgent {
    *  Undefined for AGI EXT-owned tabs (always live). Distinguishes an orphaned but
    *  running session (resume attaches) from a crashed one (resume relaunches). */
   pidAlive?: boolean
+  /**
+   * Lifecycle state from the CLI picker join (`SessionPickerJsonRow.state`): the
+   * live status word, or 'inactive' for a genuinely ended session. 'inactive' is
+   * the load-bearing signal that this is a resumable PREVIOUS row folded in from
+   * the durable index rather than a live-roster row. Undefined for a live row.
+   */
+  sessionState?: string
+  /** Whether an ended session can be resumed (`SessionPickerJsonRow.resumable`).
+   *  false for a harness with no resume path (grok/gemini/droid/cursor/…) — those
+   *  rows show View, never a dead Resume. */
+  resumable?: boolean
+  /** The CLI's own recovery command for this session
+   *  (`agents sessions resume <id> --device <device>`). null for non-resumable. */
+  recovery?: { command: string; args: string[]; cwd?: string } | null
+  /** Canonical device label the session's transcript lives on (`sourceDevice`),
+   *  e.g. 'zion', 'yosemite-s0'. Labels every Previous row with its device. */
+  sourceDevice?: string
 }
 
 // ---------- Sessions surface (manage / recover) ----------
 
-/** The status filter chips on the Sessions surface. */
-export type SessionFilter = 'all' | 'active' | 'orphaned' | 'starred'
+/** The status filter chips on the Sessions surface — exactly these three
+ *  (RUSH/PHNX-3593). No 'orphaned': without tmux a session is either Active or a
+ *  resumable Previous row, never a detached-but-alive orphan. */
+export type SessionFilter = 'all' | 'active' | 'favorites'
 /** How the Sessions list is grouped into sections. */
 export type SessionGroup = 'state' | 'project' | 'host' | 'flat'
 /** The within-group sort key for the Sessions list. */
 export type SessionSort = 'recent' | 'started' | 'status' | 'name' | 'tok'
 
 /**
- * The band a session belongs to when grouped by state — the shape the Sessions
- * surface leads with. 'reconnect' is the acute case (alive-but-detached or
- * crashed) the whole surface exists for; it is derived from the raw `liveStatus`,
- * never from `phase` (which can't see it). Pure so it is unit-tested.
+ * The band a session belongs to when grouped by state. 'previous' is the crashed/
+ * ended-but-resumable case folded in from the durable index — the reason this
+ * surface exists after a reboot prunes dead PIDs. It is derived from the CLI's own
+ * `sessionState === 'inactive'`, never from `phase`. Pure so it is unit-tested.
  */
-export type SessionBand = 'reconnect' | 'attention' | 'active' | 'done'
+export type SessionBand = 'attention' | 'active' | 'done' | 'previous'
 
-/** Lowercased lifecycle words that mean "alive/left-behind, resume to reconnect". */
-const RECONNECT_STATUSES = new Set(['orphaned', 'crashed', 'abandoned'])
-
-/** Does this session need reconnecting (detached-but-alive, crashed, or abandoned)? */
-export function needsReconnect(a: Pick<FloorAgent, 'liveStatus'>): boolean {
-  return RECONNECT_STATUSES.has((a.liveStatus ?? '').toLowerCase())
+/**
+ * True for a resumable PREVIOUS session — a crashed/ended row folded in from the
+ * durable transcript index (`agents sessions --json`, `state: 'inactive'`), not a
+ * live-roster row. The Sessions surface bands these separately (bottom "Previous ·
+ * resumable" band) and never lets them leak into the live feed. Keyed on the CLI's
+ * own lifecycle word, so the extension classifies nothing.
+ */
+export function isPrevious(a: Pick<FloorAgent, 'sessionState' | 'context'>): boolean {
+  return (a.sessionState ?? '').toLowerCase() === 'inactive' || a.context === 'recent'
 }
 
 /**
  * Assign a session to its state band, ranked by PROGRESS (see the root AGENTS.md
- * "Purpose" section): reconnect (detached/crashed) > attention (live but stopped
- * progressing — waiting on input, stalled, idle, or failed) > active (running,
- * making progress) > done. Idle-but-unfinished work is the highest-abandonment
- * risk, so it surfaces ABOVE running rather than below it. Pure so it is
- * unit-tested; classifies the CLI-supplied `phase`/`liveStatus`, never derives
- * lifecycle itself.
+ * "Purpose" section): attention (live but stopped progressing — waiting on input,
+ * stalled, idle, or failed) > active (running, making progress) > done > previous
+ * (ended, resumable). Idle-but-unfinished work is the highest-abandonment risk, so
+ * it surfaces ABOVE running rather than below it. Pure so it is unit-tested;
+ * classifies the CLI-supplied `phase`/`sessionState`, never derives lifecycle itself.
  */
 export function sessionBand(a: FloorAgent): SessionBand {
-  if (needsReconnect(a)) return 'reconnect'
+  if (isPrevious(a)) return 'previous'
   if (a.phase === 'done') return 'done'
   if (a.phase === 'running') return 'active'
   return 'attention'
+}
+
+/**
+ * The exact command that resumes a session, sourced from the CLI's own recovery
+ * record when present (`agents sessions resume <id> --device <device>`), else built
+ * from the row's resumable id + device. Returns null for a non-resumable harness
+ * (recovery null, resumable false) so the row shows View instead of a dead Resume.
+ * Pure so the built command is unit-tested and quotable.
+ */
+export function resumeCommand(a: FloorAgent): { command: string; args: string[]; cwd?: string } | null {
+  if (a.recovery && a.recovery.command && a.recovery.args.length > 0) return a.recovery
+  if (!a.resumable || !a.sessionId) return null
+  const device = a.sourceDevice || a.hostLabel || (a.host && a.host !== 'this-mac' ? a.host : '')
+  const args = device
+    ? ['sessions', 'resume', a.sessionId, '--device', device]
+    : ['sessions', 'resume', a.sessionId]
+  return { command: 'agents', args }
 }
 
 // ---------- HOSTS sidebar rows ----------

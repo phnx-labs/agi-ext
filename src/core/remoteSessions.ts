@@ -190,6 +190,18 @@ export interface RemoteSessionArtifact {
   bucket: 'artifacts' | 'plans' | 'reports' | 'docs';
 }
 
+/**
+ * The CLI's own recovery command for a resumable session
+ * (`SessionPickerJsonRow.recovery`): `agents sessions resume <id> --device <device>`.
+ * Carried verbatim so the Sessions surface runs the CLI's recommended command
+ * instead of re-deriving one. null for a harness with no resume path.
+ */
+export interface RemoteRecovery {
+  command: 'agents' | string;
+  args: string[];
+  cwd?: string;
+}
+
 export interface RemoteSession {
   host: string;
   sessionId: string;
@@ -317,6 +329,20 @@ export interface RemoteSession {
   /** Where the session is currently being viewed, pre-formatted by the CLI (e.g.
    *  "Codium tab 3", "Ghostty tab 2", "detached"). '' when the CLI supplies none. */
   viewingIn: string;
+  /** Lifecycle state from the CLI picker join (`SessionPickerJsonRow.state` —
+   *  the live ActiveSession status, or 'inactive' for a genuinely ended session).
+   *  'inactive' is the load-bearing signal that a session is a resumable PREVIOUS
+   *  row rather than a live one. '' when unknown (a raw live-roster row). */
+  state?: string;
+  /** Whether an ended/idle session can be resumed (`SessionPickerJsonRow.resumable`).
+   *  A harness with no resume path (grok/gemini/droid/cursor/…) reports false. */
+  resumable?: boolean;
+  /** The CLI's own recovery command (`SessionPickerJsonRow.recovery`):
+   *  `agents sessions resume <id> --device <device>`. null for non-resumable. */
+  recovery?: RemoteRecovery | null;
+  /** Canonical device label the session's transcript lives on
+   *  (`SessionPickerJsonRow.sourceDevice`, e.g. 'zion', 'yosemite-s0'). '' when unknown. */
+  sourceDevice?: string;
   /** Outcome metrics from either a live CLI row or a RECENT (historical) row.
    *  Undefined when the owning CLI cannot compute them. */
   durationMs?: number;
@@ -769,11 +795,33 @@ export interface RawRecentSession {
   topic?: string;
   label?: string;
   machine?: string;
+  // SessionPickerJsonRow lifecycle/recovery fields (agents sessions --json): the
+  // CLI already joins the durable index against the live roster, so every row
+  // arrives with its resumability + the exact command to recover it.
+  state?: string;
+  resumable?: boolean;
+  sourceDevice?: string;
+  pid?: number | null;
+  recovery?: { command?: string; args?: unknown[]; cwd?: string } | null;
   // Outcome metrics the CLI computes per session (may arrive as numeric strings).
   durationMs?: number | string;
   costUsd?: number | string;
   tokenCount?: number | string;
   messageCount?: number | string;
+}
+
+/**
+ * Normalize the CLI's `recovery` object (SessionPickerJsonRow.recovery) into the
+ * flat RemoteRecovery the UI runs. Returns null for a non-resumable harness (the
+ * CLI emits null) or a malformed payload, so the row shows View, never a dead Resume.
+ */
+export function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const command = asStr(raw.command);
+  const args = Array.isArray(raw.args) ? raw.args.map((a) => asStr(a)).filter((a) => a.length > 0) : [];
+  if (!command || args.length === 0) return null;
+  const cwd = asStr(raw.cwd);
+  return cwd ? { command, args, cwd } : { command, args };
 }
 
 /** Map a recent (historical, non-active) SessionMeta onto RemoteSession. Recent =
@@ -839,6 +887,13 @@ export function normalizeRecentSession(
     // client to resolve, so both are empty (the required-string default).
     tmuxPane: '',
     viewingIn: '',
+    // Lifecycle + recovery from the CLI picker join. `state` defaults to 'inactive'
+    // (an ended session) so the Sessions surface can classify it as Previous; the
+    // recovery command is the CLI's own `sessions resume … --device <device>`.
+    state: asStr(raw.state) || 'inactive',
+    resumable: raw.resumable === true,
+    recovery: normalizeRecovery(raw.recovery),
+    sourceDevice: asStr(raw.sourceDevice) || host,
     // Outcome metrics for the Recap ledger. The CLI emits these on the flat
     // SessionMeta payload; coerce defensively (numeric strings observed in the wild).
     durationMs: asNum(raw.durationMs),
