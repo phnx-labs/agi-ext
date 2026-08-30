@@ -30,7 +30,7 @@ import { AgentAvatar, agentIdFromPrefix } from './AgentAvatar'
 // sort / group runs client-side, and the list is virtualized (fixed-offset
 // windowing below), so hundreds of rows render like twenty.
 
-const ROW_H = 122
+export const ROW_H = 146
 const ROW_EXPANDED_EXTRA = 56
 const HEADER_H = 32
 const OVERSCAN = 4
@@ -238,10 +238,17 @@ export const SESSION_ROW_CSS3 = `
    title or any inline pill, even in a narrow VS Code panel. */
 .sw-sessions .sx-row { align-items: flex-start; gap: 10px; }
 .sw-sessions .sx-grow { min-width: 0; overflow: hidden; }
-.sw-sessions .sx-titleline { flex-wrap: nowrap; overflow: hidden; }
-.sw-sessions .sx-rowactions { flex: 0 0 auto; align-self: flex-start; padding-left: 6px; }
+.sw-sessions .sx-titleline { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.sw-sessions .sx-titleline .sx-ttl { min-width: 0; }
+.sw-sessions .sx-rowactions {
+  flex: 0 0 132px; width: 132px; box-sizing: border-box;
+  justify-content: flex-end; align-self: flex-start; padding-left: 6px;
+}
 /* the lone attention pill rides beside the title, never pushed to the right edge */
 .sw-sessions .sx-phase.needs { margin-left: 6px; }
+@media (max-width: 720px) {
+  .sw-sessions .sx-rowactions { flex-basis: 76px; width: 76px; padding-left: 0; }
+}
 `
 
 interface SessionsPaneProps {

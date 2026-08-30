@@ -20,7 +20,7 @@ import { AgentsHtmlReaderProvider } from './htmlReader';
 import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
 import { listRegisteredDevices } from './deviceHealth.vscode';
-import { isDerivedSessionName, normalizeHost } from '../core/remoteSessions';
+import { isDerivedSessionName, normalizeHost, buildRecoveryResumeCommand } from '../core/remoteSessions';
 import * as settings from './settings.vscode';
 import * as swarm from './swarm.vscode';
 import {
@@ -2763,15 +2763,11 @@ export async function openAgentSessionByRecovery(
   context: vscode.ExtensionContext,
   opts: { sessionId: string; agentType: string; device?: string; cwd?: string },
 ): Promise<boolean> {
-  const q = (v: string) => (/^[A-Za-z0-9._:@/-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`);
-  const parts = ['agents', 'sessions', 'resume', q(opts.sessionId)];
   const device = (opts.device || '').trim();
-  if (device) parts.push('--device', q(device));
-  parts.push('--vscodium');
   return openAgentSessionTerminal(
     context,
     { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, cwd: opts.cwd, host: device || undefined },
-    parts.join(' '),
+    buildRecoveryResumeCommand(opts.sessionId, device),
   );
 }
 
