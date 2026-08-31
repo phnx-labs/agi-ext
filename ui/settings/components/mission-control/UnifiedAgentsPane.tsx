@@ -93,6 +93,19 @@ import type {
 const FLOOR_PREFS_KEY = 'swarmify.floorPrefs.v1'
 export const FLOOR_PREFS_LAYOUT_VERSION = 2
 
+export function registeredDevicesToDispatchDevices(devices: unknown[]): DispatchDevice[] {
+  return devices.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const device = value as { name?: unknown; host?: unknown; online?: unknown }
+    if (typeof device.name !== 'string' || !device.name) return []
+    return [{
+      name: device.name,
+      host: typeof device.host === 'string' && device.host ? device.host : device.name,
+      reachable: device.online !== false,
+    }]
+  })
+}
+
 // Floor session refresh is event-driven + manual — no recurring local/remote
 // polling (issue #2030). Local tab agents stream via the extension's monitor /
 // webview pushes; remote rows refresh when the operator clicks the freshness
@@ -1092,6 +1105,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       const msg = event.data
       if (msg?.type === 'devicesData' && Array.isArray(msg.devices)) {
         if (typeof msg.local === 'string' && msg.local) setLocalHostName(msg.local)
+        // Mount-time registry data powers the Sessions alternate-device menu
+        // before Dispatch is ever opened. A later deviceHealthData event replaces
+        // these rows with the same inventory plus richer live statistics.
+        setDispatchDevices(registeredDevicesToDispatchDevices(msg.devices))
       } else if (msg?.type === 'deviceHealthData' && Array.isArray(msg.health)) {
         setDispatchDevices(
           (msg.health as Array<{ device: { name: string; host: string; secretRef?: string; softLimit?: number }; stats: { reachable?: boolean; runningAgents?: number; memPercent?: number; loadAvg1?: number } }>).map(
