@@ -230,7 +230,7 @@ export interface FloorAgent {
   sessionState?: string
   /** Whether an ended session can be resumed (`SessionPickerJsonRow.resumable`).
    *  false for a harness with no resume path (grok/gemini/droid/cursor/…) — those
-   *  rows show View, never a dead Resume. */
+   *  rows expose no dead action. */
   resumable?: boolean
   /** The CLI's own recovery command for this session
    *  (`agents sessions resume <id> --device <device>`). null for non-resumable. */

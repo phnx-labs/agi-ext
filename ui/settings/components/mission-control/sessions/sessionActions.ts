@@ -63,3 +63,15 @@ export function terminalOpenMessageForAgent(a: FloorAgent): TerminalOpenMessage 
   if (a.sessionId) return { type: 'focusSession', sessionId: a.sessionId, host: a.host }
   return null
 }
+
+/** Post the resolved one-click terminal action. Kept outside React so the exact
+ * webview bridge message used by `openTerminalForAgent` is unit-testable. */
+export function postTerminalOpenForAgent(
+  a: FloorAgent,
+  post: (message: TerminalOpenMessage) => void,
+): boolean {
+  const message = terminalOpenMessageForAgent(a)
+  if (!message) return false
+  post(message)
+  return true
+}
