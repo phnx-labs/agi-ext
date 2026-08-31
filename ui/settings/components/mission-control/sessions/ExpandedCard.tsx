@@ -48,7 +48,7 @@ export interface ExpandedCardProps {
   onView: (agent: FloorAgent) => void
 }
 
-export function ExpandedCard({ agent: a, row, onResume, onView }: ExpandedCardProps) {
+export function ExpandedCard({ agent: a, row, nowMs, onResume, onView }: ExpandedCardProps) {
   const ask = row.you.text || a.prompt || ''
   const segments = activitySegments(a)
   const todos = a.todos ?? []
@@ -87,7 +87,7 @@ export function ExpandedCard({ agent: a, row, onResume, onView }: ExpandedCardPr
       ) : (
         <div className="sx-dsec">
           <div className="sx-dcap">Ended session</div>
-          <SessionMeta agent={a} row={row} />
+          <SessionMeta agent={a} row={row} nowMs={nowMs} />
         </div>
       )}
       {total > 0 && (
