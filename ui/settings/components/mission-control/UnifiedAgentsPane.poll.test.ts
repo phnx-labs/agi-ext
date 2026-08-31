@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { TerminalDetail } from '../../types'
 import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 
-const { UnifiedAgentsPane, defaultFloorPrefs, loadFloorPrefs, FLOOR_PREFS_LAYOUT_VERSION } = await import('./UnifiedAgentsPane')
+const { UnifiedAgentsPane, defaultFloorPrefs, loadFloorPrefs, FLOOR_PREFS_LAYOUT_VERSION, registeredDevicesToDispatchDevices } = await import('./UnifiedAgentsPane')
 const { SessionsPane } = await import('./SessionsPane')
 
 // Source-level regression guards: the Floor must not reintroduce 3s local /
@@ -23,6 +23,18 @@ const source = readFileSync(panePath, 'utf8')
 const css = readFileSync(cssPath, 'utf8')
 
 describe('Floor poll / timer budget (no recurring probes)', () => {
+  test('mount-time registered devices feed Resume before Dispatch opens', () => {
+    expect(registeredDevicesToDispatchDevices([
+      { name: 'zion', host: 'zion.local', online: true },
+      { name: 'offline-box', host: 'offline.local', online: false },
+      null,
+    ])).toEqual([
+      { name: 'zion', host: 'zion.local', reachable: true },
+      { name: 'offline-box', host: 'offline.local', reachable: false },
+    ])
+    expect(source).toMatch(/devicesData[\s\S]*?setDispatchDevices\(registeredDevicesToDispatchDevices\(msg\.devices\)\)/)
+  })
+
   test('exports 1s throughput tick and a non-poll stale threshold', () => {
     expect(THROUGHPUT_TICK_MS).toBe(1_000)
     expect(REMOTE_STALE_MS).toBe(90_000)
