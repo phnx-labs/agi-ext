@@ -64,7 +64,6 @@ function SessionRowImpl({
       <span className="sx-av"><AgentAvatar id={agentId} size={24} title={row.harnessTag || agentId} /></span>
       <span className="sx-grow">
         <div className="sx-titleline">
-          <span className="sx-agent">{agentId}</span>
           {a.project && <span className="sx-proj" title={a.project}>{a.project}</span>}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
           {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}

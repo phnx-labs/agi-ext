@@ -124,7 +124,6 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-av { flex: none; margin-top: 1px; }
 .sw-sessions .sx-roletag { width: 40px; }
 .sw-sessions .sx-titleline { margin-bottom: 3px; gap: 7px; }
-.sw-sessions .sx-agent { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--ds-text-dim, #8b94a6); font-weight: 600; flex: none; }
 .sw-sessions .sx-proj { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--brand, #a3e635); font-weight: 700; letter-spacing: .4px; text-transform: uppercase; flex: none; }
 .sw-sessions .sx-phase { margin-left: auto; flex: none; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 9.5px; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--ds-border, #1b2334); color: var(--ds-text-dim, #8b94a6); white-space: nowrap; }
 .sw-sessions .sx-phase.running { color: #6ea8fe; border-color: rgba(110,168,254,.4); background: rgba(110,168,254,.10); }
