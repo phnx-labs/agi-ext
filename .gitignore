@@ -13,3 +13,6 @@ node_modules
 
 # Vite standalone bundle for the Electron app
 app-ui/
+
+# local vite preview build output
+ui/.tmp/

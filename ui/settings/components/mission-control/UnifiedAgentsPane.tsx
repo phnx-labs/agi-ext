@@ -2341,6 +2341,16 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     setRightOpen(true)
   }, [])
 
+  // Closing the detail must fully collapse the pane, not just clear the selection.
+  // On the Sessions center there is no FloorControls toggle to drop rightOpen, so
+  // clearing selectedAgentId alone would wedge the column open on the empty
+  // placeholder (PHNX-3593 follow-up). Both detail branches (local DetailPane and
+  // the remote/cross-host fallback) close through here.
+  const closeDetail = useCallback(() => {
+    setSelectedAgentId(null)
+    setRightOpen(false)
+  }, [])
+
   // Host detail pane: clicking a host in the sidebar opens its detail/config on
   // the right and fetches its inventory (cached backend-side).
   const onSelectHost = useCallback((hostName: string) => {
@@ -2436,7 +2446,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
             item={u}
             previewCard={previewCard}
             hasPreviewData={hasPreviewData}
-            onClose={() => setSelectedAgentId(null)}
+            onClose={closeDetail}
             onFocusTerminal={handleFocusTerminal}
             onRetry={handleRetry}
             onKill={handleKill}
@@ -2448,6 +2458,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'auto' }}>
             {fallbackBanner}
             <div className="dhead" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <button className="sw-btn secondary sm" style={{ alignSelf: 'flex-end' }} onClick={closeDetail} aria-label="Close detail pane">×</button>
               <div className="title">{a.project} / {a.name}</div>
               <div className="sub">host <b>{a.hostLabel ?? a.host}</b>{(a.worktreeSlug || a.branch) ? ` · ${a.worktreeSlug || a.branch}` : ''} · {a.phase}{a.tok ? ` · ${a.tok} tok/s` : ''}{a.ticket ? ` · ${a.ticket}` : ''}</div>
               {/* Artifacts row: the agent's outputs at a glance — the PR (click-through),
@@ -2769,7 +2780,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       )}
 
       <div className="page" style={{ flex: 1, minHeight: 0, height: 'auto', '--floor-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
-        {sidebarOpen && (railCollapsed ? (
+        {center !== 'sessions' && sidebarOpen && (railCollapsed ? (
           <FloorRail
             agents={floorAgents}
             tickets={floorTickets}

@@ -254,6 +254,18 @@ test('Fleet layout defaults and legacy prefs keep both side panels closed', () =
   expect(source).toContain('onSelect={(a) => selectSession(a.id)}')
   expect(source).toContain('{rightOpen && <div className="detail-col">')
   expect(source).not.toContain("rightOpen && center !== 'sessions'")
+
+  // Closing the detail must drop rightOpen, not merely clear the selection — on the
+  // Sessions center there is no FloorControls toggle, so a close that left rightOpen
+  // set would wedge the pane open on the empty placeholder. Both detail branches close
+  // through the shared closeDetail, which resets both bits of state.
+  expect(source).toContain('const closeDetail = useCallback(() => {')
+  expect(source).toMatch(/closeDetail = useCallback\(\(\) => \{\s*setSelectedAgentId\(null\)\s*setRightOpen\(false\)/)
+  expect(source).toContain('onClose={closeDetail}')
+  expect(source).toContain('onClick={closeDetail} aria-label="Close detail pane"')
+  // The left nav rail/sidebar stays off the decluttered Sessions view — its only
+  // toggle lives in FloorControls, which does not render on Sessions.
+  expect(source).toContain("center !== 'sessions' && sidebarOpen")
 })
 
 test('SessionsPane shows degraded copy when stream is degraded and empty', () => {

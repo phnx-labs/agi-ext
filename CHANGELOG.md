@@ -6,6 +6,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.350] - 2026-08-30
 
+- **Sessions detail pane closes cleanly (PHNX-3593 follow-up).** With the right
+  detail panel no longer gated by center, its “×” now fully collapses the pane
+  (drops `rightOpen`) instead of only clearing the selection — on the Sessions
+  view there is no side-panel toggle, so the old behavior wedged the column open
+  on the empty “Select an agent…” placeholder. The remote/cross-host session
+  detail, which had no close control at all, gains the same “×”. The left nav
+  rail/sidebar stays off the decluttered Sessions list.
 - **Sessions rows: clickable metadata pills + an expanded card that adapts to data
   (PHNX-3593 follow-up).** Every metadata pill (ticket, PR, repo, branch, device) in
   both the collapsed row and the expanded Catch-up now copies its value on click and
