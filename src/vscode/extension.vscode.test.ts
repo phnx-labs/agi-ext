@@ -19,16 +19,24 @@ describe('agent session editor-tab routing', () => {
     expect(helper.indexOf('terminal.show();')).toBeLessThan(helper.indexOf("readiness.waitFor(terminal, 'promptReady')"));
   });
 
-  test('CLI-owned recovery still creates a terminal for an unpresented resumable harness', () => {
+  test('CLI-owned recovery preserves an unpresented harness across editor reload', () => {
     const helper = extensionSource.slice(
       extensionSource.indexOf('export async function openAgentSessionTerminal'),
       extensionSource.indexOf('export async function openAgentSessionById'),
     );
+    const restore = extensionSource.slice(
+      extensionSource.indexOf('async function restoreAgentTerminals'),
+      extensionSource.indexOf('async function reopenLastClosedSession'),
+    );
 
     expect(helper).toContain('if (!agentKey && !resumeCommandOverride)');
-    expect(helper).toContain("createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', 'ag')");
-    expect(helper).toContain('agentKey: agentKey || session.agent');
+    expect(helper).toContain("createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', RECOVERY_AGENT_PREFIX)");
+    expect(helper).toContain('recoveryAgent: agentKey ? undefined : session.agent');
+    expect(helper).not.toContain("'agents.png', 'ag'");
     expect(helper.indexOf("'agents.png'")).toBeLessThan(helper.indexOf('vscode.window.createTerminal'));
+    expect(restore).toContain('session.prefix.toLowerCase() === RECOVERY_AGENT_PREFIX');
+    expect(restore).toContain('terminals.setRecoveryAgent(terminal, session.recoveryAgent)');
+    expect(restore).toContain('buildRecoveryResumeCommand(session.sessionId, session.host)');
   });
 
   test('Fleet focus and remote attach both use the shared registered path', () => {

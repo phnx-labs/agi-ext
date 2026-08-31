@@ -23,8 +23,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
     device and opens immediately; right-click offers "Resume on a different
     device…", a context menu that lists online/offline reachable peers and uses
     the CLI migration verb before focusing the confirmed-live target. Remote
-    transcript paths are never reused as local terminal working directories.
-    "Resume here" is gone.
+    transcript paths are never reused as local terminal working directories. An
+    unpresented CLI harness keeps its opaque recovery identity across editor
+    reloads instead of borrowing another harness's prefix. "Resume here" is gone.
   - **Real grouping + status model.** Group by Project / Device / Status / None
     (the Previous band honors the grouping too), with status filter chips —
     Active (green) / Idle (amber) / Blocked (red) / Favorites — driven by one

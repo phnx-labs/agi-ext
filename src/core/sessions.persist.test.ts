@@ -76,4 +76,26 @@ describe('persisted session data survives a reload', () => {
     expect(loaded[0].sessionId).toBe('sess-xyz');
     expect(loaded[0].agentPid).toBe(7);
   });
+
+  test('an opaque recovery harness round-trips without borrowing a built-in agent type', () => {
+    const ws = '/work/opaque-recovery';
+    const recovered = {
+      terminalId: 'RX-1',
+      prefix: 'rx',
+      sessionId: 'sess-muse',
+      host: 'yosemite-m3',
+      recoveryAgent: 'muse',
+      createdAt: 222,
+    };
+    runInChild(`
+      persist.saveWorkspaceSessions(${JSON.stringify(ws)}, [${JSON.stringify(recovered)}], true);
+      console.log(JSON.stringify('ok'));
+    `);
+    const loaded = runInChild(`
+      console.log(JSON.stringify(persist.getWorkspaceSessions(${JSON.stringify(ws)})));
+    `) as Array<Record<string, unknown>>;
+
+    expect(loaded).toEqual([recovered]);
+    expect(loaded[0].agentType).toBeUndefined();
+  });
 });
