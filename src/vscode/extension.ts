@@ -2660,31 +2660,33 @@ export async function openAgentSessionTerminal(
   resumeCommandOverride?: string,
 ): Promise<boolean> {
   const agentKey = agentKeyFromSession(session.agent);
-  if (!agentKey) {
+  // Ordinary picker/reload paths still require a presented built-in. A canonical
+  // recovery command is different: the CLI owns the recorded harness and may
+  // support one (for example Muse) that AGI EXT does not offer as a New-agent
+  // button. Give that command a generic Agents-decorated editor terminal instead
+  // of rendering a Resume button that dies before createTerminal.
+  if (!agentKey && !resumeCommandOverride) {
     vscode.window.showInformationMessage(`Cannot resume sessions of type ${session.agent || 'unknown'}`);
     return false;
   }
 
-  const builtIn = BUILT_IN_AGENTS.find(a => a.key === agentKey);
-  if (!builtIn) {
+  const builtIn = agentKey ? BUILT_IN_AGENTS.find(a => a.key === agentKey) : undefined;
+  if (!builtIn && !resumeCommandOverride) {
     vscode.window.showInformationMessage(`No built-in agent config for ${agentKey}`);
     return false;
   }
 
-  const agentConfig = createAgentConfig(
-    context.extensionPath,
-    builtIn.title,
-    builtIn.command,
-    builtIn.icon,
-    builtIn.prefix,
-  );
+  const recoveryTitle = session.agent.trim().replace(/[^A-Za-z0-9._-]+/g, ' ').slice(0, 24) || 'Agent';
+  const agentConfig = builtIn
+    ? createAgentConfig(context.extensionPath, builtIn.title, builtIn.command, builtIn.icon, builtIn.prefix)
+    : createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', 'ag');
 
   // A resumed session belongs in ITS OWN directory, not whatever workspace this
   // window happens to have open — batch resume routinely spans several repos.
   const workspacePath = session.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  const resumeCmd = resumeCommandOverride ?? buildVersionedResumeCommand(agentKey, session.id, session.version, session.host);
+  const resumeCmd = resumeCommandOverride ?? buildVersionedResumeCommand(agentKey!, session.id, session.version, session.host);
 
-  const terminalId = session.terminalId || terminals.nextId(builtIn.prefix);
+  const terminalId = session.terminalId || terminals.nextId(agentConfig.prefix);
   const title = buildTerminalTitle(agentConfig.title, undefined, context, session.id);
   const terminal = vscode.window.createTerminal({
     iconPath: agentConfig.iconPath,
@@ -2698,7 +2700,7 @@ export async function openAgentSessionTerminal(
   await registerAgentTerminal(terminal, context, {
     terminalId,
     agentConfig,
-    agentKey,
+    agentKey: agentKey || session.agent,
     sessionId: session.id,
     host: session.host,
     pinnedVersion: session.version,
@@ -2723,7 +2725,7 @@ export async function openAgentSessionTerminal(
     terminal.sendText(resumeCmd);
   }
   readiness.armAgentReady(terminal, {
-    agentKey,
+    agentKey: agentKey || session.agent,
     sessionId: session.id,
     cwd: workspacePath,
   });

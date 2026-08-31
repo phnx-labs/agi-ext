@@ -19,6 +19,18 @@ describe('agent session editor-tab routing', () => {
     expect(helper.indexOf('terminal.show();')).toBeLessThan(helper.indexOf("readiness.waitFor(terminal, 'promptReady')"));
   });
 
+  test('CLI-owned recovery still creates a terminal for an unpresented resumable harness', () => {
+    const helper = extensionSource.slice(
+      extensionSource.indexOf('export async function openAgentSessionTerminal'),
+      extensionSource.indexOf('export async function openAgentSessionById'),
+    );
+
+    expect(helper).toContain('if (!agentKey && !resumeCommandOverride)');
+    expect(helper).toContain("createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', 'ag')");
+    expect(helper).toContain('agentKey: agentKey || session.agent');
+    expect(helper.indexOf("'agents.png'")).toBeLessThan(helper.indexOf('vscode.window.createTerminal'));
+  });
+
   test('Fleet focus and remote attach both use the shared registered path', () => {
     const focusRemote = settingsSource.slice(
       settingsSource.indexOf("case 'focusRemoteSession':"),
