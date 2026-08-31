@@ -337,6 +337,14 @@ describe('sessionRowView adapter seam', () => {
     expect(row.lastFull).toContain('shared microVM pool')
   })
 
+  test('prefers the full first user turn over the one-line cleaned summary', () => {
+    const row = sessionRowView(floor(), {
+      firstUserMessage: 'Implement the complete behavior.\nKeep this original second line.',
+      userPromptClean: 'Implement the complete behavior',
+    })
+    expect(row.you.text).toContain('Keep this original second line.')
+  })
+
   test('command remainder does not keep a stray $ after the chip', () => {
     const p = processUserPrompt('please run\n$ git status\nthanks', 'command')
     expect(p.chip).toBe('git status')

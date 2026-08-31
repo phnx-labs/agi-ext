@@ -841,6 +841,22 @@ describe('toFloorAgentFromRemote', () => {
     expect(a.prompt).toBe('rush-2031-factory-floor')
     expect(a.summary).toBe('rush-2031-factory-floor')
   })
+
+  test('keeps the streamed recap title separate from the full first user turn', () => {
+    const r = {
+      host: 'yosemite-m2', sessionId: 's-first', agentType: 'codex', cwd: '/repo', project: 'agi-ext',
+      phase: 'running', activity: '', tokPerSec: 0, waitingForInput: false, lastResponse: '',
+      prUrl: null, ticket: null, branch: '', sinceMs: 0, startedAtMs: NOW,
+      topic: 'one-line request summary', title: 'Overhauling the Sessions view',
+      firstUserMessage: 'Build the entire Sessions overhaul.\nPreserve the genuine second line.',
+      context: 'terminal', cloudTaskId: '', cloudProvider: '', teamName: '', pid: 0,
+      transport: 'ssh', replyRail: '', replyMuxTarget: '', replyMuxSocket: '',
+    } as RemoteSessionLike
+    const a = toFloorAgentFromRemote(r, new Set())
+    expect(a.title).toBe('Overhauling the Sessions view')
+    expect(a.firstUserMessage).toBe('Build the entire Sessions overhaul.\nPreserve the genuine second line.')
+    expect(a.prompt).toBe(a.firstUserMessage)
+  })
 })
 
 describe('deriveReplyTargetFromRemote', () => {

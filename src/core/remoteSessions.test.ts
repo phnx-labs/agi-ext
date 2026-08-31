@@ -573,11 +573,16 @@ describe('normalizeActiveSession — topic', () => {
     );
     expect(legacy.topic).toBe('Repair remote cards');
     const firstMessage = normalizeActiveSession(
-      { kind: 'codex', status: 'running', firstUserMessage: 'Explain the background run' } as RawActiveSession,
+      {
+        kind: 'codex', status: 'running', title: 'Explaining a background run',
+        firstUserMessage: 'Explain the background run\nwith all of these original details.',
+      } as RawActiveSession,
       'mac-mini',
       FETCHED_AT
     );
-    expect(firstMessage.topic).toBe('Explain the background run');
+    expect(firstMessage.title).toBe('Explaining a background run');
+    expect(firstMessage.firstUserMessage).toBe('Explain the background run\nwith all of these original details.');
+    expect(firstMessage.topic).toBe('Explain the background run\nwith all of these original details.');
   });
 });
 
@@ -789,6 +794,16 @@ describe('normalizeRecentSession outcome metrics', () => {
     expect(s.durationMs).toBe(2562344);
     expect(s.costUsd).toBeCloseTo(5.6019435);
     expect(s.tokenCount).toBe(2849270);
+  });
+
+  test('preserves the recap title and full first user turn on historical rows', () => {
+    const s = normalizeRecentSession({
+      ...base,
+      title: 'Shipping the recap ledger',
+      firstUserMessage: 'Ship the recap ledger.\nDo not lose this second line.',
+    }, 'zion', Date.now());
+    expect(s.title).toBe('Shipping the recap ledger');
+    expect(s.firstUserMessage).toBe('Ship the recap ledger.\nDo not lose this second line.');
   });
 
   test('missing or garbage metrics land as 0, never NaN', () => {

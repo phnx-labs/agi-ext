@@ -134,14 +134,36 @@ describe('SessionRow — compact card', () => {
     expect(html).not.toContain('<bash-input>')
   })
 
-  test('clicking a row expands into the full detail card (the ask / activity / catch up)', () => {
-    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
+  test('clicking a row expands into the full detail card (request / activity / catch up)', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent({ firstUserMessage: 'The real first user turn, in full.' })} {...rowProps} expanded />)
     expect(html).toContain('sx-detail')
-    expect(html).toContain('The ask')
+    expect(html).toContain('Your request')
     expect(html).toContain('Activity')
     expect(html).toContain('Catch up')
-    expect(html).toContain('The landscape mode looks cramped')
+    expect(html).toContain('The real first user turn, in full.')
     expect(html).not.toContain('Resume here')
+  })
+
+  test('labels a missing first turn honestly and toggles long real requests', () => {
+    const fallback = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
+    expect(fallback).toContain('Request summary')
+    expect(fallback).not.toContain('Your request')
+
+    const full = `Keep this genuine first turn intact.\n${'Detailed constraint. '.repeat(30)}`
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => { root.render(<SessionRow agent={agent({ firstUserMessage: full })} {...rowProps} expanded />) })
+    const request = host.querySelector('.sx-ask') as HTMLDivElement
+    const toggle = host.querySelector('.sx-see-more') as HTMLButtonElement
+    expect(request.textContent).toBe(full)
+    expect(request.classList.contains('collapsed')).toBe(true)
+    expect(toggle.textContent).toBe('See more')
+    act(() => { toggle.click() })
+    expect(request.classList.contains('expanded')).toBe(true)
+    expect(toggle.textContent).toBe('See less')
+    act(() => root.unmount())
+    host.remove()
   })
 
   test('per-row Resume posts the same onResume the group control uses', () => {
