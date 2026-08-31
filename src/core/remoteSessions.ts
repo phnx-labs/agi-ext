@@ -475,6 +475,7 @@ export interface RawActiveSession {
   /** Durable lifecycle/recovery fields are also present on the recoverable rows
    * folded into the canonical watch stream. */
   state?: string;
+  previous?: boolean;
   resumable?: boolean;
   sourceDevice?: string;
   recovery?: { command?: string; args?: unknown[]; cwd?: string } | null;
@@ -766,7 +767,9 @@ export function normalizeActiveSession(
     title: asStr(raw.title),
     firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
-    state: asStr(raw.state),
+    // Current watch rows mark index-backed history explicitly; older picker-shaped
+    // rows used lifecycle state='inactive'. Present one stable word to the UI.
+    state: raw.previous === true ? 'inactive' : asStr(raw.state),
     resumable: raw.resumable === undefined ? undefined : raw.resumable === true,
     recovery: normalizeRecovery(raw.recovery),
     sourceDevice: asStr(raw.sourceDevice) || host,

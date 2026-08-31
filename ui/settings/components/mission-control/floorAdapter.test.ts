@@ -29,7 +29,7 @@ describe('canonical stream → Previous row', () => {
       v: 1, type: 'reset', streamId: 'stream', sequence: 1, capturedAt: NOW, scope: 'yosemite-s0', attention: [],
       agents: [{
         rowKey: 'previous-row', sessionId: 'previous-session-id', kind: 'codex', context: 'recent',
-        sourceDevice: 'yosemite-s0', state: 'inactive', status: 'idle', resumable: true,
+        sourceDevice: 'yosemite-s0', previous: true, status: 'idle', resumable: true,
         recovery: { command: 'agents', args: ['sessions', 'resume', 'previous-session-id', '--device', 'yosemite-s0'], cwd: '/remote/repo' },
         firstUserMessage: 'Fix the recovery button and prove the terminal opens.',
         cwd: '/remote/repo', startedAtMs: NOW - 120_000, lastActivityMs: NOW - 60_000,
