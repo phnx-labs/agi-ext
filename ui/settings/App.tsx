@@ -160,6 +160,9 @@ export default function App() {
   const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({
     claude: true, codex: true, gemini: true, opencode: true, cursor: true, shell: true
   })
+  // Registered device fleet (agents devices list --json, no SSH) — surfaced in the
+  // Settings panel now that the Fleet view no longer carries a Devices filter (PHNX-3594).
+  const [fleetDevices, setFleetDevices] = useState<Array<{ name: string; online: boolean }>>([])
 
   // Prewarm state
   const [prewarmEnabled, setPrewarmEnabled] = useState(false)
@@ -299,6 +302,16 @@ export default function App() {
         case 'installedAgentsData':
           setInstalledAgents(message.installedAgents)
           break
+        case 'devicesData':
+          if (Array.isArray(message.devices)) {
+            setFleetDevices(
+              (message.devices as Array<{ name: string; online?: boolean }>).map((d) => ({
+                name: d.name,
+                online: !!d.online,
+              })),
+            )
+          }
+          break
         case 'agentModelsData':
           if (message.agentModels && typeof message.agentModels === 'object') {
             setAgentModels((prev) => ({ ...prev, ...message.agentModels }))
@@ -386,6 +399,7 @@ export default function App() {
     vscode.postMessage({ type: 'getWorkspaceConfig' })
     vscode.postMessage({ type: 'fetchAllTerminals' })
     vscode.postMessage({ type: 'detectTaskSources' })
+    vscode.postMessage({ type: 'listDevices' })
 
     return () => {
       window.removeEventListener('message', handleMessage)
@@ -904,6 +918,7 @@ export default function App() {
           installedAgents={installedAgents}
           agentModels={agentModels}
           agentInventories={agentInventories}
+          devices={fleetDevices}
           icons={icons}
           isLightTheme={isLightTheme}
           swarmInstalling={swarmInstalling}

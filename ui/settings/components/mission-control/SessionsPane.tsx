@@ -114,12 +114,19 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   // more" bumps it, paging further back through the resumable history.
   const [previousShown, setPreviousShown] = useState<number | null>(null)
   const [resumeMenu, setResumeMenu] = useState<ResumeDeviceMenuState | null>(null)
+  // Needs-you narrowing — the affordance the removed left icon rail used to carry
+  // (PHNX-3594). A toggle over the scoped list, not one of the primary filter chips.
+  const [needsOnly, setNeedsOnly] = useState(false)
   const nowMs = useNow(30000)
 
   const counts = useMemo(() => sessionChipCounts(agents), [agents])
+  const needsCount = useMemo(() => agents.filter((a) => a.needs).length, [agents])
 
   const scope: SessionScope = useMemo(() => ({ filter, project: null, host: null, search }), [filter, search])
-  const scoped = useMemo(() => scopeSessions(agents, scope), [agents, scope])
+  const scoped = useMemo(() => {
+    const base = scopeSessions(agents, scope)
+    return needsOnly ? base.filter((a) => a.needs) : base
+  }, [agents, scope, needsOnly])
   const sections = useMemo(
     () => buildSessionSections(scoped, group, sort, desc, { filter, nowMs, previousShown: previousShown ?? undefined }),
     [scoped, group, sort, desc, filter, nowMs, previousShown],
@@ -196,6 +203,17 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
             </button>
           ))}
         </div>
+        {needsCount > 0 && (
+          <button
+            type="button"
+            className={`sx-needs${needsOnly ? ' on' : ''}`}
+            title={`${needsCount} session${needsCount === 1 ? '' : 's'} need you`}
+            aria-pressed={needsOnly}
+            onClick={() => setNeedsOnly((v) => !v)}
+          >
+            <Icon name="alert" size={11} /> Needs you <span className="n">{needsCount}</span>
+          </button>
+        )}
         <div className="sx-search">
           <Icon name="search" size={12} />
           <input
@@ -227,7 +245,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
           <div className="sx-empty">
             {streamDegraded && agents.length === 0
               ? 'Session data unavailable. Waiting for the first snapshot…'
-              : <>No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setSearch('') }}>Clear filters</button>}</>}
+              : <>No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setSearch(''); setNeedsOnly(false) }}>Clear filters</button>}</>}
           </div>
         ) : (
           <div style={{ height: totalHeight, position: 'relative' }}>

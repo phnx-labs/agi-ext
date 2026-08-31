@@ -15,7 +15,7 @@ export const FEED_GROUP_OPTS: { value: FloorGroupBy | 'none'; label: string }[] 
   { value: 'outcome', label: 'Outcome' },
   { value: 'none', label: 'None' },
   { value: 'project', label: 'Project' },
-  { value: 'host', label: 'Host' },
+  { value: 'host', label: 'Device' },
   { value: 'status', label: 'Status' },
   { value: 'agent', label: 'Agent' },
 ]

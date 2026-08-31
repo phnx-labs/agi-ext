@@ -263,9 +263,12 @@ test('Fleet layout defaults and legacy prefs keep both side panels closed', () =
   expect(source).toMatch(/closeDetail = useCallback\(\(\) => \{\s*setSelectedAgentId\(null\)\s*setRightOpen\(false\)/)
   expect(source).toContain('onClose={closeDetail}')
   expect(source).toContain('onClick={closeDetail} aria-label="Close detail pane"')
-  // The left nav rail/sidebar stays off the decluttered Sessions view — its only
-  // toggle lives in FloorControls, which does not render on Sessions.
-  expect(source).toContain("center !== 'sessions' && sidebarOpen")
+  // PHNX-3594: the left icon rail (FloorRail) and its expanded FloorSidebar are
+  // removed from the Fleet view entirely — Projects/Devices moved to Settings.
+  // Guard that neither the rail nor the sidebar is reintroduced as Fleet chrome.
+  expect(source).not.toContain("from './FloorRail'")
+  expect(source).not.toContain('<FloorRail')
+  expect(source).not.toContain('<FloorSidebar')
 })
 
 test('SessionsPane shows degraded copy when stream is degraded and empty', () => {
