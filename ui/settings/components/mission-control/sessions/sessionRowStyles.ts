@@ -139,7 +139,6 @@ export const SESSION_ROW_CSS = `
   color: var(--ds-text-dim, #8b94a6); background: none; border: 0; cursor: pointer; letter-spacing: 0; text-transform: none;
 }
 .sw-sessions .sx-band-more:hover { color: var(--brand, #a3e635); }
-.sw-sessions .sx-metarow .sx-chip.device { color: #6ea8fe; border-color: rgba(110,168,254,.3); }
 .sw-sessions .sx-metarow .sx-chip.attach { color: #5eead4; border-color: rgba(94,234,212,.28); }
 .sw-sessions .sx-metarow .sx-chip.art { color: #f5b544; border-color: rgba(245,181,68,.3); }
 .sw-sessions .sx-viewbtn {

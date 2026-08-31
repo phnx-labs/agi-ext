@@ -79,7 +79,7 @@ const rowProps = {
 }
 
 describe('SessionRow — compact card', () => {
-  test('renders title, You ›, Claude ›, the prompt chip, PR / repo / device chips, and Resume', () => {
+  test('renders title, prompt, metadata links, and Resume without duplicating the device', () => {
     const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} />)
     expect(html).toContain('Redesigning the SVAtlas landscape hero section')
     expect(html).toContain('You ›')
@@ -90,9 +90,8 @@ describe('SessionRow — compact card', () => {
     expect(html).not.toContain('CleanShot')
     expect(html).toContain('PR #418')
     expect(html).toContain('▪ svatlas')
-    // Host -> Device: every row is labelled with its device
-    expect(html).toContain('sx-chip device')
-    expect(html).toContain('yosemite-s1')
+    expect(html).not.toContain('sx-chip device')
+    expect(html).not.toContain('yosemite-s1')
     // a live session is always resumable
     expect(html).toContain('class="sx-resumelabel">Resume</span>')
     expect(html).not.toContain('sx-viewbtn')
