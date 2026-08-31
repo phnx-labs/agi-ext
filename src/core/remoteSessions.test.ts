@@ -10,6 +10,7 @@ import {
   normalizeActiveSession,
   normalizeActiveSessions,
   normalizeRecentSession,
+  buildRecoveryMigrationCommand,
   buildRecoveryResumeCommand,
   normalizeQuestion,
   dedupeSessions,
@@ -875,6 +876,26 @@ describe('buildRecoveryResumeCommand — device-targeted, injection-safe (PHNX-3
     expect(cmd).toBe("agents sessions resume 'x'\\''; rm -rf ~ #' --device 'dev name' --vscodium");
     // the injected `rm` is inside quotes, so it is a literal argument, not a command
     expect(cmd.startsWith('agents sessions resume ')).toBe(true);
+  });
+});
+
+describe('buildRecoveryMigrationCommand — alternate-device recovery (PHNX-3621)', () => {
+  test('transports from the owning peer before focusing the selected target', () => {
+    expect(buildRecoveryMigrationCommand('abc-123', 'yosemite-s0', 'yosemite-m3')).toBe(
+      'agents ssh yosemite-s0 agents sessions migrate abc-123 --device yosemite-m3 --mode resume --keep && agents sessions focus abc-123 --device yosemite-m3',
+    );
+  });
+
+  test('runs migration locally when the source is this device', () => {
+    expect(buildRecoveryMigrationCommand('abc-123', 'zion', 'yosemite-m3', true)).toBe(
+      'agents sessions migrate abc-123 --device yosemite-m3 --mode resume --keep && agents sessions focus abc-123 --device yosemite-m3',
+    );
+  });
+
+  test('quotes every streamed identity before it reaches a shell', () => {
+    expect(buildRecoveryMigrationCommand("x'; whoami #", 'source box', 'target box')).toBe(
+      "agents ssh 'source box' agents sessions migrate 'x'\\''; whoami #' --device 'target box' --mode resume --keep && agents sessions focus 'x'\\''; whoami #' --device 'target box'",
+    );
   });
 });
 

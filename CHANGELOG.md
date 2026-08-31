@@ -21,8 +21,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
     only (no redundant name); the owning device is stated a single time in the card.
   - **One Resume.** A single compact "Resume" reopens the session on its owning
     device and opens immediately; right-click offers "Resume on a different
-    device…", a context menu that lists online/offline reachable peers. "Resume
-    here" is gone.
+    device…", a context menu that lists online/offline reachable peers and uses
+    the CLI migration verb before focusing the confirmed-live target. Remote
+    transcript paths are never reused as local terminal working directories.
+    "Resume here" is gone.
   - **Real grouping + status model.** Group by Project / Device / Status / None
     (the Previous band honors the grouping too), with status filter chips —
     Active (green) / Idle (amber) / Blocked (red) / Favorites — driven by one
@@ -30,6 +32,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   - **Refactor.** The oversized `SessionsPane.tsx` is split into focused
     components under `sessions/` (`SessionRow`, `RowLinks`, `sessionActions`,
     consolidated row styles).
+  - **One Sessions stream.** Previous/recoverable rows now come only from the
+    canonical watch projection; opening Sessions no longer starts a separate
+    fleet-wide history sweep.
 - **Test infra: host bridge is resettable (`resetVsCodeApi`).** The webview host
   API is a process-wide singleton resolved on first use; a test that installs its
   own `acquireVsCodeApi` now resets it so its stub is actually observed instead of

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { FloorAgent } from '../floorModel'
+import { resumeSourceDevice } from './sessionActions'
 
 export interface ResumeDevice {
   name: string
@@ -20,7 +21,7 @@ export function ResumeDeviceMenu({ state, devices, onChoose, onClose }: {
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const current = state.agent.sourceDevice || state.agent.hostLabel || state.agent.host
+  const current = resumeSourceDevice(state.agent)
   const alternatives = useMemo(
     () => devices.filter((device) => device.name && device.name !== current),
     [current, devices],

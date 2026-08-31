@@ -40,6 +40,7 @@ describe('agent session editor-tab routing', () => {
       settingsSource.indexOf("case 'stopSession':"),
     );
     expect(resumePrevious).toContain('await openAgentSessionByRecovery(context');
+    expect(resumePrevious).toContain('await openAgentSessionByMigration(context');
     expect(resumePrevious).not.toContain('openAgentSessionById');
   });
 });

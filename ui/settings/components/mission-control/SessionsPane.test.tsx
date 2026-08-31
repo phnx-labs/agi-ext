@@ -291,6 +291,17 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('title="Codex ›"')
     expect(html).not.toContain('class="sx-agent"')
   })
+
+  test('uses the authoritative generic Agents logo instead of the shared AG abbreviation', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent({ abbr: 'AG', agentType: 'agents' })} {...rowProps} />)
+    expect(html).toContain('title="Agents ›"')
+    expect(html).toContain('src="agents.svg"')
+    expect(html).not.toContain('antigravity.svg')
+  })
+
+  test('keeps expanded long requests inside the virtualized row height', () => {
+    expect(SESSION_ROW_CSS).toContain('.sx-ask.expanded { max-height: 140px; overflow-y: auto; }')
+  })
 })
 
 describe('SessionsPane', () => {

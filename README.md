@@ -110,7 +110,8 @@ Ended-session timing reads “Ran … · ended … ago” with the absolute rang
 and names its device once as “Runs on …”. Ticket, PR, and repository pills navigate;
 branch pills copy. The single compact **Resume** targets the owning device, while
 right-clicking it offers **Resume on a different device…** from the already-loaded
-fleet roster.
+fleet roster; that path delegates transcript transport and liveness to
+`agents sessions migrate`, then focuses the target in the same editor terminal.
 The left navigation and right detail panel start closed; selecting a session opens
 its detail in place. Background/headless runs remain hidden by default in the agent
 feed; use the **Background** toggle when you need them.

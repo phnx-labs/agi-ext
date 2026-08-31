@@ -5,7 +5,7 @@ import { AgentAvatar, agentIdFromPrefix } from '../AgentAvatar'
 import { ExpandedCard } from './ExpandedCard'
 import { RowLinks } from './RowLinks'
 import { formatRelativeTime } from './sessionTime'
-import { previousResumeMessage } from './sessionActions'
+import { previousResumeMessage, resumeSourceDevice } from './sessionActions'
 
 export interface SessionRowProps {
   agent: FloorAgent
@@ -44,7 +44,10 @@ function SessionRowImpl({
     : 'Resume this session'
   const row = sessionRowView(a)
   const liveClass = row.live === 'run' ? '' : row.live
-  const agentId = agentIdFromPrefix(a.abbr) ?? (row.harnessTag || 'agent').toLowerCase()
+  // The streamed harness id is authoritative. In particular, both the generic
+  // Agents runner and Antigravity use the legacy AG abbreviation, but ship
+  // distinct logos.
+  const agentId = (a.agentType || agentIdFromPrefix(a.abbr) || row.harnessTag || 'agent').toLowerCase()
   const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
   const phaseLabel = previous ? '' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
   const step = previous ? '' : ((a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : ''))
@@ -89,7 +92,7 @@ function SessionRowImpl({
             title={resumeTitle}
             onClick={(e) => { e.stopPropagation(); onResume(a) }}
             onContextMenu={(e) => {
-              if (!onResumeContext || !previousResumeMessage(a)) return
+              if (!onResumeContext || !previousResumeMessage(a) || !resumeSourceDevice(a)) return
               e.preventDefault()
               e.stopPropagation()
               onResumeContext(a, e)

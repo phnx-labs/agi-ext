@@ -43,7 +43,7 @@ presentation layer. Concretely:
 The Sessions dashboard follows that same stream contract. Its full first-user
 request comes from `SessionWatchRow.firstUserMessage`; status filters and grouping
 use only the projected phase/attention fields; alternate-device Resume reuses the
-already-loaded device roster and the row's one-shot recovery verb. Never fill any
+already-loaded device roster and the CLI's one-shot migration/recovery verbs. Never fill any
 of these with a transcript read, lifecycle probe, or a second device/session fetch.
 
 The `agentsPanel.terminal` activity-bar view is the focused session's work card,
