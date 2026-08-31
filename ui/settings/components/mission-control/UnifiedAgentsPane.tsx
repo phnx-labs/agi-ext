@@ -73,6 +73,7 @@ import {
   linearIssueLabel,
   linearIssueUrl,
 } from './floorModel'
+import { previousResumeMessage } from './sessions/sessionActions'
 import { SavedViews } from './SavedViewsBar'
 import { loadSavedViews, persistSavedViews, upsertView, removeView, viewMatches, type SavedView } from './savedViews'
 import { adaptUnified, adaptRemote, adaptTickets, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
@@ -2191,14 +2192,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     // device-targeted — never the local-only focusSession candidate lookup, which
     // can't see a session recovered from a remote fleet device (PHNX-3593). The host
     // rebuilds the command from the id + device, so this only picks the session.
-    if (isPrevious(a) && a.sessionId && a.resumable !== false) {
-      postMessage({
-        type: 'resumePreviousSession',
-        sessionId: a.sessionId,
-        agentType: agentIdFromPrefix(a.abbr) ?? '',
-        device: a.sourceDevice ?? (a.host !== 'this-mac' ? a.host : ''),
-        cwd: a.worktreePath || undefined,
-      })
+    const previousMessage = previousResumeMessage(a)
+    if (previousMessage) {
+      postMessage(previousMessage)
       return
     }
     if (a.reply.kind === 'terminal' && a.reply.terminalId) {
@@ -2227,14 +2223,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   }, [unifiedById])
 
   const resumeAgentOnDevice = useCallback((a: FloorAgent, device: string) => {
-    if (!a.sessionId || !device || a.resumable === false) return
-    postMessage({
-      type: 'resumePreviousSession',
-      sessionId: a.sessionId,
-      agentType: agentIdFromPrefix(a.abbr) ?? '',
-      device,
-      cwd: a.worktreePath || undefined,
-    })
+    if (!device) return
+    const message = previousResumeMessage(a, device)
+    if (message) postMessage(message)
   }, [])
 
   // Bulk reconnect: resume/focus every selected session. Each opens on its OWNING
@@ -2662,7 +2653,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       onResumeMany={resumeManyAgents}
       devices={fleetDevices}
       onSelect={(a) => selectSession(a.id)}
-      onView={(a) => selectSession(a.id)}
       selectedId={selectedAgentId}
       streamDegraded={sessionStreamDegraded}
     />

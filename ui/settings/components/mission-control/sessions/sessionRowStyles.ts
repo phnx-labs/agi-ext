@@ -94,7 +94,9 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-band .lab { color: var(--ds-text, #e6e9ef); font-weight: 600; }
 .sw-sessions .sx-band .cnt { color: var(--ds-text-muted, #5c6675); }
 .sw-sessions .sx-band .g { background: var(--brand, #a3e635); border-radius: 3px; }
-.sw-sessions .sx-band.recon .g { background: #a78bfa; }
+.sw-sessions .sx-band.active .g { background: #4ade80; }
+.sw-sessions .sx-band.idle .g { background: #f5b544; }
+.sw-sessions .sx-band.blocked .g { background: #f87171; }
 .sw-sessions .sx-band-act { color: var(--brand, #a3e635); background: rgba(163,230,53,.12); border-color: var(--brand, #a3e635); }
 .sw-sessions .sx-row { border-bottom-color: var(--ds-border, #1b2334); }
 .sw-sessions .sx-row:hover { background: rgba(127,140,160,0.07); }
@@ -134,6 +136,10 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-now { font-size: 12px; color: var(--ds-text-dim, #8b94a6); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sw-sessions .sx-now b { color: var(--ds-text, #e6e9ef); font-weight: 600; }
 .sw-sessions .sx-band.previous .g { background: #a78bfa; }
+.sw-sessions .sx-status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+.sw-sessions .sx-status-dot.active { background: #4ade80; }
+.sw-sessions .sx-status-dot.idle { background: #f5b544; }
+.sw-sessions .sx-status-dot.blocked { background: #f87171; }
 .sw-sessions .sx-band-more {
   margin-left: 8px; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 11px;
   color: var(--ds-text-dim, #8b94a6); background: none; border: 0; cursor: pointer; letter-spacing: 0; text-transform: none;

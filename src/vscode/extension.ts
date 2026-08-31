@@ -2703,6 +2703,10 @@ export async function openAgentSessionTerminal(
     host: session.host,
     pinnedVersion: session.version,
   });
+  // Show the editor-tab terminal immediately. Readiness can take seconds (or time
+  // out on a broken shell integration); hiding the tab behind that await made a
+  // successful Resume click look like a complete no-op.
+  terminal.show();
   if (session.account) {
     terminals.setAccount(terminal, session.account);
   }
@@ -2724,7 +2728,6 @@ export async function openAgentSessionTerminal(
     cwd: workspacePath,
   });
 
-  terminal.show();
   try {
     await readiness.waitFor(terminal, 'agentReady');
     return true;
