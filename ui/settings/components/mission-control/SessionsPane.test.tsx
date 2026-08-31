@@ -200,10 +200,11 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
-  test('Previous rows omit redundant phase and recap-source badges', () => {
-    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row' })} {...rowProps} />)
+  test('Previous rows omit the redundant phase pill; live rows keep it', () => {
+    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row', phase: 'idle' })} {...rowProps} />)
+    // The Previous band header already names the lifecycle, so a resumable-index
+    // row renders no phase pill even when it carries a phase.
     expect(previous).not.toContain('sx-phase')
-    expect(previous).not.toContain('sx-src')
 
     const live = renderToStaticMarkup(<SessionRow agent={agent({ id: 'live-row', phase: 'idle' })} {...rowProps} />)
     expect(live).toContain('class="sx-phase idle"')
