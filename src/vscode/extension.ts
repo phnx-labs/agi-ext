@@ -20,7 +20,7 @@ import { AgentsHtmlReaderProvider } from './htmlReader';
 import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
 import { listRegisteredDevices } from './deviceHealth.vscode';
-import { isDerivedSessionName, normalizeHost, buildRecoveryResumeCommand } from '../core/remoteSessions';
+import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand, buildRecoveryResumeCommand } from '../core/remoteSessions';
 import * as settings from './settings.vscode';
 import * as swarm from './swarm.vscode';
 import {
@@ -2764,13 +2764,29 @@ export async function openAgentSessionById(
  */
 export async function openAgentSessionByRecovery(
   context: vscode.ExtensionContext,
-  opts: { sessionId: string; agentType: string; device?: string; cwd?: string },
+  opts: { sessionId: string; agentType: string; device?: string },
 ): Promise<boolean> {
   const device = (opts.device || '').trim();
   return openAgentSessionTerminal(
     context,
-    { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, cwd: opts.cwd, host: device || undefined },
+    // The transcript's cwd belongs to its origin device. Leave the local editor
+    // terminal in this workspace; the CLI recovery record restores cwd remotely.
+    { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, host: device || undefined },
     buildRecoveryResumeCommand(opts.sessionId, device),
+  );
+}
+
+/** Move a PREVIOUS session to a user-selected device, then attach its target
+ * pane in the same editor-tab terminal. The CLI migration verb owns transcript
+ * transport and liveness confirmation; the extension only renders the action. */
+export async function openAgentSessionByMigration(
+  context: vscode.ExtensionContext,
+  opts: { sessionId: string; agentType: string; sourceDevice: string; targetDevice: string; sourceIsLocal: boolean },
+): Promise<boolean> {
+  return openAgentSessionTerminal(
+    context,
+    { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, host: opts.targetDevice },
+    buildRecoveryMigrationCommand(opts.sessionId, opts.sourceDevice, opts.targetDevice, opts.sourceIsLocal),
   );
 }
 

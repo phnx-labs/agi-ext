@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { FloorAgent } from '../floorModel'
-import { previousResumeMessage } from './sessionActions'
+import { previousResumeMessage, terminalOpenMessageForAgent } from './sessionActions'
 
 function previous(overrides: Partial<FloorAgent> = {}): FloorAgent {
   return {
@@ -20,19 +20,47 @@ describe('previousResumeMessage', () => {
       type: 'resumePreviousSession',
       sessionId: 'session-from-recovery',
       agentType: 'codex',
+      sourceDevice: 'zion',
       device: 'zion',
-      cwd: '/repo',
+      migrate: false,
     })
   })
 
   test('prefers the canonical session id and supports an alternate device', () => {
     expect(previousResumeMessage(previous({ sessionId: 'canonical-id' }), 'yosemite-s1')).toMatchObject({
-      type: 'resumePreviousSession', sessionId: 'canonical-id', agentType: 'codex', device: 'yosemite-s1',
+      type: 'resumePreviousSession', sessionId: 'canonical-id', agentType: 'codex', sourceDevice: 'zion', device: 'yosemite-s1', migrate: true,
     })
   })
 
   test('never routes live or non-resumable rows through Previous recovery', () => {
     expect(previousResumeMessage(previous({ sessionState: 'running' }))).toBeNull()
     expect(previousResumeMessage(previous({ resumable: false, recovery: null }))).toBeNull()
+  })
+
+  test('refuses an alternate-device action when the origin is unknown', () => {
+    expect(previousResumeMessage(previous({ sourceDevice: undefined, host: 'this-mac', hostLabel: undefined }), 'yosemite-s1')).toBeNull()
+  })
+})
+
+describe('terminalOpenMessageForAgent', () => {
+  test('a resumable Previous row takes recovery before dead-session focus', () => {
+    const message = terminalOpenMessageForAgent(previous({ sessionId: 'canonical-id' }))
+    expect(message).toMatchObject({
+      type: 'resumePreviousSession',
+      sessionId: 'canonical-id',
+      agentType: 'codex',
+      sourceDevice: 'zion',
+      device: 'zion',
+      migrate: false,
+    })
+    expect(message?.type).not.toBe('focusSession')
+  })
+
+  test('a live indexed row still uses focusSession', () => {
+    expect(terminalOpenMessageForAgent(previous({
+      sessionState: 'running',
+      recovery: null,
+      sessionId: 'live-id',
+    }))).toEqual({ type: 'focusSession', sessionId: 'live-id', host: 'this-mac' })
   })
 })

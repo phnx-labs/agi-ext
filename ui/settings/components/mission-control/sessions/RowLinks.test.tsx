@@ -14,7 +14,7 @@ const posted: unknown[] = []
   setState: () => {},
 })
 
-const { PillLink, githubRepoUrl } = await import('./RowLinks')
+const { PillLink, githubPullRequestUrl, githubRepoUrl } = await import('./RowLinks')
 const { resetVsCodeApi } = await import('../../../hooks/useVscodeApi')
 
 beforeEach(() => {
@@ -54,5 +54,12 @@ describe('session row links', () => {
       .toBe('https://github.com/phnx-labs/agi-ext')
     expect(githubRepoUrl('https://gitlab.com/phnx-labs/agi-ext/pull/23')).toBeNull()
     expect(githubRepoUrl('https://github.com/phnx-labs/agi-ext/issues/23')).toBeNull()
+  })
+
+  test('opens only a normalized GitHub pull-request URL', () => {
+    expect(githubPullRequestUrl('https://github.com/phnx-labs/agi-ext/pull/23?utm_source=feed#discussion'))
+      .toBe('https://github.com/phnx-labs/agi-ext/pull/23')
+    expect(githubPullRequestUrl('https://attacker.example/phnx-labs/agi-ext/pull/23')).toBeNull()
+    expect(githubPullRequestUrl('#23')).toBeNull()
   })
 })

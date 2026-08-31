@@ -16,7 +16,7 @@ import * as swarm from './swarm.vscode';
 import { notifyNewlyWaiting } from './waitingNotifier.vscode';
 import { fetchAllTasks, detectAvailableSources } from './tasks.vscode';
 import { getBuiltInByTitle, configFromDef } from './agents.vscode';
-import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById, openAgentSessionByRecovery } from './extension';
+import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById, openAgentSessionByMigration, openAgentSessionByRecovery } from './extension';
 import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { nudgeSession } from '../mcp/watchdog-bridge';
@@ -2349,22 +2349,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         }
         break;
       }
-      case 'fetchPreviousSessions': {
-        // PHNX-3593: resumable PREVIOUS (crashed/ended) sessions across the WHOLE
-        // fleet, folded into the Sessions surface so a reboot that prunes dead PIDs
-        // from the live roster never loses recoverable work. Same one-shot fleet
-        // sweep the Recap ledger uses (the durable transcript index carries the
-        // CLI's lifecycle/recovery fields); rides its own 'previousSessions' message.
-        try {
-          const { fetchRecapSessions } = await import('./remoteSessions.vscode');
-          const sessions = await fetchRecapSessions(50, getSettings(context).projectRules ?? []);
-          settingsPanel?.webview.postMessage({ type: 'previousSessions', sessions });
-        } catch (err) {
-          console.error('[SETTINGS] Error fetching previous sessions:', err);
-          settingsPanel?.webview.postMessage({ type: 'previousSessions', sessions: [] });
-        }
-        break;
-      }
       case 'fetchHostInventory': {
         // Host detail pane: installed agents/versions/accounts/usage/resources on
         // one host (over SSH for remotes) + registry metadata. Cached per host.
@@ -3262,9 +3246,20 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
         if (!sessionId) break;
         const agentType = typeof message.agentType === 'string' ? message.agentType : '';
-        const device = typeof message.device === 'string' && !isLocalDeviceHost(message.device) ? message.device : '';
-        const cwd = typeof message.cwd === 'string' && message.cwd ? message.cwd : undefined;
-        await openAgentSessionByRecovery(context, { sessionId, agentType, device, cwd });
+        const sourceDevice = typeof message.sourceDevice === 'string' ? message.sourceDevice.trim() : '';
+        const requestedDevice = typeof message.device === 'string' ? message.device.trim() : '';
+        if (message.migrate === true && sourceDevice && requestedDevice && sourceDevice !== requestedDevice) {
+          await openAgentSessionByMigration(context, {
+            sessionId,
+            agentType,
+            sourceDevice,
+            targetDevice: requestedDevice,
+            sourceIsLocal: isLocalDeviceHost(sourceDevice),
+          });
+          break;
+        }
+        const device = requestedDevice && !isLocalDeviceHost(requestedDevice) ? requestedDevice : '';
+        await openAgentSessionByRecovery(context, { sessionId, agentType, device });
         break;
       }
       // Stop a background (headless) run by killing its pid — sends it back to parked

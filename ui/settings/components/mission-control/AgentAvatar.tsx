@@ -3,7 +3,7 @@ import type { IconConfig } from '../../types'
 import { getIcons } from '../../hooks/useVscodeApi'
 import { getIcon } from '../../utils/icons'
 
-export type AgentId = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'shell' | 'watchdog' | 'antigravity' | 'grok' | 'kimi' | 'droid'
+export type AgentId = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'shell' | 'watchdog' | 'agents' | 'antigravity' | 'grok' | 'kimi' | 'droid'
 
 const BG: Record<AgentId, string> = {
   claude: 'var(--claude)',
@@ -13,6 +13,7 @@ const BG: Record<AgentId, string> = {
   cursor: 'var(--cursor)',
   shell: 'var(--shell)',
   watchdog: 'var(--ds-text-dim)',
+  agents: 'var(--agents, var(--ds-text-dim))',
   antigravity: 'var(--antigravity, var(--ds-text-dim))',
   grok: 'var(--grok, var(--ds-text-dim))',
   kimi: 'var(--kimi, var(--ds-text-dim))',
@@ -27,6 +28,7 @@ const LETTER: Record<AgentId, string> = {
   cursor: 'K',
   shell: '$',
   watchdog: 'W',
+  agents: 'A',
   antigravity: 'A',
   grok: 'R',
   kimi: 'K',

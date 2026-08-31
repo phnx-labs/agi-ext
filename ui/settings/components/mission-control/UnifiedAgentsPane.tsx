@@ -54,8 +54,6 @@ import {
   ticketWorkers,
   projectRollups,
   visibleFloorAgents,
-  isPrevious,
-  mergeSessionAgents,
   type FloorAgent,
   type FloorAttachment,
   type FloorTicket,
@@ -73,7 +71,7 @@ import {
   linearIssueLabel,
   linearIssueUrl,
 } from './floorModel'
-import { previousResumeMessage } from './sessions/sessionActions'
+import { previousResumeMessage, terminalOpenMessageForAgent } from './sessions/sessionActions'
 import { SavedViews } from './SavedViewsBar'
 import { loadSavedViews, persistSavedViews, upsertView, removeView, viewMatches, type SavedView } from './savedViews'
 import { adaptUnified, adaptRemote, adaptTickets, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
@@ -778,11 +776,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Fork edges recorded at launch by `Agents: Fork …` — what lets the ledger pair
   // a fork back up with the session it came from (their ids share nothing).
   const [recapForkEdges, setRecapForkEdges] = useState<RecapForkEdge[]>([])
-  // PREVIOUS (crashed/ended, resumable) sessions folded into the Sessions surface
-  // (PHNX-3593). null = not fetched yet — a one-shot fleet sweep runs when the
-  // Sessions center first opens, NOT on a timer. Reboots prune dead PIDs from the
-  // live roster, but the durable transcript index keeps these resumable.
-  const [previousSessions, setPreviousSessions] = useState<RemoteSessionLike[] | null>(null)
   const [floorSort, setFloorSort] = useState<FloorSort>('needs')
   // Group the live feed by an axis. Defaults to 'outcome' (ticket/PR/worktree) so a
   // fleet-scale floor shows deliverables, not ~1,100 agents (RUSH-1479). NEEDS YOU
@@ -1004,8 +997,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       } else if (msg?.type === 'recapSessions') {
         setRecapSessions(Array.isArray(msg.sessions) ? (msg.sessions as RemoteSessionLike[]) : [])
         setRecapForkEdges(Array.isArray(msg.forkEdges) ? (msg.forkEdges as RecapForkEdge[]) : [])
-      } else if (msg?.type === 'previousSessions') {
-        setPreviousSessions(Array.isArray(msg.sessions) ? (msg.sessions as RemoteSessionLike[]) : [])
       }
     }
     window.addEventListener('message', onMsg)
@@ -1684,22 +1675,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     () => [...floorLocalAgents, ...floorRemoteAgents],
     [floorLocalAgents, floorRemoteAgents]
   )
-  // PREVIOUS (crashed/ended, resumable) sessions from the durable index, adapted
-  // through the SAME card path as live agents. Folded into the Sessions surface ONLY
-  // (never the live feed): merged with the live roster, deduped by sessionId so a
-  // LIVE row always wins over an index row (mergeSessionAgents). A one-shot fetch —
-  // no timer — seeds `previousSessions` when the Sessions center first opens.
-  const previousFloorAgents = useMemo(
-    // Keep ONLY genuinely-inactive rows: the picker fetch also returns currently-live
-    // sessions (state 'running'/'idle'), which must not enter the Sessions surface as
-    // Previous duplicates — the live roster already carries them (PHNX-3593).
-    () => (previousSessions ? adaptRemote(previousSessions, pinned, localHostName, projectRules).filter(isPrevious) : []),
-    [previousSessions, pinned, localHostName, projectRules]
-  )
-  const sessionsAgents = useMemo(
-    () => mergeSessionAgents(floorAgents, previousFloorAgents),
-    [floorAgents, previousFloorAgents]
-  )
+  // The canonical watch stream already carries recoverable/inactive rows. Sessions
+  // uses that one projection directly; no second history sweep or dedupe can drift.
+  const sessionsAgents = floorAgents
   const floorTickets = useMemo(() => adaptTickets(unifiedTasks), [unifiedTasks])
   // Ticket id -> agents carrying it: the backlog's in-flight chips and the ticket
   // detail's "In flight" block + double-dispatch guard all join on this.
@@ -1751,11 +1729,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   useEffect(() => {
     if (center === 'recap' && recapSessions === null) postMessage({ type: 'fetchRecap' })
   }, [center, recapSessions])
-  // One-shot fleet sweep for resumable PREVIOUS sessions the first time the Sessions
-  // center opens (thin-client rule: a user-triggered verb, never a poll).
-  useEffect(() => {
-    if (center === 'sessions' && previousSessions === null) postMessage({ type: 'fetchPreviousSessions' })
-  }, [center, previousSessions])
   const recapDays = useMemo(() => {
     if (!recapSessions) return []
     const liveIds = new Set(floorAgents.map((a) => a.sessionId).filter((id): id is string => !!id))
@@ -2192,28 +2165,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     // device-targeted — never the local-only focusSession candidate lookup, which
     // can't see a session recovered from a remote fleet device (PHNX-3593). The host
     // rebuilds the command from the id + device, so this only picks the session.
-    const previousMessage = previousResumeMessage(a)
-    if (previousMessage) {
-      postMessage(previousMessage)
-      return
-    }
-    if (a.reply.kind === 'terminal' && a.reply.terminalId) {
-      postMessage({ type: 'focusTerminal', terminalId: a.reply.terminalId })
-      return
-    }
-    if (a.reply.kind === 'tmux' && a.reply.muxTarget) {
-      postMessage({
-        type: 'focusRemoteSession',
-        host: a.reply.host,
-        muxSocket: a.reply.muxSocket,
-        muxTarget: a.reply.muxTarget,
-        sessionId: a.reply.sessionId ?? a.sessionId,
-        label: a.name,
-      })
-      return
-    }
-    if (a.sessionId) {
-      postMessage({ type: 'focusSession', sessionId: a.sessionId, host: a.host })
+    const message = terminalOpenMessageForAgent(a)
+    if (message) {
+      postMessage(message)
       return
     }
     const u = unifiedById.get(a.id)

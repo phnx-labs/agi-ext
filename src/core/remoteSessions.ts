@@ -855,6 +855,31 @@ export function buildRecoveryResumeCommand(sessionId: string, device?: string): 
   return parts.join(' ');
 }
 
+/**
+ * Move a historical session to another device through the CLI's existing
+ * transcript-transport seam, then focus the confirmed-live target pane. Direct
+ * `sessions resume --device <different-device>` is intentionally invalid: that
+ * flag names the transcript's origin. When the origin is remote, migration must
+ * execute there because that is where the indexed transcript lives.
+ */
+export function buildRecoveryMigrationCommand(
+  sessionId: string,
+  sourceDevice: string,
+  targetDevice: string,
+  sourceIsLocal = false,
+): string {
+  const migrate = [
+    'agents', 'sessions', 'migrate', shellQuoteArg(sessionId),
+    '--device', shellQuoteArg(targetDevice), '--mode', 'resume', '--keep',
+  ];
+  const source = sourceDevice.trim();
+  const migrateCommand = source && !sourceIsLocal
+    ? ['agents', 'ssh', shellQuoteArg(source), ...migrate].join(' ')
+    : migrate.join(' ');
+  const focus = ['agents', 'sessions', 'focus', shellQuoteArg(sessionId), '--device', shellQuoteArg(targetDevice)].join(' ');
+  return `${migrateCommand} && ${focus}`;
+}
+
 /** Map a recent (historical, non-active) SessionMeta onto RemoteSession. Recent =
  *  not live, so phase is always 'idle'; lastActivity drives the "…ago" stamp. */
 export function normalizeRecentSession(
