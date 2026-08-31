@@ -95,11 +95,22 @@ CLI session stream, so switching tabs does not start a transcript scan or poll.
 
 ### Fleet
 
-The dashboard's mission control. Fleet opens on the session list with just
-**All · Active · Favorites**, search, sort, and a header-level **Dispatch** action.
-The Previous band defaults to at most 50 sessions active in the last seven days
-and pages older history ten rows at a time. Its count distinguishes shown rows
-from total history, and bulk Resume applies only to the shown resumable rows.
+The dashboard's mission control. Fleet opens on the session list with
+**All · Active · Idle · Blocked · Favorites**, search, sort, and a header-level
+**Dispatch** action. The status chips and Group by Status share the same
+CLI-projected phase/attention taxonomy; grouping by Project, Device, Status, or
+None re-buckets the entire list, including Previous sessions. Previous history
+defaults to at most 50 sessions active in the last seven days and pages older
+history ten rows at a time; bulk Resume applies only to shown resumable rows.
+
+Each row uses the harness logo without repeating its name. Expanding it shows the
+CLI-indexed full first user turn as **Your request** (with **See more** for long
+requests), or labels an older CLI's topic fallback honestly as **Request summary**.
+Ended-session timing reads “Ran … · ended … ago” with the absolute range on hover,
+and names its device once as “Runs on …”. Ticket, PR, and repository pills navigate;
+branch pills copy. The single compact **Resume** targets the owning device, while
+right-clicking it offers **Resume on a different device…** from the already-loaded
+fleet roster.
 The left navigation and right detail panel start closed; selecting a session opens
 its detail in place. Background/headless runs remain hidden by default in the agent
 feed; use the **Background** toggle when you need them.
