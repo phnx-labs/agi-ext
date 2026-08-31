@@ -157,6 +157,10 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-dsec { display: flex; flex-direction: column; gap: 6px; }
 .sw-sessions .sx-dcap { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--ds-text-muted, #5c6675); }
 .sw-sessions .sx-ask { color: var(--ds-text-dim, #8b94a6); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; padding: 8px 11px; border-left: 2px solid var(--ds-border, #223); background: var(--ds-bg-sunken, #0b101c); border-radius: 0 7px 7px 0; max-height: 140px; overflow-y: auto; }
+.sw-sessions .sx-ask.collapsed { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+.sw-sessions .sx-ask.expanded { max-height: 360px; }
+.sw-sessions .sx-see-more { align-self: flex-start; padding: 0; border: 0; background: transparent; color: var(--brand, #a3e635); font-size: 11px; cursor: pointer; }
+.sw-sessions .sx-see-more:hover { text-decoration: underline; }
 .sw-sessions .sx-goal { color: var(--ds-text-muted, #5c6675); font-size: 12px; font-style: italic; }
 .sw-sessions .sx-goal b { color: var(--ds-text-dim, #8b94a6); font-style: normal; }
 .sw-sessions .sx-endedmeta { color: var(--ds-text-dim, #8b94a6); font-size: 12px; padding: 6px 10px; border-left: 2px solid var(--ds-border, #223); background: var(--ds-bg-sunken, #0b101c); border-radius: 0 7px 7px 0; }

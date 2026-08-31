@@ -290,6 +290,11 @@ export interface RemoteSession {
   /** The session's task/prompt line from the CLI payload (`topic`/`label`). Shown
    *  on the card when Tier-1 has no enriched activity yet (remote hosts). */
   topic: string;
+  /** CLI-authored recap title. This is the row header, never the request body. */
+  title: string;
+  /** Full genuine first user turn from the durable session index. Empty on an
+   *  older CLI, where the UI labels its topic fallback as a summary. */
+  firstUserMessage: string;
   /** User-set session label from the CLI payload. Kept separate from topic so UI
    *  card headers can prefer explicit names over inferred task lines. */
   label: string;
@@ -395,6 +400,7 @@ export interface RawActiveSession {
   cwd?: string;
   label?: string;
   topic?: string;
+  title?: string;
   /** Compatibility task fields emitted by older/alternate session producers. */
   prompt?: string;
   firstUserMessage?: string;
@@ -751,6 +757,8 @@ export function normalizeActiveSession(
     // startedAtMs — start time is not activity.
     lastActivityMs: typeof raw.lastActivityMs === 'number' ? raw.lastActivityMs : 0,
     topic: asStr(raw.topic) || asStr(raw.prompt) || asStr(raw.firstUserMessage) || asStr(raw.label),
+    title: asStr(raw.title),
+    firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
     sessionFile: asStr(raw.sessionFile),
     context: asStr(raw.context),
@@ -793,6 +801,8 @@ export interface RawRecentSession {
   prUrl?: string;
   prNumber?: number;
   topic?: string;
+  title?: string;
+  firstUserMessage?: string;
   label?: string;
   machine?: string;
   // SessionPickerJsonRow lifecycle/recovery fields (agents sessions --json): the
@@ -893,6 +903,8 @@ export function normalizeRecentSession(
     startedAtMs,
     lastActivityMs,
     topic: asStr(raw.topic) || asStr(raw.label),
+    title: asStr(raw.title),
+    firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
     sessionFile: '',
     context: 'recent',

@@ -180,6 +180,9 @@ export interface RemoteSessionLike {
   /** User-set session label from `agents run --name` / session metadata. */
   label?: string
   topic: string
+  /** CLI-authored recap title and full first user turn from SessionWatchRow. */
+  title?: string
+  firstUserMessage?: string
   context: string
   cloudTaskId: string
   cloudProvider: string
@@ -472,6 +475,7 @@ export function toFloorAgentFromUnified(
     (!!u.sessionId && r.sessionId === u.sessionId) || (!!u.terminal?.id && r.terminalId === u.terminal.id))
   if (projected) {
     const floor = toFloorAgentFromRemote({ ...projected, host: 'this-mac' }, opts.pinned, opts.localHostName, opts.projectRules)
+    const firstUserMessage = firstNonEmptyStr(projected.firstUserMessage, u.terminal?.firstUserMessage, u.agent?.prompt)
     return {
       ...floor,
       id: u.id,
@@ -485,6 +489,8 @@ export function toFloorAgentFromUnified(
       tools: u.toolCalls,
       recent: u.terminal?.recentToolCalls ?? [],
       recentEvents: u.terminal?.recentEvents ?? [],
+      firstUserMessage: firstUserMessage || undefined,
+      prompt: firstUserMessage || floor.prompt,
     }
   }
   const ci = u.ci ?? null
@@ -561,6 +567,7 @@ export function toFloorAgentFromUnified(
     plans,
     resp,
     prompt,
+    firstUserMessage: prompt || undefined,
     // The Sessions surface's row title: the task line, falling back to the tab name.
     topic: prompt || u.displayName,
     messages,
@@ -688,6 +695,8 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     lastActivityMs: r.lastActivityMs && r.lastActivityMs > 0 ? r.lastActivityMs : (r.startedAtMs > 0 ? r.startedAtMs : 0),
     startedAtMs: r.startedAtMs || 0,
     topic: r.topic || r.label || undefined,
+    title: r.title || undefined,
+    firstUserMessage: r.firstUserMessage || undefined,
     files: 0,
     tools: 0,
     needs,
@@ -706,9 +715,9 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     worktreePath,
     plans,
     resp,
-    // Remote (Tier-1) has no first-user-message enrichment yet — the session's task line
-    // (topic) is the closest durable anchor for the original task.
-    prompt: taskAnchor,
+    // The full first turn is indexed by the CLI. Older rows fall back to the task
+    // anchor, which ExpandedCard labels as a summary rather than pretending it is exact.
+    prompt: firstNonEmptyStr(r.firstUserMessage, taskAnchor),
     // Prefer the last few assistant turns from the CLI (context feed); fall back to the
     // single last response when the CLI supplied no tail.
     messages: r.tail && r.tail.length ? r.tail : r.lastResponse ? [r.lastResponse] : [],

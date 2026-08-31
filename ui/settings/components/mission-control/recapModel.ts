@@ -472,8 +472,8 @@ export function sessionRowView(
   } as SessionRecapFields & FloorAgent
 
   const rawPrompt = firstNonEmpty(
-    overlay.userPromptClean,
     overlay.firstUserMessage,
+    overlay.userPromptClean,
     agent.prompt,
     agent.topic,
   )

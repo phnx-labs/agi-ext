@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { isPrevious, todoProgress, type FloorAgent } from '../floorModel'
 import type { SessionRowView } from '../recapModel'
 import { RowLinks } from './RowLinks'
@@ -47,7 +47,12 @@ export interface ExpandedCardProps {
 }
 
 export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
-  const ask = row.you.text || a.prompt || ''
+  const [showFullRequest, setShowFullRequest] = useState(false)
+  const hasRealRequest = Boolean(a.firstUserMessage?.trim())
+  // Preserve the genuine first turn byte-for-byte for the expanded view. Trimming
+  // here would make the UI's “full” request subtly incomplete.
+  const ask = hasRealRequest ? a.firstUserMessage! : (row.you.text || a.prompt || '')
+  const requestIsLong = ask.length > 320 || ask.split(/\r?\n/).length > 5
   const segments = activitySegments(a)
   const todos = a.todos ?? []
   const { done, total } = todoProgress(todos)
@@ -58,8 +63,16 @@ export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
   return (
     <div className="sx-detail" onClick={(e) => e.stopPropagation()}>
       <div className="sx-dsec">
-        <div className="sx-dcap">The ask</div>
-        {ask && <div className="sx-ask">{ask}</div>}
+        <div className="sx-dcap">{hasRealRequest ? 'Your request' : 'Request summary'}</div>
+        {ask && <div className={`sx-ask${requestIsLong ? (showFullRequest ? ' expanded' : ' collapsed') : ''}`}>{ask}</div>}
+        {requestIsLong && (
+          <button
+            type="button"
+            className="sx-see-more"
+            aria-expanded={showFullRequest}
+            onClick={(event) => { event.stopPropagation(); setShowFullRequest((shown) => !shown) }}
+          >{showFullRequest ? 'See less' : 'See more'}</button>
+        )}
         {row.title && row.title.trim() && row.title.trim() !== ask.trim() && (
           <div className="sx-goal">{row.title}</div>
         )}

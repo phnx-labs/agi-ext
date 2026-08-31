@@ -185,6 +185,8 @@ export interface FloorAgent {
   resp: string           // last response text (Anthropic Agent-view style)
   prompt?: string        // the ORIGINAL task (first user message / dispatch prompt / topic); anchors the card, distinct from the last message
   topic?: string         // the session's task/label line from the roster (topic/label/prompt). The Sessions surface's row title + search field. Falls back to prompt/name when absent.
+  title?: string         // CLI-authored recap title for the row header; distinct from the request body.
+  firstUserMessage?: string // Full genuine first user turn from the CLI index. Undefined means the UI must label its fallback honestly.
   messages: string[]     // the last few assistant messages (from the CLI's last_messages window); [] when none. Drives the detail-pane Activity feed.
   question: StructuredQuestion | null
   /** The CLI attention row's kind, carried verbatim from the stream. Drives the
