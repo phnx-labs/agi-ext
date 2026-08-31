@@ -396,12 +396,13 @@ async function registerAgentTerminal(
     terminalId: string;
     agentConfig: Omit<AgentConfig, 'count'>;
     agentKey?: string;
+    recoveryAgent?: string;
     sessionId?: string | null;
     host?: string | null;
     pinnedVersion?: string | null;
   }
 ): Promise<void> {
-  const { terminalId, agentConfig, agentKey, sessionId, host, pinnedVersion } = args;
+  const { terminalId, agentConfig, agentKey, recoveryAgent, sessionId, host, pinnedVersion } = args;
   const pid = await terminal.processId;
   terminals.register(terminal, terminalId, agentConfig, pid, context);
   readiness.registerTerminal(terminal);
@@ -409,6 +410,9 @@ async function registerAgentTerminal(
   const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
   if (resumeKey) {
     terminals.setAgentType(terminal, resumeKey);
+  }
+  if (recoveryAgent) {
+    terminals.setRecoveryAgent(terminal, recoveryAgent);
   }
   // Stamp the host BEFORE the label poller starts: the poller reads the entry
   // to decide whether to look the session up locally or over `--device`.
@@ -2649,6 +2653,12 @@ function agentKeyFromSession(agent: string): SessionAgentType | null {
   return BUILT_IN_AGENTS.some(a => a.key === agent) ? (agent as SessionAgentType) : null;
 }
 
+const RECOVERY_AGENT_PREFIX = 'rx';
+
+function recoveryAgentTitle(agent: string): string {
+  return agent.trim().replace(/[^A-Za-z0-9._-]+/g, ' ').slice(0, 24) || 'Agent';
+}
+
 /** One resumed session, opened as its own editor tab wearing that agent's icon. */
 export async function openAgentSessionTerminal(
   context: vscode.ExtensionContext,
@@ -2676,10 +2686,10 @@ export async function openAgentSessionTerminal(
     return false;
   }
 
-  const recoveryTitle = session.agent.trim().replace(/[^A-Za-z0-9._-]+/g, ' ').slice(0, 24) || 'Agent';
+  const recoveryTitle = recoveryAgentTitle(session.agent);
   const agentConfig = builtIn
     ? createAgentConfig(context.extensionPath, builtIn.title, builtIn.command, builtIn.icon, builtIn.prefix)
-    : createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', 'ag');
+    : createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', RECOVERY_AGENT_PREFIX);
 
   // A resumed session belongs in ITS OWN directory, not whatever workspace this
   // window happens to have open — batch resume routinely spans several repos.
@@ -2700,7 +2710,8 @@ export async function openAgentSessionTerminal(
   await registerAgentTerminal(terminal, context, {
     terminalId,
     agentConfig,
-    agentKey: agentKey || session.agent,
+    agentKey: agentKey || undefined,
+    recoveryAgent: agentKey ? undefined : session.agent,
     sessionId: session.id,
     host: session.host,
     pinnedVersion: session.version,
@@ -5158,9 +5169,19 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     let agentConfig: Omit<import('./agents.vscode').AgentConfig, 'count'>;
     let displayTitle: string;
 
+    const isOpaqueRecovery = session.prefix.toLowerCase() === RECOVERY_AGENT_PREFIX && Boolean(session.recoveryAgent);
     if (session.prefix.toLowerCase() === 'sh') {
       agentConfig = createAgentConfig(context.extensionPath, 'SH', '', 'agents.png', 'sh');
       displayTitle = 'SH';
+    } else if (isOpaqueRecovery) {
+      displayTitle = recoveryAgentTitle(session.recoveryAgent!);
+      agentConfig = createAgentConfig(
+        context.extensionPath,
+        displayTitle,
+        'agents',
+        'agents.png',
+        RECOVERY_AGENT_PREFIX,
+      );
     } else {
       const def = getBuiltInByPrefix(session.prefix);
       if (!def) {
@@ -5202,26 +5223,32 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     }
 
     // Restore session tracking metadata if present
-    if (session.sessionId && session.agentType) {
+    if (session.sessionId && (session.agentType || session.recoveryAgent)) {
       terminals.setSessionId(terminal, session.sessionId);
-      terminals.setAgentType(terminal, session.agentType as SessionAgentType);
+      if (session.agentType) {
+        terminals.setAgentType(terminal, session.agentType as SessionAgentType);
+      } else if (session.recoveryAgent) {
+        terminals.setRecoveryAgent(terminal, session.recoveryAgent);
+      }
       // Stamp the host before the poller starts so a restored offloaded tab
       // keeps resolving its label (and its resume) on the machine that owns it.
       if (session.host) {
         terminals.setHost(terminal, session.host);
       }
-      startAutoLabelPollerForTerminal(terminal, context);
+      if (session.agentType) {
+        startAutoLabelPollerForTerminal(terminal, context);
+      }
 
       // Actually resume the session by sending the resume command. Any known
       // harness resumes here, not just the prewarm five (#1747) — buildVersioned-
       // ResumeCommand routes non-prewarm agents through `agents run --resume`.
-      if (agentKeyFromSession(session.agentType)) {
-        const resumeCmd = buildVersionedResumeCommand(
-          session.agentType,
-          session.sessionId,
-          session.version,
-          session.host
-        );
+      const restoredAgentKey = session.agentType ? agentKeyFromSession(session.agentType) : null;
+      const resumeCmd = session.recoveryAgent
+        ? buildRecoveryResumeCommand(session.sessionId, session.host)
+        : restoredAgentKey
+          ? buildVersionedResumeCommand(restoredAgentKey, session.sessionId, session.version, session.host)
+          : null;
+      if (resumeCmd) {
         try {
           await readiness.waitFor(terminal, 'promptReady');
         } catch (err) {
@@ -5232,11 +5259,13 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
         } else {
           terminal.sendText(resumeCmd);
         }
-        readiness.armAgentReady(terminal, {
-          agentKey: session.agentType,
-          sessionId: session.sessionId,
-          cwd: workspacePath,
-        });
+        if (restoredAgentKey) {
+          readiness.armAgentReady(terminal, {
+            agentKey: restoredAgentKey,
+            sessionId: session.sessionId,
+            cwd: workspacePath,
+          });
+        }
       }
     }
   };

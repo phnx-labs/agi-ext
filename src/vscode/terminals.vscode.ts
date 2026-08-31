@@ -91,6 +91,7 @@ export interface EditorTerminal {
                             // machine, so every by-session lookup (label, preview, resume) has to
                             // route through `--device <name>` instead of the local filesystem.
   agentType?: SessionAgentType; // Agent type for session operations
+  recoveryAgent?: string;   // Opaque CLI harness resumed through the canonical recovery verb.
   version?: string;         // Pinned agent version ("2.1.113"); undefined when unknown
   account?: string;         // Resolved account email for this terminal when known
   statusVersion?: string;   // Display-only version from agents-cli metadata
@@ -461,6 +462,16 @@ export function setAgentType(
 
   } else {
     console.error(`[TERMINALS] FAILED to set agentType - terminal "${terminal.name}" not found in registry.`);
+  }
+}
+
+export function setRecoveryAgent(terminal: vscode.Terminal, recoveryAgent: string): void {
+  const entry = getByTerminal(terminal);
+  if (entry) {
+    entry.recoveryAgent = recoveryAgent;
+    schedulePersist();
+  } else {
+    console.error(`[TERMINALS] FAILED to set recoveryAgent - terminal "${terminal.name}" not found in registry.`);
   }
 }
 
@@ -1295,6 +1306,7 @@ export function buildPersistedSessions(): sessionsPersist.PersistedSession[] {
       label: entry.label,
       autoLabel: entry.autoLabel,
       agentType: entry.agentType,
+      recoveryAgent: entry.recoveryAgent,
       version: entry.version,
       createdAt: entry.createdAt,
       agentPid: entry.pid,

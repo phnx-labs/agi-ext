@@ -106,6 +106,25 @@ describe('automatic-label persistence', () => {
       }),
     ]);
   });
+
+  test('buildPersistedSessions keeps an opaque recovery harness separate from built-in identity', () => {
+    const term = fakeTerm('Muse recovery');
+    t.register(term, 'RX-opaque', { ...fakeAgentConfig(), title: 'muse', prefix: 'rx' }, undefined);
+    t.setSessionId(term, 'session-muse');
+    t.setHost(term, 'yosemite-m3');
+    t.setRecoveryAgent(term, 'muse');
+
+    expect(t.buildPersistedSessions()).toEqual([
+      expect.objectContaining({
+        terminalId: 'RX-opaque',
+        prefix: 'rx',
+        sessionId: 'session-muse',
+        host: 'yosemite-m3',
+        agentType: undefined,
+        recoveryAgent: 'muse',
+      }),
+    ]);
+  });
 });
 
 describe('reload scan ignores terminal editor ghosts', () => {
