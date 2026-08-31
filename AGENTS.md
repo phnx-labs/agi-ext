@@ -40,6 +40,12 @@ presentation layer. Concretely:
 4. **Fail loud.** A missing CLI noun is an upgrade error, never a filesystem
    fallback.
 
+The Sessions dashboard follows that same stream contract. Its full first-user
+request comes from `SessionWatchRow.firstUserMessage`; status filters and grouping
+use only the projected phase/attention fields; alternate-device Resume reuses the
+already-loaded device roster and the row's one-shot recovery verb. Never fill any
+of these with a transcript read, lifecycle probe, or a second device/session fetch.
+
 The `agentsPanel.terminal` activity-bar view is the focused session's work card,
 not a command catalog or tracker browser. It renders request/attachments,
 runtime and tokens, checklist progress, artifacts/delivery links, delegated-team

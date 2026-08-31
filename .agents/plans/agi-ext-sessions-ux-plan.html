@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>AGI EXT — Sessions view UX overhaul: real prompts, readable timing, links that go somewhere, working grouping</title>
+<style>
+:root{--font-body:Inter,Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-display:Inter,Inter,system-ui,sans-serif;--font-mono:"JetBrains Mono","JetBrains Mono","SFMono-Regular",Consolas,monospace;}
+@page{margin:24px}
+:root{color-scheme:light;--bg:#faf9f6;--surface:#ffffff;--surface-alt:#f2f4f0;--line:#e2e6df;--text:#1a1c1a;--muted:#5c655c;--accent:#4d7c0f;--accent-alt:#0e7490;--warn:#b45309;--danger:#dc2626;--artifact-fg:#1a1c1a;--artifact-muted:#5c655c;--artifact-accent:#4d7c0f;--content-width:980px;--page-padding:24px;--mobile-page-padding:16px;--hero-top:40px;--hero-bottom:28px;--section-spacing:36px;--figure-spacing:22px;--panel-padding:16px;--footer-spacing:64px;--print-margin:24px;--code:#0c0f0d;--code-text:#e7ece8;--radius:10px}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){color-scheme:dark;--bg:#0a0a0a;--surface:#111312;--surface-alt:#161a18;--line:#26302a;--text:#e7ece8;--muted:#8b938c;--accent:#a3e635;--accent-alt:#5ad6c0;--warn:#f5c451;--danger:#ff6b6b;--artifact-fg:#e7ece8;--artifact-muted:#8b938c;--artifact-accent:#a3e635;}}
+:root[data-theme="light"]{color-scheme:light;--bg:#faf9f6;--surface:#ffffff;--surface-alt:#f2f4f0;--line:#e2e6df;--text:#1a1c1a;--muted:#5c655c;--accent:#4d7c0f;--accent-alt:#0e7490;--warn:#b45309;--danger:#dc2626;--artifact-fg:#1a1c1a;--artifact-muted:#5c655c;--artifact-accent:#4d7c0f;}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0a0a0a;--surface:#111312;--surface-alt:#161a18;--line:#26302a;--text:#e7ece8;--muted:#8b938c;--accent:#a3e635;--accent-alt:#5ad6c0;--warn:#f5c451;--danger:#ff6b6b;--artifact-fg:#e7ece8;--artifact-muted:#8b938c;--artifact-accent:#a3e635;}
+@media print{:root,:root[data-theme="light"],:root[data-theme="dark"]{color-scheme:light;--bg:#faf9f6;--surface:#ffffff;--surface-alt:#f2f4f0;--line:#e2e6df;--text:#1a1c1a;--muted:#5c655c;--accent:#4d7c0f;--accent-alt:#0e7490;--warn:#b45309;--danger:#dc2626;--artifact-fg:#1a1c1a;--artifact-muted:#5c655c;--artifact-accent:#4d7c0f;}}
+.reader-highlight{background:color-mix(in srgb,var(--warn) 38%,var(--bg));color:inherit;border-radius:2px;box-decoration-break:clone;-webkit-box-decoration-break:clone;cursor:pointer}.reader-highlight:hover{background:color-mix(in srgb,var(--warn) 55%,var(--bg))}.reload-chip{display:inline-flex;align-items:center;height:30px;margin-right:8px;padding:0 12px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent);font:500 12px/1 var(--font-mono);cursor:pointer}.reload-chip[hidden]{display:none}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);line-height:1.6;-webkit-font-smoothing:antialiased;transition:background-color .15s ease,color .15s ease}main{width:100%;max-width:var(--content-width);min-width:0;margin:0 auto;padding:24px var(--page-padding) 80px}.document-header{display:flex;align-items:center;justify-content:flex-end;min-height:42px;border-bottom:1px solid var(--line);color:var(--muted);font-family:var(--font-mono);font-size:12px}.header-label{min-width:0;margin-right:auto;padding-right:12px;overflow-wrap:anywhere;color:var(--text);font-weight:650}.theme-toggle{display:inline-flex;flex:0 0 auto;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font:500 12px/1 var(--font-mono);cursor:pointer}.theme-toggle:hover{color:var(--accent);border-color:var(--accent)}.theme-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.hero{padding:var(--hero-top) 0 var(--hero-bottom);border-bottom:1px solid var(--line)}.kicker{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);font-weight:500}.kicker-part{color:var(--accent)}.kicker-separator{color:var(--muted);padding:0 2px}.status-badge{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);font-family:var(--font-mono);font-size:10.5px;font-weight:650;letter-spacing:.1em;text-transform:uppercase;line-height:1}.status-badge.status-implementing,.status-badge.status-in-progress,.status-badge.status-review,.status-badge.status-done,.status-badge.status-complete{border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}.hero h1{font-family:var(--font-display);font-size:clamp(30px,4vw,44px);line-height:1.1;margin:12px 0 14px;letter-spacing:-.01em}.summary{max-width:760px;color:var(--muted);font-size:17px;margin:0}.meta{display:grid;gap:14px;margin-top:20px}.facts-line{margin:0;color:var(--muted);font-family:var(--font-mono);font-size:12.5px;line-height:1.7}.meta-block{display:grid;gap:8px}.meta-label{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:500}.meta-row{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0}.chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 11px;color:var(--muted);font-family:var(--font-mono);font-size:11.5px;line-height:1.5}.chip-value{color:var(--text);overflow-wrap:anywhere}.chip-icon{display:inline-block;width:12px;height:12px;margin-right:5px;vertical-align:-1.5px;fill:currentColor;flex:0 0 auto}.chip-favicon{display:inline-block;width:12px;height:12px;margin-right:5px;vertical-align:-1.5px;border-radius:2px;object-fit:contain;flex:0 0 auto}.chip-value a{color:inherit;text-decoration:none}.chip-value a:hover{text-decoration:underline}.provenance-line{margin:0;color:var(--muted);font-family:var(--font-mono);font-size:12.5px;line-height:1.7}.provenance-line a{color:var(--accent-alt);text-decoration:none}.provenance-line a:hover{text-decoration:underline}.provenance-part{color:var(--muted)}.meta-sep{margin:0 7px;opacity:.45}.toc{display:grid;gap:4px;margin:24px 0 8px;font-family:var(--font-mono);font-size:13px}.toc-item{display:block;padding:2px 0 2px 10px;border-left:2px solid transparent;color:var(--muted);text-decoration:none;overflow-wrap:anywhere}.toc-item.toc-sub{padding-left:24px;font-size:.92em;opacity:.85}.toc-item:hover{color:var(--accent)}.toc-item.is-active{color:var(--accent);border-left-color:var(--accent)}.toc-item.is-active .toc-index{opacity:1}@media (min-width:1380px){.toc{position:fixed;top:88px;left:max(20px,calc(50% - var(--content-width)/2 - 236px));width:212px;max-height:calc(100vh - 132px);overflow-y:auto;margin:0;z-index:5;scrollbar-width:thin}.toc::-webkit-scrollbar{width:6px}.toc::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}}@media (max-width:1379px){.toc-item.toc-sub{display:none}}.code-diff{margin:var(--figure-spacing) 0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--code)}.code-diff-pre{margin:0;padding:10px 0;background:none;border:none;border-radius:0;overflow-x:auto;font-family:var(--font-mono);font-size:12.5px;line-height:1.55;color:var(--code-text)}.cd-line{display:block;white-space:pre;padding:0 14px}.cd-sign{display:inline-block;width:1.4ch;color:var(--muted);user-select:none}.cd-add{background:color-mix(in srgb,var(--accent) 15%,transparent)}.cd-add .cd-sign{color:var(--accent)}.cd-del{background:color-mix(in srgb,var(--danger) 15%,transparent)}.cd-del .cd-sign{color:var(--danger)}.cd-hunk,.cd-meta{color:var(--muted);opacity:.8}.code-diff>summary{list-style:none;cursor:pointer;padding:8px 14px;font-family:var(--font-mono);font-size:12px;color:var(--code-text);background:color-mix(in srgb,var(--code-text) 8%,var(--code));border-bottom:1px solid transparent;user-select:none}.code-diff[open]>summary{border-bottom-color:color-mix(in srgb,var(--code-text) 15%,transparent)}.code-diff>summary::-webkit-details-marker{display:none}.code-diff>summary::before{content:"\25B8";display:inline-block;margin-right:7px;color:color-mix(in srgb,var(--code-text) 55%,transparent);font-size:10px;transition:transform .12s ease}.code-diff[open]>summary::before{transform:rotate(90deg)}.checklist{margin:var(--figure-spacing) 0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:var(--panel-padding)}.checklist-head{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px}.checklist-items{list-style:none;margin:0;padding:0;display:grid;gap:7px}.cl-item{display:flex;align-items:baseline;gap:9px}.cl-box{flex:0 0 auto;font-family:var(--font-mono);font-size:.95em}.cl-done .cl-box{color:var(--accent)}.cl-todo .cl-box{color:var(--muted)}.cl-doing .cl-box{color:var(--warn)}.cl-done .cl-text{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}.toc a{color:var(--muted);text-decoration:none}.toc a:hover{color:var(--accent)}.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.toc-index{color:var(--accent);font-family:var(--font-mono);font-size:.9em}.artifact-body{min-width:0;padding-top:18px;counter-reset:section}h2{font-size:24px;margin:var(--section-spacing) 0 12px;line-height:1.2;letter-spacing:-.01em}.artifact-body>h2{counter-increment:section}.artifact-body>h2::before{content:counter(section,decimal-leading-zero);font-family:var(--font-mono);font-size:.62em;color:var(--accent);margin-right:10px;opacity:.85}h3{font-size:17px;margin:calc(var(--section-spacing) * .78) 0 10px}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.link-pill{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface-alt);color:var(--text);font-size:.92em;line-height:1.35;text-decoration:none;vertical-align:baseline;transition:border-color .12s ease,color .12s ease,background-color .12s ease}.link-pill:hover{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface-alt));text-decoration:none}.link-pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.link-pill-icon{width:12px;height:12px;flex:0 0 auto;fill:currentColor;opacity:.9}.link-pill-favicon{display:inline-block;width:12px;height:12px;flex:0 0 auto;border-radius:3px;object-fit:contain}.link-pill-text{min-width:0;overflow-wrap:anywhere}.link-pill code{background:none;border:none;padding:0;color:inherit}td .link-pill,li .link-pill{vertical-align:-1px}p,li,dd,figcaption{overflow-wrap:anywhere}pre{background:var(--code);color:var(--code-text);padding:var(--panel-padding);border-radius:12px;overflow:auto;border:1px solid var(--line)}code{font-family:var(--font-mono);font-size:.88em;background:var(--surface-alt);border:1px solid var(--line);border-radius:5px;padding:1.5px 6px;color:var(--accent-alt)}pre code{background:none;border:none;padding:0;color:inherit}table{width:100%;border-collapse:collapse;margin:18px 0}th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}th{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}blockquote{border-left:3px solid var(--accent);padding-left:var(--panel-padding);color:var(--muted);margin-left:0}img{display:block;max-width:100%;height:auto}svg{max-width:100%;height:auto}.artifact-body>p>img{margin:var(--figure-spacing) auto}.artifact-grid{display:grid;gap:var(--panel-padding);margin:var(--figure-spacing) 0}.artifact-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}.artifact-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}.artifact-panel,.artifact-stat{min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:var(--panel-padding)}.artifact-panel h3{margin:10px 0 8px;font-size:16px}.artifact-stat-value,.artifact-stat-label{display:block}.artifact-stat-value{color:var(--text);font-family:var(--font-display);font-size:24px;line-height:1.15}.artifact-stat-label{margin-top:6px;color:var(--muted);font-size:13px}.artifact-tag{display:inline-block;--tag-color:var(--muted);background:color-mix(in srgb,var(--tag-color) 12%,transparent);border:1px solid color-mix(in srgb,var(--tag-color) 30%,transparent);border-radius:6px;padding:2px 8px;color:var(--tag-color);font-family:var(--font-mono);font-size:11px;font-weight:600;text-transform:uppercase}.artifact-tag-accent{--tag-color:var(--accent)}.artifact-callout{margin:var(--figure-spacing) 0;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;background:var(--surface-alt);padding:var(--panel-padding)}.artifact-callout-warn{border-left-color:var(--warn)}.artifact-callout-danger{border-left-color:var(--danger)}.artifact-callout strong{color:var(--text)}.artifact-figure{margin:var(--figure-spacing) 0;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:var(--panel-padding);overflow-x:auto}.artifact-figure>img,.artifact-image{width:auto;max-width:100%;height:auto;margin:0 auto}.artifact-figure-diagram{background:#0e120f;border-color:#26302a}.artifact-diagram{display:block;width:100%;height:auto;margin:0 auto}.artifact-figure-tall{width:100%;max-width:394px;margin-left:auto;margin-right:auto}.artifact-figure figcaption{margin-top:12px;color:var(--muted);font-family:var(--font-mono);font-size:12px;text-align:center}.artifact-figure.artifact-figure-diagram figcaption{color:#8b938c}.artifact-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0;color:var(--muted);font-family:var(--font-mono);font-size:11.5px}.artifact-behavior{margin:var(--figure-spacing) 0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:grid;grid-template-columns:1fr 1fr}.artifact-behavior-panel{padding:var(--panel-padding);background:var(--surface)}.artifact-behavior-panel+.artifact-behavior-panel{border-left:1px solid var(--line)}.artifact-behavior-panel::before{display:block;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:500;margin-bottom:8px;content:""}.artifact-behavior-panel[data-state="current"]::before{content:"Current"}.artifact-behavior-panel[data-state="proposed"]{background:color-mix(in srgb,var(--accent) 6%,var(--surface))}.artifact-behavior-panel[data-state="proposed"]::before{content:"Proposed";color:var(--accent)}.document-footer{margin-top:var(--footer-spacing);padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-family:var(--font-mono);font-size:12px}.references-list{margin:0;padding-left:1.6em;display:grid;gap:7px}.reference-item{color:var(--muted)}.reference-item::marker{font-family:var(--font-mono);font-size:.86em;color:var(--muted)}.reference-link{display:inline-flex;align-items:center;gap:7px;max-width:100%;color:var(--text);text-decoration:none;overflow-wrap:anywhere}.reference-link:hover{color:var(--accent);text-decoration:none}.reference-link:hover .reference-text{text-decoration:underline}.reference-host{color:var(--muted);font-family:var(--font-mono);font-size:.82em}.view-count{color:var(--muted);font-family:var(--font-mono);font-size:11.5px;margin-right:12px;white-space:nowrap}
+.artifact-figure-diagram{--artifact-fg:#e7ece8;--artifact-muted:#b7c0b8;--artifact-accent:#a3e635}.artifact-figure.artifact-figure-diagram figcaption{color:var(--artifact-muted)}
+@media(max-width:720px){main{padding:32px var(--mobile-page-padding) 64px}.artifact-grid-2,.artifact-grid-3{grid-template-columns:1fr}.artifact-figure{padding:min(12px,var(--panel-padding))}.artifact-figure-wide .artifact-diagram{min-width:640px}.artifact-behavior{grid-template-columns:1fr}.artifact-behavior-panel+.artifact-behavior-panel{border-left:none;border-top:1px solid var(--line)}table{display:block;max-width:100%;overflow-x:auto}th,td{min-width:140px;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere}}
+@media print{body{transition:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}.toc,.theme-toggle,.view-count{display:none}.document-header-empty{display:none}main{max-width:none;padding:0}:root[data-pdf-layout="poster"] main{max-width:var(--content-width);margin:0 auto;padding:var(--print-margin)}.chip{background:var(--surface)}.chip-value{color:var(--text)}.provenance-line,.provenance-line a,.facts-line{color:var(--text)}.status-badge{color:var(--text);border-color:var(--line)}h2,h3{break-after:avoid-page}.artifact-figure,.artifact-grid,.artifact-panel,.artifact-stat,.artifact-callout,.artifact-behavior,pre,table,blockquote,.meta{break-inside:avoid}.artifact-figure-wide .artifact-diagram{min-width:0}.artifact-figure-tall{max-width:330px}pre{white-space:pre-wrap;overflow-wrap:anywhere}a{color:var(--text);text-decoration:underline}.link-pill{color:var(--text);text-decoration:none;background:var(--surface);border-color:var(--line);break-inside:avoid}}
+</style>
+
+</head>
+<body>
+<main>
+<header class="document-header document-header-empty"><span class="view-count" hidden></span><button class="reload-chip" type="button" hidden>Updated · Reload</button><button class="theme-toggle" type="button" aria-label="Toggle color theme" aria-pressed="false" title="Toggle color theme"><span aria-hidden="true">&#9680;</span> theme</button></header>
+
+<section class="hero">
+<div class="kicker"><span class="kicker-part">.agents</span><span class="kicker-separator" aria-hidden="true">&middot;</span><span class="kicker-part">plan</span><span class="status-badge status-draft">draft</span></div>
+<h1>AGI EXT — Sessions view UX overhaul: real prompts, readable timing, links that go somewhere, working grouping</h1>
+<p class="summary">A full pass over the Sessions row + expanded card + list controls, fixing ten user-flow problems: THE ASK shows a header not the real prompt; timing is raw and ambiguous; pills copy silently or do nothing; device is shown three times; Resume vs Resume-here is confusing; logo and name are both shown; the "Group Project" control does nothing. Adds real grouping (project / device / status) and a status model (active / idle / waiting / blocked).
+</p>
+<div class="meta" aria-label="Artifact metadata"><div class="meta-block meta-links"><div class="meta-label">Related</div><ul class="meta-row meta-row-links"><li class="chip"><span class="chip-value"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z"/></svg><a href="https://linear.app/" target="_blank" rel="noopener">linear.app</a></span></li></ul></div><p class="provenance-line" aria-label="Provenance"><span class="provenance-part"><a href="https://github.com/muqsitnawaz/.agents" target="_blank" rel="noopener">muqsitnawaz/.agents</a></span><span class="meta-sep" aria-hidden="true">·</span><span class="provenance-part">main</span><span class="meta-sep" aria-hidden="true">·</span><span class="provenance-part">Claude</span><span class="meta-sep" aria-hidden="true">·</span><span class="provenance-part">author</span><span class="meta-sep" aria-hidden="true">·</span><span class="provenance-part">fleet-worker</span><span class="meta-sep" aria-hidden="true">·</span><span class="provenance-part">2026-08-30</span></p></div>
+</section>
+<nav class="toc" aria-label="Artifact sections"><a class="toc-item" href="#focus-for-review" data-toc-for="focus-for-review"><span class="toc-index">01&nbsp;&middot;&nbsp;</span>Focus for review</a><a class="toc-item" href="#purpose" data-toc-for="purpose"><span class="toc-index">02&nbsp;&middot;&nbsp;</span>Purpose</a><a class="toc-item" href="#design" data-toc-for="design"><span class="toc-index">03&nbsp;&middot;&nbsp;</span>Design</a><a class="toc-item toc-sub" href="#the-expanded-card-before-vs-after-the-hero" data-toc-for="the-expanded-card-before-vs-after-the-hero">The expanded card — before vs after (the hero)</a><a class="toc-item toc-sub" href="#list-controls-grouping-before-vs-after" data-toc-for="list-controls-grouping-before-vs-after">List controls &amp; grouping — before vs after</a><a class="toc-item" href="#current-architecture" data-toc-for="current-architecture"><span class="toc-index">04&nbsp;&middot;&nbsp;</span>Current architecture</a><a class="toc-item" href="#interaction-spec-every-clickable-thing" data-toc-for="interaction-spec-every-clickable-thing"><span class="toc-index">05&nbsp;&middot;&nbsp;</span>Interaction spec — every clickable thing</a><a class="toc-item" href="#status-model" data-toc-for="status-model"><span class="toc-index">06&nbsp;&middot;&nbsp;</span>Status model</a><a class="toc-item" href="#timing-model" data-toc-for="timing-model"><span class="toc-index">07&nbsp;&middot;&nbsp;</span>Timing model</a><a class="toc-item" href="#proposed-changes" data-toc-for="proposed-changes"><span class="toc-index">08&nbsp;&middot;&nbsp;</span>Proposed Changes</a><a class="toc-item" href="#public-interface" data-toc-for="public-interface"><span class="toc-index">09&nbsp;&middot;&nbsp;</span>Public Interface</a><a class="toc-item" href="#plan" data-toc-for="plan"><span class="toc-index">10&nbsp;&middot;&nbsp;</span>Plan</a><a class="toc-item" href="#validation" data-toc-for="validation"><span class="toc-index">11&nbsp;&middot;&nbsp;</span>Validation</a><a class="toc-item" href="#risks" data-toc-for="risks"><span class="toc-index">12&nbsp;&middot;&nbsp;</span>Risks</a><a class="toc-item" href="#tracking" data-toc-for="tracking"><span class="toc-index">13&nbsp;&middot;&nbsp;</span>Tracking</a></nav><article class="artifact-body"><h2 id="focus-for-review">Focus for review</h2><p>The genuine decisions — everything else follows from these:</p>
+<ol>
+<li><strong>Status model.</strong> A session is <code>active</code> (working), <code>idle</code> (running but stopped —
+waiting on your input / a permission prompt), <code>waiting</code> (waiting on a tool/CI),
+<code>blocked</code> (needs a decision only you can make), <code>done</code>/<code>previous</code> (ended). Filter
+chips and Group-by-Status use this taxonomy. Confirm the words.</li>
+<li><strong>Grouping.</strong> Bring back a Group control that actually works: <strong>Project · Device ·
+Status · None</strong>. (Today "Group Project" is shown but the Previous list is flat.)</li>
+<li><strong>Resume semantics.</strong> A plain, compact <strong>Resume</strong> that reopens the session on the
+machine it ran on (not copied to your Mac). <strong>Right-click → "Resume on a different
+device…"</strong> for the power case. Drop the second "Resume here" and the oversized
+labeled button.</li>
+<li><strong>THE ASK source.</strong> The real first user message, not the recap header ("## Apps").
+If the stream only carries the header, this needs one new field on the CLI row
+(<code>firstUserMessage</code>) — a small CLI change, not a rebuild.</li>
+</ol>
+<h2 id="purpose">Purpose</h2><p>The ten problems from your testing — this table is the acceptance checklist:</p>
+<div class="artifact-callout artifact-callout-warn">
+Every one of these is a real user-flow break you hit, not a nitpick. The list below
+is the acceptance checklist for this change.
+</div><table>
+<thead>
+<tr>
+<th>#</th>
+<th>What's wrong today</th>
+<th>The fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>THE ASK shows <code>## Apps (Connectors)</code> — a header, not your prompt</td>
+<td>Show the real first user message, full, with <strong>See more</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>Last active 4:42 PM · started 4:42 PM</code> — raw, identical, no duration</td>
+<td><code>Ran 2m · ended 9m ago</code> (absolute on hover)</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>4m</code> on the row — ago? duration?</td>
+<td><code>9m ago</code> (always relative to last activity), labeled</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Pills copy silently / a repo pill click does nothing</td>
+<td>Ticket → Linear, PR → GitHub PR, repo → GitHub repo (real navigation, <code>↗</code>)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Device shown 3× (chip row, ended line, catch-up)</td>
+<td>Once — <code>Runs on yosemite-m3</code> in the card</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>Resume</code> vs <code>Resume here</code> — which? does it copy the session?</td>
+<td>One button <code>Resume on &lt;device&gt;</code> with a plain-language subtitle</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Logo <strong>and</strong> the agent name (<code>codex</code>, <code>kimi</code>) both shown</td>
+<td>Logo only</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>Group Project</code> is set but the list is flat — nothing groups</td>
+<td>Real grouping: Project / Device / Status / None</td>
+</tr>
+<tr>
+<td>9</td>
+<td>No way to see session <strong>status</strong> (idle / waiting / blocked)</td>
+<td>Status chips + Group by Status</td>
+</tr>
+<tr>
+<td>10</td>
+<td>The row-render code is messy (why fixes kept regressing)</td>
+<td>Refactor <code>SessionsPane.tsx</code> into small components</td>
+</tr>
+</tbody></table>
+<h2 id="design">Design</h2><h3 id="the-expanded-card-before-vs-after-the-hero">The expanded card — before vs after (the hero)</h3><figure class="artifact-figure artifact-behavior">
+<figcaption>Expanded session card. Left: today's confusing card. Right: real request, readable timing, links that navigate, device once, one Resume.</figcaption>
+
+<section data-state="current" data-evidence="capture">
+<svg viewBox="0 0 600 356" xmlns="http://www.w3.org/2000/svg">
+  <text x="0" y="12" font-size="10.5" font-family="ui-monospace, monospace" fill="#f87171">TODAY — HEADER NOT PROMPT · RAW SAME DATES · SILENT PILLS · DEVICE 3× · TWO RESUMES</text>
+  <rect x="0.5" y="22.5" width="599" height="332" rx="10" fill="#0a0a0a" stroke="#1b2334"></rect>
+  <rect x="16" y="36" width="16" height="16" rx="4" fill="#12172a" stroke="#242a44"></rect><text x="19" y="48" font-size="10" fill="#7a86b0">c</text>
+  <text x="40" y="48" font-size="10.5" font-family="ui-monospace,monospace" fill="#8b94a6">codex</text>
+  <text x="82" y="48" font-size="12" font-weight="600" fill="#e6e9ef">PRIX  ## Apps (Connectors)</text>
+  <text x="300" y="48" font-size="10" fill="#f87171">✕ logo + name both · title is a header</text>
+  <text x="16" y="78" font-size="9.5" font-family="ui-monospace,monospace" fill="#6E6A63">THE ASK</text>
+  <rect x="16" y="84" width="568" height="30" rx="6" fill="#0b101c" stroke="#1b2334"></rect>
+  <text x="26" y="103" font-size="12" fill="#8b94a6">## Apps (Connectors)</text>
+  <text x="300" y="103" font-size="10" fill="#f87171">✕ not the real prompt · can't see more</text>
+  <text x="16" y="138" font-size="9.5" font-family="ui-monospace,monospace" fill="#6E6A63">ENDED SESSION</text>
+  <rect x="16" y="144" width="568" height="26" rx="6" fill="#0c1017" stroke="#1b2334"></rect>
+  <text x="26" y="161" font-size="11.5" fill="#8b94a6">Last active Aug 30, 4:42 PM · started Aug 30, 4:42 PM · resumable on yosemite-m3</text>
+  <text x="16" y="186" font-size="10" fill="#f87171">✕ raw dates · start = last active · no duration · device #2</text>
+  <text x="16" y="214" font-size="9.5" font-family="ui-monospace,monospace" fill="#6E6A63">CATCH UP</text>
+  <rect x="16" y="222" width="60" height="22" rx="6" fill="#0c1220" stroke="#1b2334"></rect><text x="24" y="237" font-size="11" fill="#8b94a6">▪ prix</text>
+  <rect x="82" y="222" width="80" height="22" rx="6" fill="#0c1220" stroke="#1b2334"></rect><text x="90" y="237" font-size="11" fill="#8b94a6">Session ↗</text>
+  <rect x="168" y="222" width="98" height="22" rx="6" fill="#0c1220" stroke="#1b2334"></rect><text x="176" y="237" font-size="11" fill="#8b94a6">◈ yosemite-m3</text>
+  <rect x="360" y="221" width="112" height="24" rx="6" fill="#161e0b" stroke="#34401a"></rect><text x="370" y="237" font-size="11.5" fill="#a3e635">↻ Resume here</text>
+  <text x="16" y="266" font-size="10" fill="#f87171">✕ "prix" does nothing on click · device #3 · "Resume here" vs the row's "Resume" = ?</text>
+  <text x="16" y="292" font-size="10" fill="#f87171">✕ and up top the row already had a green "Resume" — two resume buttons, unclear difference</text>
+</svg>
+</section>
+
+<section data-state="proposed" data-evidence="mockup">
+<svg viewBox="0 0 600 356" xmlns="http://www.w3.org/2000/svg">
+  <text x="0" y="12" font-size="10.5" font-family="ui-monospace, monospace" fill="#84cc16">PROPOSED — REAL REQUEST · READABLE TIMING · LINKS NAVIGATE · DEVICE ONCE · ONE RESUME</text>
+  <rect x="0.5" y="22.5" width="599" height="332" rx="10" fill="#0a0a0a" stroke="#1b2334"></rect>
+  
+  <rect x="16" y="36" width="18" height="18" rx="4" fill="#12172a" stroke="#242a44"></rect><text x="19" y="49" font-size="10" fill="#7a86b0">◎</text>
+  <text x="42" y="49" font-size="10.5" font-family="ui-monospace,monospace" fill="#5eead4">prix</text>
+  <text x="76" y="49" font-size="13" font-weight="600" fill="#e6e9ef">Wire the Connectors page to the live apps list</text>
+  <text x="560" y="49" font-size="11" text-anchor="end" fill="#5c6675">⌃</text>
+  
+  <text x="16" y="78" font-size="9.5" font-family="ui-monospace,monospace" fill="#6E6A63">YOUR REQUEST</text>
+  <rect x="16" y="84" width="568" height="46" rx="6" fill="#0b101c" stroke="#1b2334"></rect>
+  <text x="26" y="103" font-size="12" fill="#c5ccd6">"Under ## Apps (Connectors), wire the connector cards to the live apps list</text>
+  <text x="26" y="119" font-size="12" fill="#c5ccd6">and show a real status dot per connector…"  <tspan fill="#6ea8fe">See more</tspan></text>
+  
+  <text x="16" y="150" font-size="9.5" font-family="ui-monospace,monospace" fill="#6E6A63">SESSION</text>
+  <rect x="16" y="156" width="568" height="26" rx="6" fill="#0c1017" stroke="#1b2334"></rect>
+  <text x="26" y="173" font-size="11.5" fill="#c9d4c0">Ran 2m · ended 9m ago</text>
+  <text x="196" y="173" font-size="11.5" fill="#6E6A63">·  Runs on</text><text x="262" y="173" font-size="11.5" fill="#c9d4c0">yosemite-m3</text>
+  <text x="470" y="173" font-size="10" fill="#5c6675">Aug 30, 4:42–4:44 PM</text>
+  
+  <text x="16" y="204" font-size="9.5" font-family="ui-monospace,monospace" fill="#6E6A63">LINKS</text>
+  <rect x="16" y="212" width="104" height="22" rx="6" fill="#0c1a2e" stroke="#1c3a5a"></rect><text x="24" y="227" font-size="11" fill="#6ea8fe">◇ PHNX-3542 ↗</text>
+  <rect x="126" y="212" width="78" height="22" rx="6" fill="#0c1a2e" stroke="#1c3a5a"></rect><text x="134" y="227" font-size="11" fill="#6ea8fe">▪ prix ↗</text>
+  <rect x="210" y="212" width="76" height="22" rx="6" fill="#0c1220" stroke="#241d3a"></rect><text x="218" y="227" font-size="11" fill="#a78bfa">⑂ main ⧉</text>
+  <text x="300" y="227" font-size="10" fill="#84cc16">✓ ticket→Linear · repo→GitHub (↗) · branch→copy (⧉)</text>
+  
+  <rect x="16" y="256" width="82" height="26" rx="6" fill="#161e0b" stroke="#34401a"></rect>
+  <text x="27" y="273" font-size="12" font-family="ui-monospace,monospace" fill="#a3e635">↻ Resume</text>
+  <text x="110" y="273" font-size="10.5" fill="#6E6A63">right-click ▸ <tspan fill="#8b94a6">Resume on a different device…</tspan></text>
+  <text x="16" y="310" font-size="10" fill="#84cc16">✓ normal Resume (reopens on yosemite-m3, where it ran) · right-click for device options · logo only</text>
+</svg>
+</section>
+</figure><h3 id="list-controls-grouping-before-vs-after">List controls &amp; grouping — before vs after</h3><figure class="artifact-figure artifact-behavior">
+<figcaption>Filter + group controls. Left: dead "Group Project" over a flat list. Right: status chips + real grouping with section headers that actually split the list.</figcaption>
+
+<section data-state="current" data-evidence="capture">
+<svg viewBox="0 0 600 150" xmlns="http://www.w3.org/2000/svg">
+  <text x="0" y="12" font-size="10.5" font-family="ui-monospace, monospace" fill="#f87171">TODAY — "GROUP PROJECT" SET, BUT THE LIST IS ONE FLAT "PREVIOUS" BAND</text>
+  <rect x="0.5" y="22.5" width="599" height="126" rx="10" fill="#0a0a0a" stroke="#1b2334"></rect>
+  <rect x="14" y="35" width="50" height="20" rx="10" fill="#1a1a1a" stroke="#ffffff26"></rect><text x="24" y="49" font-size="11" fill="#E7E5E4">All</text>
+  <rect x="70" y="35" width="58" height="20" rx="10" fill="none" stroke="#ffffff14"></rect><text x="80" y="49" font-size="11" fill="#A8A29E">Active</text>
+  <rect x="134" y="35" width="70" height="20" rx="10" fill="none" stroke="#ffffff14"></rect><text x="144" y="49" font-size="11" fill="#A8A29E">Favorites</text>
+  <text x="380" y="49" font-size="10.5" fill="#6E6A63">Group <tspan fill="#E7E5E4" font-weight="600">Project</tspan>  Sort <tspan fill="#E7E5E4" font-weight="600">Last active</tspan></text>
+  <rect x="1" y="70" width="598" height="24" fill="#111828"></rect><circle cx="18" cy="82" r="3.5" fill="#a78bfa"></circle><text x="30" y="86" font-size="10.5" font-family="ui-monospace,monospace" fill="#c4b5fd">PREVIOUS · RESUMABLE</text>
+  <text x="380" y="120" font-size="10.5" fill="#f87171">✕ no PRIX / AGENTS-CLI project sections — the Group control is dead</text>
+</svg>
+</section>
+
+<section data-state="proposed" data-evidence="mockup">
+<svg viewBox="0 0 600 210" xmlns="http://www.w3.org/2000/svg">
+  <text x="0" y="12" font-size="10.5" font-family="ui-monospace, monospace" fill="#84cc16">PROPOSED — STATUS CHIPS + REAL GROUPING (PROJECT / DEVICE / STATUS)</text>
+  <rect x="0.5" y="22.5" width="599" height="186" rx="10" fill="#0a0a0a" stroke="#1b2334"></rect>
+  
+  <rect x="14" y="35" width="42" height="20" rx="10" fill="#1a1a1a" stroke="#ffffff26"></rect><text x="22" y="49" font-size="11" fill="#E7E5E4">All</text>
+  <rect x="62" y="35" width="56" height="20" rx="10" fill="none" stroke="#2c4a1c"></rect><circle cx="72" cy="45" r="3" fill="#4ade80"></circle><text x="80" y="49" font-size="11" fill="#A8A29E">Active</text>
+  <rect x="124" y="35" width="50" height="20" rx="10" fill="none" stroke="#3a2e12"></rect><circle cx="134" cy="45" r="3" fill="#f5b544"></circle><text x="142" y="49" font-size="11" fill="#A8A29E">Idle</text>
+  <rect x="180" y="35" width="62" height="20" rx="10" fill="none" stroke="#3a1c1c"></rect><circle cx="190" cy="45" r="3" fill="#f87171"></circle><text x="198" y="49" font-size="11" fill="#A8A29E">Blocked</text>
+  <rect x="248" y="35" width="70" height="20" rx="10" fill="none" stroke="#ffffff14"></rect><text x="258" y="49" font-size="11" fill="#A8A29E">Favorites</text>
+  <text x="392" y="49" font-size="10.5" fill="#6E6A63">Group <tspan fill="#E7E5E4" font-weight="600">Project ▾</tspan>  Sort <tspan fill="#E7E5E4" font-weight="600">Last active</tspan></text>
+  <text x="392" y="63" font-size="9" fill="#5c6675">Project · Device · Status · None</text>
+  
+  <rect x="1" y="74" width="598" height="22" fill="#111828"></rect><text x="16" y="88" font-size="10.5" font-family="ui-monospace,monospace" fill="#5eead4">▸ PRIX</text><text x="70" y="88" font-size="10.5" font-family="ui-monospace,monospace" fill="#5c6675">3</text>
+  <text x="120" y="88" font-size="9.5" fill="#5c6675">2 active · 1 idle</text>
+  <rect x="1" y="118" width="598" height="22" fill="#111828"></rect><text x="16" y="132" font-size="10.5" font-family="ui-monospace,monospace" fill="#5eead4">▸ AGENTS-CLI</text><text x="106" y="132" font-size="10.5" font-family="ui-monospace,monospace" fill="#5c6675">5</text>
+  <text x="160" y="132" font-size="9.5" fill="#5c6675">1 blocked · 4 previous</text>
+  <rect x="1" y="162" width="598" height="22" fill="#111828"></rect><text x="16" y="176" font-size="10.5" font-family="ui-monospace,monospace" fill="#5eead4">▸ FASTWISPR</text><text x="108" y="176" font-size="10.5" font-family="ui-monospace,monospace" fill="#5c6675">2</text>
+  <text x="392" y="176" font-size="9.5" fill="#84cc16">✓ switch Group → Device or Status to re-bucket the same rows</text>
+</svg>
+</section>
+</figure><h2 id="current-architecture">Current architecture</h2><p>All of this is render-layer in <code>SessionsPane.tsx</code> reading the streamed <code>FloorAgent</code>,
+except two data gaps worth calling out. The row already carries <code>prUrl</code>; a repo URL and
+a Linear ticket URL are derivable (repo from <code>prUrl</code>; Linear from the ticket id + the
+workspace). The <strong>real first user message</strong> may not be on the stream — <code>prompt</code>/<code>topic</code>
+can be a slash-command header — so #1 may need a <code>firstUserMessage</code> field added to the
+CLI's <code>SessionWatchRow</code> (backfilled from the index, the way <code>version</code> landed), never a
+side-channel fetch here.</p>
+<figure class="artifact-figure artifact-figure-diagram">
+<figcaption>Where each fix lives. Green = render-only; amber = needs one CLI field.</figcaption>
+<svg viewBox="0 0 700 150" xmlns="http://www.w3.org/2000/svg">
+  <rect x="16" y="50" width="150" height="50" rx="8" fill="#0f1625" stroke="#1b2334"></rect><text x="91" y="72" text-anchor="middle" fill="#E7E5E4" font-weight="600">SessionWatchRow</text><text x="91" y="89" text-anchor="middle" fill="#f5b544" font-size="10">+ firstUserMessage (#1)</text>
+  <rect x="260" y="20" width="170" height="46" rx="8" fill="#0d1a12" stroke="#2c4a1c"></rect><text x="345" y="40" text-anchor="middle" fill="#a3e635" font-weight="600">SessionRow (render)</text><text x="345" y="56" text-anchor="middle" fill="#8b94a6" font-size="10">logo-only, timing, links, group</text>
+  <rect x="260" y="86" width="170" height="46" rx="8" fill="#0d1a12" stroke="#2c4a1c"></rect><text x="345" y="106" text-anchor="middle" fill="#a3e635" font-weight="600">ExpandedCard (render)</text><text x="345" y="122" text-anchor="middle" fill="#8b94a6" font-size="10">request, meta, one Resume</text>
+  <rect x="520" y="50" width="160" height="50" rx="8" fill="#0d1220" stroke="#a3e635" stroke-width="1.4"></rect><text x="600" y="79" text-anchor="middle" fill="#a3e635" font-weight="700">Sessions view</text>
+  <line x1="166" y1="66" x2="256" y2="46" stroke="#8b94a6" stroke-width="1.4" marker-end="url(#ar)"></line>
+  <line x1="166" y1="84" x2="256" y2="108" stroke="#8b94a6" stroke-width="1.4" marker-end="url(#ar)"></line>
+  <line x1="430" y1="46" x2="518" y2="66" stroke="#8b94a6" stroke-width="1.4" marker-end="url(#ar)"></line>
+  <line x1="430" y1="108" x2="518" y2="84" stroke="#8b94a6" stroke-width="1.4" marker-end="url(#ar)"></line>
+  <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#8b94a6"></path></marker></defs>
+</svg>
+</figure><h2 id="interaction-spec-every-clickable-thing">Interaction spec — every clickable thing</h2><table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Click does</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Row body / <code>⌃</code></td>
+<td>Expand / collapse</td>
+<td>The only expand trigger</td>
+</tr>
+<tr>
+<td>Ticket <code>◇ PHNX-####</code></td>
+<td>Open in <strong>Linear</strong> (<code>↗</code>)</td>
+<td>falls back to copy-id if no URL</td>
+</tr>
+<tr>
+<td>PR <code>PR #NN</code></td>
+<td>Open the <strong>GitHub PR</strong> (<code>↗</code>)</td>
+<td>from <code>prUrl</code></td>
+</tr>
+<tr>
+<td>Repo <code>▪ prix</code></td>
+<td>Open the <strong>GitHub repo</strong> (<code>↗</code>)</td>
+<td>derived from <code>prUrl</code></td>
+</tr>
+<tr>
+<td>Branch <code>⑂ main</code></td>
+<td><strong>Copy</strong> (<code>⧉</code>)</td>
+<td>no natural URL</td>
+</tr>
+<tr>
+<td><code>Resume</code> (normal button)</td>
+<td>Reopen the session on the device it ran on</td>
+<td>plain, compact — same as the row's Resume</td>
+</tr>
+<tr>
+<td><code>Resume</code> right-click</td>
+<td>Context menu: <strong>Resume on a different device…</strong> (+ pick a device)</td>
+<td>the power case, out of the way</td>
+</tr>
+<tr>
+<td>Group <code>Project ▾</code></td>
+<td>Re-bucket into Project / Device / Status / None</td>
+<td>headers split the list for real</td>
+</tr>
+<tr>
+<td>Status chip</td>
+<td>Filter to active / idle / blocked</td>
+<td>dot color encodes status</td>
+</tr>
+</tbody></table>
+<h2 id="status-model">Status model</h2><table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Dot</th>
+<th>Means</th>
+<th>Chip / group</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>active</code></td>
+<td>green</td>
+<td>working, making progress</td>
+<td>Active</td>
+</tr>
+<tr>
+<td><code>idle</code></td>
+<td>amber</td>
+<td>running but stopped — waiting on your input or a permission prompt</td>
+<td>Idle</td>
+</tr>
+<tr>
+<td><code>waiting</code></td>
+<td>amber</td>
+<td>waiting on a tool / CI to return</td>
+<td>(folds into Idle unless you want it split)</td>
+</tr>
+<tr>
+<td><code>blocked</code></td>
+<td>red</td>
+<td>needs a decision only you can make</td>
+<td>Blocked</td>
+</tr>
+<tr>
+<td><code>previous</code></td>
+<td>grey</td>
+<td>ended, resumable from transcript</td>
+<td>(the Previous band)</td>
+</tr>
+</tbody></table>
+<h2 id="timing-model">Timing model</h2><ul>
+<li><strong>Row age</strong>: always relative to last activity — <code>9m ago</code>, <code>2h ago</code>, <code>3d ago</code>.</li>
+<li><strong>Card meta</strong>: <code>Ran &lt;duration&gt; · ended &lt;relative&gt; ago</code>, with the absolute range
+(<code>Aug 30, 4:42–4:44 PM</code>) on hover. <code>duration = lastActivity − started</code>; when it's &lt;1m
+show <code>Ran &lt;1m</code>. Never show two identical timestamps.</li>
+</ul>
+<h2 id="proposed-changes">Proposed Changes</h2><div class="code-diff"><pre class="code-diff-pre"><span class="cd-line cd-ctx"><span class="cd-sign"></span><span class="cd-code"># SessionRow header — logo carries identity; drop the redundant agent-name text</span></span><span class="cd-line cd-del"><span class="cd-sign">-</span><span class="cd-code"> &lt;span className="sx-agent"&gt;{agentId}&lt;/span&gt;</span></span><span class="cd-line cd-del"><span class="cd-sign">-</span><span class="cd-code"> {a.project &amp;&amp; &lt;span className="sx-proj"&gt;{a.project}&lt;/span&gt;}</span></span><span class="cd-line cd-del"><span class="cd-sign">-</span><span class="cd-code"> &lt;span className="sx-ttl"&gt;{row.title}&lt;/span&gt;</span></span><span class="cd-line cd-add"><span class="cd-sign">+</span><span class="cd-code"> {a.project &amp;&amp; &lt;span className="sx-proj"&gt;{a.project}&lt;/span&gt;}</span></span><span class="cd-line cd-add"><span class="cd-sign">+</span><span class="cd-code"> &lt;span className="sx-ttl"&gt;{row.title}&lt;/span&gt;   {/* the avatar already shows who */}</span></span></pre></div><div class="code-diff"><pre class="code-diff-pre"><span class="cd-line cd-ctx"><span class="cd-sign"></span><span class="cd-code"># Pills navigate instead of copy-or-nothing</span></span><span class="cd-line cd-del"><span class="cd-sign">-</span><span class="cd-code"> {a.ticket &amp;&amp; &lt;span className="sx-chip ticket" onClick={(e)=&gt;copyPill(e,a.ticket!)}&gt;◇ {a.ticket}&lt;/span&gt;}</span></span><span class="cd-line cd-add"><span class="cd-sign">+</span><span class="cd-code"> {a.ticket &amp;&amp; &lt;PillLink kind="ticket" href={linearUrl(a.ticket)} onCopyFallback={a.ticket}&gt;◇ {a.ticket}&lt;/PillLink&gt;}</span></span><span class="cd-line cd-add"><span class="cd-sign">+</span><span class="cd-code"> {row.repo &amp;&amp; &lt;PillLink kind="repo" href={repoUrl(a.prUrl)}&gt;▪ {row.repo}&lt;/PillLink&gt;}</span></span></pre></div><div class="code-diff"><pre class="code-diff-pre"><span class="cd-line cd-ctx"><span class="cd-sign"></span><span class="cd-code"># Grouping: make Group actually bucket the Previous list too (not just live)</span></span><span class="cd-line cd-del"><span class="cd-sign">-</span><span class="cd-code"> buildSessionSections(scoped, 'flat', ...)          // previous always flat</span></span><span class="cd-line cd-add"><span class="cd-sign">+</span><span class="cd-code"> buildSessionSections(scoped, group, sort, desc)    // honor Project | Device | Status | None</span></span></pre></div><h2 id="public-interface">Public Interface</h2><ul>
+<li>Row: logo only (no agent-name text); title is the recap; age is relative (<code>9m ago</code>).</li>
+<li>Expanded card: <code>YOUR REQUEST</code> (real first user message + See more) · <code>SESSION</code>
+(<code>Ran … · ended … ago</code>, device once) · <code>LINKS</code> (ticket→Linear, PR/repo→GitHub,
+branch→copy) · one <code>Resume on &lt;device&gt;</code>.</li>
+<li>List: status chips <code>All · Active · Idle · Blocked · Favorites</code>; Group <code>Project · Device · Status · None</code> that splits the list; Sort unchanged.</li>
+<li>If <code>firstUserMessage</code> is missing from the stream, it is added to the CLI row.</li>
+</ul>
+<h2 id="plan">Plan</h2><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Task</th>
+<th>File(s)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Refactor <code>SessionsPane.tsx</code>: extract <code>SessionRow</code>, <code>ExpandedCard</code>, <code>RowLinks</code>, <code>SessionMeta</code> components; consolidate the duplicated <code>SESSION_ROW_CSS</code>/<code>CSS3</code></td>
+<td><code>SessionsPane.tsx</code> (+ new files)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Logo-only header; relative-age helper; <code>Ran … · ended … ago</code> meta with hover</td>
+<td><code>SessionsPane.tsx</code>, <code>recapModel.ts</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>PillLink</code> — ticket→Linear, PR/repo→GitHub (via <code>openExternal</code> bridge), branch→copy</td>
+<td><code>SessionsPane.tsx</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Device shown once; single <code>Resume on &lt;device&gt;</code> with subtitle; drop <code>Resume here</code></td>
+<td><code>SessionsPane.tsx</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Status model + status chips + Group by Project/Device/Status/None (make Previous honor grouping)</td>
+<td><code>floorModel.ts</code>, <code>sessionsModel.ts</code>, <code>SessionsPane.tsx</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>firstUserMessage</code> on the stream if <code>prompt</code>/<code>topic</code> is a header (CLI + adapter)</td>
+<td>agents-cli <code>SessionWatchRow</code>, <code>remoteSessions.vscode.ts</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Tests for each; <code>bun test</code> + <code>compile:ext</code> green; verify in VS Code, screenshot</td>
+<td><code>*.test.tsx</code></td>
+</tr>
+</tbody></table>
+<h2 id="validation">Validation</h2><ul>
+<li>Unit: relative-age + duration formatting; <code>PillLink</code> opens the right URL and
+stops propagation; grouping buckets Previous rows by Project/Device/Status;
+logo-only header has no agent-name text.</li>
+<li>Visual (VS Code, installed): expand a codex row → YOUR REQUEST shows the real prompt
+with See more; SESSION reads <code>Ran … · ended … ago</code>; clicking the repo pill opens
+GitHub; switching Group re-buckets. Screenshot each.</li>
+</ul>
+<h2 id="risks">Risks</h2><ul>
+<li><code>firstUserMessage</code>: if the CLI genuinely can't supply it, THE ASK falls back to the
+best available (topic/prompt) and we label it honestly — never invent text.</li>
+<li>Linear URL needs the workspace slug; if absent, ticket pill copies the id instead of
+a dead link.</li>
+<li>Grouping the Previous band by Status must not double-count a row across sections.</li>
+</ul>
+<h2 id="tracking">Tracking</h2><ul>
+<li>PHNX-3593 (extends the open PR #23 branch <code>agents/prevsessions-followup</code>).</li>
+<li>Implemented after your sign-off, then verified in VS Code on zion with screenshots.</li>
+</ul>
+</article>
+
+</main>
+<script type="application/json" id="artifacts-source">{"encoding":"base64","markdown":"LS0tCmtpbmQ6IHBsYW4Kc3VyZmFjZTogd2ViCnRpdGxlOiAiQUdJIEVYVCDigJQgU2Vzc2lvbnMgdmlldyBVWCBvdmVyaGF1bDogcmVhbCBwcm9tcHRzLCByZWFkYWJsZSB0aW1pbmcsIGxpbmtzIHRoYXQgZ28gc29tZXdoZXJlLCB3b3JraW5nIGdyb3VwaW5nIgpzdW1tYXJ5OiA+CiAgQSBmdWxsIHBhc3Mgb3ZlciB0aGUgU2Vzc2lvbnMgcm93ICsgZXhwYW5kZWQgY2FyZCArIGxpc3QgY29udHJvbHMsIGZpeGluZyB0ZW4KICB1c2VyLWZsb3cgcHJvYmxlbXM6IFRIRSBBU0sgc2hvd3MgYSBoZWFkZXIgbm90IHRoZSByZWFsIHByb21wdDsgdGltaW5nIGlzIHJhdyBhbmQKICBhbWJpZ3VvdXM7IHBpbGxzIGNvcHkgc2lsZW50bHkgb3IgZG8gbm90aGluZzsgZGV2aWNlIGlzIHNob3duIHRocmVlIHRpbWVzOyBSZXN1bWUgdnMKICBSZXN1bWUtaGVyZSBpcyBjb25mdXNpbmc7IGxvZ28gYW5kIG5hbWUgYXJlIGJvdGggc2hvd247IHRoZSAiR3JvdXAgUHJvamVjdCIgY29udHJvbAogIGRvZXMgbm90aGluZy4gQWRkcyByZWFsIGdyb3VwaW5nIChwcm9qZWN0IC8gZGV2aWNlIC8gc3RhdHVzKSBhbmQgYSBzdGF0dXMgbW9kZWwKICAoYWN0aXZlIC8gaWRsZSAvIHdhaXRpbmcgLyBibG9ja2VkKS4Kc3RhdHVzOiBkcmFmdApsaW5rczoKICAtIGh0dHBzOi8vbGluZWFyLmFwcC8gICMgUEhOWC0zNTkzCi0tLQoKIyMgRm9jdXMgZm9yIHJldmlldwoKVGhlIGdlbnVpbmUgZGVjaXNpb25zIOKAlCBldmVyeXRoaW5nIGVsc2UgZm9sbG93cyBmcm9tIHRoZXNlOgoKMS4gKipTdGF0dXMgbW9kZWwuKiogQSBzZXNzaW9uIGlzIGBhY3RpdmVgICh3b3JraW5nKSwgYGlkbGVgIChydW5uaW5nIGJ1dCBzdG9wcGVkIOKAlAogICB3YWl0aW5nIG9uIHlvdXIgaW5wdXQgLyBhIHBlcm1pc3Npb24gcHJvbXB0KSwgYHdhaXRpbmdgICh3YWl0aW5nIG9uIGEgdG9vbC9DSSksCiAgIGBibG9ja2VkYCAobmVlZHMgYSBkZWNpc2lvbiBvbmx5IHlvdSBjYW4gbWFrZSksIGBkb25lYC9gcHJldmlvdXNgIChlbmRlZCkuIEZpbHRlcgogICBjaGlwcyBhbmQgR3JvdXAtYnktU3RhdHVzIHVzZSB0aGlzIHRheG9ub215LiBDb25maXJtIHRoZSB3b3Jkcy4KMi4gKipHcm91cGluZy4qKiBCcmluZyBiYWNrIGEgR3JvdXAgY29udHJvbCB0aGF0IGFjdHVhbGx5IHdvcmtzOiAqKlByb2plY3QgwrcgRGV2aWNlIMK3CiAgIFN0YXR1cyDCtyBOb25lKiouIChUb2RheSAiR3JvdXAgUHJvamVjdCIgaXMgc2hvd24gYnV0IHRoZSBQcmV2aW91cyBsaXN0IGlzIGZsYXQuKQozLiAqKlJlc3VtZSBzZW1hbnRpY3MuKiogQSBwbGFpbiwgY29tcGFjdCAqKlJlc3VtZSoqIHRoYXQgcmVvcGVucyB0aGUgc2Vzc2lvbiBvbiB0aGUKICAgbWFjaGluZSBpdCByYW4gb24gKG5vdCBjb3BpZWQgdG8geW91ciBNYWMpLiAqKlJpZ2h0LWNsaWNrIOKGkiAiUmVzdW1lIG9uIGEgZGlmZmVyZW50CiAgIGRldmljZeKApiIqKiBmb3IgdGhlIHBvd2VyIGNhc2UuIERyb3AgdGhlIHNlY29uZCAiUmVzdW1lIGhlcmUiIGFuZCB0aGUgb3ZlcnNpemVkCiAgIGxhYmVsZWQgYnV0dG9uLgo0LiAqKlRIRSBBU0sgc291cmNlLioqIFRoZSByZWFsIGZpcnN0IHVzZXIgbWVzc2FnZSwgbm90IHRoZSByZWNhcCBoZWFkZXIgKCIjIyBBcHBzIikuCiAgIElmIHRoZSBzdHJlYW0gb25seSBjYXJyaWVzIHRoZSBoZWFkZXIsIHRoaXMgbmVlZHMgb25lIG5ldyBmaWVsZCBvbiB0aGUgQ0xJIHJvdwogICAoYGZpcnN0VXNlck1lc3NhZ2VgKSDigJQgYSBzbWFsbCBDTEkgY2hhbmdlLCBub3QgYSByZWJ1aWxkLgoKIyMgUHVycG9zZQoKVGhlIHRlbiBwcm9ibGVtcyBmcm9tIHlvdXIgdGVzdGluZyDigJQgdGhpcyB0YWJsZSBpcyB0aGUgYWNjZXB0YW5jZSBjaGVja2xpc3Q6Cgo8ZGl2IGNsYXNzPSJhcnRpZmFjdC1jYWxsb3V0IGFydGlmYWN0LWNhbGxvdXQtd2FybiI+CkV2ZXJ5IG9uZSBvZiB0aGVzZSBpcyBhIHJlYWwgdXNlci1mbG93IGJyZWFrIHlvdSBoaXQsIG5vdCBhIG5pdHBpY2suIFRoZSBsaXN0IGJlbG93CmlzIHRoZSBhY2NlcHRhbmNlIGNoZWNrbGlzdCBmb3IgdGhpcyBjaGFuZ2UuCjwvZGl2PgoKfCAjIHwgV2hhdCdzIHdyb25nIHRvZGF5IHwgVGhlIGZpeCB8CnwtLS18LS0tfC0tLXwKfCAxIHwgVEhFIEFTSyBzaG93cyBgIyMgQXBwcyAoQ29ubmVjdG9ycylgIOKAlCBhIGhlYWRlciwgbm90IHlvdXIgcHJvbXB0IHwgU2hvdyB0aGUgcmVhbCBmaXJzdCB1c2VyIG1lc3NhZ2UsIGZ1bGwsIHdpdGggKipTZWUgbW9yZSoqIHwKfCAyIHwgYExhc3QgYWN0aXZlIDQ6NDIgUE0gwrcgc3RhcnRlZCA0OjQyIFBNYCDigJQgcmF3LCBpZGVudGljYWwsIG5vIGR1cmF0aW9uIHwgYFJhbiAybSDCtyBlbmRlZCA5bSBhZ29gIChhYnNvbHV0ZSBvbiBob3ZlcikgfAp8IDMgfCBgNG1gIG9uIHRoZSByb3cg4oCUIGFnbz8gZHVyYXRpb24/IHwgYDltIGFnb2AgKGFsd2F5cyByZWxhdGl2ZSB0byBsYXN0IGFjdGl2aXR5KSwgbGFiZWxlZCB8CnwgNCB8IFBpbGxzIGNvcHkgc2lsZW50bHkgLyBhIHJlcG8gcGlsbCBjbGljayBkb2VzIG5vdGhpbmcgfCBUaWNrZXQg4oaSIExpbmVhciwgUFIg4oaSIEdpdEh1YiBQUiwgcmVwbyDihpIgR2l0SHViIHJlcG8gKHJlYWwgbmF2aWdhdGlvbiwgYOKGl2ApIHwKfCA1IHwgRGV2aWNlIHNob3duIDPDlyAoY2hpcCByb3csIGVuZGVkIGxpbmUsIGNhdGNoLXVwKSB8IE9uY2Ug4oCUIGBSdW5zIG9uIHlvc2VtaXRlLW0zYCBpbiB0aGUgY2FyZCB8CnwgNiB8IGBSZXN1bWVgIHZzIGBSZXN1bWUgaGVyZWAg4oCUIHdoaWNoPyBkb2VzIGl0IGNvcHkgdGhlIHNlc3Npb24/IHwgT25lIGJ1dHRvbiBgUmVzdW1lIG9uIDxkZXZpY2U+YCB3aXRoIGEgcGxhaW4tbGFuZ3VhZ2Ugc3VidGl0bGUgfAp8IDcgfCBMb2dvICoqYW5kKiogdGhlIGFnZW50IG5hbWUgKGBjb2RleGAsIGBraW1pYCkgYm90aCBzaG93biB8IExvZ28gb25seSB8CnwgOCB8IGBHcm91cCBQcm9qZWN0YCBpcyBzZXQgYnV0IHRoZSBsaXN0IGlzIGZsYXQg4oCUIG5vdGhpbmcgZ3JvdXBzIHwgUmVhbCBncm91cGluZzogUHJvamVjdCAvIERldmljZSAvIFN0YXR1cyAvIE5vbmUgfAp8IDkgfCBObyB3YXkgdG8gc2VlIHNlc3Npb24gKipzdGF0dXMqKiAoaWRsZSAvIHdhaXRpbmcgLyBibG9ja2VkKSB8IFN0YXR1cyBjaGlwcyArIEdyb3VwIGJ5IFN0YXR1cyB8CnwgMTAgfCBUaGUgcm93LXJlbmRlciBjb2RlIGlzIG1lc3N5ICh3aHkgZml4ZXMga2VwdCByZWdyZXNzaW5nKSB8IFJlZmFjdG9yIGBTZXNzaW9uc1BhbmUudHN4YCBpbnRvIHNtYWxsIGNvbXBvbmVudHMgfAoKIyMgRGVzaWduCgojIyMgVGhlIGV4cGFuZGVkIGNhcmQg4oCUIGJlZm9yZSB2cyBhZnRlciAodGhlIGhlcm8pCgo8ZmlndXJlIGNsYXNzPSJhcnRpZmFjdC1maWd1cmUgYXJ0aWZhY3QtYmVoYXZpb3IiPgo8ZmlnY2FwdGlvbj5FeHBhbmRlZCBzZXNzaW9uIGNhcmQuIExlZnQ6IHRvZGF5J3MgY29uZnVzaW5nIGNhcmQuIFJpZ2h0OiByZWFsIHJlcXVlc3QsIHJlYWRhYmxlIHRpbWluZywgbGlua3MgdGhhdCBuYXZpZ2F0ZSwgZGV2aWNlIG9uY2UsIG9uZSBSZXN1bWUuPC9maWdjYXB0aW9uPgoKPHNlY3Rpb24gZGF0YS1zdGF0ZT0iY3VycmVudCIgZGF0YS1ldmlkZW5jZT0iY2FwdHVyZSI+Cjxzdmcgdmlld0JveD0iMCAwIDYwMCAzNTYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZm9udC1mYW1pbHk9IkdlaXN0LCBzeXN0ZW0tdWksIHNhbnMtc2VyaWYiPgogIDx0ZXh0IHg9IjAiIHk9IjEyIiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsIG1vbm9zcGFjZSIgbGV0dGVyLXNwYWNpbmc9IjAuNSIgZmlsbD0iI2Y4NzE3MSI+VE9EQVkg4oCUIEhFQURFUiBOT1QgUFJPTVBUIMK3IFJBVyBTQU1FIERBVEVTIMK3IFNJTEVOVCBQSUxMUyDCtyBERVZJQ0UgM8OXIMK3IFRXTyBSRVNVTUVTPC90ZXh0PgogIDxyZWN0IHg9IjAuNSIgeT0iMjIuNSIgd2lkdGg9IjU5OSIgaGVpZ2h0PSIzMzIiIHJ4PSIxMCIgZmlsbD0iIzBhMGEwYSIgc3Ryb2tlPSIjMWIyMzM0Ii8+CiAgPHJlY3QgeD0iMTYiIHk9IjM2IiB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHJ4PSI0IiBmaWxsPSIjMTIxNzJhIiBzdHJva2U9IiMyNDJhNDQiLz48dGV4dCB4PSIxOSIgeT0iNDgiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiM3YTg2YjAiPmM8L3RleHQ+CiAgPHRleHQgeD0iNDAiIHk9IjQ4IiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmaWxsPSIjOGI5NGE2Ij5jb2RleDwvdGV4dD4KICA8dGV4dCB4PSI4MiIgeT0iNDgiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI2MDAiIGZpbGw9IiNlNmU5ZWYiPlBSSVggICMjIEFwcHMgKENvbm5lY3RvcnMpPC90ZXh0PgogIDx0ZXh0IHg9IjMwMCIgeT0iNDgiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiNmODcxNzEiPuKclSBsb2dvICsgbmFtZSBib3RoIMK3IHRpdGxlIGlzIGEgaGVhZGVyPC90ZXh0PgogIDx0ZXh0IHg9IjE2IiB5PSI3OCIgZm9udC1zaXplPSI5LjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBsZXR0ZXItc3BhY2luZz0iMC44IiBmaWxsPSIjNkU2QTYzIj5USEUgQVNLPC90ZXh0PgogIDxyZWN0IHg9IjE2IiB5PSI4NCIgd2lkdGg9IjU2OCIgaGVpZ2h0PSIzMCIgcng9IjYiIGZpbGw9IiMwYjEwMWMiIHN0cm9rZT0iIzFiMjMzNCIvPgogIDx0ZXh0IHg9IjI2IiB5PSIxMDMiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM4Yjk0YTYiPiMjIEFwcHMgKENvbm5lY3RvcnMpPC90ZXh0PgogIDx0ZXh0IHg9IjMwMCIgeT0iMTAzIiBmb250LXNpemU9IjEwIiBmaWxsPSIjZjg3MTcxIj7inJUgbm90IHRoZSByZWFsIHByb21wdCDCtyBjYW4ndCBzZWUgbW9yZTwvdGV4dD4KICA8dGV4dCB4PSIxNiIgeT0iMTM4IiBmb250LXNpemU9IjkuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSxtb25vc3BhY2UiIGxldHRlci1zcGFjaW5nPSIwLjgiIGZpbGw9IiM2RTZBNjMiPkVOREVEIFNFU1NJT048L3RleHQ+CiAgPHJlY3QgeD0iMTYiIHk9IjE0NCIgd2lkdGg9IjU2OCIgaGVpZ2h0PSIyNiIgcng9IjYiIGZpbGw9IiMwYzEwMTciIHN0cm9rZT0iIzFiMjMzNCIvPgogIDx0ZXh0IHg9IjI2IiB5PSIxNjEiIGZvbnQtc2l6ZT0iMTEuNSIgZmlsbD0iIzhiOTRhNiI+TGFzdCBhY3RpdmUgQXVnIDMwLCA0OjQyIFBNIMK3IHN0YXJ0ZWQgQXVnIDMwLCA0OjQyIFBNIMK3IHJlc3VtYWJsZSBvbiB5b3NlbWl0ZS1tMzwvdGV4dD4KICA8dGV4dCB4PSIxNiIgeT0iMTg2IiBmb250LXNpemU9IjEwIiBmaWxsPSIjZjg3MTcxIj7inJUgcmF3IGRhdGVzIMK3IHN0YXJ0ID0gbGFzdCBhY3RpdmUgwrcgbm8gZHVyYXRpb24gwrcgZGV2aWNlICMyPC90ZXh0PgogIDx0ZXh0IHg9IjE2IiB5PSIyMTQiIGZvbnQtc2l6ZT0iOS41IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgbGV0dGVyLXNwYWNpbmc9IjAuOCIgZmlsbD0iIzZFNkE2MyI+Q0FUQ0ggVVA8L3RleHQ+CiAgPHJlY3QgeD0iMTYiIHk9IjIyMiIgd2lkdGg9IjYwIiBoZWlnaHQ9IjIyIiByeD0iNiIgZmlsbD0iIzBjMTIyMCIgc3Ryb2tlPSIjMWIyMzM0Ii8+PHRleHQgeD0iMjQiIHk9IjIzNyIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhiOTRhNiI+4paqIHByaXg8L3RleHQ+CiAgPHJlY3QgeD0iODIiIHk9IjIyMiIgd2lkdGg9IjgwIiBoZWlnaHQ9IjIyIiByeD0iNiIgZmlsbD0iIzBjMTIyMCIgc3Ryb2tlPSIjMWIyMzM0Ii8+PHRleHQgeD0iOTAiIHk9IjIzNyIgZm9udC1zaXplPSIxMSIgZmlsbD0iIzhiOTRhNiI+U2Vzc2lvbiDihpc8L3RleHQ+CiAgPHJlY3QgeD0iMTY4IiB5PSIyMjIiIHdpZHRoPSI5OCIgaGVpZ2h0PSIyMiIgcng9IjYiIGZpbGw9IiMwYzEyMjAiIHN0cm9rZT0iIzFiMjMzNCIvPjx0ZXh0IHg9IjE3NiIgeT0iMjM3IiBmb250LXNpemU9IjExIiBmaWxsPSIjOGI5NGE2Ij7il4ggeW9zZW1pdGUtbTM8L3RleHQ+CiAgPHJlY3QgeD0iMzYwIiB5PSIyMjEiIHdpZHRoPSIxMTIiIGhlaWdodD0iMjQiIHJ4PSI2IiBmaWxsPSIjMTYxZTBiIiBzdHJva2U9IiMzNDQwMWEiLz48dGV4dCB4PSIzNzAiIHk9IjIzNyIgZm9udC1zaXplPSIxMS41IiBmaWxsPSIjYTNlNjM1Ij7ihrsgUmVzdW1lIGhlcmU8L3RleHQ+CiAgPHRleHQgeD0iMTYiIHk9IjI2NiIgZm9udC1zaXplPSIxMCIgZmlsbD0iI2Y4NzE3MSI+4pyVICJwcml4IiBkb2VzIG5vdGhpbmcgb24gY2xpY2sgwrcgZGV2aWNlICMzIMK3ICJSZXN1bWUgaGVyZSIgdnMgdGhlIHJvdydzICJSZXN1bWUiID0gPzwvdGV4dD4KICA8dGV4dCB4PSIxNiIgeT0iMjkyIiBmb250LXNpemU9IjEwIiBmaWxsPSIjZjg3MTcxIj7inJUgYW5kIHVwIHRvcCB0aGUgcm93IGFscmVhZHkgaGFkIGEgZ3JlZW4gIlJlc3VtZSIg4oCUIHR3byByZXN1bWUgYnV0dG9ucywgdW5jbGVhciBkaWZmZXJlbmNlPC90ZXh0Pgo8L3N2Zz4KPC9zZWN0aW9uPgoKPHNlY3Rpb24gZGF0YS1zdGF0ZT0icHJvcG9zZWQiIGRhdGEtZXZpZGVuY2U9Im1vY2t1cCI+Cjxzdmcgdmlld0JveD0iMCAwIDYwMCAzNTYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZm9udC1mYW1pbHk9IkdlaXN0LCBzeXN0ZW0tdWksIHNhbnMtc2VyaWYiPgogIDx0ZXh0IHg9IjAiIHk9IjEyIiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsIG1vbm9zcGFjZSIgbGV0dGVyLXNwYWNpbmc9IjAuNSIgZmlsbD0iIzg0Y2MxNiI+UFJPUE9TRUQg4oCUIFJFQUwgUkVRVUVTVCDCtyBSRUFEQUJMRSBUSU1JTkcgwrcgTElOS1MgTkFWSUdBVEUgwrcgREVWSUNFIE9OQ0UgwrcgT05FIFJFU1VNRTwvdGV4dD4KICA8cmVjdCB4PSIwLjUiIHk9IjIyLjUiIHdpZHRoPSI1OTkiIGhlaWdodD0iMzMyIiByeD0iMTAiIGZpbGw9IiMwYTBhMGEiIHN0cm9rZT0iIzFiMjMzNCIvPgogIDwhLS0gaGVhZGVyOiBsb2dvIG9ubHksIHJlYWwgdGl0bGUgLS0+CiAgPHJlY3QgeD0iMTYiIHk9IjM2IiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSI0IiBmaWxsPSIjMTIxNzJhIiBzdHJva2U9IiMyNDJhNDQiLz48dGV4dCB4PSIxOSIgeT0iNDkiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiM3YTg2YjAiPuKXjjwvdGV4dD4KICA8dGV4dCB4PSI0MiIgeT0iNDkiIGZvbnQtc2l6ZT0iMTAuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSxtb25vc3BhY2UiIGZpbGw9IiM1ZWVhZDQiPnByaXg8L3RleHQ+CiAgPHRleHQgeD0iNzYiIHk9IjQ5IiBmb250LXNpemU9IjEzIiBmb250LXdlaWdodD0iNjAwIiBmaWxsPSIjZTZlOWVmIj5XaXJlIHRoZSBDb25uZWN0b3JzIHBhZ2UgdG8gdGhlIGxpdmUgYXBwcyBsaXN0PC90ZXh0PgogIDx0ZXh0IHg9IjU2MCIgeT0iNDkiIGZvbnQtc2l6ZT0iMTEiIHRleHQtYW5jaG9yPSJlbmQiIGZpbGw9IiM1YzY2NzUiPuKMgzwvdGV4dD4KICA8IS0tIHlvdXIgcmVxdWVzdCAocmVhbCwgc2VlIG1vcmUpIC0tPgogIDx0ZXh0IHg9IjE2IiB5PSI3OCIgZm9udC1zaXplPSI5LjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBsZXR0ZXItc3BhY2luZz0iMC44IiBmaWxsPSIjNkU2QTYzIj5ZT1VSIFJFUVVFU1Q8L3RleHQ+CiAgPHJlY3QgeD0iMTYiIHk9Ijg0IiB3aWR0aD0iNTY4IiBoZWlnaHQ9IjQ2IiByeD0iNiIgZmlsbD0iIzBiMTAxYyIgc3Ryb2tlPSIjMWIyMzM0Ii8+CiAgPHRleHQgeD0iMjYiIHk9IjEwMyIgZm9udC1zaXplPSIxMiIgZmlsbD0iI2M1Y2NkNiI+IlVuZGVyICMjIEFwcHMgKENvbm5lY3RvcnMpLCB3aXJlIHRoZSBjb25uZWN0b3IgY2FyZHMgdG8gdGhlIGxpdmUgYXBwcyBsaXN0PC90ZXh0PgogIDx0ZXh0IHg9IjI2IiB5PSIxMTkiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNjNWNjZDYiPmFuZCBzaG93IGEgcmVhbCBzdGF0dXMgZG90IHBlciBjb25uZWN0b3LigKYiICA8dHNwYW4gZmlsbD0iIzZlYThmZSI+U2VlIG1vcmU8L3RzcGFuPjwvdGV4dD4KICA8IS0tIHRpbWluZyBtZXRhOiByZWFkYWJsZSAtLT4KICA8dGV4dCB4PSIxNiIgeT0iMTUwIiBmb250LXNpemU9IjkuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSxtb25vc3BhY2UiIGxldHRlci1zcGFjaW5nPSIwLjgiIGZpbGw9IiM2RTZBNjMiPlNFU1NJT048L3RleHQ+CiAgPHJlY3QgeD0iMTYiIHk9IjE1NiIgd2lkdGg9IjU2OCIgaGVpZ2h0PSIyNiIgcng9IjYiIGZpbGw9IiMwYzEwMTciIHN0cm9rZT0iIzFiMjMzNCIvPgogIDx0ZXh0IHg9IjI2IiB5PSIxNzMiIGZvbnQtc2l6ZT0iMTEuNSIgZmlsbD0iI2M5ZDRjMCI+UmFuIDJtIMK3IGVuZGVkIDltIGFnbzwvdGV4dD4KICA8dGV4dCB4PSIxOTYiIHk9IjE3MyIgZm9udC1zaXplPSIxMS41IiBmaWxsPSIjNkU2QTYzIj7CtyAgUnVucyBvbjwvdGV4dD48dGV4dCB4PSIyNjIiIHk9IjE3MyIgZm9udC1zaXplPSIxMS41IiBmaWxsPSIjYzlkNGMwIj55b3NlbWl0ZS1tMzwvdGV4dD4KICA8dGV4dCB4PSI0NzAiIHk9IjE3MyIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzVjNjY3NSI+QXVnIDMwLCA0OjQy4oCTNDo0NCBQTTwvdGV4dD4KICA8IS0tIGxpbmtzOiBuYXZpZ2F0ZSAtLT4KICA8dGV4dCB4PSIxNiIgeT0iMjA0IiBmb250LXNpemU9IjkuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSxtb25vc3BhY2UiIGxldHRlci1zcGFjaW5nPSIwLjgiIGZpbGw9IiM2RTZBNjMiPkxJTktTPC90ZXh0PgogIDxyZWN0IHg9IjE2IiB5PSIyMTIiIHdpZHRoPSIxMDQiIGhlaWdodD0iMjIiIHJ4PSI2IiBmaWxsPSIjMGMxYTJlIiBzdHJva2U9IiMxYzNhNWEiLz48dGV4dCB4PSIyNCIgeT0iMjI3IiBmb250LXNpemU9IjExIiBmaWxsPSIjNmVhOGZlIj7il4cgUEhOWC0zNTQyIOKGlzwvdGV4dD4KICA8cmVjdCB4PSIxMjYiIHk9IjIxMiIgd2lkdGg9Ijc4IiBoZWlnaHQ9IjIyIiByeD0iNiIgZmlsbD0iIzBjMWEyZSIgc3Ryb2tlPSIjMWMzYTVhIi8+PHRleHQgeD0iMTM0IiB5PSIyMjciIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiM2ZWE4ZmUiPuKWqiBwcml4IOKGlzwvdGV4dD4KICA8cmVjdCB4PSIyMTAiIHk9IjIxMiIgd2lkdGg9Ijc2IiBoZWlnaHQ9IjIyIiByeD0iNiIgZmlsbD0iIzBjMTIyMCIgc3Ryb2tlPSIjMjQxZDNhIi8+PHRleHQgeD0iMjE4IiB5PSIyMjciIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiNhNzhiZmEiPuKRgiBtYWluIOKniTwvdGV4dD4KICA8dGV4dCB4PSIzMDAiIHk9IjIyNyIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzg0Y2MxNiI+4pyTIHRpY2tldOKGkkxpbmVhciDCtyByZXBv4oaSR2l0SHViICjihpcpIMK3IGJyYW5jaOKGkmNvcHkgKOKniSk8L3RleHQ+CiAgPCEtLSBvbmUgbm9ybWFsIFJlc3VtZTsgcmlnaHQtY2xpY2sgZm9yIGRldmljZSBvcHRpb25zIC0tPgogIDxyZWN0IHg9IjE2IiB5PSIyNTYiIHdpZHRoPSI4MiIgaGVpZ2h0PSIyNiIgcng9IjYiIGZpbGw9IiMxNjFlMGIiIHN0cm9rZT0iIzM0NDAxYSIvPgogIDx0ZXh0IHg9IjI3IiB5PSIyNzMiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmaWxsPSIjYTNlNjM1Ij7ihrsgUmVzdW1lPC90ZXh0PgogIDx0ZXh0IHg9IjExMCIgeT0iMjczIiBmb250LXNpemU9IjEwLjUiIGZpbGw9IiM2RTZBNjMiPnJpZ2h0LWNsaWNrIOKWuCA8dHNwYW4gZmlsbD0iIzhiOTRhNiI+UmVzdW1lIG9uIGEgZGlmZmVyZW50IGRldmljZeKApjwvdHNwYW4+PC90ZXh0PgogIDx0ZXh0IHg9IjE2IiB5PSIzMTAiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiM4NGNjMTYiPuKckyBub3JtYWwgUmVzdW1lIChyZW9wZW5zIG9uIHlvc2VtaXRlLW0zLCB3aGVyZSBpdCByYW4pIMK3IHJpZ2h0LWNsaWNrIGZvciBkZXZpY2Ugb3B0aW9ucyDCtyBsb2dvIG9ubHk8L3RleHQ+Cjwvc3ZnPgo8L3NlY3Rpb24+CjwvZmlndXJlPgoKIyMjIExpc3QgY29udHJvbHMgJiBncm91cGluZyDigJQgYmVmb3JlIHZzIGFmdGVyCgo8ZmlndXJlIGNsYXNzPSJhcnRpZmFjdC1maWd1cmUgYXJ0aWZhY3QtYmVoYXZpb3IiPgo8ZmlnY2FwdGlvbj5GaWx0ZXIgKyBncm91cCBjb250cm9scy4gTGVmdDogZGVhZCAiR3JvdXAgUHJvamVjdCIgb3ZlciBhIGZsYXQgbGlzdC4gUmlnaHQ6IHN0YXR1cyBjaGlwcyArIHJlYWwgZ3JvdXBpbmcgd2l0aCBzZWN0aW9uIGhlYWRlcnMgdGhhdCBhY3R1YWxseSBzcGxpdCB0aGUgbGlzdC48L2ZpZ2NhcHRpb24+Cgo8c2VjdGlvbiBkYXRhLXN0YXRlPSJjdXJyZW50IiBkYXRhLWV2aWRlbmNlPSJjYXB0dXJlIj4KPHN2ZyB2aWV3Qm94PSIwIDAgNjAwIDE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiBmb250LWZhbWlseT0iR2Vpc3QsIHN5c3RlbS11aSwgc2Fucy1zZXJpZiI+CiAgPHRleHQgeD0iMCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTAuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSwgbW9ub3NwYWNlIiBsZXR0ZXItc3BhY2luZz0iMC41IiBmaWxsPSIjZjg3MTcxIj5UT0RBWSDigJQgIkdST1VQIFBST0pFQ1QiIFNFVCwgQlVUIFRIRSBMSVNUIElTIE9ORSBGTEFUICJQUkVWSU9VUyIgQkFORDwvdGV4dD4KICA8cmVjdCB4PSIwLjUiIHk9IjIyLjUiIHdpZHRoPSI1OTkiIGhlaWdodD0iMTI2IiByeD0iMTAiIGZpbGw9IiMwYTBhMGEiIHN0cm9rZT0iIzFiMjMzNCIvPgogIDxyZWN0IHg9IjE0IiB5PSIzNSIgd2lkdGg9IjUwIiBoZWlnaHQ9IjIwIiByeD0iMTAiIGZpbGw9IiMxYTFhMWEiIHN0cm9rZT0iI2ZmZmZmZjI2Ii8+PHRleHQgeD0iMjQiIHk9IjQ5IiBmb250LXNpemU9IjExIiBmaWxsPSIjRTdFNUU0Ij5BbGw8L3RleHQ+CiAgPHJlY3QgeD0iNzAiIHk9IjM1IiB3aWR0aD0iNTgiIGhlaWdodD0iMjAiIHJ4PSIxMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmMTQiLz48dGV4dCB4PSI4MCIgeT0iNDkiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiNBOEEyOUUiPkFjdGl2ZTwvdGV4dD4KICA8cmVjdCB4PSIxMzQiIHk9IjM1IiB3aWR0aD0iNzAiIGhlaWdodD0iMjAiIHJ4PSIxMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmMTQiLz48dGV4dCB4PSIxNDQiIHk9IjQ5IiBmb250LXNpemU9IjExIiBmaWxsPSIjQThBMjlFIj5GYXZvcml0ZXM8L3RleHQ+CiAgPHRleHQgeD0iMzgwIiB5PSI0OSIgZm9udC1zaXplPSIxMC41IiBmaWxsPSIjNkU2QTYzIj5Hcm91cCA8dHNwYW4gZmlsbD0iI0U3RTVFNCIgZm9udC13ZWlnaHQ9IjYwMCI+UHJvamVjdDwvdHNwYW4+ICBTb3J0IDx0c3BhbiBmaWxsPSIjRTdFNUU0IiBmb250LXdlaWdodD0iNjAwIj5MYXN0IGFjdGl2ZTwvdHNwYW4+PC90ZXh0PgogIDxyZWN0IHg9IjEiIHk9IjcwIiB3aWR0aD0iNTk4IiBoZWlnaHQ9IjI0IiBmaWxsPSIjMTExODI4Ii8+PGNpcmNsZSBjeD0iMTgiIGN5PSI4MiIgcj0iMy41IiBmaWxsPSIjYTc4YmZhIi8+PHRleHQgeD0iMzAiIHk9Ijg2IiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmaWxsPSIjYzRiNWZkIj5QUkVWSU9VUyDCtyBSRVNVTUFCTEU8L3RleHQ+CiAgPHRleHQgeD0iMzgwIiB5PSIxMjAiIGZvbnQtc2l6ZT0iMTAuNSIgZmlsbD0iI2Y4NzE3MSI+4pyVIG5vIFBSSVggLyBBR0VOVFMtQ0xJIHByb2plY3Qgc2VjdGlvbnMg4oCUIHRoZSBHcm91cCBjb250cm9sIGlzIGRlYWQ8L3RleHQ+Cjwvc3ZnPgo8L3NlY3Rpb24+Cgo8c2VjdGlvbiBkYXRhLXN0YXRlPSJwcm9wb3NlZCIgZGF0YS1ldmlkZW5jZT0ibW9ja3VwIj4KPHN2ZyB2aWV3Qm94PSIwIDAgNjAwIDIxMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiBmb250LWZhbWlseT0iR2Vpc3QsIHN5c3RlbS11aSwgc2Fucy1zZXJpZiI+CiAgPHRleHQgeD0iMCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTAuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSwgbW9ub3NwYWNlIiBsZXR0ZXItc3BhY2luZz0iMC41IiBmaWxsPSIjODRjYzE2Ij5QUk9QT1NFRCDigJQgU1RBVFVTIENISVBTICsgUkVBTCBHUk9VUElORyAoUFJPSkVDVCAvIERFVklDRSAvIFNUQVRVUyk8L3RleHQ+CiAgPHJlY3QgeD0iMC41IiB5PSIyMi41IiB3aWR0aD0iNTk5IiBoZWlnaHQ9IjE4NiIgcng9IjEwIiBmaWxsPSIjMGEwYTBhIiBzdHJva2U9IiMxYjIzMzQiLz4KICA8IS0tIHN0YXR1cyBjaGlwcyAtLT4KICA8cmVjdCB4PSIxNCIgeT0iMzUiIHdpZHRoPSI0MiIgaGVpZ2h0PSIyMCIgcng9IjEwIiBmaWxsPSIjMWExYTFhIiBzdHJva2U9IiNmZmZmZmYyNiIvPjx0ZXh0IHg9IjIyIiB5PSI0OSIgZm9udC1zaXplPSIxMSIgZmlsbD0iI0U3RTVFNCI+QWxsPC90ZXh0PgogIDxyZWN0IHg9IjYyIiB5PSIzNSIgd2lkdGg9IjU2IiBoZWlnaHQ9IjIwIiByeD0iMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJjNGExYyIvPjxjaXJjbGUgY3g9IjcyIiBjeT0iNDUiIHI9IjMiIGZpbGw9IiM0YWRlODAiLz48dGV4dCB4PSI4MCIgeT0iNDkiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiNBOEEyOUUiPkFjdGl2ZTwvdGV4dD4KICA8cmVjdCB4PSIxMjQiIHk9IjM1IiB3aWR0aD0iNTAiIGhlaWdodD0iMjAiIHJ4PSIxMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM2EyZTEyIi8+PGNpcmNsZSBjeD0iMTM0IiBjeT0iNDUiIHI9IjMiIGZpbGw9IiNmNWI1NDQiLz48dGV4dCB4PSIxNDIiIHk9IjQ5IiBmb250LXNpemU9IjExIiBmaWxsPSIjQThBMjlFIj5JZGxlPC90ZXh0PgogIDxyZWN0IHg9IjE4MCIgeT0iMzUiIHdpZHRoPSI2MiIgaGVpZ2h0PSIyMCIgcng9IjEwIiBmaWxsPSJub25lIiBzdHJva2U9IiMzYTFjMWMiLz48Y2lyY2xlIGN4PSIxOTAiIGN5PSI0NSIgcj0iMyIgZmlsbD0iI2Y4NzE3MSIvPjx0ZXh0IHg9IjE5OCIgeT0iNDkiIGZvbnQtc2l6ZT0iMTEiIGZpbGw9IiNBOEEyOUUiPkJsb2NrZWQ8L3RleHQ+CiAgPHJlY3QgeD0iMjQ4IiB5PSIzNSIgd2lkdGg9IjcwIiBoZWlnaHQ9IjIwIiByeD0iMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZmZmZjE0Ii8+PHRleHQgeD0iMjU4IiB5PSI0OSIgZm9udC1zaXplPSIxMSIgZmlsbD0iI0E4QTI5RSI+RmF2b3JpdGVzPC90ZXh0PgogIDx0ZXh0IHg9IjM5MiIgeT0iNDkiIGZvbnQtc2l6ZT0iMTAuNSIgZmlsbD0iIzZFNkE2MyI+R3JvdXAgPHRzcGFuIGZpbGw9IiNFN0U1RTQiIGZvbnQtd2VpZ2h0PSI2MDAiPlByb2plY3Qg4pa+PC90c3Bhbj4gIFNvcnQgPHRzcGFuIGZpbGw9IiNFN0U1RTQiIGZvbnQtd2VpZ2h0PSI2MDAiPkxhc3QgYWN0aXZlPC90c3Bhbj48L3RleHQ+CiAgPHRleHQgeD0iMzkyIiB5PSI2MyIgZm9udC1zaXplPSI5IiBmaWxsPSIjNWM2Njc1Ij5Qcm9qZWN0IMK3IERldmljZSDCtyBTdGF0dXMgwrcgTm9uZTwvdGV4dD4KICA8IS0tIGdyb3VwZWQgc2VjdGlvbnMgdGhhdCBhY3R1YWxseSBzcGxpdCAtLT4KICA8cmVjdCB4PSIxIiB5PSI3NCIgd2lkdGg9IjU5OCIgaGVpZ2h0PSIyMiIgZmlsbD0iIzExMTgyOCIvPjx0ZXh0IHg9IjE2IiB5PSI4OCIgZm9udC1zaXplPSIxMC41IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZmlsbD0iIzVlZWFkNCI+4pa4IFBSSVg8L3RleHQ+PHRleHQgeD0iNzAiIHk9Ijg4IiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmaWxsPSIjNWM2Njc1Ij4zPC90ZXh0PgogIDx0ZXh0IHg9IjEyMCIgeT0iODgiIGZvbnQtc2l6ZT0iOS41IiBmaWxsPSIjNWM2Njc1Ij4yIGFjdGl2ZSDCtyAxIGlkbGU8L3RleHQ+CiAgPHJlY3QgeD0iMSIgeT0iMTE4IiB3aWR0aD0iNTk4IiBoZWlnaHQ9IjIyIiBmaWxsPSIjMTExODI4Ii8+PHRleHQgeD0iMTYiIHk9IjEzMiIgZm9udC1zaXplPSIxMC41IiBmb250LWZhbWlseT0idWktbW9ub3NwYWNlLG1vbm9zcGFjZSIgZmlsbD0iIzVlZWFkNCI+4pa4IEFHRU5UUy1DTEk8L3RleHQ+PHRleHQgeD0iMTA2IiB5PSIxMzIiIGZvbnQtc2l6ZT0iMTAuNSIgZm9udC1mYW1pbHk9InVpLW1vbm9zcGFjZSxtb25vc3BhY2UiIGZpbGw9IiM1YzY2NzUiPjU8L3RleHQ+CiAgPHRleHQgeD0iMTYwIiB5PSIxMzIiIGZvbnQtc2l6ZT0iOS41IiBmaWxsPSIjNWM2Njc1Ij4xIGJsb2NrZWQgwrcgNCBwcmV2aW91czwvdGV4dD4KICA8cmVjdCB4PSIxIiB5PSIxNjIiIHdpZHRoPSI1OTgiIGhlaWdodD0iMjIiIGZpbGw9IiMxMTE4MjgiLz48dGV4dCB4PSIxNiIgeT0iMTc2IiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmaWxsPSIjNWVlYWQ0Ij7ilrggRkFTVFdJU1BSPC90ZXh0Pjx0ZXh0IHg9IjEwOCIgeT0iMTc2IiBmb250LXNpemU9IjEwLjUiIGZvbnQtZmFtaWx5PSJ1aS1tb25vc3BhY2UsbW9ub3NwYWNlIiBmaWxsPSIjNWM2Njc1Ij4yPC90ZXh0PgogIDx0ZXh0IHg9IjM5MiIgeT0iMTc2IiBmb250LXNpemU9IjkuNSIgZmlsbD0iIzg0Y2MxNiI+4pyTIHN3aXRjaCBHcm91cCDihpIgRGV2aWNlIG9yIFN0YXR1cyB0byByZS1idWNrZXQgdGhlIHNhbWUgcm93czwvdGV4dD4KPC9zdmc+Cjwvc2VjdGlvbj4KPC9maWd1cmU+CgojIyBDdXJyZW50IGFyY2hpdGVjdHVyZQoKQWxsIG9mIHRoaXMgaXMgcmVuZGVyLWxheWVyIGluIGBTZXNzaW9uc1BhbmUudHN4YCByZWFkaW5nIHRoZSBzdHJlYW1lZCBgRmxvb3JBZ2VudGAsCmV4Y2VwdCB0d28gZGF0YSBnYXBzIHdvcnRoIGNhbGxpbmcgb3V0LiBUaGUgcm93IGFscmVhZHkgY2FycmllcyBgcHJVcmxgOyBhIHJlcG8gVVJMIGFuZAphIExpbmVhciB0aWNrZXQgVVJMIGFyZSBkZXJpdmFibGUgKHJlcG8gZnJvbSBgcHJVcmxgOyBMaW5lYXIgZnJvbSB0aGUgdGlja2V0IGlkICsgdGhlCndvcmtzcGFjZSkuIFRoZSAqKnJlYWwgZmlyc3QgdXNlciBtZXNzYWdlKiogbWF5IG5vdCBiZSBvbiB0aGUgc3RyZWFtIOKAlCBgcHJvbXB0YC9gdG9waWNgCmNhbiBiZSBhIHNsYXNoLWNvbW1hbmQgaGVhZGVyIOKAlCBzbyAjMSBtYXkgbmVlZCBhIGBmaXJzdFVzZXJNZXNzYWdlYCBmaWVsZCBhZGRlZCB0byB0aGUKQ0xJJ3MgYFNlc3Npb25XYXRjaFJvd2AgKGJhY2tmaWxsZWQgZnJvbSB0aGUgaW5kZXgsIHRoZSB3YXkgYHZlcnNpb25gIGxhbmRlZCksIG5ldmVyIGEKc2lkZS1jaGFubmVsIGZldGNoIGhlcmUuCgo8ZmlndXJlIGNsYXNzPSJhcnRpZmFjdC1maWd1cmUgYXJ0aWZhY3QtZmlndXJlLWRpYWdyYW0iPgo8ZmlnY2FwdGlvbj5XaGVyZSBlYWNoIGZpeCBsaXZlcy4gR3JlZW4gPSByZW5kZXItb25seTsgYW1iZXIgPSBuZWVkcyBvbmUgQ0xJIGZpZWxkLjwvZmlnY2FwdGlvbj4KPHN2ZyB2aWV3Qm94PSIwIDAgNzAwIDE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiBmb250LWZhbWlseT0idWktc2Fucy1zZXJpZiwgc3lzdGVtLXVpIiBmb250LXNpemU9IjEyIj4KICA8cmVjdCB4PSIxNiIgeT0iNTAiIHdpZHRoPSIxNTAiIGhlaWdodD0iNTAiIHJ4PSI4IiBmaWxsPSIjMGYxNjI1IiBzdHJva2U9IiMxYjIzMzQiLz48dGV4dCB4PSI5MSIgeT0iNzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNFN0U1RTQiIGZvbnQtd2VpZ2h0PSI2MDAiPlNlc3Npb25XYXRjaFJvdzwvdGV4dD48dGV4dCB4PSI5MSIgeT0iODkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmNWI1NDQiIGZvbnQtc2l6ZT0iMTAiPisgZmlyc3RVc2VyTWVzc2FnZSAoIzEpPC90ZXh0PgogIDxyZWN0IHg9IjI2MCIgeT0iMjAiIHdpZHRoPSIxNzAiIGhlaWdodD0iNDYiIHJ4PSI4IiBmaWxsPSIjMGQxYTEyIiBzdHJva2U9IiMyYzRhMWMiLz48dGV4dCB4PSIzNDUiIHk9IjQwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjYTNlNjM1IiBmb250LXdlaWdodD0iNjAwIj5TZXNzaW9uUm93IChyZW5kZXIpPC90ZXh0Pjx0ZXh0IHg9IjM0NSIgeT0iNTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM4Yjk0YTYiIGZvbnQtc2l6ZT0iMTAiPmxvZ28tb25seSwgdGltaW5nLCBsaW5rcywgZ3JvdXA8L3RleHQ+CiAgPHJlY3QgeD0iMjYwIiB5PSI4NiIgd2lkdGg9IjE3MCIgaGVpZ2h0PSI0NiIgcng9IjgiIGZpbGw9IiMwZDFhMTIiIHN0cm9rZT0iIzJjNGExYyIvPjx0ZXh0IHg9IjM0NSIgeT0iMTA2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjYTNlNjM1IiBmb250LXdlaWdodD0iNjAwIj5FeHBhbmRlZENhcmQgKHJlbmRlcik8L3RleHQ+PHRleHQgeD0iMzQ1IiB5PSIxMjIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM4Yjk0YTYiIGZvbnQtc2l6ZT0iMTAiPnJlcXVlc3QsIG1ldGEsIG9uZSBSZXN1bWU8L3RleHQ+CiAgPHJlY3QgeD0iNTIwIiB5PSI1MCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI1MCIgcng9IjgiIGZpbGw9IiMwZDEyMjAiIHN0cm9rZT0iI2EzZTYzNSIgc3Ryb2tlLXdpZHRoPSIxLjQiLz48dGV4dCB4PSI2MDAiIHk9Ijc5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjYTNlNjM1IiBmb250LXdlaWdodD0iNzAwIj5TZXNzaW9ucyB2aWV3PC90ZXh0PgogIDxsaW5lIHgxPSIxNjYiIHkxPSI2NiIgeDI9IjI1NiIgeTI9IjQ2IiBzdHJva2U9IiM4Yjk0YTYiIHN0cm9rZS13aWR0aD0iMS40IiBtYXJrZXItZW5kPSJ1cmwoI2FyKSIvPgogIDxsaW5lIHgxPSIxNjYiIHkxPSI4NCIgeDI9IjI1NiIgeTI9IjEwOCIgc3Ryb2tlPSIjOGI5NGE2IiBzdHJva2Utd2lkdGg9IjEuNCIgbWFya2VyLWVuZD0idXJsKCNhcikiLz4KICA8bGluZSB4MT0iNDMwIiB5MT0iNDYiIHgyPSI1MTgiIHkyPSI2NiIgc3Ryb2tlPSIjOGI5NGE2IiBzdHJva2Utd2lkdGg9IjEuNCIgbWFya2VyLWVuZD0idXJsKCNhcikiLz4KICA8bGluZSB4MT0iNDMwIiB5MT0iMTA4IiB4Mj0iNTE4IiB5Mj0iODQiIHN0cm9rZT0iIzhiOTRhNiIgc3Ryb2tlLXdpZHRoPSIxLjQiIG1hcmtlci1lbmQ9InVybCgjYXIpIi8+CiAgPGRlZnM+PG1hcmtlciBpZD0iYXIiIG1hcmtlcldpZHRoPSI5IiBtYXJrZXJIZWlnaHQ9IjkiIHJlZlg9IjciIHJlZlk9IjQuNSIgb3JpZW50PSJhdXRvIj48cGF0aCBkPSJNMCwwIEw4LDQuNSBMMCw5IHoiIGZpbGw9IiM4Yjk0YTYiLz48L21hcmtlcj48L2RlZnM+Cjwvc3ZnPgo8L2ZpZ3VyZT4KCiMjIEludGVyYWN0aW9uIHNwZWMg4oCUIGV2ZXJ5IGNsaWNrYWJsZSB0aGluZwoKfCBFbGVtZW50IHwgQ2xpY2sgZG9lcyB8IE5vdGVzIHwKfC0tLXwtLS18LS0tfAp8IFJvdyBib2R5IC8gYOKMg2AgfCBFeHBhbmQgLyBjb2xsYXBzZSB8IFRoZSBvbmx5IGV4cGFuZCB0cmlnZ2VyIHwKfCBUaWNrZXQgYOKXhyBQSE5YLSMjIyNgIHwgT3BlbiBpbiAqKkxpbmVhcioqIChg4oaXYCkgfCBmYWxscyBiYWNrIHRvIGNvcHktaWQgaWYgbm8gVVJMIHwKfCBQUiBgUFIgI05OYCB8IE9wZW4gdGhlICoqR2l0SHViIFBSKiogKGDihpdgKSB8IGZyb20gYHByVXJsYCB8CnwgUmVwbyBg4paqIHByaXhgIHwgT3BlbiB0aGUgKipHaXRIdWIgcmVwbyoqIChg4oaXYCkgfCBkZXJpdmVkIGZyb20gYHByVXJsYCB8CnwgQnJhbmNoIGDikYIgbWFpbmAgfCAqKkNvcHkqKiAoYOKniWApIHwgbm8gbmF0dXJhbCBVUkwgfAp8IGBSZXN1bWVgIChub3JtYWwgYnV0dG9uKSB8IFJlb3BlbiB0aGUgc2Vzc2lvbiBvbiB0aGUgZGV2aWNlIGl0IHJhbiBvbiB8IHBsYWluLCBjb21wYWN0IOKAlCBzYW1lIGFzIHRoZSByb3cncyBSZXN1bWUgfAp8IGBSZXN1bWVgIHJpZ2h0LWNsaWNrIHwgQ29udGV4dCBtZW51OiAqKlJlc3VtZSBvbiBhIGRpZmZlcmVudCBkZXZpY2XigKYqKiAoKyBwaWNrIGEgZGV2aWNlKSB8IHRoZSBwb3dlciBjYXNlLCBvdXQgb2YgdGhlIHdheSB8CnwgR3JvdXAgYFByb2plY3Qg4pa+YCB8IFJlLWJ1Y2tldCBpbnRvIFByb2plY3QgLyBEZXZpY2UgLyBTdGF0dXMgLyBOb25lIHwgaGVhZGVycyBzcGxpdCB0aGUgbGlzdCBmb3IgcmVhbCB8CnwgU3RhdHVzIGNoaXAgfCBGaWx0ZXIgdG8gYWN0aXZlIC8gaWRsZSAvIGJsb2NrZWQgfCBkb3QgY29sb3IgZW5jb2RlcyBzdGF0dXMgfAoKIyMgU3RhdHVzIG1vZGVsCgp8IFN0YXR1cyB8IERvdCB8IE1lYW5zIHwgQ2hpcCAvIGdyb3VwIHwKfC0tLXwtLS18LS0tfC0tLXwKfCBgYWN0aXZlYCB8IGdyZWVuIHwgd29ya2luZywgbWFraW5nIHByb2dyZXNzIHwgQWN0aXZlIHwKfCBgaWRsZWAgfCBhbWJlciB8IHJ1bm5pbmcgYnV0IHN0b3BwZWQg4oCUIHdhaXRpbmcgb24geW91ciBpbnB1dCBvciBhIHBlcm1pc3Npb24gcHJvbXB0IHwgSWRsZSB8CnwgYHdhaXRpbmdgIHwgYW1iZXIgfCB3YWl0aW5nIG9uIGEgdG9vbCAvIENJIHRvIHJldHVybiB8IChmb2xkcyBpbnRvIElkbGUgdW5sZXNzIHlvdSB3YW50IGl0IHNwbGl0KSB8CnwgYGJsb2NrZWRgIHwgcmVkIHwgbmVlZHMgYSBkZWNpc2lvbiBvbmx5IHlvdSBjYW4gbWFrZSB8IEJsb2NrZWQgfAp8IGBwcmV2aW91c2AgfCBncmV5IHwgZW5kZWQsIHJlc3VtYWJsZSBmcm9tIHRyYW5zY3JpcHQgfCAodGhlIFByZXZpb3VzIGJhbmQpIHwKCiMjIFRpbWluZyBtb2RlbAoKLSAqKlJvdyBhZ2UqKjogYWx3YXlzIHJlbGF0aXZlIHRvIGxhc3QgYWN0aXZpdHkg4oCUIGA5bSBhZ29gLCBgMmggYWdvYCwgYDNkIGFnb2AuCi0gKipDYXJkIG1ldGEqKjogYFJhbiA8ZHVyYXRpb24+IMK3IGVuZGVkIDxyZWxhdGl2ZT4gYWdvYCwgd2l0aCB0aGUgYWJzb2x1dGUgcmFuZ2UKICAoYEF1ZyAzMCwgNDo0MuKAkzQ6NDQgUE1gKSBvbiBob3Zlci4gYGR1cmF0aW9uID0gbGFzdEFjdGl2aXR5IOKIkiBzdGFydGVkYDsgd2hlbiBpdCdzIDwxbQogIHNob3cgYFJhbiA8MW1gLiBOZXZlciBzaG93IHR3byBpZGVudGljYWwgdGltZXN0YW1wcy4KCiMjIFByb3Bvc2VkIENoYW5nZXMKCmBgYGRpZmYKIyBTZXNzaW9uUm93IGhlYWRlciDigJQgbG9nbyBjYXJyaWVzIGlkZW50aXR5OyBkcm9wIHRoZSByZWR1bmRhbnQgYWdlbnQtbmFtZSB0ZXh0Ci0gPHNwYW4gY2xhc3NOYW1lPSJzeC1hZ2VudCI+e2FnZW50SWR9PC9zcGFuPgotIHthLnByb2plY3QgJiYgPHNwYW4gY2xhc3NOYW1lPSJzeC1wcm9qIj57YS5wcm9qZWN0fTwvc3Bhbj59Ci0gPHNwYW4gY2xhc3NOYW1lPSJzeC10dGwiPntyb3cudGl0bGV9PC9zcGFuPgorIHthLnByb2plY3QgJiYgPHNwYW4gY2xhc3NOYW1lPSJzeC1wcm9qIj57YS5wcm9qZWN0fTwvc3Bhbj59CisgPHNwYW4gY2xhc3NOYW1lPSJzeC10dGwiPntyb3cudGl0bGV9PC9zcGFuPiAgIHsvKiB0aGUgYXZhdGFyIGFscmVhZHkgc2hvd3Mgd2hvICovfQpgYGAKCmBgYGRpZmYKIyBQaWxscyBuYXZpZ2F0ZSBpbnN0ZWFkIG9mIGNvcHktb3Itbm90aGluZwotIHthLnRpY2tldCAmJiA8c3BhbiBjbGFzc05hbWU9InN4LWNoaXAgdGlja2V0IiBvbkNsaWNrPXsoZSk9PmNvcHlQaWxsKGUsYS50aWNrZXQhKX0+4peHIHthLnRpY2tldH08L3NwYW4+fQorIHthLnRpY2tldCAmJiA8UGlsbExpbmsga2luZD0idGlja2V0IiBocmVmPXtsaW5lYXJVcmwoYS50aWNrZXQpfSBvbkNvcHlGYWxsYmFjaz17YS50aWNrZXR9PuKXhyB7YS50aWNrZXR9PC9QaWxsTGluaz59Cisge3Jvdy5yZXBvICYmIDxQaWxsTGluayBraW5kPSJyZXBvIiBocmVmPXtyZXBvVXJsKGEucHJVcmwpfT7ilqoge3Jvdy5yZXBvfTwvUGlsbExpbms+fQpgYGAKCmBgYGRpZmYKIyBHcm91cGluZzogbWFrZSBHcm91cCBhY3R1YWxseSBidWNrZXQgdGhlIFByZXZpb3VzIGxpc3QgdG9vIChub3QganVzdCBsaXZlKQotIGJ1aWxkU2Vzc2lvblNlY3Rpb25zKHNjb3BlZCwgJ2ZsYXQnLCAuLi4pICAgICAgICAgIC8vIHByZXZpb3VzIGFsd2F5cyBmbGF0CisgYnVpbGRTZXNzaW9uU2VjdGlvbnMoc2NvcGVkLCBncm91cCwgc29ydCwgZGVzYykgICAgLy8gaG9ub3IgUHJvamVjdCB8IERldmljZSB8IFN0YXR1cyB8IE5vbmUKYGBgCgojIyBQdWJsaWMgSW50ZXJmYWNlCgotIFJvdzogbG9nbyBvbmx5IChubyBhZ2VudC1uYW1lIHRleHQpOyB0aXRsZSBpcyB0aGUgcmVjYXA7IGFnZSBpcyByZWxhdGl2ZSAoYDltIGFnb2ApLgotIEV4cGFuZGVkIGNhcmQ6IGBZT1VSIFJFUVVFU1RgIChyZWFsIGZpcnN0IHVzZXIgbWVzc2FnZSArIFNlZSBtb3JlKSDCtyBgU0VTU0lPTmAKICAoYFJhbiDigKYgwrcgZW5kZWQg4oCmIGFnb2AsIGRldmljZSBvbmNlKSDCtyBgTElOS1NgICh0aWNrZXTihpJMaW5lYXIsIFBSL3JlcG/ihpJHaXRIdWIsCiAgYnJhbmNo4oaSY29weSkgwrcgb25lIGBSZXN1bWUgb24gPGRldmljZT5gLgotIExpc3Q6IHN0YXR1cyBjaGlwcyBgQWxsIMK3IEFjdGl2ZSDCtyBJZGxlIMK3IEJsb2NrZWQgwrcgRmF2b3JpdGVzYDsgR3JvdXAgYFByb2plY3QgwrcKICBEZXZpY2UgwrcgU3RhdHVzIMK3IE5vbmVgIHRoYXQgc3BsaXRzIHRoZSBsaXN0OyBTb3J0IHVuY2hhbmdlZC4KLSBJZiBgZmlyc3RVc2VyTWVzc2FnZWAgaXMgbWlzc2luZyBmcm9tIHRoZSBzdHJlYW0sIGl0IGlzIGFkZGVkIHRvIHRoZSBDTEkgcm93LgoKIyMgUGxhbgoKfCAjIHwgVGFzayB8IEZpbGUocykgfAp8LS0tfC0tLS0tLXwtLS0tLS0tLS18CnwgMSB8IFJlZmFjdG9yIGBTZXNzaW9uc1BhbmUudHN4YDogZXh0cmFjdCBgU2Vzc2lvblJvd2AsIGBFeHBhbmRlZENhcmRgLCBgUm93TGlua3NgLCBgU2Vzc2lvbk1ldGFgIGNvbXBvbmVudHM7IGNvbnNvbGlkYXRlIHRoZSBkdXBsaWNhdGVkIGBTRVNTSU9OX1JPV19DU1NgL2BDU1MzYCB8IGBTZXNzaW9uc1BhbmUudHN4YCAoKyBuZXcgZmlsZXMpIHwKfCAyIHwgTG9nby1vbmx5IGhlYWRlcjsgcmVsYXRpdmUtYWdlIGhlbHBlcjsgYFJhbiDigKYgwrcgZW5kZWQg4oCmIGFnb2AgbWV0YSB3aXRoIGhvdmVyIHwgYFNlc3Npb25zUGFuZS50c3hgLCBgcmVjYXBNb2RlbC50c2AgfAp8IDMgfCBgUGlsbExpbmtgIOKAlCB0aWNrZXTihpJMaW5lYXIsIFBSL3JlcG/ihpJHaXRIdWIgKHZpYSBgb3BlbkV4dGVybmFsYCBicmlkZ2UpLCBicmFuY2jihpJjb3B5IHwgYFNlc3Npb25zUGFuZS50c3hgIHwKfCA0IHwgRGV2aWNlIHNob3duIG9uY2U7IHNpbmdsZSBgUmVzdW1lIG9uIDxkZXZpY2U+YCB3aXRoIHN1YnRpdGxlOyBkcm9wIGBSZXN1bWUgaGVyZWAgfCBgU2Vzc2lvbnNQYW5lLnRzeGAgfAp8IDUgfCBTdGF0dXMgbW9kZWwgKyBzdGF0dXMgY2hpcHMgKyBHcm91cCBieSBQcm9qZWN0L0RldmljZS9TdGF0dXMvTm9uZSAobWFrZSBQcmV2aW91cyBob25vciBncm91cGluZykgfCBgZmxvb3JNb2RlbC50c2AsIGBzZXNzaW9uc01vZGVsLnRzYCwgYFNlc3Npb25zUGFuZS50c3hgIHwKfCA2IHwgYGZpcnN0VXNlck1lc3NhZ2VgIG9uIHRoZSBzdHJlYW0gaWYgYHByb21wdGAvYHRvcGljYCBpcyBhIGhlYWRlciAoQ0xJICsgYWRhcHRlcikgfCBhZ2VudHMtY2xpIGBTZXNzaW9uV2F0Y2hSb3dgLCBgcmVtb3RlU2Vzc2lvbnMudnNjb2RlLnRzYCB8CnwgNyB8IFRlc3RzIGZvciBlYWNoOyBgYnVuIHRlc3RgICsgYGNvbXBpbGU6ZXh0YCBncmVlbjsgdmVyaWZ5IGluIFZTIENvZGUsIHNjcmVlbnNob3QgfCBgKi50ZXN0LnRzeGAgfAoKIyMgVmFsaWRhdGlvbgoKLSBVbml0OiByZWxhdGl2ZS1hZ2UgKyBkdXJhdGlvbiBmb3JtYXR0aW5nOyBgUGlsbExpbmtgIG9wZW5zIHRoZSByaWdodCBVUkwgYW5kCiAgc3RvcHMgcHJvcGFnYXRpb247IGdyb3VwaW5nIGJ1Y2tldHMgUHJldmlvdXMgcm93cyBieSBQcm9qZWN0L0RldmljZS9TdGF0dXM7CiAgbG9nby1vbmx5IGhlYWRlciBoYXMgbm8gYWdlbnQtbmFtZSB0ZXh0LgotIFZpc3VhbCAoVlMgQ29kZSwgaW5zdGFsbGVkKTogZXhwYW5kIGEgY29kZXggcm93IOKGkiBZT1VSIFJFUVVFU1Qgc2hvd3MgdGhlIHJlYWwgcHJvbXB0CiAgd2l0aCBTZWUgbW9yZTsgU0VTU0lPTiByZWFkcyBgUmFuIOKApiDCtyBlbmRlZCDigKYgYWdvYDsgY2xpY2tpbmcgdGhlIHJlcG8gcGlsbCBvcGVucwogIEdpdEh1Yjsgc3dpdGNoaW5nIEdyb3VwIHJlLWJ1Y2tldHMuIFNjcmVlbnNob3QgZWFjaC4KCiMjIFJpc2tzCgotIGBmaXJzdFVzZXJNZXNzYWdlYDogaWYgdGhlIENMSSBnZW51aW5lbHkgY2FuJ3Qgc3VwcGx5IGl0LCBUSEUgQVNLIGZhbGxzIGJhY2sgdG8gdGhlCiAgYmVzdCBhdmFpbGFibGUgKHRvcGljL3Byb21wdCkgYW5kIHdlIGxhYmVsIGl0IGhvbmVzdGx5IOKAlCBuZXZlciBpbnZlbnQgdGV4dC4KLSBMaW5lYXIgVVJMIG5lZWRzIHRoZSB3b3Jrc3BhY2Ugc2x1ZzsgaWYgYWJzZW50LCB0aWNrZXQgcGlsbCBjb3BpZXMgdGhlIGlkIGluc3RlYWQgb2YKICBhIGRlYWQgbGluay4KLSBHcm91cGluZyB0aGUgUHJldmlvdXMgYmFuZCBieSBTdGF0dXMgbXVzdCBub3QgZG91YmxlLWNvdW50IGEgcm93IGFjcm9zcyBzZWN0aW9ucy4KCiMjIFRyYWNraW5nCgotIFBITlgtMzU5MyAoZXh0ZW5kcyB0aGUgb3BlbiBQUiAjMjMgYnJhbmNoIGBhZ2VudHMvcHJldnNlc3Npb25zLWZvbGxvd3VwYCkuCi0gSW1wbGVtZW50ZWQgYWZ0ZXIgeW91ciBzaWduLW9mZiwgdGhlbiB2ZXJpZmllZCBpbiBWUyBDb2RlIG9uIHppb24gd2l0aCBzY3JlZW5zaG90cy4K"}</script>
+<script>
+(() => {
+  const root = document.documentElement;
+  const button = document.querySelector('.theme-toggle');
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const configured = "system";
+  const stored = () => { try { const value = localStorage.getItem('artifacts-theme'); return value === 'light' || value === 'dark' ? value : null; } catch { return null; } };
+  const preferred = () => stored() || (configured === 'system' ? (media.matches ? 'dark' : 'light') : configured);
+  const apply = (theme, persist) => {
+    root.dataset.theme = theme;
+    root.style.colorScheme = theme;
+    const next = theme === 'dark' ? 'light' : 'dark';
+    button.setAttribute('aria-label', 'Switch to ' + next + ' theme');
+    button.setAttribute('title', 'Switch to ' + next + ' theme');
+    button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+    if (persist) { try { localStorage.setItem('artifacts-theme', theme); } catch {} }
+  };
+  apply(preferred(), false);
+  button.addEventListener('click', () => apply(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+  media.addEventListener('change', () => { if (configured === 'system' && !stored()) apply(media.matches ? 'dark' : 'light', false); });
+})();
+</script><script>
+(() => {
+  // Scroll-spy: mark the section the reader is currently in. The active heading
+  // is the last one whose top has passed the reading line, so a heading is
+  // "current" from the moment it reaches the top, not when it leaves.
+  const links = [...document.querySelectorAll('.toc-item')];
+  if (links.length) {
+    const targets = links
+      .map((link) => ({ link, heading: document.getElementById(link.dataset.tocFor) }))
+      .filter((entry) => entry.heading);
+    let active = null;
+    let queued = false;
+    const sync = () => {
+      queued = false;
+      const line = 120;
+      let current = targets[0];
+      for (const entry of targets) {
+        if (entry.heading.getBoundingClientRect().top <= line) current = entry;
+        else break;
+      }
+      // Past the end of the document the last section is the one being read.
+      if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 4) current = targets[targets.length - 1];
+      if (!current || current.link === active) return;
+      if (active) active.classList.remove('is-active');
+      active = current.link;
+      active.classList.add('is-active');
+      const rail = active.closest('.toc');
+      if (rail && rail.scrollHeight > rail.clientHeight) {
+        const top = active.offsetTop - rail.clientHeight / 2;
+        rail.scrollTo({ top, behavior: 'smooth' });
+      }
+    };
+    const onScroll = () => { if (!queued) { queued = true; requestAnimationFrame(sync); } };
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll, { passive: true });
+    sync();
+  }
+
+  // Local read count. Per-browser, keyed by this artifact's own identity, so a
+  // shared link counts each reader's own visits rather than a global total.
+  try {
+    const key = 'artifacts-views:' + location.origin + location.pathname + ':' + (document.title || '');
+    const count = (parseInt(localStorage.getItem(key) || '0', 10) || 0) + 1;
+    localStorage.setItem(key, String(count));
+    const label = document.querySelector('.view-count');
+    if (label) {
+      label.textContent = count === 1 ? 'first read' : count + ' reads';
+      label.hidden = false;
+    }
+  } catch {}
+})();
+</script><script>
+(() => {
+  const current = document.querySelector('meta[name="artifacts-content-hash"]')?.content;
+  const chip = document.querySelector('.reload-chip');
+  if (!current || !chip || !['127.0.0.1', 'localhost', '::1'].includes(location.hostname)) return;
+  chip.addEventListener('click', () => location.reload());
+  const check = async () => {
+    try {
+      const response = await fetch(location.href, { cache: 'no-store' });
+      const html = await response.text();
+      const next = html.match(/<meta name="artifacts-content-hash" content="([^"]+)">/)?.[1];
+      if (next && next !== current) chip.hidden = false;
+    } catch {}
+  };
+  setInterval(check, 1500);
+})();
+</script><script>
+(() => {
+  const root = document.querySelector('.artifact-body');
+  if (!root) return;
+
+  const storageKey = 'artifacts-highlights:' + location.origin + location.pathname + ':' + (document.title || '');
+  const selector = 'h2,h3,p,li,blockquote,pre,figcaption,td,th,dd';
+  const hash = (value) => {
+    let result = 2166136261;
+    for (let index = 0; index < value.length; index += 1) { result ^= value.charCodeAt(index); result = Math.imul(result, 16777619); }
+    return (result >>> 0).toString(36);
+  };
+  const anchors = [...root.querySelectorAll(selector)].filter((element) => !element.parentElement.closest(selector));
+  const bases = [];
+  let section = 'document';
+  for (const anchor of anchors) {
+    if ((anchor.tagName === 'H2' || anchor.tagName === 'H3') && anchor.id) section = anchor.id;
+    anchor.dataset.readerSection = section;
+    const text = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    bases.push(anchor.id ? 'id:' + anchor.id : section + ':' + anchor.tagName.toLowerCase() + ':' + hash(text));
+  }
+  const totals = new Map();
+  for (const base of bases) totals.set(base, (totals.get(base) || 0) + 1);
+  const occurrences = new Map();
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    const base = bases[index];
+    const occurrence = (occurrences.get(base) || 0) + 1;
+    occurrences.set(base, occurrence);
+    anchor.dataset.readerAnchor = base.startsWith('id:') ? base : base + ':count:' + totals.get(base) + ':occurrence:' + occurrence;
+  }
+  const byId = new Map(anchors.map((anchor) => [anchor.dataset.readerAnchor, anchor]));
+
+  const read = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      return Array.isArray(value) ? value.filter((item) => item && item.id && item.start && item.end).map((item) => ({
+        quote: '', note: '', section: 'document', created_at: new Date().toISOString(), ...item,
+      })) : [];
+    } catch { return []; }
+  };
+  let highlights = read();
+  let postTimer;
+  const post = () => {
+    if (location.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1'].includes(location.hostname)) return;
+    fetch('/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schema: 'artifacts.notes.v1', notes: highlights }) }).catch(() => {});
+  };
+  const write = () => {
+    try { localStorage.setItem(storageKey, JSON.stringify(highlights)); } catch {}
+    clearTimeout(postTimer); postTimer = setTimeout(post, 600);
+  };
+  const textLength = (anchor) => (anchor.textContent || '').length;
+  const offsetAt = (anchor, node, offset) => {
+    const range = document.createRange(); range.selectNodeContents(anchor);
+    try { range.setEnd(node, offset); } catch { return null; }
+    return range.toString().length;
+  };
+  const wrap = (anchor, start, end, id) => {
+    if (end <= start) return;
+    const nodes = []; const walker = document.createTreeWalker(anchor, NodeFilter.SHOW_TEXT); let cursor = 0; let node = walker.nextNode();
+    while (node) {
+      const nodeStart = cursor; const nodeEnd = cursor + node.data.length;
+      if (nodeEnd > start && nodeStart < end) nodes.push([node, Math.max(0, start - nodeStart), Math.min(node.data.length, end - nodeStart)]);
+      cursor = nodeEnd; node = walker.nextNode();
+    }
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+      const [textNode, from, to] = nodes[index]; if (to <= from) continue;
+      const range = document.createRange(); range.setStart(textNode, from); range.setEnd(textNode, to);
+      const mark = document.createElement('mark'); mark.className = 'reader-highlight'; mark.dataset.highlightId = id; mark.title = 'Open note';
+      range.surroundContents(mark);
+    }
+  };
+  const clearMarks = () => {
+    for (const mark of root.querySelectorAll('mark[data-highlight-id]')) mark.replaceWith(...mark.childNodes);
+    for (const anchor of anchors) anchor.normalize();
+  };
+  const render = () => {
+    clearMarks();
+    for (const highlight of highlights) {
+      const first = byId.get(highlight.start.anchor); const last = byId.get(highlight.end.anchor);
+      const firstIndex = anchors.indexOf(first); const lastIndex = anchors.indexOf(last);
+      if (!first || !last || firstIndex < 0 || lastIndex < firstIndex) continue;
+      for (let index = firstIndex; index <= lastIndex; index += 1) wrap(anchors[index], index === firstIndex ? highlight.start.offset : 0, index === lastIndex ? highlight.end.offset : textLength(anchors[index]), highlight.id);
+    }
+  };
+
+  const style = document.createElement('style');
+  style.textContent = '.reader-toolbar,.reader-popover{position:fixed;z-index:40;display:flex;align-items:center;gap:6px;padding:7px;border:1px solid var(--line,#ccc);border-radius:10px;background:var(--surface,#fff);color:var(--text,#111);box-shadow:0 10px 35px rgba(0,0,0,.18);font:500 12px/1.2 var(--font-mono,monospace)}.reader-toolbar[hidden],.reader-popover[hidden]{display:none}.reader-toolbar-status{padding:0 6px;color:var(--muted,#666)}.reader-toolbar button,.reader-popover button{border:1px solid var(--line,#ccc);border-radius:999px;background:var(--surface-alt,#f5f5f5);color:inherit;padding:6px 9px;font:inherit;cursor:pointer}.reader-popover{width:min(360px,calc(100vw - 24px));align-items:stretch;flex-direction:column;padding:12px}.reader-popover-quote{margin:0;color:var(--muted,#666);font-style:italic;line-height:1.45}.reader-popover textarea{width:100%;min-height:84px;resize:vertical;border:1px solid var(--line,#ccc);border-radius:7px;padding:8px;background:var(--bg,#fff);color:inherit;font:13px/1.4 var(--font-body,sans-serif)}.reader-popover-actions{display:flex;gap:6px}.reader-remove{margin-left:auto;color:var(--danger,#b91c1c)!important}';
+  document.head.append(style);
+  const toolbar = document.createElement('div'); toolbar.className = 'reader-toolbar'; toolbar.hidden = true;
+  toolbar.innerHTML = '<span class="reader-toolbar-status">Copied</span><span aria-hidden="true">·</span><button type="button" data-reader-action="highlight">Highlight</button><span aria-hidden="true">·</span><button type="button" data-reader-action="note">Note</button>';
+  document.body.append(toolbar);
+  const popover = document.createElement('div'); popover.className = 'reader-popover'; popover.hidden = true;
+  popover.innerHTML = '<p class="reader-popover-quote"></p><textarea aria-label="Note" placeholder="Attach a note…"></textarea><div class="reader-popover-actions"><button type="button" data-reader-action="copy">Copy</button><button type="button" class="reader-remove" data-reader-action="remove">Remove</button></div>';
+  document.body.append(popover);
+  let pending = null; let activeId = null; let noteTimer;
+  const place = (element, rect) => { element.style.left = Math.max(8, Math.min(innerWidth - element.offsetWidth - 8, rect.left)) + 'px'; element.style.top = Math.max(8, rect.bottom + 8) + 'px'; };
+  const openNote = (item, rect) => {
+    activeId = item.id; toolbar.hidden = true; popover.hidden = false;
+    popover.querySelector('.reader-popover-quote').textContent = '“' + item.quote + '”'; popover.querySelector('textarea').value = item.note || '';
+    place(popover, rect);
+  };
+  const persistPending = (open) => {
+    if (!pending) return;
+    const duplicate = highlights.find((item) => item.start.anchor === pending.start.anchor && item.start.offset === pending.start.offset && item.end.anchor === pending.end.anchor && item.end.offset === pending.end.offset);
+    const item = duplicate || { id: Date.now().toString(36) + Math.random().toString(36).slice(2), ...pending, created_at: new Date().toISOString() };
+    if (!duplicate) highlights.push(item);
+    write(); toolbar.hidden = true; render();
+    if (open) openNote(item, pending.rect);
+  };
+
+  root.addEventListener('mouseup', () => {
+    const selection = getSelection(); if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0); const startAnchor = range.startContainer.parentElement?.closest('[data-reader-anchor]'); const endAnchor = range.endContainer.parentElement?.closest('[data-reader-anchor]');
+    if (!startAnchor || !endAnchor || !root.contains(startAnchor) || !root.contains(endAnchor)) return;
+    const startOffset = offsetAt(startAnchor, range.startContainer, range.startOffset); const endOffset = offsetAt(endAnchor, range.endContainer, range.endOffset);
+    if (startOffset === null || endOffset === null) return;
+    const startIndex = anchors.indexOf(startAnchor); const endIndex = anchors.indexOf(endAnchor);
+    if (startIndex > endIndex || (startIndex === endIndex && startOffset >= endOffset)) return;
+    const quote = selection.toString(); const rect = range.getBoundingClientRect();
+    pending = { quote, note: '', section: startAnchor.dataset.readerSection || 'document', start: { anchor: startAnchor.dataset.readerAnchor, offset: startOffset }, end: { anchor: endAnchor.dataset.readerAnchor, offset: endOffset }, rect };
+    navigator.clipboard?.writeText(quote).catch(() => {});
+    popover.hidden = true; toolbar.hidden = false; requestAnimationFrame(() => place(toolbar, rect));
+  });
+  toolbar.addEventListener('mousedown', (event) => event.preventDefault());
+  toolbar.addEventListener('click', (event) => {
+    const action = event.target.closest('button')?.dataset.readerAction;
+    if (action === 'highlight') persistPending(false);
+    if (action === 'note') persistPending(true);
+  });
+  root.addEventListener('click', (event) => {
+    const mark = event.target.closest('mark[data-highlight-id]'); if (!mark || !root.contains(mark)) return;
+    event.preventDefault(); event.stopPropagation();
+    const item = highlights.find((value) => value.id === mark.dataset.highlightId); if (item) openNote(item, mark.getBoundingClientRect());
+  });
+  popover.querySelector('textarea').addEventListener('input', (event) => {
+    clearTimeout(noteTimer); noteTimer = setTimeout(() => {
+      const item = highlights.find((value) => value.id === activeId); if (item) { item.note = event.target.value; write(); }
+    }, 600);
+  });
+  popover.addEventListener('click', (event) => {
+    const action = event.target.closest('button')?.dataset.readerAction; const item = highlights.find((value) => value.id === activeId); if (!item) return;
+    if (action === 'copy') navigator.clipboard?.writeText(item.quote).catch(() => {});
+    if (action === 'remove') { highlights = highlights.filter((value) => value.id !== activeId); write(); popover.hidden = true; render(); }
+  });
+  render();
+})();
+</script>
+</body>
+</html>
