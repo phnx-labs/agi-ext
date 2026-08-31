@@ -26,6 +26,10 @@ describe('SessionPresentationStore', () => {
       { rowKey: 'a', sourceDevice: 'zion', status: 'active' },
       { rowKey: 'b', sourceDevice: 'zion', status: 'orphaned' },
     ]);
+    store.apply({ v: 1, type: 'agent.remove', streamId: 's', sequence: 3, capturedAt: 3, scope: 'zion', rowKey: 'a' });
+    expect(store.sessions()).toEqual([
+      { rowKey: 'b', sourceDevice: 'zion', status: 'orphaned' },
+    ]);
   });
 
   // RUSH-2670: a detached session's row has host 'tmux' (the terminal APP — the

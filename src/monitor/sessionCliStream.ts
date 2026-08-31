@@ -41,6 +41,8 @@ export class SessionCliReplay {
       }));
     } else if (event.type === 'agent.upsert' && event.rowKey && event.agent) {
       current.rows.set(event.rowKey, event.agent);
+    } else if (event.type === 'agent.remove' && event.rowKey) {
+      current.rows.delete(event.rowKey);
     } else if (event.type === 'attention.upsert' && event.rowKey && event.attention && !Array.isArray(event.attention)) {
       current.attention.set(event.rowKey, event.attention);
     } else if (event.type === 'attention.remove' && event.rowKey) {

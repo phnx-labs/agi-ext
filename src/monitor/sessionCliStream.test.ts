@@ -31,14 +31,14 @@ test('SessionCliReplay gives a late window the current rows without another CLI 
   replay.ingest({ v: 1, type: 'agent.upsert', streamId: 'cli', sequence: 3, capturedAt: 3, scope: 'zion', rowKey: 'b', agent:
     { rowKey: 'b', sourceDevice: 'zion', sessionId: 'current' },
   });
-  replay.ingest({ v: 1, type: 'scope', streamId: 'cli', sequence: 4, capturedAt: 4, scope: 'zion', status: 'available' });
+  replay.ingest({ v: 1, type: 'agent.remove', streamId: 'cli', sequence: 4, capturedAt: 4, scope: 'zion', rowKey: 'a' });
+  replay.ingest({ v: 1, type: 'scope', streamId: 'cli', sequence: 5, capturedAt: 5, scope: 'zion', status: 'available' });
   const first = replay.envelopes('late-window');
   expect(first).toEqual([
-    { v: 1, type: 'reset', streamId: 'replay:late-window:zion:1', sequence: 1, capturedAt: 4, scope: 'zion', agents: [
-      { rowKey: 'a', sourceDevice: 'zion', sessionId: 'old' },
+    { v: 1, type: 'reset', streamId: 'replay:late-window:zion:1', sequence: 1, capturedAt: 5, scope: 'zion', agents: [
       { rowKey: 'b', sourceDevice: 'zion', sessionId: 'current' },
     ], attention: [] },
-    { v: 1, type: 'scope', streamId: 'replay:late-window:zion:1', sequence: 2, capturedAt: 4, scope: 'zion', status: 'available' },
+    { v: 1, type: 'scope', streamId: 'replay:late-window:zion:1', sequence: 2, capturedAt: 5, scope: 'zion', status: 'available' },
   ]);
   expect(replay.envelopes('late-window')[0].streamId).not.toBe(first[0].streamId);
 });

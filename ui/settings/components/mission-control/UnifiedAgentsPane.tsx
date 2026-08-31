@@ -53,6 +53,8 @@ import {
   sessionTaskLine,
   ticketWorkers,
   projectRollups,
+  isPrevious,
+  mergeSessionAgents,
   visibleFloorAgents,
   type FloorAgent,
   type FloorAttachment,
@@ -1671,13 +1673,21 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       ),
     [remoteSessions, localTabSessionIds, pinned, localHostName, projectRules]
   )
-  const floorAgents = useMemo(
+  const streamedFloorAgents = useMemo(
     () => [...floorLocalAgents, ...floorRemoteAgents],
     [floorLocalAgents, floorRemoteAgents]
   )
-  // The canonical watch stream already carries recoverable/inactive rows. Sessions
-  // uses that one projection directly; no second history sweep or dedupe can drift.
-  const sessionsAgents = floorAgents
+  // Durable Previous rows ride the SAME watch stream under an explicit marker.
+  // Keep them out of the live Feed/Needs-you surfaces, then fold them into Sessions
+  // with the existing live-wins dedupe for a session that is currently running.
+  const floorAgents = useMemo(
+    () => streamedFloorAgents.filter((agent) => !isPrevious(agent)),
+    [streamedFloorAgents]
+  )
+  const sessionsAgents = useMemo(
+    () => mergeSessionAgents(floorAgents, streamedFloorAgents.filter(isPrevious)),
+    [floorAgents, streamedFloorAgents]
+  )
   const floorTickets = useMemo(() => adaptTickets(unifiedTasks), [unifiedTasks])
   // Ticket id -> agents carrying it: the backlog's in-flight chips and the ticket
   // detail's "In flight" block + double-dispatch guard all join on this.
