@@ -156,6 +156,9 @@ export interface FloorAgent {
   project: string       // repo or cwd basename (worktrees folded to their repo)
   name: string          // displayName / branch-derived label
   abbr: AgentAbbr       // agentType -> CC/CX/GX/...
+  /** Exact CLI harness id. Resume uses this instead of reverse-mapping the avatar
+   *  abbreviation, which is intentionally lossy for aliases and unknown harnesses. */
+  agentType?: string
   phase: FloorPhase
   verb: string          // current activity verb, e.g. "Editing"
   target: string        // activity object, e.g. "src/core/tasks.ts"
@@ -237,12 +240,11 @@ export interface FloorAgent {
 
 // ---------- Sessions surface (manage / recover) ----------
 
-/** The status filter chips on the Sessions surface — exactly these three
- *  (RUSH/PHNX-3593). No 'orphaned': without tmux a session is either Active or a
- *  resumable Previous row, never a detached-but-alive orphan. */
-export type SessionFilter = 'all' | 'active' | 'favorites'
+/** Status filter chips on the Sessions surface. All status membership comes from
+ *  CLI-supplied phase/attention fields; the view never probes lifecycle itself. */
+export type SessionFilter = 'all' | 'active' | 'idle' | 'blocked' | 'favorites'
 /** How the Sessions list is grouped into sections. */
-export type SessionGroup = 'state' | 'project' | 'host' | 'flat'
+export type SessionGroup = 'project' | 'device' | 'status' | 'none'
 /** The within-group sort key for the Sessions list. */
 export type SessionSort = 'recent' | 'started' | 'status' | 'name' | 'tok'
 
@@ -253,6 +255,8 @@ export type SessionSort = 'recent' | 'started' | 'status' | 'name' | 'tok'
  * `sessionState === 'inactive'`, never from `phase`. Pure so it is unit-tested.
  */
 export type SessionBand = 'attention' | 'active' | 'done' | 'previous'
+/** User-facing Sessions taxonomy shared by filters and Group: Status. */
+export type SessionStatus = 'active' | 'idle' | 'blocked' | 'previous'
 
 /**
  * True for a resumable PREVIOUS session — a crashed/ended row folded in from the
@@ -283,6 +287,18 @@ export function sessionBand(a: FloorAgent): SessionBand {
 }
 
 /**
+ * Classify a row from the CLI stream only. An open attention item is Blocked;
+ * failed sessions are likewise actionable. Waiting folds into Idle until the CLI
+ * exposes a more specific status, as does ordinary idle. Ended rows are Previous.
+ */
+export function sessionStatus(a: FloorAgent): SessionStatus {
+  if (isPrevious(a) || a.phase === 'done') return 'previous'
+  if (a.needs || a.phase === 'failed') return 'blocked'
+  if (a.phase === 'idle' || a.phase === 'waiting') return 'idle'
+  return 'active'
+}
+
+/**
  * The exact command that resumes a session, sourced from the CLI's own recovery
  * record when present (`agents sessions resume <id> --device <device>`), else built
  * from the row's resumable id + device. Returns null for a non-resumable harness
@@ -297,6 +313,25 @@ export function resumeCommand(a: FloorAgent): { command: string; args: string[];
     ? ['sessions', 'resume', a.sessionId, '--device', device]
     : ['sessions', 'resume', a.sessionId]
   return { command: 'agents', args }
+}
+
+/**
+ * Resolve the id targeted by the CLI recovery record. Historical rows should carry
+ * `sessionId`, but older stream projections only carried the recovery argv. A row
+ * with a real recovery command must still be actionable: the Sessions UI uses this
+ * same resolver both to show Resume and to route the click, so it can never display
+ * a Resume button whose handler silently falls through to dead-session focus.
+ */
+export function recoverySessionId(a: Pick<FloorAgent, 'sessionId' | 'recovery'>): string | null {
+  const direct = a.sessionId?.trim()
+  if (direct) return direct
+  const args = a.recovery?.args ?? []
+  for (let index = 1; index + 1 < args.length; index++) {
+    if (args[index - 1] !== 'sessions' || args[index] !== 'resume') continue
+    const recovered = (args[index + 1] ?? '').trim()
+    return recovered && !recovered.startsWith('-') ? recovered : null
+  }
+  return null
 }
 
 // ---------- HOSTS sidebar rows ----------

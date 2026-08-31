@@ -57,9 +57,6 @@ interface SessionsPaneProps {
   onResumeMany: (agents: FloorAgent[]) => void
   /** Select a session for the detail pane. */
   onSelect: (a: FloorAgent) => void
-  /** View a non-resumable session's transcript (recovery: null harnesses).
-   *  Defaults to onSelect (open the detail pane) when the parent supplies none. */
-  onView?: (a: FloorAgent) => void
   /** Currently selected session id (detail pane). */
   selectedId?: string | null
   /** True while the follower has not yet observed a CLI stream reset. */
@@ -92,13 +89,20 @@ const SORT_OPTS: { value: SessionSort; label: string }[] = [
   { value: 'tok', label: 'Tokens/s' },
 ]
 const GROUP_OPTS: { value: SessionGroup; label: string }[] = [
-  { value: 'state', label: 'State' },
   { value: 'project', label: 'Project' },
-  { value: 'host', label: 'Host' },
-  { value: 'flat', label: 'Flat' },
+  { value: 'device', label: 'Device' },
+  { value: 'status', label: 'Status' },
+  { value: 'none', label: 'None' },
+]
+const FILTER_OPTS: { value: SessionFilter; label: string; tone?: 'active' | 'idle' | 'blocked' }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active', tone: 'active' },
+  { value: 'idle', label: 'Idle', tone: 'idle' },
+  { value: 'blocked', label: 'Blocked', tone: 'blocked' },
+  { value: 'favorites', label: 'Favorites' },
 ]
 
-export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, onView, selectedId, streamDegraded = false }: SessionsPaneProps) {
+export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<SessionGroup>('project')
@@ -180,13 +184,14 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
       <style>{SESSION_ROW_CSS}</style>
       <div className="sx-filters">
         <div className="sx-chips">
-          {(['all', 'active', 'favorites'] as SessionFilter[]).map((f) => (
+          {FILTER_OPTS.map(({ value: f, label, tone }) => (
             <button
               key={f}
               className={`sx-chip${filter === f ? ' on' : ''}`}
               onClick={() => setFilter(f)}
             >
-              {f[0]!.toUpperCase() + f.slice(1)}
+              {tone && <span className={`sx-status-dot ${tone}`} aria-hidden />}
+              {label}
               <span className="n">{counts[f]}</span>
             </button>
           ))}
@@ -232,9 +237,9 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                   <SectionHeader
                     key={it.section.key}
                     section={it.section}
-                    resumableCount={it.section.band === 'previous' ? it.section.agents.filter((a) => !!resumeCommand(a)).length : 0}
+                    resumableCount={it.section.agents.filter((a) => !!resumeCommand(a)).length}
                     onResumeAll={() => resumeSection(it.section)}
-                    hasMore={it.section.band === 'previous' && previousHasMore}
+                    hasMore={it.section.kind === 'pager' && previousHasMore}
                     moreCount={previousPageSize}
                     onShowMore={showMorePrevious}
                   />
@@ -251,7 +256,6 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                     onToggleStar={onToggleStar}
                     onResume={onResume}
                     onResumeContext={onResumeOnDevice ? openResumeMenu : undefined}
-                    onView={onView ?? onSelect}
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
                   />
@@ -302,12 +306,12 @@ function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, more
   moreCount: number
   onShowMore: () => void
 }) {
-  const isPrev = section.band === 'previous'
-  const countLabel = isPrev && section.total !== undefined && section.total !== section.agents.length
-    ? `${section.agents.length} shown of ${section.total}`
+  const isPrev = section.status === 'previous'
+  const countLabel = section.kind === 'pager' && section.total !== undefined
+    ? `${section.shown ?? 0} shown of ${section.total}`
     : String(section.agents.length)
   return (
-    <div className={`sx-band${isPrev ? ' previous' : ''}${section.kind === 'favorites' ? ' star' : ''}`} style={{ height: HEADER_H }}>
+    <div className={`sx-band${isPrev ? ' previous' : ''}${section.status ? ` ${section.status}` : ''}`} style={{ height: HEADER_H }}>
       <span className="g" aria-hidden />
       <span className="lab">{section.label}</span>
       <span className="cnt">{countLabel}</span>

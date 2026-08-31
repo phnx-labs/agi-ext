@@ -1,10 +1,11 @@
 import React from 'react'
-import { isPrevious, resumeCommand, type FloorAgent } from '../floorModel'
+import { isPrevious, type FloorAgent } from '../floorModel'
 import { sessionRowView, type SessionRowView } from '../recapModel'
 import { AgentAvatar, agentIdFromPrefix } from '../AgentAvatar'
 import { ExpandedCard } from './ExpandedCard'
 import { RowLinks } from './RowLinks'
 import { formatRelativeTime } from './sessionTime'
+import { previousResumeMessage } from './sessionActions'
 
 export interface SessionRowProps {
   agent: FloorAgent
@@ -16,7 +17,6 @@ export interface SessionRowProps {
   onToggleSelect: (id: string) => void
   onToggleStar: (agent: FloorAgent) => void
   onResume: (agent: FloorAgent) => void
-  onView: (agent: FloorAgent) => void
   onSelect: (agent: FloorAgent) => void
   onToggleExpand: (id: string) => void
   onResumeContext?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
@@ -35,10 +35,10 @@ const PHASE_LABEL: Record<string, string> = {
 
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onView, onSelect, onToggleExpand, onResumeContext,
+  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext,
 }: SessionRowProps) {
   const previous = isPrevious(a)
-  const canResume = !previous || !!resumeCommand(a)
+  const canResume = !previous || !!previousResumeMessage(a)
   const resumeTitle = previous
     ? `Resume — relaunch from the transcript on ${a.sourceDevice || a.hostLabel || a.host}`
     : 'Resume this session'
@@ -89,7 +89,7 @@ function SessionRowImpl({
             title={resumeTitle}
             onClick={(e) => { e.stopPropagation(); onResume(a) }}
             onContextMenu={(e) => {
-              if (!onResumeContext || !resumeCommand(a)) return
+              if (!onResumeContext || !previousResumeMessage(a)) return
               e.preventDefault()
               e.stopPropagation()
               onResumeContext(a, e)
@@ -97,13 +97,7 @@ function SessionRowImpl({
           >
             <span aria-hidden>↻</span><span className="sx-resumelabel">Resume</span>
           </button>
-        ) : (
-          <button
-            className="sx-viewbtn"
-            title="View the session transcript (this harness has no resume path)"
-            onClick={(e) => { e.stopPropagation(); onView(a) }}
-          ><span aria-hidden>↗</span><span className="sx-resumelabel">View</span></button>
-        )}
+        ) : null}
         <span className="sx-age">{formatRelativeTime(a.lastActivityMs || a.startedAtMs || 0, nowMs)}</span>
         <span className={`sx-live${liveClass ? ` ${liveClass}` : ''}`} title={a.liveStatus || a.phase} />
       </span>

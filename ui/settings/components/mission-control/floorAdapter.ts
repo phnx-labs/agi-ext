@@ -532,6 +532,7 @@ export function toFloorAgentFromUnified(
     project,
     name: u.displayName,
     abbr: abbrFor(u.agentType),
+    agentType: u.agentType,
     phase,
     verb,
     target,
@@ -662,6 +663,7 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     project: deriveProject(r.cwd, r.project, r.project || '—', projectRules),
     name,
     abbr: abbrFor(r.agentType),
+    agentType: r.agentType,
     phase,
     // Raw lifecycle word (orphaned/crashed/abandoned/...) kept for the Sessions
     // reconnect band; phase can't carry it. Undefined -> the session is attached.
