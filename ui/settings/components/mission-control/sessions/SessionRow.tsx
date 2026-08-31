@@ -19,6 +19,7 @@ export interface SessionRowProps {
   onView: (agent: FloorAgent) => void
   onSelect: (agent: FloorAgent) => void
   onToggleExpand: (id: string) => void
+  onResumeContext?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
 }
 
 function PromptChips({ you }: { you: SessionRowView['you'] }) {
@@ -34,7 +35,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onView, onSelect, onToggleExpand,
+  onToggleSelect, onToggleStar, onResume, onView, onSelect, onToggleExpand, onResumeContext,
 }: SessionRowProps) {
   const previous = isPrevious(a)
   const canResume = !previous || !!resumeCommand(a)
@@ -78,12 +79,22 @@ function SessionRowImpl({
           <span className="sx-roletag you">You ›</span>
           <span className="sx-rolebody clip"><PromptChips you={row.you} /></span>
         </div>
-        <RowLinks agent={a} row={row} mode="compact" onResume={onResume} onView={onView} />
-        {expanded && <ExpandedCard agent={a} row={row} nowMs={nowMs} onResume={onResume} onView={onView} />}
+        <RowLinks agent={a} row={row} mode="compact" />
+        {expanded && <ExpandedCard agent={a} row={row} nowMs={nowMs} />}
       </span>
       <span className="sx-rowactions">
         {canResume ? (
-          <button className="sx-resumebtn" title={resumeTitle} onClick={(e) => { e.stopPropagation(); onResume(a) }}>
+          <button
+            className="sx-resumebtn"
+            title={resumeTitle}
+            onClick={(e) => { e.stopPropagation(); onResume(a) }}
+            onContextMenu={(e) => {
+              if (!onResumeContext || !resumeCommand(a)) return
+              e.preventDefault()
+              e.stopPropagation()
+              onResumeContext(a, e)
+            }}
+          >
             <span aria-hidden>↻</span><span className="sx-resumelabel">Resume</span>
           </button>
         ) : (

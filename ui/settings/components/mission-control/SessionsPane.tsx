@@ -22,6 +22,11 @@ import { sessionRowView } from './recapModel'
 import { useVirtualList } from './useVirtualList'
 import { useNow } from './useNow'
 import { SessionRow } from './sessions/SessionRow'
+import {
+  ResumeDeviceMenu,
+  type ResumeDevice,
+  type ResumeDeviceMenuState,
+} from './sessions/ResumeDeviceMenu'
 import { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 export { SessionRow } from './sessions/SessionRow'
@@ -44,6 +49,10 @@ interface SessionsPaneProps {
   onToggleStar: (a: FloorAgent) => void
   /** Resume / focus a single session — parent routes to the owning machine. */
   onResume: (a: FloorAgent) => void
+  /** Resume a previous session on an explicitly selected alternate device. */
+  onResumeOnDevice?: (a: FloorAgent, device: string) => void
+  /** Fleet devices already loaded by the parent; this view never fetches them. */
+  devices?: ResumeDevice[]
   /** Resume many at once (bulk). Parent loops the resume path. */
   onResumeMany: (agents: FloorAgent[]) => void
   /** Select a session for the detail pane. */
@@ -89,7 +98,7 @@ const GROUP_OPTS: { value: SessionGroup; label: string }[] = [
   { value: 'flat', label: 'Flat' },
 ]
 
-export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onSelect, onView, selectedId, streamDegraded = false }: SessionsPaneProps) {
+export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, onView, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<SessionGroup>('project')
@@ -100,6 +109,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
   // How many Previous rows are shown; null = the default 7-day/50 bound. "Show 10
   // more" bumps it, paging further back through the resumable history.
   const [previousShown, setPreviousShown] = useState<number | null>(null)
+  const [resumeMenu, setResumeMenu] = useState<ResumeDeviceMenuState | null>(null)
   const nowMs = useNow(30000)
 
   const counts = useMemo(() => sessionChipCounts(agents), [agents])
@@ -160,6 +170,10 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
       return next
     })
   }, [])
+  const openResumeMenu = useCallback((agent: FloorAgent, event: React.MouseEvent) => {
+    setResumeMenu({ agent, x: event.clientX, y: event.clientY })
+  }, [])
+  const closeResumeMenu = useCallback(() => setResumeMenu(null), [])
 
   return (
     <div className="sw-sessions">
@@ -236,6 +250,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
                     onToggleSelect={toggleSelect}
                     onToggleStar={onToggleStar}
                     onResume={onResume}
+                    onResumeContext={onResumeOnDevice ? openResumeMenu : undefined}
                     onView={onView ?? onSelect}
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
@@ -266,6 +281,14 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeMany, onS
             </>
           )}
         </div>
+      )}
+      {resumeMenu && onResumeOnDevice && (
+        <ResumeDeviceMenu
+          state={resumeMenu}
+          devices={devices}
+          onChoose={onResumeOnDevice}
+          onClose={closeResumeMenu}
+        />
       )}
     </div>
   )

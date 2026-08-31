@@ -44,11 +44,9 @@ export interface ExpandedCardProps {
   agent: FloorAgent
   row: SessionRowView
   nowMs: number
-  onResume: (agent: FloorAgent) => void
-  onView: (agent: FloorAgent) => void
 }
 
-export function ExpandedCard({ agent: a, row, nowMs, onResume, onView }: ExpandedCardProps) {
+export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
   const ask = row.you.text || a.prompt || ''
   const segments = activitySegments(a)
   const todos = a.todos ?? []
@@ -105,7 +103,7 @@ export function ExpandedCard({ agent: a, row, nowMs, onResume, onView }: Expande
       )}
       <div className="sx-dsec">
         <div className="sx-dcap">Catch up</div>
-        <RowLinks agent={a} row={row} mode="expanded" onResume={onResume} onView={onView} />
+        <RowLinks agent={a} row={row} mode="expanded" />
       </div>
     </div>
   )

@@ -2226,6 +2226,17 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     }
   }, [unifiedById])
 
+  const resumeAgentOnDevice = useCallback((a: FloorAgent, device: string) => {
+    if (!a.sessionId || !device || a.resumable === false) return
+    postMessage({
+      type: 'resumePreviousSession',
+      sessionId: a.sessionId,
+      agentType: agentIdFromPrefix(a.abbr) ?? '',
+      device,
+      cwd: a.worktreePath || undefined,
+    })
+  }, [])
+
   // Bulk reconnect: resume/focus every selected session. Each opens on its OWNING
   // machine via the same single-session path (the CLI decides attach vs recover and
   // routes remote sessions to their host) — so a whole project's worth of lost work
@@ -2647,7 +2658,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       agents={sessionsAgents}
       onToggleStar={(a) => togglePin(a.id)}
       onResume={openTerminalForAgent}
+      onResumeOnDevice={resumeAgentOnDevice}
       onResumeMany={resumeManyAgents}
+      devices={fleetDevices}
       onSelect={(a) => selectSession(a.id)}
       onView={(a) => selectSession(a.id)}
       selectedId={selectedAgentId}
