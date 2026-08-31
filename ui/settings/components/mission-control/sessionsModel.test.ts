@@ -105,7 +105,7 @@ describe('resumeCommand', () => {
     const cmd = resumeCommand(mk({ id: 'x9', sessionState: 'inactive', resumable: true, recovery: null, sourceDevice: 'zion' }))
     expect(cmd).toEqual({ command: 'agents', args: ['sessions', 'resume', 'x9', '--device', 'zion'] })
   })
-  test('a non-resumable harness (recovery null, resumable false) has no command -> View', () => {
+  test('a non-resumable harness (recovery null, resumable false) has no dead action', () => {
     expect(resumeCommand(mk({ id: 'g1', sessionState: 'inactive', resumable: false, recovery: null }))).toBeNull()
   })
 })
