@@ -4,6 +4,7 @@ import { join } from 'path';
 
 const extensionSource = readFileSync(join(import.meta.dir, 'extension.ts'), 'utf8');
 const settingsSource = readFileSync(join(import.meta.dir, 'settings.vscode.ts'), 'utf8');
+const unifiedPaneSource = readFileSync(join(import.meta.dir, '../../ui/settings/components/mission-control/UnifiedAgentsPane.tsx'), 'utf8');
 
 describe('agent session editor-tab routing', () => {
   test('the shared resume helper creates an editor tab and registers its identity', () => {
@@ -42,5 +43,19 @@ describe('agent session editor-tab routing', () => {
     expect(resumePrevious).toContain('await openAgentSessionByRecovery(context');
     expect(resumePrevious).toContain('await openAgentSessionByMigration(context');
     expect(resumePrevious).not.toContain('openAgentSessionById');
+  });
+
+  test('Previous rows stay on the canonical stream with no history side channel', () => {
+    expect(unifiedPaneSource).not.toContain('fetchPreviousSessions');
+    expect(settingsSource).not.toContain("case 'fetchPreviousSessions':");
+  });
+
+  test('recovery never creates a local terminal in the transcript origin cwd', () => {
+    const recovery = extensionSource.slice(
+      extensionSource.indexOf('export async function openAgentSessionByRecovery'),
+      extensionSource.indexOf('export async function openAgentSessionByMigration'),
+    );
+    expect(recovery).not.toContain('cwd: opts.cwd');
+    expect(recovery).toContain('buildRecoveryResumeCommand(opts.sessionId, device)');
   });
 });
