@@ -129,7 +129,7 @@ export interface SessionCliFactPayload {
   /** Adapter seam for Track B: accept canonical `v` and legacy `version`. */
   version?: 1;
   v?: 1;
-  type: 'reset' | 'agent.upsert' | 'attention.upsert' | 'attention.remove' | 'activity.append' | 'scope' | 'heartbeat';
+  type: 'reset' | 'agent.upsert' | 'agent.remove' | 'attention.upsert' | 'attention.remove' | 'activity.append' | 'scope' | 'heartbeat';
   streamId: string;
   sequence: number;
   capturedAt: number;

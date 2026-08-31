@@ -61,6 +61,9 @@ export class SessionPresentationStore {
         this.rows.set(rowKey, event.agent);
         this.rowScopes.set(rowKey, event.scope);
       }
+    } else if (event.type === 'agent.remove' && event.rowKey) {
+      this.rows.delete(event.rowKey);
+      this.rowScopes.delete(event.rowKey);
     } else if (event.type === 'attention.upsert' && event.attention && !Array.isArray(event.attention)) {
       const key = event.rowKey || this.attentionKeyOf(event.attention);
       if (key) {
