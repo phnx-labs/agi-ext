@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { FloorAgent } from '../floorModel'
-import { previousResumeMessage, terminalOpenMessageForAgent } from './sessionActions'
+import { postTerminalOpenForAgent, previousResumeMessage, terminalOpenMessageForAgent, type TerminalOpenMessage } from './sessionActions'
 
 function previous(overrides: Partial<FloorAgent> = {}): FloorAgent {
   return {
@@ -54,6 +54,16 @@ describe('terminalOpenMessageForAgent', () => {
       migrate: false,
     })
     expect(message?.type).not.toBe('focusSession')
+  })
+
+  test('openTerminalForAgent posts recovery for a resumable Previous row, never focus', () => {
+    const posted: TerminalOpenMessage[] = []
+    expect(postTerminalOpenForAgent(previous({ sessionId: 'canonical-id' }), (message) => posted.push(message))).toBe(true)
+    expect(posted).toEqual([{
+      type: 'resumePreviousSession', sessionId: 'canonical-id', agentType: 'codex',
+      sourceDevice: 'zion', device: 'zion', migrate: false,
+    }])
+    expect(posted.some((message) => message.type === 'focusSession')).toBe(false)
   })
 
   test('a live indexed row still uses focusSession', () => {

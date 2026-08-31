@@ -71,7 +71,7 @@ import {
   linearIssueLabel,
   linearIssueUrl,
 } from './floorModel'
-import { previousResumeMessage, terminalOpenMessageForAgent } from './sessions/sessionActions'
+import { postTerminalOpenForAgent, previousResumeMessage } from './sessions/sessionActions'
 import { SavedViews } from './SavedViewsBar'
 import { loadSavedViews, persistSavedViews, upsertView, removeView, viewMatches, type SavedView } from './savedViews'
 import { adaptUnified, adaptRemote, adaptTickets, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
@@ -2165,11 +2165,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     // device-targeted — never the local-only focusSession candidate lookup, which
     // can't see a session recovered from a remote fleet device (PHNX-3593). The host
     // rebuilds the command from the id + device, so this only picks the session.
-    const message = terminalOpenMessageForAgent(a)
-    if (message) {
-      postMessage(message)
-      return
-    }
+    if (postTerminalOpenForAgent(a, postMessage)) return
     const u = unifiedById.get(a.id)
     if (u?.terminal) {
       postMessage({ type: 'focusTerminal', terminalId: u.terminal.id })

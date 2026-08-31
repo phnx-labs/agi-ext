@@ -191,7 +191,7 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-thumbs .th { width: 46px; height: 46px; border-radius: 6px; border: 1px solid var(--ds-border, #1b2334); object-fit: cover; background: var(--ds-bg-sunken, #0c1220); }
 .sw-sessions .sx-thumbs .th.ph { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; color: var(--ds-text-muted, #5c6675); }
 /* PHNX-3593 layout hardening: the row is two tracks — a clipping content column and a
-   fixed action column — so the Resume/View button + age + dot can never overlap the
+   fixed action column — so the Resume button + age + dot can never overlap the
    title or any inline pill, even in a narrow VS Code panel. */
 .sw-sessions .sx-row { align-items: flex-start; gap: 10px; }
 .sw-sessions .sx-grow { min-width: 0; overflow: hidden; }

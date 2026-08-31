@@ -2,6 +2,25 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator'
 
 if (typeof (globalThis as { document?: unknown }).document === 'undefined') GlobalRegistrator.register()
 
+// Brand logos are theme-provided at runtime via window.__ICONS__ (the extension
+// injects them into the webview). Register them here so the avatar's logo path
+// is exercised regardless of test-file ordering — otherwise the generic Agents
+// logo assertion only passes when App.test.tsx happens to run first.
+;(window as unknown as { __ICONS__: unknown }).__ICONS__ = {
+  claude: 'claude.svg',
+  codex: { dark: 'codex-dark.svg', light: 'codex-light.svg' },
+  gemini: 'gemini.svg',
+  opencode: 'opencode.svg',
+  cursor: { dark: 'cursor-dark.svg', light: 'cursor-light.svg' },
+  agents: 'agents.svg',
+  shell: 'shell.svg',
+  github: 'github.svg',
+  antigravity: 'antigravity.svg',
+  grok: { dark: 'grok-dark.svg', light: 'grok-light.svg' },
+  kimi: 'kimi.svg',
+  droid: { dark: 'droid-dark.svg', light: 'droid-light.svg' },
+}
+
 import { describe, expect, test } from 'bun:test'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react'
@@ -293,6 +312,7 @@ describe('SessionRow — compact card', () => {
   })
 
   test('uses the authoritative generic Agents logo instead of the shared AG abbreviation', () => {
+    ;(window as unknown as { __ICONS__: Record<string, string> }).__ICONS__ = { agents: 'agents.svg' }
     const html = renderToStaticMarkup(<SessionRow agent={agent({ abbr: 'AG', agentType: 'agents' })} {...rowProps} />)
     expect(html).toContain('title="Agents ›"')
     expect(html).toContain('src="agents.svg"')
