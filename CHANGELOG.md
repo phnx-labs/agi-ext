@@ -4,6 +4,37 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.351] - 2026-08-30
+
+- **Sessions view UX overhaul (PHNX-3621).** Full pass on the Sessions row,
+  expanded card, and list controls:
+  - **Real prompt as THE ASK.** The row now shows the genuine first user message
+    (`firstUserMessage`, backfilled from the CLI index) instead of the recap
+    header, with a "See more" expansion — never a synthesized title.
+  - **Metadata pills that navigate.** Ticket and PR links open through the
+    extension host's `openExternal` bridge, and the repo pill is derived only from
+    a real `github.com/<owner>/<repo>/pull/<n>` URL — falling back to copy-on-click
+    when no safe URL is available; all pills stop row propagation.
+  - **Readable timing.** Row timestamps read as compact relative ages (`2h ago`,
+    `3d ago`) with an absolute start–end range on hover.
+  - **Logo-only headers, device shown once.** The header shows the harness logo
+    only (no redundant name); the owning device is stated a single time in the card.
+  - **One Resume.** A single compact "Resume" reopens the session on its owning
+    device and opens immediately; right-click offers "Resume on a different
+    device…", a context menu that lists online/offline reachable peers. "Resume
+    here" is gone.
+  - **Real grouping + status model.** Group by Project / Device / Status / None
+    (the Previous band honors the grouping too), with status filter chips —
+    Active (green) / Idle (amber) / Blocked (red) / Favorites — driven by one
+    shared `sessionStatus` classifier so chips and Group: Status agree.
+  - **Refactor.** The oversized `SessionsPane.tsx` is split into focused
+    components under `sessions/` (`SessionRow`, `RowLinks`, `sessionActions`,
+    consolidated row styles).
+- **Test infra: host bridge is resettable (`resetVsCodeApi`).** The webview host
+  API is a process-wide singleton resolved on first use; a test that installs its
+  own `acquireVsCodeApi` now resets it so its stub is actually observed instead of
+  silently inheriting whichever host an earlier test file resolved first.
+
 ## [0.9.350] - 2026-08-30
 
 - **Sessions detail pane closes cleanly (PHNX-3593 follow-up).** With the right
