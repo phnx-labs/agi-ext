@@ -8,7 +8,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 - **Sessions view UX overhaul (PHNX-3621).** Full pass on the Sessions row,
   expanded card, and list controls:
-  - **Real prompt as THE ASK.** The row now shows the genuine first user message
+  - **Real prompt as YOUR REQUEST.** The row now shows the genuine first user message
     (`firstUserMessage`, backfilled from the CLI index) instead of the recap
     header, with a "See more" expansion — never a synthesized title.
   - **Metadata pills that navigate.** Ticket and PR links open through the
