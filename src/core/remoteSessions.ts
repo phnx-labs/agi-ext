@@ -823,7 +823,7 @@ export interface RawRecentSession {
 /**
  * Normalize the CLI's `recovery` object (SessionPickerJsonRow.recovery) into the
  * flat RemoteRecovery the UI runs. Returns null for a non-resumable harness (the
- * CLI emits null) or a malformed payload, so the row shows View, never a dead Resume.
+ * CLI emits null) or a malformed payload, so the row renders no dead action.
  */
 export function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | null {
   if (!raw || typeof raw !== 'object') return null;

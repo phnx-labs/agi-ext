@@ -304,7 +304,7 @@ export function sessionStatus(a: FloorAgent): SessionStatus {
  * The exact command that resumes a session, sourced from the CLI's own recovery
  * record when present (`agents sessions resume <id> --device <device>`), else built
  * from the row's resumable id + device. Returns null for a non-resumable harness
- * (recovery null, resumable false) so the row shows View instead of a dead Resume.
+ * (recovery null, resumable false) so the row renders no dead action.
  * Pure so the built command is unit-tested and quotable.
  */
 export function resumeCommand(a: FloorAgent): { command: string; args: string[]; cwd?: string } | null {
