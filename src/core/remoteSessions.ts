@@ -472,6 +472,12 @@ export interface RawActiveSession {
    *  `sessions watch --json` — the load-bearing signal for which physical
    *  machine a session runs on. Absent for cloud rows (attributed to the querier). */
   machine?: string;
+  /** Durable lifecycle/recovery fields are also present on the recoverable rows
+   * folded into the canonical watch stream. */
+  state?: string;
+  resumable?: boolean;
+  sourceDevice?: string;
+  recovery?: { command?: string; args?: unknown[]; cwd?: string } | null;
   /**
    * AGI EXT / editor tab id (`AGENT_TERMINAL_ID`) when the launch inherited it.
    * Join key for "which session is MY tab running?" across local/`--device` runs.
@@ -760,6 +766,10 @@ export function normalizeActiveSession(
     title: asStr(raw.title),
     firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
+    state: asStr(raw.state),
+    resumable: raw.resumable === undefined ? undefined : raw.resumable === true,
+    recovery: normalizeRecovery(raw.recovery),
+    sourceDevice: asStr(raw.sourceDevice) || host,
     sessionFile: asStr(raw.sessionFile),
     context: asStr(raw.context),
     presence: asStr(raw.presence),
