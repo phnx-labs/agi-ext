@@ -1028,16 +1028,21 @@ function LaunchMatrixPreview() {
 function Sessions() {
   const [pins, setPins] = useState<Set<string>>(() => new Set(['star1', 'star2']))
   const rows: FloorAgent[] = React.useMemo(() => {
+    const previewNow = Date.now()
     const base = (over: Partial<FloorAgent>): FloorAgent => agent({
-      startedAtMs: 1_786_000_000_000, lastActivityMs: 1_786_300_000_000, ...over,
+      startedAtMs: previewNow - 18 * 60_000, lastActivityMs: previewNow - 4 * 60_000, ...over,
     })
     const raw = [
-      base({ id: 'star1', abbr: 'CC', project: 'agents-cli', hostLabel: 'zion', host: 'this-mac', phase: 'running', liveStatus: 'running', tok: 62, since: '3s', topic: 'Refactor secrets broker teardown to reap orphaned watch-lock helpers' }),
+      base({
+        id: 'star1', abbr: 'CC', project: 'agents-cli', hostLabel: 'zion', host: 'this-mac', phase: 'running', liveStatus: 'running', tok: 62, since: '3s',
+        title: 'Refactoring secrets broker teardown', topic: 'Refactor secrets broker teardown to reap orphaned watch-lock helpers',
+        firstUserMessage: `Refactor the secrets broker teardown so orphaned watch-lock helpers are always reaped.\n\nKeep the stream single-owner, preserve remote sessions, and add a regression test that runs the real cleanup boundary. ${'Do not add another polling path. '.repeat(8)}`,
+      }),
       base({ id: 'star2', abbr: 'CX', project: 'rush', hostLabel: 'mac-mini', host: 'mac-mini', phase: 'idle', liveStatus: 'idle', since: '1h', topic: 'Rush blog: Cybertron launch post + content cadence fix' }),
       base({ id: 'orph1', abbr: 'CC', project: 'agents-cli', hostLabel: 'zion', host: 'this-mac', phase: 'idle', liveStatus: 'orphaned', since: '14m', topic: 'Provision a harness credential for a device without handing off login' }),
       base({ id: 'orph2', abbr: 'AG', project: 'agents-cli', hostLabel: 'yosemite-s0', host: 'yosemite-s0', phase: 'idle', liveStatus: 'orphaned', since: '52m', topic: 'Audit verify-work-complete hook effectiveness (PR #2367)' }),
-      base({ id: 'crash1', abbr: 'KM', project: 'agents-cli', hostLabel: 'mac-mini', host: 'mac-mini', phase: 'failed', liveStatus: 'crashed', since: '2h', topic: 'perf(sessions): non-resumable upsert consumers on tool-store.ts' }),
-      base({ id: 'aband1', abbr: 'DR', project: 'agents-cli', hostLabel: 'yosemite-m2', host: 'yosemite-m2', phase: 'idle', liveStatus: 'abandoned', since: '3h', topic: 'Fleet cache warm routine to daemon service migration (RUSH-2451)' }),
+      base({ id: 'crash1', abbr: 'KM', project: 'agents-cli', hostLabel: 'mac-mini', host: 'mac-mini', phase: 'failed', liveStatus: 'crashed', sessionState: 'inactive', resumable: true, sourceDevice: 'mac-mini', recovery: { command: 'agents', args: ['sessions', 'resume', 'crash1', '--device', 'mac-mini'] }, since: '2h', topic: 'perf(sessions): non-resumable upsert consumers on tool-store.ts' }),
+      base({ id: 'aband1', abbr: 'DR', project: 'agents-cli', hostLabel: 'yosemite-m2', host: 'yosemite-m2', phase: 'idle', liveStatus: 'abandoned', sessionState: 'inactive', resumable: true, sourceDevice: 'yosemite-m2', recovery: { command: 'agents', args: ['sessions', 'resume', 'aband1', '--device', 'yosemite-m2'] }, since: '3h', topic: 'Fleet cache warm routine to daemon service migration (RUSH-2451)' }),
       base({ id: 'wait1', abbr: 'CC', project: 'agents-cli', hostLabel: 'zion', host: 'this-mac', phase: 'waiting', liveStatus: 'waiting', needs: true, since: '20s', topic: 'Improve AGI EXT UI: star + resume the sessions surface' }),
       base({ id: 'run1', abbr: 'CX', project: 'rush', hostLabel: 'yosemite-m4', host: 'yosemite-m4', phase: 'running', liveStatus: 'running', tok: 44, since: '8s', topic: 'Landing site OG cards + share preview unfurl' }),
       base({ id: 'idle1', abbr: 'KM', project: 'artifacts-cli', hostLabel: 'zion', host: 'this-mac', phase: 'idle', liveStatus: 'idle', since: '6m', topic: 'artifacts-cli: poster PDF tag layout + light/dark parity' }),
@@ -1056,7 +1061,9 @@ function Sessions() {
         agents={rows}
         onToggleStar={(a) => setPins((p) => { const n = new Set(p); n.has(a.id) ? n.delete(a.id) : n.add(a.id); return n })}
         onResume={(a) => console.log('resume', a.id)}
+        onResumeOnDevice={(a, device) => console.log('resume', a.id, 'on', device)}
         onResumeMany={(l) => console.log('resume many', l.map((a) => a.id))}
+        devices={[{ name: 'zion', online: true }, { name: 'yosemite-m2', online: true }, { name: 'mac-mini', online: false }]}
         onSelect={(a) => console.log('select', a.id)}
         selectedId={null}
       />
