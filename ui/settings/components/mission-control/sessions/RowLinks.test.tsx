@@ -15,8 +15,14 @@ const posted: unknown[] = []
 })
 
 const { PillLink, githubRepoUrl } = await import('./RowLinks')
+const { resetVsCodeApi } = await import('../../../hooks/useVscodeApi')
 
-beforeEach(() => { posted.length = 0 })
+beforeEach(() => {
+  posted.length = 0
+  // The host API is a process-wide singleton resolved on first use; without
+  // this reset an earlier test file's host wins and our stub is never observed.
+  resetVsCodeApi()
+})
 afterAll(() => {
   delete (globalThis as unknown as { acquireVsCodeApi?: unknown }).acquireVsCodeApi
 })

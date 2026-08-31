@@ -74,7 +74,6 @@ const rowProps = {
   onToggleSelect: noop,
   onToggleStar: noop,
   onResume: noop,
-  onView: noop,
   onSelect: noop,
   onToggleExpand: noop,
 }
@@ -162,6 +161,23 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
+  test('a Previous row with recovery argv always routes its one-click Resume', () => {
+    const seen: FloorAgent[] = []
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const previous = prevAgent({ id: 'previous-with-recovery', sessionId: undefined })
+    act(() => {
+      root.render(<SessionRow agent={previous} {...rowProps} onResume={(a) => { seen.push(a) }} />)
+    })
+    const resume = host.querySelector('.sx-resumebtn') as HTMLButtonElement
+    expect(resume).toBeTruthy()
+    act(() => { resume.click() })
+    expect(seen).toEqual([previous])
+    act(() => root.unmount())
+    host.remove()
+  })
+
   test('right-clicking Resume offers online alternate devices and keeps the current device out', () => {
     const previous = prevAgent({ id: 'resume-elsewhere', sourceDevice: 'yosemite-s0' })
     const contextSeen: string[] = []
@@ -224,29 +240,17 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
-  test('a non-resumable harness (recovery null) shows View, never a dead Resume', () => {
-    const seen: string[] = []
-    const host = document.createElement('div')
-    document.body.appendChild(host)
-    const root = createRoot(host)
-    act(() => {
-      root.render(
-        <SessionRow
-          agent={prevAgent({ id: 'grok1', abbr: 'GK', resumable: false, recovery: null })}
-          {...rowProps}
-          onResume={() => { throw new Error('must not resume a non-resumable harness') }}
-          onView={(a) => { seen.push(a.id) }}
-        />,
-      )
-    })
-    expect(host.querySelector('.sx-resumebtn')).toBeNull()
-    const view = host.querySelector('.sx-viewbtn') as HTMLButtonElement
-    expect(view).toBeTruthy()
-    expect(view.querySelector('.sx-resumelabel')?.textContent).toBe('View')
-    act(() => { view.click() })
-    expect(seen).toEqual(['grok1'])
-    act(() => root.unmount())
-    host.remove()
+  test('a non-resumable harness shows no dead action button', () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        agent={prevAgent({ id: 'grok1', abbr: 'GK', resumable: false, recovery: null })}
+        {...rowProps}
+        onResume={() => { throw new Error('must not resume a non-resumable harness') }}
+      />,
+    )
+    expect(html).not.toContain('sx-resumebtn')
+    expect(html).not.toContain('sx-viewbtn')
+    expect(html).not.toContain('>View<')
   })
 
   test('Previous rows omit the redundant phase pill; live rows keep it', () => {
@@ -268,12 +272,14 @@ describe('SessionRow — compact card', () => {
 })
 
 describe('SessionsPane', () => {
-  test('filter chips are exactly All | Active | Favorites (no Orphaned, no Starred)', () => {
+  test('filter chips are exactly All | Active | Idle | Blocked | Favorites', () => {
     const html = renderToStaticMarkup(
       <SessionsPane agents={[agent({ id: 'a' })]} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />,
     )
     expect(html).toContain('>All<')
     expect(html).toContain('>Active<')
+    expect(html).toContain('>Idle<')
+    expect(html).toContain('>Blocked<')
     expect(html).toContain('>Favorites<')
     expect(html).not.toContain('>Orphaned<')
     expect(html).not.toContain('>Starred<')
@@ -281,6 +287,10 @@ describe('SessionsPane', () => {
     expect(html).not.toContain('All hosts')
     expect(html).not.toContain('Filter by project')
     expect(html).not.toContain('Filter by machine')
+    expect(html).toContain('<option value="project" selected="">Project</option>')
+    expect(html).toContain('<option value="device">Device</option>')
+    expect(html).toContain('<option value="status">Status</option>')
+    expect(html).toContain('<option value="none">None</option>')
   })
 
   test('meta chips live under sx-metarow', () => {
@@ -304,7 +314,7 @@ describe('SessionsPane', () => {
     expect(SESSION_ROW_CSS3).toContain('flex-basis: 76px; width: 76px;')
   })
 
-  test('the Previous · resumable band renders last and exposes Resume all N', () => {
+  test('Previous rows participate in the default Project group and remain resumable', () => {
     const now = Date.now()
     const html = renderToStaticMarkup(
       <SessionsPane
@@ -316,14 +326,14 @@ describe('SessionsPane', () => {
         onResume={noop}
         onResumeMany={noop}
         onSelect={noop}
-        onView={noop}
       />,
     )
-    expect(html).toContain('Previous · resumable')
+    expect(html).toContain('<span class="lab">svatlas</span>')
+    expect(html).toContain('<span class="cnt">2</span>')
     expect(html).toContain('Resume all 2')
   })
 
-  test('Previous defaults to 50 shown rows with consistent paging and resume counts', () => {
+  test('Previous defaults to 50 visible resumable rows (paging is model-tested)', () => {
     const now = Date.now()
     const html = renderToStaticMarkup(
       <SessionsPane
@@ -334,8 +344,6 @@ describe('SessionsPane', () => {
         onSelect={noop}
       />,
     )
-    expect(html).toContain('50 shown of 60')
-    expect(html).toContain('Show 10 more')
     expect(html).toContain('Resume all 50')
     expect(html).not.toContain('Resume all 60')
   })

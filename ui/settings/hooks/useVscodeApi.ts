@@ -1,5 +1,5 @@
 import type { VsCodeApi, IconConfig } from '../types'
-import { resolveBridge } from '../host/bridge'
+import { resolveBridge, resetHostBridge } from '../host/bridge'
 
 // Create singleton instance
 let vscodeInstance: VsCodeApi | null = null
@@ -22,6 +22,15 @@ export function getVsCodeApi(): VsCodeApi {
     }
   }
   return vscodeInstance
+}
+
+/**
+ * Drop the cached host API (and its underlying bridge) so the next call
+ * re-resolves against the current host globals. Test-only — see resetHostBridge.
+ */
+export function resetVsCodeApi(): void {
+  vscodeInstance = null
+  resetHostBridge()
 }
 
 /**

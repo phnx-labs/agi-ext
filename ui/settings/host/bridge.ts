@@ -60,3 +60,13 @@ export function resolveBridge(): HostBridge {
   }
   throw new Error('HostBridge: no host detected (neither Electron swarmHost nor VS Code acquireVsCodeApi)')
 }
+
+/**
+ * Drop the cached bridge so the next resolveBridge() re-reads the host globals.
+ * Test-only: the singleton is resolved once per process, so a test that installs
+ * its own acquireVsCodeApi/swarmHost must reset it to be observed, otherwise it
+ * inherits whichever host an earlier test file resolved first.
+ */
+export function resetHostBridge(): void {
+  bridge = null
+}

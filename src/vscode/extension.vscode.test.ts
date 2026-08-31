@@ -15,6 +15,7 @@ describe('agent session editor-tab routing', () => {
     expect(helper).toContain('location: { viewColumn: vscode.ViewColumn.Active }');
     expect(helper).toContain('await registerAgentTerminal(terminal, context');
     expect(helper).toContain('terminalId = session.terminalId || terminals.nextId');
+    expect(helper.indexOf('terminal.show();')).toBeLessThan(helper.indexOf("readiness.waitFor(terminal, 'promptReady')"));
   });
 
   test('Fleet focus and remote attach both use the shared registered path', () => {
@@ -31,5 +32,14 @@ describe('agent session editor-tab routing', () => {
     expect(focusSession).toContain('await openAgentSessionById(context, sessionId');
     expect(focusRemote).not.toContain('createTerminal');
     expect(focusSession).not.toContain('createTerminal');
+  });
+
+  test('Previous-session messages invoke recovery rather than dead-session focus', () => {
+    const resumePrevious = settingsSource.slice(
+      settingsSource.indexOf("case 'resumePreviousSession':"),
+      settingsSource.indexOf("case 'stopSession':"),
+    );
+    expect(resumePrevious).toContain('await openAgentSessionByRecovery(context');
+    expect(resumePrevious).not.toContain('openAgentSessionById');
   });
 });
