@@ -283,7 +283,7 @@ describe('SessionsPane', () => {
     expect(html).toContain('Resume all 50')
     expect(html).not.toContain('Resume all 60')
   })
-  test('clicking a metadata pill copies its value and does NOT toggle the row expand', () => {
+  test('a metadata pill without a URL copies its value and does NOT toggle the row expand', () => {
     const copied: string[] = []
     const orig = Object.getOwnPropertyDescriptor(globalThis.navigator, 'clipboard')
     Object.defineProperty(globalThis.navigator, 'clipboard', {
@@ -295,13 +295,13 @@ describe('SessionsPane', () => {
     document.body.appendChild(host)
     const root = createRoot(host)
     act(() => {
-      root.render(<SessionRow agent={agent({ id: 'copy-me', ticket: 'PHNX-3542' })} {...rowProps} onToggleExpand={() => { expandToggles += 1 }} />)
+      root.render(<SessionRow agent={agent({ id: 'copy-me', ticket: 'not-a-ticket' })} {...rowProps} onToggleExpand={() => { expandToggles += 1 }} />)
     })
-    const ticket = Array.from(host.querySelectorAll('.sx-metarow .sx-chip')).find((el) => el.textContent?.includes('PHNX-3542')) as HTMLElement
+    const ticket = Array.from(host.querySelectorAll('.sx-metarow .sx-chip')).find((el) => el.textContent?.includes('not-a-ticket')) as HTMLElement
     expect(ticket).toBeTruthy()
     expect(ticket.getAttribute('role')).toBe('button')
     act(() => { ticket.click() })
-    expect(copied).toEqual(['PHNX-3542'])   // copied the id
+    expect(copied).toEqual(['not-a-ticket'])
     expect(expandToggles).toBe(0)            // and did NOT expand the row
     act(() => root.unmount())
     host.remove()
