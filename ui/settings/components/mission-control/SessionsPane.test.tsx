@@ -286,8 +286,11 @@ describe('SessionsPane', () => {
 
   test('clicking a metadata pill copies its value and does NOT toggle the row expand', () => {
     const copied: string[] = []
-    const orig = (globalThis.navigator as any).clipboard
-    ;(globalThis.navigator as any).clipboard = { writeText: (t: string) => { copied.push(t); return Promise.resolve() } }
+    const orig = Object.getOwnPropertyDescriptor(globalThis.navigator, 'clipboard')
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: (t: string) => { copied.push(t); return Promise.resolve() } },
+    })
     let expandToggles = 0
     const host = document.createElement('div')
     document.body.appendChild(host)
@@ -303,7 +306,7 @@ describe('SessionsPane', () => {
     expect(expandToggles).toBe(0)            // and did NOT expand the row
     act(() => root.unmount())
     host.remove()
-    ;(globalThis.navigator as any).clipboard = orig
+    if (orig) Object.defineProperty(globalThis.navigator, 'clipboard', orig)
   })
 
   test('an ENDED (Previous) row shows the meta line, not the empty activity bar', () => {
