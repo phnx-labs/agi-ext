@@ -56,7 +56,6 @@ interface RowLinksProps {
 
 /** The row's two metadata-link surfaces, kept behind one interaction contract. */
 export function RowLinks({ agent: a, row, mode, onResume, onView }: RowLinksProps) {
-  const device = a.sourceDevice || row.host
   if (mode === 'expanded') {
     const canResume = !isPrevious(a) || !!resumeCommand(a)
     return (
@@ -66,7 +65,6 @@ export function RowLinks({ agent: a, row, mode, onResume, onView }: RowLinksProp
         {row.repo && <PillLink href={githubRepoUrl(a.prUrl)} copyText={row.repo} className="lnk repo">▪ {row.repo}{a.files ? ` · ${a.files} files` : ''}</PillLink>}
         {row.branch && <PillLink href={null} copyText={row.branch} className="lnk branch">⑂ {row.branch}</PillLink>}
         <span className="lnk" role="button" onClick={(e) => { e.stopPropagation(); onView(a) }}>Session ↗</span>
-        {device && <span className="lnk" role="button" title={`Copy ${device}`} onClick={(e) => copyPill(e, device)}>◈ {device}</span>}
         {canResume
           ? <span className="lnk go" onClick={() => onResume(a)}>↻ Resume here</span>
           : <span className="lnk" onClick={() => onView(a)}>View transcript</span>}
@@ -87,7 +85,6 @@ export function RowLinks({ agent: a, row, mode, onResume, onView }: RowLinksProp
       {row.branch && <PillLink href={null} copyText={row.branch} className="sx-chip branch">⑂ {row.branch}</PillLink>}
       {(a.attachments?.length ?? 0) > 0 && <span className="sx-chip attach">{'🖼'} {a.attachments!.length}</span>}
       {(a.plans?.length ?? 0) > 0 && <span className="sx-chip art">◆ {a.plans!.length}</span>}
-      {device && <span className="sx-chip device" role="button" title={`Copy ${device}`} onClick={(e) => copyPill(e, device)}>◈ {device}</span>}
       {!row.pr && !a.ticket && <span className="sx-chip nopr">no PR</span>}
     </div>
   )
