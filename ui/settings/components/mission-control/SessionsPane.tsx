@@ -30,7 +30,7 @@ import {
 import { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 export { SessionRow } from './sessions/SessionRow'
-export { SESSION_ROW_CSS, SESSION_ROW_CSS as SESSION_ROW_CSS3 } from './sessions/sessionRowStyles'
+export { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 // The Sessions surface: one place to see every session you own — local + remote,
 // active + orphaned — and resume any of them, or a whole project's worth after a

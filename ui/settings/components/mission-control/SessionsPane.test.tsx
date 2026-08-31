@@ -8,7 +8,7 @@ import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { FloorAgent } from './floorModel'
 
-const { SessionRow, SessionsPane, SESSION_ROW_CSS, SESSION_ROW_CSS3, ROW_H } = await import('./SessionsPane')
+const { SessionRow, SessionsPane, SESSION_ROW_CSS, ROW_H } = await import('./SessionsPane')
 const { ResumeDeviceMenu } = await import('./sessions/ResumeDeviceMenu')
 
 const noop = () => {}
@@ -331,9 +331,9 @@ describe('SessionsPane', () => {
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-rolebody { min-width: 0; flex: 1;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-band {')
     expect(SESSION_ROW_CSS).toContain('@media (max-width: 720px)')
-    expect(SESSION_ROW_CSS3).toContain('.sx-titleline { min-width: 0;')
-    expect(SESSION_ROW_CSS3).toContain('flex: 0 0 132px; width: 132px;')
-    expect(SESSION_ROW_CSS3).toContain('flex-basis: 76px; width: 76px;')
+    expect(SESSION_ROW_CSS).toContain('.sx-titleline { min-width: 0;')
+    expect(SESSION_ROW_CSS).toContain('flex: 0 0 132px; width: 132px;')
+    expect(SESSION_ROW_CSS).toContain('flex-basis: 76px; width: 76px;')
   })
 
   test('Previous rows participate in the default Project group and remain resumable', () => {
