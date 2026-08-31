@@ -9,9 +9,9 @@ summary: >
   Resume-here is confusing; logo and name are both shown; the "Group Project" control
   does nothing. Adds real grouping (project / device / status) and a status model
   (active / idle / waiting / blocked).
-status: draft
+status: implemented
 links:
-  - https://linear.app/  # PHNX-3593
+  - https://linear.app/issue/PHNX-3621
 ---
 
 ## Focus for review
@@ -284,5 +284,6 @@ side-channel fetch here.
 
 ## Tracking
 
-- PHNX-3593 (extends the open PR #23 branch `agents/prevsessions-followup`).
-- Implemented after your sign-off, then verified in VS Code on zion with screenshots.
+- [PHNX-3621](https://linear.app/issue/PHNX-3621) — implemented on `agents/prevsessions-followup`.
+- PR #23 is already merged; this follow-up ships in a new PR from the same branch.
+- Verified in the product-faithful browser preview on zion with expanded-request, Previous timing, grouping, and alternate-device Resume screenshots.
