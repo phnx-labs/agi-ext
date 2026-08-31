@@ -200,10 +200,11 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
-  test('Previous rows omit redundant phase and recap-source badges', () => {
-    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row' })} {...rowProps} />)
+  test('Previous rows omit the redundant phase pill; live rows keep it', () => {
+    const previous = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'previous-row', phase: 'idle' })} {...rowProps} />)
+    // The Previous band header already names the lifecycle, so a resumable-index
+    // row renders no phase pill even when it carries a phase.
     expect(previous).not.toContain('sx-phase')
-    expect(previous).not.toContain('sx-src')
 
     const live = renderToStaticMarkup(<SessionRow agent={agent({ id: 'live-row', phase: 'idle' })} {...rowProps} />)
     expect(live).toContain('class="sx-phase idle"')
@@ -281,5 +282,51 @@ describe('SessionsPane', () => {
     expect(html).toContain('Show 10 more')
     expect(html).toContain('Resume all 50')
     expect(html).not.toContain('Resume all 60')
+  })
+
+  test('clicking a metadata pill copies its value and does NOT toggle the row expand', () => {
+    const copied: string[] = []
+    const orig = (globalThis.navigator as any).clipboard
+    ;(globalThis.navigator as any).clipboard = { writeText: (t: string) => { copied.push(t); return Promise.resolve() } }
+    let expandToggles = 0
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(<SessionRow agent={agent({ id: 'copy-me', ticket: 'PHNX-3542' })} {...rowProps} onToggleExpand={() => { expandToggles += 1 }} />)
+    })
+    const ticket = Array.from(host.querySelectorAll('.sx-metarow .sx-chip')).find((el) => el.textContent?.includes('PHNX-3542')) as HTMLElement
+    expect(ticket).toBeTruthy()
+    expect(ticket.getAttribute('role')).toBe('button')
+    act(() => { ticket.click() })
+    expect(copied).toEqual(['PHNX-3542'])   // copied the id
+    expect(expandToggles).toBe(0)            // and did NOT expand the row
+    act(() => root.unmount())
+    host.remove()
+    ;(globalThis.navigator as any).clipboard = orig
+  })
+
+  test('an ENDED (Previous) row shows the meta line, not the empty activity bar', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'ended1' })} {...rowProps} expanded />)
+    expect(html).toContain('Ended session')
+    expect(html).toContain('sx-endedmeta')
+    expect(html).toContain('resumable on yosemite-s0')
+    expect(html).not.toContain('sx-actbar')
+  })
+
+  test('a LIVE row keeps the activity bar and never shows the ended meta line', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
+    expect(html).toContain('sx-actbar')
+    expect(html).toContain('Activity')
+    expect(html).not.toContain('sx-endedmeta')
+  })
+
+  test('the summary line is suppressed when it just repeats the ask (no triple-duplicate)', () => {
+    const same = 'Consolidate the dispatch maps into one catalog'
+    const dupHtml = renderToStaticMarkup(<SessionRow agent={agent({ prompt: same, topic: same, resp: '' })} {...rowProps} expanded />)
+    expect(dupHtml).not.toContain('sx-goal')
+    const diffHtml = renderToStaticMarkup(<SessionRow agent={agent({ prompt: 'fix the thing', topic: 'A different recap summary', resp: '' })} {...rowProps} expanded />)
+    expect(diffHtml).toContain('sx-goal')
+    expect(diffHtml).toContain('A different recap summary')
   })
 })

@@ -588,7 +588,9 @@ function clockLabel(ms: number): string {
  *  no-op, never a thrown error. */
 function copyPill(e: React.MouseEvent, text: string): void {
   e.stopPropagation()
-  try { void navigator.clipboard?.writeText(text) } catch { /* clipboard unavailable in this host */ }
+  // writeText rejects ASYNChronously when the host denies clipboard access, so the
+  // .catch swallows that promise rejection — a sync try/catch would miss it.
+  navigator.clipboard?.writeText(text)?.catch(() => { /* clipboard unavailable in this host */ })
 }
 
 /** Live sessions get an activity bar (it fills as tools run, even if momentarily
@@ -630,7 +632,7 @@ function ExpandedDetail({ a, row, nowMs, onResume, onView }: {
         {row.title && row.title.trim() && row.title.trim() !== ask.trim() && (
           <div className="sx-goal">{row.title}</div>
         )}
-        {attachments.length > 0 && (
+        {hasLiveActivity(a) && attachments.length > 0 && (
           <div className="sx-thumbs">
             {attachments.slice(0, 6).map((att, i) =>
               att.thumbnailUri
