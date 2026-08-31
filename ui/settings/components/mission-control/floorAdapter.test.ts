@@ -8,6 +8,7 @@ import {
   floorPrLabel,
   toFloorAgentFromUnified,
   toFloorAgentFromRemote,
+  adaptRemote,
   adaptTickets,
   cleanWorktreeSlug,
   detectCreatedCommits,
@@ -15,8 +16,40 @@ import {
   type RemoteSessionLike,
 } from './floorAdapter'
 import type { UnifiedTask } from '../../types'
+import { SessionPresentationStore } from '../../../../src/core/sessionPresentationStore'
+import { isPrevious } from './floorModel'
+import { previousResumeMessage } from './sessions/sessionActions'
 
 const NOW = 1_700_000_000_000
+
+describe('canonical stream → Previous row', () => {
+  test('preserves lifecycle, recovery, source device, and first request through the adapter', () => {
+    const store = new SessionPresentationStore()
+    store.apply({
+      v: 1, type: 'reset', streamId: 'stream', sequence: 1, capturedAt: NOW, scope: 'yosemite-s0', attention: [],
+      agents: [{
+        rowKey: 'previous-row', sessionId: 'previous-session-id', kind: 'codex', context: 'recent',
+        sourceDevice: 'yosemite-s0', state: 'inactive', status: 'idle', resumable: true,
+        recovery: { command: 'agents', args: ['sessions', 'resume', 'previous-session-id', '--device', 'yosemite-s0'], cwd: '/remote/repo' },
+        firstUserMessage: 'Fix the recovery button and prove the terminal opens.',
+        cwd: '/remote/repo', startedAtMs: NOW - 120_000, lastActivityMs: NOW - 60_000,
+      }],
+    })
+
+    const presented = store.presentedSessions('zion', 'this-mac', [], NOW)
+    expect(presented[0]).toMatchObject({
+      state: 'inactive', resumable: true, sourceDevice: 'yosemite-s0',
+      firstUserMessage: 'Fix the recovery button and prove the terminal opens.',
+      recovery: { command: 'agents', args: ['sessions', 'resume', 'previous-session-id', '--device', 'yosemite-s0'] },
+    })
+    const [floor] = adaptRemote(presented, new Set(), 'zion')
+    expect(isPrevious(floor!)).toBe(true)
+    expect(previousResumeMessage(floor!)).toMatchObject({
+      type: 'resumePreviousSession', sessionId: 'previous-session-id', agentType: 'codex',
+      sourceDevice: 'yosemite-s0', device: 'yosemite-s0', migrate: false,
+    })
+  })
+})
 
 describe('abbrFor', () => {
   test('maps known agent types to their tab prefix', () => {
