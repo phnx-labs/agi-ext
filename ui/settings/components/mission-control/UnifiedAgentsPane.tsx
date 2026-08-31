@@ -706,6 +706,12 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Registered-device dispatch: devices (with live health), ranked repos->projects,
   // and the sync status for the currently-selected repo. All backend-driven.
   const [dispatchDevices, setDispatchDevices] = useState<DispatchDevice[]>([])
+  // Sessions' alternate-device Resume menu consumes the same registered-device
+  // inventory as Dispatch; no second Fleet derivation or request is needed.
+  const fleetDevices = useMemo(
+    () => dispatchDevices.map((device) => ({ name: device.name, online: device.reachable })),
+    [dispatchDevices],
+  )
   const [deviceRepos, setDeviceRepos] = useState<DispatchDeviceRepo[]>([])
   const [deviceSync, setDeviceSync] = useState<DispatchDeviceSync | null>(null)
   // This machine's real canonical device name (e.g. 'zion'), from the fleet fetch.
