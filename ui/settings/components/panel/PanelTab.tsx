@@ -47,6 +47,9 @@ export interface PanelTabProps {
   installedAgents: Record<string, boolean>
   agentModels: Record<string, string[]>
   agentInventories: Record<string, AgentInventory>
+  /** Registered device fleet (name + online), surfaced here now that the Fleet view
+   *  no longer carries a Devices filter (PHNX-3594). */
+  devices?: Array<{ name: string; online: boolean }>
   icons: IconConfig
   isLightTheme: boolean
   swarmInstalling: boolean
@@ -112,6 +115,7 @@ export function PanelTab({
   installedAgents,
   agentModels,
   agentInventories,
+  devices = [],
   icons,
   isLightTheme,
   swarmInstalling,
@@ -639,6 +643,36 @@ export function PanelTab({
         </section>
 
         <ProjectRulesSection settings={settings} onSaveSettings={onSaveSettings} />
+
+        <section className="sw-panel-section">
+          <div className="sw-panel-section-head">Devices</div>
+          <div style={{ fontSize: 11, opacity: 0.7, margin: '0 0 8px' }}>
+            Registered device fleet (<code>agents devices</code>). The Fleet view no longer
+            carries a device filter — resume routes each session to its owning device.
+          </div>
+          <div className="sw-panel-command-pack">
+            {devices.length === 0 ? (
+              <div className="sw-panel-command-card" style={{ fontSize: 12, opacity: 0.7 }}>
+                No devices registered. Add one with <code>agents devices</code>.
+              </div>
+            ) : (
+              devices.map((d) => (
+                <div key={d.name} className="sw-panel-command-card" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 8, height: 8, borderRadius: '50%', flex: 'none',
+                      background: d.online ? '#4ade80' : '#5c6675',
+                      boxShadow: d.online ? '0 0 6px #4ade8066' : 'none',
+                    }}
+                  />
+                  <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 12 }}>{d.name}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{d.online ? 'online' : 'offline'}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
 
       </div>
     </div>

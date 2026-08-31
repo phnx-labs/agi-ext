@@ -106,7 +106,7 @@ export function TicketDetail({ ticket: t, hosts = ['this-mac'], workers = [], on
             </span>
           </div>
           <div className="dp-row">
-            <span className="dp-k">Host</span>
+            <span className="dp-k">Device</span>
             <select className="sel" value={host} onChange={(e) => setHost(e.target.value)}>
               {hosts.map((h) => (
                 <option key={h} value={h}>{h}</option>

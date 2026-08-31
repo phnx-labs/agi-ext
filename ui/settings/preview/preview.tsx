@@ -14,7 +14,6 @@ import '../index.css'
 
 import { Icon } from '../components/mission-control/icons'
 import { FloorSidebar, FLOOR_SIDEBAR_DEFAULT_WIDTH } from '../components/mission-control/FloorSidebar'
-import { FloorRail } from '../components/mission-control/FloorRail'
 import { FloorControls, floorControlsMode } from '../components/mission-control/FloorControls'
 import { FloorSubtabs, openTaskTab, closeTaskTab, type FixedTab, type TaskTab } from '../components/mission-control/FloorSubtabs'
 import { FeedItem, TicketStrip } from '../components/mission-control/FeedItem'
@@ -547,7 +546,7 @@ function Subtabs() {
     { center: 'agents', label: 'Agents', count: running.length + 2, needs: 2 },
     { center: 'backlog', label: 'Backlog', count: tickets.length },
     { center: 'projects', label: 'Projects', count: managedProjects.length },
-    { center: 'host', label: 'Hosts', count: 5 },
+    { center: 'host', label: 'Devices', count: 5 },
   ]
   const controlsMode = activeTaskTab ? null : floorControlsMode(center)
   // Agents center owns its FloorControls inside AgentsFeed (Sort + needs only).
@@ -638,26 +637,9 @@ function Sidebar() {
     { name: 'yosemite-s0', online: true, agents: 2 },
     { name: 'yosemite-s1', online: false, agents: 1 },
   ]
-  const [collapsed, setCollapsed] = useState(true)
-  return collapsed ? (
-    <FloorRail
-      agents={sidebarAgents}
-      tickets={tickets}
-      center="agents"
-      projFilter={null}
-      hostFilter={null}
-      needsOnly={false}
-      projects={managedProjects}
-      devices={devices}
-      offlineHosts={['yosemite-s1']}
-      hostPins={pins}
-      localHost="zion"
-      onScope={noop}
-      onDispatch={noop}
-      onManageProjects={noop}
-      onExpand={() => setCollapsed(false)}
-    />
-  ) : (
+  // PHNX-3594: the collapsed FloorRail is gone; the DEVICES/Projects sidebar now
+  // lives in Settings. This preview keeps the FloorSidebar (Settings surface) alone.
+  return (
     <div className="page" style={{ height: '100%', '--floor-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
       <FloorSidebar
         agents={sidebarAgents}
@@ -670,7 +652,7 @@ function Sidebar() {
         onManageProjects={noop}
         sidebarWidth={sidebarWidth}
         onSidebarWidthChange={setSidebarWidth}
-        onCollapse={() => setCollapsed(true)}
+        onCollapse={noop}
         onToggleHostPin={(n) => setPins((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]))}
         onReorderHostPins={setPins}
         onScope={noop}

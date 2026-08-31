@@ -40,6 +40,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   API is a process-wide singleton resolved on first use; a test that installs its
   own `acquireVsCodeApi` now resets it so its stub is actually observed instead of
   silently inheriting whichever host an earlier test file resolved first.
+- **Declutter the FLEET view (PHNX-3594).** The Fleet is now just the session list.
+  The left icon rail (`FloorRail`) and its expanded projects/devices sidebar are
+  removed entirely, and the Backlog / Recap / PRs centers leave the Fleet — Backlog
+  already lives in BENCH, and their now-dead derivations (`floorTickets`,
+  `fleetDevices`, `recapDays`, `prRows`) and the lazy `fetchRecap` sweep are deleted
+  so nothing computes for chrome that no longer renders. Dispatch stays pinned in the
+  header, and the rail's **Needs-you** scope survives as an amber “Needs you N” badge
+  on the Sessions surface (a toggle over the list, distinct from the All / Active /
+  Favorites chips). The Projects + Devices filters move to **Settings**: project
+  mapping via the existing Project Rules section, and a new **Devices** section that
+  lists the registered fleet (name + online) from the same `listDevices` round-trip.
+- **“Host” → “Device” across the UI.** Every user-visible “Host(s)” label is now
+  “Device(s)” (the session Group-by option, the sidebar section header, the
+  saved-views axis, ticket detail, and the empty detail-pane copy). Internal
+  identifiers (`hostFilter`, `hostId`, `host` data fields) are unchanged.
 
 ## [0.9.350] - 2026-08-30
 

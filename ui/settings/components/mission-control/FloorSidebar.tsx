@@ -223,7 +223,7 @@ export function FloorSidebar({ agents, tickets, projFilter, hostFilter = null, o
         </div>
       ) : null}
 
-      <div className="sb-sec">HOSTS</div>
+      <div className="sb-sec">DEVICES</div>
       {pinnedRows.map(renderHost)}
       {pinnedRows.length > 0 && restRows.length > 0 && <div className="sb-host-div" />}
       {restRows.map(renderHost)}

@@ -27,14 +27,8 @@ import {
   type PendingDispatch,
 } from './dispatch'
 import { FloorControls, floorControlsMode, type StatusChip } from './FloorControls'
-import { FloorSidebar, FLOOR_SIDEBAR_DEFAULT_WIDTH, FLOOR_SIDEBAR_MAX_WIDTH, FLOOR_SIDEBAR_MIN_WIDTH } from './FloorSidebar'
-import { FloorRail } from './FloorRail'
+import { FLOOR_SIDEBAR_DEFAULT_WIDTH, FLOOR_SIDEBAR_MAX_WIDTH, FLOOR_SIDEBAR_MIN_WIDTH } from './FloorSidebar'
 import { FloorSubtabs, openTaskTab, closeTaskTab, type TaskTab } from './FloorSubtabs'
-import { BacklogCenter } from './BacklogCenter'
-import { PrBoardPane } from './PrBoardPane'
-import { buildPrBoard, type PrStatusLike } from './prBoardModel'
-import { RecapPane } from './RecapPane'
-import { buildRecap, type RecapForkEdge } from './recapModel'
 import { TaskDetail } from '../bench/TaskDetail'
 import type { FlatTask } from '../bench/TaskCard'
 import { TicketDetail } from './TicketDetail'
@@ -51,7 +45,6 @@ import {
   groupAgents,
   partitionFloorAgents,
   sessionTaskLine,
-  ticketWorkers,
   projectRollups,
   isPrevious,
   mergeSessionAgents,
@@ -76,7 +69,7 @@ import {
 import { postTerminalOpenForAgent, previousResumeMessage } from './sessions/sessionActions'
 import { SavedViews } from './SavedViewsBar'
 import { loadSavedViews, persistSavedViews, upsertView, removeView, viewMatches, type SavedView } from './savedViews'
-import { adaptUnified, adaptRemote, adaptTickets, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
+import { adaptUnified, adaptRemote, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
 import type { PlanFile } from '../../utils/planDetector'
 import {
   DispatchPanel,
@@ -715,9 +708,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [dispatchDevices, setDispatchDevices] = useState<DispatchDevice[]>([])
   const [deviceRepos, setDeviceRepos] = useState<DispatchDeviceRepo[]>([])
   const [deviceSync, setDeviceSync] = useState<DispatchDeviceSync | null>(null)
-  // Lightweight fleet list (agents devices list --json, no SSH) for the sidebar
-  // HOSTS section — populated on mount so hosts show even before the panel opens.
-  const [fleetDevices, setFleetDevices] = useState<{ name: string; online: boolean }[]>([])
   // This machine's real canonical device name (e.g. 'zion'), from the fleet fetch.
   // Local agents keep host==='this-mac' for routing but display under this name.
   const [localHostName, setLocalHostName] = useState<string>('')
@@ -770,14 +760,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Recent (historical) sessions per host, fetched lazily only when a host filter has
   // 0 live agents — so an empty host shows recent work instead of a blank pane.
   const [recentByHost, setRecentByHost] = useState<Record<string, RemoteSessionLike[]>>({})
-  const [prMerging, setPrMerging] = useState<Set<string>>(() => new Set())
-  const [prErrors, setPrErrors] = useState<Record<string, string>>({})
-  // Recap ledger: fleet-wide recent (ended) sessions. null = not fetched yet — the
-  // sweep is expensive (SSH fan-out), so it runs lazily when the Recap center opens.
-  const [recapSessions, setRecapSessions] = useState<RemoteSessionLike[] | null>(null)
-  // Fork edges recorded at launch by `Agents: Fork …` — what lets the ledger pair
-  // a fork back up with the session it came from (their ids share nothing).
-  const [recapForkEdges, setRecapForkEdges] = useState<RecapForkEdge[]>([])
+  // PHNX-3594: PR-board and Recap state left with those removed Fleet centers.
+  // Previous sessions now arrive on the canonical watch stream (PHNX-3621).
   const [floorSort, setFloorSort] = useState<FloorSort>('needs')
   // Group the live feed by an axis. Defaults to 'outcome' (ticket/PR/worktree) so a
   // fleet-scale floor shows deliverables, not ~1,100 agents (RUSH-1479). NEEDS YOU
@@ -990,15 +974,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
         const rh = typeof msg.host === 'string' ? msg.host : ''
         const recent = Array.isArray(msg.sessions) ? (msg.sessions as RemoteSessionLike[]) : []
         setRecentByHost((p) => ({ ...p, [rh]: recent }))
-      } else if (msg?.type === 'mergePrResult') {
-        const mu = typeof msg.url === 'string' ? msg.url : ''
-        setPrMerging((prev) => { const next = new Set(prev); next.delete(mu); return next })
-        if (msg.ok !== true) {
-          setPrErrors((prev) => ({ ...prev, [mu]: typeof msg.error === 'string' ? msg.error : 'merge failed' }))
-        }
-      } else if (msg?.type === 'recapSessions') {
-        setRecapSessions(Array.isArray(msg.sessions) ? (msg.sessions as RemoteSessionLike[]) : [])
-        setRecapForkEdges(Array.isArray(msg.forkEdges) ? (msg.forkEdges as RecapForkEdge[]) : [])
       }
     }
     window.addEventListener('message', onMsg)
@@ -1101,7 +1076,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     postMessage({ type: 'deviceHealth' })
     postMessage({ type: 'repos' })
   }, [dispatchOpen])
-  // Cheap fleet fetch on mount (no SSH) so the sidebar HOSTS list is populated.
+  // Cheap fleet fetch on mount (no SSH) so this machine's canonical device name
+  // (localHostName) is resolved early; the DEVICES list itself now lives in Settings.
   useEffect(() => {
     postMessage({ type: 'listDevices' })
   }, [])
@@ -1110,12 +1086,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       const msg = event.data
       if (msg?.type === 'devicesData' && Array.isArray(msg.devices)) {
         if (typeof msg.local === 'string' && msg.local) setLocalHostName(msg.local)
-        setFleetDevices(
-          (msg.devices as Array<{ name: string; online?: boolean }>).map((d) => ({
-            name: d.name,
-            online: !!d.online,
-          })),
-        )
       } else if (msg?.type === 'deviceHealthData' && Array.isArray(msg.health)) {
         setDispatchDevices(
           (msg.health as Array<{ device: { name: string; host: string; secretRef?: string; softLimit?: number }; stats: { reachable?: boolean; runningAgents?: number; memPercent?: number; loadAvg1?: number } }>).map(
@@ -1688,13 +1658,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     () => mergeSessionAgents(floorAgents, streamedFloorAgents.filter(isPrevious)),
     [floorAgents, streamedFloorAgents]
   )
-  const floorTickets = useMemo(() => adaptTickets(unifiedTasks), [unifiedTasks])
-  // Ticket id -> agents carrying it: the backlog's in-flight chips and the ticket
-  // detail's "In flight" block + double-dispatch guard all join on this.
-  const floorWorkers = useMemo(() => ticketWorkers(floorAgents), [floorAgents])
-  // Per-project activity rollups: the rail's Projects flyout sub-counts and the
-  // Projects pane's activity line both read from this one derivation.
-  const floorRollups = useMemo(() => projectRollups(floorAgents, floorTickets), [floorAgents, floorTickets])
+  // Per-project activity rollups (run/wait per project) for the Projects pane.
+  // PHNX-3594: backlog ticket derivations (floorTickets/floorWorkers) are removed
+  // with the Backlog center — the backlog lives in BENCH — so rollups no longer
+  // fold ticket/PR counts.
+  const floorRollups = useMemo(() => projectRollups(floorAgents, []), [floorAgents])
 
   // Lookup back to the source UnifiedAgent so the right pane can reuse the rich DetailPane.
   const unifiedById = useMemo(() => {
@@ -1728,22 +1696,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     [hostFilter, hostHasNoActive, recentByHost, pinned, localHostName, projectRules]
   )
 
-  // PR status is part of the CLI feed projection; the extension never polls GitHub.
-  const projectedPrStatuses = useMemo(
-    () => remoteSessions.map((session) => session.pullRequest).filter((status): status is PrStatusLike => !!status),
-    [remoteSessions],
-  )
-  const prRows = useMemo(() => buildPrBoard(projectedPrStatuses, floorAgents), [projectedPrStatuses, floorAgents])
-  // Recap ledger: lazy fleet sweep the first time the Recap center opens; live
-  // sessions are excluded (the feed owns what's running, the ledger what finished).
-  useEffect(() => {
-    if (center === 'recap' && recapSessions === null) postMessage({ type: 'fetchRecap' })
-  }, [center, recapSessions])
-  const recapDays = useMemo(() => {
-    if (!recapSessions) return []
-    const liveIds = new Set(floorAgents.map((a) => a.sessionId).filter((id): id is string => !!id))
-    return buildRecap(recapSessions, liveIds, Date.now(), recapForkEdges)
-  }, [recapSessions, floorAgents, recapForkEdges])
+  // PHNX-3594: the PRs board and Recap ledger are removed from the Fleet view, so
+  // their derivations and the lazy `fetchRecap` sweep are gone. Previous rows
+  // require no separate effect because they ride the canonical watch stream.
 
   const feedPartition = useMemo(() => partitionFloorAgents(scopedAgents), [scopedAgents])
   const needsAgents = feedPartition.needs
@@ -2074,11 +2029,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const selectedFloorAgent: FloorAgent | null = useMemo(
     () => (selectedAgentId ? sessionsAgents.find((a) => a.id === selectedAgentId) ?? null : null),
     [selectedAgentId, sessionsAgents]
-  )
-
-  const selectedFloorTicket = useMemo(
-    () => (selectedTicketId ? floorTickets.find((t) => t.id === selectedTicketId) ?? null : null),
-    [selectedTicketId, floorTickets]
   )
 
   // Fetch the rich preview digest once when a session with an id is selected — a
@@ -2616,42 +2566,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       selectedId={selectedAgentId}
       streamDegraded={sessionStreamDegraded}
     />
-  ) : center === 'backlog' ? (
-    <BacklogCenter
-      tickets={floorTickets}
-      group={ticketGroup}
-      subgroup={ticketSubgroup}
-      sort={ticketSort}
-      srcFilter={ticketSrc}
-      projFilter={projFilter}
-      search={floorSearch}
-      selectedTicketId={selectedTicketId}
-      workers={floorWorkers}
-      onSelectTicket={(id) => setSelectedTicketId(id)}
-      onOpenTask={openTaskFromTicket}
-    />
-  ) : center === 'recap' ? (
-    <RecapPane
-      days={recapDays}
-      loading={recapSessions === null}
-      onOpenUrl={(url) => postMessage({ type: 'openExternal', url })}
-    />
-  ) : center === 'prs' ? (
-    <PrBoardPane
-      rows={prRows}
-      loading={false}
-      merging={prMerging}
-      errors={prErrors}
-      onMerge={(url) => {
-        setPrMerging((prev) => new Set(prev).add(url))
-        setPrErrors((prev) => { const { [url]: _gone, ...rest } = prev; return rest })
-        postMessage({ type: 'mergePr', url })
-      }}
-      onOpenUrl={(url) => postMessage({ type: 'openExternal', url })}
-      onRefresh={() => {}}
-      onSelectAgent={selectFloorAgent}
-    />
   ) : (
+    // PHNX-3594: Backlog (lives in BENCH), Recap, and PRs are removed from the
+    // Fleet view. The only remaining non-sessions center is the Agents feed.
     <div className="feed-col" ref={scrollRef} onScroll={onScroll}>
       <div className="feed" style={{ height: totalHeight, position: 'relative' }}>
         <div style={{ transform: `translateY(${padTop}px)` }}>
@@ -2690,17 +2607,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           onRemove={() => removeHostAction(selectedHostId)}
           onDispatch={() => setDispatchOpen(true)}
         />
-      : <div className="detail-empty">Select a host to see its installed agents and configuration.</div>)
-    : center === 'backlog'
-    ? (selectedFloorTicket
-      ? <TicketDetail
-          ticket={selectedFloorTicket}
-          hosts={floorHosts}
-          workers={floorWorkers[selectedFloorTicket.id] ?? []}
-          onSelectAgent={selectFloorAgent}
-          onDispatch={() => openDispatch({ ticketId: selectedFloorTicket.id })}
-        />
-      : <div className="detail-empty">Select a ticket to see its details and dispatch an agent onto it.</div>)
+      : <div className="detail-empty">Select a device to see its installed agents and configuration.</div>)
     : renderAgentDetail()
 
   return (
@@ -2742,58 +2649,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
         />
       )}
 
-      <div className="page" style={{ flex: 1, minHeight: 0, height: 'auto', '--floor-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
-        {center !== 'sessions' && sidebarOpen && (railCollapsed ? (
-          <FloorRail
-            agents={floorAgents}
-            tickets={floorTickets}
-            center={center}
-            projFilter={projFilter}
-            hostFilter={hostFilter}
-            needsOnly={statusChips.includes('needs')}
-            projects={managedProjects}
-            devices={
-              // Running counts come only from floorAgents (session collection) —
-              // never a second deviceHealth runningAgents source.
-              dispatchDevices.length
-                ? dispatchDevices.map((d) => ({ name: d.name, online: !!d.reachable, agents: 0 }))
-                : fleetDevices.map((d) => ({ name: d.name, online: d.online, agents: 0 }))
-            }
-            offlineHosts={offlineHosts}
-            hostPins={effectiveHostPins}
-            localHost={localHostName || undefined}
-            onScope={onScope}
-            onDispatch={() => openDispatch(selectedTicketId ? { ticketId: selectedTicketId } : undefined)}
-            onManageProjects={() => { setCenter('projects'); setRightOpen(true) }}
-            onExpand={() => setRailCollapsed(false)}
-          />
-        ) : (
-          <FloorSidebar
-            agents={floorAgents}
-            tickets={floorTickets}
-            projFilter={projFilter}
-            hostFilter={hostFilter}
-            offlineHosts={offlineHosts}
-            devices={
-              dispatchDevices.length
-                ? dispatchDevices.map((d) => ({ name: d.name, online: !!d.reachable, agents: 0 }))
-                : fleetDevices.map((d) => ({ name: d.name, online: d.online, agents: 0 }))
-            }
-            hostPins={effectiveHostPins}
-            onToggleHostPin={toggleHostPin}
-            onReorderHostPins={reorderHostPins}
-            onScope={onScope}
-            onCollapse={() => setRailCollapsed(true)}
-            onSelectHost={onSelectHost}
-            selectedHost={center === 'host' ? selectedHostId : null}
-            hosts={hostRoster}
-            localHost={localHostName || undefined}
-            projects={managedProjects}
-            onManageProjects={() => { setCenter('projects'); setRightOpen(true) }}
-            sidebarWidth={sidebarWidth}
-            onSidebarWidthChange={(width) => setSidebarWidth(clampSidebarWidth(width))}
-          />
-        ))}
+      <div className="page" style={{ flex: 1, minHeight: 0, height: 'auto' } as React.CSSProperties}>
+        {/* PHNX-3594 declutter: the left icon rail (FloorRail) and its expanded
+            FloorSidebar are removed from the Fleet view. Their scopes (Backlog /
+            Recap / Projects / Devices) are gone or moved to Settings; Dispatch stays
+            pinned in the header sub-tab strip. The session list renders full-width. */}
         {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
         {rightOpen && <div className="detail-col">{rightContent}</div>}
       </div>

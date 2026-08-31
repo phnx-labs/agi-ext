@@ -346,6 +346,25 @@ describe('SessionsPane', () => {
     expect(html).toContain('<option value="none">None</option>')
   })
 
+  test('Needs-you badge surfaces the attention count (rail affordance moved onto the list)', () => {
+    // PHNX-3594: the left icon rail carried the Needs-you scope; it now lives on the
+    // Sessions surface as a badge showing the count of sessions that need you.
+    const withNeeds = renderToStaticMarkup(
+      <SessionsPane
+        agents={[agent({ id: 'a', needs: true }), agent({ id: 'b' })]}
+        onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop}
+      />,
+    )
+    expect(withNeeds).toContain('sx-needs')
+    expect(withNeeds).toContain('Needs you')
+
+    // No session needs you -> the badge is absent (no clutter).
+    const noNeeds = renderToStaticMarkup(
+      <SessionsPane agents={[agent({ id: 'a' })]} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />,
+    )
+    expect(noNeeds).not.toContain('sx-needs')
+  })
+
   test('meta chips live under sx-metarow', () => {
     const html = renderToStaticMarkup(
       <SessionsPane agents={[agent({ id: 'a' })]} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />,

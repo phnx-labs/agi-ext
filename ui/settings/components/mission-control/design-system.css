@@ -3259,6 +3259,17 @@
   border: 1px solid var(--ds-border); background: var(--ds-bg-inset); color: var(--ds-text-muted); cursor: pointer;
 }
 .sx-dir:hover { background: var(--ds-bg-hover); }
+/* Needs-you badge: surfaces the attention count on the Sessions surface (the affordance
+   the removed left rail used to carry, PHNX-3594). A toggle, not a primary filter chip. */
+.sx-needs {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px;
+  padding: 3px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(245, 181, 68, .45); color: #b56a00; background: rgba(245, 181, 68, .12);
+}
+.sx-needs:hover { background: rgba(245, 181, 68, .2); }
+.sx-needs.on { border-color: #f5b544; background: rgba(245, 181, 68, .28); font-weight: 600; }
+.sx-needs .n { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; }
+.theme-dark .sx-needs { color: #f5b544; }
 
 /* --- scroll viewport (virtualized) --- */
 .sx-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
