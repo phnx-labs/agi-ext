@@ -1,6 +1,6 @@
 import React from 'react'
 import { ExtLink } from '../../common'
-import { isPrevious, linearIssueUrl, resumeCommand, type FloorAgent } from '../floorModel'
+import { linearIssueUrl, type FloorAgent } from '../floorModel'
 import type { SessionRowView } from '../recapModel'
 
 /** Copy a short value and keep the click out of the row expand handler. */
@@ -50,24 +50,17 @@ interface RowLinksProps {
   agent: FloorAgent
   row: SessionRowView
   mode: 'compact' | 'expanded'
-  onResume: (agent: FloorAgent) => void
-  onView: (agent: FloorAgent) => void
 }
 
 /** The row's two metadata-link surfaces, kept behind one interaction contract. */
-export function RowLinks({ agent: a, row, mode, onResume, onView }: RowLinksProps) {
+export function RowLinks({ agent: a, row, mode }: RowLinksProps) {
   if (mode === 'expanded') {
-    const canResume = !isPrevious(a) || !!resumeCommand(a)
     return (
       <div className="sx-catch">
         {a.ticket && <PillLink href={linearIssueUrl(a.ticket)} copyText={a.ticket} className="lnk">◇ {a.ticket}</PillLink>}
         {row.pr && <PillLink href={a.prUrl} copyText={row.pr.label} className="lnk pr">{row.pr.label}</PillLink>}
         {row.repo && <PillLink href={githubRepoUrl(a.prUrl)} copyText={row.repo} className="lnk repo">▪ {row.repo}{a.files ? ` · ${a.files} files` : ''}</PillLink>}
         {row.branch && <PillLink href={null} copyText={row.branch} className="lnk branch">⑂ {row.branch}</PillLink>}
-        <span className="lnk" role="button" onClick={(e) => { e.stopPropagation(); onView(a) }}>Session ↗</span>
-        {canResume
-          ? <span className="lnk go" onClick={() => onResume(a)}>↻ Resume here</span>
-          : <span className="lnk" onClick={() => onView(a)}>View transcript</span>}
       </div>
     )
   }

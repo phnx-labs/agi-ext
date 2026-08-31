@@ -183,7 +183,6 @@ export const SESSION_ROW_CSS = `
   border: 1px solid var(--ds-border, #1b2334); border-radius: 5px; padding: 2px 8px; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
 }
 .sw-sessions .sx-catch a:hover, .sw-sessions .sx-catch .lnk:hover { color: var(--ds-text, #e6e9ef); border-color: var(--ds-text-muted, #5c6675); }
-.sw-sessions .sx-catch .lnk.go { color: var(--brand, #a3e635); border-color: var(--brand, #a3e635); background: rgba(163,230,53,.1); }
 .sw-sessions .sx-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .sw-sessions .sx-thumbs .th { width: 46px; height: 46px; border-radius: 6px; border: 1px solid var(--ds-border, #1b2334); object-fit: cover; background: var(--ds-bg-sunken, #0c1220); }
 .sw-sessions .sx-thumbs .th.ph { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; color: var(--ds-text-muted, #5c6675); }
@@ -203,4 +202,25 @@ export const SESSION_ROW_CSS = `
 @media (max-width: 720px) {
   .sw-sessions .sx-rowactions { flex-basis: 76px; width: 76px; padding-left: 0; }
 }
+.sx-resume-menu {
+  position: fixed; z-index: 10000; width: 244px; box-sizing: border-box; padding: 6px;
+  border: 1px solid var(--ds-border, #2a3550); border-radius: 8px;
+  background: var(--ds-bg-raised, #151d2d); color: var(--ds-text, #e6e9ef);
+  box-shadow: 0 12px 34px rgba(0,0,0,.42);
+}
+.sx-resume-menu-title {
+  padding: 6px 8px 7px; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace;
+  font-size: 10px; color: var(--ds-text-muted, #7b8699); letter-spacing: .25px;
+}
+.sx-resume-menu button {
+  width: 100%; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 5px;
+  padding: 7px 8px; color: var(--ds-text, #e6e9ef); background: transparent;
+  font: 12px/1.2 inherit; text-align: left; cursor: pointer;
+}
+.sx-resume-menu button:hover:not(:disabled) { background: rgba(127,140,160,.13); }
+.sx-resume-menu button:disabled { color: var(--ds-text-muted, #5c6675); cursor: default; }
+.sx-resume-device-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; flex: none; }
+.sx-resume-device-dot.offline { background: #5c6675; }
+.sx-resume-device-state { margin-left: auto; color: var(--ds-text-muted, #5c6675); font-size: 10px; }
+.sx-resume-menu-empty { padding: 8px; color: var(--ds-text-muted, #5c6675); font-size: 12px; }
 `
