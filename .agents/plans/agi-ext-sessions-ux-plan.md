@@ -285,5 +285,5 @@ side-channel fetch here.
 ## Tracking
 
 - [PHNX-3621](https://linear.app/issue/PHNX-3621) — implemented on `agents/prevsessions-followup`.
-- PR #23 is already merged; this follow-up ships in a new PR from the same branch.
+- PR #23 is already merged; the follow-up is [PR #26](https://github.com/phnx-labs/agi-ext/pull/26) from the same branch.
 - Verified in the product-faithful browser preview on zion with expanded-request, Previous timing, grouping, and alternate-device Resume screenshots.
