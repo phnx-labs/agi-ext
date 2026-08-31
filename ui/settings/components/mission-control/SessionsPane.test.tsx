@@ -209,6 +209,13 @@ describe('SessionRow — compact card', () => {
     const live = renderToStaticMarkup(<SessionRow agent={agent({ id: 'live-row', phase: 'idle' })} {...rowProps} />)
     expect(live).toContain('class="sx-phase idle"')
   })
+
+  test('renders the harness identity as an avatar only', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent({ abbr: 'CX' })} {...rowProps} />)
+    expect(html).toContain('class="sw-avatar sz-24"')
+    expect(html).toContain('title="Codex ›"')
+    expect(html).not.toContain('class="sx-agent"')
+  })
 })
 
 describe('SessionsPane', () => {
