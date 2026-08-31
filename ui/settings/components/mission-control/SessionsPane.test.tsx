@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { FloorAgent } from './floorModel'
 
 const { SessionRow, SessionsPane, SESSION_ROW_CSS, SESSION_ROW_CSS3, ROW_H } = await import('./SessionsPane')
+const { ResumeDeviceMenu } = await import('./sessions/ResumeDeviceMenu')
 
 const noop = () => {}
 
@@ -141,6 +142,7 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('Activity')
     expect(html).toContain('Catch up')
     expect(html).toContain('The landscape mode looks cramped')
+    expect(html).not.toContain('Resume here')
   })
 
   test('per-row Resume posts the same onResume the group control uses', () => {
@@ -156,6 +158,54 @@ describe('SessionRow — compact card', () => {
     expect(btn.querySelector('.sx-resumelabel')?.textContent).toBe('Resume')
     act(() => { btn.click() })
     expect(seen).toEqual(['resume-me'])
+    act(() => root.unmount())
+    host.remove()
+  })
+
+  test('right-clicking Resume offers online alternate devices and keeps the current device out', () => {
+    const previous = prevAgent({ id: 'resume-elsewhere', sourceDevice: 'yosemite-s0' })
+    const contextSeen: string[] = []
+    const seen: string[] = []
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(
+        <SessionRow
+          agent={previous}
+          {...rowProps}
+          onResumeContext={(a) => { contextSeen.push(a.id) }}
+        />,
+      )
+    })
+    const resume = host.querySelector('.sx-resumebtn') as HTMLButtonElement
+    act(() => {
+      resume.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }))
+    })
+    expect(contextSeen).toEqual(['resume-elsewhere'])
+
+    act(() => {
+      root.render(
+        <ResumeDeviceMenu
+          state={{ agent: previous, x: 20, y: 20 }}
+          devices={[
+            { name: 'yosemite-s0', online: true },
+            { name: 'yosemite-m3', online: true },
+            { name: 'offline-box', online: false },
+          ]}
+          onChoose={(a, device) => { seen.push(`${a.id}:${device}`) }}
+          onClose={noop}
+        />,
+      )
+    })
+    const menu = document.body.querySelector('.sx-resume-menu') as HTMLDivElement
+    expect(menu).toBeTruthy()
+    expect(menu.textContent).toContain('Resume on a different device…')
+    expect(menu.textContent).not.toContain('yosemite-s0')
+    expect(menu.textContent).toContain('yosemite-m3')
+    expect((menu.querySelector('button[title="offline-box is offline"]') as HTMLButtonElement).disabled).toBe(true)
+    act(() => { (menu.querySelector('button[title="Resume on yosemite-m3"]') as HTMLButtonElement).click() })
+    expect(seen).toEqual(['resume-elsewhere:yosemite-m3'])
     act(() => root.unmount())
     host.remove()
   })
