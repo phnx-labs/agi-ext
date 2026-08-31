@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { TerminalDetail } from '../../types'
 import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 
-const { UnifiedAgentsPane } = await import('./UnifiedAgentsPane')
+const { UnifiedAgentsPane, defaultFloorPrefs, loadFloorPrefs, FLOOR_PREFS_LAYOUT_VERSION } = await import('./UnifiedAgentsPane')
 const { SessionsPane } = await import('./SessionsPane')
 
 // Source-level regression guards: the Floor must not reintroduce 3s local /
