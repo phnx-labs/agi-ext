@@ -312,7 +312,8 @@ describe('SessionsPane', () => {
     const html = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'ended1' })} {...rowProps} expanded />)
     expect(html).toContain('Ended session')
     expect(html).toContain('sx-endedmeta')
-    expect(html).toContain('resumable on yosemite-s0')
+    expect(html).toContain('Ran &lt;1m · ended 2d ago · Runs on <b>yosemite-s0</b>')
+    expect(html).toContain('title="Aug 23, 12:00 PM"')
     expect(html).not.toContain('sx-actbar')
   })
 

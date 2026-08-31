@@ -4,6 +4,7 @@ import { sessionRowView, type SessionRowView } from '../recapModel'
 import { AgentAvatar, agentIdFromPrefix } from '../AgentAvatar'
 import { ExpandedCard } from './ExpandedCard'
 import { RowLinks } from './RowLinks'
+import { formatRelativeTime } from './sessionTime'
 
 export interface SessionRowProps {
   agent: FloorAgent
@@ -93,7 +94,7 @@ function SessionRowImpl({
             onClick={(e) => { e.stopPropagation(); onView(a) }}
           ><span aria-hidden>↗</span><span className="sx-resumelabel">View</span></button>
         )}
-        <span className="sx-age">{row.age}</span>
+        <span className="sx-age">{formatRelativeTime(a.lastActivityMs || a.startedAtMs || 0, nowMs)}</span>
         <span className={`sx-live${liveClass ? ` ${liveClass}` : ''}`} title={a.liveStatus || a.phase} />
       </span>
     </div>
