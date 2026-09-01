@@ -12,20 +12,6 @@ export interface PrewarmConfig {
   exitSequence: string[];       // Key sequences to cleanly exit
 }
 
-/** A pre-warmed session ready for hand-off */
-export interface PrewarmedSession {
-  agentType: PrewarmAgentType;
-  sessionId: string;
-  createdAt: number;
-  workingDirectory: string;
-}
-
-/** Session pool state */
-export interface SessionPoolState {
-  available: PrewarmedSession[];
-  pending: number;              // Number currently being created
-}
-
 /** Terminal-to-session mapping for crash recovery */
 export interface TerminalSessionMapping {
   terminalId: string;           // AGENT_TERMINAL_ID
@@ -78,9 +64,6 @@ export const PREWARM_CONFIGS: Record<PrewarmAgentType, PrewarmConfig> = {
     exitSequence: ['\x03', '\x03'],  // Ctrl+C twice
   }
 };
-
-// Default pool size per agent type
-export const DEFAULT_POOL_SIZE = 3;
 
 /**
  * Build the canonical resume command for any harness. The legacy parameters
