@@ -107,26 +107,6 @@ export function clearWorkspaceSessions(workspacePath: string): void {
   }
 }
 
-// Check if workspace had a clean shutdown
-export function wasCleanShutdown(workspacePath: string): boolean {
-  const data = loadSessionsFile();
-  return data.workspaces[workspacePath]?.cleanShutdown ?? true;
-}
-
-// Mark workspace as not clean shutdown (called on activate before restore)
-export function markDirtyShutdown(workspacePath: string): void {
-  const data = loadSessionsFile();
-  if (!data.workspaces[workspacePath]) {
-    data.workspaces[workspacePath] = {
-      cleanShutdown: false,
-      sessions: []
-    };
-  } else {
-    data.workspaces[workspacePath].cleanShutdown = false;
-  }
-  saveSessionsFile(data);
-}
-
 // Update a single session's metadata (e.g., when sessionId is captured)
 export function updateSession(
   workspacePath: string,

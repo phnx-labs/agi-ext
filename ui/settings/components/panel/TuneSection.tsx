@@ -4,7 +4,6 @@ import { AgentAvatar } from '../mission-control/AgentAvatar'
 import {
   AgentSettings,
   NotificationSettings,
-  PrewarmPool,
 } from '../../types'
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -142,56 +141,6 @@ export function SourcesSection({
             on={settings.taskSources?.githubAssignedOnly ?? false}
             onChange={(v) => onUpdateTaskSources({ githubAssignedOnly: v })}
           />
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface PrewarmingSectionProps {
-  prewarmEnabled: boolean
-  prewarmLoaded: boolean
-  prewarmPools: PrewarmPool[]
-  onTogglePrewarm: () => void
-}
-
-export function PrewarmingSection({
-  prewarmEnabled,
-  prewarmLoaded,
-  prewarmPools,
-  onTogglePrewarm,
-}: PrewarmingSectionProps) {
-  return (
-    <div className="sw-panel-section">
-      <div className="sw-panel-section-head">Prewarming</div>
-      <div className="sw-rocker-row">
-        <span className="sw-rocker-label">Pre-warm sessions</span>
-        <Rocker on={prewarmEnabled} onChange={onTogglePrewarm} />
-      </div>
-
-      {prewarmEnabled && prewarmLoaded && prewarmPools.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          {prewarmPools.map(pool => {
-            const total = pool.available + pool.pending
-            const pct = total > 0 ? (pool.available / Math.max(total, 3)) * 100 : 0
-            return (
-              <div key={pool.agentType} className="sw-prewarm-gauge">
-                <AgentAvatar id={pool.agentType} size={16} />
-                <span style={{ fontSize: '11px', width: 60, textTransform: 'capitalize' }}>{pool.agentType}</span>
-                <div className="sw-prewarm-gauge-bar">
-                  <div className="sw-gauge">
-                    <div
-                      className={`sw-gauge-fill ${pct < 33 ? 'danger' : pct < 66 ? 'warn' : ''}`}
-                      style={{ width: `${Math.min(pct, 100)}%` }}
-                    />
-                  </div>
-                </div>
-                <span style={{ fontSize: '10px', color: 'var(--ds-text-dim)', fontFamily: '"Geist Mono", monospace' }}>
-                  {pool.available}/{total}
-                </span>
-              </div>
-            )
-          })}
         </div>
       )}
     </div>

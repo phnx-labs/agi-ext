@@ -65,8 +65,6 @@ export type VsCodeMessageType =
   | 'getSecondaryAgent'
   | 'setDefaultAgent'
   | 'setSecondaryAgent'
-  | 'getPrewarmStatus'
-  | 'togglePrewarm'
   | 'getWorkspaceConfig'
   | 'openContextFile'
   | 'openTerminalFile'

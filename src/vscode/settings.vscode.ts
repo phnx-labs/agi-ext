@@ -2970,21 +2970,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
       }
 
 
-      case 'getPrewarmStatus':
-        settingsPanel?.webview.postMessage({
-          type: 'prewarmStatus',
-          enabled: false,
-          pools: []
-        });
-        break;
-      case 'togglePrewarm':
-        vscode.window.showInformationMessage('Session warming is no longer used. Session IDs are discovered after launch.');
-        settingsPanel?.webview.postMessage({
-          type: 'prewarmStatus',
-          enabled: false,
-          pools: []
-        });
-        break;
       case 'getWorkspaceConfig':
         const wsFolder = workspaceConfig.getActiveWorkspaceFolder();
         if (wsFolder) {
