@@ -33,7 +33,6 @@ import { TaskDetail } from '../bench/TaskDetail'
 import type { FlatTask } from '../bench/TaskCard'
 import { TicketDetail } from './TicketDetail'
 import { HostDetail } from './HostDetail'
-import { ProjectsPane } from './ProjectsPane'
 import { AttentionReceipt, FeedItem, FollowUpBox } from './FeedItem'
 import { SessionsPane } from './SessionsPane'
 import { NeedsYouClusters } from './NeedsYouClusters'
@@ -45,7 +44,6 @@ import {
   groupAgents,
   partitionFloorAgents,
   sessionTaskLine,
-  projectRollups,
   isPrevious,
   mergeSessionAgents,
   visibleFloorAgents,
@@ -62,7 +60,6 @@ import {
   type AgentAbbr,
   type CiStatus,
   type ManagedProject,
-  type LinearProjectLite,
   linearIssueLabel,
   linearIssueUrl,
 } from './floorModel'
@@ -882,16 +879,13 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [remoteSyncError, setRemoteSyncError] = useState<string | null>(null)
   // Optional host signal: agents CLI missing / unusable (never blocks cached rows).
   const [cliUnavailable, setCliUnavailable] = useState(false)
-  // Managed-project command failures (agents projects …) — inline, never toast.
-  const [projectCommandError, setProjectCommandError] = useState<string | null>(null)
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
   const [hostInventories, setHostInventories] = useState<Record<string, HostInventory>>({})
   const [hostConfigError, setHostConfigError] = useState<string | null>(null)
-  // Curated managed projects (sidebar top-3 + Projects pane), the Linear projects
-  // available to link, and the most recent host folder-picker result (prefills the form).
+  // Curated managed projects for the sidebar top-3 and the feed's linked-project
+  // lookup. The Projects management pane moved to Settings (FleetProjectsSection),
+  // which owns its own Linear-projects + folder-picker state (PHNX-3592).
   const [managedProjects, setManagedProjects] = useState<ManagedProject[]>([])
-  const [linearProjects, setLinearProjects] = useState<LinearProjectLite[]>([])
-  const [pickedFolder, setPickedFolder] = useState<{ path: string; repoSlug?: string; name: string; suggestedLinear?: LinearProjectLite } | null>(null)
 
   // Persist the durable Floor prefs (pinned set, plain/sidebar/right toggles, group-by, host pins).
   useEffect(() => {
@@ -1023,42 +1017,17 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     return () => window.removeEventListener('message', onMsg)
   }, [])
 
-  // Managed projects + linkable Linear projects for the sidebar top-3 and the
-  // Projects pane. Fetch on mount; the host re-sends managedProjectsData after any
-  // save/delete, so no optimistic update is needed. projectFolderPicked answers the
-  // pane's Browse… button and prefills its add form. Command failures surface
-  // inline on the Projects pane (never a toast). When managedProjectsData carries
-  // error, KEEP last-good projects (same last-good pattern as hostSessions).
+  // Curated managed projects for the sidebar top-3 and the feed's linked-project
+  // lookup. Fetch on mount; the host re-sends managedProjectsData after any
+  // save/delete (from the Settings Projects section), so no optimistic update is
+  // needed. On error, KEEP last-good projects (same pattern as hostSessions) —
+  // there is no pane here to surface it, and the sidebar just shows what it has.
   useEffect(() => {
     postMessage({ type: 'fetchManagedProjects' })
-    postMessage({ type: 'fetchLinearProjects' })
     const onMsg = (event: MessageEvent) => {
       const msg = event.data
-      if (msg?.type === 'managedProjectsData') {
-        const failed = typeof msg.error === 'string'
-        if (failed) {
-          // Retain last-good projects; surface the error inline on Projects pane.
-          setProjectCommandError(msg.error)
-          return
-        }
-        if (Array.isArray(msg.projects)) {
-          setManagedProjects(msg.projects as ManagedProject[])
-          setProjectCommandError(null)
-        }
-      } else if (msg?.type === 'linearProjectsData' && Array.isArray(msg.projects)) {
-        setLinearProjects(msg.projects as LinearProjectLite[])
-      } else if (msg?.type === 'projectFolderPicked' && typeof msg.path === 'string') {
-        setPickedFolder({
-          path: msg.path,
-          repoSlug: typeof msg.repoSlug === 'string' ? msg.repoSlug : undefined,
-          name: typeof msg.name === 'string' ? msg.name : '',
-          suggestedLinear: msg.suggestedLinear as LinearProjectLite | undefined,
-        })
-      } else if (
-        (msg?.type === 'managedProjectsError' || msg?.type === 'projectCommandError')
-        && typeof msg.error === 'string'
-      ) {
-        setProjectCommandError(msg.error)
+      if (msg?.type === 'managedProjectsData' && Array.isArray(msg.projects)) {
+        setManagedProjects(msg.projects as ManagedProject[])
       }
     }
     window.addEventListener('message', onMsg)
@@ -1681,12 +1650,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     () => mergeSessionAgents(floorAgents, streamedFloorAgents.filter(isPrevious)),
     [floorAgents, streamedFloorAgents]
   )
-  // Per-project activity rollups (run/wait per project) for the Projects pane.
-  // PHNX-3594: backlog ticket derivations (floorTickets/floorWorkers) are removed
-  // with the Backlog center — the backlog lives in BENCH — so rollups no longer
-  // fold ticket/PR counts.
-  const floorRollups = useMemo(() => projectRollups(floorAgents, []), [floorAgents])
-
   // Lookup back to the source UnifiedAgent so the right pane can reuse the rich DetailPane.
   const unifiedById = useMemo(() => {
     const m = new Map<string, UnifiedAgent>()
@@ -2607,19 +2570,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     </div>
   )
 
-  const rightContent = center === 'projects'
-    ? <ProjectsPane
-        projects={managedProjects}
-        rollups={floorRollups}
-        linearProjects={linearProjects}
-        pickedFolder={pickedFolder}
-        commandError={projectCommandError}
-        onSave={(p) => { setProjectCommandError(null); postMessage({ type: 'saveManagedProject', project: p }) }}
-        onDelete={(id) => { setProjectCommandError(null); postMessage({ type: 'deleteManagedProject', id }) }}
-        onPickFolder={() => postMessage({ type: 'pickProjectFolder' })}
-        onClose={() => setCenter('agents')}
-      />
-    : center === 'host'
+  // PHNX-3592: the managed-Projects pane moved to Settings (FleetProjectsSection).
+  // After PHNX-3594 removed the Fleet left rail, nothing called setCenter('projects'),
+  // so this branch was dead — the pane lives in the Panel now.
+  const rightContent = center === 'host'
     ? (selectedHostId
       ? <HostDetail
           host={selectedHostId}

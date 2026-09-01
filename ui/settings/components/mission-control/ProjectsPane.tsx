@@ -20,7 +20,9 @@ interface ProjectsPaneProps {
   onSave: (p: ManagedProject) => void
   onDelete: (id: string) => void
   onPickFolder: () => void
-  onClose: () => void
+  /** Detail-column back affordance. Omit when the pane is embedded (e.g. the
+   *  Settings Projects section) and there is nowhere to return to. */
+  onClose?: () => void
 }
 
 const VIOLET = '#8b8ce8'
@@ -160,9 +162,11 @@ export function ProjectsPane({ projects, rollups = {}, linearProjects, pickedFol
           <span className="sub">{projects.length} CLI-managed</span>
           <span className="host-cap" title="Owned by agents projects — AGI EXT only renders">CLI-managed</span>
         </div>
-        <button className="host-btn" onClick={onClose}>
-          <Icon name="chevL" size={12} /> back to agents
-        </button>
+        {onClose && (
+          <button className="host-btn" onClick={onClose}>
+            <Icon name="chevL" size={12} /> back to agents
+          </button>
+        )}
       </div>
 
       <div className="dbody">
