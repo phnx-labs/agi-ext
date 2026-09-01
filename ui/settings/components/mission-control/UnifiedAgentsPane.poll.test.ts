@@ -122,16 +122,15 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
     expect(previewFetches?.length).toBe(1)
   })
 
-  test('managedProjectsData.error retains last-good projects', () => {
-    // Failure path surfaces error and returns before setManagedProjects.
-    expect(source).toMatch(
-      /msg\?\.type === 'managedProjectsData'[\s\S]*?typeof msg\.error === 'string'[\s\S]*?setProjectCommandError\(msg\.error\)[\s\S]*?return/,
-    )
-    expect(source).toContain('Retain last-good projects')
-    // Success path still replaces projects and clears the error.
-    expect(source).toMatch(
-      /Array\.isArray\(msg\.projects\)[\s\S]*?setManagedProjects\(msg\.projects as ManagedProject\[\]\)[\s\S]*?setProjectCommandError\(null\)/,
-    )
+  // The managed-Projects management pane (and its last-good-on-error handling)
+  // moved to Settings — FleetProjectsSection — with PHNX-3592. Its behavior is
+  // covered there (FleetProjectsSection.test.tsx); the pane keeps only a plain
+  // managedProjectsData fetch for the sidebar top-3 + feed linked-project lookup.
+  test('managedProjectsData feeds the sidebar without a Projects pane', () => {
+    expect(source).toContain("msg?.type === 'managedProjectsData' && Array.isArray(msg.projects)")
+    expect(source).toContain('setManagedProjects(msg.projects as ManagedProject[])')
+    // The Projects management pane no longer renders inside the Fleet view.
+    expect(source).not.toContain('<ProjectsPane')
   })
 })
 

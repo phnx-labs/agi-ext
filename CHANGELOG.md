@@ -4,6 +4,18 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.352] - 2026-09-01
+
+- **Projects management moved to Settings (PHNX-3592).** Removing the Fleet
+  view's left rail (PHNX-3594) left the managed-Projects pane unreachable —
+  nothing called `setCenter('projects')` anymore, so the pane was dead code in
+  `UnifiedAgentsPane`. Projects (add / remove / link a Linear project) now lives
+  in the **Settings → Projects** section (`FleetProjectsSection`), self-contained
+  for its own data like the other Panel cards. The Fleet view keeps a lean
+  `managedProjectsData` fetch only for the sidebar top-3 and the feed's
+  linked-project lookup; its dead `ProjectsPane` branch and now-orphaned
+  Linear/folder-picker state are removed.
+
 ## [0.9.351] - 2026-08-30
 
 - **Sessions view UX overhaul (PHNX-3621).** Full pass on the Sessions row,

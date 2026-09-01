@@ -35,6 +35,7 @@ import { getIcon, formatPreviewTerminalTitle } from '../../utils'
 import { FactorySection } from '../FactorySection'
 import { SourcesSection } from './TuneSection'
 import { ProjectRulesSection } from './ProjectRulesSection'
+import { FleetProjectsSection } from './FleetProjectsSection'
 
 export interface PanelTabProps {
   settings: AgentSettings
@@ -643,6 +644,15 @@ export function PanelTab({
         </section>
 
         <ProjectRulesSection settings={settings} onSaveSettings={onSaveSettings} />
+
+        <section className="sw-panel-section">
+          <div className="sw-panel-section-head">Projects</div>
+          <div style={{ fontSize: 11, opacity: 0.7, margin: '0 0 8px' }}>
+            CLI-managed projects (<code>agents projects</code>) — add, remove, or link a
+            Linear project. Moved here from the Fleet view's removed left rail.
+          </div>
+          <FleetProjectsSection />
+        </section>
 
         <section className="sw-panel-section">
           <div className="sw-panel-section-head">Devices</div>
