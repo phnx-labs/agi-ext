@@ -9,10 +9,8 @@ export type { EditorAssociations } from '../core/editorAssociations';
 export {
   AGENTS_HTML_READER,
   AGENTS_MARKDOWN_EDITOR,
-  MARKDOWN_PATTERN,
   READER_PATTERNS,
   normalizeEditorAssociations,
-  withMarkdownEditorAssociation,
   withReaderEditorAssociations,
 } from '../core/editorAssociations';
 

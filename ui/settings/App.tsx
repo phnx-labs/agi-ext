@@ -16,7 +16,6 @@ import {
   RunningCounts,
   TabId,
   IconConfig,
-  PrewarmPool,
   WorkspaceConfig,
   SwarmAgentType,
   AgentInventory,
@@ -163,11 +162,6 @@ export default function App() {
   // Registered device fleet (agents devices list --json, no SSH) — surfaced in the
   // Settings panel now that the Fleet view no longer carries a Devices filter (PHNX-3594).
   const [fleetDevices, setFleetDevices] = useState<Array<{ name: string; online: boolean }>>([])
-
-  // Prewarm state
-  const [prewarmEnabled, setPrewarmEnabled] = useState(false)
-  const [prewarmPools, setPrewarmPools] = useState<PrewarmPool[]>([])
-  const [prewarmLoaded, setPrewarmLoaded] = useState(false)
 
   // Watchdog state
   const [watchdogEnabled, setWatchdogEnabled] = useState(false)
@@ -346,11 +340,6 @@ export default function App() {
         case 'swarmInstallDone':
           setSwarmInstalling(false)
           break
-        case 'prewarmStatus':
-          setPrewarmEnabled(message.enabled)
-          setPrewarmPools(message.pools || [])
-          setPrewarmLoaded(true)
-          break
         case 'watchdogStatus':
           setWatchdogEnabled(!!message.enabled)
           break
@@ -395,7 +384,6 @@ export default function App() {
     vscode.postMessage({ type: 'getSecondaryAgent' })
     vscode.postMessage({ type: 'getWatchdogStatus' })
     vscode.postMessage({ type: 'getWatchdogPlaybookStatus' })
-    vscode.postMessage({ type: 'getPrewarmStatus' })
     vscode.postMessage({ type: 'getWorkspaceConfig' })
     vscode.postMessage({ type: 'fetchAllTerminals' })
     vscode.postMessage({ type: 'detectTaskSources' })
@@ -661,10 +649,6 @@ export default function App() {
   const handleSetSecondaryAgent = (agentTitle: string) => {
     setSecondaryAgent(agentTitle)
     vscode.postMessage({ type: 'setSecondaryAgent', agentTitle })
-  }
-
-  const togglePrewarm = () => {
-    vscode.postMessage({ type: 'togglePrewarm' })
   }
 
   const toggleDirExpanded = (dir: string) => {

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   AGENTS_HTML_READER,
   AGENTS_MARKDOWN_EDITOR,
-  MARKDOWN_PATTERN,
   normalizeEditorAssociations,
   readerViewTypeForPath,
   withReaderEditorAssociations,
@@ -55,7 +54,7 @@ describe('normalizeEditorAssociations', () => {
 describe('withReaderEditorAssociations', () => {
   test('maps md to markdown editor and html/htm to html reader when enabling', () => {
     expect(withReaderEditorAssociations({}, true)).toEqual({
-      [MARKDOWN_PATTERN]: AGENTS_MARKDOWN_EDITOR,
+      '*.md': AGENTS_MARKDOWN_EDITOR,
       '*.html': AGENTS_HTML_READER,
       '*.htm': AGENTS_HTML_READER,
     });
@@ -66,7 +65,7 @@ describe('withReaderEditorAssociations', () => {
       withReaderEditorAssociations({ '*.pdf': 'pdf.preview' }, true)
     ).toEqual({
       '*.pdf': 'pdf.preview',
-      [MARKDOWN_PATTERN]: AGENTS_MARKDOWN_EDITOR,
+      '*.md': AGENTS_MARKDOWN_EDITOR,
       '*.html': AGENTS_HTML_READER,
       '*.htm': AGENTS_HTML_READER,
     });
@@ -74,9 +73,9 @@ describe('withReaderEditorAssociations', () => {
 
   test('replaces a prior *.md association when enabling', () => {
     expect(
-      withReaderEditorAssociations({ [MARKDOWN_PATTERN]: 'default' }, true)
+      withReaderEditorAssociations({ '*.md': 'default' }, true)
     ).toEqual({
-      [MARKDOWN_PATTERN]: AGENTS_MARKDOWN_EDITOR,
+      '*.md': AGENTS_MARKDOWN_EDITOR,
       '*.html': AGENTS_HTML_READER,
       '*.htm': AGENTS_HTML_READER,
     });
@@ -86,7 +85,7 @@ describe('withReaderEditorAssociations', () => {
     expect(
       withReaderEditorAssociations(
         {
-          [MARKDOWN_PATTERN]: AGENTS_MARKDOWN_EDITOR,
+          '*.md': AGENTS_MARKDOWN_EDITOR,
           '*.html': AGENTS_HTML_READER,
           '*.htm': AGENTS_HTML_READER,
           '*.pdf': 'pdf.preview',
@@ -94,7 +93,7 @@ describe('withReaderEditorAssociations', () => {
         false
       )
     ).toEqual({
-      [MARKDOWN_PATTERN]: 'default',
+      '*.md': 'default',
       '*.html': 'default',
       '*.htm': 'default',
       '*.pdf': 'pdf.preview',

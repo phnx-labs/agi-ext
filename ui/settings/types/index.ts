@@ -477,13 +477,6 @@ export interface BuiltInAgentConfig {
   supported?: boolean
 }
 
-// Prewarm pool types
-export interface PrewarmPool {
-  agentType: string
-  available: number
-  pending: number
-}
-
 // Workspace config types
 export interface ContextMapping {
   source: string

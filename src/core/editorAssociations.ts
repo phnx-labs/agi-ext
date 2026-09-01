@@ -19,9 +19,6 @@ export const READER_PATTERNS = ['*.md', '*.html', '*.htm'] as const;
 
 export type ReaderPattern = (typeof READER_PATTERNS)[number];
 
-/** @deprecated Use READER_PATTERNS; kept for call-site clarity in markdown-only paths. */
-export const MARKDOWN_PATTERN = '*.md';
-
 /**
  * Normalize whatever is stored for `workbench.editorAssociations` into the
  * object map VS Code actually consumes. Accepts the current object shape and
@@ -93,15 +90,4 @@ export function withReaderEditorAssociations(
     }
   }
   return next;
-}
-
-/**
- * @deprecated Prefer withReaderEditorAssociations — same behavior, name kept for
- * older call sites during the rename.
- */
-export function withMarkdownEditorAssociation(
-  current: EditorAssociations,
-  enabled: boolean
-): EditorAssociations {
-  return withReaderEditorAssociations(current, enabled);
 }
