@@ -75,7 +75,7 @@ deleting it or shrinking it, never adding to it.
 | Path | Violation | Fate |
 |---|---|---|
 | `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | label/topic are already on the stream | DELETE now |
-| `src/vscode/prewarm.vscode.ts`, `src/core/prewarm.simple.ts` | the harness-spawning session-pool is already gone; what remains is the terminal-to-session **crash-recovery** mapping. Its storm bug (machine-global recovery state → multi-window resume storm) is FIXED — the state is now per-workspace `workspaceState` (PHNX-3768). The file is still slated for removal once the CLI daemon owns restore | DELETE |
+| `src/vscode/prewarm.vscode.ts`, `src/core/prewarm.simple.ts` | `prewarm.vscode.ts` no longer spawns harness binaries — it is pure crash-recovery mapping storage, and its storm bug (machine-global recovery state → multi-window resume storm) is FIXED: state is now per-workspace `workspaceState` (PHNX-3768). `prewarm.simple.ts` still `spawn`s `opencode session list` on every OpenCode tab open (the candidate-cache violation). Both still slated for removal once the CLI daemon owns restore | DELETE |
 | `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | ext-invented lifecycle classifier (ps/pgrep loops) | move the signal into the CLI daemon, project it on the stream |

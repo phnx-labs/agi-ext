@@ -18,7 +18,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   the machine. The state now lives in per-workspace `workspaceState` (mirroring
   the already-workspace-scoped `restoreAgentTerminals` disk path), so a window
   only ever restores or clears its **own** workspace's sessions — no
-  cross-workspace resurrection and no cross-window state wipe.
+  cross-workspace resurrection and no cross-window state wipe. A one-time,
+  workspace-scoped migration folds any pending pre-upgrade crash-recovery data out
+  of the old machine-global store so an in-progress restore survives the upgrade,
+  and folder-less ("empty") windows skip prewarm recovery entirely (matching the
+  disk-persist path).
 
 ## [0.9.355] - 2026-09-02
 
