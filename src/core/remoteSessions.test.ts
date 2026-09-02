@@ -827,6 +827,25 @@ describe('normalizeRecentSession outcome metrics', () => {
     expect(s.tokenCount).toBe(2849270);
   });
 
+  test('a historical row resolves its cwd first, so project RULES win over the CLI word (PHNX-3796)', () => {
+    const withCwd = normalizeRecentSession(
+      { ...base, cwd: '/x/y/agents/prix/api', project: 'something-else' },
+      'zion',
+      FETCHED_AT,
+      [{ pattern: '**/agents/prix/api', project: 'Prix API' }]
+    );
+    expect(withCwd.project).toBe('Prix API');
+
+    // No cwd -> the CLI's own word is the only hint, same as the live path.
+    const cwdless = normalizeRecentSession(
+      { ...base, cwd: '', project: 'phnx-labs/agi-ext' },
+      'zion',
+      FETCHED_AT,
+      [{ pattern: '**/agents/prix/api', project: 'Prix API' }]
+    );
+    expect(cwdless.project).toBe('phnx-labs/agi-ext');
+  });
+
   test('preserves the recap title and full first user turn on historical rows', () => {
     const s = normalizeRecentSession({
       ...base,

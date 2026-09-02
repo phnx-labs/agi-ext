@@ -39,8 +39,6 @@ export interface SessionProjectHints {
   cwd?: string | null
   /** Absolute worktree path; a cwd by another name when the row omitted cwd. */
   worktreePath?: string | null
-  /** Git repo root, so a monorepo subdir folds to the repo (resolveProject arg 3). */
-  repoRoot?: string | null
   /** The CLI's repo/project word for the row ("phnx-labs/agi-ext", "agents-cli"). */
   repo?: string | null
   /** The row's PR URL — a cloud run's repo slug lives in it (github.com/o/r/pull/N). */
@@ -108,9 +106,9 @@ function repoHint(raw: string | null | undefined): string {
 /**
  * Bind a WEAK hint (branch, worktree slug, team) to a project. Weak hints are
  * near-arbitrary strings, so only an EXACT normalized match against an already-known
- * project counts — matchLinearProject's containment fallback would bind "flush-fix"
- * to a project named "Rush". Each `/`-separated segment gets a try, so
- * "agents-cli/fix-lease" still finds "agents-cli".
+ * project counts: a branch that merely contains a project's word ("rush-the-fix")
+ * says nothing about which project the session belongs to. Each `/`-separated
+ * segment gets a try, so "agents-cli/fix-lease" still finds "agents-cli".
  */
 function matchWeakHint(raw: string | null | undefined, known: LinearProjectLite[]): string {
   const v = (raw || '').trim()
@@ -126,7 +124,9 @@ function matchWeakHint(raw: string | null | undefined, known: LinearProjectLite[
  * Resolve one session's project from every hint it carries, strongest first:
  *
  *   cwd / worktree path  -> the existing rule + worktree-fold resolution
- *   CLI repo word        -> matchLinearProject (containment allowed: it IS a repo slug)
+ *   CLI repo word        -> matchLinearProject (word-wise containment allowed: it IS
+ *                           a repo slug, so "o/agents-cli-web" folds onto "agents-cli"
+ *                           while "o/crush-cli" never folds onto "rush")
  *   PR repo slug         -> same, and this is how a cloud run gets its project
  *   branch / slug / team -> exact match against an already-known project only
  *
@@ -143,7 +143,7 @@ export function attributeSessionProject(
 
   const dir = (hints.cwd || '').trim() || (hints.worktreePath || '').trim()
   if (dir) {
-    const fromCwd = resolveProject(dir, rules, hints.repoRoot || undefined)
+    const fromCwd = resolveProject(dir, rules)
     if (fromCwd) return { project: fromCwd, source: 'cwd' }
   }
 

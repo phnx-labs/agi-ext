@@ -1,4 +1,5 @@
 import { abbrFor, type RemoteSessionLike } from './floorAdapter'
+import { attributeSessionProject } from './sessionProjects'
 import type { AgentAbbr, CiStatus, FloorAgent } from './floorModel'
 import type { TerminalDetail } from '../../types'
 
@@ -108,7 +109,15 @@ export function buildRecap(
       id: s.sessionId,
       abbr: abbrFor(s.agentType),
       title: recapTitle(s),
-      project: s.project,
+      // Same attribution the Sessions surface uses (PHNX-3796): resolve the cwd,
+      // then the row's own repo hints, and scrub run-CONTEXT words — a recent
+      // cloud row carrying project:'cloud' must not render "cloud" as a project.
+      project: attributeSessionProject({
+        cwd: s.cwd,
+        worktreePath: s.worktreePath,
+        repo: s.project,
+        prUrl: s.prUrl ?? s.pullRequest?.url ?? null,
+      }).project,
       host: s.host,
       branch: s.branch,
       startedAtMs: s.startedAtMs,

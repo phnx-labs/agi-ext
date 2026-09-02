@@ -30,7 +30,18 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
     project**, the group header offers **assign all**; both open the same searchable
     menu (managed projects included) and persist locally, like pinned favorites.
   - **`linearProjects.ts` moved to `src/shared/`** so the host and the webview match
-    project identity with one implementation instead of two.
+    project identity with one implementation instead of two. Its containment fallback
+    is now WORD-wise rather than character-wise: `crush-cli` normalized to `crushcli`,
+    which contains `rush`, so an unrelated repo used to file itself under a short
+    project name. `agents-cli-web` → `Agents CLI` still works; `crush-cli` → `Rush`
+    no longer does. Historical rows also resolve their cwd before the CLI's project
+    word (they had the precedence reversed), so a user project rule wins there too.
+  - **One word for one state.** The agent feed's Group-by-Project bucket for a session
+    with no project now reads **Unassigned**, matching the Sessions surface, and the
+    Recap ledger runs its rows through the same attribution so a cwd-less row can never
+    render the run-context word "cloud" as a project name. (Tickets keep "Unlabeled" —
+    a ticket with no project is a different thing.)
+
 ## [0.9.353] - 2026-09-02
 
 - **Dead-code sweep (non-overlapping subset).** Removed ~200 LOC of unreferenced

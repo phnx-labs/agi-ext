@@ -136,10 +136,25 @@ describe('attributeSessionProject — widened hints (PHNX-3796)', () => {
   })
 
   test('a weak hint never takes the containment shortcut a repo slug is allowed', () => {
-    // "flush-fix" contains "rush"; matching it would put unrelated work in Rush.
-    expect(attributeSessionProject({ branch: 'flush-fix' }, { known: KNOWN }).project).toBe(UNASSIGNED_PROJECT)
+    // A branch that merely carries a project's word says nothing about the project.
+    expect(attributeSessionProject({ branch: 'rush-the-lease-fix' }, { known: KNOWN }).project).toBe(UNASSIGNED_PROJECT)
     // The same containment IS wanted for a real repo slug.
     expect(attributeSessionProject({ repo: 'o/agents-cli-web' }, { known: KNOWN }).project).toBe('agents-cli')
+  })
+
+  test('a repo whose name merely CONTAINS a short project name is never filed under it', () => {
+    // Regression: character containment ("crushcli" contains "rush") filed an
+    // unrelated repo under project Rush. It must keep its own name instead.
+    expect(attributeSessionProject({ repo: 'someuser/crush-cli' }, { known: KNOWN })).toEqual({
+      project: 'crush-cli',
+      source: 'repo',
+    })
+    expect(attributeSessionProject({ prUrl: 'https://github.com/someuser/brush-fix/pull/3' }, { known: KNOWN })).toEqual({
+      project: 'brush-fix',
+      source: 'cloud',
+    })
+    // the genuine repo still folds onto the project
+    expect(attributeSessionProject({ repo: 'phnx-labs/rush-web' }, { known: KNOWN }).project).toBe('rush')
   })
 
   test('a prompt-shaped label is never mined — a genuinely repo-less run stays Unassigned', () => {

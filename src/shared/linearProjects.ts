@@ -32,15 +32,40 @@ export function normalizeProjectKey(s: string): string {
 }
 
 /**
+ * The same last-path-segment, lowercased — but split into WORDS instead of
+ * collapsed, so containment can respect word boundaries.
+ *   "Agents CLI" / "phnx-labs/agents-cli" -> ["agents", "cli"]
+ */
+function projectKeyWords(s: string): string[] {
+  const last = s.toLowerCase().split('/').filter(Boolean).pop() ?? '';
+  return last.split(/[-_\s.]+/).filter(Boolean);
+}
+
+/** Is `needle` a contiguous run of words inside `hay`? */
+function containsWords(hay: string[], needle: string[]): boolean {
+  if (needle.length === 0 || needle.length > hay.length) return false;
+  for (let i = 0; i + needle.length <= hay.length; i++) {
+    if (needle.every((w, j) => hay[i + j] === w)) return true;
+  }
+  return false;
+}
+
+/**
  * Find the Linear project that best matches a repo slug or folder name.
- * Exact normalized match first, then a containment fallback (either direction),
- * so "agents-cli-web" still suggests "Agents CLI" when no exact peer exists.
+ * Exact normalized match first, then a WORD-boundary containment fallback (either
+ * direction), so "agents-cli-web" still suggests "Agents CLI" when no exact peer
+ * exists.
+ *
+ * Containment is deliberately word-wise, not character-wise. Character containment
+ * over the separator-stripped key silently binds unrelated repos to short project
+ * names — "crush-cli" ("crushcli") contains "rush", so a repo nobody at this org
+ * owns would file itself under project Rush. Word containment keeps the case the
+ * fallback exists for and drops the collisions.
  *
  * `fuzzy: false` keeps only the exact normalized match. Weak hints — a branch, a
- * worktree slug, a team name — are near-arbitrary strings, and containment across
- * a short project name mis-binds them ("flush-fix" would "match" project "Rush").
- * Session attribution passes fuzzy:false for those and keeps containment for real
- * repo slugs, where it is the whole point.
+ * worktree slug, a team name — are near-arbitrary strings where even a word match
+ * ("rush" as one word of a branch name) says nothing about the project, so session
+ * attribution passes fuzzy:false for those.
  */
 export function matchLinearProject(
   slugOrName: string,
@@ -52,8 +77,9 @@ export function matchLinearProject(
   const exact = projects.find((p) => normalizeProjectKey(p.name) === key);
   if (exact) return exact;
   if (opts.fuzzy === false) return undefined;
+  const words = projectKeyWords(slugOrName);
   return projects.find((p) => {
-    const pk = normalizeProjectKey(p.name);
-    return pk.length > 0 && (pk.includes(key) || key.includes(pk));
+    const pw = projectKeyWords(p.name);
+    return pw.length > 0 && (containsWords(words, pw) || containsWords(pw, words));
   });
 }
