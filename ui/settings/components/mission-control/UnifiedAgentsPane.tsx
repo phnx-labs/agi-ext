@@ -887,6 +887,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // (FleetProjectsSection), which owns its own Linear-projects + folder-picker
   // state (PHNX-3592).
   const [managedProjects, setManagedProjects] = useState<ManagedProject[]>([])
+  // Curated project names, reused (not refetched) for session attribution + the
+  // Sessions surface's assign menus (PHNX-3796).
+  const managedProjectNameList = useMemo(() => managedProjects.map((p) => p.name).filter(Boolean), [managedProjects])
 
   // Persist the durable Floor prefs (pinned set, plain/sidebar/right toggles, group-by, host pins).
   useEffect(() => {
@@ -1609,8 +1612,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Local agents (drop the synthetic watchdog row) + genuinely-remote sessions
   // (host !== 'this-mac' so we don't double count this machine's own agents).
   const floorLocalAgents = useMemo(
-    () => adaptUnified(items.filter((i) => i.kind !== 'watchdog'), { pinned, workspaceRepo: workspaceRepoName, nowMs, localHostName, projectRules, projectedSessions: remoteSessions }),
-    [items, pinned, workspaceRepoName, nowMs, localHostName, projectRules, remoteSessions]
+    () => adaptUnified(items.filter((i) => i.kind !== 'watchdog'), { pinned, workspaceRepo: workspaceRepoName, nowMs, localHostName, projectRules, projectedSessions: remoteSessions, knownProjects: managedProjectNameList }),
+    [items, pinned, workspaceRepoName, nowMs, localHostName, projectRules, remoteSessions, managedProjectNameList]
   )
   // Session UUIDs already open as a terminal tab in THIS window (the rich, local
   // source). Used to avoid double-listing an agent that the machine-wide fetch also
@@ -1632,9 +1635,13 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
         ),
         pinned,
         localHostName,
-        projectRules
+        projectRules,
+        // The curated project roster the pane already holds — no extra fetch. Weak
+        // hints (branch / worktree slug / team) may only bind to a project in here or
+        // one another row established from a real cwd (PHNX-3796).
+        managedProjectNameList
       ),
-    [remoteSessions, localTabSessionIds, pinned, localHostName, projectRules]
+    [remoteSessions, localTabSessionIds, pinned, localHostName, projectRules, managedProjectNameList]
   )
   const streamedFloorAgents = useMemo(
     () => [...floorLocalAgents, ...floorRemoteAgents],
@@ -1679,8 +1686,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     }
   }, [hostHasNoActive, hostFilter, recentByHost])
   const recentAgents = useMemo(
-    () => (hostFilter && hostHasNoActive ? adaptRemote(recentByHost[hostFilter] ?? [], pinned, localHostName, projectRules) : []),
-    [hostFilter, hostHasNoActive, recentByHost, pinned, localHostName, projectRules]
+    () => (hostFilter && hostHasNoActive ? adaptRemote(recentByHost[hostFilter] ?? [], pinned, localHostName, projectRules, managedProjectNameList) : []),
+    [hostFilter, hostHasNoActive, recentByHost, pinned, localHostName, projectRules, managedProjectNameList]
   )
 
   // PHNX-3594: the PRs board and Recap ledger are removed from the Fleet view, so
@@ -2552,6 +2559,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       onSelect={(a) => selectSession(a.id)}
       selectedId={selectedAgentId}
       streamDegraded={sessionStreamDegraded}
+      managedProjectNames={managedProjectNameList}
     />
   ) : (
     // PHNX-3594: Backlog (lives in BENCH), Recap, and PRs are removed from the

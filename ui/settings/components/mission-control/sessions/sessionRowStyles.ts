@@ -227,4 +227,50 @@ export const SESSION_ROW_CSS = `
 .sx-resume-device-dot.offline { background: #5c6675; }
 .sx-resume-device-state { margin-left: auto; color: var(--ds-text-muted, #5c6675); font-size: 10px; }
 .sx-resume-menu-empty { padding: 8px; color: var(--ds-text-muted, #5c6675); font-size: 12px; }
+
+/* --- project filter / assign menu (PHNX-3796) --- */
+.sx-proj-menu {
+  position: fixed; z-index: 10000; width: 252px; box-sizing: border-box; padding: 6px;
+  border: 1px solid var(--ds-border, #2a3550); border-radius: 8px;
+  background: var(--ds-bg-raised, #151d2d); color: var(--ds-text, #e6e9ef);
+  box-shadow: 0 12px 34px rgba(0,0,0,.42);
+}
+.sx-proj-menu-title {
+  padding: 6px 8px 7px; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace;
+  font-size: 10px; color: var(--ds-text-muted, #7b8699); letter-spacing: .25px;
+}
+.sx-proj-menu-search {
+  width: 100%; box-sizing: border-box; margin-bottom: 4px; padding: 5px 8px; border-radius: 6px;
+  border: 1px solid var(--ds-border, #2a3550); background: var(--ds-bg-inset, #0c1220);
+  color: var(--ds-text, #e6e9ef); font: 12px/1.2 inherit; outline: none;
+}
+.sx-proj-menu-list { max-height: 236px; overflow-y: auto; }
+.sx-proj-menu button {
+  width: 100%; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 5px;
+  padding: 6px 8px; color: var(--ds-text, #e6e9ef); background: transparent;
+  font: 12px/1.2 inherit; text-align: left; cursor: pointer;
+}
+.sx-proj-menu button:hover { background: rgba(127,140,160,.13); }
+.sx-proj-menu-check { flex: none; width: 10px; color: var(--brand, #a3e635); font-size: 11px; }
+.sx-proj-menu-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sx-proj-menu-count {
+  flex: none; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace;
+  font-size: 10px; color: var(--ds-text-muted, #7b8699);
+}
+.sx-proj-menu-empty { padding: 8px; color: var(--ds-text-muted, #5c6675); font-size: 12px; }
+
+/* The band's reason line + assign affordances. The Unassigned header states WHY its
+   rows are there, so the bucket reads as an explanation instead of a leftover. */
+.sw-sessions .sx-band .why {
+  letter-spacing: 0; text-transform: none; color: var(--ds-text-faint, #5c6675); font-size: 11px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sw-sessions .sx-band-assign, .sw-sessions .sx-assign {
+  font-family: inherit; font-size: 11px; letter-spacing: 0; text-transform: none;
+  border: 1px dashed var(--ds-border-strong, #34405c); background: transparent;
+  color: var(--ds-text-muted, #8b94a6); border-radius: 6px; padding: 2px 8px; cursor: pointer;
+}
+.sw-sessions .sx-band-assign { margin-left: auto; }
+.sw-sessions .sx-band-assign:hover, .sw-sessions .sx-assign:hover { color: var(--ds-text, #e6e9ef); border-style: solid; }
+.sw-sessions .sx-assign { flex: none; }
 `

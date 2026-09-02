@@ -4,6 +4,33 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.354] - 2026-09-02
+
+- **Fleet: filter sessions by project, and no more blank "no project" group (PHNX-3796).**
+  - **Project filter.** A searchable `Project` control joins Group and Sort on the
+    Sessions toolbar: every project in view with its session count, plus **All
+    projects** and **Unassigned** as first-class picks. The pick scopes the row list
+    AND the status-chip counts (All / Active / Idle / Blocked / Favorites / Needs you),
+    and is remembered across reloads. A remembered project that has left the fleet
+    falls back to All projects instead of an empty list.
+  - **Widened attribution.** A session's project no longer comes from its cwd alone.
+    `sessionProjects.ts` walks the hints the projected row already carries — cwd or
+    worktree path, the CLI's repo word, the PR's `owner/repo` slug, then branch,
+    worktree slug, and team — matching each with the same `matchLinearProject` the
+    host uses to bind a folder to a Linear project. Repo slugs keep the containment
+    match; weak hints must match an already-known project exactly, so "flush-fix"
+    never lands in "Rush". Prompts are deliberately not mined. No new fetch, no
+    polling: every hint is a field already on the stream, and the extension host now
+    keeps the CLI's own project word for a cwd-less row instead of dropping it
+    (`normalizeActiveSession`).
+  - **Unassigned is a real bucket.** Sessions no hint can attribute get `''`, which
+    renders as a labeled **Unassigned** group stating its reason ("cloud & no-repo
+    runs — no cwd to match") instead of the old `—` placeholder that read as a blank
+    header, and it always sorts last however large it is. Each row offers **+ assign
+    project**, the group header offers **assign all**; both open the same searchable
+    menu (managed projects included) and persist locally, like pinned favorites.
+  - **`linearProjects.ts` moved to `src/shared/`** so the host and the webview match
+    project identity with one implementation instead of two.
 ## [0.9.353] - 2026-09-02
 
 - **Dead-code sweep (non-overlapping subset).** Removed ~200 LOC of unreferenced

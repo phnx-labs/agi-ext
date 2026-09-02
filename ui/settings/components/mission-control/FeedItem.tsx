@@ -112,9 +112,11 @@ function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, on
   // concatenated into the meta string — so a stray `WT=<path>` can never leak into the
   // meta line. The meta line keeps project · host · ticket · files.
   const wt = a.worktreeSlug || a.branch
+  // An unattributed session carries no project (PHNX-3796), so the project segment is
+  // dropped rather than rendering a dangling separator ("· zion").
   const meta = plain
     ? a.project
-    : `${a.project} · ${a.hostLabel ?? a.host}${filesLabel}${paneLabel}${viewingLabel}`
+    : `${a.project ? `${a.project} · ` : ''}${a.hostLabel ?? a.host}${filesLabel}${paneLabel}${viewingLabel}`
   const destructive = a.question?.kind === 'destructive'
   const attn = a.phase === 'failed' ? 'fail' : stalled ? 'stall' : a.needs ? 'attn' : ''
 

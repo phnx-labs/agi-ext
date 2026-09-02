@@ -6,6 +6,7 @@ import { ExpandedCard } from './ExpandedCard'
 import { RowLinks } from './RowLinks'
 import { formatRelativeTime } from './sessionTime'
 import { previousResumeMessage, resumeSourceDevice } from './sessionActions'
+import { isUnassigned } from '../sessionProjects'
 
 export interface SessionRowProps {
   agent: FloorAgent
@@ -20,6 +21,8 @@ export interface SessionRowProps {
   onSelect: (agent: FloorAgent) => void
   onToggleExpand: (id: string) => void
   onResumeContext?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
+  /** Open the assign-project menu for this row. Absent -> no assign affordance. */
+  onAssignProject?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
 }
 
 function PromptChips({ you }: { you: SessionRowView['you'] }) {
@@ -35,7 +38,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext,
+  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext, onAssignProject,
 }: SessionRowProps) {
   const previous = isPrevious(a)
   const canResume = !previous || !!previousResumeMessage(a)
@@ -68,7 +71,18 @@ function SessionRowImpl({
       <span className="sx-av"><AgentAvatar id={agentId} size={24} title={row.harnessTag || agentId} /></span>
       <span className="sx-grow">
         <div className="sx-titleline">
-          {a.project && <span className="sx-proj" title={a.project}>{a.project}</span>}
+          {isUnassigned(a) ? (
+            onAssignProject && (
+              <button
+                type="button"
+                className="sx-assign"
+                title="Assign this session to a project"
+                onClick={(e) => { e.stopPropagation(); onAssignProject(a, e) }}
+              >+ assign project ▾</button>
+            )
+          ) : (
+            <span className="sx-proj" title={a.project}>{a.project}</span>
+          )}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
           {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>

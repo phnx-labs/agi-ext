@@ -4,6 +4,7 @@
 // share one CLI-field classifier, and bounded PREVIOUS history participates in every
 // grouping rather than escaping into an unrelated flat band.
 
+import { UNASSIGNED_LABEL, UNASSIGNED_PROJECT, UNASSIGNED_REASON, isUnassigned } from './sessionProjects'
 import {
   isPrevious,
   sessionStatus,
@@ -32,6 +33,12 @@ export interface SessionSection {
   total?: number
   /** For the Previous pager: how many bounded rows are currently visible. */
   shown?: number
+  /** Why this section exists, when the label alone doesn't say it. Only the
+   *  Unassigned project bucket sets it, so the orphan group is never a blank
+   *  header with an unexplained count (PHNX-3796). */
+  reason?: string
+  /** True for the Unassigned project bucket — drives the assign-all affordance. */
+  unassigned?: boolean
 }
 
 /** Rolling window a Previous session must fall inside to appear by default. */
@@ -43,7 +50,8 @@ export const PREVIOUS_PAGE = 10
 
 export interface SessionScope {
   filter: SessionFilter
-  /** Exact project name, or null for all. */
+  /** Project scope: null = all projects, '' (UNASSIGNED_PROJECT) = only the
+   *  unattributed rows, otherwise an exact project name. */
   project: string | null
   /** hostLabel ?? host, or null for all. */
   host: string | null
@@ -67,7 +75,9 @@ export function scopeSessions(all: FloorAgent[], scope: SessionScope): FloorAgen
   return all.filter((a) => {
     if (scope.filter === 'favorites' && !a.pinned) return false
     if (scope.filter !== 'all' && scope.filter !== 'favorites' && sessionStatus(a) !== scope.filter) return false
-    if (scope.project && a.project !== scope.project) return false
+    // `null` means all projects; '' is a real pick (the Unassigned bucket), so this
+    // compares against null rather than testing truthiness.
+    if (scope.project !== null && (a.project || UNASSIGNED_PROJECT) !== scope.project) return false
     if (scope.host && hostOf(a) !== scope.host) return false
     if (q) {
       const hay = `${a.name} ${a.topic ?? ''} ${a.prompt ?? ''} ${a.project} ${hostOf(a)} ${a.branch} ${a.worktreeSlug} ${a.sessionId ?? ''}`.toLowerCase()
@@ -157,25 +167,35 @@ export function groupSessions(
   }
 
   // Project and Device bucket the whole bounded list, ordered by most rows first.
-  const keyOf = group === 'project' ? (a: FloorAgent) => a.project : hostOf
+  // Project keys on '' for an unattributed session; Device still falls back to a
+  // literal '(none)' because a session always ran SOMEWHERE.
+  const keyOf = group === 'project'
+    ? (a: FloorAgent) => (isUnassigned(a) ? UNASSIGNED_PROJECT : a.project)
+    : (a: FloorAgent) => hostOf(a) || '(none)'
   const sections: SessionSection[] = []
   const buckets = new Map<string, FloorAgent[]>()
   for (const a of scoped) {
-    const k = keyOf(a) || '(none)'
+    const k = keyOf(a)
     const b = buckets.get(k)
     if (b) b.push(a)
     else buckets.set(k, [a])
   }
+  const isOrphanBucket = (k: string) => group === 'project' && k === UNASSIGNED_PROJECT
   const ordered = [...buckets.entries()].sort((a, b) => {
+    // Unassigned is always LAST, however large it is: it is the bucket of work that
+    // still needs a home, not the fleet's biggest project.
+    if (isOrphanBucket(a[0]) !== isOrphanBucket(b[0])) return isOrphanBucket(a[0]) ? 1 : -1
     if (b[1].length !== a[1].length) return b[1].length - a[1].length
     return a[0].localeCompare(b[0])
   })
   for (const [k, rows] of ordered) {
+    const orphan = isOrphanBucket(k)
     sections.push({
-      key: `${group}:${k}`,
-      label: k,
+      key: `${group}:${orphan ? 'unassigned' : k}`,
+      label: orphan ? UNASSIGNED_LABEL : k,
       kind: group,
       agents: sortSessions(rows, sort, desc),
+      ...(orphan ? { reason: UNASSIGNED_REASON, unassigned: true } : {}),
     })
   }
   return sections

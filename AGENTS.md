@@ -46,6 +46,17 @@ use only the projected phase/attention fields; alternate-device Resume reuses th
 already-loaded device roster and the CLI's one-shot migration/recovery verbs. Never fill any
 of these with a transcript read, lifecycle probe, or a second device/session fetch.
 
+Project attribution obeys the same rule. `sessionProjects.ts` resolves a session's
+project ONLY from hints the projected row already carries — cwd/worktree path first,
+then the CLI's repo word, the PR's `owner/repo` slug, and finally branch / worktree
+slug / team, matched with the shared `matchLinearProject`. Weak hints bind only to a
+project already established by another row or by the managed-projects roster the pane
+holds; a prompt/label is never mined. A session no hint can attribute is `''` — the
+labeled **Unassigned** bucket with its reason — never a blank header, and never a
+guess. Do not add a fetch, a transcript read, or a repo probe to fill it: put the
+missing fact on the CLI row, or let the user assign it by hand (a local presentation
+override, like pinned favorites).
+
 The `agentsPanel.terminal` activity-bar view is the focused session's work card,
 not a command catalog or tracker browser. It renders request/attachments,
 runtime and tokens, checklist progress, artifacts/delivery links, delegated-team

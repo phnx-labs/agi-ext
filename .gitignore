@@ -16,3 +16,8 @@ app-ui/
 
 # local vite preview build output
 ui/.tmp/
+
+# Agent worktrees + scratch (rendered previews, screenshots) — never committed;
+# a plan that should outlive the session goes to .agents/plans/ instead.
+.agents/worktrees/
+.agents/scratch/

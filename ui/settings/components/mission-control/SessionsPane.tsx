@@ -27,6 +27,21 @@ import {
   type ResumeDevice,
   type ResumeDeviceMenuState,
 } from './sessions/ResumeDeviceMenu'
+import { ProjectMenu, type ProjectMenuItem, type ProjectMenuState } from './sessions/ProjectMenu'
+import {
+  applyProjectAssignments,
+  assignProjects,
+  assignableProjectNames,
+  loadProjectAssignments,
+  loadProjectFilter,
+  persistProjectAssignments,
+  persistProjectFilter,
+  projectFilterLabel,
+  projectFilterOptions,
+  UNASSIGNED_LABEL,
+  UNASSIGNED_PROJECT,
+  type ProjectAssignments,
+} from './sessionProjects'
 import { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 export { SessionRow } from './sessions/SessionRow'
@@ -61,6 +76,10 @@ interface SessionsPaneProps {
   selectedId?: string | null
   /** True while the follower has not yet observed a CLI stream reset. */
   streamDegraded?: boolean
+  /** Curated project names from the managed-projects roster the parent already
+   *  loaded. They join the assign menu so a project with no live session is still
+   *  pickable; this view never fetches them itself. */
+  managedProjectNames?: string[]
 }
 
 type VItem =
@@ -102,7 +121,7 @@ const FILTER_OPTS: { value: SessionFilter; label: string; tone?: 'active' | 'idl
   { value: 'favorites', label: 'Favorites' },
 ]
 
-export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
+export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, selectedId, streamDegraded = false, managedProjectNames = [] }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState<SessionGroup>('project')
@@ -117,16 +136,45 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   // Needs-you narrowing — the affordance the removed left icon rail used to carry
   // (PHNX-3594). A toggle over the scoped list, not one of the primary filter chips.
   const [needsOnly, setNeedsOnly] = useState(false)
+  // Project scope (PHNX-3796): null = all projects, '' = the Unassigned bucket,
+  // otherwise an exact project name. Persisted, so the pick survives a reload.
+  const [project, setProject] = useState<string | null>(() => loadProjectFilter())
+  // Manual project assignments for rows no hint could attribute — a presentation
+  // override of THIS surface, persisted locally like the pinned favorites.
+  const [assignments, setAssignments] = useState<ProjectAssignments>(() => loadProjectAssignments())
+  const [projectMenu, setProjectMenu] = useState<
+    { kind: 'filter'; targets: null; state: ProjectMenuState } |
+    { kind: 'assign'; targets: FloorAgent[]; state: ProjectMenuState } |
+    null
+  >(null)
   const nowMs = useNow(30000)
 
-  const counts = useMemo(() => sessionChipCounts(agents), [agents])
-  const needsCount = useMemo(() => agents.filter((a) => a.needs).length, [agents])
+  // Manual assignments apply BEFORE anything else reads `project`, so the filter,
+  // the chip counts, the grouping, and the row all agree on one value.
+  const rows = useMemo(() => applyProjectAssignments(agents, assignments), [agents, assignments])
 
-  const scope: SessionScope = useMemo(() => ({ filter, project: null, host: null, search }), [filter, search])
+  const projectOptions = useMemo(() => projectFilterOptions(rows), [rows])
+  // A remembered pick whose project has since disappeared from the fleet would show
+  // an empty list forever; fall back to All projects instead of a dead end.
+  const activeProject = useMemo(
+    () => (project !== null && !projectOptions.some((o) => o.value === project) ? null : project),
+    [project, projectOptions],
+  )
+  const projectScoped = useMemo(
+    () => (activeProject === null ? rows : rows.filter((a) => (a.project || UNASSIGNED_PROJECT) === activeProject)),
+    [rows, activeProject],
+  )
+
+  // Chips and the needs-you badge count what the CURRENT project scope contains —
+  // the point of the filter is that every number on the toolbar agrees with it.
+  const counts = useMemo(() => sessionChipCounts(projectScoped), [projectScoped])
+  const needsCount = useMemo(() => projectScoped.filter((a) => a.needs).length, [projectScoped])
+
+  const scope: SessionScope = useMemo(() => ({ filter, project: activeProject, host: null, search }), [filter, activeProject, search])
   const scoped = useMemo(() => {
-    const base = scopeSessions(agents, scope)
+    const base = scopeSessions(rows, scope)
     return needsOnly ? base.filter((a) => a.needs) : base
-  }, [agents, scope, needsOnly])
+  }, [rows, scope, needsOnly])
   const sections = useMemo(
     () => buildSessionSections(scoped, group, sort, desc, { filter, nowMs, previousShown: previousShown ?? undefined }),
     [scoped, group, sort, desc, filter, nowMs, previousShown],
@@ -186,6 +234,42 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   }, [])
   const closeResumeMenu = useCallback(() => setResumeMenu(null), [])
 
+  // ----- project filter + manual assignment (PHNX-3796) -----
+  const closeProjectMenu = useCallback(() => setProjectMenu(null), [])
+  const openProjectFilter = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    const r = event.currentTarget.getBoundingClientRect()
+    setProjectMenu({ kind: 'filter', targets: null, state: { x: r.left, y: r.bottom + 6 } })
+  }, [])
+  const openAssignMenu = useCallback((targets: FloorAgent[], event: React.MouseEvent<HTMLButtonElement>) => {
+    const r = event.currentTarget.getBoundingClientRect()
+    setProjectMenu({ kind: 'assign', targets, state: { x: r.left, y: r.bottom + 6 } })
+  }, [])
+  const openRowAssign = useCallback((agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => {
+    openAssignMenu([agent], event)
+  }, [openAssignMenu])
+  const chooseProject = useCallback((value: string | null) => {
+    setProject(value)
+    persistProjectFilter(value)
+  }, [])
+  const chooseAssignment = useCallback((targets: FloorAgent[], value: string | null) => {
+    setAssignments((prev) => {
+      // `null` is the menu's "Clear assignment" pick — assignProjects deletes on ''.
+      const next = assignProjects(prev, targets, value ?? '')
+      persistProjectAssignments(next)
+      return next
+    })
+  }, [])
+  // The assign menu offers every project in view plus the curated managed ones, so a
+  // project that currently has no live session is still assignable.
+  const assignItems: ProjectMenuItem[] = useMemo(
+    () => assignableProjectNames(rows, managedProjectNames).map((name) => ({ value: name, label: name })),
+    [rows, managedProjectNames],
+  )
+  const clearableTargets = useMemo(
+    () => (projectMenu?.kind === 'assign' ? projectMenu.targets.some((a) => assignments[a.sessionId || a.id]) : false),
+    [projectMenu, assignments],
+  )
+
   return (
     <div className="sw-sessions">
       <style>{SESSION_ROW_CSS}</style>
@@ -223,6 +307,13 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <label className="sx-group" title="Filter to one project">
+          Project
+          <button type="button" className="sx-projbtn" aria-haspopup="menu" onClick={openProjectFilter}>
+            <b>{projectFilterLabel(activeProject)}</b>
+            <span aria-hidden>▾</span>
+          </button>
+        </label>
         <label className="sx-group" title="Group sessions">
           Group <b>{GROUP_OPTS.find((o) => o.value === group)!.label}</b>
           <select value={group} onChange={(e) => setGroup(e.target.value as SessionGroup)}>
@@ -243,9 +334,9 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
       <div className="sx-scroll" ref={scrollRef} onScroll={onScroll}>
         {items.length === 0 ? (
           <div className="sx-empty">
-            {streamDegraded && agents.length === 0
+            {streamDegraded && rows.length === 0
               ? 'Session data unavailable. Waiting for the first snapshot…'
-              : <>No sessions match. {agents.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setSearch(''); setNeedsOnly(false) }}>Clear filters</button>}</>}
+              : <>No sessions match. {rows.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setSearch(''); setNeedsOnly(false); chooseProject(null) }}>Clear filters</button>}</>}
           </div>
         ) : (
           <div style={{ height: totalHeight, position: 'relative' }}>
@@ -260,6 +351,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                     hasMore={it.section.kind === 'pager' && previousHasMore}
                     moreCount={previousPageSize}
                     onShowMore={showMorePrevious}
+                    onAssignAll={openAssignMenu}
                   />
                 ) : (
                   <SessionRow
@@ -276,6 +368,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                     onResumeContext={onResumeOnDevice ? openResumeMenu : undefined}
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
+                    onAssignProject={openRowAssign}
                   />
                 )
               )}
@@ -304,6 +397,26 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
           )}
         </div>
       )}
+      {projectMenu?.kind === 'filter' && (
+        <ProjectMenu
+          title="Filter to a project"
+          items={projectOptions}
+          selected={activeProject}
+          state={projectMenu.state}
+          onChoose={chooseProject}
+          onClose={closeProjectMenu}
+        />
+      )}
+      {projectMenu?.kind === 'assign' && (
+        <ProjectMenu
+          title={projectMenu.targets.length > 1 ? `Assign ${projectMenu.targets.length} sessions to…` : 'Assign this session to…'}
+          items={clearableTargets ? [{ value: null, label: 'Clear assignment' }, ...assignItems] : assignItems}
+          state={projectMenu.state}
+          onChoose={(value) => chooseAssignment(projectMenu.targets, value)}
+          onClose={closeProjectMenu}
+          emptyLabel="No projects to assign to yet"
+        />
+      )}
       {resumeMenu && onResumeOnDevice && (
         <ResumeDeviceMenu
           state={resumeMenu}
@@ -316,13 +429,15 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   )
 }
 
-function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, moreCount, onShowMore }: {
+function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, moreCount, onShowMore, onAssignAll }: {
   section: SessionSection
   resumableCount: number
   onResumeAll: () => void
   hasMore: boolean
   moreCount: number
   onShowMore: () => void
+  /** Bulk-assign every row under this header (Unassigned band only). */
+  onAssignAll?: (agents: FloorAgent[], event: React.MouseEvent<HTMLButtonElement>) => void
 }) {
   const isPrev = section.status === 'previous'
   const countLabel = section.kind === 'pager' && section.total !== undefined
@@ -333,6 +448,15 @@ function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, more
       <span className="g" aria-hidden />
       <span className="lab">{section.label}</span>
       <span className="cnt">{countLabel}</span>
+      {section.reason && <span className="why">· {section.reason}</span>}
+      {section.unassigned && onAssignAll && section.agents.length > 0 && (
+        <button
+          type="button"
+          className="sx-band-assign"
+          title={`Assign all ${section.agents.length} unassigned sessions to a project`}
+          onClick={(e) => { e.stopPropagation(); onAssignAll(section.agents, e) }}
+        >assign all ▾</button>
+      )}
       {hasMore && (
         <button className="sx-band-more" onClick={(e) => { e.stopPropagation(); onShowMore() }}>Show {moreCount} more</button>
       )}

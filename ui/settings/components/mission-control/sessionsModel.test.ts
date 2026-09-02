@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import type { FloorAgent } from './floorModel'
 import { isPrevious, sessionBand, sessionStatus, resumeCommand, mergeSessionAgents } from './floorModel'
+import { UNASSIGNED_LABEL, UNASSIGNED_PROJECT, UNASSIGNED_REASON } from './sessionProjects'
 import {
   scopeSessions,
   sortSessions,
@@ -159,6 +160,24 @@ describe('scopeSessions — project / host / search', () => {
   test('project filter', () => {
     expect(scopeSessions(list, { ...EMPTY, project: 'rush' }).map((a) => a.id)).toEqual(['b'])
   })
+  test("Unassigned ('') is a real scope, and null still means every project (PHNX-3796)", () => {
+    const withOrphans = [...list, mk({ id: 'cloud', project: UNASSIGNED_PROJECT })]
+    expect(scopeSessions(withOrphans, { ...EMPTY, project: UNASSIGNED_PROJECT }).map((a) => a.id)).toEqual(['cloud'])
+    expect(scopeSessions(withOrphans, { ...EMPTY, project: null })).toHaveLength(3)
+  })
+  test('status chips scoped to a project count only that project (the toolbar agrees with the list)', () => {
+    const fleet = [
+      mk({ id: 'a', project: 'agents-cli', phase: 'running' }),
+      mk({ id: 'b', project: 'agents-cli', phase: 'idle' }),
+      mk({ id: 'c', project: 'rush', phase: 'running' }),
+      mk({ id: 'd', project: UNASSIGNED_PROJECT, phase: 'running' }),
+    ]
+    expect(sessionChipCounts(fleet)).toMatchObject({ all: 4, active: 3, idle: 1 })
+    const scoped = scopeSessions(fleet, { ...EMPTY, project: 'agents-cli' })
+    expect(sessionChipCounts(scoped)).toMatchObject({ all: 2, active: 1, idle: 1 })
+    const orphans = scopeSessions(fleet, { ...EMPTY, project: UNASSIGNED_PROJECT })
+    expect(sessionChipCounts(orphans)).toMatchObject({ all: 1, active: 1, idle: 0 })
+  })
   test('host filter uses hostLabel (the Device label)', () => {
     expect(scopeSessions(list, { ...EMPTY, host: 'zion' }).map((a) => a.id)).toEqual(['a'])
   })
@@ -207,6 +226,23 @@ describe('groupSessions — the whole bounded list, including Previous, is re-bu
     const secs = groupSessions(list, 'status', 'recent', true)
     expect(secs.map((s) => s.label)).toEqual(['Active', 'Idle', 'Blocked', 'Previous'])
     expect(secs.find((s) => s.label === 'Previous')!.agents.map((a) => a.id).sort()).toEqual(['prev-agi', 'prev-rush'])
+  })
+  test('unattributed rows land in a LABELED Unassigned bucket, last, with its reason (PHNX-3796)', () => {
+    const withOrphans = [...list, mk({ id: 'cloud1', project: UNASSIGNED_PROJECT }), mk({ id: 'cloud2', project: UNASSIGNED_PROJECT }), mk({ id: 'cloud3', project: UNASSIGNED_PROJECT })]
+    const secs = groupSessions(withOrphans, 'project', 'recent', true)
+    // never a blank header
+    expect(secs.every((s) => s.label.trim().length > 0)).toBe(true)
+    const orphan = secs[secs.length - 1]!
+    // last even though it is the BIGGEST bucket — it is work needing a home, not a project
+    expect(orphan.label).toBe(UNASSIGNED_LABEL)
+    expect(orphan.reason).toBe(UNASSIGNED_REASON)
+    expect(orphan.unassigned).toBe(true)
+    expect(orphan.agents.map((a) => a.id).sort()).toEqual(['cloud1', 'cloud2', 'cloud3'])
+    expect(secs.filter((s) => s.reason)).toHaveLength(1)
+  })
+  test('a real project bucket carries no reason and no assign-all affordance', () => {
+    const secs = groupSessions(list, 'project', 'recent', true)
+    expect(secs.every((s) => s.reason === undefined && s.unassigned === undefined)).toBe(true)
   })
   test('None returns one section containing every row exactly once', () => {
     const secs = groupSessions(list, 'none', 'recent', true)
