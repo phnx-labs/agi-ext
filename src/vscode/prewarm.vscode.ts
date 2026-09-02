@@ -1,6 +1,17 @@
 // Terminal-to-session crash recovery - VS Code integration
 // Records which terminal is running which agent session so that, after a
 // non-clean shutdown (crash), the extension can reopen and resume them.
+//
+// PHNX-3768: this state lives in `context.workspaceState`, NOT `globalState`.
+// workspaceState is per-workspace and shared by nothing across windows, so a
+// window activating for project A can only ever restore/clear project A's own
+// mappings. With machine-global `globalState` (the prior bug) every window's
+// activation iterated the whole machine's mappings, reopened/resumed each into
+// whatever window just opened, AND wiped every other window's recovery state in
+// the same pass — an N-window resume-storm that pinned CPU and crashed the host.
+// This mirrors `restoreAgentTerminals` (the disk-persist sibling), which is
+// already keyed per workspace, and `agentlinks.vscode.ts`, which likewise uses
+// workspaceState for per-workspace one-shot flags.
 
 import * as vscode from 'vscode';
 import {
@@ -8,7 +19,7 @@ import {
   TerminalSessionMapping,
 } from '../core/prewarm';
 
-// GlobalState keys
+// WorkspaceState keys (per-workspace; see the PHNX-3768 note above).
 const MAPPINGS_KEY = 'prewarm.mappings';
 const CLEAN_SHUTDOWN_KEY = 'prewarm.cleanShutdown';
 
@@ -18,7 +29,7 @@ const CLEAN_SHUTDOWN_KEY = 'prewarm.cleanShutdown';
  * Get all terminal-session mappings
  */
 export function getMappings(context: vscode.ExtensionContext): TerminalSessionMapping[] {
-  return context.globalState.get<TerminalSessionMapping[]>(MAPPINGS_KEY, []);
+  return context.workspaceState.get<TerminalSessionMapping[]>(MAPPINGS_KEY, []);
 }
 
 /**
@@ -47,7 +58,7 @@ export async function recordTerminalSession(
     workingDirectory: cwd
   });
 
-  await context.globalState.update(MAPPINGS_KEY, mappings);
+  await context.workspaceState.update(MAPPINGS_KEY, mappings);
   console.log(`[PREWARM] Recorded mapping: ${terminalId} -> ${sessionId}`);
 }
 
@@ -63,7 +74,7 @@ export async function removeTerminalSession(
 
   if (idx !== -1) {
     const removed = mappings.splice(idx, 1)[0];
-    await context.globalState.update(MAPPINGS_KEY, mappings);
+    await context.workspaceState.update(MAPPINGS_KEY, mappings);
     console.log(`[PREWARM] Removed mapping: ${terminalId} -> ${removed.sessionId}`);
   }
 }
@@ -72,7 +83,7 @@ export async function removeTerminalSession(
  * Mark clean shutdown (called in deactivate)
  */
 export async function markCleanShutdown(context: vscode.ExtensionContext): Promise<void> {
-  await context.globalState.update(CLEAN_SHUTDOWN_KEY, true);
+  await context.workspaceState.update(CLEAN_SHUTDOWN_KEY, true);
   console.log('[PREWARM] Marked clean shutdown');
 }
 
@@ -80,7 +91,7 @@ export async function markCleanShutdown(context: vscode.ExtensionContext): Promi
  * Check if last shutdown was clean
  */
 function wasCleanShutdown(context: vscode.ExtensionContext): boolean {
-  return context.globalState.get<boolean>(CLEAN_SHUTDOWN_KEY, true);
+  return context.workspaceState.get<boolean>(CLEAN_SHUTDOWN_KEY, true);
 }
 
 /**
@@ -110,10 +121,10 @@ export async function restoreTerminals(
   actions: TerminalRestoreActions,
 ): Promise<number> {
   const cleanShutdown = wasCleanShutdown(context);
-  await context.globalState.update(CLEAN_SHUTDOWN_KEY, false);
+  await context.workspaceState.update(CLEAN_SHUTDOWN_KEY, false);
   if (cleanShutdown) {
     // Clean shutdown - clear mappings, don't restore
-    await context.globalState.update(MAPPINGS_KEY, []);
+    await context.workspaceState.update(MAPPINGS_KEY, []);
     return 0;
   }
 
@@ -139,6 +150,6 @@ export async function restoreTerminals(
     });
     if (opened) restored++;
   }
-  await context.globalState.update(MAPPINGS_KEY, []);
+  await context.workspaceState.update(MAPPINGS_KEY, []);
   return restored;
 }
