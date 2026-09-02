@@ -25,6 +25,7 @@ export type { RecentEvent, RecentToolCall }
 // longer resolve differently on each side of the postMessage boundary. Re-exported
 // so existing importers (e.g. floorAdapter) keep their `from './floorModel'` path.
 import { resolveProject, worktreeSlugOf } from '@shared/project'
+import { UNASSIGNED_LABEL } from './sessionProjects'
 import type { ProjectRule } from '@shared/project'
 export { resolveProject, worktreeSlugOf }
 export type { ProjectRule }
@@ -865,7 +866,9 @@ export function groupAgents(agents: FloorAgent[], by: FloorGroupBy): Map<string,
   const accessor: Record<FloorGroupBy, (a: FloorAgent) => string> = {
     outcome: (a) => outcomeLabel(a),
     host: (a) => (a.hostLabel ?? a.host) || 'Unknown host',
-    project: (a) => a.project || 'Unlabeled',
+    // Same word the Sessions surface uses for the same state (PHNX-3796) — one
+    // concept, one label, rather than 'Unlabeled' here and 'Unassigned' there.
+    project: (a) => a.project || UNASSIGNED_LABEL,
     status: (a) => a.phase,
     agent: (a) => a.abbr,
   }

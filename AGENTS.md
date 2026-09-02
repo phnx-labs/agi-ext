@@ -49,7 +49,9 @@ of these with a transcript read, lifecycle probe, or a second device/session fet
 Project attribution obeys the same rule. `sessionProjects.ts` resolves a session's
 project ONLY from hints the projected row already carries — cwd/worktree path first,
 then the CLI's repo word, the PR's `owner/repo` slug, and finally branch / worktree
-slug / team, matched with the shared `matchLinearProject`. Weak hints bind only to a
+slug / team, matched with the shared `matchLinearProject` — whose containment fallback
+is word-wise, so a repo that merely spells a short project name inside another word
+("crush-cli" vs "Rush") is never filed under it. Weak hints bind only to a
 project already established by another row or by the managed-projects roster the pane
 holds; a prompt/label is never mined. A session no hint can attribute is `''` — the
 labeled **Unassigned** bucket with its reason — never a blank header, and never a

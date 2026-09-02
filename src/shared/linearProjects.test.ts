@@ -21,8 +21,26 @@ test('matchLinearProject: exact normalized match wins', () => {
 });
 
 test('matchLinearProject: containment fallback for near names', () => {
-  // "agents-cli-web" has no exact peer; "agentscliweb" contains "agentscli" -> Agents CLI.
+  // "agents-cli-web" has no exact peer; its words start with "agents cli" -> Agents CLI.
   expect(matchLinearProject('agents-cli-web', PROJECTS)?.id).toBe('a');
+  // and the other direction: a project name that contains the queried repo's words.
+  expect(matchLinearProject('rush', PROJECTS)?.id).toBe('b');
+});
+
+test('matchLinearProject: containment is word-wise, so a short project name cannot swallow an unrelated repo', () => {
+  const projects: LinearProjectLite[] = [...PROJECTS, { id: 'd', name: 'Rush' }];
+  // "crushcli" contains the substring "rush" — character containment filed this
+  // unrelated repo under project Rush. Words are ["crush","cli"], so it must not.
+  expect(matchLinearProject('someuser/crush-cli', projects)).toBeUndefined();
+  expect(matchLinearProject('o/brush-fix', projects)).toBeUndefined();
+  expect(matchLinearProject('airbrush', projects)).toBeUndefined();
+  // the real word still matches, in either direction
+  expect(matchLinearProject('o/rush-web', projects)?.id).toBe('d');
+});
+
+test('matchLinearProject: fuzzy:false keeps only the exact normalized match', () => {
+  expect(matchLinearProject('agents-cli-web', PROJECTS, { fuzzy: false })).toBeUndefined();
+  expect(matchLinearProject('phnx-labs/agents-cli', PROJECTS, { fuzzy: false })?.id).toBe('a');
 });
 
 test('matchLinearProject: no match returns undefined', () => {

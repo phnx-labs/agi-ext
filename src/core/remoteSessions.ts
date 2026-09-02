@@ -918,7 +918,11 @@ export function normalizeRecentSession(
     sessionId: asStr(raw.id),
     agentType: asStr(raw.agent).toLowerCase(),
     cwd,
-    project: asStr(raw.project) || resolveProject(cwd, projectRules),
+    // Same precedence as the live path (PHNX-3796): the cwd resolves first, so a
+    // user project RULE always wins, and the CLI's own project word is the fallback
+    // for a row with no cwd. This used to be reversed here, which silently ignored
+    // rules for historical rows.
+    project: resolveProject(cwd, projectRules) || asStr(raw.project),
     phase: 'idle',
     // A recent (historical, not-live) session is a resumable transcript, not a
     // running process — surface it as such rather than inventing an orphan state.

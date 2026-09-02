@@ -48,8 +48,12 @@ describe('issue 1 — real project, generic Unlabeled key', () => {
   })
 
   test('groupAgents coalesces empty keys across axes', () => {
+    // An unattributed SESSION is "Unassigned" — the same word the Sessions surface
+    // uses for the same state (PHNX-3796). Tickets keep "Unlabeled" above: a ticket
+    // with no project is a different thing from a session with no resolvable repo.
     const groups = groupAgents([agent({ project: '' }), agent({ project: 'Beta' })], 'project')
-    expect([...groups.keys()]).toEqual(expect.arrayContaining(['Unlabeled', 'Beta']))
+    expect([...groups.keys()]).toEqual(expect.arrayContaining(['Unassigned', 'Beta']))
+    expect([...groups.keys()]).not.toContain('')
     // host groups by the DISPLAY label so this-mac folds onto the device name
     const byHost = groupAgents([agent({ host: 'this-mac', hostLabel: 'zion' })], 'host')
     expect([...byHost.keys()]).toContain('zion')
