@@ -50,7 +50,6 @@ import {
   probeChildPids,
   probeStat,
 } from '../monitor/probes';
-import { agentSessionRoots, __clearRootCacheForTests } from '../monitor/sessionParse';
 import {
   SHELL_ADOPTION_POLL_MS,
   SHELL_ADOPTION_MAX_LIFETIME_MS,
@@ -65,58 +64,10 @@ interface Registered {
   pid: number | null;
   disposables: vscode.Disposable[];
   timers: NodeJS.Timeout[];
-  watchers: fs.FSWatcher[];
-  fastPathDisposers: Array<() => void>;
   agentArmed: boolean;
 }
 
 const registry = new Map<vscode.Terminal, Registered>();
-
-// Singleton watcher per session-root path. Without this, every terminal would
-// mount its own recursive fs.watch on ~/.claude/projects (and per-version
-// homes), and on macOS each subscription re-arms FSEvents over a multi-GB
-// tree. With 20+ terminals open, the duplication caused observable system
-// load. Refcounted: the watcher closes when the last callback unregisters.
-interface SharedReadinessWatcher {
-  watcher: fs.FSWatcher;
-  callbacks: Set<(filename: string) => void>;
-}
-const sharedWatchers = new Map<string, SharedReadinessWatcher>();
-
-function addSharedWatcher(
-  root: string,
-  callback: (filename: string) => void,
-): () => void {
-  let entry = sharedWatchers.get(root);
-  if (!entry) {
-    let watcher: fs.FSWatcher;
-    try {
-      watcher = fs.watch(root, { recursive: true }, (_event, filename) => {
-        if (!filename) return;
-        const name = filename.toString();
-        const e = sharedWatchers.get(root);
-        if (!e) return;
-        for (const cb of e.callbacks) {
-          try { cb(name); } catch { /* ignore */ }
-        }
-      });
-    } catch {
-      return () => { /* noop */ };
-    }
-    entry = { watcher, callbacks: new Set() };
-    sharedWatchers.set(root, entry);
-  }
-  entry.callbacks.add(callback);
-  return () => {
-    const e = sharedWatchers.get(root);
-    if (!e) return;
-    e.callbacks.delete(callback);
-    if (e.callbacks.size === 0) {
-      try { e.watcher.close(); } catch { /* ignore */ }
-      sharedWatchers.delete(root);
-    }
-  };
-}
 
 // --- Monitor follower routing (#68) ---------------------------------------
 //
@@ -228,8 +179,6 @@ export function registerTerminal(
     pid: null,
     disposables: [],
     timers: [],
-    watchers: [],
-    fastPathDisposers: [],
     agentArmed: opts.restored === true,
   };
   registry.set(terminal, r);
@@ -271,31 +220,15 @@ export function resetAfterAgentExit(terminal: vscode.Terminal): void {
 }
 
 // Arm agentReady detection. Call this right after sending the agent launch
-// command.
-//
-// Two detection paths run in parallel; whichever fires first wins:
-//   1) Process-state probe: stable 'S' state + minimum child runtime.
-//   2) Session-file fast path: if agentKey + sessionId provided, fs.watch
-//      for the agent's session file to appear. Claude/Codex/Gemini/OpenCode
-//      all write a session file when the TUI is up.
+// command. Detection is the process-state probe (stable 'S' plus minimum
+// child runtime).
 export type FastPathAgentKey = AgentLauncherKey;
 export { detectAgentKeyFromArgs, extractSessionIdFromArgs };
 
 export interface ArmAgentOptions {
-  // Any string is accepted for ergonomics; only known agent keys get the
-  // session-file fast path. Unknown keys (e.g. 'shell') fall through to the
-  // process-state probe.
   agentKey?: string;
   sessionId?: string;
   cwd?: string;
-}
-
-const FAST_PATH_KEYS = new Set<FastPathAgentKey>([
-  'claude', 'codex', 'gemini', 'cursor', 'opencode',
-]);
-
-function isFastPathKey(k: string | undefined): k is FastPathAgentKey {
-  return k !== undefined && FAST_PATH_KEYS.has(k as FastPathAgentKey);
 }
 
 export function armAgentReady(terminal: vscode.Terminal, opts: ArmAgentOptions = {}): void {
@@ -305,16 +238,11 @@ export function armAgentReady(terminal: vscode.Terminal, opts: ArmAgentOptions =
   if (hasFired(r.entry, 'agentReady')) return;
   r.agentArmed = true;
 
-  // Connected: forward the arm to the monitor (which runs the process-state
-  // probe + session-file fast path once per pid) and resolve via broadcast.
   if (useMonitor(r.pid)) {
     monitorArmSink!.armAgent(r.pid, opts.agentKey, opts.sessionId);
     return;
   }
 
-  if (isFastPathKey(opts.agentKey) && opts.sessionId) {
-    armSessionFileFastPath(r, opts.agentKey, opts.sessionId, opts.cwd);
-  }
   startAgentReadyProbe(r);
 }
 
@@ -349,12 +277,6 @@ export function disposeTerminal(terminal: vscode.Terminal): void {
   shellAdoptions.delete(terminal);
   for (const d of r.disposables) d.dispose();
   for (const t of r.timers) clearTimeout(t);
-  for (const w of r.watchers) {
-    try { w.close(); } catch { /* ignore */ }
-  }
-  for (const d of r.fastPathDisposers) {
-    try { d(); } catch { /* ignore */ }
-  }
   coreDispose(r.entry, 'terminal closed');
 }
 
@@ -670,79 +592,11 @@ function startAgentReadyProbe(r: Registered): void {
   tick();
 }
 
-// Watch the agent's session file roots. As soon as a file named
-// `{sessionId}.*` (jsonl/json) appears, the TUI has booted far enough to
-// write its session metadata — a deterministic signal even when the
-// process-state probe is still being fooled by network I/O.
-// Hard timeout to tear down the fast-path callback even if agentReady never
-// fires. Without this, an agent that fails to start leaks the watcher for the
-// full terminal lifetime — death by a thousand cuts as terminals accumulate.
-const FAST_PATH_SAFETY_TIMEOUT_MS = 30_000;
-
-function armSessionFileFastPath(
-  r: Registered,
-  agentKey: FastPathAgentKey,
-  sessionId: string,
-  _cwd: string | undefined,
-): void {
-  const roots = sessionRootsForAgent(agentKey);
-  const sessionIdLower = sessionId.toLowerCase();
-
-  const checkFilename = (filename: string): boolean => {
-    const base = filename.toLowerCase();
-    // Claude/Codex/Gemini/OpenCode: filename contains sessionId (jsonl or json).
-    // Cursor: {chatId}/store.db; sessionId is the chatId dir name.
-    return base.includes(sessionIdLower);
-  };
-
-  const tearDown = (): void => {
-    while (r.fastPathDisposers.length > 0) {
-      const d = r.fastPathDisposers.pop();
-      if (d) { try { d(); } catch { /* ignore */ } }
-    }
-  };
-
-  for (const root of roots) {
-    if (!fs.existsSync(root)) continue;
-    const dispose = addSharedWatcher(root, (filename) => {
-      if (hasFired(r.entry, 'agentReady')) return;
-      if (checkFilename(filename)) {
-        markEvent(r.entry, 'agentReady');
-        tearDown();
-      }
-    });
-    r.fastPathDisposers.push(dispose);
-  }
-
-  const safetyTimer = setTimeout(tearDown, FAST_PATH_SAFETY_TIMEOUT_MS);
-  r.timers.push(safetyTimer);
-}
-
-// The per-agent session roots are shared with the monitor's session watcher;
-// `agentSessionRoots` (sessionParse.ts) is the single source of truth.
-function sessionRootsForAgent(agentKey: FastPathAgentKey): string[] {
-  return agentSessionRoots(agentKey);
-}
-
-
-// --- Test-only helpers ---------------------------------------------------
-
 export function __clearRegistryForTests(): void {
   for (const [terminal, r] of registry.entries()) {
     shellAdoptions.delete(terminal);
     for (const d of r.disposables) d.dispose();
     for (const t of r.timers) clearTimeout(t);
-    for (const w of r.watchers) {
-      try { w.close(); } catch { /* ignore */ }
-    }
-    for (const d of r.fastPathDisposers) {
-      try { d(); } catch { /* ignore */ }
-    }
   }
   registry.clear();
-  for (const [, sw] of sharedWatchers) {
-    try { sw.watcher.close(); } catch { /* ignore */ }
-  }
-  sharedWatchers.clear();
-  __clearRootCacheForTests();
 }
