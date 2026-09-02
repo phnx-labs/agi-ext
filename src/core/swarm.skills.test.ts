@@ -1,8 +1,15 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, afterAll, mock } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { vscodeDouble } from '../testing/vscodeDouble';
+
+// mock.module is process-global and mock.restore() does NOT undo it, so the
+// './swarm.detect' stub installed by setupMocks() would otherwise leak into
+// swarm.detect.test.ts and make its getAgentCommandPath return this file's
+// temp paths. Snapshot the real exports now (into a plain object so the refs
+// survive the later mock.module) and re-install them in afterAll.
+const realSwarmDetect = { ...(await import('./swarm.detect')) };
 
 let tempDir: string;
 let fakeExtensionPath: string;
@@ -65,6 +72,10 @@ afterEach(() => {
   if (fs.existsSync(tempDir)) {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+afterAll(() => {
+  mock.module('./swarm.detect', () => realSwarmDetect);
 });
 
 describe('skills status and install', () => {
