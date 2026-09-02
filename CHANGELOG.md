@@ -4,6 +4,27 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.354] - 2026-09-02
+
+- **Fleet Sessions: filter by project + fix "no project" attribution (PHNX-3796).**
+  Two gaps in the Sessions surface are closed:
+  - **Project filter.** A new `Project: <name> ▾` control sits beside Group/Sort — a
+    searchable dropdown of every project with its session count, plus first-class
+    `All projects` and `Unassigned` picks. Selecting one scopes BOTH the rows AND the
+    status-chip counts (All/Active/Idle/Blocked/Needs-you) to that project; the pick
+    persists across reloads.
+  - **No more blank group header.** A session's project resolves from its cwd, so
+    cloud/factory runs with no local cwd used to pile up under a blank `—` bucket.
+    Attribution now widens: a run that carries a hint — an open PR's repo slug, a
+    branch, or a worktree slug — is folded onto a project (reusing `matchLinearProject`
+    against the projects other sessions already resolved, else the PR repo's own name).
+    The genuinely repo-less remainder lands in a LABELED **Unassigned** group with its
+    reason inline ("cloud & no-repo runs — no cwd to match"), a per-row `+ assign
+    project ▾`, and a bulk `assign all ▾`. Manual assignments persist.
+  - The pure `matchLinearProject` matcher moved to `src/shared/linearProjects.ts` so the
+    webview reuses the exact matcher the host already uses (re-exported from
+    `src/core/linearProjects.ts` — host importers unchanged).
+
 ## [0.9.353] - 2026-09-02
 
 - **Dead-code sweep (non-overlapping subset).** Removed ~200 LOC of unreferenced

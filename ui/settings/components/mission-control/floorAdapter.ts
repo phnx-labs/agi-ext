@@ -667,7 +667,11 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     // synthetic 'this-mac'; give them the real device name so they fold into the
     // same HOSTS row as in-window local agents instead of a second bucket.
     hostLabel: isCloud ? 'Cloud' : (r.host === 'this-mac' ? localHostName || undefined : undefined),
-    project: deriveProject(r.cwd, r.project, r.project || '—', projectRules),
+    // Empty (not '—') when nothing resolves: a cloud/factory run with no cwd and no
+    // CLI project has no repo to match. The Sessions surface attributes it from a PR
+    // slug / branch hint where it can, and buckets the rest under a LABELED Unassigned
+    // group — never a blank '—' header (PHNX-3796).
+    project: deriveProject(r.cwd, r.project, r.project || '', projectRules),
     name,
     abbr: abbrFor(r.agentType),
     agentType: r.agentType,

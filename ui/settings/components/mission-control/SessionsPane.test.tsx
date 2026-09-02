@@ -336,9 +336,11 @@ describe('SessionsPane', () => {
     expect(html).toContain('>Favorites<')
     expect(html).not.toContain('>Orphaned<')
     expect(html).not.toContain('>Starred<')
-    expect(html).not.toContain('All projects')
+    // The Project filter control IS present (PHNX-3796): a searchable trigger defaulting
+    // to "All projects". There is still no host/machine filter on this surface.
+    expect(html).toContain('Filter by project')
+    expect(html).toContain('All projects')
     expect(html).not.toContain('All hosts')
-    expect(html).not.toContain('Filter by project')
     expect(html).not.toContain('Filter by machine')
     expect(html).toContain('<option value="project" selected="">Project</option>')
     expect(html).toContain('<option value="device">Device</option>')

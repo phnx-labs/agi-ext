@@ -9,7 +9,13 @@ import {
   sessionChipCounts,
   orderedPrevious,
   previousInitialCount,
+  attributeSessionProjects,
+  buildProjectFilterOptions,
+  repoSlugFromPrUrl,
   PREVIOUS_DEFAULT_LIMIT,
+  UNASSIGNED_PROJECT,
+  UNASSIGNED_LABEL,
+  UNASSIGNED_REASON,
   type SessionScope,
 } from './sessionsModel'
 
@@ -276,5 +282,115 @@ describe('sessionChipCounts — All / Active / Idle / Blocked / Favorites', () =
       mk({ pinned: true, phase: 'running', needs: true }),
     ]
     expect(sessionChipCounts(list)).toEqual({ all: 5, active: 1, idle: 1, blocked: 1, favorites: 1 })
+  })
+  test('chips scope to a project when fed a project-scoped list (the SessionsPane path)', () => {
+    const list = [
+      mk({ id: 'a', project: 'agents-cli', phase: 'running' }),
+      mk({ id: 'b', project: 'agents-cli', phase: 'idle' }),
+      mk({ id: 'c', project: 'rush', phase: 'running', needs: true }),
+    ]
+    const scoped = scopeSessions(list, { ...EMPTY, project: 'agents-cli' })
+    expect(sessionChipCounts(scoped)).toEqual({ all: 2, active: 1, idle: 1, blocked: 0, favorites: 0 })
+  })
+})
+
+describe('repoSlugFromPrUrl', () => {
+  test('extracts owner/repo from a GitHub PR url', () => {
+    expect(repoSlugFromPrUrl('https://github.com/phnx-labs/agents-cli/pull/512')).toBe('phnx-labs/agents-cli')
+    expect(repoSlugFromPrUrl('https://github.com/phnx-labs/agi-ext.git')).toBe('phnx-labs/agi-ext')
+    expect(repoSlugFromPrUrl('')).toBe('')
+    expect(repoSlugFromPrUrl(null)).toBe('')
+    expect(repoSlugFromPrUrl('https://example.com/not/a/repo')).toBe('')
+  })
+})
+
+describe('attributeSessionProjects — widen attribution so cloud runs are not orphans', () => {
+  test('a PR-slug hint folds a no-cwd cloud run onto an EXISTING project', () => {
+    const rows = [
+      mk({ id: 'local', project: 'agents-cli' }),
+      // cloud/factory run: empty project, but its open PR names the repo.
+      mk({ id: 'cloud', project: '', prUrl: 'https://github.com/phnx-labs/agents-cli/pull/9' }),
+    ]
+    const out = attributeSessionProjects(rows)
+    expect(out.find((a) => a.id === 'cloud')!.project).toBe('agents-cli')
+  })
+  test('a PR slug with no peer still attributes to the repo basename (not blank)', () => {
+    const rows = [mk({ id: 'cloud', project: '', prUrl: 'https://github.com/acme/widgets/pull/3' })]
+    expect(attributeSessionProjects(rows)[0]!.project).toBe('widgets')
+  })
+  test('a branch hint matches an existing project when no PR is present', () => {
+    const rows = [
+      mk({ id: 'local', project: 'Agents CLI' }),
+      mk({ id: 'cloud', project: '', prUrl: null, branch: 'agents-cli' }),
+    ]
+    expect(attributeSessionProjects(rows).find((a) => a.id === 'cloud')!.project).toBe('Agents CLI')
+  })
+  test('a genuinely repo-less run keeps an empty project (lands in Unassigned)', () => {
+    const rows = [mk({ id: 'muse', project: '', prUrl: null, branch: '', worktreeSlug: '' })]
+    expect(attributeSessionProjects(rows)[0]!.project).toBe('')
+  })
+  test('a manual override always wins and is keyed by sessionId', () => {
+    const rows = [
+      mk({ id: 'x', sessionId: 'sid-x', project: '' }),
+      mk({ id: 'y', sessionId: 'sid-y', project: 'agents-cli' }),
+    ]
+    const out = attributeSessionProjects(rows, { 'sid-x': 'Rush', 'sid-y': 'Prix' })
+    expect(out.find((a) => a.id === 'x')!.project).toBe('Rush')
+    expect(out.find((a) => a.id === 'y')!.project).toBe('Prix')
+  })
+})
+
+describe('buildProjectFilterOptions', () => {
+  test('All first (total count), projects by count desc, Unassigned last with its count', () => {
+    const list = [
+      mk({ id: 'a', project: 'agents-cli' }),
+      mk({ id: 'b', project: 'agents-cli' }),
+      mk({ id: 'c', project: 'rush' }),
+      mk({ id: 'd', project: '' }),
+      mk({ id: 'e', project: '' }),
+    ]
+    const opts = buildProjectFilterOptions(list)
+    expect(opts[0]).toEqual({ value: null, label: 'All projects', count: 5 })
+    expect(opts.slice(1, 3)).toEqual([
+      { value: 'agents-cli', label: 'agents-cli', count: 2 },
+      { value: 'rush', label: 'rush', count: 1 },
+    ])
+    expect(opts[opts.length - 1]).toEqual({ value: UNASSIGNED_PROJECT, label: UNASSIGNED_LABEL, count: 2 })
+  })
+  test('no Unassigned entry when every session has a project', () => {
+    const opts = buildProjectFilterOptions([mk({ project: 'agents-cli' })])
+    expect(opts.some((o) => o.value === UNASSIGNED_PROJECT)).toBe(false)
+  })
+})
+
+describe('scopeSessions — project filter incl. the Unassigned bucket', () => {
+  const list = [
+    mk({ id: 'a', project: 'agents-cli' }),
+    mk({ id: 'b', project: 'rush' }),
+    mk({ id: 'orphan', project: '' }),
+  ]
+  test('an exact project name scopes to that project only', () => {
+    expect(scopeSessions(list, { ...EMPTY, project: 'agents-cli' }).map((a) => a.id)).toEqual(['a'])
+  })
+  test('UNASSIGNED_PROJECT scopes to only the no-project rows', () => {
+    expect(scopeSessions(list, { ...EMPTY, project: UNASSIGNED_PROJECT }).map((a) => a.id)).toEqual(['orphan'])
+  })
+})
+
+describe('groupSessions — orphan rows land in a labeled Unassigned group, never a blank header', () => {
+  const list = [
+    mk({ id: 'run', project: 'agents-cli' }),
+    mk({ id: 'o1', project: '' }),
+    mk({ id: 'o2', project: '' }),
+  ]
+  test('the empty-project bucket is labeled Unassigned with a reason and sorts last', () => {
+    const secs = groupSessions(list, 'project', 'recent', true)
+    const last = secs[secs.length - 1]!
+    expect(last.label).toBe(UNASSIGNED_LABEL)
+    expect(last.unassigned).toBe(true)
+    expect(last.reason).toBe(UNASSIGNED_REASON)
+    expect(last.agents.map((a) => a.id).sort()).toEqual(['o1', 'o2'])
+    // no bucket is keyed on a blank/'(none)' label
+    expect(secs.some((s) => s.label === '' || s.label === '(none)')).toBe(false)
   })
 })

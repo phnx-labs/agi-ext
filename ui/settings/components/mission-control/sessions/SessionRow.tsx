@@ -20,6 +20,10 @@ export interface SessionRowProps {
   onSelect: (agent: FloorAgent) => void
   onToggleExpand: (id: string) => void
   onResumeContext?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
+  /** Open the "assign project" menu for an orphan (no resolved project) row. When
+   *  provided AND the row has no project, an inline `+ assign` affordance renders in
+   *  place of the project chip (PHNX-3796). */
+  onAssignProject?: (agent: FloorAgent, event: React.MouseEvent) => void
 }
 
 function PromptChips({ you }: { you: SessionRowView['you'] }) {
@@ -35,7 +39,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext,
+  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext, onAssignProject,
 }: SessionRowProps) {
   const previous = isPrevious(a)
   const canResume = !previous || !!previousResumeMessage(a)
@@ -68,7 +72,16 @@ function SessionRowImpl({
       <span className="sx-av"><AgentAvatar id={agentId} size={24} title={row.harnessTag || agentId} /></span>
       <span className="sx-grow">
         <div className="sx-titleline">
-          {a.project && <span className="sx-proj" title={a.project}>{a.project}</span>}
+          {a.project
+            ? <span className="sx-proj" title={a.project}>{a.project}</span>
+            : onAssignProject && !previous && (
+              <button
+                className="sx-assign"
+                title="Assign this cloud/no-repo run to a project"
+                aria-haspopup="menu"
+                onClick={(e) => { e.stopPropagation(); onAssignProject(a, e) }}
+              >+ assign project ▾</button>
+            )}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
           {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>

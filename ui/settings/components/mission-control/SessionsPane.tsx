@@ -14,6 +14,9 @@ import {
   sessionChipCounts,
   orderedPrevious,
   previousInitialCount,
+  attributeSessionProjects,
+  buildProjectFilterOptions,
+  UNASSIGNED_PROJECT,
   PREVIOUS_PAGE,
   type SessionSection,
   type SessionScope,
@@ -27,6 +30,7 @@ import {
   type ResumeDevice,
   type ResumeDeviceMenuState,
 } from './sessions/ResumeDeviceMenu'
+import { ProjectMenu } from './sessions/ProjectMenu'
 import { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 export { SessionRow } from './sessions/SessionRow'
@@ -102,6 +106,42 @@ const FILTER_OPTS: { value: SessionFilter; label: string; tone?: 'active' | 'idl
   { value: 'favorites', label: 'Favorites' },
 ]
 
+// Persisted Sessions prefs. The Project pick and the manual project assignments both
+// survive a webview reload (localStorage, the same channel FLOOR_PREFS / dispatch
+// drafts use). Reads are defensive — a malformed value must never blank the surface.
+const PROJECT_FILTER_KEY = 'sw.sessions.projectFilter'
+const PROJECT_OVERRIDES_KEY = 'sw.sessions.projectOverrides'
+
+function loadProjectFilter(): string | null {
+  try {
+    const raw = localStorage.getItem(PROJECT_FILTER_KEY)
+    return raw ? (JSON.parse(raw) as string | null) : null
+  } catch { return null }
+}
+function saveProjectFilter(v: string | null): void {
+  try {
+    if (v == null) localStorage.removeItem(PROJECT_FILTER_KEY)
+    else localStorage.setItem(PROJECT_FILTER_KEY, JSON.stringify(v))
+  } catch { /* ignore */ }
+}
+function loadProjectOverrides(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(PROJECT_OVERRIDES_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
+  } catch { return {} }
+}
+function saveProjectOverrides(o: Record<string, string>): void {
+  try { localStorage.setItem(PROJECT_OVERRIDES_KEY, JSON.stringify(o)) } catch { /* ignore */ }
+}
+
+// Which project popover is open, and what a pick means. `filter` scopes the list;
+// `assign-all` / `assign-row` pin an orphan session to a project.
+type ProjectMenuMode =
+  | { kind: 'filter'; x: number; y: number }
+  | { kind: 'assign-all'; x: number; y: number }
+  | { kind: 'assign-row'; x: number; y: number; agent: FloorAgent }
+
 export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
   const [filter, setFilter] = useState<SessionFilter>('all')
   const [search, setSearch] = useState('')
@@ -117,16 +157,49 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   // Needs-you narrowing — the affordance the removed left icon rail used to carry
   // (PHNX-3594). A toggle over the scoped list, not one of the primary filter chips.
   const [needsOnly, setNeedsOnly] = useState(false)
+  // Project filter (null = all, UNASSIGNED_PROJECT = orphan bucket, else a project name)
+  // and the manual orphan->project assignments, both persisted across reloads.
+  const [projectFilter, setProjectFilter] = useState<string | null>(() => loadProjectFilter())
+  const [overrides, setOverrides] = useState<Record<string, string>>(() => loadProjectOverrides())
+  const [projectMenu, setProjectMenu] = useState<ProjectMenuMode | null>(null)
   const nowMs = useNow(30000)
 
-  const counts = useMemo(() => sessionChipCounts(agents), [agents])
-  const needsCount = useMemo(() => agents.filter((a) => a.needs).length, [agents])
+  // Widen attribution BEFORE anything else reads a project: a cloud/factory run with a
+  // PR-slug or branch hint (or a manual assignment) gets folded onto a project instead
+  // of piling up blank. Everything downstream — filter list, chips, grouping — sees the
+  // attributed rows.
+  const attributed = useMemo(() => attributeSessionProjects(agents, overrides), [agents, overrides])
+  const projectOptions = useMemo(() => buildProjectFilterOptions(attributed), [attributed])
+  // A persisted pick for a project that no longer exists must not silently hide the whole
+  // list — fall back to All while leaving the stored pick intact for when it returns.
+  const activeProject = useMemo(
+    () => (projectFilter && projectOptions.some((o) => o.value === projectFilter) ? projectFilter : null),
+    [projectFilter, projectOptions],
+  )
+  const currentProjectLabel = useMemo(
+    () => projectOptions.find((o) => o.value === activeProject)?.label ?? 'All projects',
+    [projectOptions, activeProject],
+  )
+  // Assign menus offer only real projects (not All / Unassigned).
+  const assignOptions = useMemo(
+    () => projectOptions.filter((o) => o.value && o.value !== UNASSIGNED_PROJECT),
+    [projectOptions],
+  )
 
-  const scope: SessionScope = useMemo(() => ({ filter, project: null, host: null, search }), [filter, search])
+  // Chips scope to the selected project so All/Active/Idle/Blocked/Needs-you count only
+  // that project's sessions (PHNX-3796).
+  const projectScoped = useMemo(
+    () => scopeSessions(attributed, { filter: 'all', project: activeProject, host: null, search: '' }),
+    [attributed, activeProject],
+  )
+  const counts = useMemo(() => sessionChipCounts(projectScoped), [projectScoped])
+  const needsCount = useMemo(() => projectScoped.filter((a) => a.needs).length, [projectScoped])
+
+  const scope: SessionScope = useMemo(() => ({ filter, project: activeProject, host: null, search }), [filter, activeProject, search])
   const scoped = useMemo(() => {
-    const base = scopeSessions(agents, scope)
+    const base = scopeSessions(attributed, scope)
     return needsOnly ? base.filter((a) => a.needs) : base
-  }, [agents, scope, needsOnly])
+  }, [attributed, scope, needsOnly])
   const sections = useMemo(
     () => buildSessionSections(scoped, group, sort, desc, { filter, nowMs, previousShown: previousShown ?? undefined }),
     [scoped, group, sort, desc, filter, nowMs, previousShown],
@@ -186,6 +259,41 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   }, [])
   const closeResumeMenu = useCallback(() => setResumeMenu(null), [])
 
+  const pickProjectFilter = useCallback((value: string | null) => {
+    setProjectFilter(value)
+    saveProjectFilter(value)
+  }, [])
+  // Open the project popover anchored under the clicked control.
+  const openFilterMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    const r = event.currentTarget.getBoundingClientRect()
+    setProjectMenu({ kind: 'filter', x: r.left, y: r.bottom + 4 })
+  }, [])
+  const openAssignAllMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    const r = event.currentTarget.getBoundingClientRect()
+    setProjectMenu({ kind: 'assign-all', x: r.left, y: r.bottom + 4 })
+  }, [])
+  const openAssignRowMenu = useCallback((agent: FloorAgent, event: React.MouseEvent) => {
+    setProjectMenu({ kind: 'assign-row', x: event.clientX, y: event.clientY, agent })
+  }, [])
+  const closeProjectMenu = useCallback(() => setProjectMenu(null), [])
+  // Pin one orphan (or every orphan) to a project. Overrides win over auto-attribution
+  // and persist, so the manual call sticks across reloads.
+  const assignRowsToProject = useCallback((rows: FloorAgent[], project: string | null) => {
+    if (!project || rows.length === 0) return
+    setOverrides((prev) => {
+      const next = { ...prev }
+      for (const a of rows) next[a.sessionId || a.id] = project
+      saveProjectOverrides(next)
+      return next
+    })
+  }, [])
+  const onProjectMenuPick = useCallback((value: string | null) => {
+    if (!projectMenu) return
+    if (projectMenu.kind === 'filter') pickProjectFilter(value)
+    else if (projectMenu.kind === 'assign-all') assignRowsToProject(attributed.filter((a) => !a.project), value)
+    else assignRowsToProject([projectMenu.agent], value)
+  }, [projectMenu, pickProjectFilter, assignRowsToProject, attributed])
+
   return (
     <div className="sw-sessions">
       <style>{SESSION_ROW_CSS}</style>
@@ -223,6 +331,17 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <button
+          type="button"
+          className={`sx-project${activeProject ? ' on' : ''}`}
+          title="Filter by project"
+          aria-haspopup="menu"
+          aria-expanded={projectMenu?.kind === 'filter'}
+          onClick={openFilterMenu}
+        >
+          Project <b>{currentProjectLabel}</b>
+          <Icon name="chevD" size={11} />
+        </button>
         <label className="sx-group" title="Group sessions">
           Group <b>{GROUP_OPTS.find((o) => o.value === group)!.label}</b>
           <select value={group} onChange={(e) => setGroup(e.target.value as SessionGroup)}>
@@ -260,6 +379,8 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                     hasMore={it.section.kind === 'pager' && previousHasMore}
                     moreCount={previousPageSize}
                     onShowMore={showMorePrevious}
+                    canAssign={assignOptions.length > 0}
+                    onAssignAll={openAssignAllMenu}
                   />
                 ) : (
                   <SessionRow
@@ -276,6 +397,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                     onResumeContext={onResumeOnDevice ? openResumeMenu : undefined}
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
+                    onAssignProject={assignOptions.length > 0 ? openAssignRowMenu : undefined}
                   />
                 )
               )}
@@ -312,29 +434,46 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
           onClose={closeResumeMenu}
         />
       )}
+      {projectMenu && (
+        <ProjectMenu
+          state={{ x: projectMenu.x, y: projectMenu.y }}
+          options={projectMenu.kind === 'filter' ? projectOptions : assignOptions}
+          selected={projectMenu.kind === 'filter' ? activeProject : undefined}
+          title={projectMenu.kind === 'filter' ? 'Filter by project' : 'Assign to project'}
+          searchPlaceholder={projectMenu.kind === 'filter' ? 'Search projects…' : 'Assign to project…'}
+          onPick={onProjectMenuPick}
+          onClose={closeProjectMenu}
+        />
+      )}
     </div>
   )
 }
 
-function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, moreCount, onShowMore }: {
+function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, moreCount, onShowMore, canAssign, onAssignAll }: {
   section: SessionSection
   resumableCount: number
   onResumeAll: () => void
   hasMore: boolean
   moreCount: number
   onShowMore: () => void
+  canAssign: boolean
+  onAssignAll: (event: React.MouseEvent<HTMLButtonElement>) => void
 }) {
   const isPrev = section.status === 'previous'
   const countLabel = section.kind === 'pager' && section.total !== undefined
     ? `${section.shown ?? 0} shown of ${section.total}`
     : String(section.agents.length)
   return (
-    <div className={`sx-band${isPrev ? ' previous' : ''}${section.status ? ` ${section.status}` : ''}`} style={{ height: HEADER_H }}>
+    <div className={`sx-band${isPrev ? ' previous' : ''}${section.unassigned ? ' recon' : ''}${section.status ? ` ${section.status}` : ''}`} style={{ height: HEADER_H }}>
       <span className="g" aria-hidden />
       <span className="lab">{section.label}</span>
       <span className="cnt">{countLabel}</span>
+      {section.reason && <span className="sx-band-reason">{section.reason}</span>}
       {hasMore && (
         <button className="sx-band-more" onClick={(e) => { e.stopPropagation(); onShowMore() }}>Show {moreCount} more</button>
+      )}
+      {section.unassigned && canAssign && (
+        <button className="sx-band-assign" aria-haspopup="menu" onClick={(e) => { e.stopPropagation(); onAssignAll(e) }}>assign all ▾</button>
       )}
       {resumableCount > 0 && (
         <button className="sx-band-act" onClick={(e) => { e.stopPropagation(); onResumeAll() }}>Resume all {resumableCount}</button>
