@@ -515,7 +515,10 @@ export function toFloorAgentFromUnified(
   // dispatch prompt. Distinct from `resp` (the last message), which drifts as work goes.
   const prompt = firstNonEmptyStr(u.terminal?.firstUserMessage, u.agent?.prompt)
   const { verb, target } = splitActivity(u.activity)
-  const project = deriveProject(u.terminal?.cwd ?? u.agent?.cwd, u.agent?.repo_name, opts.workspaceRepo || '—', opts.projectRules ?? [])
+  // Empty (not '—') when nothing resolves, matching the remote path: a tab-less local
+  // run with no cwd/repo/workspace folds into the labeled Unassigned group, never a
+  // bogus project literally named '—' (PHNX-3796).
+  const project = deriveProject(u.terminal?.cwd ?? u.agent?.cwd, u.agent?.repo_name, opts.workspaceRepo || '', opts.projectRules ?? [])
   const worktreePath = worktreeSlugOf(u.terminal?.cwd ?? u.agent?.cwd) ? (u.terminal?.cwd ?? u.agent?.cwd ?? '') : ''
   const plans = detectUnifiedPlans(u, worktreePath)
   const attachments = collectAttachments(u.terminal?.attachments, u.agent?.attachments)

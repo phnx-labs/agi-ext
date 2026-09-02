@@ -128,7 +128,14 @@ function loadProjectOverrides(): Record<string, string> {
   try {
     const raw = localStorage.getItem(PROJECT_OVERRIDES_KEY)
     const parsed = raw ? JSON.parse(raw) : null
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    // Keep only string values — a stale/corrupt entry must degrade to "no override",
+    // never flow a non-string project into attribution (which then throws on .trim()).
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === 'string') out[k] = v
+    }
+    return out
   } catch { return {} }
 }
 function saveProjectOverrides(o: Record<string, string>): void {
@@ -139,7 +146,10 @@ function saveProjectOverrides(o: Record<string, string>): void {
 // `assign-all` / `assign-row` pin an orphan session to a project.
 type ProjectMenuMode =
   | { kind: 'filter'; x: number; y: number }
-  | { kind: 'assign-all'; x: number; y: number }
+  // `rows` is captured from the Unassigned SECTION at click time — the orphan rows the
+  // user is actually looking at under the current chip/search/needs filters — so bulk
+  // assign never reaches hidden orphans elsewhere in the app.
+  | { kind: 'assign-all'; x: number; y: number; rows: FloorAgent[] }
   | { kind: 'assign-row'; x: number; y: number; agent: FloorAgent }
 
 export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice, onResumeMany, devices = [], onSelect, selectedId, streamDegraded = false }: SessionsPaneProps) {
@@ -268,9 +278,9 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
     const r = event.currentTarget.getBoundingClientRect()
     setProjectMenu({ kind: 'filter', x: r.left, y: r.bottom + 4 })
   }, [])
-  const openAssignAllMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+  const openAssignAllMenu = useCallback((rows: FloorAgent[], event: React.MouseEvent<HTMLButtonElement>) => {
     const r = event.currentTarget.getBoundingClientRect()
-    setProjectMenu({ kind: 'assign-all', x: r.left, y: r.bottom + 4 })
+    setProjectMenu({ kind: 'assign-all', x: r.left, y: r.bottom + 4, rows })
   }, [])
   const openAssignRowMenu = useCallback((agent: FloorAgent, event: React.MouseEvent) => {
     setProjectMenu({ kind: 'assign-row', x: event.clientX, y: event.clientY, agent })
@@ -290,9 +300,11 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   const onProjectMenuPick = useCallback((value: string | null) => {
     if (!projectMenu) return
     if (projectMenu.kind === 'filter') pickProjectFilter(value)
-    else if (projectMenu.kind === 'assign-all') assignRowsToProject(attributed.filter((a) => !a.project), value)
+    // Bulk assign targets ONLY the orphan rows captured from the section the user
+    // clicked — respecting the active chip/search/needs scope — never every orphan.
+    else if (projectMenu.kind === 'assign-all') assignRowsToProject(projectMenu.rows, value)
     else assignRowsToProject([projectMenu.agent], value)
-  }, [projectMenu, pickProjectFilter, assignRowsToProject, attributed])
+  }, [projectMenu, pickProjectFilter, assignRowsToProject])
 
   return (
     <div className="sw-sessions">
@@ -457,7 +469,7 @@ function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, more
   moreCount: number
   onShowMore: () => void
   canAssign: boolean
-  onAssignAll: (event: React.MouseEvent<HTMLButtonElement>) => void
+  onAssignAll: (rows: FloorAgent[], event: React.MouseEvent<HTMLButtonElement>) => void
 }) {
   const isPrev = section.status === 'previous'
   const countLabel = section.kind === 'pager' && section.total !== undefined
@@ -473,7 +485,7 @@ function SectionHeaderImpl({ section, resumableCount, onResumeAll, hasMore, more
         <button className="sx-band-more" onClick={(e) => { e.stopPropagation(); onShowMore() }}>Show {moreCount} more</button>
       )}
       {section.unassigned && canAssign && (
-        <button className="sx-band-assign" aria-haspopup="menu" onClick={(e) => { e.stopPropagation(); onAssignAll(e) }}>assign all ▾</button>
+        <button className="sx-band-assign" aria-haspopup="menu" onClick={(e) => { e.stopPropagation(); onAssignAll(section.agents, e) }}>assign all ▾</button>
       )}
       {resumableCount > 0 && (
         <button className="sx-band-act" onClick={(e) => { e.stopPropagation(); onResumeAll() }}>Resume all {resumableCount}</button>

@@ -348,6 +348,40 @@ describe('SessionsPane', () => {
     expect(html).toContain('<option value="none">None</option>')
   })
 
+  test('bulk "assign all" reassigns ONLY the orphan rows visible under the active filter (PHNX-3796)', () => {
+    // Regression guard: assign-all must target the orphan rows in the section the user
+    // is looking at — not every orphan in the app. With the Idle chip active, only the
+    // idle orphan is visible in Unassigned, so only it may be reassigned.
+    localStorage.removeItem('sw.sessions.projectOverrides')
+    const orphan = (id: string, phase: FloorAgent['phase']) =>
+      agent({ id, sessionId: id, project: '', prUrl: null, branch: '', worktreeSlug: '', phase, liveStatus: phase, topic: id })
+    const agents = [
+      agent({ id: 'k1', sessionId: 'k1', project: 'agents-cli', phase: 'running', prUrl: null }),
+      orphan('o1', 'running'),
+      orphan('o2', 'running'),
+      orphan('o3', 'idle'),
+    ]
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => { root.render(<SessionsPane agents={agents} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />) })
+    // Narrow to Idle -> only the idle orphan (o3) is visible in the Unassigned bucket.
+    const idleChip = [...host.querySelectorAll('.sx-chip')].find((b) => b.textContent?.startsWith('Idle')) as HTMLButtonElement
+    act(() => { idleChip.click() })
+    const assignAll = host.querySelector('.sx-band-assign') as HTMLButtonElement
+    expect(assignAll).toBeTruthy()
+    act(() => { assignAll.click() })
+    // Pick agents-cli from the portal menu.
+    const item = [...document.body.querySelectorAll('.sx-project-menu-item')].find((b) => b.textContent?.includes('agents-cli')) as HTMLButtonElement
+    expect(item).toBeTruthy()
+    act(() => { item.click() })
+    // Only o3 (the visible idle orphan) is persisted — o1/o2 were hidden and untouched.
+    const saved = JSON.parse(localStorage.getItem('sw.sessions.projectOverrides') || '{}')
+    expect(saved).toEqual({ o3: 'agents-cli' })
+    act(() => root.unmount())
+    host.remove()
+  })
+
   test('Needs-you badge surfaces the attention count (rail affordance moved onto the list)', () => {
     // PHNX-3594: the left icon rail carried the Needs-you scope; it now lives on the
     // Sessions surface as a badge showing the count of sessions that need you.
