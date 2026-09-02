@@ -195,6 +195,8 @@ Where this is still debt: `src/vscode/prewarm.vscode.ts` holds the recovery mapp
 
 ## See what an agent is doing
 
+The active agent tab shows a copy icon and the first eight characters of its session ID. Hover exposes the full ID and remote host; clicking copies the full canonical ID. Switching to a text editor or a plain terminal clears the session tooltip. Remote attach titles omit host-only placeholders; execution host identity comes from structured stream facts, never task text.
+
 You have several tabs and you want to know, for the one you are looking at, what you asked, what it has done, and whether it is stuck, without scrolling its terminal.
 
 You focus an agent tab, or click a row in Fleet. The Active Session sidebar (the `agentsPanel.terminal` view) takes that session as its subject; the last of the two triggers wins. The sidebar renders synchronously from the warm presentation store: a header with agent, session, version, label, working directory, branch, and account, plus Focus and Resume; a Goal card when the summarizer produced one; a Request card with your own first sentence in bold and chips for attached images, files, directories, pasted terminal text, and the slash command, with the whole turn behind a fold; a Timeline of the newest five steps with three more on demand and one counter for everything older, an amber line on the running step, failures and blocks in red, milestones in green; the Checklist; deliverables, delegated team, and current activity; up to eight changed files with the true total; and a reply field. The status bar shows the active tab's label and, for a remote session, its host.

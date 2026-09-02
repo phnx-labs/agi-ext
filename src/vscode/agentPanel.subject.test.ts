@@ -173,7 +173,7 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
       sessionId: sessionB, source: 'terminal', hasTerminal: true,
     });
     expect(formatAgentStatusBarText('Claude', undefined, undefined, null, entry.sessionId))
-      .toContain(sessionB);
+      .toContain(sessionB.slice(0, 8));
 
     // The historical A row cannot reclaim the terminal.
     sessionPresentationStore.apply({
@@ -192,8 +192,8 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     )).toEqual([]);
     expect(panel.currentAgentPanelSubject()?.sessionId).toBe(sessionB);
     const status = formatAgentStatusBarText('Claude', undefined, undefined, null, entry.sessionId);
-    expect(status).toContain(sessionB);
-    expect(status).not.toContain(sessionA);
+    expect(status).toContain(sessionB.slice(0, 8));
+    expect(status).not.toContain(sessionA.slice(0, 8));
 
     // Fleet selection is session-sourced, not terminal-sourced, so selecting A
     // deliberately remains on A and resolves to the other A tab.

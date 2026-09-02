@@ -159,7 +159,7 @@ import {
   planActiveMapHydration,
   type RemoteAutoLabelHooks,
 } from '../core/remoteAutoLabel';
-import { displayIdentity, formatAgentStatusBarText, resolveStreamIdentityStamp } from '../core/statusIdentity';
+import { displayIdentity, formatAgentStatusBarText, formatAgentStatusBarTooltip, resolveStreamIdentityStamp } from '../core/statusIdentity';
 import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo } from './sessions.vscode';
 import * as tasksImport from './tasks.vscode';
 import { SOURCE_BADGES } from '../core/tasks';
@@ -1011,7 +1011,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   agentStatusBarItem.text = 'Agents';
   agentStatusBarItem.command = 'agents.sessionId';
-  agentStatusBarItem.tooltip = 'Copy session ID';
+  agentStatusBarItem.tooltip = undefined;
   agentStatusBarItem.show();
   context.subscriptions.push(agentStatusBarItem);
 
@@ -1830,6 +1830,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       if (!terminal) {
         agentStatusBarItem.text = 'Agents';
+        agentStatusBarItem.tooltip = undefined;
         return;
       }
 
@@ -1872,6 +1873,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (editor) {
         // Switching to a real text editor - reset status bar
         agentStatusBarItem.text = 'Agents';
+        agentStatusBarItem.tooltip = undefined;
       } else {
         // editor is undefined - could be switching to a terminal tab
         // Check if active tab is a terminal and update status bar accordingly
@@ -4161,21 +4163,17 @@ function remoteHostBadge(host: string | null | undefined): string | null {
   return deviceBadge(host, (getRegisteredDevicesCache() ?? []).map((d) => d.name));
 }
 
-// Stamp the running session's REAL version + account onto the tab from the
-// broadcast watch row — the single-stream projection (SessionPresentationStore),
-// NOT a per-tab CLI subprocess. The stream is the only source that knows which
-// version/account a `--strategy balanced` launch actually selected for THIS
-// session (`agents view` reports only the box-wide default install, unrelated to
-// a specific terminal — the wrong-identity bug this originally fixed).
-//
-// This REPLACED `tryHydrateSessionIdentity`, whose event-pumped
-// `agents sessions <id> --device <host> --json` fetch respawned one Node+SSH
-// process per remote tab every ~4–5s — the dominant drain in the 2026-08-25 CPU
-// incident (RUSH-3184, agi-cli#3019). Rule #1 of this repo: identity rides the
-// stream, never a side channel. Synchronous, allocation-cheap, and idempotent —
-// safe to call on every status-bar refresh, including the ones the stream itself
-// pumps via syncCanonicalSessionTabLabels, so an account the CLI indexes a beat
-// after the version fills in on the next stream event with no polling.
+function renderAgentStatusBar(...args: Parameters<typeof formatAgentStatusBarText>): void {
+  if (!agentStatusBarItem) return;
+  const host = args[6];
+  const badge = remoteHostBadge(host);
+  args[6] = badge;
+  agentStatusBarItem.text = formatAgentStatusBarText(...args);
+  agentStatusBarItem.tooltip = formatAgentStatusBarTooltip(args[4], badge ? host : null);
+}
+
+// Identity comes only from the pushed stream: the former per-tab fetch caused
+// the 2026-08-25 CPU incident (RUSH-3184, agi-cli#3019).
 function applyStreamIdentity(
   terminal: vscode.Terminal,
   entry: terminals.EditorTerminal,
@@ -4238,14 +4236,14 @@ function applyHydratedSessionId(
   if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
   const displayLabel = presentableLabel(entry.label);
   const { version, account } = displayIdentity(entry, liveId);
-  agentStatusBarItem.text = formatAgentStatusBarText(
+  renderAgentStatusBar(
     getExpandedAgentName(prefix),
     version,
     account,
     displayLabel,
     liveId,
     entry.agentType === 'codex',
-    remoteHostBadge(entry.host),
+    entry.host,
   );
 }
 
@@ -4346,14 +4344,14 @@ async function tryHydrateLiveSessionId(
     ) {
       const displayLabel = presentableLabel(entry.label);
       const { version, account } = displayIdentity(entry, entry.sessionId);
-      agentStatusBarItem.text = formatAgentStatusBarText(
+      renderAgentStatusBar(
         getExpandedAgentName(prefix),
         version,
         account,
         displayLabel,
         entry.sessionId,
         entry.agentType === 'codex' || entry.agentType === 'grok',
-        remoteHostBadge(entry.host),
+        entry.host,
       );
     }
   } finally {
@@ -4388,14 +4386,14 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
     // Show status bar with the current (now stream-stamped) identity.
     const displayLabel = presentableLabel(entry?.label);
     const { version, account } = displayIdentity(entry, sessionId);
-    agentStatusBarItem.text = formatAgentStatusBarText(
+    renderAgentStatusBar(
       expandedName,
       version,
       account,
       displayLabel,
       sessionId,
       entry?.agentType === 'codex',
-      remoteHostBadge(entry?.host),
+      entry?.host,
     );
 
     // Async-resolve the live session id from the SessionStart hook's state file,
@@ -4409,6 +4407,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
 
   // Not an agent terminal - show "Terminal" for regular shells
   agentStatusBarItem.text = 'Agents: Terminal';
+  agentStatusBarItem.tooltip = undefined;
 }
 
 async function relabelActiveTerminal(context: vscode.ExtensionContext): Promise<void> {
