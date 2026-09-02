@@ -46,6 +46,29 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
   }
 });
 
+// The panel's cards already use var(--vscode-*) tokens, but under a light or
+// custom theme the webview canvas itself must be pinned to a theme background or
+// short content leaves a dark void beneath cream cards (PHNX-3809). Guard both
+// halves: the canvas is pinned to a theme token, and NO hardcoded color literal
+// (hex / rgb / hsl) is ever reintroduced anywhere in the webview <style>.
+test('webview chrome is theme-adaptive: canvas pinned + zero color literals (PHNX-3809)', () => {
+  const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
+  const styleMatch = src.match(/<style>([\s\S]*?)<\/style>/);
+  expect(styleMatch).not.toBeNull();
+  const style = styleMatch![1];
+
+  // Canvas (html) and body must both resolve their background from a theme token
+  // so no untinted void shows through in any theme.
+  expect(style).toMatch(/html\s*\{[^}]*background:\s*var\(--vscode-sideBar-background\)/);
+  expect(style).toMatch(/body\s*\{[^}]*background:\s*var\(--vscode-sideBar-background\)/);
+  // Body must stretch to the full viewport so short content can't expose a gap.
+  expect(style).toMatch(/body\s*\{[^}]*min-height:\s*100vh/);
+
+  // No hardcoded color literals: hex (#abc / #aabbcc / #aabbccdd), rgb(a), hsl(a).
+  const literals = style.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g);
+  expect(literals).toBeNull();
+});
+
 test('remote deliverables open on the session host (PHNX-3574)', () => {
   expect(sessionPathUriString('/repo/.agents/plans/sidebar.md', 'yosemite-m3')).toBe(
     'vscode-remote://ssh-remote+yosemite-m3/repo/.agents/plans/sidebar.md',

@@ -850,12 +850,22 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   :root {
     color-scheme: light dark;
   }
+  /* Pin the whole webview canvas to the sidebar background so short content
+     never leaves a mismatched void under light/custom themes (PHNX-3809). The
+     root element's background paints the entire viewport canvas; body repeats
+     it and stretches to full height so the padded area is themed too. */
+  html {
+    background: var(--vscode-sideBar-background);
+  }
   body {
     font-family: var(--vscode-font-family);
     font-size: 12px;
     color: var(--vscode-foreground);
+    background: var(--vscode-sideBar-background);
     padding: 0 12px 16px;
     margin: 0;
+    min-height: 100vh;
+    box-sizing: border-box;
   }
   h2 {
     font-size: 11px;
@@ -991,7 +1001,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--vscode-charts-green, #6abe6a);
+    background: var(--vscode-charts-green);
     animation: pulse 1.4s ease-in-out infinite;
   }
   @keyframes pulse {
@@ -1046,7 +1056,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .conv-topic code {
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: 0.94em;
-    background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.16));
+    background: var(--vscode-textCodeBlock-background);
     border-radius: 3px;
     padding: 0 3px;
   }
@@ -1129,7 +1139,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
   .goal-mk {
     flex-shrink: 0;
-    color: var(--vscode-terminal-ansiCyan, #4ec9b0);
+    color: var(--vscode-terminal-ansiCyan);
     font-size: 12px;
   }
   .goal-txt {
@@ -1153,7 +1163,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     border-radius: 50%;
     flex-shrink: 0;
     align-self: center;
-    background: var(--vscode-charts-yellow, #e0a030);
+    background: var(--vscode-charts-yellow);
   }
   .checkpoint-txt { color: var(--vscode-foreground); word-break: break-word; }
   .checkpoint-at {
@@ -1231,7 +1241,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     margin-top: 4px;
     background: var(--vscode-descriptionForeground);
   }
-  .step.live .step-mk { background: var(--vscode-charts-yellow, #e0a030); }
+  .step.live .step-mk { background: var(--vscode-charts-yellow); }
   .step.src-user .step-mk {
     background: transparent;
     border: 1px solid var(--vscode-descriptionForeground);
@@ -1244,10 +1254,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     font-size: 10.5px;
     white-space: nowrap;
   }
-  .step.live .step-at { color: var(--vscode-charts-yellow, #e0a030); font-weight: 600; }
+  .step.live .step-at { color: var(--vscode-charts-yellow); font-weight: 600; }
   .step-now {
     grid-column: 2 / span 2;
-    color: var(--vscode-charts-yellow, #e0a030);
+    color: var(--vscode-charts-yellow);
     font-size: 10.5px;
     word-break: break-word;
   }
@@ -1256,8 +1266,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     color: var(--vscode-descriptionForeground);
     font-size: 10px;
   }
-  .step-chips .bad { color: var(--vscode-errorForeground, #c0392b); }
-  .step-chips .mark { color: var(--vscode-charts-green, #3a7d44); }
+  .step-chips .bad { color: var(--vscode-errorForeground); }
+  .step-chips .mark { color: var(--vscode-charts-green); }
   .timeline-more, .timeline-earlier {
     color: var(--vscode-textLink-foreground);
     font-size: 10.5px;
@@ -1283,7 +1293,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .card-note strong { color: var(--vscode-foreground); }
   .card-note code {
     font-family: var(--vscode-editor-font-family, monospace);
-    background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.16));
+    background: var(--vscode-textCodeBlock-background);
     border-radius: 3px;
     padding: 0 3px;
   }
@@ -1300,9 +1310,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     flex-shrink: 0;
     width: 8px;
   }
-  .file-op.created { color: var(--vscode-charts-green, #3a7d44); }
+  .file-op.created { color: var(--vscode-charts-green); }
   .file-op.modified { color: var(--vscode-textLink-foreground); }
-  .file-op.deleted { color: var(--vscode-errorForeground, #c0392b); }
+  .file-op.deleted { color: var(--vscode-errorForeground); }
   .file-row .path-link {
     flex: 1;
     min-width: 0;
@@ -1376,7 +1386,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .todo-track {
     height: 3px;
     border-radius: 2px;
-    background: var(--vscode-editorWidget-border, rgba(128,128,128,0.3));
+    background: var(--vscode-editorWidget-border);
     overflow: hidden;
     margin-bottom: 6px;
   }
@@ -1401,8 +1411,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     align-self: center;
     background: var(--vscode-descriptionForeground);
   }
-  .todo.status-in_progress .todo-mk { background: var(--vscode-charts-yellow, #d7a000); }
-  .todo.status-completed .todo-mk { background: var(--vscode-charts-green, #4caf50); }
+  .todo.status-in_progress .todo-mk { background: var(--vscode-charts-yellow); }
+  .todo.status-completed .todo-mk { background: var(--vscode-charts-green); }
   .todo.status-completed .todo-txt { text-decoration: line-through; color: var(--vscode-descriptionForeground); }
   .todo-txt { color: var(--vscode-foreground); word-break: break-word; }
   .actions-row {
@@ -1489,7 +1499,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     min-width: 0;
   }
   .prompt-star {
-    color: var(--vscode-charts-yellow, #d4a72c);
+    color: var(--vscode-charts-yellow);
     font-size: 10px;
     margin-right: 2px;
   }
@@ -1523,13 +1533,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     letter-spacing: 0.02em;
   }
   .usage-badge.usage-out {
-    background: var(--vscode-inputValidation-errorBackground, rgba(228, 86, 86, 0.18));
-    color: var(--vscode-inputValidation-errorForeground, #e45656);
+    background: var(--vscode-inputValidation-errorBackground);
+    color: var(--vscode-inputValidation-errorForeground);
     border: 1px solid var(--vscode-inputValidation-errorBorder, transparent);
   }
   .usage-badge.usage-rate {
-    background: var(--vscode-inputValidation-warningBackground, rgba(212, 153, 0, 0.18));
-    color: var(--vscode-inputValidation-warningForeground, #d49900);
+    background: var(--vscode-inputValidation-warningBackground);
+    color: var(--vscode-inputValidation-warningForeground);
     border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
   }
   .recent-file {
@@ -1572,7 +1582,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     flex-shrink: 0;
   }
   .wt-dot.active {
-    background: var(--vscode-charts-green, #6bc167);
+    background: var(--vscode-charts-green);
     opacity: 1;
   }
   .wt-name {
@@ -1631,10 +1641,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     width: 6px; height: 6px; border-radius: 50%;
     justify-self: center;
   }
-  .mate-dot.running   { background: var(--vscode-charts-green, #6abe6a); }
+  .mate-dot.running   { background: var(--vscode-charts-green); }
   .mate-dot.completed { background: var(--vscode-descriptionForeground); }
-  .mate-dot.pending   { background: var(--vscode-charts-yellow, #d4a72c); }
-  .mate-dot.failed    { background: var(--vscode-errorForeground, #d4534b); }
+  .mate-dot.pending   { background: var(--vscode-charts-yellow); }
+  .mate-dot.failed    { background: var(--vscode-errorForeground); }
   .mate-dot.stopped   { background: var(--vscode-descriptionForeground); opacity: 0.5; }
   .mate-name { font-family: var(--vscode-editor-font-family, monospace); }
   .mate-agent {
