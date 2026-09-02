@@ -4,6 +4,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The Active Terminal panel fills its canvas with the sidebar theme background,
+  including the space below short content. Timeline, checklist, and usage colors
+  use editor theme tokens throughout (PHNX-3938, original PHNX-3809; #36).
+
 ## [0.9.371] - 2026-09-11
 
 Internal refactor (PHNX-4044, wave 1). No user-visible behavior changes: the

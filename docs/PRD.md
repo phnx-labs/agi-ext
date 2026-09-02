@@ -408,6 +408,8 @@ What should happen: the HTML viewer never runs the page's scripts against the ed
 
 **Fail loud.** A missing CLI binary is a visible prerequisite failure. A missing CLI noun is an upgrade error. A malformed feed event is rejected and reported without corrupting the current scope. No filesystem fallback fills a gap.
 
+**Theme.** The Active Terminal panel fills the viewport with the sidebar background, including empty space beneath short content. Its canvas, cards, timeline, checklist, and usage indicators use editor theme tokens in light, dark, and custom themes.
+
 **Latency.** Opening the sidebar, switching tabs, and selecting a Fleet row spawn zero subprocesses; the sidebar paints from the warm store synchronously. The Fleet list keeps search, filters, grouping, the row Resume button, and the expand-in-place card and nothing that fetches per selection. Previous history defaults to at most 50 sessions active in the last seven days and pages older history ten rows at a time; after a longer gap it shows up to ten most-recently-active Previous sessions rather than an empty band.
 
 **Launch composition.** `--cwd` is emitted once, independently of device selection, for ordinary, Auto, Pick Host, Pick Account, local, and version-pinned launches, carrying the exact open workspace. Only Pick Project emits `--project`, and it never emits `--cwd`. `--strategy balanced` is emitted for every automatic-placement variant (default, Auto, Pick Host, Pick Project, local) and dropped for exactly two: the account picker (`harness@`), which is mutually exclusive with a strategy, and a pinned version, where the CLI ignores it. Ordinary launches never derive a target from `agents projects view <cwd>`.
