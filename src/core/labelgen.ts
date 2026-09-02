@@ -1,10 +1,21 @@
 import { spawn } from 'child_process';
 import { resolveAgentsBin, bootstrapPath } from './agentsBin';
+import { createConcurrencyLimiter } from './concurrencyLimiter';
 
 const MAX_INPUT_CHARS = 4000;
 const MAX_LABEL_CHARS = 50;
 const DEFAULT_TIMEOUT_MS = 12000;
 const CATALOG_TIMEOUT_MS = 3000;
+
+// PHNX-3816: cap how many label-generating `agents run claude` subprocesses run
+// at once. Auto-label pollers are armed on ~every agent-tab open/restore, and a
+// mass-open (e.g. a crash-restore reopening many tabs) used to fire one full
+// headless agent per unlabeled tab simultaneously — a spawn storm on top of any
+// other. The limiter runs at most MAX_CONCURRENT_LABEL_GENS at once and queues
+// the rest, so N tabs drain a few at a time instead of all at once. It is
+// module-global so the cap holds across every tab in the window.
+const MAX_CONCURRENT_LABEL_GENS = 2;
+const labelGenLimiter = createConcurrencyLimiter(MAX_CONCURRENT_LABEL_GENS);
 
 let fastModelCache: Promise<string> | null = null;
 
@@ -38,7 +49,10 @@ export async function generateLabelWithLLM(
     return null;
   }
 
-  return new Promise<string | null>((resolve) => {
+  // Gate the actual subprocess behind the shared limiter (PHNX-3816). The
+  // per-call timeout only starts once the spawn does, so a queued call does not
+  // time out while it waits for a slot.
+  return labelGenLimiter.run(() => new Promise<string | null>((resolve) => {
     let stdout = '';
     let resolved = false;
 
@@ -66,7 +80,7 @@ export async function generateLabelWithLLM(
       if (code !== 0) return finish(null);
       finish(sanitizeLabel(stdout));
     });
-  });
+  }));
 }
 
 async function resolveFastModel(): Promise<string> {

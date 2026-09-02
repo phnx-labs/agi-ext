@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.357] - 2026-09-02
+
+- **Bound three subprocess-spawn paths that could each independently storm the CPU (PHNX-3816/3817/3818).**
+  Follow-ups to the PHNX-3768 crash fix, from the same crash-risk audit:
+  - **Auto-label spawns are now concurrency-capped** (PHNX-3816). Each unlabeled
+    agent tab summarizes itself by spawning a headless `agents run claude`; a
+    mass-open (e.g. a crash-restore reopening many tabs) fired one per tab at
+    once. A shared bounded-concurrency limiter (`src/core/concurrencyLimiter.ts`)
+    now runs at most two at a time and queues the rest.
+  - **The elected stream leader backs off when its `agents feed watch` child keeps
+    dying** (PHNX-3818). A broken or half-upgraded `agents` bin used to respawn the
+    watch child every 1s forever; the restart delay now grows exponentially up to
+    30s and resets the instant a valid event proves the child healthy.
+  - **The dispatch plan-watch poll is backed off and deadline-bounded** (PHNX-3817).
+    It polled `agents sessions <id> --json` every 2s for 20 min (up to 600
+    subprocesses per plan); it now backs off to an 8s cap. (The full fix — reading
+    the plan from the stream with no fetch — is tracked as PHNX-3819.)
+
 ## [0.9.356] - 2026-09-02
 
 - **Fix a multi-window crash-recovery resume storm that could pin CPU and crash the host (PHNX-3768).**

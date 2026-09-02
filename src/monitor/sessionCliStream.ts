@@ -80,6 +80,17 @@ export class SessionCliStream {
   /** Intentionally started (not stopped by the host). Exit restarts while true. */
   private wantRunning = false;
   private restartTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * Consecutive restarts since the last healthy run (PHNX-3818). A child that
+   * exits immediately and repeatedly — a broken/half-upgraded `agents` bin, bad
+   * `feed watch` args, an invalid-JSON crash — used to respawn every fixed
+   * `restartMs` (1s) forever with no ceiling: a steady 1 spawn/sec drip. The
+   * restart delay now backs off exponentially from `restartMs` up to
+   * MAX_RESTART_MS, and resets to 0 the moment the stream produces a valid event
+   * (proof the child works), so a transient blip still recovers fast.
+   */
+  private restartAttempts = 0;
+  private static readonly MAX_RESTART_MS = 30_000;
 
   constructor(private readonly options: SessionCliStreamOptions) {}
 
@@ -117,6 +128,9 @@ export class SessionCliStream {
         const event = JSON.parse(line) as SessionCliEvent;
         if ((event?.v === 1 || event?.version === 1) && typeof event.streamId === 'string'
           && Number.isInteger(event.sequence) && typeof event.type === 'string') {
+          // A valid event means this child is healthy — reset the restart backoff
+          // so a later transient exit restarts fast rather than at the drip cap.
+          this.restartAttempts = 0;
           this.options.emit(event);
         }
       } catch {
@@ -140,7 +154,11 @@ export class SessionCliStream {
 
   private scheduleRestart(): void {
     if (!this.wantRunning || this.restartTimer) return;
-    const ms = this.options.restartMs ?? 1_000;
+    const base = this.options.restartMs ?? 1_000;
+    // Exponential backoff, capped, so a child that keeps dying can't drip a
+    // spawn every `base` ms forever (PHNX-3818). A healthy event resets the count.
+    const ms = Math.min(base * 2 ** this.restartAttempts, SessionCliStream.MAX_RESTART_MS);
+    this.restartAttempts += 1;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = undefined;
       this.spawnChild();
@@ -149,6 +167,7 @@ export class SessionCliStream {
 
   stop(): void {
     this.wantRunning = false;
+    this.restartAttempts = 0;
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = undefined;

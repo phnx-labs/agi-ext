@@ -73,3 +73,27 @@ test('SessionCliStream restarts after the CLI child exits unexpectedly', async (
   expect(spawns).toBeGreaterThanOrEqual(2);
   expect(received).toEqual(event);
 });
+
+test('SessionCliStream backs off exponentially when the child keeps dying (PHNX-3818)', async () => {
+  // A child that always exits immediately. With the old fixed 10ms restart this
+  // would respawn ~25 times in 300ms (the 1-spawn/sec drip class); with backoff
+  // (10, 20, 40, 80, 160, …) the count stays small. Assert the rate is bounded.
+  let spawns = 0;
+  const stream = new SessionCliStream({
+    restartMs: 10,
+    emit: () => { /* never emits — child dies before output */ },
+    onError: () => { /* expected on every exit */ },
+    spawnWatch: () => {
+      spawns += 1;
+      return spawn(process.execPath, ['-e', 'process.exit(1)']);
+    },
+  });
+  stream.start();
+  await new Promise((r) => setTimeout(r, 300));
+  stream.stop();
+  const backoffCount = spawns;
+
+  // It kept trying (not stuck), but far fewer than a fixed-interval drip would.
+  expect(backoffCount).toBeGreaterThanOrEqual(2);
+  expect(backoffCount).toBeLessThanOrEqual(8);
+});
