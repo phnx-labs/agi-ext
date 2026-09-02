@@ -4,6 +4,35 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.353] - 2026-09-02
+
+- **Dead-code sweep (non-overlapping subset).** Removed ~200 LOC of unreferenced
+  code that no call site, test, or command contribution touches, verified with a
+  repo-wide reference scan:
+  - `ui/settings/utils/formatting.ts` — dropped 9 orphaned formatters
+    (`formatTimeSince`, `formatTimeAgo`, `formatSessionTimestamp`,
+    `formatTimeAgoSafe`, `formatPreview`, `getTaskSummaryStatus`,
+    `formatAgentCount`, `getAgentDisplayName`, `formatActualTime`); only
+    `formatPreviewTerminalTitle` was ever imported.
+  - `ui/settings/components/panel/TuneSection.tsx` — dropped the two dead
+    exports `EditorSection` (its toggle is inlined in `PanelTab`) and
+    `NotificationsSection`. Note: `NotificationsSection` was the only renderer of
+    the "Notify when agent needs approval" control, but nothing mounted it — it
+    was already non-rendering, so this removes dead code without changing current
+    behavior. Re-adding that settings control is separate feature work.
+  - `src/vscode/settings.vscode.ts` — removed `setDefaultModel` (dead raw
+    agents-config writer, no callers).
+  - `src/core/panel.helpers.ts` — removed `parseWorktreeListPorcelain` (no
+    callers; `agentPanel.vscode.ts` builds its own `WorktreeRef[]`). The
+    `WorktreeRef` interface stays — it is still imported.
+- **README keybindings corrected** against `package.json` contributions:
+  `Cmd+Shift+C` is Continue-from-selection (Clear is `Cmd+Shift+X`),
+  `Cmd+Shift+D` is Dispatch-a-task (Dashboard/configure is `Cmd+Shift+F`), and
+  Resume (Best Profile) is `Cmd+Shift+Alt+J` (plain `Cmd+Shift+J` spawns with a
+  prompt).
+- Deliberately left the prewarm / `sessionParse` / poller debt untouched — that
+  is being deleted wholesale by the in-flight session-identity refactor.
+
 ## [0.9.352] - 2026-09-01
 
 - **Projects management moved to Settings (PHNX-3592).** Removing the Fleet

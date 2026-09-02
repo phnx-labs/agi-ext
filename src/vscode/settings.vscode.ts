@@ -1413,49 +1413,6 @@ export function getDefaultModel(
   return settings.builtIn[agentType]?.defaultModel;
 }
 
-export async function setDefaultModel(
-  context: vscode.ExtensionContext,
-  agentType: keyof AgentSettings['builtIn'],
-  model: string | undefined
-): Promise<void> {
-  const settings = getSettings(context);
-  const current = settings.builtIn[agentType];
-
-  // Update new config format
-  const configPath = AGENTS_CONFIG_PATH;
-  let config: any = { agents: {}, providers: {} };
-  if (fs.existsSync(configPath)) {
-    try {
-      config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
-      // If file is invalid, use empty config
-    }
-  }
-
-  const agentKey = agentType.toString();
-  if (!config.agents[agentKey]) {
-    config.agents[agentKey] = { enabled: false, models: {}, provider: '' };
-  }
-
-  // Update model in the appropriate effort level (default by convention)
-  config.agents[agentKey].models.default = model;
-
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-
-  // Also update VS Code settings for backward compatibility
-  const nextSettings: AgentSettings = {
-    ...settings,
-    builtIn: {
-      ...settings.builtIn,
-      [agentType]: {
-        ...current,
-        defaultModel: model || undefined
-      }
-    }
-  };
-  await saveSettings(context, nextSettings);
-}
-
 // Save settings to global state and write configs to files
 export async function saveSettings(context: vscode.ExtensionContext, settings: AgentSettings): Promise<void> {
   await context.globalState.update('agentSettings', settings);
