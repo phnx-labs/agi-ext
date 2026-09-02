@@ -27,7 +27,7 @@ This extension turns your IDE into an IAE:
 
 1. Install the extension from VS Code Marketplace
 2. Press `Cmd+Shift+A` to spawn your first agent
-3. Open Dashboard (`Cmd+Shift+D`) to configure auto-start
+3. Open the Dashboard (`Cmd+Shift+F`) to configure auto-start
 
 ### agents-dbg Mac App
 
@@ -49,8 +49,10 @@ curl -fsSL https://raw.githubusercontent.com/phnx-labs/agents-cli/main/scripts/i
 | --- | --- |
 | `Cmd+Shift+A` | Spawn a new agent through agi-cli automatic routing |
 | `Cmd+Shift+L` | Label agent by task |
-| `Cmd+Shift+C` | Clear and restart agent |
-| `Cmd+Shift+D` | Open Dashboard |
+| `Cmd+Shift+C` | Continue agent from selection |
+| `Cmd+Shift+X` | Clear and restart agent |
+| `Cmd+Shift+D` | Dispatch a task |
+| `Cmd+Shift+F` | Open Dashboard (configure) |
 | `Cmd+Shift+I` | Focus agent (quick picker) |
 | `Cmd+Shift+H` | Horizontal split (tmux-style) |
 | `Cmd+Shift+V` | Vertical split (tmux-style) |
@@ -80,7 +82,7 @@ the harness generates a name or the session is renamed; a label set with
 - **Fork a session** - `Agents: Fork`, `Agents: Fork (Recap)`, and `Agents: Fork (Pick Host)` delegate the copy and identity semantics to `agents sessions fork <id>`, which resolves the source across the fleet and launches a recap-seeded same-harness sibling. The original is left untouched; Fork and Fork (Recap) behave identically since the verb is always recap-seeded.
 - **Fork pairs in the Recap ledger** - a fork and the session it came from finish as two rows that share no id. AGI EXT remembers the edge and reunites them: one side-by-side row in Recap, parent on the left, fork on the right, each stamped with the machine it ran on and its own duration/cost/PR.
 - **Agents: Resume** - The picker performs one bounded CLI listing when opened, then sends only the chosen canonical IDs to `agents sessions resume <id> --vscodium`.
-- **Resume variants** - `Agents: Resume (Pick Session)` lists only abandoned sessions — detached, backgrounded, parked, or idle, nothing currently open anywhere — and resumes each on the device it was created on. `Agents: Resume (Pick Host)` reopens the active tab's session on a device you pick (same harness, same version). `Agents: Resume (Pick Harness)` continues the active tab's session in a different harness on the same device, replaying the transcript through the universal `/continue` flow. `Agents: Resume (Best Profile)` rotates the active tab to the signed-in account with the most usage headroom (`Cmd+Shift+J`).
+- **Resume variants** - `Agents: Resume (Pick Session)` lists only abandoned sessions — detached, backgrounded, parked, or idle, nothing currently open anywhere — and resumes each on the device it was created on. `Agents: Resume (Pick Host)` reopens the active tab's session on a device you pick (same harness, same version). `Agents: Resume (Pick Harness)` continues the active tab's session in a different harness on the same device, replaying the transcript through the universal `/continue` flow. `Agents: Resume (Best Profile)` rotates the active tab to the signed-in account with the most usage headroom (`Cmd+Shift+Alt+J`).
 
 ### Active Session sidebar
 
