@@ -487,13 +487,23 @@ function watchForPlan(
   _cwd: string,
   notify: NotifyPrefsMsg,
 ): void {
-  const POLL_MS = 2000;
-  const MAX_ATTEMPTS = 600; // ~20 min
-  let attempts = 0;
+  // PHNX-3817: this used to spawn `agents sessions <id> --json` every 2s for 20
+  // min (up to 600 subprocesses per dispatched plan) — a retry-on-a-timer the
+  // thin-client rule forbids. The canonical fix is to carry `session.plan` on
+  // the `agents feed watch` stream row so the extension reads it from the warm
+  // `sessionPresentationStore` with no fetch at all (tracked as an agi-cli
+  // follow-up: add `plan` to `SessionWatchRow`). Until that field lands, back the
+  // poll off exponentially and bound it by a wall-clock deadline so the spawn
+  // rate is a fraction of the old fixed-interval drip while the plan is still
+  // detected promptly (first checks stay ~2-8s apart).
+  const BASE_POLL_MS = 2000;
+  const MAX_POLL_MS = 8000;
+  const DEADLINE_MS = 20 * 60 * 1000;
+  const deadline = Date.now() + DEADLINE_MS;
+  let delay = BASE_POLL_MS;
   let done = false;
   const tick = async () => {
     if (done) return;
-    attempts++;
     try {
       const { stdout } = await runAgents(`sessions ${sessionId} --json --local`, { timeout: 10_000 });
       const planText = extractPlanFromSessionJson(stdout);
@@ -509,9 +519,12 @@ function watchForPlan(
     } catch (err) {
       console.warn('[DISPATCH] plan watch poll failed:', err);
     }
-    if (attempts < MAX_ATTEMPTS) setTimeout(tick, POLL_MS);
+    if (Date.now() < deadline) {
+      delay = Math.min(delay * 2, MAX_POLL_MS);
+      setTimeout(tick, delay);
+    }
   };
-  setTimeout(tick, POLL_MS);
+  setTimeout(tick, BASE_POLL_MS);
 }
 
 // The Foreman tool-dependency bundle, shared by BOTH voice engines: the
