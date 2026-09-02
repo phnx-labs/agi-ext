@@ -38,6 +38,7 @@ import {
   persistProjectFilter,
   projectFilterLabel,
   projectFilterOptions,
+  sessionAssignmentKey,
   UNASSIGNED_LABEL,
   UNASSIGNED_PROJECT,
   type ProjectAssignments,
@@ -266,7 +267,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
     [rows, managedProjectNames],
   )
   const clearableTargets = useMemo(
-    () => (projectMenu?.kind === 'assign' ? projectMenu.targets.some((a) => assignments[a.sessionId || a.id]) : false),
+    () => (projectMenu?.kind === 'assign' ? projectMenu.targets.some((a) => assignments[sessionAssignmentKey(a)]) : false),
     [projectMenu, assignments],
   )
 

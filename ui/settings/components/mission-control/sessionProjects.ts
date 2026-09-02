@@ -205,8 +205,9 @@ export function projectFilterOptions(agents: FloorAgent[]): ProjectFilterOption[
   return out
 }
 
-/** Case-insensitive substring filter for the menu's search box. */
-export function filterProjectOptions(options: ProjectFilterOption[], query: string): ProjectFilterOption[] {
+/** Case-insensitive substring filter behind the menu's search box. Generic over the
+ *  item shape so the filter menu and the two assign menus share one implementation. */
+export function filterProjectOptions<T extends { label: string }>(options: T[], query: string): T[] {
   const q = query.trim().toLowerCase()
   if (!q) return options
   return options.filter((o) => o.label.toLowerCase().includes(q))
