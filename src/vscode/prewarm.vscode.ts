@@ -22,6 +22,9 @@ import {
 // WorkspaceState keys (per-workspace; see the PHNX-3768 note above).
 const MAPPINGS_KEY = 'prewarm.mappings';
 const CLEAN_SHUTDOWN_KEY = 'prewarm.cleanShutdown';
+// One-time marker so the pre-upgrade globalState migration runs at most once per
+// workspace (see migrateFromGlobalStateOnce).
+const MIGRATED_KEY = 'prewarm.migratedFromGlobal';
 
 // === Terminal-to-Session Mapping for Crash Recovery ===
 
@@ -116,10 +119,65 @@ export interface TerminalRestoreActions {
   ): Promise<boolean>;
 }
 
+/**
+ * One-time upgrade migration (PHNX-3768).
+ *
+ * Pre-fix versions stored crash-recovery state in machine-global `globalState`.
+ * A user who was mid-crash when the extension auto-updated has legitimate pending
+ * mappings sitting in the OLD global keys; without this, `workspaceState` reads
+ * its `true` default, the reactivation is misread as a clean shutdown, and that
+ * one pending restore is silently dropped. On the first activation after upgrade,
+ * fold THIS workspace's slice of the old global mappings into `workspaceState` and
+ * adopt the old machine-wide clean-shutdown flag, then never read `globalState`
+ * again.
+ *
+ * We only READ `globalState` and only WRITE this window's own `workspaceState`
+ * — we never clear the global keys (they become harmless orphaned bytes). That
+ * avoids the every-window-mutates-shared-state race this whole fix exists to kill.
+ * Slice by exact `workingDirectory === workspacePath` match, never a prefix, so a
+ * sibling workspace can never pull in another's sessions.
+ */
+async function migrateFromGlobalStateOnce(
+  context: vscode.ExtensionContext,
+  workspacePath: string,
+): Promise<void> {
+  if (context.workspaceState.get<boolean>(MIGRATED_KEY, false)) return;
+
+  const globalMappings = context.globalState.get<TerminalSessionMapping[]>(MAPPINGS_KEY, []);
+  const mine = globalMappings.filter(m => m.workingDirectory === workspacePath);
+  if (mine.length > 0) {
+    const existing = getMappings(context);
+    const seen = new Set(existing.map(m => m.terminalId));
+    const merged = existing.concat(mine.filter(m => !seen.has(m.terminalId)));
+    await context.workspaceState.update(MAPPINGS_KEY, merged);
+    // Only seed the crash flag if this workspace has never recorded one, so a
+    // real pre-upgrade crash (global flag === false) still triggers a restore.
+    if (context.workspaceState.get<boolean>(CLEAN_SHUTDOWN_KEY, undefined as any) === undefined) {
+      const globalClean = context.globalState.get<boolean>(CLEAN_SHUTDOWN_KEY, true);
+      await context.workspaceState.update(CLEAN_SHUTDOWN_KEY, globalClean);
+    }
+  }
+
+  await context.workspaceState.update(MIGRATED_KEY, true);
+}
+
 export async function restoreTerminals(
   context: vscode.ExtensionContext,
   actions: TerminalRestoreActions,
+  // The activating window's workspace-folder path (the caller resolves it from
+  // `vscode.workspace.workspaceFolders`). Injected rather than read here so this
+  // function stays a pure unit of the injected context — no module-global vscode
+  // state whose mock another test file could win.
+  workspacePath: string | undefined,
 ): Promise<number> {
+  // Mirror `restoreAgentTerminals` (the disk-persist sibling): a folder-less
+  // ("empty") window has no stable per-window workspaceState identity across a
+  // cold crash+relaunch, and that path bails here too — so prewarm crash-recovery
+  // is a deliberate no-op with no workspace folder rather than a best-effort guess.
+  if (!workspacePath) return 0;
+
+  await migrateFromGlobalStateOnce(context, workspacePath);
+
   const cleanShutdown = wasCleanShutdown(context);
   await context.workspaceState.update(CLEAN_SHUTDOWN_KEY, false);
   if (cleanShutdown) {

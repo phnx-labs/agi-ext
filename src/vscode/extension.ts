@@ -1022,6 +1022,7 @@ export async function activate(context: vscode.ExtensionContext) {
     .then(() => restoreAgentTerminals(context))
     .then(async () => {
       const { restoreTerminals } = await import('./prewarm.vscode');
+      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       await restoreTerminals(context, {
         listRestorableSessionIds,
         // restoreAgentTerminals ran first in this chain and registered every tab
@@ -1035,7 +1036,7 @@ export async function activate(context: vscode.ExtensionContext) {
           };
         },
         openAgentSessionTerminal,
-      });
+      }, workspacePath);
     })
     .then(() => {
       // Adopt any SH terminals that are already running an agent CLI
