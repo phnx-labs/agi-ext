@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from 'bun:test';
+import { afterAll, describe, test, expect, mock } from 'bun:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -9,6 +9,14 @@ import { vscodeDouble } from '../testing/vscodeDouble';
 // mapping set) only touch fs/path, so an empty stub satisfies the import without
 // needing the (cross-file, process-global) ripgrep mock.
 mock.module('vscode', () => vscodeDouble());
+
+// mock.module is process-global and mock.restore() does NOT undo it, so the
+// './swarmifyConfig.vscode' stub below would otherwise leak into
+// swarmifyConfig.vscode.test.ts, where its createCoalescingScheduler export
+// would then be missing. Snapshot the real module now (vscode is already
+// stubbed, so it loads) into a plain object so its refs survive the later
+// mock.module, and re-install it in afterAll.
+const realSwarmifyConfig = { ...(await import('./swarmifyConfig.vscode')) };
 
 // hasEffectiveConfig/loadWorkspaceConfig read VS Code workspace config, which is
 // unavailable in the test host. loadWorkspaceConfig is a counting stub so the
@@ -27,6 +35,10 @@ mock.module('./swarmifyConfig.vscode', () => ({
 }));
 
 const { createSymlinksInDirectory, ensureSymlinksOnWorkspaceOpen } = await import('./agentlinks.vscode');
+
+afterAll(() => {
+  mock.module('./swarmifyConfig.vscode', () => realSwarmifyConfig);
+});
 
 function freshTmpDir(): string {
   // realpath so path.relative inside createSymlink matches (/tmp -> /private/tmp).
