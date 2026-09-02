@@ -105,6 +105,17 @@ None re-buckets the entire list, including Previous sessions. Previous history
 defaults to at most 50 sessions active in the last seven days and pages older
 history ten rows at a time; bulk Resume applies only to shown resumable rows.
 
+A **Project** control sits beside Group and Sort: a searchable list of every project
+in view with its session count, plus **All projects** and **Unassigned** as
+first-class picks. Choosing one scopes the rows *and* the status-chip counts to it,
+and the pick is remembered. A session's project comes from the hints its stream row
+already carries — working directory or worktree path, the CLI's repo word, the PR's
+`owner/repo` slug, then branch, worktree slug, or team — so cloud and remote runs are
+attributed without a local checkout. Runs that genuinely have no repo land in a
+labeled **Unassigned** group that states why (“cloud & no-repo runs — no cwd to
+match”) instead of an empty header, with **+ assign project** on each row and
+**assign all** on the group header to file them by hand.
+
 Each row uses the harness logo without repeating its name. Expanding it shows the
 CLI-indexed full first user turn as **Your request** (with **See more** for long
 requests), or labels an older CLI's topic fallback honestly as **Request summary**.

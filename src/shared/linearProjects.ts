@@ -8,7 +8,10 @@
 //
 // This module is PURE (no CLI, no fs, no vscode) so it unit-tests without a live
 // `linear` binary. The actual `linear projects --json` shell-out lives in
-// linear.vscode.ts (reusing its cached CLI-path resolver).
+// linear.vscode.ts (reusing its cached CLI-path resolver). It lives in src/shared
+// because BOTH sides match on project identity: the host suggests a Linear project
+// for a managed folder, and the webview attributes a session to a project from the
+// hints its stream row carries (sessionProjects.ts). One matcher, no second copy.
 
 /** The minimal Linear project shape the webview needs (id + name). */
 export interface LinearProjectLite {
@@ -32,15 +35,23 @@ export function normalizeProjectKey(s: string): string {
  * Find the Linear project that best matches a repo slug or folder name.
  * Exact normalized match first, then a containment fallback (either direction),
  * so "agents-cli-web" still suggests "Agents CLI" when no exact peer exists.
+ *
+ * `fuzzy: false` keeps only the exact normalized match. Weak hints — a branch, a
+ * worktree slug, a team name — are near-arbitrary strings, and containment across
+ * a short project name mis-binds them ("flush-fix" would "match" project "Rush").
+ * Session attribution passes fuzzy:false for those and keeps containment for real
+ * repo slugs, where it is the whole point.
  */
 export function matchLinearProject(
   slugOrName: string,
-  projects: LinearProjectLite[]
+  projects: LinearProjectLite[],
+  opts: { fuzzy?: boolean } = {}
 ): LinearProjectLite | undefined {
   const key = normalizeProjectKey(slugOrName);
   if (!key) return undefined;
   const exact = projects.find((p) => normalizeProjectKey(p.name) === key);
   if (exact) return exact;
+  if (opts.fuzzy === false) return undefined;
   return projects.find((p) => {
     const pk = normalizeProjectKey(p.name);
     return pk.length > 0 && (pk.includes(key) || key.includes(pk));

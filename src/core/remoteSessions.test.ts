@@ -179,6 +179,36 @@ describe('resolveProject', () => {
     );
     expect(s.project).toBe('Prix API');
   });
+
+  test("a cwd-bearing row ignores the CLI's project word; a cwd-less one keeps it (PHNX-3796)", () => {
+    // With a cwd, the resolved cwd is authoritative — the CLI word must not override it.
+    const local = normalizeActiveSession(
+      { kind: 'claude', status: 'running', cwd: '/x/y/agents/prix/api', project: 'something-else', sessionFile: '/x/aaaaaaaa.jsonl' } as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+      RULES
+    );
+    expect(local.project).toBe('Prix API');
+
+    // With no cwd there is nothing to resolve, so the CLI's own word is the only
+    // repo hint there is — dropping it is what left cloud rows with a blank project.
+    const cloud = normalizeActiveSession(
+      { kind: 'claude', status: 'running', context: 'cloud', cloudTaskId: 't1', project: 'phnx-labs/agi-ext' } as RawActiveSession,
+      'pinnacles',
+      FETCHED_AT,
+      RULES
+    );
+    expect(cloud.project).toBe('phnx-labs/agi-ext');
+
+    // A genuinely repo-less row still resolves to '' (the webview's Unassigned bucket).
+    const bare = normalizeActiveSession(
+      { kind: 'claude', status: 'running', context: 'cloud', cloudTaskId: 't2' } as RawActiveSession,
+      'pinnacles',
+      FETCHED_AT,
+      RULES
+    );
+    expect(bare.project).toBe('');
+  });
 });
 
 describe('normalizeQuestion — carry the CLI decision across postMessage', () => {

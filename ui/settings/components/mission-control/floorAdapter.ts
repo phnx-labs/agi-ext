@@ -26,6 +26,7 @@ import {
   type TodoItem,
   type FloorAttachment,
 } from './floorModel'
+import { attributeSessionProject, UNASSIGNED_PROJECT, type SessionProjectHints } from './sessionProjects'
 import type { UnifiedTask, RecentEvent, RecentToolCall, ProjectRule, SessionAttachment } from '../../types'
 import { detectPlanFiles, extractPlanCandidates, type PlanFile, type PlanFileCandidate } from '../../utils/planDetector'
 
@@ -376,6 +377,44 @@ export function deriveProject(
   return resolveProject(cwd, rules, repoName || undefined) || fallback
 }
 
+/**
+ * Every project hint a projected session row carries (PHNX-3796). Extracting them
+ * here — where the payload shape is known — keeps attributeSessionProject pure and
+ * testable against hints rather than against the whole transport shape.
+ */
+export function remoteProjectHints(r: RemoteSessionLike): SessionProjectHints {
+  return {
+    cwd: r.cwd,
+    worktreePath: r.worktreePath,
+    repo: r.project,
+    prUrl: r.prUrl ?? r.pullRequest?.url ?? null,
+    branch: r.branch,
+    worktreeSlug: r.worktreeSlug,
+    team: r.teamName || r.spawnedTeam,
+  }
+}
+
+/**
+ * Project names already established by a batch of rows — the pool weak hints (branch,
+ * worktree slug, team) are allowed to bind to. Rows that resolve from their own cwd
+ * seed it, so a cloud run on branch `agents-cli/x` folds onto the same `agents-cli`
+ * bucket the local checkouts produced instead of minting a near-duplicate.
+ */
+export function knownProjectNames(
+  sessions: RemoteSessionLike[],
+  rules: ProjectRule[] = [],
+  extra: string[] = [],
+): string[] {
+  const names = new Set<string>(extra.filter((e) => !!e && e.trim().length > 0))
+  for (const s of sessions) {
+    const dir = (s.cwd || '').trim() || (s.worktreePath || '').trim()
+    if (!dir) continue
+    const p = resolveProject(dir, rules)
+    if (p) names.add(p)
+  }
+  return [...names]
+}
+
 /** Human elapsed label ("2s" / "14m" / "3h" / "1d") from an epoch-ms delta. */
 export function sinceFromMs(ms: number): string {
   if (!isFinite(ms) || ms < 0) return ''
@@ -469,12 +508,12 @@ export function deriveReplyTargetFromRemote(r: RemoteSessionLike): ReplyTarget {
  */
 export function toFloorAgentFromUnified(
   u: UnifiedAgentLike,
-  opts: { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[] },
+  opts: { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[]; knownProjects?: string[] },
 ): FloorAgent {
   const projected = opts.projectedSessions?.find((r) =>
     (!!u.sessionId && r.sessionId === u.sessionId) || (!!u.terminal?.id && r.terminalId === u.terminal.id))
   if (projected) {
-    const floor = toFloorAgentFromRemote({ ...projected, host: 'this-mac' }, opts.pinned, opts.localHostName, opts.projectRules)
+    const floor = toFloorAgentFromRemote({ ...projected, host: 'this-mac' }, opts.pinned, opts.localHostName, opts.projectRules, opts.knownProjects)
     const firstUserMessage = firstNonEmptyStr(projected.firstUserMessage, u.terminal?.firstUserMessage, u.agent?.prompt)
     return {
       ...floor,
@@ -515,7 +554,14 @@ export function toFloorAgentFromUnified(
   // dispatch prompt. Distinct from `resp` (the last message), which drifts as work goes.
   const prompt = firstNonEmptyStr(u.terminal?.firstUserMessage, u.agent?.prompt)
   const { verb, target } = splitActivity(u.activity)
-  const project = deriveProject(u.terminal?.cwd ?? u.agent?.cwd, u.agent?.repo_name, opts.workspaceRepo || '—', opts.projectRules ?? [])
+  // Same widened attribution as the remote path (PHNX-3796); a tab with no cwd and
+  // no workspace repo is Unassigned rather than the '—' placeholder.
+  const project = deriveProject(
+    u.terminal?.cwd ?? u.agent?.cwd,
+    u.agent?.repo_name,
+    opts.workspaceRepo || UNASSIGNED_PROJECT,
+    opts.projectRules ?? [],
+  )
   const worktreePath = worktreeSlugOf(u.terminal?.cwd ?? u.agent?.cwd) ? (u.terminal?.cwd ?? u.agent?.cwd ?? '') : ''
   const plans = detectUnifiedPlans(u, worktreePath)
   const attachments = collectAttachments(u.terminal?.attachments, u.agent?.attachments)
@@ -614,7 +660,13 @@ export function detectSessionRateLimited(
  * Map a cross-host RemoteSession to a FloorAgent. The backend already normalized the
  * phase, activity, throughput, and attention, so this is presentation-only.
  */
-export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>, localHostName?: string, projectRules: ProjectRule[] = []): FloorAgent {
+export function toFloorAgentFromRemote(
+  r: RemoteSessionLike,
+  pinned: Set<string>,
+  localHostName?: string,
+  projectRules: ProjectRule[] = [],
+  knownProjects: string[] = [],
+): FloorAgent {
   const phase = r.phase
   const prOpenUnreviewed = !!r.prUrl
   const ci = r.ci ?? null
@@ -667,7 +719,11 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
     // synthetic 'this-mac'; give them the real device name so they fold into the
     // same HOSTS row as in-window local agents instead of a second bucket.
     hostLabel: isCloud ? 'Cloud' : (r.host === 'this-mac' ? localHostName || undefined : undefined),
-    project: deriveProject(r.cwd, r.project, r.project || '—', projectRules),
+    // Widened attribution (PHNX-3796): cwd first, then the repo / cloud-PR slug /
+    // branch / worktree / team hints the row already carries. Nothing matched means
+    // genuinely repo-less — '' routes the row into the labeled Unassigned bucket
+    // instead of the old '—' placeholder that rendered as a blank group header.
+    project: attributeSessionProject(remoteProjectHints(r), { rules: projectRules, known: knownProjects }).project,
     name,
     abbr: abbrFor(r.agentType),
     agentType: r.agentType,
@@ -750,7 +806,7 @@ export function toFloorAgentFromRemote(r: RemoteSessionLike, pinned: Set<string>
 /** Map local UnifiedAgents (watchdog rows should be filtered out by the caller). */
 export function adaptUnified(
   agents: UnifiedAgentLike[],
-  opts: { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[] },
+  opts: { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[]; knownProjects?: string[] },
 ): FloorAgent[] {
   return agents.map((a) => toFloorAgentFromUnified(a, opts))
 }
@@ -773,8 +829,17 @@ export function structuredQuestionFromAttention(attention: RemoteSessionLike['at
 }
 
 /** Map genuinely-remote sessions (caller drops host === 'this-mac' to avoid double count). */
-export function adaptRemote(sessions: RemoteSessionLike[], pinned: Set<string>, localHostName?: string, projectRules: ProjectRule[] = []): FloorAgent[] {
-  return sessions.map((s) => toFloorAgentFromRemote(s, pinned, localHostName, projectRules))
+export function adaptRemote(
+  sessions: RemoteSessionLike[],
+  pinned: Set<string>,
+  localHostName?: string,
+  projectRules: ProjectRule[] = [],
+  knownProjects: string[] = [],
+): FloorAgent[] {
+  // One pass to learn which projects this batch establishes from real cwds, so the
+  // hint-only rows in the SAME batch can fold onto them (PHNX-3796).
+  const known = knownProjectNames(sessions, projectRules, knownProjects)
+  return sessions.map((s) => toFloorAgentFromRemote(s, pinned, localHostName, projectRules, known))
 }
 
 /** UnifiedTask[] -> FloorTicket[] (delegates to floorModel.toFloorTicket). */

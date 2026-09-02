@@ -41,7 +41,7 @@ import {
   type ManagedProject,
 } from '../core/managedProjects';
 import { repoSlugFromPath } from '../core/projectIndex';
-import { matchLinearProject } from '../core/linearProjects';
+import { matchLinearProject } from '../shared/linearProjects';
 import { fetchLinearProjects } from './linear.vscode';
 import { resolveForemanTarget, candidateName } from '../core/foreman.target';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';

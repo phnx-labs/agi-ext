@@ -1030,3 +1030,45 @@ describe('toFloorAgentFromRemote — plan progress (RUSH-1380)', () => {
     expect(a.verb).toBe('')
   })
 })
+
+describe('project attribution across a real fleet batch (PHNX-3796)', () => {
+  // Shapes taken from the live roster that produced the 48-row blank bucket: cloud
+  // rows carry no cwd and the CLI's project slot holds the run CONTEXT word "cloud".
+  const row = (over: Partial<RemoteSessionLike>): RemoteSessionLike => ({
+    host: 'pinnacles', sessionId: 's', agentType: 'claude', cwd: '', project: '',
+    phase: 'running', activity: '', tokPerSec: 0, waitingForInput: false, lastResponse: '',
+    prUrl: null, ticket: null, branch: '', sinceMs: 0, startedAtMs: 0, topic: '',
+    context: 'cloud', cloudTaskId: '9hk9oiqv', cloudProvider: 'rush', teamName: '', pid: 0,
+    transport: '', replyRail: '', replyMuxTarget: '', replyMuxSocket: '',
+    ...over,
+  })
+
+  test('a cwd-bearing row seeds the project pool that hint-only rows in the same batch bind to', () => {
+    const batch = [
+      row({ sessionId: 'local', host: 'zion', context: 'terminal', cwd: '/home/m/src/github.com/phnx-labs/agi-ext', cloudTaskId: '', cloudProvider: '' }),
+      row({ sessionId: 'cloudpr', prUrl: 'https://github.com/phnx-labs/agi-ext/pull/412', project: 'cloud' }),
+      row({ sessionId: 'branchy', branch: 'agi-ext/fix-lease', project: 'cloud' }),
+      row({ sessionId: 'norepo', label: 'echo hello from balanced factory run', project: 'cloud' }),
+    ]
+    const projects = adaptRemote(batch, new Set(), 'zion').map((a) => a.project)
+    expect(projects).toEqual(['agi-ext', 'agi-ext', 'agi-ext', ''])
+  })
+
+  test("a genuinely repo-less run gets '' (the labeled Unassigned bucket), never the old '—' placeholder", () => {
+    const [a] = adaptRemote([row({ sessionId: 'norepo', project: 'cloud' })], new Set(), 'zion')
+    expect(a!.project).toBe('')
+    expect(a!.project).not.toBe('—')
+  })
+
+  test('managed project names widen attribution without any extra fetch', () => {
+    const batch = [row({ sessionId: 'team', context: 'teams', teamName: 'agents-cli', project: '', cloudTaskId: '' })]
+    expect(adaptRemote(batch, new Set(), 'zion', [], []).map((a) => a.project)).toEqual([''])
+    expect(adaptRemote(batch, new Set(), 'zion', [], ['agents-cli']).map((a) => a.project)).toEqual(['agents-cli'])
+  })
+
+  test('project rules still win over every widened hint', () => {
+    const rules = [{ pattern: '/home/m/src/**/agi-ext', project: 'AGI EXT' }]
+    const batch = [row({ sessionId: 'local', context: 'terminal', cwd: '/home/m/src/github.com/phnx-labs/agi-ext', prUrl: 'https://github.com/o/other/pull/1', cloudTaskId: '' })]
+    expect(adaptRemote(batch, new Set(), 'zion', rules).map((a) => a.project)).toEqual(['AGI EXT'])
+  })
+})

@@ -336,7 +336,9 @@ describe('SessionsPane', () => {
     expect(html).toContain('>Favorites<')
     expect(html).not.toContain('>Orphaned<')
     expect(html).not.toContain('>Starred<')
-    expect(html).not.toContain('All projects')
+    // The Project control IS a toolbar control (PHNX-3796) — but it is a searchable
+    // menu, not the removed <select>-style "Filter by project" / host pair.
+    expect(html).toContain('All projects')
     expect(html).not.toContain('All hosts')
     expect(html).not.toContain('Filter by project')
     expect(html).not.toContain('Filter by machine')
@@ -467,5 +469,140 @@ describe('SessionsPane', () => {
     const diffHtml = renderToStaticMarkup(<SessionRow agent={agent({ prompt: 'fix the thing', topic: 'A different recap summary', resp: '' })} {...rowProps} expanded />)
     expect(diffHtml).toContain('sx-goal')
     expect(diffHtml).toContain('A different recap summary')
+  })
+})
+
+describe('SessionsPane — Project filter + Unassigned attribution (PHNX-3796)', () => {
+  const fleet = () => [
+    agent({ id: 'a1', sessionId: 'a1', project: 'agents-cli', topic: 'lease reaper', phase: 'running' }),
+    agent({ id: 'a2', sessionId: 'a2', project: 'agents-cli', topic: 'index backfill', phase: 'idle', liveStatus: 'idle' }),
+    agent({ id: 'r1', sessionId: 'r1', project: 'rush', topic: 'landing OG cards', phase: 'running' }),
+    agent({ id: 'c1', sessionId: 'c1', project: '', topic: 'echo hello from balanced factory run', phase: 'running', context: 'cloud', pr: null, prUrl: null }),
+    agent({ id: 'c2', sessionId: 'c2', project: '', topic: 'Muse session', phase: 'running', context: 'cloud', pr: null, prUrl: null }),
+  ]
+
+  function mount(agents = fleet()) {
+    // Portals from an earlier mount can outlive it here (bun's happy-dom root is
+    // shared); drop them so a menu query only ever sees this mount's menu.
+    for (const stale of Array.from(document.querySelectorAll('.sx-proj-menu'))) stale.remove()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(
+        <SessionsPane agents={agents} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} managedProjectNames={['agi-ext']} />,
+      )
+    })
+    return { host, root, cleanup: () => { act(() => root.unmount()); host.remove() } }
+  }
+
+  const bands = (host: HTMLElement) => Array.from(host.querySelectorAll('.sx-band')).map((b) => b.textContent ?? '')
+  const chip = (host: HTMLElement, label: string) =>
+    Array.from(host.querySelectorAll('.sx-chip')).find((c) => c.textContent?.startsWith(label))!
+  const menu = () => Array.from(document.querySelectorAll('.sx-proj-menu')).pop() as HTMLElement
+  const openProjectMenu = (host: HTMLElement) => {
+    act(() => { (host.querySelector('.sx-projbtn') as HTMLButtonElement).click() })
+    return menu()
+  }
+  const menuItems = () =>
+    Array.from(menu().querySelectorAll('button')).map((b) => b.textContent?.replace('✓', '').trim() ?? '')
+  const pickMenuItem = (match: (text: string) => boolean) => {
+    const target = Array.from(menu().querySelectorAll('button')).find((b) => match(b.textContent ?? ''))!
+    act(() => { target.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+  }
+
+  test('the orphan bucket is a LABELED Unassigned band with its reason — never a blank header', () => {
+    localStorage.clear()
+    const { host, cleanup } = mount()
+    const labels = bands(host)
+    expect(labels.some((l) => l.includes('Unassigned'))).toBe(true)
+    expect(labels.some((l) => l.includes('cloud & no-repo runs — no cwd to match'))).toBe(true)
+    // no band renders with an empty name
+    expect(host.querySelectorAll('.sx-band .lab')).not.toHaveLength(0)
+    for (const lab of Array.from(host.querySelectorAll('.sx-band .lab'))) expect((lab.textContent ?? '').trim()).not.toBe('')
+    // and it sorts last, below the real projects
+    expect(labels[labels.length - 1]).toContain('Unassigned')
+    cleanup()
+  })
+
+  test('the menu lists per-project counts with All projects and Unassigned as first-class picks', () => {
+    localStorage.clear()
+    const { host, cleanup } = mount()
+    openProjectMenu(host)
+    expect(menuItems()).toEqual(['All projects5', 'agents-cli2', 'rush1', 'Unassigned2'])
+    cleanup()
+  })
+
+  test('picking a project scopes the rows AND the status-chip counts, and is remembered', () => {
+    localStorage.clear()
+    const first = mount()
+    openProjectMenu(first.host)
+    expect(chip(first.host, 'All').textContent).toBe('All5')
+    pickMenuItem((t) => t.includes('agents-cli'))
+    // rows: only that project's sessions
+    expect(bands(first.host).join(' ')).toContain('agents-cli')
+    expect(bands(first.host).join(' ')).not.toContain('rush')
+    expect(bands(first.host).join(' ')).not.toContain('Unassigned')
+    // chips: counted inside the project scope, not fleet-wide
+    expect(chip(first.host, 'All').textContent).toBe('All2')
+    expect(chip(first.host, 'Active').textContent).toContain('1')
+    expect((first.host.querySelector('.sx-projbtn b') as HTMLElement).textContent).toBe('agents-cli')
+    first.cleanup()
+
+    // remembered across a remount (persisted)
+    expect(localStorage.getItem('swarm.sessions.projectFilter')).toBe('"agents-cli"')
+    const second = mount()
+    expect((second.host.querySelector('.sx-projbtn b') as HTMLElement).textContent).toBe('agents-cli')
+    expect(chip(second.host, 'All').textContent).toBe('All2')
+    second.cleanup()
+    localStorage.clear()
+  })
+
+  test('Unassigned is a selectable scope that shows only the unattributed runs', () => {
+    localStorage.clear()
+    const { host, cleanup } = mount()
+    openProjectMenu(host)
+    pickMenuItem((t) => t.includes('Unassigned'))
+    expect(chip(host, 'All').textContent).toBe('All2')
+    expect(host.textContent).toContain('echo hello from balanced factory run')
+    expect(host.textContent).not.toContain('landing OG cards')
+    cleanup()
+    localStorage.clear()
+  })
+
+  test('a row assign and the band-level assign all move sessions into a project and persist', () => {
+    localStorage.clear()
+    const single = mount()
+    const rowBtn = single.host.querySelector('.sx-assign') as HTMLButtonElement
+    expect(rowBtn.textContent).toContain('+ assign project')
+    act(() => { rowBtn.click() })
+    // managed projects join the assign menu even with no live session on them
+    expect(menuItems()).toEqual(['agents-cli', 'agi-ext', 'rush'])
+    pickMenuItem((t) => t.trim() === 'agi-ext')
+    expect(bands(single.host).join(' ')).toContain('agi-ext')
+    // one orphan remains, so the Unassigned band is still there
+    expect(bands(single.host).join(' ')).toContain('Unassigned')
+    expect(JSON.parse(localStorage.getItem('swarm.sessions.projectAssignments')!)).toEqual({ c1: 'agi-ext' })
+    single.cleanup()
+
+    // bulk: assign every remaining orphan at once -> the Unassigned band disappears
+    const bulk = mount()
+    act(() => { (bulk.host.querySelector('.sx-band-assign') as HTMLButtonElement).click() })
+    pickMenuItem((t) => t.trim() === 'rush')
+    expect(bands(bulk.host).join(' ')).not.toContain('Unassigned')
+    expect(JSON.parse(localStorage.getItem('swarm.sessions.projectAssignments')!)).toEqual({ c1: 'agi-ext', c2: 'rush' })
+    bulk.cleanup()
+    localStorage.clear()
+  })
+
+  test('an attributed row shows its project, not an assign affordance', () => {
+    localStorage.clear()
+    const html = renderToStaticMarkup(
+      <SessionsPane agents={[agent({ id: 'a1', project: 'agents-cli' })]} onToggleStar={noop} onResume={noop} onResumeMany={noop} onSelect={noop} />,
+    )
+    expect(html).toContain('class="sx-proj" title="agents-cli"')
+    // (the class names appear in the inlined stylesheet; assert on the rendered controls)
+    expect(html).not.toContain('+ assign project ▾')
+    expect(html).not.toContain('assign all ▾')
   })
 })

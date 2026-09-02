@@ -1028,6 +1028,12 @@ function Sessions() {
       base({ id: 'wait1', abbr: 'CC', project: 'agents-cli', hostLabel: 'zion', host: 'this-mac', phase: 'waiting', liveStatus: 'waiting', needs: true, since: '20s', topic: 'Improve AGI EXT UI: star + resume the sessions surface' }),
       base({ id: 'run1', abbr: 'CX', project: 'rush', hostLabel: 'yosemite-m4', host: 'yosemite-m4', phase: 'running', liveStatus: 'running', tok: 44, since: '8s', topic: 'Landing site OG cards + share preview unfurl' }),
       base({ id: 'idle1', abbr: 'KM', project: 'artifacts-cli', hostLabel: 'zion', host: 'this-mac', phase: 'idle', liveStatus: 'idle', since: '6m', topic: 'artifacts-cli: poster PDF tag layout + light/dark parity' }),
+      // Cloud / factory runs with no local cwd — the PHNX-3796 case. project '' puts
+      // them in the labeled Unassigned bucket (never a blank header) with the per-row
+      // "+ assign project" affordance and the band's "assign all".
+      base({ id: 'cloud1', abbr: 'CC', project: '', hostLabel: 'Cloud', host: 'pinnacles', context: 'cloud', phase: 'running', liveStatus: 'running', since: '3mo', topic: 'echo hello from balanced factory run', pr: null, prUrl: null }),
+      base({ id: 'cloud2', abbr: 'CC', project: '', hostLabel: 'Cloud', host: 'pinnacles', context: 'cloud', phase: 'idle', liveStatus: 'idle', since: '3mo', topic: 'Muse session', pr: null, prUrl: null }),
+      base({ id: 'cloud3', abbr: 'CX', project: '', hostLabel: 'Cloud', host: 'pinnacles', context: 'cloud', phase: 'running', liveStatus: 'running', since: '2mo', topic: "echo 'health check' && date", pr: null, prUrl: null }),
       ...Array.from({ length: 40 }, (_, i) => base({
         id: `bulk${i}`, abbr: (['CC', 'CX', 'KM', 'AG', 'DR'] as const)[i % 5], project: (['agents-cli', 'rush', 'artifacts-cli'])[i % 3],
         hostLabel: (['zion', 'mac-mini', 'yosemite-m4', 'yosemite-s0'])[i % 4], host: (['this-mac', 'mac-mini', 'yosemite-m4', 'yosemite-s0'])[i % 4],
@@ -1048,6 +1054,7 @@ function Sessions() {
         devices={[{ name: 'zion', online: true }, { name: 'yosemite-m2', online: true }, { name: 'mac-mini', online: false }]}
         onSelect={(a) => console.log('select', a.id)}
         selectedId={null}
+        managedProjectNames={['agents-cli', 'agi-ext', 'rush', 'artifacts-cli', 'svatlas']}
       />
     </div>
   )

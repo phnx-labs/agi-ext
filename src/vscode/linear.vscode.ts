@@ -4,7 +4,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { UnifiedTask, CycleInfo, linearToUnifiedTask, extractRepoNameFromLabels } from '../core/tasks';
-import type { LinearProjectLite } from '../core/linearProjects';
+import type { LinearProjectLite } from '../shared/linearProjects';
 import { resolveLinearBin } from '../core/linearBin';
 import { getSettings, resolveGithubOwner } from './settings.vscode';
 

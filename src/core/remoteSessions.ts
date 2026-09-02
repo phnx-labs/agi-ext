@@ -393,6 +393,9 @@ export interface RawActiveSession {
   context?: string;
   presence?: string;
   kind?: string;
+  /** The CLI's own project/repo word for the row. Only read when the row has no
+   *  cwd to resolve (PHNX-3796) — for a cwd-bearing row the resolved cwd wins. */
+  project?: string;
   pid?: number;
   /** Whether the CLI's process probe found the pid alive. */
   pidAlive?: boolean;
@@ -717,7 +720,12 @@ export function normalizeActiveSession(
     terminalId,
     agentType: (raw.kind || '').toLowerCase(),
     cwd,
-    project: resolveProject(cwd, projectRules),
+    // Resolve the cwd first (user rules + worktree fold), then fall back to the
+    // project word the CLI already put on the row. That fallback matters only for a
+    // cwd-less row — a cloud/factory run — where dropping it threw away the one repo
+    // hint the CLI had (PHNX-3796). The webview filters run-CONTEXT words like
+    // "cloud" out of it, so this never invents a project named after a context.
+    project: resolveProject(cwd, projectRules) || asStr(raw.project),
     phase,
     // Raw lifecycle word kept verbatim (phase loses orphaned/crashed). Absent -> ''.
     liveStatus: (status || '').toLowerCase(),
