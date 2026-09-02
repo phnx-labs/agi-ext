@@ -50,7 +50,7 @@ export function formatAgentStatusBarText(
   if (host) text += ` $(vm) ${host}`;
   if (label) text += ` - ${label}`;
   const displayId = canonicalSessionId(sessionId);
-  if (displayId) text += ` (${displayId})`;
+  if (displayId) text += ` $(copy) ${displayId.slice(0, 8)}`;
   else if (showTrackingHint) text += ' (tracking session)';
   return text;
 }
@@ -84,6 +84,15 @@ export function resolveStreamIdentityStamp(
 export function normalizeStatusEmail(email: string | null | undefined): string | undefined {
   const trimmed = email?.replace(/[<>]/g, '').trim();
   return trimmed || undefined;
+}
+
+export function formatAgentStatusBarTooltip(sessionId?: string, host?: string | null): string {
+  const id = canonicalSessionId(sessionId);
+  return [
+    host ? `Host: ${host}` : null,
+    id ? `Session: ${id}` : 'No session ID available',
+    id ? 'Click to copy session ID' : null,
+  ].filter(Boolean).join('\n');
 }
 
 /**

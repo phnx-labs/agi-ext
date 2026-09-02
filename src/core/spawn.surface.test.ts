@@ -65,3 +65,12 @@ describe('parseSpawnRequest', () => {
     expect(parseSpawnRequest('')).toBeNull();
   });
 });
+test('attach titles hide only complete host placeholders, preserving task text', () => {
+  const request = (title: string) => parseSpawnRequest('p=' + Buffer.from(JSON.stringify({
+    command: 'ssh worker tmux attach', agent: 'claude', title,
+  })).toString('base64url'));
+  expect(request('CC - [host/yosemite-m3]')?.title).toBeUndefined();
+  expect(request('[host/yosemite-m3]')?.title).toBeUndefined();
+  expect(request('CC - fix host/config parser')?.title).toBe('CC - fix host/config parser');
+  expect(request('CC - investigate [host/yosemite-m3]')?.title).toBe('CC - investigate [host/yosemite-m3]');
+});

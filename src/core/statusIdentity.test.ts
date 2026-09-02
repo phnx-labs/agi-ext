@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'bun:test';
-import { displayIdentity, normalizeStatusEmail, resolveStreamIdentityStamp, type StatusIdentitySource } from './statusIdentity';
+import { displayIdentity, formatAgentStatusBarText, formatAgentStatusBarTooltip, normalizeStatusEmail, resolveStreamIdentityStamp, type StatusIdentitySource } from './statusIdentity';
+
+describe('status bar session copy presentation', () => {
+  const id = '019fd129-6e9f-7082-ad08-9c22de9f1234';
+  const rollout = 'rollout-2026-08-05T02-03-01-' + id;
+
+  it('shows the compact canonical ID and keeps the full host and ID in the tooltip', () => {
+    expect(formatAgentStatusBarText('Codex', '1.0', 'dev@example.com', 'Fix parser', rollout, false, 'm3'))
+      .toBe('Agents: Codex 1.0 <dev@example.com> $(vm) m3 - Fix parser $(copy) 019fd129');
+    expect(formatAgentStatusBarTooltip(rollout, 'yosemite-m3'))
+      .toBe('Host: yosemite-m3\nSession: ' + id + '\nClick to copy session ID');
+  });
+
+  it('does not offer copying before a session ID is available', () => {
+    expect(formatAgentStatusBarText('Codex', undefined, undefined, null, undefined, true))
+      .toBe('Agents: Codex (tracking session)');
+    expect(formatAgentStatusBarTooltip()).toBe('No session ID available');
+    expect(formatAgentStatusBarTooltip(id)).not.toContain('Host:');
+  });
+});
 
 describe('normalizeStatusEmail', () => {
   it('strips angle brackets and whitespace, blanks empties', () => {

@@ -2,6 +2,8 @@
 // The VS Code glue that turns a SpawnRequest into an editor-tab terminal lives
 // in vscode/extension.ts (spawnCommandTerminal).
 
+import { isHostFallbackLabel, parseTerminalName } from './utils';
+
 type SpawnSplit = 'right' | 'down';
 
 export interface SpawnRequest {
@@ -47,7 +49,9 @@ export function parseSpawnRequest(query: string): SpawnRequest | null {
   const agent = typeof obj?.agent === 'string' && obj.agent.trim() ? obj.agent.trim().toLowerCase() : undefined;
   const sessionId =
     typeof obj?.sessionId === 'string' && obj.sessionId.trim() ? obj.sessionId.trim() : undefined;
-  const title = typeof obj?.title === 'string' && obj.title.trim() ? obj.title.trim() : undefined;
+  const rawTitle = typeof obj?.title === 'string' ? obj.title.trim() : undefined;
+  const title = rawTitle && !isHostFallbackLabel(rawTitle)
+    && !isHostFallbackLabel(parseTerminalName(rawTitle).label) ? rawTitle : undefined;
   return { command, cwd, split, agent, sessionId, title };
 }
 

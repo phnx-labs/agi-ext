@@ -9,6 +9,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - The Active Terminal panel fills its canvas with the sidebar theme background,
   including the space below short content. Timeline, checklist, and usage colors
   use editor theme tokens throughout (PHNX-3938, original PHNX-3809; #36).
+- The status bar shows a compact session ID with a copy icon. Hover shows the
+  full session ID and remote host; switching to an editor or plain terminal
+  clears the tooltip. Remote attach titles drop host-only placeholders without
+  inferring an execution host from task text (PHNX-3938, original PHNX-3809; #37).
 
 ## [0.9.371] - 2026-09-11
 
