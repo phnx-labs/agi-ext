@@ -4,6 +4,22 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.356] - 2026-09-02
+
+- **Fix a multi-window crash-recovery resume storm that could pin CPU and crash the host (PHNX-3768).**
+  Terminal-to-session crash-recovery state (`prewarm.mappings` and
+  `prewarm.cleanShutdown`) was stored in the extension's **machine-global**
+  `globalState`, read and written by every open window. After a non-clean
+  shutdown, *every* window's activation iterated the entire machine's mapping
+  set, reopened and re-resumed each recorded session into whatever window had
+  just opened, and wiped every other window's recovery state in the same pass.
+  With several windows open across projects this became an N-window storm of
+  `agents sessions resume` processes that oversubscribed the CPU and could crash
+  the machine. The state now lives in per-workspace `workspaceState` (mirroring
+  the already-workspace-scoped `restoreAgentTerminals` disk path), so a window
+  only ever restores or clears its **own** workspace's sessions — no
+  cross-workspace resurrection and no cross-window state wipe.
+
 ## [0.9.355] - 2026-09-02
 
 - **New `Agents: New <Harness> (Pick Project)` command variant** (PHNX-3800).

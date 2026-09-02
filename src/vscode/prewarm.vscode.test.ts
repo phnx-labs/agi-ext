@@ -49,7 +49,9 @@ describe('restoreTerminals', () => {
       ]],
     ]);
     const context = {
-      globalState: {
+      // PHNX-3768: crash-recovery state is keyed to workspaceState, not the
+      // machine-global globalState, so a window can only touch its own workspace.
+      workspaceState: {
         get<T>(key: string, fallback?: T): T {
           return (values.has(key) ? values.get(key) : fallback) as T;
         },
@@ -87,5 +89,65 @@ describe('restoreTerminals', () => {
       terminalId: 'CL42',
     }]);
     expect(updates).toContainEqual(['prewarm.mappings', []]);
+  });
+
+  // PHNX-3768 regression: the crash-recovery store is per-workspace, so a window
+  // activating for workspace A must NEVER read, reopen, or clear workspace B's
+  // mappings. Under the old machine-global globalState, A's activation resurrected
+  // every one of B's sessions into A's window and wiped B's state in the same pass
+  // — the N-window resume-storm that crashed the host. Two independent contexts
+  // (as workspaceState gives each window) must stay fully isolated.
+  test('a window only restores + clears its OWN workspace — no cross-workspace bleed', async () => {
+    const makeContext = (initial: Array<[string, unknown]>) => {
+      const values = new Map<string, unknown>(initial);
+      return {
+        values,
+        ctx: {
+          workspaceState: {
+            get<T>(key: string, fallback?: T): T {
+              return (values.has(key) ? values.get(key) : fallback) as T;
+            },
+            async update(key: string, value: unknown): Promise<void> {
+              values.set(key, value);
+            },
+          },
+        } as any,
+      };
+    };
+
+    const workspaceB = makeContext([
+      ['prewarm.cleanShutdown', false],
+      ['prewarm.mappings', [
+        { terminalId: 'B-CL1', sessionId: 'b-session-1', agentType: 'claude', createdAt: 10, workingDirectory: '/workspace/b' },
+        { terminalId: 'B-CL2', sessionId: 'b-session-2', agentType: 'codex', createdAt: 11, workingDirectory: '/workspace/b' },
+      ]],
+    ]);
+
+    const workspaceA = makeContext([
+      ['prewarm.cleanShutdown', false],
+      ['prewarm.mappings', [
+        { terminalId: 'A-CL1', sessionId: 'a-session-1', agentType: 'claude', createdAt: 20, workingDirectory: '/workspace/a' },
+      ]],
+    ]);
+
+    const opened: string[] = [];
+    const restored = await restoreTerminals(workspaceA.ctx, {
+      // The machine-wide CLI list contains BOTH workspaces' live sessions.
+      async listRestorableSessionIds() {
+        return new Set(['a-session-1', 'b-session-1', 'b-session-2']);
+      },
+      trackedKeys: () => ({ terminalIds: new Set<string>(), sessionIds: new Set<string>() }),
+      async openAgentSessionTerminal(_context, session) {
+        opened.push(session.id);
+        return true;
+      },
+    });
+
+    // Only workspace A's session reopens — B's live sessions are never touched.
+    expect(restored).toBe(1);
+    expect(opened).toEqual(['a-session-1']);
+    // Workspace B's crash-recovery state is left completely intact.
+    expect(workspaceB.values.get('prewarm.mappings')).toHaveLength(2);
+    expect(workspaceB.values.get('prewarm.cleanShutdown')).toBe(false);
   });
 });
