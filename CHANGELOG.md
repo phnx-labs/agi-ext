@@ -17,9 +17,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
     `sessionProjects.ts` walks the hints the projected row already carries — cwd or
     worktree path, the CLI's repo word, the PR's `owner/repo` slug, then branch,
     worktree slug, and team — matching each with the same `matchLinearProject` the
-    host uses to bind a folder to a Linear project. Repo slugs keep the containment
-    match; weak hints must match an already-known project exactly, so "flush-fix"
-    never lands in "Rush". Prompts are deliberately not mined. No new fetch, no
+    host uses to bind a folder to a Linear project. Repo slugs keep its (word-wise)
+    containment match; weak hints must match an already-known project exactly, so a
+    branch that merely carries a project's word never files work under it.
+    Prompts are deliberately not mined. No new fetch, no
     polling: every hint is a field already on the stream, and the extension host now
     keeps the CLI's own project word for a cwd-less row instead of dropping it
     (`normalizeActiveSession`).
