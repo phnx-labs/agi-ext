@@ -882,9 +882,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
   const [hostInventories, setHostInventories] = useState<Record<string, HostInventory>>({})
   const [hostConfigError, setHostConfigError] = useState<string | null>(null)
-  // Curated managed projects for the sidebar top-3 and the feed's linked-project
-  // lookup. The Projects management pane moved to Settings (FleetProjectsSection),
-  // which owns its own Linear-projects + folder-picker state (PHNX-3592).
+  // Curated managed projects for the feed's linked-project lookup (the per-group
+  // Linear-project pill). The Projects management pane moved to Settings
+  // (FleetProjectsSection), which owns its own Linear-projects + folder-picker
+  // state (PHNX-3592).
   const [managedProjects, setManagedProjects] = useState<ManagedProject[]>([])
 
   // Persist the durable Floor prefs (pinned set, plain/sidebar/right toggles, group-by, host pins).
@@ -1017,11 +1018,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     return () => window.removeEventListener('message', onMsg)
   }, [])
 
-  // Curated managed projects for the sidebar top-3 and the feed's linked-project
-  // lookup. Fetch on mount; the host re-sends managedProjectsData after any
-  // save/delete (from the Settings Projects section), so no optimistic update is
-  // needed. On error, KEEP last-good projects (same pattern as hostSessions) —
-  // there is no pane here to surface it, and the sidebar just shows what it has.
+  // Curated managed projects for the feed's linked-project lookup. Fetch on
+  // mount; the host re-sends managedProjectsData after any save/delete (from the
+  // Settings Projects section), so no optimistic update is needed. On error, KEEP
+  // last-good projects (same pattern as hostSessions) — there is no pane here to
+  // surface it, and the feed just uses whatever mapping it already has.
   useEffect(() => {
     postMessage({ type: 'fetchManagedProjects' })
     const onMsg = (event: MessageEvent) => {
