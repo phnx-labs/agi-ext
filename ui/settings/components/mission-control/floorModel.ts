@@ -433,6 +433,7 @@ export function computeHostRows(
 export interface ManagedProject {
   id: string                       // stable local id
   name: string                     // label in sidebar + dispatch
+  description?: string             // one-line summary from the ProjectDef
   path: string                     // absolute local folder (the FIRST bound directory)
   repoSlug?: string                // "owner/repo" (the FIRST bound directory's repo)
   dirs: ManagedProjectDir[]        // every directory bound to this project, root/defaultPath first

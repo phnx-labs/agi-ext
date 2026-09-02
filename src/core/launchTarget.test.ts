@@ -56,12 +56,16 @@ describe('launchOptsForHarnessCommand', () => {
     expect(launchOptsForHarnessCommand('pick-host')).toEqual({ pickHost: true, accountPicker: true });
     expect(launchOptsForHarnessCommand('auto')).toEqual({});
   });
+
+  it('Pick Project asks only for the project — never a host, so placement stays automatic', () => {
+    expect(launchOptsForHarnessCommand('pick-project')).toEqual({ pickProject: true });
+  });
 });
 
 describe('registered harness launch commands', () => {
   const RUNNERS = BUILT_IN_AGENTS.filter(({ key }) => key !== 'shell' && key !== 'gemini');
 
-  it('registers the default, Pick Host, and Auto command ids for every active harness', () => {
+  it('registers the default, Pick Host, Auto, and Pick Project command ids for every active harness', () => {
     for (const agent of RUNNERS) {
       expect(harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto').map((entry) => ({
         commandId: entry.commandId,
@@ -70,6 +74,7 @@ describe('registered harness launch commands', () => {
         { commandId: agent.commandId, variant: 'default' },
         { commandId: `${agent.commandId}PickHost`, variant: 'pick-host' },
         { commandId: `${agent.commandId}Auto`, variant: 'auto' },
+        { commandId: `${agent.commandId}PickProject`, variant: 'pick-project' },
       ]);
     }
   });
@@ -112,6 +117,32 @@ describe('registered harness launch commands', () => {
         `agents run ${agent.key} --interactive --device auto --strategy balanced --mode auto`,
       );
     }
+  });
+
+  it('builds each Pick Project command as automatic device + balanced account + the picked project', () => {
+    for (const agent of RUNNERS) {
+      const [, , , registration] = harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto');
+      // The variant carries pickProject but never a host/local flag, so placement
+      // stays automatic (`--device auto`) and the account stays balanced.
+      expect(registration.launchOptions()).toEqual({ agentKey: agent.key, pickProject: true });
+      // launchAgent supplies the picked slug via context.projectSlug; the CLI then
+      // owns the cwd on the auto-picked worker (no --cwd is emitted alongside it).
+      const command = buildNewAgentLaunchCommand(registration.launchOptions(), { projectSlug: 'my-app' });
+      expect(command).toBe(
+        `agents run ${agent.key} --interactive --device auto --project 'my-app' --strategy balanced --mode auto`,
+      );
+      expect(command).not.toContain(`${agent.key}@`);
+      expect(command).not.toContain('--cwd');
+    }
+  });
+
+  it('falls back to the plain Auto command when no project was picked', () => {
+    // A cancelled quickpick leaves projectSlug undefined; the launch must still be
+    // the Auto-equivalent command, not a broken one with a dangling --project.
+    const [, , , registration] = harnessLaunchRegistrations('claude', 'agents.newClaude', () => 'auto');
+    expect(buildNewAgentLaunchCommand(registration.launchOptions())).toBe(
+      'agents run claude --interactive --device auto --strategy balanced --mode auto',
+    );
   });
 
   it('keeps configured local and prompted-device defaults on the balanced path', () => {
