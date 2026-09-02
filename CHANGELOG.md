@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.355] - 2026-09-02
+
+- **New `Agents: New <Harness> (Pick Project)` command variant** (PHNX-3800).
+  A fourth per-harness palette command alongside the default, `(Pick Host)`, and
+  `(Auto)` variants — generated for every active harness (Claude, Codex,
+  OpenCode, Cursor, Antigravity, Grok, Kimi, Droid). It never prompts for a host:
+  placement stays automatic (`--device auto`) with balanced account rotation
+  (`--strategy balanced`), exactly like `(Auto)`. It first shows a quickpick of
+  your projects (name + description, sourced from the existing
+  `agents projects list --json` consumer) and launches the agent landed in the
+  chosen project's path on the auto-selected worker via `--project <slug>` — the
+  CLI resolves the remote cwd. An empty or unavailable project list, or a
+  cancelled pick, aborts the launch cleanly rather than opening an agent with
+  nowhere to land.
+
 ## [0.9.354] - 2026-09-02
 
 - **Fleet: filter sessions by project, and no more blank "no project" group (PHNX-3796).**
@@ -42,7 +57,6 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
     Recap ledger runs its rows through the same attribution so a cwd-less row can never
     render the run-context word "cloud" as a project name. (Tickets keep "Unlabeled" —
     a ticket with no project is a different thing.)
-
 ## [0.9.353] - 2026-09-02
 
 - **Dead-code sweep (non-overlapping subset).** Removed ~200 LOC of unreferenced
