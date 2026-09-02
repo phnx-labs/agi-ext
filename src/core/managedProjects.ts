@@ -21,6 +21,7 @@ import { resolveAgentsBin, bootstrapPath, runAgents, AgentsBinNotFoundError } fr
 export interface ManagedProject {
   id: string;                                 // stable local id (= the project YAML slug)
   name: string;                               // label in sidebar + dispatch
+  description?: string;                       // one-line summary from the ProjectDef (shown in the project quickpick)
   path: string;                               // absolute local folder (root/defaultPath — the FIRST bound directory)
   repoSlug?: string;                          // "owner/repo" (repos[0].slug — the FIRST bound directory's repo)
   dirs: ManagedProjectDir[];                  // every directory bound to this project, root/defaultPath first
@@ -97,6 +98,7 @@ export function defToManaged(def: Record<string, unknown>): ManagedProject {
   return {
     id: name,
     name,
+    description: typeof def.description === 'string' ? def.description : undefined,
     path: expandedPath,
     repoSlug,
     dirs,

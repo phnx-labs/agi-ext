@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
-import { resolveProjectForCwd } from '../core/managedProjects';
+import { resolveProjectForCwd, readManagedProjects } from '../core/managedProjects';
 import { parseSpawnRequest, resolveSpawnSurface, SpawnRequest } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
@@ -375,6 +375,44 @@ async function pickLaunchHost(
   return picked ? { host: picked.host, cancelled: false } : { cancelled: true };
 }
 
+/**
+ * The project quickpick behind `New <Harness> (Pick Project)`. It reuses the one
+ * `agents projects list --json` consumer (readManagedProjects) rather than
+ * re-shelling the CLI, and returns the picked project's slug — which launchAgent
+ * threads through as `--project <slug>` so agents-cli owns the cwd on the
+ * auto-picked worker. A `cancelled` return aborts the launch; an empty project
+ * list surfaces a message and cancels rather than opening an agent with nowhere
+ * to land.
+ */
+async function pickProjectSlug(): Promise<{ slug?: string; cancelled: boolean }> {
+  let projects: Awaited<ReturnType<typeof readManagedProjects>>;
+  try {
+    projects = await readManagedProjects();
+  } catch (e) {
+    vscode.window.showErrorMessage(
+      `Couldn't load your projects: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return { cancelled: true };
+  }
+  if (projects.length === 0) {
+    const action = await vscode.window.showInformationMessage(
+      'No projects defined yet. Add one in the Agents dashboard, then try again.',
+      'Open Dashboard',
+    );
+    if (action === 'Open Dashboard') vscode.commands.executeCommand('agents.configure');
+    return { cancelled: true };
+  }
+  const picked = await vscode.window.showQuickPick(
+    projects.map(project => ({
+      label: `$(folder) ${project.name}`,
+      description: project.description || project.repoSlug || '',
+      slug: project.id,
+    })),
+    { title: 'Land the agent in project…', placeHolder: 'Pick a project (runs on an auto-selected worker)' },
+  );
+  return picked ? { slug: picked.slug, cancelled: false } : { cancelled: true };
+}
+
 // --- The one launch engine --------------------------------------------------
 // Every "New agent" command routes through launchAgent. The command is just a
 // route: it fills in whichever of {agentKey, host} the user pinned, and the
@@ -451,6 +489,14 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
     if (picked.cancelled) return;
     host = picked.host;
   }
+  // (Pick Project): the only prompt is the project quickpick — no host prompt.
+  // A cancel (or an empty/failed project list) aborts the launch entirely.
+  let pickedProjectSlug: string | undefined;
+  if (opts.pickProject) {
+    const picked = await pickProjectSlug();
+    if (picked.cancelled) return;
+    pickedProjectSlug = picked.slug;
+  }
   const automatic = !opts.agentKey;
   const cwd = getActiveWorkspaceFolder()?.uri.fsPath;
   const builtIn = opts.agentKey ? getBuiltInByKey(opts.agentKey) : undefined;
@@ -473,8 +519,10 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
     ? settings.getDefaultModel(context, builtIn.key as Parameters<typeof settings.getDefaultModel>[1])
     : undefined;
   // `--project` owns the working directory end-to-end, so it and cwd are
-  // mutually exclusive (buildAgentLaunchCommand throws if both are passed).
-  const projectSlug = cwd ? await resolveProjectForCwd(cwd) : undefined;
+  // mutually exclusive (buildAgentLaunchCommand throws if both are passed). A
+  // (Pick Project) launch supplies the slug explicitly and overrides the
+  // cwd-derived match — the user chose where to land, not where the window is.
+  const projectSlug = pickedProjectSlug ?? (cwd ? await resolveProjectForCwd(cwd) : undefined);
   // "Local" must cover BOTH an explicit `local: true` (the per-harness New X
   // commands) and a Pick Host prompt the user answered with "This Mac", which
   // returns no host. Passing plain `opts.local` there leaves it undefined, the
@@ -1535,9 +1583,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Per-harness launch commands — every one is a thin route into launchAgent.
   // For each non-shell agent:
-  //   New <Harness>              -> configured device target + balanced account/version
-  //   New <Harness> (Pick Host)  -> device picker, then account/version picker
-  //   New <Harness> (Auto)       -> automatic device + balanced account/version
+  //   New <Harness>                 -> configured device target + balanced account/version
+  //   New <Harness> (Pick Host)     -> device picker, then account/version picker
+  //   New <Harness> (Auto)          -> automatic device + balanced account/version
+  //   New <Harness> (Pick Project)  -> project quickpick, then automatic device + balanced
   for (const def of BUILT_IN_AGENTS) {
     if (def.key === 'shell') {
       // Shell is a plain terminal — no balancing, no host offload.

@@ -33,9 +33,17 @@ export function resolveLaunchTarget(value: unknown): LaunchTarget {
 export interface LaunchTargetOpts {
   local?: boolean;
   pickHost?: boolean;
+  /**
+   * Show a project quickpick and land the agent in the picked project's path on
+   * an auto-selected worker (`--device auto` + `--project <slug>`). It never
+   * prompts for a host — placement stays automatic — so it is orthogonal to
+   * {@link pickHost}. launchAgent resolves the slug from the pick and threads it
+   * through as the launch's `--project`; the CLI owns the remote cwd from there.
+   */
+  pickProject?: boolean;
 }
 
-export type HarnessLaunchVariant = 'default' | 'pick-host' | 'auto';
+export type HarnessLaunchVariant = 'default' | 'pick-host' | 'auto' | 'pick-project';
 
 /** Launch choices layered on top of placement for per-harness palette commands. */
 export interface HarnessLaunchOpts extends LaunchTargetOpts {
@@ -71,11 +79,14 @@ export function launchOptsForTarget(target: LaunchTarget): LaunchTargetOpts {
 }
 
 /**
- * Keep the three per-harness command variants distinct:
+ * Keep the four per-harness command variants distinct:
  *
  * - default: configured placement, balanced account — no prompt at all;
  * - pick-host: ask for the device, then ask which account on it to run;
- * - auto: let agents-cli choose both the device and account without a prompt.
+ * - auto: let agents-cli choose both the device and account without a prompt;
+ * - pick-project: auto device + balanced account (like auto), but first ask
+ *   which project to land in — the only prompt is the project quickpick, never
+ *   a host prompt.
  *
  * The bare `New <Harness>` is the command bound to a keybinding and pressed
  * dozens of times a day, so it must open an agent, not a question: RUSH-2961
@@ -94,11 +105,13 @@ export function launchOptsForHarnessCommand(
       return { pickHost: true, accountPicker: true };
     case 'auto':
       return {};
+    case 'pick-project':
+      return { pickProject: true };
   }
 }
 
 /**
- * The three registered commands for one harness. The default target is read by
+ * The four registered commands for one harness. The default target is read by
  * the callback so a settings change applies without reloading the editor.
  */
 export function harnessLaunchRegistrations(
@@ -124,6 +137,11 @@ export function harnessLaunchRegistrations(
       commandId: `${commandId}Auto`,
       variant: 'auto',
       launchOptions: () => ({ agentKey, ...launchOptsForHarnessCommand('auto') }),
+    },
+    {
+      commandId: `${commandId}PickProject`,
+      variant: 'pick-project',
+      launchOptions: () => ({ agentKey, ...launchOptsForHarnessCommand('pick-project') }),
     },
   ];
 }
