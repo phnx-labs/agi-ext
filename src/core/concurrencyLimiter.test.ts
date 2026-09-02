@@ -48,6 +48,39 @@ describe('createConcurrencyLimiter', () => {
     expect(limiter.queued).toBe(0);
   });
 
+  test('admits queued tasks in FIFO order — the oldest-queued tab is never starved', async () => {
+    // cap=1 makes admission fully deterministic: task 0 runs, 1-3 queue, and each
+    // release must admit the NEXT-oldest. A LIFO regression (waiters.pop()) would
+    // admit [0,3,...] and fail at the first release. Flush with a real macrotask
+    // (setTimeout) so the full release→admit→exec microtask chain settles.
+    const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+    const limiter = createConcurrencyLimiter(1);
+    const startOrder: number[] = [];
+    const gates = Array.from({ length: 4 }, () => deferred<void>());
+    const all = gates.map((gate, i) =>
+      limiter.run(async () => {
+        startOrder.push(i); // records EXEC-start order, not gate-resolution order
+        await gate.promise;
+      }),
+    );
+
+    await flush();
+    expect(startOrder).toEqual([0]); // only the first is admitted
+
+    gates[0].resolve();
+    await flush();
+    expect(startOrder).toEqual([0, 1]); // FIFO: 1 next, not 3
+
+    gates[1].resolve();
+    await flush();
+    expect(startOrder).toEqual([0, 1, 2]);
+
+    gates[2].resolve();
+    gates[3].resolve();
+    await Promise.all(all);
+    expect(startOrder).toEqual([0, 1, 2, 3]);
+  });
+
   test('a task that throws frees its slot (no deadlock)', async () => {
     const limiter = createConcurrencyLimiter(1);
     await expect(limiter.run(async () => { throw new Error('boom'); })).rejects.toThrow('boom');
