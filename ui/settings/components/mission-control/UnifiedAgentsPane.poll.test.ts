@@ -211,7 +211,12 @@ test('follower with a reset renders the genuine empty state', () => {
     sessionStreamDegraded: false,
   }))
 
-  expect(html).toContain('No sessions match')
+  // With genuinely zero sessions, show a clean empty state — NOT "No sessions
+  // match" (nothing to match against) and NOT the filter toolbar chrome, which is
+  // dead weight when there is nothing to filter (the empty-sidebar fix).
+  expect(html).toContain('No agent sessions yet')
+  expect(html).not.toContain('No sessions match')
+  expect(html).not.toContain('sx-filters')
   expect(html).not.toContain('Session data unavailable')
 })
 
