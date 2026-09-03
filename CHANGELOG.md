@@ -4,6 +4,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.361] - 2026-09-03
+
+- **The empty Dispatch bar is gone from the Fleet view; Dispatch moved into the
+  top header (PHNX-3925).** With the center counter tabs removed (PHNX-3594) and
+  no task tab open, the `FloorSubtabs` strip collapsed to a blank full-width band
+  whose only content was the green Dispatch button stranded on the right — a
+  wasted toolbar row under the FLEET/BENCH/PANEL header. The strip now renders
+  only when at least one task tab is open, and the lime **Dispatch** button lives
+  in the top header, just right of the search box. Before: a full empty toolbar
+  band with a lone right-pinned Dispatch button. After: no band, Dispatch pinned
+  in the header where it is always reachable. The header button appears only on
+  the Fleet tab; opening a task tab still brings the sub-tab strip back.
+
 ## [0.9.360] - 2026-09-03
 
 - **The host badge moved off the agent tab title into the status bar, and shared

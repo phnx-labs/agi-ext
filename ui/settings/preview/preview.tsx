@@ -1092,6 +1092,7 @@ function Preview() {
               search=""
               onSearch={noop}
               throughputTokensPerSec={0}
+              onDispatch={noop}
             />
           </PreviewErrorBoundary>
         </div>
