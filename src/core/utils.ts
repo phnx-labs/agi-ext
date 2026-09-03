@@ -10,9 +10,9 @@ export const ANTIGRAVITY_TITLE = 'AG';
 export const GROK_TITLE = 'GK';
 export const KIMI_TITLE = 'KM';
 export const DROID_TITLE = 'DR';
-export const LABEL_MAX_WORDS = 5;
+const LABEL_MAX_WORDS = 5;
 
-export const KNOWN_PREFIXES = [CLAUDE_TITLE, CODEX_TITLE, GEMINI_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, ANTIGRAVITY_TITLE, GROK_TITLE, KIMI_TITLE, DROID_TITLE];
+const KNOWN_PREFIXES = [CLAUDE_TITLE, CODEX_TITLE, GEMINI_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, ANTIGRAVITY_TITLE, GROK_TITLE, KIMI_TITLE, DROID_TITLE];
 
 // Agent type for session operations
 export type SessionAgentType = 'claude' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'antigravity' | 'grok' | 'kimi' | 'droid';

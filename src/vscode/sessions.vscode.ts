@@ -323,19 +323,9 @@ export async function discoverRecentSessions(
   return sessions.slice(0, limit);
 }
 
-export async function getSessionContent(session: AgentSession): Promise<string> {
-  try {
-    const content = await fs.readFile(session.path, 'utf-8');
-    return content.toString();
-  } catch (error) {
-    console.error(`[SESSIONS] Failed to read ${session.path}`, error);
-    return '';
-  }
-}
-
 // --- Session path resolution by sessionId ---
 
-export async function findFileBySessionId(dir: string, sessionId: string, depth: number): Promise<string | undefined> {
+async function findFileBySessionId(dir: string, sessionId: string, depth: number): Promise<string | undefined> {
   if (depth < 0) return undefined;
   const entries = await safeReaddir(dir);
 

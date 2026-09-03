@@ -470,10 +470,6 @@ interface DispatchSessionPolicy {
   mode: DispatchModeMsg;
 }
 const dispatchSessionPolicies = new Map<string, DispatchSessionPolicy>();
-export function getDispatchSessionPolicy(sessionId: string): DispatchSessionPolicy | undefined {
-  return dispatchSessionPolicies.get(sessionId);
-}
-
 // Watch a plan-mode Claude session for an ExitPlanMode tool call and post
 // `planReady` to the webview once, so the Floor can show the plan for approval.
 // Polls `agents sessions <id> --json --local` (the CLI's canonical session
@@ -1059,7 +1055,7 @@ async function resolveSlotAlias(slot: QuickLaunchSlot | undefined): Promise<bool
   return true;
 }
 
-export async function resolveQuickLaunchAliases(
+async function resolveQuickLaunchAliases(
   context: vscode.ExtensionContext,
   settings: AgentSettings,
 ): Promise<AgentSettings> {
@@ -1081,10 +1077,6 @@ let settingsPanel: vscode.WebviewPanel | undefined;
 let currentlySubscribedAgentType: string | null = null;
 
 // Notify settings panel when integration status changes
-export function notifyIntegrationStatus(provider: string, connected: boolean): void {
-  settingsPanel?.webview.postMessage({ type: 'integrationStatus', provider, connected });
-}
-
 // Clean up all session file watchers
 function cleanupSessionWatchers(): void {
   currentlySubscribedAgentType = null;
@@ -1223,7 +1215,7 @@ const AGENTS_CONFIG_PATH = path.join(AGENTS_CONFIG_DIR, 'config.json');
 const PROMPTS_PATH = path.join(AGENTS_CONFIG_DIR, 'prompts.json');
 
 // Write swarm config file with enabled agents
-export function writeSwarmConfig(enabledAgents: SwarmAgentType[]): void {
+function writeSwarmConfig(enabledAgents: SwarmAgentType[]): void {
   try {
     fs.mkdirSync(AGENTS_CONFIG_DIR, { recursive: true });
 
@@ -1466,14 +1458,6 @@ export function openPanelAndFocusQuickSpawn(context: vscode.ExtensionContext): v
 // re-reveals the tab. Re-posting the panel's real visibility on reconnect
 // unfreezes it. No-op when the panel is closed. Reuses the same message the
 // visibility listener posts — no new webview contract.
-export function resumeFloorPolling(): void {
-  if (!settingsPanel) return;
-  settingsPanel.webview.postMessage({
-    type: 'panelVisibility',
-    visible: settingsPanel.visible,
-  });
-}
-
 // Cache for agent inventories. agents view --json takes 4-6s because it hits
 // vendor APIs for usage stats. Shared 60s SWR with panel/dispatch ONLY — the
 // SnapshotDetector 4s tick does not call agents view (see monitor/snapshotDetector).
@@ -1526,7 +1510,7 @@ function invalidateAgentInventoryCache(): void {
 /**
  * Seed the device registry used alongside the canonical CLI session stream.
  */
-export async function seedFloorDataPipeline(context: vscode.ExtensionContext): Promise<void> {
+async function seedFloorDataPipeline(context: vscode.ExtensionContext): Promise<void> {
   floorDataContext = context;
   const persistedDevices = parseFloorDevicesSnapshot(context.globalState.get(FLOOR_DEVICES_KEY));
   if (persistedDevices) {

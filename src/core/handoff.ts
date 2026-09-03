@@ -212,7 +212,7 @@ const toolStatsInFlight = new Map<string, Promise<SessionToolStats>>();
 
 // Exported for tests. `compute` is the real work (shelling out to the agents
 // CLI in production); the cache and in-flight machinery are exercised directly.
-export async function getCachedToolStats(
+async function getCachedToolStats(
   sessionId: string,
   sessionFilePath: string | undefined,
   compute: () => Promise<SessionToolStats>,

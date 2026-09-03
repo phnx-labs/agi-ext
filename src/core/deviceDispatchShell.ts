@@ -14,7 +14,7 @@ export function encodePowershellScript(script: string): string {
 }
 
 /** Shell-quote for bash -lc outer payload (single-quote style). */
-export function bashOuterQuote(s: string): string {
+function bashOuterQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 

@@ -8,10 +8,10 @@
 // No transcript parsing here — the CLI computed every field; we only reshape its
 // JSON. This keeps the extension a presentation layer (AGENTS.md rule #3).
 
-export type FileOp = 'created' | 'modified' | 'deleted'
+type FileOp = 'created' | 'modified' | 'deleted'
 export interface PreviewFileChange { path: string; op: FileOp }
 
-export interface PreviewSessionHeader {
+interface PreviewSessionHeader {
   id: string
   shortId: string
   agent: string
@@ -34,14 +34,14 @@ export interface PreviewSessionHeader {
   prUrl: string
 }
 
-export interface PreviewChangeCounts { created: number; modified: number; deleted: number }
-export interface PreviewSkill { name: string; count: number }
-export interface PreviewHook { name: string; event?: string; count: number; failed: number }
-export interface PreviewLink { kind: string; url: string; label: string }
-export interface PreviewToolCount { tool: string; count: number }
-export interface PreviewTest { runner: string; ok: boolean; passed?: number; failed?: number }
+interface PreviewChangeCounts { created: number; modified: number; deleted: number }
+interface PreviewSkill { name: string; count: number }
+interface PreviewHook { name: string; event?: string; count: number; failed: number }
+interface PreviewLink { kind: string; url: string; label: string }
+interface PreviewToolCount { tool: string; count: number }
+interface PreviewTest { runner: string; ok: boolean; passed?: number; failed?: number }
 
-export interface PreviewDigest {
+interface PreviewDigest {
   firstUser: string
   lastAssistant: string
   filesRead: number

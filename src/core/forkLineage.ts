@@ -22,7 +22,7 @@ export const FORK_LINEAGE_KEY = 'agents.forkLineage.v1';
 
 /** Ledger depth is the last ~20 sessions per machine, so a deeper history of
  *  edges can never be rendered. Keep enough to cover a heavy day and drop the rest. */
-export const FORK_LINEAGE_MAX = 60;
+const FORK_LINEAGE_MAX = 60;
 
 /**
  * Prepend an edge, newest first, capped. An edge is identified by its fork

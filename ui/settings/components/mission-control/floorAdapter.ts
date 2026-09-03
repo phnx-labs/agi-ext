@@ -382,7 +382,7 @@ export function deriveProject(
  * here — where the payload shape is known — keeps attributeSessionProject pure and
  * testable against hints rather than against the whole transport shape.
  */
-export function remoteProjectHints(r: RemoteSessionLike): SessionProjectHints {
+function remoteProjectHints(r: RemoteSessionLike): SessionProjectHints {
   return {
     cwd: r.cwd,
     worktreePath: r.worktreePath,
@@ -400,7 +400,7 @@ export function remoteProjectHints(r: RemoteSessionLike): SessionProjectHints {
  * seed it, so a cloud run on branch `agents-cli/x` folds onto the same `agents-cli`
  * bucket the local checkouts produced instead of minting a near-duplicate.
  */
-export function knownProjectNames(
+function knownProjectNames(
   sessions: RemoteSessionLike[],
   rules: ProjectRule[] = [],
   extra: string[] = [],
@@ -638,7 +638,7 @@ export function toFloorAgentFromUnified(
 }
 
 /** True when the CLI flagged the session, or last messages match rate-limit shapes. */
-export function detectSessionRateLimited(
+function detectSessionRateLimited(
   flagged: boolean | undefined,
   messages: string[],
   resp: string,
@@ -812,7 +812,7 @@ export function adaptUnified(
 }
 
 /** Presentation-only mapping of the CLI's canonical AttentionItem. */
-export function structuredQuestionFromAttention(attention: RemoteSessionLike['attention']): FloorAgent['question'] {
+function structuredQuestionFromAttention(attention: RemoteSessionLike['attention']): FloorAgent['question'] {
   const text = attention?.question?.text?.trim()
   if (!attention || !text) return null
   const choices = attention.question?.options ?? []

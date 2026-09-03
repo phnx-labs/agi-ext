@@ -123,7 +123,7 @@ async function findAgentsCli(): Promise<string> {
  * list to skip the registry read (the host picker's refresh path fetches once
  * and threads the same list through).
  */
-export async function discoverHosts(devices?: readonly DeviceRef[]): Promise<ReconciledHost[]> {
+async function discoverHosts(devices?: readonly DeviceRef[]): Promise<ReconciledHost[]> {
   const registered = devices ?? getRegisteredDevicesCache() ?? await listRegisteredDevices();
   const inputs: RegisteredDeviceInput[] = registered.map((d) => ({
     name: d.name,

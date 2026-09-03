@@ -16,7 +16,7 @@ import { isSensitiveEnvKey } from './terminals';
  * `session.todos`, mapped into the panel shape by `todoProgressFromCli`.
  */
 
-export type ActivityType =
+type ActivityType =
   | 'reading'     // file_read, Read, Glob, Grep
   | 'editing'     // file_write, Edit, Write
   | 'running'     // bash command
@@ -32,7 +32,7 @@ export interface CurrentActivity {
 
 type AgentType = 'claude' | 'codex' | 'gemini';
 
-export type TodoProgressStatus = 'pending' | 'in_progress' | 'completed';
+type TodoProgressStatus = 'pending' | 'in_progress' | 'completed';
 
 /** One item of an agent's task checklist, parsed from its latest plan write. */
 export interface TodoProgressItem {
@@ -429,7 +429,7 @@ function truncatePath(path: string, maxLen: number = 40): string {
  * Scrub sensitive environment variables from a command string.
  * Replaces KEY=value with KEY=*** for sensitive keys.
  */
-export function scrubSensitiveCommand(command: string): string {
+function scrubSensitiveCommand(command: string): string {
   if (!command) return command;
   // Match environment variable assignments like KEY=value, KEY="value", or KEY='value'
   const envVarRegex = /\b([A-Za-z_][A-Za-z0-9_]*)=('[^']*'|"[^"]*"|[^\s]+)/g;

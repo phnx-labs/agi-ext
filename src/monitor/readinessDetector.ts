@@ -45,9 +45,9 @@ import {
 export const SHELL_ADOPTION_POLL_MS = 2000;
 export const SHELL_ADOPTION_MAX_LIFETIME_MS = 10 * 60 * 1000;
 export const SHELL_ADOPTION_TREE_DEPTH = 5;
-export const SHELL_ADOPTION_SESSION_LOOKBACK_MS = 60 * 1000;
+const SHELL_ADOPTION_SESSION_LOOKBACK_MS = 60 * 1000;
 
-export const SESSION_UUID_RE =
+const SESSION_UUID_RE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const READINESS_ORDER: readonly ReadinessEventName[] = [

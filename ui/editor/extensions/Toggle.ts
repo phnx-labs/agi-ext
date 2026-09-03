@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 
-export interface ToggleOptions {
+interface ToggleOptions {
   HTMLAttributes: Record<string, any>;
 }
 

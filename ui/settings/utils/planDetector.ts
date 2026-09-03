@@ -1,4 +1,4 @@
-export type PlanFileKind = 'html' | 'markdown'
+type PlanFileKind = 'html' | 'markdown'
 export type PlanFileSource = 'output' | 'worktree' | 'attachment'
 
 export interface PlanFile {

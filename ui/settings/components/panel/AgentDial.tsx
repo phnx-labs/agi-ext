@@ -13,14 +13,14 @@ const STRATEGY_CAPTIONS: Record<AgentRunStrategy, string> = {
   balanced: 'Distribute across healthy accounts, weighted by remaining capacity',
 }
 
-export interface AgentDialOption {
+interface AgentDialOption {
   key: string
   label: string
   caption?: string
   disabled?: boolean
 }
 
-export interface AgentDialMeta {
+interface AgentDialMeta {
   version?: string
   model?: string
   account?: string

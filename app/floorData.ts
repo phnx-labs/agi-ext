@@ -76,7 +76,7 @@ export function latestActivity(times: string[]): string {
   return best ?? new Date().toISOString()
 }
 
-export async function fetchLocalTasks() {
+async function fetchLocalTasks() {
   const byTask = new Map<string, ReturnType<typeof emptyDetail>[]>()
   for (const base of [SWARM_DIR, TEAMS_DIR]) {
     let ids: string[]
@@ -121,7 +121,7 @@ async function readRushToken(): Promise<string | null> {
   }
 }
 
-export async function fetchCloudTasks() {
+async function fetchCloudTasks() {
   const token = await readRushToken()
   if (!token) return []
   let data: { executions?: Array<Record<string, unknown>> }

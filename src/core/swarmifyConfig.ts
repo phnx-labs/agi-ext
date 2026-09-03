@@ -15,7 +15,7 @@ export interface ContextMapping {
   aliases: string[]; // agent-specific aliases (e.g., ['CLAUDE.md', 'GEMINI.md'])
 }
 
-export interface TasksConfig {
+interface TasksConfig {
   ralph: string;
   todo: string;
 }
@@ -51,9 +51,6 @@ export function getDefaultConfig(): AgentsConfig {
 export function isValidAgentId(value: string): value is AgentId {
   return isCliAgentId(value);
 }
-
-/** Re-exported so config consumers can enumerate the valid set. */
-export const VALID_AGENT_IDS: readonly AgentId[] = CLI_AGENT_IDS;
 
 export type ContextMergeStrategy = 'replace' | 'union';
 

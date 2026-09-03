@@ -42,7 +42,7 @@ export interface SessionSection {
 }
 
 /** Rolling window a Previous session must fall inside to appear by default. */
-export const PREVIOUS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const PREVIOUS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 /** Default cap on Previous rows shown before "Show 10 more" pages further back. */
 export const PREVIOUS_DEFAULT_LIMIT = 50
 /** How many older rows each "Show 10 more" reveals. */

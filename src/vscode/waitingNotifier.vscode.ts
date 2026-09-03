@@ -46,8 +46,3 @@ export function notifyNewlyWaiting(current: readonly terminals.TerminalDetail[])
     });
   }
 }
-
-/** Reset the edge-detection state (deactivation / tests). */
-export function resetWaitingNotifierState(): void {
-  waitingSessions = new Set<string>();
-}

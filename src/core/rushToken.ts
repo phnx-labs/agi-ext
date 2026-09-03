@@ -9,10 +9,6 @@ interface TokenCacheEntry {
 let cache: TokenCacheEntry | undefined;
 
 // Test seam: drop the cached token so each test starts from a cold read.
-export function resetRushTokenCache(): void {
-  cache = undefined;
-}
-
 // Read + parse the Rush access token from user.yaml, caching the parsed value
 // keyed by the file's mtime+size. The floor tab polls every 10s (plus bursts on
 // terminal open/close); without this the token file was read + regex-parsed

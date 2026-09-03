@@ -60,7 +60,7 @@ export {
 //   2. Local session metadata from agents-cli (topic, project, gitBranch,
 //      tokenCount) - enrichment only, agents-cli doesn't know pid liveness
 // Plus two auxiliary sources: cloud dispatches and team DAGs.
-export async function computeBriefing(_workspacePath?: string): Promise<ForemanDigest> {
+async function computeBriefing(_workspacePath?: string): Promise<ForemanDigest> {
   const live = readLiveTerminals();
   const liveIds = new Set(live.map((t) => t.sessionId));
 
@@ -213,7 +213,7 @@ function expand(kind: string): string {
 // Deep detail for one agent. Matches by label substring, kind, or session id
 // prefix. Reads the normalized event tail from agents-cli for the truly live
 // bits (last tool, last file, recent tool calls) that the lean briefing skips.
-export async function computeFocus(who: string, _workspacePath?: string): Promise<unknown> {
+async function computeFocus(who: string, _workspacePath?: string): Promise<unknown> {
   const q = (who ?? '').trim().toLowerCase();
   if (!q) return { error: 'no query' };
 

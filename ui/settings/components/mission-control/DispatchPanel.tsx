@@ -27,7 +27,7 @@ import type {
 // These types are local to the owned dispatch files (they mirror the backend
 // deviceRegistry/deviceHealth/repoIndex/repoSync shapes) so DispatchRequest and
 // dispatch.types stay untouched — the device path is additive.
-export type SyncPolicy = 'off' | 'safe' | 'aggressive'
+type SyncPolicy = 'off' | 'safe' | 'aggressive'
 
 /** One attached ticket flattened for the draft-prompt round-trip (host reads these). */
 export interface DraftTicketPayload {
@@ -56,7 +56,7 @@ export interface DispatchDevice {
   loadAvg1?: number
 }
 
-export interface DispatchDeviceProject {
+interface DispatchDeviceProject {
   name: string
   relPath: string
 }

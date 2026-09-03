@@ -29,7 +29,7 @@ import {
 } from './protocol';
 
 /** Lookup key for resolving a broadcast tuple back to a local terminal. */
-export interface TerminalKey {
+interface TerminalKey {
   pid?: number | null;
   sessionId?: string | null;
 }

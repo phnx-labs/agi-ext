@@ -31,7 +31,7 @@ const MIGRATED_KEY = 'prewarm.migratedFromGlobal';
 /**
  * Get all terminal-session mappings
  */
-export function getMappings(context: vscode.ExtensionContext): TerminalSessionMapping[] {
+function getMappings(context: vscode.ExtensionContext): TerminalSessionMapping[] {
   return context.workspaceState.get<TerminalSessionMapping[]>(MAPPINGS_KEY, []);
 }
 

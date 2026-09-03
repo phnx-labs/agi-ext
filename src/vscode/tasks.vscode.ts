@@ -152,11 +152,3 @@ export async function fetchAllTasks(
   const result = await listTickets(enabledSources, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
   return { tasks: result.tickets, cycleInfo: result.cycleInfo };
 }
-
-export async function fetchTasksGrouped(
-  context: vscode.ExtensionContext,
-  enabledSources: TaskSourceSettings
-): Promise<Map<TaskSource, UnifiedTask[]>> {
-  const { tasks } = await fetchAllTasks(context, enabledSources);
-  return groupTasksBySource(tasks);
-}

@@ -261,9 +261,3 @@ export async function removeHost(name: string): Promise<void> {
   await runAgents(`hosts remove ${shellArg(name)}`, { timeout: 15_000 });
   hostCache.delete(name);
 }
-
-/** Drop a cached inventory so the next fetch re-probes (used after config changes). */
-export function invalidateHostInventory(host?: string): void {
-  if (host) hostCache.delete(host);
-  else hostCache.clear();
-}

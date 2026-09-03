@@ -14,7 +14,7 @@ import {
  * from the one-shot watchdog socket (`~/.agents/.tmp/watchdog.sock`) so this
  * parallel pub/sub channel never disturbs the existing request/reply bridge.
  */
-export const MONITOR_SOCKET_PATH = path.join(
+const MONITOR_SOCKET_PATH = path.join(
   os.homedir(),
   '.agents',
   '.tmp',

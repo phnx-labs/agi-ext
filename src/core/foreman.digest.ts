@@ -32,7 +32,7 @@ export interface ForemanTerminal {
 // Claude, no label"), so a null that reaches the payload gets spoken aloud.
 // id is an 8-char session prefix: enough for a follow-up focus() call,
 // short enough that the model won't try to read a UUID.
-export interface ForemanAgentDigest {
+interface ForemanAgentDigest {
   id: string;
   kind: string;
   elapsed: string;
@@ -52,7 +52,7 @@ export interface ForemanAgentDigest {
 // Aggregate for agents with nothing to report (no task, label, or tool
 // activity) plus detailed-row overflow. The model speaks this as a count
 // ("plus eleven idle") instead of reciting empty rows one by one.
-export interface ForemanOthersRollup {
+interface ForemanOthersRollup {
   count: number;
   kinds: Record<string, number>;
   working: number;

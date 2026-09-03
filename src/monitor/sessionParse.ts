@@ -12,12 +12,12 @@ import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { createHash } from 'crypto';
-export type SessionAgentKind = 'claude' | 'codex' | 'gemini' | 'opencode';
+type SessionAgentKind = 'claude' | 'codex' | 'gemini' | 'opencode';
 import { runAgents } from '../core/agentsBin';
 
 const LINE_CAP = 100;
 
-export interface ParseResult {
+interface ParseResult {
   forkedFromId?: string;
   codexCwd?: string;
   geminiProjectHash?: string;
@@ -48,83 +48,6 @@ export function workspaceHash(workspacePath: string): string {
   return createHash('sha256').update(workspacePath).digest('hex');
 }
 
-/**
- * Read the head of a session file and extract the correlation metadata. JSON
- * agents (gemini/opencode) read the whole file; JSONL agents (claude/codex)
- * scan up to LINE_CAP lines for the first relevant record.
- */
-export async function parseSessionHead(
-  file: string,
-  agentType: SessionAgentKind,
-): Promise<ParseResult> {
-  const result: ParseResult = {};
-  if (agentType === 'gemini' || agentType === 'opencode') {
-    try {
-      const raw = await fs.promises.readFile(file, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (agentType === 'gemini') {
-        if (typeof parsed?.projectHash === 'string') {
-          result.geminiProjectHash = parsed.projectHash;
-        }
-        if (typeof parsed?.sessionId === 'string') {
-          result.geminiSessionId = parsed.sessionId;
-        }
-      } else {
-        if (typeof parsed?.directory === 'string') {
-          result.opencodeDirectory = parsed.directory;
-        }
-        if (typeof parsed?.id === 'string') {
-          result.opencodeSessionId = parsed.id;
-        }
-      }
-    } catch {
-      /* ignore malformed json */
-    }
-    return result;
-  }
-
-  let stream: fs.ReadStream | undefined;
-  let rl: readline.Interface | undefined;
-  let count = 0;
-  try {
-    stream = fs.createReadStream(file, { encoding: 'utf-8' });
-    rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-    for await (const line of rl) {
-      if (++count > LINE_CAP) break;
-      if (!line.trim()) continue;
-      let parsed: any;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (agentType === 'claude') {
-        const forked = parsed?.forkedFrom?.sessionId;
-        if (typeof forked === 'string' && forked.length > 0) {
-          result.forkedFromId = forked;
-          break;
-        }
-      } else {
-        if (parsed?.type === 'session_meta') {
-          const cwd = parsed?.payload?.cwd;
-          if (typeof cwd === 'string') result.codexCwd = cwd;
-          break;
-        }
-        if (parsed?.payload?.cwd && typeof parsed.payload.cwd === 'string') {
-          result.codexCwd = parsed.payload.cwd;
-          break;
-        }
-      }
-    }
-  } catch {
-    /* ignore transient read errors (deleted/rotated files) */
-  } finally {
-    rl?.close();
-    stream?.destroy();
-  }
-  return result;
-}
-
 // --- Session roots (machine-wide, not workspace-keyed) --------------------
 
 export type AgentRootKind = SessionAgentKind | 'cursor' | 'antigravity' | 'grok' | 'kimi' | 'droid';
@@ -132,7 +55,7 @@ export type AgentRootKind = SessionAgentKind | 'cursor' | 'antigravity' | 'grok'
 let cachedClaudeRoots: string[] | undefined;
 
 /** ~/.claude/projects plus every installed version's projects dir (cached). */
-export function claudeProjectRoots(): string[] {
+function claudeProjectRoots(): string[] {
   if (cachedClaudeRoots) return cachedClaudeRoots;
   const home = homeDir();
   const roots = [path.join(home, '.claude', 'projects')];
@@ -175,7 +98,7 @@ export function agentSessionRoots(agentKey: AgentRootKind): string[] {
   }
 }
 
-export interface WatcherRoot {
+interface WatcherRoot {
   root: string;
   agentType: SessionAgentKind;
 }
@@ -186,7 +109,7 @@ export interface WatcherRoot {
  * This is the degraded path for a machine without agents-cli; the watcher
  * normally configures itself from watcherRootsFromCli() below.
  */
-export function watcherRoots(): WatcherRoot[] {
+function watcherRoots(): WatcherRoot[] {
   const home = homeDir();
   const roots: WatcherRoot[] = [];
   for (const root of claudeProjectRoots()) roots.push({ root, agentType: 'claude' });
@@ -203,55 +126,4 @@ export function watcherRoots(): WatcherRoot[] {
 interface CliSessionRootsEntry {
   agent?: string;
   dirs?: unknown[];
-}
-
-/**
- * Watcher roots from the CLI's own discovery table (`agents sessions --roots
- * --json`, issue #741) — the exact directories `agents sessions` scans, so the
- * watcher stays in lockstep when an agent's on-disk layout changes (the
- * hardcoded list kept watching ~/.gemini/sessions after gemini moved its
- * transcripts to ~/.gemini/tmp). Roots for agents whose transcripts this
- * monitor cannot parse (antigravity, droid, kimi) are skipped. OpenCode is
- * appended from the local default: the CLI does not scan opencode transcripts,
- * so it never appears in --roots. Falls back to watcherRoots() when the CLI is
- * missing or the payload is unusable.
- */
-export async function watcherRootsFromCli(): Promise<WatcherRoot[]> {
-  let stdout: string;
-  try {
-    ({ stdout } = await runAgents('sessions --roots --json', { timeout: 15_000 }));
-  } catch {
-    return watcherRoots();
-  }
-  let entries: CliSessionRootsEntry[];
-  try {
-    const parsed = JSON.parse(stdout);
-    entries = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return watcherRoots();
-  }
-  const roots: WatcherRoot[] = [];
-  for (const entry of entries) {
-    const agent = entry?.agent;
-    if (agent !== 'claude' && agent !== 'codex' && agent !== 'gemini') continue;
-    for (const dir of entry.dirs ?? []) {
-      if (typeof dir === 'string' && dir) roots.push({ root: dir, agentType: agent });
-    }
-  }
-  if (roots.length === 0) return watcherRoots();
-  roots.push({
-    root: path.join(homeDir(), '.local', 'share', 'opencode', 'storage', 'session'),
-    agentType: 'opencode',
-  });
-  return roots;
-}
-
-/** Filename filter mirroring sessionTracker.onRename: jsonl for claude/codex, json otherwise. */
-export function isSessionFilename(filename: string, agentType: SessionAgentKind): boolean {
-  const isJsonl = agentType === 'claude' || agentType === 'codex';
-  return isJsonl ? filename.endsWith('.jsonl') : filename.endsWith('.json');
-}
-
-export function __clearRootCacheForTests(): void {
-  cachedClaudeRoots = undefined;
 }

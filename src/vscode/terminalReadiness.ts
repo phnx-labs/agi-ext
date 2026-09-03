@@ -222,7 +222,7 @@ export function resetAfterAgentExit(terminal: vscode.Terminal): void {
 // Arm agentReady detection. Call this right after sending the agent launch
 // command. Detection is the process-state probe (stable 'S' plus minimum
 // child runtime).
-export type FastPathAgentKey = AgentLauncherKey;
+type FastPathAgentKey = AgentLauncherKey;
 export { detectAgentKeyFromArgs, extractSessionIdFromArgs };
 
 export interface ArmAgentOptions {
@@ -270,7 +270,7 @@ function defaultTimeoutFor(event: ReadinessEvent): number | undefined {
   }
 }
 
-export function disposeTerminal(terminal: vscode.Terminal): void {
+function disposeTerminal(terminal: vscode.Terminal): void {
   const r = registry.get(terminal);
   if (!r) return;
   registry.delete(terminal);

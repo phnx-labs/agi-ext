@@ -73,7 +73,7 @@ function extractTerminalIdentificationOptions(terminal: vscode.Terminal): Termin
   };
 }
 
-export type TerminalApprovalStatus = 'pending' | 'approved' | 'running' | 'complete' | 'rejected';
+type TerminalApprovalStatus = 'pending' | 'approved' | 'running' | 'complete' | 'rejected';
 
 // Terminal entry following API.md
 export interface EditorTerminal {
@@ -110,12 +110,12 @@ type StatusBarLabelsStorage = { [pid: number]: string };
 // Re-export PersistedSession from sessions.persist for external use
 export type { PersistedSession } from '../core/sessions.persist';
 
-export function loadStatusBarLabels(context: vscode.ExtensionContext): StatusBarLabelsStorage {
+function loadStatusBarLabels(context: vscode.ExtensionContext): StatusBarLabelsStorage {
   const stored = context.globalState.get<StatusBarLabelsStorage>(STATUS_BAR_LABELS_KEY);
   return stored || {};
 }
 
-export async function saveStatusBarLabel(
+async function saveStatusBarLabel(
   context: vscode.ExtensionContext,
   pid: number,
   label: string | undefined
@@ -126,16 +126,6 @@ export async function saveStatusBarLabel(
   } else {
     delete stored[pid];
   }
-  await context.globalState.update(STATUS_BAR_LABELS_KEY, stored);
-}
-
-export async function removeStatusBarLabel(
-  context: vscode.ExtensionContext,
-  pid: number | undefined
-): Promise<void> {
-  if (pid === undefined) return;
-  const stored = loadStatusBarLabels(context);
-  delete stored[pid];
   await context.globalState.update(STATUS_BAR_LABELS_KEY, stored);
 }
 
@@ -166,10 +156,6 @@ export function pushClosedSession(session: ClosedSession): void {
 
 export function popClosedSession(): ClosedSession | undefined {
   return recentlyClosedSessions.shift();
-}
-
-export function getRecentlyClosedSessions(): readonly ClosedSession[] {
-  return recentlyClosedSessions;
 }
 
 // Two-map architecture (API.md)
@@ -888,23 +874,6 @@ export function countRunning(): RunningCounts {
 
 // Accurate running counts that verify terminals have active sessions with messages.
 // Falls back to countRunning() for shell terminals and unknown terminals.
-export async function countActive(workspacePath?: string): Promise<RunningCounts> {
-  const openCounts = countRunning();
-  const activeCounts: RunningCounts = { ...openCounts, custom: { ...openCounts.custom } };
-
-  const agentKeys = ['claude', 'codex', 'gemini', 'opencode', 'cursor'] as const;
-  const checks = agentKeys
-    .filter(key => openCounts[key] > 0)
-    .map(async (key) => {
-      const details = await getTerminalsByAgentType(key, workspacePath);
-      const active = details.filter(d => d.messageCount && d.messageCount > 0).length;
-      activeCounts[key] = active;
-    });
-
-  await Promise.all(checks);
-  return activeCounts;
-}
-
 // Terminal detail for UI display
 export interface TerminalDetail {
   id: string;
@@ -1317,7 +1286,7 @@ export function buildPersistedSessions(): sessionsPersist.PersistedSession[] {
 }
 
 // Persist all current sessions for a workspace
-export function persistSessions(workspacePath: string): void {
+function persistSessions(workspacePath: string): void {
   const sessions = buildPersistedSessions();
   sessionsPersist.saveWorkspaceSessions(workspacePath, sessions, true);
 }

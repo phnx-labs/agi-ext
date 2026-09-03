@@ -4,7 +4,7 @@ export const RESOURCE_KINDS = [
   'commands', 'skills', 'hooks', 'mcp', 'rules', 'plugins', 'workflows', 'subagents',
 ] as const;
 
-export type ResourceKind = (typeof RESOURCE_KINDS)[number];
+type ResourceKind = (typeof RESOURCE_KINDS)[number];
 
 export interface AgentResourceRepo {
   repo: string;

@@ -104,7 +104,7 @@ export type SkillName =
   | 'srecap'
   | 'simagine';
 
-export interface SkillDefinition {
+interface SkillDefinition {
   name: SkillName;
   description: string;
   assets: {
@@ -566,7 +566,7 @@ async function setupSwarmIntegrationForAgents(
 
 
 // Types for task listing
-export interface AgentMeta {
+interface AgentMeta {
   agent_id: string;
   task_name: string;
   agent_type: string;

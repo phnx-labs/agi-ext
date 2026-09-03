@@ -184,12 +184,12 @@ function pairForksWithin(day: RecapDay): void {
 // Wire the final field names here — not in SessionsPane.
 // =============================================================================
 
-export type RecapSource = 'agent recap' | 'last line' | 'renamed'
+type RecapSource = 'agent recap' | 'last line' | 'renamed'
 export type UserPromptKind = 'text' | 'image' | 'command' | 'skill'
-export type RecapSourceClass = 'agent' | 'last' | 'rename'
-export type SessionLive = 'run' | 'idle' | 'done' | 'orphan'
+type RecapSourceClass = 'agent' | 'last' | 'rename'
+type SessionLive = 'run' | 'idle' | 'done' | 'orphan'
 
-export type RecapSourceWire =
+type RecapSourceWire =
   | RecapSource
   | 'agent'
   | 'last'
@@ -320,7 +320,7 @@ export function harnessLabel(abbr: AgentAbbr): string {
   return `${HARNESS_BY_ABBR[abbr] ?? 'Agent'} ›`
 }
 
-export function normalizeRecapSource(raw: RecapSourceWire | null | undefined): RecapSource | null {
+function normalizeRecapSource(raw: RecapSourceWire | null | undefined): RecapSource | null {
   if (!raw) return null
   if (raw === 'agent' || raw === 'agent recap') return 'agent recap'
   if (raw === 'last' || raw === 'last line') return 'last line'
@@ -328,7 +328,7 @@ export function normalizeRecapSource(raw: RecapSourceWire | null | undefined): R
   return null
 }
 
-export function recapSourceClass(src: RecapSource): RecapSourceClass {
+function recapSourceClass(src: RecapSource): RecapSourceClass {
   if (src === 'agent recap') return 'agent'
   if (src === 'last line') return 'last'
   return 'rename'

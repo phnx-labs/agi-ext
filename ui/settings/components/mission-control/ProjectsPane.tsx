@@ -29,7 +29,7 @@ const VIOLET = '#8b8ce8'
 
 /** "3 running · 1 waiting · 12 backlog · 2 PRs · active 40m ago" — only non-zero
  *  parts; 'quiet' when the project has no live activity and no backlog. */
-export function rollupLine(r: ProjectRollup | undefined, nowMs: number): string {
+function rollupLine(r: ProjectRollup | undefined, nowMs: number): string {
   if (!r) return 'quiet'
   const parts: string[] = []
   if (r.run > 0) parts.push(`${r.run} running`)

@@ -11,24 +11,9 @@ import * as os from 'os';
 import { normalizeHost } from './remoteSessions';
 import { canonicalSessionId, isRolloutSessionStem } from './canonicalSessionId';
 import { sessionPresentationStore } from './sessionPresentationStore';
-
-/** Legacy exported timing constants retained for pure caller compatibility. */
-export const ACTIVE_MAP_TTL_LOCAL_MS = 3_000;
-/** Remote active feed TTL — one poll services all tabs on that host. */
-export const ACTIVE_MAP_TTL_REMOTE_MS = 8_000;
-/** Hard ceiling on the local CLI subprocess. */
-export const ACTIVE_MAP_TIMEOUT_LOCAL_MS = 5_000;
-/** Hard ceiling on a remote `--device` active fetch (SSH + CLI). */
-export const ACTIVE_MAP_TIMEOUT_REMOTE_MS = 10_000;
-
 const LOCAL_CACHE_KEY = '__local__';
 
 export type TerminalIdSessionMap = Map<string, string>;
-
-/** Test-only: reset the shared cache between unit tests. */
-export function resetSessionIdHydrateCacheForTests(): void {
-  // The canonical stream store owns freshness; there is no extension cache.
-}
 
 /**
  * Cache key for a tab's placement. Same-machine `--device <this-host>` collapses
