@@ -13,7 +13,7 @@
 
 import { FOREMAN_SYSTEM_PROMPT, FOREMAN_TOOLS, ForemanTool } from '../core/foreman.config';
 
-export const SMART_MODEL = 'gpt-4.1-mini';
+const SMART_MODEL = 'gpt-4.1-mini';
 const CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 // Bound on tool rounds in a single turn — a runaway model that keeps calling
 // tools without answering can't spin forever.
@@ -34,14 +34,14 @@ export function capHistory(messages: any[], max: number): any[] {
 
 // OpenAI Chat Completions nests our schema under `function`. FOREMAN_TOOLS is
 // already {type:'function',name,description,parameters}; this is the shallow wrap.
-export function adaptToolsForOpenAI(tools: ForemanTool[]) {
+function adaptToolsForOpenAI(tools: ForemanTool[]) {
   return tools.map((t) => ({
     type: 'function' as const,
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
 }
 
-export interface SmartTurnEvents {
+interface SmartTurnEvents {
   onText?: (delta: string) => void;                 // streamed assistant text
   onToolCall?: (name: string, args: unknown) => void;
   onStatus?: (status: 'thinking' | 'tool' | 'done' | 'error', detail?: string) => void;

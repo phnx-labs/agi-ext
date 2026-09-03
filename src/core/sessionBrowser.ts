@@ -27,7 +27,7 @@ export interface BrowsableSession {
   messageCount?: number;
 }
 
-export interface SessionBrowserGroupRow {
+interface SessionBrowserGroupRow {
   kind: 'group';
   /** Machine id this group covers. */
   machine: string;

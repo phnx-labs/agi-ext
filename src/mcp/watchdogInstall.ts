@@ -73,8 +73,3 @@ export function ensureWatchdogMcpInstalled(mcpServerPath: string): Promise<void>
   ).then(() => undefined);
   return installPromise;
 }
-
-/** Test-only: drop the memoized result so the next call re-probes. */
-export function __resetWatchdogInstallCache(): void {
-  installPromise = null;
-}

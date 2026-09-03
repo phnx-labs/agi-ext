@@ -13,7 +13,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-export const KNOWN_SHELLS = new Set([
+const KNOWN_SHELLS = new Set([
   'zsh', '-zsh', 'bash', '-bash', 'fish', '-fish', 'sh', '-sh',
 ]);
 
@@ -23,7 +23,7 @@ export const KNOWN_SHELLS = new Set([
 // idle machine with many terminals stops spinning `ps`/`pgrep` every 50-150ms.
 export const SHELL_PROBE_BASE_MS = 50;     // shellReady: first poll cadence
 export const IDLE_PROBE_BASE_MS = 150;     // prompt/agent: first poll cadence
-export const PROBE_BACKOFF_CAP_MS = 1000;  // never poll slower than this
+const PROBE_BACKOFF_CAP_MS = 1000;  // never poll slower than this
 export const PS_TIMEOUT_MS = 2000;
 
 // Debounce windows are wall-clock so backoff (variable poll cadence) never
@@ -45,7 +45,7 @@ export const AGENT_MIN_CHILD_RUNTIME_MS = 2500; // child has existed at least 2.
 
 // Hard cap on concurrent ps/pgrep probe subprocesses across every probe, so a
 // burst of terminal opens can't fork dozens of probes at once.
-export const MAX_CONCURRENT_PROBES = 8;
+const MAX_CONCURRENT_PROBES = 8;
 
 export function backoffMs(base: number, attempt: number): number {
   return Math.min(base * 2 ** attempt, PROBE_BACKOFF_CAP_MS);
@@ -55,7 +55,7 @@ let activeProbeCount = 0;
 const probeWaiters: Array<() => void> = [];
 
 /** Run `fn` under the shared concurrency gate so probes never fork unbounded. */
-export async function withProbeSlot<T>(fn: () => Promise<T>): Promise<T> {
+async function withProbeSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (activeProbeCount >= MAX_CONCURRENT_PROBES) {
     await new Promise<void>((res) => probeWaiters.push(res));
   }

@@ -11,7 +11,7 @@ export function parseLstart(stdout: string): number | undefined {
 // registration so kill/restart correlation can compare cached start times
 // instead of spawning pgrep + ps per dormant terminal on every session-file
 // event (#97).
-export function captureProcessStartTime(pid: number): Promise<number | undefined> {
+function captureProcessStartTime(pid: number): Promise<number | undefined> {
   return new Promise((resolve) => {
     execFile('ps', ['-p', String(pid), '-o', 'lstart='], (err, stdout) => {
       if (err) {
@@ -42,16 +42,3 @@ export async function resolveStartedAtMs(pid: number): Promise<number> {
 
 // Pick the item with the most recent (largest) start time. Items without a
 // captured start time are ignored. Returns undefined when none have one.
-export function pickNewestStartTime<T extends { startTimeMs?: number }>(
-  items: T[],
-): T | undefined {
-  let newest: { item: T; start: number } | undefined;
-  for (const item of items) {
-    const start = item.startTimeMs;
-    if (start === undefined) continue;
-    if (!newest || start > newest.start) {
-      newest = { item, start };
-    }
-  }
-  return newest?.item;
-}

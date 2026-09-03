@@ -3,7 +3,7 @@ import type { RunStrategy } from '../core/agents';
 import { buildForkSessionRequest } from '../core/forkSession';
 import { forkHostForSession, type SessionBrowserSessionRow } from '../core/sessionBrowser';
 
-export interface SessionBrowserRunResult {
+interface SessionBrowserRunResult {
   stdout: string;
   stderr: string;
 }
@@ -40,7 +40,7 @@ export async function loadBrowsableSessions(
   return parseSessionList(listed.stdout);
 }
 
-export class LatestSessionBrowserRequest {
+class LatestSessionBrowserRequest {
   private generation = 0;
 
   begin(): { current: () => boolean } {
@@ -140,7 +140,7 @@ export async function runSessionBrowserPicker<Item extends { row?: SessionBrowse
   });
 }
 
-export async function runPickedSessionFork(opts: {
+async function runPickedSessionFork(opts: {
   row: SessionBrowserSessionRow;
   localMachine: string;
   launch: (request: {

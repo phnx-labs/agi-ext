@@ -65,27 +65,6 @@ export function getQuickLaunchSlot(config: QuickLaunchConfig | undefined, key: Q
   return undefined;
 }
 
-export function setQuickLaunchSlot(
-  config: QuickLaunchConfig | undefined,
-  key: QuickLaunchSlotKey,
-  slot: QuickLaunchSlot | undefined,
-): QuickLaunchConfig {
-  const next: QuickLaunchConfig = {
-    ...(config || {}),
-    slots: { ...(config?.slots || {}) },
-  };
-  // Strip legacy mirror — slots map is the source of truth going forward.
-  delete next.slot1;
-  delete next.slot2;
-  delete next.slot3;
-  if (slot) {
-    next.slots![key] = slot;
-  } else {
-    delete next.slots![key];
-  }
-  return next;
-}
-
 // One-shot migration: fold legacy slot1/slot2/slot3 into the `slots` map.
 export function migrateLegacyQuickLaunchSlots(config: QuickLaunchConfig): boolean {
   let changed = false;

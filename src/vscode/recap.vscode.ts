@@ -51,7 +51,7 @@ export function stripGeminiToml(toml: string): string {
   return singleQuoted ? singleQuoted[1] : toml;
 }
 
-export async function readRecapTemplate(
+async function readRecapTemplate(
   extensionPath: string,
   agentType: RecapAgentType,
 ): Promise<string> {

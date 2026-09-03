@@ -113,13 +113,5 @@ export function exitSequenceFor(agentType: string): readonly string[] {
 
 // === Blocking Prompt Detection ===
 
-export type BlockedReason = 'trust_prompt' | 'auth_required' | 'rate_limit' | 'unknown_prompt';
-export type FailedReason = 'timeout' | 'cli_error' | 'parse_error' | 'cli_not_found';
-
-export interface PrewarmResult {
-  status: 'success' | 'blocked' | 'failed';
-  sessionId?: string;
-  blockedReason?: BlockedReason;
-  failedReason?: FailedReason;
-  rawOutput?: string;
-}
+type BlockedReason = 'trust_prompt' | 'auth_required' | 'rate_limit' | 'unknown_prompt';
+type FailedReason = 'timeout' | 'cli_error' | 'parse_error' | 'cli_not_found';

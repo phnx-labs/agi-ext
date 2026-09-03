@@ -19,7 +19,7 @@ export const READINESS_ORDER: readonly ReadinessEvent[] = [
   'agentReady',
 ];
 
-export interface ReadinessState {
+interface ReadinessState {
   tabReadyAt: number | null;
   shellReadyAt: number | null;
   promptReadyAt: number | null;

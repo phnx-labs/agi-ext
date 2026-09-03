@@ -23,10 +23,10 @@ export type { ProjectRule } from '../shared/project';
 export type RemotePhase = 'running' | 'idle' | 'waiting' | 'failed' | 'done';
 
 /** Why an agent handed control back — mirrors the CLI AwaitingReason. */
-export type RemoteAwaitReason = 'question' | 'plan_review' | 'permission';
+type RemoteAwaitReason = 'question' | 'plan_review' | 'permission';
 
 /** One discrete choice the agent offered (mirror of the CLI QuestionOption). */
-export interface RemoteQuestionOption {
+interface RemoteQuestionOption {
   label: string;
   description: string;
   /** Selection keystroke for a TUI prompt ('1' … or 'esc'); '' for a free-text choice. */
@@ -56,7 +56,7 @@ export interface RemoteAttention {
   question?: { text?: string; options?: Array<{ label?: string; description?: string; id?: string; deliveryKey?: string }> };
 }
 
-export interface RemotePullRequest {
+interface RemotePullRequest {
   url: string; number: number; title: string; state: 'open' | 'merged' | 'closed'; isDraft: boolean;
   ci: 'passed' | 'failed' | 'running' | null; review: 'approved' | 'changes_requested' | 'review_required' | null;
   mergeable: 'mergeable' | 'conflicting' | 'unknown'; readyToMerge: boolean;
@@ -148,7 +148,7 @@ export interface RosterDeviceLite {
  * `platform: 'unknown'`, which the CLI skips. Mirrors the set in the CLI's
  * `watchFleetFeed` so the two stay in lockstep.
  */
-export const DIALABLE_PEER_PLATFORMS: ReadonlySet<string> = new Set(['windows', 'linux', 'macos']);
+const DIALABLE_PEER_PLATFORMS: ReadonlySet<string> = new Set(['windows', 'linux', 'macos']);
 
 /**
  * The peer scopes the elected CLI feed will actually dial and therefore resolve
@@ -196,7 +196,7 @@ export interface RemoteSessionArtifact {
  * Carried verbatim so the Sessions surface runs the CLI's recommended command
  * instead of re-deriving one. null for a harness with no resume path.
  */
-export interface RemoteRecovery {
+interface RemoteRecovery {
   command: 'agents' | string;
   args: string[];
   cwd?: string;
@@ -846,7 +846,7 @@ export interface RawRecentSession {
  * flat RemoteRecovery the UI runs. Returns null for a non-resumable harness (the
  * CLI emits null) or a malformed payload, so the row renders no dead action.
  */
-export function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | null {
+function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | null {
   if (!raw || typeof raw !== 'object') return null;
   const command = asStr(raw.command);
   const args = Array.isArray(raw.args) ? raw.args.map((a) => asStr(a)).filter((a) => a.length > 0) : [];
@@ -1188,7 +1188,7 @@ export function parseSessionLabelSource(rawJson: string, sessionId?: string): Se
 }
 
 /** First non-synthetic user message in a `sessions <id> --json` events array. */
-export function topicFromUserEvents(events: unknown): string | null {
+function topicFromUserEvents(events: unknown): string | null {
   if (!Array.isArray(events)) return null;
   for (const item of events) {
     if (!item || typeof item !== 'object') continue;

@@ -4,8 +4,8 @@
 
 import { aggregateChecks, type CiStatus } from './prChecks';
 
-export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null;
-export type Mergeable = 'mergeable' | 'conflicting' | 'unknown';
+type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null;
+type Mergeable = 'mergeable' | 'conflicting' | 'unknown';
 
 export interface PrStatus {
   url: string;

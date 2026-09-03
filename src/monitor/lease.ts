@@ -18,7 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { isPidAlive } from '../core/liveness';
 
-export const LEASE_DIR = path.join(os.homedir(), '.agents', '.tmp');
+const LEASE_DIR = path.join(os.homedir(), '.agents', '.tmp');
 export const LEASE_FILE = path.join(LEASE_DIR, 'monitor-lease.json');
 
 export interface MonitorLease {

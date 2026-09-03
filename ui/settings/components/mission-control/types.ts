@@ -2,34 +2,7 @@ import type { AgentDetail, TaskSummary, TerminalDetail } from '../../types'
 
 // A "Swarm" in Mission Control is a TaskSummary from agents-cli teams.
 export type Swarm = TaskSummary
-export type SwarmAgent = AgentDetail
 export type Terminal = TerminalDetail
-
-export interface ActivityEvent {
-  t: string // relative time "3m 12s"
-  agent: string // agent id (claude/codex/…)
-  kind: 'tool' | 'read' | 'msg'
-  text: string
-  detail?: string
-}
-
-export function splitSwarms(tasks: TaskSummary[]): { active: TaskSummary[]; completed: TaskSummary[] } {
-  const active: TaskSummary[] = []
-  const completed: TaskSummary[] = []
-  for (const t of tasks) {
-    if (t.status_counts.running > 0) active.push(t)
-    else completed.push(t)
-  }
-  return { active, completed }
-}
-
-export function swarmShortId(taskName: string): string {
-  // Generate a stable short identifier from task name
-  let hash = 0
-  for (let i = 0; i < taskName.length; i++) hash = (hash * 31 + taskName.charCodeAt(i)) | 0
-  const n = Math.abs(hash) % 900 + 100
-  return `sw-${n}`
-}
 
 export function taskNameToTitle(taskName: string): string {
   // task_name is "task-id:description" or just a description

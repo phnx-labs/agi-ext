@@ -65,7 +65,7 @@ export interface ReportTuplesRequest {
   tuples: TerminalTuple[];
 }
 
-export interface SnapshotRequest {
+interface SnapshotRequest {
   op: typeof MONITOR_OP.snapshot;
 }
 

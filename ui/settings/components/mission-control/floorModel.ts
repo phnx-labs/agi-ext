@@ -61,7 +61,7 @@ export type AttentionKind =
 /** Terminal-tab prefix per agent CLI (ui utils is the reference map). */
 export type AgentAbbr = 'CC' | 'CX' | 'GX' | 'CR' | 'AG' | 'GK' | 'KM' | 'DR' | 'OC' | 'SH'
 
-export type StructuredQuestionKind = 'choice' | 'confirm' | 'destructive' | 'retry'
+type StructuredQuestionKind = 'choice' | 'confirm' | 'destructive' | 'retry'
 
 /**
  * Parsed from an agent's last response. Drives the structured-reply buttons
@@ -92,7 +92,7 @@ export interface StructuredQuestion {
   optionKeys?: string[]
 }
 
-export type TodoStatus = 'pending' | 'in_progress' | 'completed'
+type TodoStatus = 'pending' | 'in_progress' | 'completed'
 
 /** One item of an agent's task checklist, parsed from its latest TodoWrite call. */
 export interface TodoItem {
@@ -487,8 +487,8 @@ export function orderManagedProjects(
 // ---------- ticket view-model (Backlog) ----------
 
 export type TicketSource = 'LN' | 'GH'
-export type TicketPriority = 'urgent' | 'high' | 'med' | 'low'
-export type TicketStatus = 'todo' | 'in-progress' | 'blocked' | 'done'
+type TicketPriority = 'urgent' | 'high' | 'med' | 'low'
+type TicketStatus = 'todo' | 'in-progress' | 'blocked' | 'done'
 
 /** Mirrors prototype TICKETS (factory-floor.html:382-395); built from UnifiedTask. */
 export interface FloorTicket {
@@ -616,7 +616,7 @@ export const PRI_RANK: Record<TicketPriority, number> = {
  * Where a session was observed. 'this-mac' sightings (a local tab OR the local sweep)
  * are 'local'; only a genuinely different host is 'remote'. Cloud tasks are 'cloud'.
  */
-export type SessionOrigin = 'local' | 'remote' | 'cloud'
+type SessionOrigin = 'local' | 'remote' | 'cloud'
 
 /**
  * Raw identity signals for one observed session. Shaped to fit what the adapter has:
@@ -827,7 +827,7 @@ export function todoProgress(todos: ReadonlyArray<TodoItem>): { done: number; to
  * Deliverable key for one agent: ticket > PR > worktree slug > Unassigned.
  * Mirrors CLI `deriveOutcome` so Fleet and `agents feed` group the same way.
  */
-export function outcomeLabel(a: Pick<FloorAgent, 'ticket' | 'pr' | 'worktreeSlug'>): string {
+function outcomeLabel(a: Pick<FloorAgent, 'ticket' | 'pr' | 'worktreeSlug'>): string {
   if (a.ticket) return a.ticket
   if (a.pr) {
     const n = a.pr.replace(/^#/, '')
@@ -886,7 +886,7 @@ export function groupAgents(agents: FloorAgent[], by: FloorGroupBy): Map<string,
 
 /** Attention priority of one agent: its CLI attention kind's rank, or last when the
  *  CLI raised no attention. The needs-you surface sorts on this alone. */
-export function attentionRank(a: Pick<FloorAgent, 'attentionKind'>): number {
+function attentionRank(a: Pick<FloorAgent, 'attentionKind'>): number {
   return a.attentionKind ? ATTENTION_KIND_RANK[a.attentionKind] : Number.MAX_SAFE_INTEGER
 }
 

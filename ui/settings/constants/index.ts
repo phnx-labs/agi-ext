@@ -29,8 +29,6 @@ export const SOURCE_BADGES: Record<TaskSource, { label: string; color: string }>
 }
 
 // Reserved agent name prefixes (cannot be used for custom agents)
-export const RESERVED_NAMES = ['CC', 'CX', 'GX', 'OC', 'CR', 'SH', 'AG', 'GK', 'KM', 'DR']
-
 // Swarm agent display labels
 export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = {
   codex: 'Codex',
@@ -61,8 +59,6 @@ export const AGENT_INSTALL_INFO: Record<string, { command?: string; url?: string
 
 // agents-cli package for managing agent configurations
 export const AGENTS_CLI_PACKAGE = '@swarmify/agents-cli'
-export const AGENTS_CLI_INSTALL_COMMAND = `npm install -g ${AGENTS_CLI_PACKAGE}`
-
 // Map from agent title (CL, CX, etc.) to key (claude, codex, etc.)
 export const AGENT_TITLE_TO_KEY: Record<string, string> = {
   'CC': 'claude',
@@ -101,19 +97,6 @@ export const AGENT_KEY_TO_TITLE: Record<string, string> = {
 }
 
 // Notification-capable agents
-export const NOTIFICATION_AGENTS = [
-  { key: 'claude', name: 'Claude', supported: true },
-  { key: 'codex', name: 'Codex', supported: false },
-  { key: 'gemini', name: 'Gemini', supported: false },
-  { key: 'antigravity', name: 'Antigravity', supported: false },
-  { key: 'grok', name: 'Grok', supported: false },
-  { key: 'kimi', name: 'Kimi', supported: false },
-  { key: 'droid', name: 'Droid', supported: false },
-  { key: 'opencode', name: 'OpenCode', supported: false },
-  { key: 'cursor', name: 'Cursor', supported: false },
-  { key: 'shell', name: 'Shell', supported: false },
-]
-
 // Markdown rendering allowed tags
 export const TODO_MARKDOWN_ALLOWED_TAGS = [
   'a',

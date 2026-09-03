@@ -19,13 +19,13 @@ import { bootstrapPath, resolveAgentsBin } from '../core/agentsBin';
 
 // --- CLI-backed enable/disable ----------------------------------------------
 
-export type WatchdogCliAction = 'on' | 'off';
+type WatchdogCliAction = 'on' | 'off';
 
 /**
  * The exec seam (injected by tests): a promisified `child_process.execFile` —
  * argv array, never a shell string.
  */
-export type ExecFileAsync = (
+type ExecFileAsync = (
   file: string,
   args: string[],
   options: { env: NodeJS.ProcessEnv },
@@ -53,7 +53,7 @@ const defaultExecFileAsync: ExecFileAsync = (file, args, options) =>
  * never a shell string). Resolves on a clean exit; throws an Error whose
  * message quotes the CLI's stderr on a nonzero exit.
  */
-export async function runWatchdogCli(
+async function runWatchdogCli(
   args: string[],
   deps: WatchdogCliDeps = {},
 ): Promise<void> {

@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export type ThemeMode = 'light' | 'dark';
+type ThemeMode = 'light' | 'dark';
 
 // Icons that have light variants (dark logo for light backgrounds)
 const ICONS_WITH_LIGHT_VARIANTS = new Set([
@@ -21,7 +21,7 @@ const ICONS_WITH_LIGHT_VARIANTS = new Set([
  * Get current theme mode from VS Code.
  * VS Code theme takes precedence over system settings.
  */
-export function getThemeMode(): ThemeMode {
+function getThemeMode(): ThemeMode {
   const kind = vscode.window.activeColorTheme.kind;
   // Light (1) and HighContrastLight (4) are light themes
   return kind === vscode.ColorThemeKind.Light || kind === vscode.ColorThemeKind.HighContrastLight
@@ -40,20 +40,13 @@ export function isLightTheme(): boolean {
  * Get the light variant filename for an icon (if it exists).
  * e.g., "chatgpt.png" -> "chatgpt-light.png"
  */
-export function getLightVariant(iconFilename: string): string | null {
+function getLightVariant(iconFilename: string): string | null {
   if (!ICONS_WITH_LIGHT_VARIANTS.has(iconFilename)) {
     return null;
   }
   const ext = path.extname(iconFilename);
   const base = path.basename(iconFilename, ext);
   return `${base}-light${ext}`;
-}
-
-/**
- * Check if a light variant exists for the given icon.
- */
-export function hasLightVariant(iconFilename: string): boolean {
-  return ICONS_WITH_LIGHT_VARIANTS.has(iconFilename);
 }
 
 /**
@@ -86,14 +79,4 @@ export function buildIconPathFromUri(extensionUri: vscode.Uri, iconFilename: str
     : darkIcon;
 
   return { light: lightIcon, dark: darkIcon };
-}
-
-/**
- * Subscribe to theme changes.
- * Returns a disposable that should be added to context.subscriptions.
- */
-export function onThemeChange(callback: (mode: ThemeMode) => void): vscode.Disposable {
-  return vscode.window.onDidChangeActiveColorTheme(() => {
-    callback(getThemeMode());
-  });
 }

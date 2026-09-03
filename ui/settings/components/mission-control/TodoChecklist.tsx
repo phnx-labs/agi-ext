@@ -6,19 +6,6 @@ import { todoProgress, type TodoItem } from './floorModel'
 // strikethrough on completed items -- no glyphs. Shared by the Floor detail pane,
 // the feed card (bar-only), and the cloud activity feed.
 
-/** Compact done/total progress bar -- the card affordance. Renders nothing when empty. */
-export function TodoProgressBar({ todos }: { todos: TodoItem[] }) {
-  const { done, total } = todoProgress(todos)
-  if (total === 0) return null
-  const pct = Math.round((done / total) * 100)
-  return (
-    <div className="sw-todobar" title={`${done} of ${total} tasks done`}>
-      <span className="sw-todobar-frac">{done}/{total}</span>
-      <span className="sw-todobar-track"><i style={{ width: `${pct}%` }} /></span>
-    </div>
-  )
-}
-
 /**
  * Card affordance: the progress bar with the full checklist EXPANDED beneath it by
  * default, so the current step reads at a glance without a click. The bar doubles as a

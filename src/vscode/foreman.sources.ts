@@ -268,19 +268,6 @@ type CacheEntry<T> = {
 let allTeamsCache: CacheEntry<TeamLite[]> | undefined;
 const teamStatusCache = new Map<string, CacheEntry<TeammateLite[]>>();
 
-export function clearForemanSourcesCache(): void {
-  allTeamsCache = undefined;
-  teamStatusCache.clear();
-}
-
-export function getForemanSourcesCacheStats(): { teamsListCached: boolean; teamStatusCached: number } {
-  const now = Date.now();
-  return {
-    teamsListCached: !!allTeamsCache && allTeamsCache.expiresAt > now && !!allTeamsCache.value,
-    teamStatusCached: Array.from(teamStatusCache.values()).filter((entry) => entry.expiresAt > now && !!entry.value).length,
-  };
-}
-
 export interface SessionEvent {
   type: string;           // message | tool_use | tool_result | thinking | usage | ...
   timestamp?: string;
@@ -331,7 +318,7 @@ export async function listTeams(): Promise<TeamLite[]> {
 
 // All teams (including completed/stopped) — used by the agent panel so the
 // "Teams in this directory" list can show recently-finished work too.
-export async function listAllTeams(): Promise<TeamLite[]> {
+async function listAllTeams(): Promise<TeamLite[]> {
   const now = Date.now();
   if (allTeamsCache?.value && allTeamsCache.expiresAt > now) {
     return allTeamsCache.value;
@@ -414,29 +401,8 @@ export interface TeamWithMates extends TeamLite {
 // Includes the teammates so the panel can render the full breakdown without
 // firing another round-trip. Limits status calls to the first 6 matches to
 // keep the panel responsive.
-export async function listTeamsForCwd(cwd: string | undefined): Promise<TeamWithMates[]> {
-  if (!cwd) return [];
-  const teams = await listAllTeams();
-  const matched = teams.filter((t) => pathsRelated(t.workspace_dir, cwd)).slice(0, 6);
-  const withMates = await Promise.all(
-    matched.map(async (t) => ({ ...t, teammates: await getTeamStatus(t.task_name) }))
-  );
-  return withMates;
-}
-
 // Collect live session ids from the VS Code terminal environment so we can
 // mark which sessions are "open in the IDE" without re-reading JSONL.
-export function openSessionIdsFromIde(): Set<string> {
-  const ids = new Set<string>();
-  for (const t of vscode.window.terminals) {
-    if (t.exitStatus !== undefined) continue;
-    const opts = t.creationOptions as vscode.TerminalOptions;
-    const env = opts?.env as Record<string, string | undefined> | undefined;
-    const sid = env?.AGENT_SESSION_ID;
-    if (sid) ids.add(sid);
-  }
-  return ids;
-}
 
 async function runJson<T>(args: string[], fallback: T): Promise<T> {
   try {

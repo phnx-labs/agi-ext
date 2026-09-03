@@ -42,7 +42,7 @@ export interface FloorHostSessionsSnapshot {
 }
 
 /** Persisted registry row. Kept core-only so parsing does not depend on VS Code. */
-export interface FloorDevice {
+interface FloorDevice {
   name: string;
   host: string;
   platform?: string;

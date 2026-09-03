@@ -17,8 +17,6 @@ export const AGENTS_HTML_READER = 'agents.htmlReader';
 
 export const READER_PATTERNS = ['*.md', '*.html', '*.htm'] as const;
 
-export type ReaderPattern = (typeof READER_PATTERNS)[number];
-
 /**
  * Normalize whatever is stored for `workbench.editorAssociations` into the
  * object map VS Code actually consumes. Accepts the current object shape and
@@ -54,7 +52,7 @@ export function normalizeEditorAssociations(value: unknown): EditorAssociations 
 /**
  * View type the Agents Reader uses for a given filename pattern.
  */
-export function readerViewTypeForPattern(pattern: string): string {
+function readerViewTypeForPattern(pattern: string): string {
   if (pattern === '*.html' || pattern === '*.htm') return AGENTS_HTML_READER;
   return AGENTS_MARKDOWN_EDITOR;
 }

@@ -15,7 +15,7 @@ import { FileIcon, ImageIcon } from './dispatchIcons'
 // so every agent's detail pane reads identically.
 
 /** File-pill border color: fresh edits blue, fading toward muted grey over ~3 min. */
-export function filePillColor(touchedAtMs: number | undefined, now: number): string {
+function filePillColor(touchedAtMs: number | undefined, now: number): string {
   if (touchedAtMs === undefined) return 'var(--ds-text-muted)'
   const elapsed = now - touchedAtMs
   if (elapsed <= 1000) return '#3b82f6'

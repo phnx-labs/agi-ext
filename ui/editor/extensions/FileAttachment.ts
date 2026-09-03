@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 
-export interface FileAttachmentOptions {
+interface FileAttachmentOptions {
   HTMLAttributes: Record<string, any>;
   onSaveAsset: (data: string, fileName: string) => void;
 }

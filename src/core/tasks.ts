@@ -44,7 +44,7 @@ export function buildTaskDispatchPrompt(input: TaskDispatchPromptInput): string 
 // card renders an agent chip rather than a @mention. Case-insensitive match.
 const AGENT_ASSIGNEE_PATTERN = /^(claude|codex|gemini|cursor|opencode)$/i;
 
-export function detectAssigneeKind(name: string | undefined | null): 'user' | 'agent' | undefined {
+function detectAssigneeKind(name: string | undefined | null): 'user' | 'agent' | undefined {
   if (!name) return undefined;
   return AGENT_ASSIGNEE_PATTERN.test(name.trim()) ? 'agent' : 'user';
 }
@@ -235,9 +235,3 @@ export function groupTasksBySource(tasks: UnifiedTask[]): Map<TaskSource, Unifie
 }
 
 // Filter tasks by status
-export function filterTasksByStatus(
-  tasks: UnifiedTask[],
-  statuses: UnifiedTask['status'][]
-): UnifiedTask[] {
-  return tasks.filter(t => statuses.includes(t.status));
-}

@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 
-export interface CalloutOptions {
+interface CalloutOptions {
   HTMLAttributes: Record<string, any>;
 }
 

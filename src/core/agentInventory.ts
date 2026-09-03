@@ -142,20 +142,6 @@ export function writeAgentRunStrategy(
   fs.writeFileSync(configPath, YAML.stringify(next, { indent: 2 }));
 }
 
-export async function fetchAgentInventory(agentKey: string): Promise<AgentInventory | null> {
-  try {
-    const { stdout } = await runAgents(`view ${agentKey} --json`, {
-      timeout: 5000,
-      maxBuffer: 5 * 1024 * 1024,
-    });
-    const parsed = JSON.parse(stdout) as AgentsViewJsonAgent;
-    if (!parsed || !Array.isArray(parsed.versions)) return null;
-    return summarizeAgentInventory(agentKey, parsed, readAgentRunStrategy(agentKey));
-  } catch {
-    return null;
-  }
-}
-
 // Fetches all installed agents in a single `agents view --json` call. This is
 // 3-5x faster than spawning one CLI process per agent because it shares one
 // network roundtrip across agents instead of running them concurrently.

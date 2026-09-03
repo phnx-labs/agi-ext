@@ -17,21 +17,6 @@ export interface ForkPickHostRecord {
   terminalId: string;
 }
 
-export function sessionIdForTerminal(activeJson: string, terminalId: string): string | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(activeJson);
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(parsed)) return null;
-  const match = parsed.find((row): row is { terminalId: string; sessionId: string } =>
-    !!row && typeof row === 'object' &&
-    (row as { terminalId?: unknown }).terminalId === terminalId &&
-    typeof (row as { sessionId?: unknown }).sessionId === 'string');
-  return match?.sessionId.trim() || null;
-}
-
 export function remoteForkSessionId(
   host: string,
   terminalId: string,

@@ -23,7 +23,7 @@ async function findLinearCli(): Promise<string | null> {
   return cachedLinearPath || null;
 }
 
-export async function isLinearAvailable(_context: vscode.ExtensionContext): Promise<boolean> {
+async function isLinearAvailable(_context: vscode.ExtensionContext): Promise<boolean> {
   try {
     const linearPath = await findLinearCli();
     if (!linearPath) return false;
@@ -34,7 +34,7 @@ export async function isLinearAvailable(_context: vscode.ExtensionContext): Prom
   }
 }
 
-export interface LinearFetchResult {
+interface LinearFetchResult {
   tasks: UnifiedTask[];
   cycleInfo: CycleInfo | null;
 }
@@ -125,8 +125,4 @@ export async function saveLinearApiKey(key: string): Promise<void> {
   config.apiKey = key;
   await fs.promises.mkdir(path.dirname(LINEAR_CONFIG), { recursive: true });
   await fs.promises.writeFile(LINEAR_CONFIG, JSON.stringify(config, null, 2));
-}
-
-export function clearLinearCache(): void {
-  // No cache to clear with CLI approach
 }

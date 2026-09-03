@@ -1,11 +1,11 @@
 // Agent settings types
-export interface BuiltInAgentSettings {
+interface BuiltInAgentSettings {
   login: boolean
   instances: number
   defaultModel?: string
 }
 
-export interface CustomAgentSettings {
+interface CustomAgentSettings {
   name: string
   command: string
   login: boolean
@@ -107,7 +107,7 @@ export interface SkillAgentStatus {
   supported: boolean
 }
 
-export interface SkillCommandStatus {
+interface SkillCommandStatus {
   name: SkillName
   description: string
   agents: Record<PromptPackAgentType, SkillAgentStatus>
@@ -321,7 +321,7 @@ export interface AgentDetail {
   after?: string[]
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'running' | 'complete' | 'rejected'
+type ApprovalStatus = 'pending' | 'approved' | 'running' | 'complete' | 'rejected'
 
 export interface TaskSummary {
   task_name: string

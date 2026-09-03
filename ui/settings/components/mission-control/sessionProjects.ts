@@ -30,7 +30,7 @@ export const UNASSIGNED_LABEL = 'Unassigned'
 export const UNASSIGNED_REASON = 'cloud & no-repo runs — no cwd to match'
 
 /** Which hint attributed a session. 'none' = genuinely repo-less -> Unassigned. */
-export type ProjectSource = 'cwd' | 'repo' | 'cloud' | 'branch' | 'worktree' | 'actor' | 'none'
+type ProjectSource = 'cwd' | 'repo' | 'cloud' | 'branch' | 'worktree' | 'actor' | 'none'
 
 /** Every project hint a projected session row can carry. All optional: a row that
  *  carries none of them is the genuinely repo-less case the Unassigned bucket names. */

@@ -21,20 +21,20 @@ export interface MonitorEvent {
 }
 
 /** Server -> clients: a broadcast push. */
-export interface MonitorEventFrame {
+interface MonitorEventFrame {
   kind: 'event';
   event: MonitorEvent;
 }
 
 /** Client -> server: a correlated request on the persistent connection. */
-export interface MonitorRequestFrame {
+interface MonitorRequestFrame {
   kind: 'request';
   id: number;
   payload: unknown;
 }
 
 /** Server -> one client: the reply to a {@link MonitorRequestFrame}. */
-export interface MonitorResponseFrame {
+interface MonitorResponseFrame {
   kind: 'response';
   id: number;
   payload?: unknown;

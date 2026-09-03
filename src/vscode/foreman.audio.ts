@@ -16,8 +16,8 @@ import WebSocket from 'ws';
 import { FOREMAN_MODEL, FOREMAN_VOICE, FOREMAN_SYSTEM_PROMPT, FOREMAN_TOOLS } from '../core/foreman.config';
 import { resolveExecutable } from '../core/binResolve';
 
-export const REALTIME_WS = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(FOREMAN_MODEL)}`;
-export const SAMPLE_RATE = 24000;
+const REALTIME_WS = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(FOREMAN_MODEL)}`;
+const SAMPLE_RATE = 24000;
 
 // Playback clock for the mic gate. Each PCM chunk queued into ffplay plays
 // for exactly bytes/(SAMPLE_RATE*2) seconds; the clock accumulates those
@@ -25,7 +25,7 @@ export const SAMPLE_RATE = 24000;
 // Deltas arrive several times faster than realtime, so anchoring the gate to
 // arrival time instead of this clock reopens the mic mid-speech and the
 // assistant answers its own playback in a loop.
-export function advancePlaybackClock(nowMs: number, playbackEndsAtMs: number, pcmBytes: number): number {
+function advancePlaybackClock(nowMs: number, playbackEndsAtMs: number, pcmBytes: number): number {
   const durationMs = (pcmBytes / (SAMPLE_RATE * 2)) * 1000;
   return Math.max(nowMs, playbackEndsAtMs) + durationMs;
 }
@@ -33,7 +33,7 @@ export function advancePlaybackClock(nowMs: number, playbackEndsAtMs: number, pc
 // Exact mic capture command. Exported so the e2e test spawns the SAME args
 // production uses — a flag the installed ffmpeg rejects (the avfoundation
 // "-sample_rate"/"-channels" regression) fails the suite, not the orb tap.
-export const MIC_FFMPEG_ARGS = [
+const MIC_FFMPEG_ARGS = [
   '-hide_banner', '-loglevel', 'error',
   '-f', 'avfoundation',
   '-i', ':default',
@@ -46,7 +46,7 @@ export const MIC_FFMPEG_ARGS = [
 // at -loglevel error (an ESC[2K erase-line escape every refresh), and the
 // stderr reporter below treats ANY output as an error — without -nostats
 // every spoken reply flashed a red "ffplay: [2K" in the orb.
-export const SPEAKER_FFPLAY_ARGS = [
+const SPEAKER_FFPLAY_ARGS = [
   '-hide_banner', '-loglevel', 'error', '-nostats',
   '-autoexit', '-nodisp',
   '-f', 's16le', '-ar', String(SAMPLE_RATE), '-ch_layout', 'mono',
@@ -57,7 +57,7 @@ export const SPEAKER_FFPLAY_ARGS = [
 // GA Realtime session.update payload. Exported so the e2e WS handshake test
 // can exercise the exact same shape production sends — schema drift caught
 // at test time, not at "tap the orb" time.
-export function buildForemanSessionUpdate() {
+function buildForemanSessionUpdate() {
   return {
     type: 'session.update',
     session: {

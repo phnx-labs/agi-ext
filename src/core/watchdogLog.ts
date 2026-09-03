@@ -7,7 +7,7 @@ import * as path from 'path';
 
 export const WATCHDOG_LOG_PATH = path.join(os.homedir(), '.agents', '.cache', 'logs', 'watchdog.log');
 
-export type WatchdogEventKind = 'tick' | 'decision' | 'nudge' | 'undelivered' | 'rotate' | 'error';
+type WatchdogEventKind = 'tick' | 'decision' | 'nudge' | 'undelivered' | 'rotate' | 'error';
 
 export interface WatchdogEvent {
   ts: number;

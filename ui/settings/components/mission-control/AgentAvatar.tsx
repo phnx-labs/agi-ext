@@ -95,8 +95,3 @@ export function agentIdFromPrefix(prefix: string | null | undefined): AgentId | 
     default: return null
   }
 }
-
-export function agentShortChunk(sessionId: string | null | undefined): string {
-  if (!sessionId) return ''
-  return sessionId.replace(/-/g, '').slice(0, 8)
-}

@@ -2,7 +2,7 @@
 // The VS Code glue that turns a SpawnRequest into an editor-tab terminal lives
 // in vscode/extension.ts (spawnCommandTerminal).
 
-export type SpawnSplit = 'right' | 'down';
+type SpawnSplit = 'right' | 'down';
 
 export interface SpawnRequest {
   // Exact command line to run in the spawned terminal (e.g. "claude --resume <id>").

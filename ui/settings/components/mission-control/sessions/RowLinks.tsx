@@ -4,7 +4,7 @@ import { linearIssueUrl, type FloorAgent } from '../floorModel'
 import type { SessionRowView } from '../recapModel'
 
 /** Copy a short value and keep the click out of the row expand handler. */
-export function copyPill(e: React.MouseEvent, text: string): void {
+function copyPill(e: React.MouseEvent, text: string): void {
   e.stopPropagation()
   navigator.clipboard?.writeText(text)?.catch(() => { /* clipboard unavailable in this host */ })
 }

@@ -46,7 +46,7 @@ import type { RemoteAttachment, RemoteSession, RemoteSessionArtifact } from '../
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
 
-export const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
+const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
 
 interface PlanFileInfo {
   path: string;
@@ -1927,7 +1927,7 @@ function findLiveSession(sessionId: string): RemoteSession | undefined {
 }
 
 /** Resolve a CLI-owned session path on the machine that produced it. */
-export function sessionPathUri(filePath: string, host: string | undefined): vscode.Uri {
+function sessionPathUri(filePath: string, host: string | undefined): vscode.Uri {
   const remote = sessionPathUriString(filePath, host, [LOCAL_MACHINE_ID, LOCAL_LABEL]);
   return remote ? vscode.Uri.parse(remote) : vscode.Uri.file(filePath);
 }

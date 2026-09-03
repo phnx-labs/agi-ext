@@ -13,7 +13,7 @@ const MODES: { label: string; value: 'plan' | 'edit' }[] = [
   { label: 'Edit', value: 'edit' },
 ]
 
-export interface DispatchChoice {
+interface DispatchChoice {
   agent: string
   host: string
   mode: 'plan' | 'edit'

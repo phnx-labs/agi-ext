@@ -24,7 +24,7 @@ export interface PreambleMeta {
   user?: string;
 }
 
-export interface PreambleEvent {
+interface PreambleEvent {
   kind: 'preamble';
   text: string;
   tSec?: number;
@@ -34,18 +34,18 @@ export interface PreambleEvent {
   isMetric?: boolean;
 }
 
-export interface SystemEvent {
+interface SystemEvent {
   kind: 'system';
   subtype: string;
   summary: string;
 }
 
-export interface ThinkingEvent {
+interface ThinkingEvent {
   kind: 'thinking';
   text: string;
 }
 
-export interface AssistantEvent {
+interface AssistantEvent {
   kind: 'assistant';
   text: string;
 }
@@ -64,12 +64,12 @@ export interface ToolResultEvent {
   isError: boolean;
 }
 
-export interface UserMessageEvent {
+interface UserMessageEvent {
   kind: 'user';
   text: string;
 }
 
-export interface ResultEvent {
+interface ResultEvent {
   kind: 'result';
   subtype: string;
   durationMs?: number;
