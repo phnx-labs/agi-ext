@@ -65,6 +65,25 @@ describe('shortenDeviceName', () => {
     expect(shortenDeviceName('mark', roster)).toBe('mark');
   });
 
+  test('never renders two distinct devices with the same badge (collision guard)', () => {
+    // `prod-m1` and `staging-m1` each share a stem with a same-prefix sibling, so
+    // naive per-peer stripping would reduce BOTH to `m1` — indistinguishable in
+    // the status bar. The guard keeps the full name for the colliding pair.
+    const roster = ['prod-m1', 'prod-m2', 'staging-m1', 'staging-m2'];
+    expect(shortenDeviceName('prod-m1', roster)).toBe('prod-m1');
+    expect(shortenDeviceName('staging-m1', roster)).toBe('staging-m1');
+    // `prod-m2`/`staging-m2` collide the same way, so they keep their full names too.
+    expect(shortenDeviceName('prod-m2', roster)).toBe('prod-m2');
+  });
+
+  test('falls back to the full name when the suffix collides with a real device name', () => {
+    // `pool-web1` would strip to `web1`, but a device literally named `web1`
+    // exists — shortening would alias the two, so keep the full name.
+    const roster = ['pool-web1', 'pool-web2', 'web1'];
+    expect(shortenDeviceName('pool-web1', roster)).toBe('pool-web1');
+    expect(shortenDeviceName('pool-web2', roster)).toBe('web2');
+  });
+
   test('an empty name is returned unchanged', () => {
     expect(shortenDeviceName('', ['', 'zion'])).toBe('');
   });
