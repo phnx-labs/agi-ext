@@ -45,7 +45,6 @@ function gate(taskTabs: { id: string; title: string; source: 'LN' | 'GH' }[]) {
       onSelectCenter={noop}
       onSelectTaskTab={noop}
       onCloseTaskTab={noop}
-      onDispatch={noop}
     />
   ) : null
 }

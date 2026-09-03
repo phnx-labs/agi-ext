@@ -16,6 +16,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   band with a lone right-pinned Dispatch button. After: no band, Dispatch pinned
   in the header where it is always reachable. The header button appears only on
   the Fleet tab; opening a task tab still brings the sub-tab strip back.
+- **Fix: the returning sub-tab strip no longer double-renders Dispatch
+  (PHNX-3925 follow-up).** When a task tab was open on the Fleet tab, the
+  `FloorSubtabs` strip still carried its own right-pinned Dispatch button
+  alongside the new header one — two identical lime **Dispatch** buttons on
+  screen at once. The strip's button (and its now-dead `onDispatch` prop, whose
+  handler always dispatched with no ticket because `selectedTicketId` was never
+  set) is removed; the header button is the single Dispatch entry point in every
+  Fleet-tab state.
 
 ## [0.9.360] - 2026-09-03
 
