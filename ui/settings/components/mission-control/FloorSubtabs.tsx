@@ -61,12 +61,11 @@ interface FloorSubtabsProps {
   onSelectCenter: (c: CenterMode) => void
   onSelectTaskTab: (id: string) => void
   onCloseTaskTab: (id: string) => void
-  onDispatch: () => void
 }
 
 export function FloorSubtabs({
   fixed, center, taskTabs, activeTaskTab,
-  onSelectCenter, onSelectTaskTab, onCloseTaskTab, onDispatch,
+  onSelectCenter, onSelectTaskTab, onCloseTaskTab,
 }: FloorSubtabsProps) {
   return (
     <div className="fsubtabs" role="tablist">
@@ -113,8 +112,8 @@ export function FloorSubtabs({
       })}
 
       <div className="grow" />
-
-      <button className="disp" onClick={onDispatch}><Icon name="zap" size={12} /> Dispatch</button>
+      {/* Dispatch lives in the top header (TopBar, PHNX-3925) — no button here,
+          or it double-renders next to the header one when a task tab is open. */}
     </div>
   )
 }

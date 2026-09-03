@@ -2404,7 +2404,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           onSelectCenter={selectCenter}
           onSelectTaskTab={selectTaskTab}
           onCloseTaskTab={handleCloseTaskTab}
-          onDispatch={() => openDispatch(selectedTicketId ? { ticketId: selectedTicketId } : undefined)}
         />
       )}
 

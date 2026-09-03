@@ -565,7 +565,6 @@ function Subtabs() {
           setTaskTabs(r.tabs)
           setActiveTaskTab(r.activeId)
         }}
-        onDispatch={noop}
       />
       {showOuterControls && (
         <FloorControls
