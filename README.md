@@ -116,9 +116,11 @@ labeled **Unassigned** group that states why (“cloud & no-repo runs — no cwd
 match”) instead of an empty header, with **+ assign project** on each row and
 **assign all** on the group header to file them by hand.
 
-Each row uses the harness logo without repeating its name. Expanding it shows the
-CLI-indexed full first user turn as **Your request** (with **See more** for long
-requests), or labels an older CLI's topic fallback honestly as **Request summary**.
+Each row uses the harness logo without repeating its name. Its chevron expands the
+row in place, showing the CLI-indexed full first user turn as **Your request**
+(with **See more** for long requests), or labels an older CLI's topic fallback
+honestly as **Request summary** — independent of clicking the row itself, which
+only opens the right detail rail.
 Ended-session timing reads “Ran … · ended … ago” with the absolute range on hover,
 and names its device once as “Runs on …”. Ticket, PR, and repository pills navigate;
 branch pills copy. The single compact **Resume** targets the owning device, while

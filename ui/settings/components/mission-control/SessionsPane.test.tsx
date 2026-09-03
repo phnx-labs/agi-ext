@@ -281,6 +281,36 @@ describe('SessionRow — compact card', () => {
     host.remove()
   })
 
+  test('a plain row click selects but does not expand; the chevron expands but does not select', () => {
+    const selected: string[] = []
+    let expandToggles = 0
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(
+        <SessionRow
+          agent={agent({ id: 'one-gesture' })}
+          {...rowProps}
+          onSelect={(a) => { selected.push(a.id) }}
+          onToggleExpand={() => { expandToggles += 1 }}
+        />,
+      )
+    })
+    act(() => { (host.querySelector('.sx-row') as HTMLDivElement).click() })
+    expect(selected).toEqual(['one-gesture'])
+    expect(expandToggles).toBe(0)
+
+    const chevron = host.querySelector('.sx-expandbtn') as HTMLButtonElement
+    expect(chevron).toBeTruthy()
+    expect(chevron.getAttribute('aria-label')).toBeTruthy()
+    act(() => { chevron.click() })
+    expect(expandToggles).toBe(1)
+    expect(selected).toEqual(['one-gesture'])
+    act(() => root.unmount())
+    host.remove()
+  })
+
   test('a non-resumable harness shows no dead action button', () => {
     const html = renderToStaticMarkup(
       <SessionRow

@@ -31,6 +31,13 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-cb.on { background: #a3e635; border-color: #a3e635; }
 .sw-sessions .sx-star { flex: none; margin-top: 1px; color: #5c6675; font-size: 13px; }
 .sw-sessions .sx-star.on { color: #f5c518; }
+.sw-sessions .sx-expandbtn { flex: none; margin-top: 2px; width: 14px; height: 14px; border: 0; background: none; padding: 0; cursor: pointer; color: #5c6675; position: relative; }
+.sw-sessions .sx-expandbtn::after {
+  content: ""; position: absolute; left: 3px; top: 5px; width: 6px; height: 6px;
+  border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform .12s ease;
+}
+.sw-sessions .sx-expandbtn.on::after { top: 7px; transform: rotate(-135deg); }
+.sw-sessions .sx-expandbtn:hover { color: #e6e9ef; }
 .sw-sessions .sx-pdot { width: 8px; height: 8px; border-radius: 50%; background: #a78bfa; flex: none; margin-top: 5px; }
 .sw-sessions .sx-pdot.off { background: #5c6675; }
 .sw-sessions .sx-grow { min-width: 0; flex: 1; }
@@ -123,6 +130,8 @@ export const SESSION_ROW_CSS = `
 .sw-sessions .sx-cb { border-color: var(--ds-text-muted, #5c6675); }
 .sw-sessions .sx-cb.on { background: var(--brand, #a3e635); border-color: var(--brand, #a3e635); }
 .sw-sessions .sx-star { color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-expandbtn { color: var(--ds-text-muted, #5c6675); }
+.sw-sessions .sx-expandbtn:hover { color: var(--ds-text, #e6e9ef); }
 .sw-sessions .sx-av { flex: none; margin-top: 1px; }
 .sw-sessions .sx-roletag { width: 40px; }
 .sw-sessions .sx-titleline { margin-bottom: 3px; gap: 7px; }
