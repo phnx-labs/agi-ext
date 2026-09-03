@@ -1,17 +1,19 @@
 // Watchdog segmented control — Off · Keep moving (default) · Hands-off. Ports the
-// prototype's #wdSeg + #wdhint + the WD hint map (dispatch.html).
+// prototype's #wdSeg + #wdhint + the WD hint map (dispatch.html). Thin wrapper over
+// the shared SegmentedControl.
 import React from 'react'
 import type { WatchdogPolicy } from './dispatch.types'
+import { SegmentedControl } from './SegmentedControl'
 
 export interface WatchdogSegProps {
   value: WatchdogPolicy
   onChange: (policy: WatchdogPolicy) => void
 }
 
-const POLICIES: { w: WatchdogPolicy; label: string }[] = [
-  { w: 'off', label: 'Off' },
-  { w: 'keep', label: 'Keep moving' },
-  { w: 'handsoff', label: 'Hands-off' },
+const POLICIES: { value: WatchdogPolicy; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'keep', label: 'Keep moving' },
+  { value: 'handsoff', label: 'Hands-off' },
 ]
 
 function hint(policy: WatchdogPolicy): React.ReactNode {
@@ -21,14 +23,5 @@ function hint(policy: WatchdogPolicy): React.ReactNode {
 }
 
 export function WatchdogSeg({ value, onChange }: WatchdogSegProps) {
-  return (
-    <>
-      <span className="seg">
-        {POLICIES.map(({ w, label }) => (
-          <button key={w} className={w === value ? 'on' : ''} onClick={() => onChange(w)}>{label}</button>
-        ))}
-      </span>
-      <div className="modehint">{hint(value)}</div>
-    </>
-  )
+  return <SegmentedControl options={POLICIES} value={value} onChange={onChange} renderHint={hint} />
 }

@@ -3,16 +3,18 @@
 // auto-mode agent is the common case). Maps 1:1 to the CLI's --interactive /
 // --headless axis. Interactive opens a terminal tab; Headless runs detached in the
 // background (no tab) and shows in the Floor under its device, focusable later.
+// Thin wrapper over the shared SegmentedControl.
 import React from 'react'
+import { SegmentedControl } from './SegmentedControl'
 
 export interface SurfaceSegProps {
   headless: boolean
   onChange: (headless: boolean) => void
 }
 
-const SURFACES: { headless: boolean; label: string }[] = [
-  { headless: false, label: 'Interactive' },
-  { headless: true, label: 'Headless' },
+const SURFACES: { value: boolean; label: string }[] = [
+  { value: false, label: 'Interactive' },
+  { value: true, label: 'Headless' },
 ]
 
 function hint(headless: boolean): React.ReactNode {
@@ -22,14 +24,5 @@ function hint(headless: boolean): React.ReactNode {
 }
 
 export function SurfaceSeg({ headless, onChange }: SurfaceSegProps) {
-  return (
-    <>
-      <span className="seg">
-        {SURFACES.map(({ headless: h, label }) => (
-          <button key={label} className={h === headless ? 'on' : ''} onClick={() => onChange(h)}>{label}</button>
-        ))}
-      </span>
-      <div className="modehint">{hint(headless)}</div>
-    </>
-  )
+  return <SegmentedControl options={SURFACES} value={headless} onChange={onChange} renderHint={hint} />
 }
