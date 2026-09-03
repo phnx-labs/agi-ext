@@ -4,6 +4,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.358] - 2026-09-03
+
+- **A plain Sessions row click no longer opens two detail surfaces at once (PHNX-3879).**
+  Clicking anywhere on a row fired both the inline expand (row grows in place)
+  and the right detail rail — duplicated detail for one gesture, and the list
+  jumped under the cursor as the row grew. A plain click now only selects the
+  row for the right rail; inline expansion moved to its own chevron control
+  (`sx-expandbtn`, keyboard-reachable, `aria-expanded`) matching the row's
+  existing icon-button idiom.
+
 ## [0.9.357] - 2026-09-02
 
 - **Bound three subprocess-spawn paths that could each independently storm the CPU (PHNX-3816/3817/3818).**

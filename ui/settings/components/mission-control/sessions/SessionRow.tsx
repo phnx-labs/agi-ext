@@ -60,8 +60,15 @@ function SessionRowImpl({
     <div
       className={`sx-row${selected ? ' sel' : ''}${active ? ' active' : ''}`}
       style={{ height }}
-      onClick={() => { onToggleExpand(a.id); onSelect(a) }}
+      onClick={() => onSelect(a)}
     >
+      <button
+        className={`sx-expandbtn${expanded ? ' on' : ''}`}
+        title={expanded ? 'Collapse details' : 'Expand details'}
+        aria-label={expanded ? 'Collapse details' : 'Expand details'}
+        aria-expanded={expanded}
+        onClick={(e) => { e.stopPropagation(); onToggleExpand(a.id) }}
+      />
       <button className={`sx-cb${selected ? ' on' : ''}`} title="Select" onClick={(e) => { e.stopPropagation(); onToggleSelect(a.id) }} />
       <button
         className={`sx-star${a.pinned ? ' on' : ''}`}
