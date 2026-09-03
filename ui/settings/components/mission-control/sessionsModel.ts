@@ -226,14 +226,17 @@ export function orderedPrevious(scoped: FloorAgent[]): FloorAgent[] {
 
 /**
  * How many Previous rows to show by default: those active within the last 7 days,
- * capped at 50. Older history stays behind explicit ten-row paging, including when
- * the rolling window is empty.
+ * capped at 50. When the window holds none but resumable history exists further
+ * back (a user returning after a long gap), fall back to the most-recent
+ * PREVIOUS_PAGE rows instead of an empty band — "Show more" still pages beyond
+ * that (PHNX-3811).
  */
 export function previousInitialCount(ordered: FloorAgent[], nowMs: number): number {
   const withinWindow = ordered.filter((a) => {
     const t = activityMs(a)
     return t > 0 && nowMs - t <= PREVIOUS_WINDOW_MS
   }).length
+  if (withinWindow === 0 && ordered.length > 0) return Math.min(ordered.length, PREVIOUS_PAGE)
   return Math.min(withinWindow, PREVIOUS_DEFAULT_LIMIT)
 }
 

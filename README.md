@@ -104,6 +104,9 @@ CLI-projected phase/attention taxonomy; grouping by Project, Device, Status, or
 None re-buckets the entire list, including Previous sessions. Previous history
 defaults to at most 50 sessions active in the last seven days and pages older
 history ten rows at a time; bulk Resume applies only to shown resumable rows.
+Returning after a longer gap — nothing resumable in the last seven days — shows
+the ten most-recently-active Previous sessions instead of an empty band, so the
+list never looks broken; "Show more" still pages further back from there.
 
 A **Project** control sits beside Group and Sort: a searchable list of every project
 in view with its session count, plus **All projects** and **Unassigned** as
