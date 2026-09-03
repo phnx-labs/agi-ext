@@ -34,6 +34,18 @@ describe('session tab label reconciliation', () => {
     )).toEqual({ label: 'RUSH-3011 Release the project', clearManualLabel: false });
   });
 
+  test('never adopts the CLI [host/<device>] fallback as a tab label (PHNX-3893)', () => {
+    expect(planSessionTabLabelUpdate(
+      { autoLabel: undefined },
+      { topic: '', label: '[host/yosemite-m3]' },
+    )).toBeUndefined();
+    // A real name that only mentions "host" is still adopted.
+    expect(planSessionTabLabelUpdate(
+      { autoLabel: undefined },
+      { topic: '', label: 'host resolver fix' },
+    )).toEqual({ label: 'host resolver fix', clearManualLabel: false });
+  });
+
   test('does nothing until a canonical session name exists or when already current', () => {
     expect(planSessionTabLabelUpdate(
       { autoLabel: 'Initial task' },

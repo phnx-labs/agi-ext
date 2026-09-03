@@ -4,6 +4,22 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.360] - 2026-09-03
+
+- **The host badge moved off the agent tab title into the status bar, and shared
+  fleet stems are shortened (PHNX-3893).** A session dispatched to another box
+  used to title its tab `CC - [host/yosemite-m3]` — the CLI's `[host/<device>]`
+  fallback label crowding the tab. That fallback is now dropped from the tab
+  (the tab reads `CC`, or its real topic/name if it has one), and the executing
+  device shows in the focused terminal's status bar instead (`$(vm) m3`),
+  alongside the existing model/account/session content. When several fleet
+  devices share a common prefix (`yosemite-m3`, `yosemite-m2`, …) the badge
+  shows only the unique suffix (`m3`), cut at a real token boundary so a name is
+  never sliced mid-token; a device with no shared prefix shows its full name.
+  Local sessions and sessions with a real name/topic are unchanged. The host
+  rides the stream's structured `machine` field — no label string-parsing, no
+  new fetch (`src/core/deviceName.ts`, thin-client rule).
+
 ## [0.9.359] - 2026-09-03
 
 - **The Previous band no longer looks empty for a user returning after a long

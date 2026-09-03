@@ -324,6 +324,22 @@ export interface TerminalTitleOptions {
 }
 
 /**
+ * The CLI's fallback session label for a nameless host-dispatched session is
+ * exactly `[host/<device>]` (agents-cli `hosts/session-index.ts`; shared with
+ * `agents sessions` output, so it is NOT changed CLI-side). The executing
+ * device already rides the stream as the structured `machine` field and belongs
+ * in the status bar, never the tab title — so a label that is ONLY this chip is
+ * dropped from presentation. The match is anchored to the whole label: a real
+ * name/topic that merely mentions "host" is unaffected. See PHNX-3893.
+ */
+const HOST_FALLBACK_LABEL = /^\[host\/[^\]]+\]$/;
+
+export function isHostFallbackLabel(label: string | null | undefined): boolean {
+  if (!label) return false;
+  return HOST_FALLBACK_LABEL.test(label.trim());
+}
+
+/**
  * Build the terminal tab title based on display preferences.
  * Canonical prefix should be one of the KNOWN_PREFIXES.
  * When isFocused=false and showLabelOnlyOnFocus=true, label is hidden.
@@ -339,7 +355,10 @@ export function formatTerminalTitle(prefix: string, options?: TerminalTitleOptio
   const base = display?.showFullAgentNames ? getExpandedAgentName(prefix) : prefix;
   const sessionChunk = display?.showSessionIdInTitles ? options?.sessionChunk?.trim() : null;
 
-  const label = options?.label?.trim()?.replace(/<[^>]*>/g, '').trim() || null;
+  const cleaned = options?.label?.trim()?.replace(/<[^>]*>/g, '').trim() || null;
+  // The bare `[host/<device>]` fallback is not a real title — drop it so the tab
+  // falls back to the agent base (`CC`); the host shows in the status bar.
+  const label = cleaned && !isHostFallbackLabel(cleaned) ? cleaned : null;
   if (sessionChunk) {
     if (display?.showLabelsInTitles && label) {
       return `${base} ${sessionChunk} - ${label}`;
@@ -406,7 +425,10 @@ export function getTerminalDisplayInfo(options: TerminalIdentificationOptions): 
   // Strategy 1: Parse name (handles "CC", "Claude", "CC - label", etc.)
   const parsed = parseTerminalName(name);
   if (parsed.isAgent && parsed.prefix) {
-    return buildDisplayInfo(parsed.prefix, parsed.label, parsed.sessionChunk);
+    // A persisted tab titled `CC - [host/<device>]` must not re-adopt the host
+    // chip as its label on rescan (PHNX-3893) — drop it to the bare base.
+    const label = isHostFallbackLabel(parsed.label) ? null : parsed.label;
+    return buildDisplayInfo(parsed.prefix, label, parsed.sessionChunk);
   }
 
   // Strategy 2: Extract prefix from AGENT_TERMINAL_ID env var

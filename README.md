@@ -72,11 +72,14 @@ Every open agent terminal is fully restorable. Session ID, icon, and custom labe
 Automatic tab titles follow the canonical session name from the fleet stream.
 A remote tab may briefly show its first meaningful prompt, then replaces it when
 the harness generates a name or the session is renamed; a label set with
-`Cmd+Shift+L` remains authoritative.
+`Cmd+Shift+L` remains authoritative. A session dispatched to another box keeps a
+clean title (`CC`, or its real name) — the executing device is shown in the
+status bar instead, shortened to its unique suffix (`m3`) when fleet peers share
+a common prefix (`yosemite-`).
 
 ### Task Management
 
-- **Labels** - Tag agents by task (`Cmd+Shift+L`). Status bar shows active agent and label.
+- **Labels** - Tag agents by task (`Cmd+Shift+L`). Status bar shows the active agent, its label, and — for a session running on another device — that device.
 - **Tasks** - Renders tasks returned by agi-cli; the extension does not parse task files or query trackers itself.
 - **Session history** - Browse CLI-provided sessions from the dashboard and resume through `agents sessions resume`.
 - **Fork a session** - `Agents: Fork`, `Agents: Fork (Recap)`, and `Agents: Fork (Pick Host)` delegate the copy and identity semantics to `agents sessions fork <id>`, which resolves the source across the fleet and launches a recap-seeded same-harness sibling. The original is left untouched; Fork and Fork (Recap) behave identically since the verb is always recap-seeded.
