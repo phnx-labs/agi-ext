@@ -1,17 +1,19 @@
 // Mode segmented control — Plan · Auto · Edit (default Auto). Ports the prototype's
-// #modeSeg + #modehint (dispatch.html renderExpanded / wireExpanded).
+// #modeSeg + #modehint (dispatch.html renderExpanded / wireExpanded). Thin wrapper
+// over the shared SegmentedControl.
 import React from 'react'
 import type { DispatchMode } from './dispatch.types'
+import { SegmentedControl } from './SegmentedControl'
 
 export interface ModeSegProps {
   value: DispatchMode
   onChange: (mode: DispatchMode) => void
 }
 
-const MODES: { m: DispatchMode; label: string }[] = [
-  { m: 'plan', label: 'Plan' },
-  { m: 'auto', label: 'Auto' },
-  { m: 'edit', label: 'Edit' },
+const MODES: { value: DispatchMode; label: string }[] = [
+  { value: 'plan', label: 'Plan' },
+  { value: 'auto', label: 'Auto' },
+  { value: 'edit', label: 'Edit' },
 ]
 
 function hint(mode: DispatchMode): React.ReactNode {
@@ -21,14 +23,5 @@ function hint(mode: DispatchMode): React.ReactNode {
 }
 
 export function ModeSeg({ value, onChange }: ModeSegProps) {
-  return (
-    <>
-      <span className="seg">
-        {MODES.map(({ m, label }) => (
-          <button key={m} className={m === value ? 'on' : ''} onClick={() => onChange(m)}>{label}</button>
-        ))}
-      </span>
-      <div className="modehint">{hint(value)}</div>
-    </>
-  )
+  return <SegmentedControl options={MODES} value={value} onChange={onChange} renderHint={hint} />
 }
