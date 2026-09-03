@@ -220,7 +220,7 @@ test('follower with a reset renders the genuine empty state', () => {
   expect(html).not.toContain('Session data unavailable')
 })
 
-test('Fleet omits fixed counter tabs while keeping Dispatch in its header', () => {
+test('Fleet paints no sub-tab strip or Dispatch button when there are no task tabs (PHNX-3925)', () => {
   const html = renderToStaticMarkup(React.createElement(UnifiedAgentsPane, {
     terminals: [],
     tasks: [],
@@ -232,10 +232,15 @@ test('Fleet omits fixed counter tabs while keeping Dispatch in its header', () =
     onSearch: () => {},
   }))
 
+  // PHNX-3594 already dropped the fixed counter pills; PHNX-3925 removes the
+  // now-empty FloorSubtabs band entirely when no task tab is open — the strip is
+  // gated on openTaskTabs.length > 0. Dispatch moved to the TopBar header
+  // (covered by TopBar.test.tsx), so the pane renders neither the strip nor its
+  // stranded Dispatch button here.
   expect(source).not.toContain('const fixedTabs')
   expect(html).not.toContain('class="fsubtab-cnt"')
-  expect(html).toContain('class="disp"')
-  expect(html).toContain('Dispatch')
+  expect(html).not.toContain('class="fsubtabs"')
+  expect(html).not.toContain('class="disp"')
 })
 
 test('Fleet layout defaults and legacy prefs keep both side panels closed', () => {

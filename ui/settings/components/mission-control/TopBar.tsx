@@ -23,6 +23,11 @@ interface TopBarProps {
   throughputTokensPerSec?: number
   watchdogEnabled?: boolean
   onToggleWatchdog?: () => void
+  /**
+   * When provided, renders the lime Dispatch button between the search box and the
+   * theme/settings icons. Omit it (e.g. off the Fleet tab) to hide the button.
+   */
+  onDispatch?: () => void
 }
 
 export function TopBar({
@@ -39,6 +44,7 @@ export function TopBar({
   throughputTokensPerSec = 0,
   watchdogEnabled = false,
   onToggleWatchdog,
+  onDispatch,
 }: TopBarProps) {
   return (
     <header className="sw-topbar">
@@ -108,6 +114,11 @@ export function TopBar({
       <div className="sw-topbar-right">
         {throughputTokensPerSec > 0 && (
           <ThroughputCounter tokensPerSec={throughputTokensPerSec} />
+        )}
+        {onDispatch && (
+          <button className="disp" onClick={onDispatch} title="Dispatch a swarm">
+            <Icon name="zap" size={12} /> Dispatch
+          </button>
         )}
         {onToggleWatchdog && (
           <button

@@ -2392,18 +2392,21 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   return (
     <div className="sw-floor-dashboard" style={{ padding: 0, overflow: 'hidden' }}>
       {/* PHNX-3594 declutter: drop the center counter bar (Sessions/Agents/Backlog/
-          …) — the Fleet view IS the session list. Dispatch stays pinned in the header,
-          and open task tabs still render. */}
-      <FloorSubtabs
-        fixed={[]}
-        center={center}
-        taskTabs={openTaskTabs}
-        activeTaskTab={activeTaskTab}
-        onSelectCenter={selectCenter}
-        onSelectTaskTab={selectTaskTab}
-        onCloseTaskTab={handleCloseTaskTab}
-        onDispatch={() => openDispatch(selectedTicketId ? { ticketId: selectedTicketId } : undefined)}
-      />
+          …) — the Fleet view IS the session list. Dispatch now lives in the top header
+          (PHNX-3925), so the sub-tab strip only renders when open task tabs exist —
+          otherwise it collapsed to a blank full-width band with a stranded button. */}
+      {openTaskTabs.length > 0 && (
+        <FloorSubtabs
+          fixed={[]}
+          center={center}
+          taskTabs={openTaskTabs}
+          activeTaskTab={activeTaskTab}
+          onSelectCenter={selectCenter}
+          onSelectTaskTab={selectTaskTab}
+          onCloseTaskTab={handleCloseTaskTab}
+          onDispatch={() => openDispatch(selectedTicketId ? { ticketId: selectedTicketId } : undefined)}
+        />
+      )}
 
       {controlsMode && (
         <FloorControls

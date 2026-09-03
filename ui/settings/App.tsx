@@ -809,6 +809,7 @@ export default function App() {
         throughputTokensPerSec={activeTab === 'floor' ? floorThroughput : 0}
         watchdogEnabled={watchdogEnabled}
         onToggleWatchdog={() => vscode.postMessage({ type: 'setWatchdogEnabled', value: !watchdogEnabled })}
+        onDispatch={activeTab === 'floor' ? () => setOpenDispatchTrigger((n) => n + 1) : undefined}
       />
 
       {/* Guide overlay */}
