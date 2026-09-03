@@ -10,7 +10,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   gap (PHNX-3811).** `previousInitialCount` bounded Previous (resumable)
   sessions to the last 7 days, capped at 50 — but returned 0 when every
   resumable session was older than that window, even though resumable history
-  existed further back. It now falls back to the 10 most-recently-active
+  existed further back. It now falls back to up to 10 most-recently-active
   Previous rows when the 7-day window itself is empty; "Show more" still pages
   further back from there, and the bounded-window behavior is unchanged
   whenever it yields at least one row.
