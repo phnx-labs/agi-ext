@@ -88,7 +88,7 @@ export function agentSessionRoots(agentKey: AgentRootKind): string[] {
       return [path.join(home, '.local', 'share', 'opencode', 'storage', 'message')];
     case 'cursor':
       return [path.join(home, '.cursor', 'chats')];
-    // Monitor cannot parse these transcripts yet (see watcherRootsFromCli).
+    // Monitor cannot parse these transcripts yet.
     // Return empty so locate/fast-path no-ops rather than type-error.
     case 'antigravity':
     case 'grok':
@@ -106,8 +106,7 @@ interface WatcherRoot {
 /**
  * The set of roots the machine-wide watcher recursively watches — one entry
  * per (root, agentType). The watcher mounts exactly one fs.watch per root.
- * This is the degraded path for a machine without agents-cli; the watcher
- * normally configures itself from watcherRootsFromCli() below.
+ * This is the degraded path for a machine without agents-cli.
  */
 function watcherRoots(): WatcherRoot[] {
   const home = homeDir();
