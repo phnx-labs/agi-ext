@@ -84,7 +84,6 @@ describe('FloorSubtabs render', () => {
         onSelectCenter={noop}
         onSelectTaskTab={noop}
         onCloseTaskTab={noop}
-        onDispatch={noop}
       />,
     )
     // The agents tab is active (lime `on`); the count + needs badges render.
@@ -92,7 +91,9 @@ describe('FloorSubtabs render', () => {
     expect(html).toContain('fsubtab-needs')
     expect(html).toContain('>3<') // needs badge
     expect(html).toContain('>8<') // agents count
-    expect(html).toContain('Dispatch')
+    // Dispatch lives in the top header now (PHNX-3925) — the sub-tab strip must
+    // NOT render its own Dispatch button, or it double-renders next to the header's.
+    expect(html).not.toContain('Dispatch')
   })
 
   test('a task tab active suppresses the fixed active state and renders a closeable tab', () => {
@@ -105,7 +106,6 @@ describe('FloorSubtabs render', () => {
         onSelectCenter={noop}
         onSelectTaskTab={noop}
         onCloseTaskTab={noop}
-        onDispatch={noop}
       />,
     )
     // No fixed tab is `on` while a task tab owns the center.
