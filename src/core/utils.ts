@@ -340,6 +340,21 @@ export function isHostFallbackLabel(label: string | null | undefined): boolean {
 }
 
 /**
+ * A session label reduced to what may actually be shown, or `null` when nothing
+ * presentable remains: angle-bracket runs (the CLI's `<account>` decoration) are
+ * stripped, and a label that is only the `[host/<device>]` fallback is dropped.
+ *
+ * The single source of truth for both label surfaces — the tab title
+ * (`formatTerminalTitle`) and the status bar — so the two can never disagree
+ * about what counts as a real label (PHNX-3893).
+ */
+export function presentableLabel(rawLabel: string | null | undefined): string | null {
+  const cleaned = rawLabel?.trim()?.replace(/<[^>]*>/g, '').trim() || null;
+  if (!cleaned || isHostFallbackLabel(cleaned)) return null;
+  return cleaned;
+}
+
+/**
  * Build the terminal tab title based on display preferences.
  * Canonical prefix should be one of the KNOWN_PREFIXES.
  * When isFocused=false and showLabelOnlyOnFocus=true, label is hidden.
@@ -355,10 +370,9 @@ export function formatTerminalTitle(prefix: string, options?: TerminalTitleOptio
   const base = display?.showFullAgentNames ? getExpandedAgentName(prefix) : prefix;
   const sessionChunk = display?.showSessionIdInTitles ? options?.sessionChunk?.trim() : null;
 
-  const cleaned = options?.label?.trim()?.replace(/<[^>]*>/g, '').trim() || null;
   // The bare `[host/<device>]` fallback is not a real title — drop it so the tab
   // falls back to the agent base (`CC`); the host shows in the status bar.
-  const label = cleaned && !isHostFallbackLabel(cleaned) ? cleaned : null;
+  const label = presentableLabel(options?.label);
   if (sessionChunk) {
     if (display?.showLabelsInTitles && label) {
       return `${base} ${sessionChunk} - ${label}`;

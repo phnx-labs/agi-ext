@@ -111,11 +111,30 @@ function sharedPrefixSuffix(name: string, allNames: readonly string[]): string {
  * would collide with another device's suffix or full name — e.g. `prod-m1` and
  * `staging-m1` both reducing to `m1` — every colliding name keeps its full name
  * instead. Deterministic: the same roster always yields the same result.
+ *
+ * Information guard: a badge has to be readable as a machine, so an all-digit
+ * suffix is rejected too. `{mark, mark-1}` would strip to `1`, and `$(vm) 1`
+ * names nothing a user can act on, so `mark-1` stays whole. The letter→digit
+ * boundary still cuts wherever it leaves a letter behind (`mark1a` → `1a`).
  */
+/**
+ * The status-bar badge for a remote session's executing device: the shortened
+ * name, resolved against the roster the caller already holds. The caller owns
+ * the "is this actually a remote device?" question — this is pure presentation.
+ */
+export function deviceBadge(host: string, rosterNames: readonly string[]): string {
+  // A host absent from the roster cache (a peer registered since the last
+  // refresh) still has to shorten against its peers, so count it as its own
+  // peer rather than shortening against a roster it is missing from.
+  const names = rosterNames.includes(host) ? rosterNames : [...rosterNames, host];
+  return shortenDeviceName(host, names);
+}
+
 export function shortenDeviceName(name: string, allNames: readonly string[]): string {
   if (!name) return name;
   const suffix = sharedPrefixSuffix(name, allNames);
   if (suffix === name) return name;
+  if (!/[A-Za-z]/.test(suffix)) return name;
 
   for (const other of allNames) {
     if (!other || other === name) continue;

@@ -20,7 +20,7 @@ import { AgentsHtmlReaderProvider } from './htmlReader';
 import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
 import { listRegisteredDevices, getRegisteredDevicesCache } from './deviceHealth.vscode';
-import { shortenDeviceName } from '../core/deviceName';
+import { deviceBadge } from '../core/deviceName';
 import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand, buildRecoveryResumeCommand } from '../core/remoteSessions';
 import * as settings from './settings.vscode';
 import * as swarm from './swarm.vscode';
@@ -69,7 +69,7 @@ import {
   parseTerminalName,
   sanitizeLabel,
   formatTerminalTitle,
-  isHostFallbackLabel,
+  presentableLabel,
   getSessionChunk,
   truncateText,
   extractFirstNWords,
@@ -4154,19 +4154,7 @@ async function tryFetchLabelOnFocus(
 // cache the ext already holds; no new fetch (thin-client rule). PHNX-3893.
 function remoteHostBadge(host: string | null | undefined): string | null {
   if (!host || isLocalDeviceName(host)) return null;
-  const roster = getRegisteredDevicesCache() ?? [];
-  const names = roster.map((d) => d.name);
-  if (!names.includes(host)) names.push(host);
-  return shortenDeviceName(host, names);
-}
-
-// A tab's manual label, HTML-stripped, with the CLI's `[host/<device>]`
-// fallback discarded — the device shows as its own status-bar badge, never as
-// the label (PHNX-3893).
-function statusBarDisplayLabel(rawLabel: string | null | undefined): string | null {
-  const cleaned = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : '';
-  if (!cleaned || isHostFallbackLabel(cleaned)) return null;
-  return cleaned;
+  return deviceBadge(host, (getRegisteredDevicesCache() ?? []).map((d) => d.name));
 }
 
 function formatAgentStatusBarText(
@@ -4278,7 +4266,7 @@ function applyHydratedSessionId(
   }
   applyStreamIdentity(terminal, entry, liveId);
   if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
-  const displayLabel = statusBarDisplayLabel(entry.label);
+  const displayLabel = presentableLabel(entry.label);
   const { version, account } = displayIdentity(entry, liveId);
   agentStatusBarItem.text = formatAgentStatusBarText(
     getExpandedAgentName(prefix),
@@ -4371,7 +4359,7 @@ async function tryHydrateLiveSessionId(
       vscode.window.activeTerminal === terminal &&
       needsSessionIdHydrate(entry.sessionId)
     ) {
-      const displayLabel = statusBarDisplayLabel(entry.label);
+      const displayLabel = presentableLabel(entry.label);
       const { version, account } = displayIdentity(entry, entry.sessionId);
       agentStatusBarItem.text = formatAgentStatusBarText(
         getExpandedAgentName(prefix),
@@ -4413,7 +4401,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
     }
 
     // Show status bar with the current (now stream-stamped) identity.
-    const displayLabel = statusBarDisplayLabel(entry?.label);
+    const displayLabel = presentableLabel(entry?.label);
     const { version, account } = displayIdentity(entry, sessionId);
     agentStatusBarItem.text = formatAgentStatusBarText(
       expandedName,

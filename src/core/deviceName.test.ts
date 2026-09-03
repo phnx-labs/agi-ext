@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { shortenDeviceName } from './deviceName';
+import { shortenDeviceName, deviceBadge } from './deviceName';
 
 describe('shortenDeviceName', () => {
   test('strips a shared hyphen prefix, keeping the unique suffix', () => {
@@ -20,7 +20,20 @@ describe('shortenDeviceName', () => {
   });
 
   test('splits at a letter→digit boundary when there is no delimiter', () => {
-    expect(shortenDeviceName('mark1', ['mark1', 'mark2'])).toBe('1');
+    // The cut lands on the mark→1 transition; the suffix keeps a letter, so it stands.
+    expect(shortenDeviceName('mark1a', ['mark1a', 'mark2a'])).toBe('1a');
+  });
+
+  test('never reduces a device to an all-digit badge', () => {
+    // `mark1`/`mark2` cut at the letter→digit boundary to `1`/`2` — unambiguous,
+    // but `$(vm) 1` names no machine a user can act on, so both stay whole.
+    expect(shortenDeviceName('mark1', ['mark1', 'mark2'])).toBe('mark1');
+    // Asymmetric pair: one bare name, one digit-suffixed sibling.
+    expect(shortenDeviceName('mark2', ['mark', 'mark2'])).toBe('mark2');
+    // Real roster case: `mark` and `mark-1` are both live fleet devices.
+    const fleet = ['mark', 'mark-1', 'mark-aws-1'];
+    expect(shortenDeviceName('mark-1', fleet)).toBe('mark-1');
+    expect(shortenDeviceName('mark-aws-1', fleet)).toBe('aws-1');
   });
 
   test('a delimiter boundary wins over an inner letter→digit boundary', () => {
@@ -86,5 +99,30 @@ describe('shortenDeviceName', () => {
 
   test('an empty name is returned unchanged', () => {
     expect(shortenDeviceName('', ['', 'zion'])).toBe('');
+  });
+});
+
+describe('deviceBadge', () => {
+  const roster = ['yosemite-m1', 'yosemite-m2', 'zion'];
+
+  test('shortens against the roster the caller holds', () => {
+    expect(deviceBadge('yosemite-m1', roster)).toBe('m1');
+    expect(deviceBadge('zion', roster)).toBe('zion');
+  });
+
+  test('a host missing from the roster cache still shortens against its peers', () => {
+    // `yosemite-m9` registered after the last roster refresh: it must still
+    // collapse the shared stem rather than render the full name.
+    expect(deviceBadge('yosemite-m9', roster)).toBe('m9');
+  });
+
+  test('a host missing from an empty roster is returned whole', () => {
+    expect(deviceBadge('yosemite-m9', [])).toBe('yosemite-m9');
+  });
+
+  test('does not mutate the caller\'s roster', () => {
+    const held = [...roster];
+    deviceBadge('yosemite-m9', held);
+    expect(held).toEqual(roster);
   });
 });

@@ -75,7 +75,8 @@ the harness generates a name or the session is renamed; a label set with
 `Cmd+Shift+L` remains authoritative. A session dispatched to another box keeps a
 clean title (`CC`, or its real name) — the executing device is shown in the
 status bar instead, shortened to its unique suffix (`m3`) when fleet peers share
-a common prefix (`yosemite-`).
+a common prefix (`yosemite-`) — and left whole whenever shortening would stop
+naming exactly one box.
 
 ### Task Management
 
