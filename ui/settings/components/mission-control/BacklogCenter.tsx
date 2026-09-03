@@ -8,6 +8,7 @@ import {
   type TicketSort,
   type TicketSource,
 } from './floorModel'
+import { filterTickets } from './listFilter'
 
 // Full ticket list (backlog). Group/sort/source controls now live in the shared
 // contextual bar (FloorControls, mode='backlog') — this component's own duplicate
@@ -83,17 +84,7 @@ export function BacklogCenter({
   onSelectTicket, onOpenTask,
 }: BacklogCenterProps) {
   // Backlog = work you can still dispatch onto, so completed tickets are excluded.
-  const q = search.trim().toLowerCase()
-  const list = tickets.filter(
-    (t) =>
-      t.status !== 'done' &&
-      (projFilter === null || t.project === projFilter) &&
-      srcFilter[t.source] &&
-      (!q ||
-        t.id.toLowerCase().includes(q) ||
-        t.title.toLowerCase().includes(q) ||
-        (t.labels || []).some((l) => l.toLowerCase().includes(q))),
-  )
+  const list = filterTickets(tickets, { projFilter, srcFilter, search })
   const sorted = sortTickets(list, sort)
   const groups = groupTickets(sorted, group)
   const subgroupActive = subgroup !== 'none' && subgroup !== group

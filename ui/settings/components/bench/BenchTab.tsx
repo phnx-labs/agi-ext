@@ -8,6 +8,7 @@ import { KanbanBoard } from './KanbanBoard'
 import { DeadlineView } from './DeadlineView'
 import type { FlatTask } from './TaskCard'
 import type { CloudProviderId } from '../mission-control'
+import { filterTasks, sortTasks, type TaskSortOption } from '../mission-control/listFilter'
 import type {
   AgentSettings,
   ContextFile,
@@ -17,11 +18,6 @@ import type {
   UnifiedTask,
   WorkspaceConfig,
 } from '../../types'
-
-const SOURCE_ORDER: Record<string, number> = {
-  linear: 0,
-  github: 1,
-}
 
 interface BenchTabProps {
   unifiedTasks: UnifiedTask[]
@@ -63,7 +59,6 @@ const SOURCE_FILTERS: Array<{ key: TaskSource; label: string; cls: string }> = [
   { key: 'github', label: 'GH', cls: 'gh' },
 ]
 
-type SortOption = 'priority' | 'due' | 'priority+due'
 type BenchView = 'list' | 'kanban' | 'deadline'
 
 const BENCH_VIEWS: Array<{ key: BenchView; label: string }> = [
@@ -93,7 +88,7 @@ export function BenchTab(props: BenchTabProps) {
     new Set(['linear', 'github'])
   )
   const [repoFilter, setRepoFilter] = useState<string>('all')
-  const [sortBy, setSortBy] = useState<SortOption>('priority')
+  const [sortBy, setSortBy] = useState<TaskSortOption>('priority')
   const [view, setView] = useState<BenchView>('list')
 
   const toggleFilter = (source: TaskSource) => {
@@ -125,62 +120,22 @@ export function BenchTab(props: BenchTabProps) {
   }, [workspaceRepoName, allRepos, repoFilter])
 
   const flatTasks = useMemo<FlatTask[]>(() => {
-    const items: FlatTask[] = []
-
-    const filteredUnified = unifiedTasks.filter(task => {
-      if (dismissedTaskIds.has(task.id)) return false
-      return true
-    })
-
-    const priorityRank: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
-
-    const getDueSortValue = (task: UnifiedTask): number => {
-      const due = task.metadata.dueDate
-      if (!due) return Number.MAX_SAFE_INTEGER
-      return new Date(due).getTime()
-    }
-
-    filteredUnified
-      .sort((a, b) => {
-        const sourceDiff = SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]
-        if (sourceDiff !== 0) return sourceDiff
-
-        if (sortBy === 'priority' || sortBy === 'priority+due') {
-          const ra = a.priority ? priorityRank[a.priority] ?? 99 : 99
-          const rb = b.priority ? priorityRank[b.priority] ?? 99 : 99
-          if (ra !== rb) return ra - rb
-        }
-
-        if (sortBy === 'due' || sortBy === 'priority+due') {
-          const da = getDueSortValue(a)
-          const db = getDueSortValue(b)
-          if (da !== db) return da - db
-        }
-
-        return 0
-      })
-      .forEach(task => {
-        items.push({
-          id: task.id,
-          source: task.source,
-          title: task.title,
-          description: task.description,
-          status: task.status,
-          priority: task.priority,
-          metadata: task.metadata,
-        })
-      })
-
-    return items
+    const filteredUnified = unifiedTasks.filter(task => !dismissedTaskIds.has(task.id))
+    return sortTasks(filteredUnified, sortBy).map(task => ({
+      id: task.id,
+      source: task.source,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      metadata: task.metadata,
+    }))
   }, [unifiedTasks, dismissedTaskIds, sortBy])
 
-  const filteredTasks = useMemo(() => {
-    let tasks = flatTasks.filter(t => activeFilters.has(t.source))
-    if (repoFilter !== 'all') {
-      tasks = tasks.filter(t => t.metadata.repo === repoFilter)
-    }
-    return tasks
-  }, [flatTasks, activeFilters, repoFilter])
+  const filteredTasks = useMemo(
+    () => filterTasks(flatTasks, { activeSources: activeFilters, repoFilter }),
+    [flatTasks, activeFilters, repoFilter]
+  )
 
   const dispatchSiblings = useMemo(() => {
     const ids = new Set(filteredTasks.map(t => t.id))
@@ -326,7 +281,7 @@ export function BenchTab(props: BenchTabProps) {
             <select
               className="sw-bench-filter-select"
               value={sortBy}
-              onChange={e => setSortBy(e.target.value as SortOption)}
+              onChange={e => setSortBy(e.target.value as TaskSortOption)}
               title="Sort tasks"
             >
               <option value="priority">Priority</option>
