@@ -19,7 +19,8 @@ import { AgentsMarkdownEditorProvider, swarmCurrentDocument } from './customEdit
 import { AgentsHtmlReaderProvider } from './htmlReader';
 import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
-import { listRegisteredDevices } from './deviceHealth.vscode';
+import { listRegisteredDevices, getRegisteredDevicesCache } from './deviceHealth.vscode';
+import { shortenDeviceName } from '../core/deviceName';
 import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand, buildRecoveryResumeCommand } from '../core/remoteSessions';
 import * as settings from './settings.vscode';
 import * as swarm from './swarm.vscode';
@@ -68,6 +69,7 @@ import {
   parseTerminalName,
   sanitizeLabel,
   formatTerminalTitle,
+  isHostFallbackLabel,
   getSessionChunk,
   truncateText,
   extractFirstNWords,
@@ -4145,6 +4147,28 @@ async function tryFetchLabelOnFocus(
 }
 
 
+// The host badge for the status bar: the tab's executing device (entry.host,
+// stamped from the stream's `machine`), shortened against the known-device
+// roster so a shared fleet stem collapses (`yosemite-m3` → `m3`). Returns null
+// for a local session — nothing to show. Reads only the synchronous roster
+// cache the ext already holds; no new fetch (thin-client rule). PHNX-3893.
+function remoteHostBadge(host: string | null | undefined): string | null {
+  if (!host || isLocalDeviceName(host)) return null;
+  const roster = getRegisteredDevicesCache() ?? [];
+  const names = roster.map((d) => d.name);
+  if (!names.includes(host)) names.push(host);
+  return shortenDeviceName(host, names);
+}
+
+// A tab's manual label, HTML-stripped, with the CLI's `[host/<device>]`
+// fallback discarded — the device shows as its own status-bar badge, never as
+// the label (PHNX-3893).
+function statusBarDisplayLabel(rawLabel: string | null | undefined): string | null {
+  const cleaned = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : '';
+  if (!cleaned || isHostFallbackLabel(cleaned)) return null;
+  return cleaned;
+}
+
 function formatAgentStatusBarText(
   expandedName: string,
   version: string | undefined,
@@ -4152,6 +4176,7 @@ function formatAgentStatusBarText(
   label: string | null,
   sessionId: string | undefined,
   showTrackingHint = false,
+  host: string | null = null,
 ): string {
   let text = `Agents: ${expandedName}`;
   if (version) {
@@ -4159,6 +4184,13 @@ function formatAgentStatusBarText(
   }
   if (account) {
     text += ` <${account}>`;
+  }
+  // The executing device for an offloaded/remote session (its structured
+  // `machine`, shortened against the fleet roster). Local sessions pass null —
+  // nothing added. This is where the host lives now, not the tab title
+  // (PHNX-3893).
+  if (host) {
+    text += ` $(vm) ${host}`;
   }
   if (label) {
     text += ` - ${label}`;
@@ -4246,8 +4278,7 @@ function applyHydratedSessionId(
   }
   applyStreamIdentity(terminal, entry, liveId);
   if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
-  const rawLabel = entry.label;
-  const displayLabel = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : null;
+  const displayLabel = statusBarDisplayLabel(entry.label);
   const { version, account } = displayIdentity(entry, liveId);
   agentStatusBarItem.text = formatAgentStatusBarText(
     getExpandedAgentName(prefix),
@@ -4256,6 +4287,7 @@ function applyHydratedSessionId(
     displayLabel,
     liveId,
     entry.agentType === 'codex',
+    remoteHostBadge(entry.host),
   );
 }
 
@@ -4339,8 +4371,7 @@ async function tryHydrateLiveSessionId(
       vscode.window.activeTerminal === terminal &&
       needsSessionIdHydrate(entry.sessionId)
     ) {
-      const rawLabel = entry.label;
-      const displayLabel = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : null;
+      const displayLabel = statusBarDisplayLabel(entry.label);
       const { version, account } = displayIdentity(entry, entry.sessionId);
       agentStatusBarItem.text = formatAgentStatusBarText(
         getExpandedAgentName(prefix),
@@ -4349,6 +4380,7 @@ async function tryHydrateLiveSessionId(
         displayLabel,
         entry.sessionId,
         entry.agentType === 'codex' || entry.agentType === 'grok',
+        remoteHostBadge(entry.host),
       );
     }
   } finally {
@@ -4381,8 +4413,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
     }
 
     // Show status bar with the current (now stream-stamped) identity.
-    const rawLabel = entry?.label;
-    const displayLabel = rawLabel ? rawLabel.replace(/<[^>]*>/g, '').trim() : null;
+    const displayLabel = statusBarDisplayLabel(entry?.label);
     const { version, account } = displayIdentity(entry, sessionId);
     agentStatusBarItem.text = formatAgentStatusBarText(
       expandedName,
@@ -4391,6 +4422,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
       displayLabel,
       sessionId,
       entry?.agentType === 'codex',
+      remoteHostBadge(entry?.host),
     );
 
     // Async-resolve the live session id from the SessionStart hook's state file,

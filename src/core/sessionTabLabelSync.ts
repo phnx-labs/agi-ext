@@ -1,4 +1,4 @@
-import { extractLinearTicketId } from './utils';
+import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 
 export interface SessionTabLabelState {
   manualLabel?: string;
@@ -39,7 +39,10 @@ export function planSessionTabLabelUpdate(
   live: LiveSessionLabelSource,
 ): SessionTabLabelUpdate | undefined {
   const sessionLabel = live.label.trim();
-  if (!sessionLabel) return undefined;
+  // The CLI's `[host/<device>]` fallback is not a task title — the executing
+  // device belongs in the status bar, not the tab (PHNX-3893). Treat it as no
+  // label so the tab keeps its bare agent base until a real name/topic lands.
+  if (!sessionLabel || isHostFallbackLabel(sessionLabel)) return undefined;
 
   const manualLabel = tab.manualLabel?.trim() || '';
   const topic = live.topic.trim();

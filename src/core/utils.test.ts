@@ -8,6 +8,7 @@ import {
   getTerminalDisplayInfo,
   findTerminalNameByTabLabel,
   formatTerminalTitle,
+  isHostFallbackLabel,
   getSessionChunk,
   extractFirstNWords,
   extractLinearTicketId,
@@ -673,6 +674,46 @@ describe('formatTerminalTitle', () => {
       display: { showFullAgentNames: true, showLabelsInTitles: true, showSessionIdInTitles: false, labelReplacesTitle: true, showLabelOnlyOnFocus: true },
       isFocused: false
     })).toBe('Claude');
+  });
+
+  test('drops a bare [host/<device>] fallback label — tab falls back to the base (PHNX-3893)', () => {
+    const display = { showFullAgentNames: false, showLabelsInTitles: true, showSessionIdInTitles: false, labelReplacesTitle: false };
+    expect(formatTerminalTitle('CC', { label: '[host/yosemite-m3]', display })).toBe('CC');
+    // labelReplacesTitle must not leave an empty title either.
+    expect(formatTerminalTitle('CC', {
+      label: '[host/yosemite-m3]',
+      display: { ...display, labelReplacesTitle: true },
+    })).toBe('CC');
+  });
+
+  test('keeps a real label that merely mentions the word host', () => {
+    const display = { showFullAgentNames: false, showLabelsInTitles: true, showSessionIdInTitles: false, labelReplacesTitle: false };
+    expect(formatTerminalTitle('CC', { label: 'fix host resolver', display })).toBe('CC - fix host resolver');
+  });
+});
+
+describe('isHostFallbackLabel', () => {
+  test('matches only the exact [host/<device>] chip', () => {
+    expect(isHostFallbackLabel('[host/yosemite-m3]')).toBe(true);
+    expect(isHostFallbackLabel('  [host/zion]  ')).toBe(true);
+  });
+
+  test('does not match real labels, partial chips, or empty input', () => {
+    expect(isHostFallbackLabel('fix host resolver')).toBe(false);
+    expect(isHostFallbackLabel('CC - [host/yosemite-m3]')).toBe(false);
+    expect(isHostFallbackLabel('[host/]')).toBe(false);
+    expect(isHostFallbackLabel('')).toBe(false);
+    expect(isHostFallbackLabel(null)).toBe(false);
+    expect(isHostFallbackLabel(undefined)).toBe(false);
+  });
+});
+
+describe('getTerminalDisplayInfo host-fallback handling', () => {
+  test('a rescanned "CC - [host/<device>]" tab drops the host chip label', () => {
+    const info = getTerminalDisplayInfo({ name: 'CC - [host/yosemite-m3]' });
+    expect(info.isAgent).toBe(true);
+    expect(info.label).toBeNull();
+    expect(info.statusBarText).toBe('Claude');
   });
 });
 
