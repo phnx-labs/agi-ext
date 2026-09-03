@@ -16,6 +16,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   devices share a common prefix (`yosemite-m3`, `yosemite-m2`, …) the badge
   shows only the unique suffix (`m3`), cut at a real token boundary so a name is
   never sliced mid-token; a device with no shared prefix shows its full name.
+  Shortening only applies when it stays unambiguous — if two devices would
+  reduce to the same badge (`prod-m1` and `staging-m1` → `m1`), or a suffix
+  would collide with another device's real name, the colliding devices keep
+  their full names, so the badge always identifies exactly one box.
   Local sessions and sessions with a real name/topic are unchanged. The host
   rides the stream's structured `machine` field — no label string-parsing, no
   new fetch (`src/core/deviceName.ts`, thin-client rule).

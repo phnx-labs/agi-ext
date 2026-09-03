@@ -72,19 +72,11 @@ function boundaryCutWithin(delims: number[], softs: number[], limit: number): nu
 }
 
 /**
- * Shorten a device name by stripping the prefix it shares with a PEER device,
- * cut at a real token boundary (delimiter, camelCase, or letter→digit).
- *
- * - `{yosemite-m3, yosemite-m2, zion}` → `yosemite-m3` shows as `m3`.
- * - `yosemite_s1` / `yosemite s1` split the same way → `s1`.
- * - `yosemiteXYZ` (no delimiter) splits at the case boundary → `XYZ`.
- * - One device, or no shared prefix (`{mac-mini, macbook-air}`, which diverge
- *   before any delimiter) → the full name, unchanged. Never a mid-token slice.
- *
- * Deterministic: the same roster always yields the same result.
+ * The boundary-safe suffix of `name` after stripping the longest prefix it
+ * shares with any PEER, without regard to whether that suffix is unique. The
+ * public `shortenDeviceName` layers a collision guard on top of this.
  */
-export function shortenDeviceName(name: string, allNames: readonly string[]): string {
-  if (!name) return name;
+function sharedPrefixSuffix(name: string, allNames: readonly string[]): string {
   const peers = allNames.filter((other) => other && other !== name);
   if (peers.length === 0) return name;
 
@@ -102,4 +94,37 @@ export function shortenDeviceName(name: string, allNames: readonly string[]): st
   if (cut === 0) return name;
   const suffix = name.slice(cut).replace(/^[-_ ]+/, '');
   return suffix || name;
+}
+
+/**
+ * Shorten a device name by stripping the prefix it shares with a PEER device,
+ * cut at a real token boundary (delimiter, camelCase, or letter→digit).
+ *
+ * - `{yosemite-m3, yosemite-m2, zion}` → `yosemite-m3` shows as `m3`.
+ * - `yosemite_s1` / `yosemite s1` split the same way → `s1`.
+ * - `yosemiteXYZ` (no delimiter) splits at the case boundary → `XYZ`.
+ * - One device, or no shared prefix (`{mac-mini, macbook-air}`, which diverge
+ *   before any delimiter) → the full name, unchanged. Never a mid-token slice.
+ *
+ * Collision guard: the whole point of the badge is to say WHICH box, so a
+ * shortening is only applied when it stays unambiguous. If the stripped suffix
+ * would collide with another device's suffix or full name — e.g. `prod-m1` and
+ * `staging-m1` both reducing to `m1` — every colliding name keeps its full name
+ * instead. Deterministic: the same roster always yields the same result.
+ */
+export function shortenDeviceName(name: string, allNames: readonly string[]): string {
+  if (!name) return name;
+  const suffix = sharedPrefixSuffix(name, allNames);
+  if (suffix === name) return name;
+
+  for (const other of allNames) {
+    if (!other || other === name) continue;
+    // Collides with a real device's own name, or with the suffix that device
+    // would itself display — either way the badge would no longer identify the
+    // box, so fall back to the unambiguous full name.
+    if (other === suffix || sharedPrefixSuffix(other, allNames) === suffix) {
+      return name;
+    }
+  }
+  return suffix;
 }
