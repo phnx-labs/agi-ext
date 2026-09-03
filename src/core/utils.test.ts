@@ -9,6 +9,7 @@ import {
   findTerminalNameByTabLabel,
   formatTerminalTitle,
   isHostFallbackLabel,
+  presentableLabel,
   getSessionChunk,
   extractFirstNWords,
   extractLinearTicketId,
@@ -705,6 +706,42 @@ describe('isHostFallbackLabel', () => {
     expect(isHostFallbackLabel('')).toBe(false);
     expect(isHostFallbackLabel(null)).toBe(false);
     expect(isHostFallbackLabel(undefined)).toBe(false);
+  });
+});
+
+describe('presentableLabel', () => {
+  test('keeps a real label, stripping the CLI account decoration', () => {
+    expect(presentableLabel('auth refactor')).toBe('auth refactor');
+    expect(presentableLabel('  auth refactor  ')).toBe('auth refactor');
+    expect(presentableLabel('auth refactor <muqsit@getrush.ai>')).toBe('auth refactor');
+  });
+
+  test('drops the host fallback and anything that leaves nothing behind', () => {
+    expect(presentableLabel('[host/yosemite-m3]')).toBeNull();
+    expect(presentableLabel('  [host/zion]  ')).toBeNull();
+    expect(presentableLabel('<muqsit@getrush.ai>')).toBeNull();
+    expect(presentableLabel('')).toBeNull();
+    expect(presentableLabel(null)).toBeNull();
+    expect(presentableLabel(undefined)).toBeNull();
+  });
+
+  test('a label that merely mentions host survives', () => {
+    expect(presentableLabel('fix host resolver')).toBe('fix host resolver');
+  });
+
+  test('agrees with the tab title on what counts as a real label', () => {
+    // Both label surfaces route through this function, so they cannot diverge.
+    const display = {
+      showFullAgentNames: false,
+      showLabelsInTitles: true,
+      showSessionIdInTitles: false,
+      labelReplacesTitle: false,
+    };
+    for (const raw of ['[host/yosemite-m3]', 'auth refactor', '<acct>', 'fix host resolver']) {
+      const shown = presentableLabel(raw);
+      const title = formatTerminalTitle('CC', { label: raw, display });
+      expect(title).toBe(shown ? `CC - ${shown}` : 'CC');
+    }
   });
 });
 
