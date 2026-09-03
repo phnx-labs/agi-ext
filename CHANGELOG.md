@@ -4,6 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.359] - 2026-09-03
+
+- **The Previous band no longer looks empty for a user returning after a long
+  gap (PHNX-3811).** `previousInitialCount` bounded Previous (resumable)
+  sessions to the last 7 days, capped at 50 — but returned 0 when every
+  resumable session was older than that window, even though resumable history
+  existed further back. It now falls back to the 10 most-recently-active
+  Previous rows when the 7-day window itself is empty; "Show more" still pages
+  further back from there, and the bounded-window behavior is unchanged
+  whenever it yields at least one row.
+
 ## [0.9.358] - 2026-09-03
 
 - **A plain Sessions row click no longer opens two detail surfaces at once (PHNX-3879).**

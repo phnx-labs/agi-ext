@@ -11,6 +11,7 @@ import {
   orderedPrevious,
   previousInitialCount,
   PREVIOUS_DEFAULT_LIMIT,
+  PREVIOUS_PAGE,
   type SessionScope,
 } from './sessionsModel'
 
@@ -291,10 +292,22 @@ describe('previous band bounds', () => {
     const ordered = orderedPrevious([...recent, ...old])
     expect(previousInitialCount(ordered, now)).toBe(3)
   })
-  test('when everything is older than the window, require explicit paging', () => {
+  test('when everything is older than the window, fall back to the most-recent PREVIOUS_PAGE rows instead of an empty band (PHNX-3811)', () => {
     const old = Array.from({ length: 20 }, (_, i) => prevRow({ id: `o${i}`, lastActivityMs: now - (30 * 24 * 60 * 60 * 1000 + i) }))
     const ordered = orderedPrevious(old)
-    expect(previousInitialCount(ordered, now)).toBe(0)
+    expect(previousInitialCount(ordered, now)).toBe(PREVIOUS_PAGE)
+    // newest-first: the fallback keeps the most recently active rows, not an arbitrary slice.
+    expect(ordered.slice(0, previousInitialCount(ordered, now)).map((a) => a.id)).toEqual(
+      Array.from({ length: PREVIOUS_PAGE }, (_, i) => `o${i}`),
+    )
+  })
+  test('exactly zero-in-window with fewer resumable rows than PREVIOUS_PAGE falls back to all of them', () => {
+    const old = Array.from({ length: 4 }, (_, i) => prevRow({ id: `o${i}`, lastActivityMs: now - (30 * 24 * 60 * 60 * 1000 + i) }))
+    const ordered = orderedPrevious(old)
+    expect(previousInitialCount(ordered, now)).toBe(4)
+  })
+  test('no resumable sessions at all stays empty, not a false fallback', () => {
+    expect(previousInitialCount([], now)).toBe(0)
   })
   test('the cap never exceeds the default limit', () => {
     const many = Array.from({ length: 80 }, (_, i) => prevRow({ id: `m${i}`, lastActivityMs: now - i * 1000 }))
