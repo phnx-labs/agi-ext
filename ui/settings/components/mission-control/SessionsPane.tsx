@@ -274,6 +274,10 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   return (
     <div className="sw-sessions">
       <style>{SESSION_ROW_CSS}</style>
+      {/* Only show the filter toolbar when there is something to filter. With
+          zero sessions the chips/search/sort chrome is dead weight — the empty
+          state below carries the whole message. */}
+      {rows.length > 0 && (
       <div className="sx-filters">
         <div className="sx-chips">
           {FILTER_OPTS.map(({ value: f, label, tone }) => (
@@ -331,13 +335,16 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
           <Icon name={desc ? 'chevD' : 'chevR'} size={12} />
         </button>
       </div>
+      )}
 
       <div className="sx-scroll" ref={scrollRef} onScroll={onScroll}>
         {items.length === 0 ? (
           <div className="sx-empty">
             {streamDegraded && rows.length === 0
               ? 'Session data unavailable. Waiting for the first snapshot…'
-              : <>No sessions match. {rows.length > 0 && <button className="sx-link" onClick={() => { setFilter('all'); setSearch(''); setNeedsOnly(false); chooseProject(null) }}>Clear filters</button>}</>}
+              : rows.length === 0
+              ? 'No agent sessions yet.'
+              : <>No sessions match. <button className="sx-link" onClick={() => { setFilter('all'); setSearch(''); setNeedsOnly(false); chooseProject(null) }}>Clear filters</button></>}
           </div>
         ) : (
           <div style={{ height: totalHeight, position: 'relative' }}>
