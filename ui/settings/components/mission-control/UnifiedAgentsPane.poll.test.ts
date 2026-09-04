@@ -273,7 +273,12 @@ test('Fleet layout defaults and legacy prefs keep both side panels closed', () =
 
   expect(source).toContain('sessionsAgents.find((a) => a.id === selectedAgentId)')
   expect(source).toContain('onSelect={(a) => selectSession(a.id)}')
-  expect(source).toContain('{rightOpen && <div className="detail-col">')
+  // PHNX-3938: the detail rail renders only when rightOpen AND something is
+  // actually selected — otherwise a persisted rightOpen pref restored a blank
+  // third-width column on open. The old "Select an agent" placeholder is gone.
+  expect(source).toContain("{rightOpen && (center === 'host' ? selectedHostId : selectedFloorAgent) && (")
+  expect(source).not.toContain('{rightOpen && <div className="detail-col">')
+  expect(source).not.toContain('Select an agent or issue to open its conversation')
   expect(source).not.toContain("rightOpen && center !== 'sessions'")
 
   // Closing the detail must drop rightOpen, not merely clear the selection — on the

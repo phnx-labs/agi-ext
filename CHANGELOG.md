@@ -4,6 +4,20 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.362] - 2026-09-04
+
+- **Fix: the Fleet view no longer opens with a blank detail rail on the right
+  (PHNX-3938, folds in PHNX-3592).** `rightOpen` is a persisted layout pref that
+  is re-saved `true` every time a session detail is opened, but the selected
+  session itself is not persisted. So on the next extension open the rail was
+  restored open with no selection and rendered its "Select an agent or issue…"
+  placeholder — a blank column eating roughly a third of the width for nothing.
+  The detail rail now renders only when it is open **and** something is actually
+  selected (a session on the Sessions/Agents center, or a device on the Hosts
+  center); the now-unreachable empty placeholder is removed. Before: the session
+  list shared the width with an empty rail on every open. After: the list uses
+  the full width until you click a session, which opens the rail as before.
+
 ## [0.9.361] - 2026-09-03
 
 - **Perf: removed the always-on `agents feed watch` load hog from the monitor
