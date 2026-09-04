@@ -6,6 +6,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.361] - 2026-09-03
 
+- **Perf: removed the always-on `agents feed watch` load hog from the monitor
+  host.** The elected-leader window spawned `agents feed watch --json` 24/7 via
+  `SessionCliStream` to feed a session-*presentation* store. In practice that
+  command busy-polls at ~31% CPU and fans out accumulating ssh connections to the
+  whole fleet without reaping them — on a real box two watchers pinned ~63% CPU
+  for 6+ hours feeding a view that does not render, never gated on the Fleet panel
+  being visible. Deleted `src/monitor/sessionCliStream.ts` and stripped the
+  `sessionCli` detector + follower-replay wiring from `host.ts`. The session
+  *browser* (`agents sessions --json`) is a separate path and is untouched; the
+  harmless receive-side plumbing (protocol fact, `sessionPresentationStore`,
+  extension routing) is left for a follow-up since it causes zero load.
 - **The empty Dispatch bar is gone from the Fleet view; Dispatch moved into the
   top header (PHNX-3925).** With the center counter tabs removed (PHNX-3594) and
   no task tab open, the `FloorSubtabs` strip collapsed to a blank full-width band
