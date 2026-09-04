@@ -2079,9 +2079,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // cross-host fallback.
   const renderAgentDetail = () => {
     const a = selectedFloorAgent
-    if (!a) {
-      return <div className="detail-empty">Select an agent or issue to open its conversation and reply here.</div>
-    }
+    // The detail rail only mounts when a session is selected (see the detail-col
+    // gate in the page layout), so `a` is always set here. Guard defensively and
+    // render nothing rather than a blank placeholder if selection ever clears
+    // while the rail is mid-unmount (PHNX-3938).
+    if (!a) return null
     // The "needs you" decision block (why blocked · original task · the question +
     // option chips + reply). Extracted to AgentDecision so the preview harness renders
     // the exact same markup.
@@ -2436,7 +2438,16 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
             Recap / Projects / Devices) are gone or moved to Settings; Dispatch stays
             pinned in the header sub-tab strip. The session list renders full-width. */}
         {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
-        {rightOpen && <div className="detail-col">{rightContent}</div>}
+        {/* The detail rail renders ONLY when the pane is open AND something is
+            actually selected. `rightOpen` alone is a persisted pref that restores
+            true on extension open, so gating on it alone left a blank third-width
+            column with a "Select an agent" placeholder and no selection (PHNX-3938,
+            folds PHNX-3592). Selecting a session/host sets both the selection and
+            rightOpen (selectFloorAgent / selectSession / onSelectHost), so the rail
+            still opens on click; the list uses full width until then. */}
+        {rightOpen && (center === 'host' ? selectedHostId : selectedFloorAgent) && (
+          <div className="detail-col">{rightContent}</div>
+        )}
       </div>
 
       {cardDragActive && (
