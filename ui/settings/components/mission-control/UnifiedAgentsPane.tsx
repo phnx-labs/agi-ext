@@ -2442,9 +2442,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
             actually selected. `rightOpen` alone is a persisted pref that restores
             true on extension open, so gating on it alone left a blank third-width
             column with a "Select an agent" placeholder and no selection (PHNX-3938,
-            folds PHNX-3592). Selecting a session/host sets both the selection and
-            rightOpen (selectFloorAgent / selectSession / onSelectHost), so the rail
-            still opens on click; the list uses full width until then. */}
+            folds PHNX-3592). Selecting a session sets both the selection and
+            rightOpen (selectFloorAgent / selectSession), so the rail still opens on
+            click; the list uses full width until then. The host branch mirrors the
+            same guard so it stays correct if the Hosts surface is re-wired (its
+            onSelectHost entry point is currently unused after PHNX-3594). */}
         {rightOpen && (center === 'host' ? selectedHostId : selectedFloorAgent) && (
           <div className="detail-col">{rightContent}</div>
         )}
