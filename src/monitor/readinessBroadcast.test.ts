@@ -82,7 +82,7 @@ describe('readiness broadcast round-trip', () => {
   test('leader probes a reported pid once and the follower receives agentReady', async () => {
     const socketPath = tempSocketPath();
     const pid = spawnShellWithChild();
-    const host = new MonitorHost({ socketPath, detectors: { sessionCli: false } });
+    const host = new MonitorHost({ socketPath, detectors: { readiness: true } });
     await host.start();
 
     const readinessFacts: ReadinessFactPayload[] = [];
