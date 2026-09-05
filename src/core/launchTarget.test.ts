@@ -136,6 +136,32 @@ describe('registered harness launch commands', () => {
     }
   });
 
+  it('preserves a shared monorepo cwd unless Pick Project was explicitly chosen', () => {
+    const cwd = '/Users/me/src/github.com/example/monorepo';
+    const context = { cwd, projectSlug: 'child-a' };
+
+    // A caller may know which managed project contains this path, but that is
+    // attribution only. Default, Auto, and Pick Host must not reinterpret it as
+    // consent to replace the exact workspace with the project's defaultPath.
+    const ordinaryOptions = [
+      { agentKey: 'claude' },
+      launchOptsForHarnessCommand('auto'),
+      { ...launchOptsForHarnessCommand('pick-host'), agentKey: 'claude', host: 'worker-box' },
+    ];
+    for (const options of ordinaryOptions) {
+      const command = buildNewAgentLaunchCommand(options, context);
+      expect(command).toContain(`--cwd '${cwd}'`);
+      expect(command).not.toContain('--project');
+    }
+
+    const explicit = buildNewAgentLaunchCommand(
+      { agentKey: 'claude', ...launchOptsForHarnessCommand('pick-project') },
+      context,
+    );
+    expect(explicit).toContain("--project 'child-a'");
+    expect(explicit).not.toContain('--cwd');
+  });
+
   it('falls back to the plain Auto command when no project was picked', () => {
     // A cancelled quickpick leaves projectSlug undefined; the launch must still be
     // the Auto-equivalent command, not a broken one with a dangling --project.

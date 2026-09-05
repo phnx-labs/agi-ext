@@ -4,6 +4,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- **Fix: ordinary remote launches preserve a shared monorepo root (PHNX-3970).**
+  New, Auto, and Pick Host used `agents projects view <workspace>` to turn any
+  containing managed-project match into `--project`, then dropped the exact
+  `--cwd`. When several child projects shared one monorepo root, the lookup's
+  first weak match silently sent the terminal to that child's `defaultPath`.
+  Ordinary launches now carry the open workspace through unchanged; only the
+  explicit Pick Project command may replace it with a project's configured path.
+
 ## [0.9.367] - 2026-09-07
 
 - **Contain process leaks that could orphan a fork-bombed subtree and crash the
@@ -131,6 +141,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   regardless of state, and kept a resolved copy — so *ask A → resolve A → ask B*
   left the card showing the stale, resolved A. Resolved attention is now dropped to
   a receipt and the join prefers the live (open, most-recent) item.
+
 
 ## [0.9.363] - 2026-09-05
 

@@ -57,10 +57,19 @@ presentation layer. Concretely:
 4. **Fail loud.** A missing CLI noun is an upgrade error, never a filesystem
    fallback.
 
+Launch location follows explicit user intent. Ordinary New, Auto, and Pick Host
+commands preserve the active workspace as the portable `--cwd`, including when
+that path is a monorepo root shared by several managed projects. Only the explicit
+Pick Project command emits `--project` and lets the CLI resolve that project's
+configured path. Never derive an ordinary launch target from `agents projects
+view <cwd>`: that command is a containment attribution lookup, and a shared root
+can belong to multiple child projects.
+
 The Fleet dashboard is a LIST, not a preview: it keeps search, filters, grouping,
 the row Resume button and the expand-in-place card, and it hands session preview to
 the native sidebar. It has no detail rail, no `rightOpen` layout pref and no
 per-selection `sessions preview` fetch — a row click costs zero subprocesses.
+
 
 The Sessions dashboard follows that same stream contract. Its full first-user
 request comes from `SessionWatchRow.firstUserMessage`; status filters and grouping
