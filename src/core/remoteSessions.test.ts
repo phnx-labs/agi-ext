@@ -180,6 +180,75 @@ describe('resolveProject', () => {
     expect(s.project).toBe('Prix API');
   });
 
+  test('copies the summarizer signals verbatim — goal, checkpoints, checklist, state (PHNX-3939)', () => {
+    const s = normalizeActiveSession(
+      {
+        kind: 'claude',
+        status: 'running',
+        cwd: '/x/y/agents/agi-ext',
+        sessionFile: '/x/aaaaaaaa.jsonl',
+        goal: 'Ship the sidebar Goal + Progress cards',
+        checkpoints: [
+          { text: 'Scoped the CLI field contract', at: '2026-09-05T10:00:00Z' },
+          { text: 'Wired the render layer', at: '2026-09-05T10:20:00Z' },
+          { text: '', at: '2026-09-05T10:30:00Z' }, // textless → dropped
+          null,
+        ],
+        summaryChecklist: {
+          items: [
+            { content: 'Add RemoteSession fields', status: 'completed' },
+            { content: 'Render the cards', status: 'in_progress', activeForm: 'Rendering the cards' },
+            { content: 'Write tests', status: 'weird' }, // unknown status → pending
+            { content: '' }, // contentless → dropped
+          ],
+        },
+        summaryState: 'ready',
+      } as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+    );
+    expect(s.goal).toBe('Ship the sidebar Goal + Progress cards');
+    expect(s.checkpoints).toEqual([
+      { text: 'Scoped the CLI field contract', at: '2026-09-05T10:00:00Z' },
+      { text: 'Wired the render layer', at: '2026-09-05T10:20:00Z' },
+    ]);
+    expect(s.summaryChecklist).toEqual([
+      { content: 'Add RemoteSession fields', status: 'completed' },
+      { content: 'Render the cards', status: 'in_progress', activeForm: 'Rendering the cards' },
+      { content: 'Write tests', status: 'pending' },
+    ]);
+    expect(s.summaryState).toBe('ready');
+  });
+
+  test('summaryChecklist also accepts a bare array; absent signals are undefined (PHNX-3939)', () => {
+    const arrayShape = normalizeActiveSession(
+      {
+        kind: 'claude',
+        status: 'running',
+        cwd: '/x/y/agents/agi-ext',
+        sessionFile: '/x/bbbbbbbb.jsonl',
+        summaryChecklist: [{ content: 'One item', status: 'pending' }],
+        summaryState: 'garbage', // invalid → undefined
+      } as unknown as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+    );
+    expect(arrayShape.summaryChecklist).toEqual([{ content: 'One item', status: 'pending' }]);
+    expect(arrayShape.summaryState).toBeUndefined();
+
+    // A row with no summarizer signals leaves goal/checklist/state undefined and
+    // checkpoints an empty array — the render layer supplies the topic fallback.
+    const bare = normalizeActiveSession(
+      { kind: 'claude', status: 'running', cwd: '/x/y/agents/agi-ext', sessionFile: '/x/cccccccc.jsonl', topic: 'raw request' } as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+    );
+    expect(bare.goal).toBeUndefined();
+    expect(bare.checkpoints).toEqual([]);
+    expect(bare.summaryChecklist).toBeUndefined();
+    expect(bare.summaryState).toBeUndefined();
+  });
+
   test("a cwd-bearing row ignores the CLI's project word; a cwd-less one keeps it (PHNX-3796)", () => {
     // With a cwd, the resolved cwd is authoritative — the CLI word must not override it.
     const local = normalizeActiveSession(

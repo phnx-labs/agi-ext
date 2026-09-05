@@ -184,6 +184,12 @@ export interface RemoteTodoItem {
   activeForm?: string;
 }
 
+/** One progress checkpoint from the CLI summarizer: a short line + its ISO timestamp. */
+export interface RemoteCheckpoint {
+  text: string;
+  at: string;
+}
+
 export interface RemoteSessionArtifact {
   path: string;
   basename: string;
@@ -256,6 +262,19 @@ export interface RemoteSession {
    *  Fleet show an N/M pill + checklist for remote / device-dispatched agents
    *  that have no local tool-call stream. Absent when the session wrote no todo list. */
   todos?: RemoteTodoItem[];
+  /** Clean 1–2 line goal distilled by the CLI summarizer from the raw first request
+   *  (PHNX-3939). The sidebar shows this as ◈ Goal instead of the rambling request.
+   *  Absent on an older CLI — the panel falls back to `topic`. */
+  goal?: string;
+  /** Live progress checkpoints from the CLI summarizer (most-recent last). [] when none. */
+  checkpoints?: RemoteCheckpoint[];
+  /** The CLI summarizer's always-on checklist — same item shape as `todos`, but a
+   *  separate signal (the distilled plan, not the live TodoWrite). Absent until ready. */
+  summaryChecklist?: RemoteTodoItem[];
+  /** Summarizer lifecycle for the checklist's always-on empty state:
+   *  'pending' → "summarizing…", 'ready'/'skipped' → "No checklist yet". Absent on an
+   *  older CLI. */
+  summaryState?: 'pending' | 'ready' | 'skipped';
   /** Raw CLI output text, when the active-session payload carries it. */
   output: string;
   /** Attachment refs/names from the CLI payload, normalized for thumbnail + preview. */
@@ -460,6 +479,20 @@ export interface RawActiveSession {
     total?: number;
     activeForm?: string;
   } | null;
+  /** Clean 1–2 line goal for the session, distilled by the CLI summarizer from the
+   *  raw first request (PHNX-3939). Absent on an older CLI — the UI falls back to topic. */
+  goal?: string;
+  /** Live progress checkpoints the CLI summarizer emits (most-recent last), each a
+   *  short line + an ISO timestamp. Absent when the summarizer wrote none. */
+  checkpoints?: Array<{ text?: string; at?: string } | null>;
+  /** The CLI summarizer's always-on checklist (same item shape as `todos`), distinct
+   *  from the live TodoWrite list. Absent until the summarizer produces one. */
+  summaryChecklist?: {
+    items?: Array<{ content?: string; status?: string; activeForm?: string } | null>;
+  } | Array<{ content?: string; status?: string; activeForm?: string } | null> | null;
+  /** Summarizer lifecycle: 'pending' (working on the digest), 'ready' (produced),
+   *  'skipped' (nothing to summarize). Drives the always-on checklist's empty state. */
+  summaryState?: string;
   output?: string;
   attachments?: unknown[];
   pr?: { url?: string; number?: number } | null;
@@ -506,8 +539,10 @@ const TICKET_RE = /\b[A-Z][A-Z0-9]*-\d+\b/;
  * renders (RUSH-1380). Drops contentless items; coerces an unknown status to
  * 'pending'. Returns [] when the payload carries no usable list.
  */
-function normalizeTodos(raw: RawActiveSession['todos']): RemoteTodoItem[] {
-  const items = raw?.items;
+function normalizeTodos(raw: RawActiveSession['todos'] | RawActiveSession['summaryChecklist']): RemoteTodoItem[] {
+  // The live `todos` payload nests items under `.items`; the summarizer's
+  // `summaryChecklist` may arrive as a bare array. Accept either shape.
+  const items = Array.isArray(raw) ? raw : raw?.items;
   if (!Array.isArray(items)) return [];
   const out: RemoteTodoItem[] = [];
   for (const it of items) {
@@ -520,6 +555,27 @@ function normalizeTodos(raw: RawActiveSession['todos']): RemoteTodoItem[] {
     out.push(activeForm ? { content, status, activeForm } : { content, status });
   }
   return out;
+}
+
+/**
+ * Normalize the CLI summarizer's progress checkpoints (PHNX-3939) into the flat
+ * list the sidebar renders. Drops textless entries; keeps the timestamp verbatim
+ * ('' when absent). Returns [] when the payload carries no usable checkpoints.
+ */
+function normalizeCheckpoints(raw: RawActiveSession['checkpoints']): RemoteCheckpoint[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RemoteCheckpoint[] = [];
+  for (const it of raw) {
+    if (!it) continue;
+    const text = asStr(it.text);
+    if (!text) continue;
+    out.push({ text, at: asStr(it.at) });
+  }
+  return out;
+}
+
+function normalizeSummaryState(raw: unknown): RemoteSession['summaryState'] {
+  return raw === 'pending' || raw === 'ready' || raw === 'skipped' ? raw : undefined;
 }
 
 function normalizeSessionArtifacts(raw: unknown): RemoteSessionArtifact[] {
@@ -712,6 +768,8 @@ export function normalizeActiveSession(
   const preview = asStr(raw.preview);
   const worktreeSlug = asStr(raw.worktree?.slug) || worktreeSlugOf(cwd);
   const todos = normalizeTodos(raw.todos);
+  const summaryChecklist = normalizeTodos(raw.summaryChecklist);
+  const checkpoints = normalizeCheckpoints(raw.checkpoints);
   const terminalId = asStr(raw.terminalId);
 
   return {
@@ -749,6 +807,12 @@ export function normalizeActiveSession(
     pullRequest: raw.pullRequest,
     tail: Array.isArray(raw.tail) ? raw.tail.map((t) => asStr(t)).filter(Boolean) : [],
     todos: todos.length ? todos : undefined,
+    // Summarizer signals (PHNX-3939) — pure field copies, no fetch. goal falls back
+    // to topic at the render layer, not here, so the raw absence stays visible.
+    goal: asStr(raw.goal) || undefined,
+    checkpoints,
+    summaryChecklist: summaryChecklist.length ? summaryChecklist : undefined,
+    summaryState: normalizeSummaryState(raw.summaryState),
     output: asStr(raw.output),
     attachments: Array.isArray(raw.attachments)
       ? raw.attachments.map(normalizeAttachment).filter((a): a is RemoteAttachment => Boolean(a))

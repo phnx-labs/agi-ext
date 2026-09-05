@@ -4,6 +4,23 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.363] - 2026-09-05
+
+- **Active Terminal sidebar leads with Goal + Progress + an always-on Checklist
+  (PHNX-3939).** The work card used to open with the raw, rambling first request.
+  It now shows a clean **◈ Goal** (1–2 lines), a live **Progress** list of the
+  agent's checkpoints, and an **always-on Checklist** — in that order — with the
+  full request demoted below into a collapsible **Request** section. The three new
+  signals (`goal`, `checkpoints`, `summaryChecklist` + `summaryState`) ride the
+  existing `agents feed watch` session stream from a companion agents-cli change;
+  the extension only renders them. Nothing new is fetched, spawned, or parsed on a
+  tab/terminal switch — the switch path stays synchronous off the warm
+  `sessionPresentationStore`, so the refresh is instant (the owner's zero-overhead
+  requirement). The Goal falls back to the session topic and the Checklist falls
+  back to the live TodoWrite list on an older CLI that carries none of the new
+  fields; while the summarizer is still working the Checklist shows "Summarizing…",
+  and "No checklist yet" once it settles.
+
 ## [0.9.362] - 2026-09-04
 
 - **Fix: the Fleet view no longer opens with a blank detail rail on the right
