@@ -223,24 +223,6 @@ export async function readManagedProjects(): Promise<ManagedProject[]> {
     .map((d) => defToManaged(d as Record<string, unknown>));
 }
 
-/**
- * Resolve a local directory to its defined project slug via
- * `agents projects view <cwd> --json` — the CLI does the matching
- * (root and every repos[].path/subpath), never reimplemented here; `.name` is
- * the def id. Returns undefined when nothing matches or the CLI call fails; a
- * launch should fall back to today's computed-cwd behavior rather than block on
- * this. (`projects for-cwd` was folded into `projects view` in PHNX-3704.)
- */
-export async function resolveProjectForCwd(cwd: string): Promise<string | undefined> {
-  try {
-    const { stdout } = await runAgentsArgv(['projects', 'view', cwd, '--json']);
-    const parsed = JSON.parse(stdout) as { name?: string | null };
-    return typeof parsed.name === 'string' ? parsed.name : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** Load raw ProjectDef objects from `agents projects list --json` (for merge-on-save). */
 async function listRawDefs(): Promise<Record<string, unknown>[]> {
   const { stdout } = await runAgents('projects list --json');

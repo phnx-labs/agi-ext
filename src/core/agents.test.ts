@@ -451,6 +451,16 @@ describe('buildAgentLaunchCommand', () => {
     expect(cmd).not.toContain('--remote-cwd');
   });
 
+  test('automatic remote placement also sends the workspace as portable --cwd', () => {
+    const cmd = buildAgentLaunchCommand(
+      'codex', null, undefined, undefined, undefined, undefined, undefined,
+      { cwd: '/Users/muqsit/src/monorepo' },
+    );
+    expect(cmd).toContain('--device auto');
+    expect(cmd).toContain("--cwd '/Users/muqsit/src/monorepo'");
+    expect(cmd).not.toContain('--project');
+  });
+
   test('picked remote session uses exact --remote-cwd and never portable --cwd', () => {
     const cmd = buildAgentLaunchCommand(
       'codex', null, undefined, undefined, undefined, undefined, undefined,

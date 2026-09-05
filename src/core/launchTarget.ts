@@ -164,6 +164,10 @@ export function buildNewAgentLaunchCommand(
 ): string {
   const agent = options.agentKey ?? 'auto';
   const isLocal = options.local === true || (options.pickHost === true && !options.host);
+  // A project is a destination the user explicitly selected, never an
+  // attribution inferred from the open workspace. Keeping this authorization
+  // check here prevents any caller from silently narrowing a monorepo cwd.
+  const project = options.pickProject === true ? context.projectSlug : undefined;
   return buildAgentLaunchCommand(
     agent,
     context.sessionId ?? null,
@@ -176,8 +180,8 @@ export function buildNewAgentLaunchCommand(
       host: options.host,
       local: isLocal,
       accountPicker: options.accountPicker,
-      project: context.projectSlug,
-      cwd: context.projectSlug ? undefined : context.cwd,
+      project,
+      cwd: project ? undefined : context.cwd,
     },
   );
 }
