@@ -90,10 +90,12 @@ naming exactly one box.
 
 ### Active Session sidebar
 
-The activity-bar sidebar is a work brief for the focused agent: the original
-request and attachments, runtime and token usage, checklist progress, created
-plans/artifacts, ticket and PR links, spawned-team summary, and current activity.
-Recent files are available as a compact disclosure under Deliverables. Generic
+The activity-bar sidebar is a work brief for the focused agent. It leads with a
+clean **◈ Goal**, live **Progress** checkpoints, and an **always-on Checklist**,
+then the raw request and attachments demoted into a collapsible section, runtime
+and token usage, created plans/artifacts, ticket and PR links, spawned-team
+summary, and current activity. Recent files are available as a compact disclosure
+under Deliverables. Generic
 slash-command buttons, saved prompts, duplicate worktree/CWD navigation, and the
 separate Issues view are deliberately absent; those belong to their owning
 command, dashboard, Source Control, or tracker surfaces. All live facts ride the
