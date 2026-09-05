@@ -58,9 +58,10 @@ presentation layer. Concretely:
    fallback.
 
 Launch location follows explicit user intent. Ordinary New, Auto, and Pick Host
-commands preserve the active workspace as the portable `--cwd`, including when
-that path is a monorepo root shared by several managed projects. Only the explicit
-Pick Project command emits `--project` and lets the CLI resolve that project's
+commands preserve the exact active workspace as the portable `--cwd`: a
+monorepo-root workspace lands at the root remotely, while a workspace opened at
+one nested project lands in that same nested directory. Only the explicit Pick
+Project command emits `--project` and lets the CLI resolve that project's
 configured path. Never derive an ordinary launch target from `agents projects
 view <cwd>`: that command is a containment attribution lookup, and a shared root
 can belong to multiple child projects.

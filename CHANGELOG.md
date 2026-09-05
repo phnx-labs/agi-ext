@@ -11,7 +11,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   containing managed-project match into `--project`, then dropped the exact
   `--cwd`. When several child projects shared one monorepo root, the lookup's
   first weak match silently sent the terminal to that child's `defaultPath`.
-  Ordinary launches now carry the open workspace through unchanged; only the
+  Ordinary launches now carry the open workspace through unchanged — either the
+  monorepo root or a specifically opened nested project directory. Only the
   explicit Pick Project command may replace it with a project's configured path.
 
 ## [0.9.367] - 2026-09-07
