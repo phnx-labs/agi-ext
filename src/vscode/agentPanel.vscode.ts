@@ -1546,7 +1546,7 @@ function renderGoalCard(s) {
   const goal = (s.goal || '').trim();
   if (!goal) return '';
   return (
-    '<h2 class="goal-h2">Goal</h2>' +
+    '<h2>Goal</h2>' +
     '<div class="card goal-card">' +
       '<span class="goal-mk">◈</span>' +
       '<span class="goal-txt">' + esc(truncate(goal, 240)) + '</span>' +
