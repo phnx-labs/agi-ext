@@ -162,6 +162,24 @@ describe('registered harness launch commands', () => {
     expect(explicit).not.toContain('--cwd');
   });
 
+  it('preserves an explicitly opened nested project folder as the remote cwd', () => {
+    const cwd = '/Users/me/src/github.com/example/monorepo/apps/web';
+    const context = { cwd, projectSlug: 'web' };
+
+    const automatic = buildNewAgentLaunchCommand({ agentKey: 'claude' }, context);
+    expect(automatic).toContain('--device auto');
+    expect(automatic).toContain(`--cwd '${cwd}'`);
+    expect(automatic).not.toContain('--project');
+
+    const pickedHost = buildNewAgentLaunchCommand(
+      { agentKey: 'claude', pickHost: true, host: 'worker-box' },
+      context,
+    );
+    expect(pickedHost).toContain("--device 'worker-box'");
+    expect(pickedHost).toContain(`--cwd '${cwd}'`);
+    expect(pickedHost).not.toContain('--project');
+  });
+
   it('falls back to the plain Auto command when no project was picked', () => {
     // A cancelled quickpick leaves projectSlug undefined; the launch must still be
     // the Auto-equivalent command, not a broken one with a dangling --project.
