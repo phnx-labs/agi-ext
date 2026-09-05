@@ -60,12 +60,18 @@ missing fact on the CLI row, or let the user assign it by hand (a local presenta
 override, like pinned favorites).
 
 The `agentsPanel.terminal` activity-bar view is the focused session's work card,
-not a command catalog or tracker browser. It renders request/attachments,
-runtime and tokens, checklist progress, artifacts/delivery links, delegated-team
-summary, and current activity from the normalized session stream. Keep recent
-files secondary. Do not reintroduce Quick Actions, Quick Prompts, worktree/CWD
-navigation, an Issues view, or a filesystem/transcript fallback to fill missing
-card fields; add missing facts to the CLI row instead.
+not a command catalog or tracker browser. It leads with a clean **◈ Goal**, live
+**Progress** checkpoints, and an **always-on Checklist** (`goal` / `checkpoints` /
+`summaryChecklist` + `summaryState` on the session row, PHNX-3939), then the raw
+**Request**/attachments demoted into a collapsible section, runtime and tokens,
+artifacts/delivery links, delegated-team summary, and current activity — all from
+the normalized session stream. Keep recent files secondary. The Goal/Progress/
+Checklist fill is a synchronous field copy off the warm `sessionPresentationStore`
+(Goal falls back to topic, Checklist to the live TodoWrite list) — never an `await`,
+fetch, or lazy enrich on tab-switch; that is the owner's zero-overhead guarantee.
+Do not reintroduce Quick Actions, Quick Prompts, worktree/CWD navigation, an Issues
+view, or a filesystem/transcript fallback to fill missing card fields; add missing
+facts to the CLI row instead.
 
 ## Known debt — scheduled for deletion, do NOT extend
 

@@ -63,12 +63,17 @@ test('Active Session render is outcome-oriented and drops utility-stack cards (P
   const renderOrder = src.slice(renderStart, renderEnd);
 
   expect(renderOrder).toContain('renderSessionStats(snap)');
+  expect(renderOrder).toContain('renderGoalCard(snap)');
+  expect(renderOrder).toContain('renderCheckpointsCard(snap)');
   expect(renderOrder).toContain('renderConversationCard(snap)');
   expect(renderOrder).toContain('renderChecklistCard(snap)');
   expect(renderOrder).toContain('renderDeliverablesCard(snap)');
   expect(renderOrder).toContain('renderSpawnedTeamCard(snap)');
   expect(renderOrder).toContain('renderActivityCard(snap)');
-  expect(renderOrder.indexOf('renderConversationCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
+  // PHNX-3939: Goal → Progress → Checklist lead, then the raw Request is demoted below.
+  expect(renderOrder.indexOf('renderGoalCard')).toBeLessThan(renderOrder.indexOf('renderCheckpointsCard'));
+  expect(renderOrder.indexOf('renderCheckpointsCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
+  expect(renderOrder.indexOf('renderChecklistCard')).toBeLessThan(renderOrder.indexOf('renderConversationCard'));
   expect(renderOrder).not.toContain('renderActionsCard');
   expect(renderOrder).not.toContain('renderPromptsCard');
   expect(renderOrder).not.toContain('renderWorktreesCard');

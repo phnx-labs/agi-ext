@@ -42,7 +42,7 @@ import {
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
-import type { RemoteAttachment, RemoteSession, RemoteSessionArtifact } from '../core/remoteSessions';
+import type { RemoteAttachment, RemoteCheckpoint, RemoteSession, RemoteSessionArtifact, RemoteTodoItem } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
 
@@ -127,6 +127,15 @@ interface PanelSnapshot {
   // Conversation
   conversation?: ConversationSummary;
   recentActivity?: ActivityItem[];
+  // Clean 1–2 line goal (◈ GOAL), distilled by the CLI summarizer from the raw
+  // request (PHNX-3939). Falls back to the conversation topic when the CLI has none.
+  goal?: string;
+  // Live progress checkpoints from the CLI summarizer (most-recent last).
+  checkpoints?: RemoteCheckpoint[];
+  // The always-on summarizer checklist + its lifecycle. summaryState drives the
+  // empty state ('pending' → "summarizing…", else "No checklist yet").
+  summaryChecklist?: RemoteTodoItem[];
+  summaryState?: 'pending' | 'ready' | 'skipped';
   // Fine-grained task checklist + done/total, from the agent's latest plan write.
   // Rides the transcript tail already read for recentActivity (no extra I/O).
   todoProgress?: TodoProgress;
@@ -495,8 +504,19 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         const linear = extractLinearTicketId(live.topic) || extractLinearTicketId(live.lastResponse);
         if (linear) snapshot.linearIssue = linear;
 
+        // Goal + Progress + always-on Checklist (PHNX-3939) — synchronous field
+        // copies from the warm row, with fallbacks so the cards are always
+        // populated. NO await, NO fetch: the tab-switch path must stay instant, so
+        // these read only what the stream already carries (goal falls back to the
+        // topic; the checklist falls back to the live TodoWrite list).
+        snapshot.goal = live.goal ?? (live.topic || undefined);
+        snapshot.checkpoints = live.checkpoints ?? [];
+        snapshot.summaryState = live.summaryState;
+        const summaryChecklist = live.summaryChecklist ?? live.todos ?? [];
+        snapshot.summaryChecklist = summaryChecklist;
+
         // Checklist — already the CLI-normalized RemoteTodoItem[]; just tally it.
-        const todos = todoProgressFromItems(live.todos);
+        const todos = todoProgressFromItems(summaryChecklist);
         if (todos) snapshot.todoProgress = todos;
 
         // "What's being worked on": the CLI's computed one-line `activity`, else
@@ -858,6 +878,67 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     color: var(--vscode-foreground);
     word-break: break-word;
   }
+  /* ◈ Goal (PHNX-3939) — teal accent label, the clean one-line read. */
+  .goal-card {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .goal-mk {
+    flex-shrink: 0;
+    color: var(--vscode-terminal-ansiCyan, #4ec9b0);
+    font-size: 12px;
+  }
+  .goal-txt {
+    color: var(--vscode-foreground);
+    font-weight: 600;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  /* Progress checkpoints — amber marker for the live now-line, newest on top. */
+  .checkpoint {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .checkpoint-mk {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    align-self: center;
+    background: var(--vscode-charts-yellow, #e0a030);
+  }
+  .checkpoint-txt { color: var(--vscode-foreground); word-break: break-word; }
+  .checkpoint-at {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 10.5px;
+  }
+  /* Always-on checklist empty/summarizing state. */
+  .todo-empty {
+    color: var(--vscode-descriptionForeground);
+    font-size: 11.5px;
+    font-style: italic;
+  }
+  /* Demoted, collapsible Request. */
+  .request-details > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .request-details > summary::-webkit-details-marker { display: none; }
+  .request-details > summary h2 { display: inline; }
+  .request-details > summary::before {
+    content: '▸';
+    color: var(--vscode-descriptionForeground);
+    font-size: 10px;
+    margin-right: 4px;
+  }
+  .request-details[open] > summary::before { content: '▾'; }
   h2 .todo-frac {
     color: var(--vscode-descriptionForeground);
     font-weight: 600;
@@ -1372,15 +1453,20 @@ function renderConversationCard(s) {
   const meta = [];
   if (c.messageCount) meta.push(c.messageCount + ' message' + (c.messageCount === 1 ? '' : 's'));
   if (c.lastActivityMs) meta.push(relTime(c.lastActivityMs));
+  // Demoted below Goal/Progress/Checklist (PHNX-3939): the clean ◈ Goal is the
+  // primary read now, so the raw request collapses into a <details> the user can
+  // expand for the full ask.
   return (
-    '<h2>Request</h2>' +
-    '<div class="card">' +
-      (topic ? '<div class="conv-topic">' + renderMarkdownPreview(truncate(topic, 420)) + '</div>' : '') +
-      ((s.attachments || []).length ? '<div class="request-attachments">' + s.attachments.map((a) =>
-        '<a class="path-link attachment-link" data-path="' + esc(a.path) + '">' + esc(a.label || a.path) + '</a>'
-      ).join('') + '</div>' : '') +
-      (meta.length ? '<div class="conv-meta">' + esc(meta.join(' · ')) + '</div>' : '') +
-    '</div>'
+    '<details class="request-details">' +
+      '<summary><h2>Request</h2></summary>' +
+      '<div class="card">' +
+        (topic ? '<div class="conv-topic">' + renderMarkdownPreview(truncate(topic, 420)) + '</div>' : '') +
+        ((s.attachments || []).length ? '<div class="request-attachments">' + s.attachments.map((a) =>
+          '<a class="path-link attachment-link" data-path="' + esc(a.path) + '">' + esc(a.label || a.path) + '</a>'
+        ).join('') + '</div>' : '') +
+        (meta.length ? '<div class="conv-meta">' + esc(meta.join(' · ')) + '</div>' : '') +
+      '</div>' +
+    '</details>'
   );
 }
 
@@ -1456,9 +1542,47 @@ function renderActivityCard(s) {
   );
 }
 
+function renderGoalCard(s) {
+  const goal = (s.goal || '').trim();
+  if (!goal) return '';
+  return (
+    '<h2 class="goal-h2">Goal</h2>' +
+    '<div class="card goal-card">' +
+      '<span class="goal-mk">◈</span>' +
+      '<span class="goal-txt">' + esc(truncate(goal, 240)) + '</span>' +
+    '</div>'
+  );
+}
+
+function renderCheckpointsCard(s) {
+  const checkpoints = s.checkpoints || [];
+  if (!checkpoints.length) return '';
+  // Most-recent last on the wire; show newest first so the current state is on top.
+  const rows = checkpoints.slice().reverse().map((c) => (
+    '<div class="checkpoint">' +
+      '<span class="checkpoint-mk"></span>' +
+      '<span class="checkpoint-txt">' + esc(truncate(c.text, 120)) + '</span>' +
+      (c.at ? '<span class="checkpoint-at">' + esc(relTime(Date.parse(c.at))) + '</span>' : '') +
+    '</div>'
+  )).join('');
+  return (
+    '<h2>Progress</h2>' +
+    '<div class="card">' + rows + '</div>'
+  );
+}
+
+// The checklist is ALWAYS on (PHNX-3939): a populated list renders the progress
+// bar + rows; an empty one still renders a card so the summarizer's state is
+// visible — "summarizing…" while pending, "No checklist yet" once it settles.
 function renderChecklistCard(s) {
   const p = s.todoProgress;
-  if (!p || !p.total) return '';
+  if (!p || !p.total) {
+    const msg = s.summaryState === 'pending' ? 'Summarizing…' : 'No checklist yet';
+    return (
+      '<h2>Checklist</h2>' +
+      '<div class="card"><div class="todo-empty">' + esc(msg) + '</div></div>'
+    );
+  }
   const pct = Math.round((p.done / p.total) * 100);
   const rows = p.todos.map((t) => (
     '<div class="todo status-' + esc(t.status) + '">' +
@@ -1707,8 +1831,10 @@ function render(snap) {
   root.innerHTML = (
     renderTerminalCard(snap) +
     renderSessionStats(snap) +
-    renderConversationCard(snap) +
+    renderGoalCard(snap) +
+    renderCheckpointsCard(snap) +
     renderChecklistCard(snap) +
+    renderConversationCard(snap) +
     renderDeliverablesCard(snap) +
     renderSpawnedTeamCard(snap) +
     renderActivityCard(snap) +
