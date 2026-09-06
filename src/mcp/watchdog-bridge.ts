@@ -260,14 +260,6 @@ async function handleSendNudge(
 // Reuses the exact terminal-lookup + Ink-vs-newline delivery that the MCP
 // socket path uses, so a UI-driven nudge and an agent-driven nudge behave
 // identically. `reason` is recorded to the watchdog log for audit.
-export async function nudgeSession(
-  sessionId: string,
-  text: string,
-  reason: string,
-): Promise<SendNudgeResponse> {
-  return handleSendNudge({ sessionId, text, reason });
-}
-
 export function startWatchdogBridge(
   context: vscode.ExtensionContext
 ): WatchdogBridge {
