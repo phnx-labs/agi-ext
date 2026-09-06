@@ -63,6 +63,16 @@ export interface ReportTuplesRequest {
   op: typeof MONITOR_OP.reportTuples;
   windowId: string;
   tuples: TerminalTuple[];
+  /**
+   * Whether THIS window currently needs the canonical session-CLI stream
+   * (PHNX-3939). True when its Fleet dashboard or active-session sidebar is
+   * visible, or it holds a tracked-but-unresolved agent tuple. The elected
+   * monitor gates the single `agents feed watch` producer on the union of all
+   * windows' demand: it spawns the watcher while ANY window demands it and tears
+   * it down (debounced) when none do. Absent on older windows -> treated as no
+   * demand, so a stale follower never keeps the stream alive by itself.
+   */
+  sessionDemand?: boolean;
 }
 
 interface SnapshotRequest {

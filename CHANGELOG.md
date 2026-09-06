@@ -4,6 +4,35 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.365] - 2026-09-06
+
+- **A desktop-launched worker session keeps its real execution host on a local
+  editor tab (PHNX-3939).** `toFloorAgentFromUnified` no longer clobbers a
+  projected session's `host`/`hostLabel` to `this-mac`. It carries the CLI's
+  canonical reconciled row through unchanged, so a session that runs on a remote
+  worker box but is attached to a tab in this window is attributed to the worker —
+  while the **live terminal in this window stays the reply transport** (a separate
+  concern from the execution host). A session already running on this machine still
+  reports `this-mac`, so the local case is byte-identical.
+- **The Sessions row no longer fakes a "You ›" line from a task label
+  (PHNX-3939).** The compact card only prints "You ›" when the CLI carried a
+  genuine first user turn; a synthesized label (topic, worktree slug, tab name)
+  stays the row title instead of being quoted back as the user's own words.
+- **Restored the canonical session stream — behind a demand gate (PHNX-3939).**
+  The elected leader again owns one `agents feed watch --json` producer feeding
+  the `sessionPresentationStore` every window reads (the receive side survived the
+  e0f4831 removal but was left unfed, so live host/attention attribution silently
+  went stale). It now spawns **only while a window needs it** — a visible Fleet
+  dashboard or active-session sidebar, or a tracked-but-unresolved agent tab — and
+  is torn down when none do, so the always-on CPU/ssh load that e0f4831 removed
+  does not return. One producer serves every follower; a window that gains demand
+  is replayed the current rows and then live events.
+- **Fix: a new question no longer hides behind a resolved one (PHNX-3939).** The
+  presentation store's attention join returned the first item by insertion order
+  regardless of state, and kept a resolved copy — so *ask A → resolve A → ask B*
+  left the card showing the stale, resolved A. Resolved attention is now dropped to
+  a receipt and the join prefers the live (open, most-recent) item.
+
 ## [0.9.363] - 2026-09-05
 
 - **Active Terminal sidebar leads with Goal + Progress + an always-on Checklist

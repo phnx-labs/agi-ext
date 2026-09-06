@@ -41,6 +41,7 @@ import {
   type WorktreeRef as SharedWorktreeRef,
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
 import type { RemoteAttachment, RemoteCheckpoint, RemoteSession, RemoteSessionArtifact, RemoteTodoItem } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
@@ -239,6 +240,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
     webviewView.onDidChangeVisibility(() => {
       this.visible = webviewView.visible;
+      // A visible active-session sidebar is demand for the canonical session
+      // stream (PHNX-3939) even with no terminals in this window.
+      sessionStreamDemand.setSidebarVisible(webviewView.visible);
       if (webviewView.visible) void this.refresh();
     });
 
@@ -247,9 +251,11 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       if (this.readyFallbackTimer) { clearTimeout(this.readyFallbackTimer); this.readyFallbackTimer = undefined; }
       this.view = undefined;
       this.visible = false;
+      sessionStreamDemand.setSidebarVisible(false);
     });
 
     this.visible = webviewView.visible;
+    sessionStreamDemand.setSidebarVisible(webviewView.visible);
     void this.refresh();
     // Guarantee a paint even if the webview's 'ready' handshake is lost.
     this.scheduleReadyFallback();

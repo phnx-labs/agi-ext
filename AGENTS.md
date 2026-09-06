@@ -21,11 +21,16 @@ agents-cli owns all state and all mechanisms: sessions, devices, accounts,
 teams, watchdog, routines, lifecycle, scheduling. This extension is a
 presentation layer. Concretely:
 
-1. **One subprocess owns live state.** The elected leader window spawns exactly
-   one `agents feed watch --json` child (`src/monitor/sessionCliStream.ts`);
-   every window and tab reads its broadcast projection
-   (`src/core/sessionPresentationStore.ts`). No other code may poll session
-   state. If a field you need is missing from the stream, add it to the CLI's
+1. **One subprocess owns live state — demand-gated.** The elected leader window
+   spawns exactly one `agents feed watch --json` child
+   (`src/monitor/sessionCliStream.ts`), and only while a window actually needs it:
+   a visible Fleet dashboard or active-session sidebar, or a tracked-but-unresolved
+   agent tab (`src/monitor/sessionDemand.ts` → `MonitorHost`, PHNX-3939). When no
+   window demands it the producer is torn down; this is why the always-on version
+   was removed in e0f4831 (it pinned ~31% CPU + leaked ssh fan-out feeding a view
+   nobody was looking at). Every window and tab reads its broadcast projection
+   (`src/core/sessionPresentationStore.ts`). No other code may poll session state.
+   If a field you need is missing from the stream, add it to the CLI's
    `SessionWatchRow` (backfill from the index, the way `version` landed) — do
    NOT add a side-channel fetch here. That side channel is how the 2026-08-25
    CPU incident happened (agi-cli#3019, RUSH-3184).

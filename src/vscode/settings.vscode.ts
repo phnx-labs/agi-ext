@@ -70,6 +70,7 @@ import {
 import { inferProjectCandidates } from '../core/projectIndex';
 import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
 import { rankRepos } from '../core/repoIndex';
 import { detectProjects } from '../core/projectDetect';
@@ -3494,7 +3495,14 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
       type: 'panelVisibility',
       visible: e.webviewPanel.visible,
     });
+    // The Fleet dashboard being visible is demand for the canonical session
+    // stream (PHNX-3939); the leader gates its single producer on this.
+    sessionStreamDemand.setDashboardVisible(e.webviewPanel.visible);
   });
+  // Seed the INITIAL visibility: the panel opens visible, so onDidChangeViewState
+  // won't fire for the first show. Without this the dashboard could sit visible
+  // with no producer until the user tabs away and back.
+  sessionStreamDemand.setDashboardVisible(settingsPanel.visible);
 
   // Forward window-focus-regained to the webview so the surfaces that aren't
   // fed by the session CLI stream (the Linear/GitHub backlog, the floor
@@ -3509,6 +3517,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
 
   settingsPanel.onDidDispose(() => {
     settingsPanel = undefined;
+    sessionStreamDemand.setDashboardVisible(false);
     terminalListener.dispose();
     terminalCloseListener.dispose();
     visibilityListener.dispose();

@@ -9,6 +9,7 @@ import {
   toFloorAgentFromUnified,
   toFloorAgentFromRemote,
   adaptRemote,
+  composeFloorAgents,
   adaptTickets,
   cleanWorktreeSlug,
   detectCreatedCommits,
@@ -17,7 +18,7 @@ import {
 } from './floorAdapter'
 import type { UnifiedTask } from '../../types'
 import { SessionPresentationStore } from '../../../../src/core/sessionPresentationStore'
-import { isPrevious } from './floorModel'
+import { isPrevious, mergeSessionAgents, visibleFloorAgents } from './floorModel'
 import { previousResumeMessage } from './sessions/sessionActions'
 
 const NOW = 1_700_000_000_000
@@ -163,6 +164,121 @@ function baseUnified(over: Partial<UnifiedAgentLike>): UnifiedAgentLike {
   }
 }
 
+describe('PHNX-3939 — UnifiedAgentsPane composition', () => {
+  function workerStream(extra: Record<string, unknown>[] = []) {
+    const store = new SessionPresentationStore()
+    store.apply({
+      v: 1, type: 'reset', streamId: 'composition', sequence: 1, capturedAt: NOW, scope: 'worker', attention: [],
+      agents: [{
+        rowKey: 'owner', sessionId: 'S', kind: 'codex', context: 'headless',
+        sourceDevice: 'worker', status: 'running', pid: 1234,
+        observerTerminals: [{ device: 'desktop', terminalId: 'TAB' }],
+        firstUserMessage: 'Keep the worker visible in its local tab.',
+        lastAssistantMessage: 'The worker is running.', cwd: '/remote/agi-ext',
+        startedAtMs: NOW - 10_000, lastActivityMs: NOW,
+      }, ...extra],
+    })
+    return store
+  }
+
+  function compose(store: SessionPresentationStore, sessionId = store.terminalSessionMap(undefined, 'desktop').get('TAB')) {
+    return composeFloorAgents([baseUnified({
+      id: 'term-TAB', agentType: 'codex', sessionId,
+      terminal: { id: 'TAB', sessionId },
+    })], {
+      pinned: new Set(['term-TAB']), nowMs: NOW, localHostName: 'desktop',
+      projectedSessions: store.presentedSessions('desktop', 'this-mac', [], NOW),
+    })
+  }
+
+  test('observer binding → actual pane composition → one Sessions row and one default-visible row', () => {
+    const store = workerStream()
+    expect(store.terminalSessionMap(undefined, 'desktop').get('TAB')).toBe('S')
+    const floor = compose(store)
+    const sessions = mergeSessionAgents(floor.filter((a) => !isPrevious(a)), floor.filter(isPrevious))
+    expect(floor).toHaveLength(1)
+    expect(sessions).toHaveLength(1)
+    expect(visibleFloorAgents(floor, false)).toHaveLength(1)
+    expect(sessions[0]).toMatchObject({
+      id: 'term-TAB', host: 'worker', sourceDevice: 'worker', agentType: 'codex', sessionId: 'S',
+      context: 'headless', localTerminalAttached: true, pinned: true, pid: 1234,
+      firstUserMessage: 'Keep the worker visible in its local tab.',
+      reply: { kind: 'terminal', host: 'this-mac', terminalId: 'TAB' },
+    })
+    // Closing the actual tab leaves the same owner as an opt-in background run.
+    const detached = composeFloorAgents([], { pinned: new Set(), nowMs: NOW, localHostName: 'desktop', projectedSessions: store.presentedSessions('desktop', 'this-mac', [], NOW) })
+    expect(detached).toHaveLength(1)
+    expect(visibleFloorAgents(detached, false)).toHaveLength(0)
+    expect(visibleFloorAgents(detached, true)).toHaveLength(1)
+  })
+
+  test('a different harness with the same native id survives composition and Previous merge', () => {
+    const floor = compose(workerStream([{
+      rowKey: 'other-harness', sessionId: 'S', kind: 'claude', sourceDevice: 'worker',
+      context: 'recent', previous: true, status: 'idle', resumable: true,
+    }]))
+    const sessions = mergeSessionAgents(floor.filter((a) => !isPrevious(a)), floor.filter(isPrevious))
+    expect(sessions).toHaveLength(2)
+    expect(sessions.map((a) => a.agentType)).toEqual(['codex', 'claude'])
+    expect(sessions[0]?.host).toBe('worker')
+  })
+
+  test('a native id on two execution owners is ambiguous, never an arbitrary cross-device join', () => {
+    const floor = compose(workerStream([{
+      rowKey: 'other-owner', sessionId: 'S', kind: 'codex', sourceDevice: 'other-worker',
+      context: 'headless', status: 'running',
+    }]))
+    expect(floor).toHaveLength(3)
+    expect(floor[0]?.sourceDevice).toBeUndefined()
+    expect(floor.filter((a) => a.host !== 'this-mac').map((a) => a.host)).toEqual(['worker', 'other-worker'])
+    expect(mergeSessionAgents(floor, [])).toHaveLength(3)
+  })
+
+  test('raw remote terminalId collision cannot borrow worker metadata or suppress its row', () => {
+    const store = workerStream([{
+      rowKey: 'collision', sessionId: 'unrelated', kind: 'codex', sourceDevice: 'other-worker',
+      terminalId: 'TAB', context: 'headless', status: 'running', firstUserMessage: 'Unrelated task',
+    }])
+    const floor = compose(store, '')
+    expect(floor).toHaveLength(3)
+    expect(floor[0]?.firstUserMessage).toBeUndefined()
+    expect(floor[0]?.host).toBe('this-mac')
+    expect(floor[0]?.reply).toEqual({ kind: 'terminal', host: 'this-mac', terminalId: 'TAB' })
+  })
+
+  test('same-device raw terminal binding still composes once before session-id hydration', () => {
+    const store = new SessionPresentationStore()
+    store.apply({ v: 1, type: 'reset', streamId: 'local', sequence: 1, capturedAt: NOW, scope: 'desktop', attention: [], agents: [{
+      rowKey: 'local', sessionId: 'local-S', kind: 'codex', sourceDevice: 'desktop', terminalId: 'TAB', context: 'headless', status: 'running',
+    }] })
+    const floor = compose(store, '')
+    expect(floor).toHaveLength(1)
+    expect(floor[0]).toMatchObject({ host: 'this-mac', sourceDevice: 'desktop', sessionId: 'local-S', context: 'headless', localTerminalAttached: true })
+    expect(visibleFloorAgents(floor, false)).toHaveLength(1)
+  })
+
+  test('two editor tabs observing the same execution still compose one row with a real reply target', () => {
+    const store = workerStream()
+    const floor = composeFloorAgents(['TAB', 'TAB-2'].map((id) => baseUnified({
+      id: `term-${id}`, agentType: 'codex', sessionId: 'S', terminal: { id, sessionId: 'S' },
+    })), { pinned: new Set(), nowMs: NOW, projectedSessions: store.presentedSessions('desktop', 'this-mac', [], NOW) })
+    expect(floor).toHaveLength(1)
+    expect(floor[0]?.reply).toEqual({ kind: 'terminal', host: 'this-mac', terminalId: 'TAB' })
+    expect(visibleFloorAgents(floor, false)).toHaveLength(1)
+  })
+
+  test('a known native id cannot be replaced by a conflicting local raw terminal id', () => {
+    const store = new SessionPresentationStore()
+    store.apply({ v: 1, type: 'reset', streamId: 'local-conflict', sequence: 1, capturedAt: NOW, scope: 'desktop', attention: [], agents: [{
+      rowKey: 'unrelated', sessionId: 'unrelated', kind: 'codex', sourceDevice: 'desktop', terminalId: 'TAB', context: 'headless', status: 'running',
+    }] })
+    const floor = compose(store, 'known-session')
+    expect(floor).toHaveLength(2)
+    expect(floor[0]?.sessionId).toBe('known-session')
+    expect(floor[1]?.sessionId).toBe('unrelated')
+  })
+})
+
 describe('toFloorAgentFromUnified', () => {
   test('a terminal awaiting input becomes a waiting, needs-you agent with a parsed question', () => {
     const a = toFloorAgentFromUnified(
@@ -257,6 +373,130 @@ describe('toFloorAgentFromUnified', () => {
     const noName = toFloorAgentFromUnified(baseUnified({}), { pinned: new Set(), workspaceRepo: null, nowMs: NOW })
     expect(noName.host).toBe('this-mac')
     expect(noName.hostLabel).toBeUndefined()
+  })
+
+  test('a desktop-launched worker session keeps its remote execution host but replies through the local terminal (PHNX-3939)', () => {
+    const a = toFloorAgentFromUnified(
+      baseUnified({
+        id: 'term-worker',
+        sessionId: 's-worker', // Hydrated from the observer-scoped stream binding.
+        displayName: 'phnx-3939-worker-preview',
+        terminal: { id: 't-worker', firstUserMessage: 'Implement the worker preview fix.' },
+        agent: null,
+      }),
+      {
+        pinned: new Set(),
+        workspaceRepo: 'agi-ext',
+        nowMs: NOW,
+        localHostName: 'desktop',
+        // The CLI's canonical reconciled row: the agent executes on worker-7 even
+        // though its live terminal is a tab in THIS (desktop) window.
+        projectedSessions: [{
+          host: 'worker-7',
+          sourceDevice: 'worker-7',
+          terminalId: 't-worker',
+          sessionId: 's-worker',
+          agentType: 'claude',
+          phase: 'running',
+          activity: 'Editing floorAdapter.ts',
+          lastResponse: 'Preserved the worker host on the local tab.',
+          firstUserMessage: 'Implement the worker preview fix.',
+          // A tmux-backed remote reply the local terminal must OVERRIDE.
+          replyRail: 'tmux',
+          replyMuxSocket: '/tmp/mux.sock',
+          replyMuxTarget: '%3',
+        } as RemoteSessionLike],
+      },
+    )
+    // Execution host + source stay truthful — the agent runs on worker-7, not local.
+    expect(a.host).toBe('worker-7')
+    expect(a.hostLabel).toBeUndefined() // remote hosts render `host` directly, no local label
+    expect(a.sourceDevice).toBe('worker-7')
+    // …but the LIVE terminal in THIS window is still the reply transport.
+    expect(a.reply).toEqual({ kind: 'terminal', host: 'this-mac', terminalId: 't-worker' })
+    // Genuine first turn + real last response ride through — no faked label.
+    expect(a.firstUserMessage).toBe('Implement the worker preview fix.')
+    expect(a.prompt).toBe('Implement the worker preview fix.')
+    expect(a.resp).toBe('Preserved the worker host on the local tab.')
+    // Identity stays the local tab id so favorites/selection keep working.
+    expect(a.id).toBe('term-worker')
+    expect(a.name).toBe('phnx-3939-worker-preview')
+  })
+
+  test('a projected LOCAL session (host this-mac) is unchanged — folds under the local device', () => {
+    const a = toFloorAgentFromUnified(
+      baseUnified({ id: 'term-local', terminal: { id: 't-local', firstUserMessage: 'Local task.' }, agent: null }),
+      {
+        pinned: new Set(),
+        workspaceRepo: 'agi-ext',
+        nowMs: NOW,
+        localHostName: 'desktop',
+        projectedSessions: [{
+          host: 'this-mac', terminalId: 't-local', sessionId: 's-local', agentType: 'claude',
+          phase: 'running', activity: '', lastResponse: '', firstUserMessage: 'Local task.',
+        } as RemoteSessionLike],
+      },
+    )
+    expect(a.host).toBe('this-mac')
+    expect(a.hostLabel).toBe('desktop')
+    expect(a.reply).toEqual({ kind: 'terminal', host: 'this-mac', terminalId: 't-local' })
+  })
+
+  test('a metadata-only projected row with no genuine first turn leaves firstUserMessage empty (no faked "You ›")', () => {
+    // The gate SessionRow applies keys off `firstUserMessage`. Prove the adapter
+    // only ever fills it from GENUINE sources — the CLI's canonical first turn,
+    // the terminal's first user message, or a headless agent's DISPATCH prompt
+    // (all user-authored). A synthesized task label (topic / worktree slug /
+    // displayName) is never one of them, so a metadata-only row stays empty and
+    // the row drops the "You ›" line downstream.
+    const a = toFloorAgentFromUnified(
+      baseUnified({
+        id: 'term-metaonly',
+        sessionId: 's-meta', // Hydrated from the observer-scoped stream binding.
+        displayName: 'phnx-3939-worker-preview',
+        terminal: { id: 't-meta' }, // no firstUserMessage
+        agent: null,                // no dispatch prompt
+      }),
+      {
+        pinned: new Set(),
+        workspaceRepo: 'agi-ext',
+        nowMs: NOW,
+        localHostName: 'desktop',
+        projectedSessions: [{
+          host: 'worker-7', terminalId: 't-meta', sessionId: 's-meta', agentType: 'claude',
+          phase: 'running', activity: 'Editing floorAdapter.ts', lastResponse: 'Working.',
+          // canonical row carries only a task label (topic/slug), NOT a first turn
+          topic: 'phnx-3939-worker-preview', worktreeSlug: 'phnx-3939-worker-preview',
+        } as RemoteSessionLike],
+      },
+    )
+    expect(a.firstUserMessage).toBeUndefined()
+    // prompt still falls back to the label so other surfaces have a task line,
+    // but firstUserMessage — the "You ›" gate — stays empty.
+    expect(a.host).toBe('worker-7')
+  })
+
+  test('a headless dispatch prompt IS a genuine first turn and populates firstUserMessage', () => {
+    // Provenance guard: agent.prompt is the user's dispatch instruction, so a
+    // projected row without its own firstUserMessage still gets a truthful one.
+    const a = toFloorAgentFromUnified(
+      baseUnified({
+        id: 'term-headless',
+        sessionId: 's-headless',
+        terminal: null,
+        agent: { prompt: 'Fix the worker preview attribution.' },
+      }),
+      {
+        pinned: new Set(),
+        workspaceRepo: 'agi-ext',
+        nowMs: NOW,
+        projectedSessions: [{
+          host: 'worker-7', sessionId: 's-headless', agentType: 'claude',
+          phase: 'running', activity: '', lastResponse: '',
+        } as RemoteSessionLike],
+      },
+    )
+    expect(a.firstUserMessage).toBe('Fix the worker preview attribution.')
   })
 
   test('a failed agent does not invent attention or a retry question', () => {

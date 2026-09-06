@@ -149,12 +149,15 @@ export class MonitorFollower<T> {
    * than throwing) when disconnected so the caller keeps the registry-file
    * fallback intact for the disconnected case.
    */
-  async reportTuples(tuples: TerminalTuple[]): Promise<boolean> {
+  async reportTuples(tuples: TerminalTuple[], sessionDemand = false): Promise<boolean> {
     if (!this.client.connected) return false;
     const request: ReportTuplesRequest = {
       op: MONITOR_OP.reportTuples,
       windowId: this.windowId,
       tuples,
+      // Whether this window needs the canonical session-CLI stream right now
+      // (PHNX-3939): the leader gates the single producer on the union of these.
+      sessionDemand,
     };
     try {
       const ack = (await this.client.request(request)) as ReportTuplesAck;

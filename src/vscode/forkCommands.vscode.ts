@@ -20,8 +20,9 @@ export interface ForkPickHostRecord {
 export function remoteForkSessionId(
   host: string,
   terminalId: string,
+  observerDevice?: string,
 ): string | null {
-  return sessionPresentationStore.terminalSessionMap(host).get(terminalId) ?? null;
+  return sessionPresentationStore.terminalSessionMap(host, observerDevice).get(terminalId) ?? null;
 }
 
 /** Wait for a just-launched sibling to publish its session id. Local forks use

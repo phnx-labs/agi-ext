@@ -143,4 +143,24 @@ describe('fork command contributions', () => {
     ]);
     expect(resolved).toBe('sibling-session-id');
   });
+
+  test('remote fork identity scopes the same tab id to its observer desktop and execution host', () => {
+    sessionPresentationStore.clear();
+    try {
+      sessionPresentationStore.apply({
+        v: 1, type: 'reset', streamId: 'fork-observers', sequence: 1, scope: 'worker',
+        agents: [
+          { rowKey: 'a', sessionId: 'sibling-a', machine: 'worker', observerTerminals: [{ device: 'desktop-a', terminalId: 'CX-shared' }] },
+          { rowKey: 'b', sessionId: 'sibling-b', machine: 'worker', observerTerminals: [{ device: 'desktop-b', terminalId: 'CX-shared' }] },
+          { rowKey: 'owner-only', sessionId: 'worker-terminal', machine: 'worker', terminalId: 'CX-owner' },
+        ], attention: [],
+      });
+      expect(remoteForkSessionId('worker', 'CX-shared', 'desktop-a')).toBe('sibling-a');
+      expect(remoteForkSessionId('worker', 'CX-shared', 'desktop-b')).toBe('sibling-b');
+      expect(remoteForkSessionId('wrong-worker', 'CX-shared', 'desktop-a')).toBeNull();
+      expect(remoteForkSessionId('worker', 'CX-owner', 'desktop-a')).toBeNull();
+    } finally {
+      sessionPresentationStore.clear();
+    }
+  });
 });

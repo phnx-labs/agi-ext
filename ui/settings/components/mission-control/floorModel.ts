@@ -152,6 +152,7 @@ export interface FloorAgent {
   host: string          // 'this-mac' for local; remote hostname otherwise. ROUTING key — reply/nudge/reassign target it.
   hostLabel?: string    // DISPLAY name for host: the local machine's real device name (e.g. 'zion') so it isn't shown as 'this-mac'. Falls back to host.
   context?: string      // CLI session context ('terminal' | 'headless' | 'cloud' | 'teams'); drives the bg badge for background runs.
+  localTerminalAttached?: boolean // Actual interactive editor tab in this window; independent of execution context/host.
   sessionId?: string    // CLI session id — Focus targets it (`agents sessions focus <id>`).
   pid?: number          // process id (headless/background runs) — Stop kills it.
   project: string       // repo or cwd basename (worktrees folded to their repo)
@@ -665,30 +666,36 @@ export function sessionTaskLine(a: FloorAgent): string {
 /** Background/headless runs stay available through an explicit toggle, but do
  * not crowd out interactive operator work on the floor by default. */
 export function visibleFloorAgents(agents: FloorAgent[], showBackground: boolean): FloorAgent[] {
-  return showBackground ? agents : agents.filter((a) => a.context !== 'headless')
+  return showBackground ? agents : agents.filter((a) => a.localTerminalAttached || a.context !== 'headless')
+}
+
+/** Execution identity, never the observer's terminal id or a fleet-wide UUID. */
+export function executionSessionKey(a: Pick<FloorAgent, 'host' | 'agentType' | 'abbr' | 'sessionId'>): string | undefined {
+  if (!a.sessionId) return undefined
+  // `host` is the normalized execution routing key. Neither the display label
+  // (which can be "Cloud") nor the transcript's sourceDevice replaces it.
+  return JSON.stringify([a.host.trim().toLowerCase(), a.agentType?.trim().toLowerCase() || `abbr:${a.abbr}`, a.sessionId])
 }
 
 /**
  * Fold resumable PREVIOUS (index) rows into the LIVE roster for the Sessions
- * surface, deduped by `sessionId` — a LIVE row always wins over an index row for
+ * surface, deduped by execution owner + harness + native id — a LIVE row wins over an index row for
  * the same session (PHNX-3593). A previous row that IS currently live is therefore
  * dropped (the live one carries real activity); genuinely-ended sessions survive as
  * the Previous·resumable band. Rows with no sessionId can't be keyed, so they pass
- * through untouched. Pure so it is unit-tested; this merge feeds ONLY the Sessions
- * surface — the live feed/needs-you must never see index rows.
+ * through untouched. Composition also uses this precedence for local tabs over
+ * projected copies. The pane removes Previous rows before its live feed/needs-you.
  */
 export function mergeSessionAgents(live: FloorAgent[], previous: FloorAgent[]): FloorAgent[] {
-  const liveIds = new Set(live.map((a) => a.sessionId).filter((id): id is string => !!id))
   const seen = new Set<string>()
-  const extra: FloorAgent[] = []
-  for (const a of previous) {
-    if (a.sessionId) {
-      if (liveIds.has(a.sessionId) || seen.has(a.sessionId)) continue
-      seen.add(a.sessionId)
+  return [...live, ...previous].filter((a) => {
+    const key = executionSessionKey(a)
+    if (key) {
+      if (seen.has(key)) return false
+      seen.add(key)
     }
-    extra.push(a)
-  }
-  return [...live, ...extra]
+    return true
+  })
 }
 
 /**

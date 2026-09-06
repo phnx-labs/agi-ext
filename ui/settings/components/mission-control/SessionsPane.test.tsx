@@ -99,7 +99,10 @@ const rowProps = {
 
 describe('SessionRow — compact card', () => {
   test('renders title, prompt, metadata links, and Resume without duplicating the device', () => {
-    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} />)
+    // A genuine first turn (as the CLI carries it) — the screenshot path + text.
+    const html = renderToStaticMarkup(<SessionRow agent={agent({
+      firstUserMessage: '/Users/muqsit/Screenshots/CleanShot 2026-08-23 at 12.03.45.png The landscape mode looks cramped — can we give the hero more room?',
+    })} {...rowProps} />)
     expect(html).toContain('Redesigning the SVAtlas landscape hero section')
     expect(html).toContain('You ›')
     expect(html).toContain('Claude ›')
@@ -120,7 +123,7 @@ describe('SessionRow — compact card', () => {
     const html = renderToStaticMarkup(
       <SessionRow
         agent={agent({
-          prompt: 'Base directory for this skill: /home/muqsit/.agents/skills/continue\npick up the agents view cache work',
+          firstUserMessage: 'Base directory for this skill: /home/muqsit/.agents/skills/continue\npick up the agents view cache work',
           topic: 'Continuing the usage-cache fix from a prior session',
           branch: 'fix-usage-cache',
           project: 'agents-cli',
@@ -139,7 +142,7 @@ describe('SessionRow — compact card', () => {
     const html = renderToStaticMarkup(
       <SessionRow
         agent={agent({
-          prompt: '<bash-input>crabbox status</bash-input>\nHelping understand the currency I set up for the agency — does it use Crabbox?',
+          firstUserMessage: '<bash-input>crabbox status</bash-input>\nHelping understand the currency I set up for the agency — does it use Crabbox?',
           topic: 'Explaining the Crabbox CI currency model',
           pr: null,
           project: 'agents-cli',
@@ -151,6 +154,26 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('Helping understand the currency')
     expect(html).toContain('no PR')
     expect(html).not.toContain('<bash-input>')
+  })
+
+  test('a row with no genuine first turn never fakes a "You ›" line from its label', () => {
+    // No firstUserMessage: the adapter would leave `prompt`/`topic` as a synthesized
+    // task label. That label is the row TITLE, but it must not be quoted back as the
+    // user's own words (PHNX-3939).
+    const html = renderToStaticMarkup(
+      <SessionRow
+        agent={agent({
+          firstUserMessage: undefined,
+          prompt: 'phnx-3939-worker-preview',
+          topic: 'phnx-3939-worker-preview',
+          resp: 'Widening the row so the worker host reads truthfully.',
+        })}
+        {...rowProps}
+      />,
+    )
+    expect(html).not.toContain('You ›')
+    // The label still surfaces as the row title, so nothing is lost.
+    expect(html).toContain('phnx-3939-worker-preview')
   })
 
   test('clicking a row expands into the full detail card (request / activity / catch up)', () => {

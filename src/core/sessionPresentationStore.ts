@@ -72,10 +72,14 @@ export class SessionPresentationStore {
       }
     } else if (event.type === 'attention.remove' && event.rowKey) {
       const previous = this.attention.get(event.rowKey);
-      if (previous && typeof previous === 'object') {
-        const resolution = event.resolution && typeof event.resolution === 'object' ? event.resolution as { state?: unknown } : {};
-        this.attention.set(event.rowKey, { ...previous, state: typeof resolution.state === 'string' ? resolution.state : 'resolved' });
-      }
+      // DROP the resolved item from the ACTIVE attention map (matching the replay
+      // path + SessionCliReplay, which delete it). Retaining a resolved copy here
+      // made sessions()' per-sessionId join return the STALE resolved attention and
+      // shadow a NEW open one for the same session — ask A → resolve A → ask B left
+      // B unattached until a reset, and live diverged from replay. The resolution
+      // is preserved as a receipt in the activity feed below.
+      this.attention.delete(event.rowKey);
+      this.attentionScopes.delete(event.rowKey);
       if (event.resolution) {
         const attention = previous && typeof previous === 'object' ? previous as Record<string, unknown> : {};
         const resolution = event.resolution as Record<string, unknown>;
@@ -105,10 +109,36 @@ export class SessionPresentationStore {
       if (!value || typeof value !== 'object') return value;
       const row = value as { sessionId?: unknown; id?: unknown };
       const sessionId = typeof row.sessionId === 'string' ? row.sessionId : typeof row.id === 'string' ? row.id : '';
-      const attention = projected.find((item) => item && typeof item === 'object'
-        && (item as { sessionId?: unknown }).sessionId === sessionId);
+      const attention = this.activeAttentionFor(sessionId, projected);
       return attention ? { ...row, attention } : row;
     });
+  }
+
+  /**
+   * The one attention item a session's card should show: an OPEN (needs-you) item
+   * wins over any non-open one, and among equals the most recently opened wins.
+   * A plain `.find` by sessionId returned whichever was inserted first regardless
+   * of state, so a still-present earlier item could shadow the live one — the
+   * ask-A / ask-B ordering bug. Resolved items are dropped from the map on remove,
+   * so this normally sees only live items; the state/recency ranking is
+   * defense-in-depth for a session that legitimately has more than one open item.
+   */
+  private activeAttentionFor(sessionId: string, items: unknown[]): unknown | undefined {
+    if (!sessionId) return undefined;
+    const matches = items.filter((item) => item && typeof item === 'object'
+      && (item as { sessionId?: unknown }).sessionId === sessionId);
+    if (matches.length === 0) return undefined;
+    if (matches.length === 1) return matches[0];
+    const openedAt = (item: unknown): number => {
+      const v = (item as { openedAt?: unknown }).openedAt;
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; }
+      return 0;
+    };
+    const isOpen = (item: unknown): boolean => (item as { state?: unknown }).state === 'open';
+    const open = matches.filter(isOpen);
+    const pool = open.length ? open : matches;
+    return pool.reduce((best, cur) => (openedAt(cur) >= openedAt(best) ? cur : best));
   }
   activityEvents(): unknown[] { return [...this.activity]; }
   scope(scope: string): { status: 'available' | 'unavailable'; reason?: string } | undefined {
@@ -171,19 +201,60 @@ export class SessionPresentationStore {
     });
   }
 
-  /** Session identity join used by terminal hydration and fork bookkeeping. */
-  terminalSessionMap(host?: string): Map<string, string> {
-    const wanted = normalizeHost(host || '');
+  /**
+   * Session identity join used by terminal hydration and fork bookkeeping:
+   * `terminalId` → `sessionId`, scoped to a device.
+   *
+   * `executionHost` filters to rows whose OWNER (the box the agent runs on) matches.
+   * `observerDevice` — THIS desktop — decides which terminalId is a valid local
+   * binding (PHNX-3939): the CLI projects launcher bindings as
+   * `observerTerminals: [{ device, terminalId }]`, and the owner's top-level
+   * `terminalId` may be undefined by design (a worker session observed from a
+   * desktop). We therefore bind:
+   *   - each `observerTerminals` entry whose `device` matches `observerDevice`, and
+   *   - the top-level `terminalId` ONLY when the owner IS the observer (a remote
+   *     owner's top-level id has no provenance for this desktop).
+   * A terminalId two sessions both claim for this observer is AMBIGUOUS and omitted.
+   *
+   * Back-compat: with no `observerDevice`, this keeps the pre-observer behaviour
+   * (bind every row's top-level terminalId under the host filter), so callers that
+   * predate the observer contract — and rows the CLI has not yet enriched — are
+   * unaffected.
+   */
+  terminalSessionMap(executionHost?: string, observerDevice?: string): Map<string, string> {
+    const wanted = normalizeHost(executionHost || '');
+    const observer = normalizeHost(observerDevice || '');
     const result = new Map<string, string>();
+    const ambiguous = new Set<string>();
+    const bind = (terminalId: string, sessionId: string) => {
+      if (!terminalId || !sessionId) return;
+      const existing = result.get(terminalId);
+      if (existing && existing !== sessionId) { ambiguous.add(terminalId); return; }
+      result.set(terminalId, sessionId);
+    };
     for (const value of this.sessions()) {
       if (!value || typeof value !== 'object') continue;
-      const row = value as { terminalId?: unknown; sessionId?: unknown; id?: unknown; machine?: unknown; sourceDevice?: unknown };
-      const terminalId = typeof row.terminalId === 'string' ? row.terminalId : '';
+      const row = value as {
+        terminalId?: unknown; sessionId?: unknown; id?: unknown; machine?: unknown; sourceDevice?: unknown;
+        observerTerminals?: unknown;
+      };
       const sessionId = typeof row.sessionId === 'string' ? row.sessionId : typeof row.id === 'string' ? row.id : '';
-      const machine = normalizeHost(typeof row.machine === 'string' ? row.machine : typeof row.sourceDevice === 'string' ? row.sourceDevice : '');
-      if (wanted && machine && wanted !== machine) continue;
-      if (terminalId && sessionId) result.set(terminalId, sessionId);
+      if (!sessionId) continue;
+      const owner = normalizeHost(typeof row.machine === 'string' ? row.machine : typeof row.sourceDevice === 'string' ? row.sourceDevice : '');
+      if (wanted && owner && wanted !== owner) continue;
+      // Launcher bindings for THIS observer desktop (provenance-carrying).
+      for (const entry of Array.isArray(row.observerTerminals) ? row.observerTerminals : []) {
+        if (!entry || typeof entry !== 'object') continue;
+        const dev = normalizeHost(typeof (entry as { device?: unknown }).device === 'string' ? (entry as { device?: string }).device! : '');
+        const tid = typeof (entry as { terminalId?: unknown }).terminalId === 'string' ? (entry as { terminalId?: string }).terminalId! : '';
+        if (observer && dev && dev === observer) bind(tid, sessionId);
+      }
+      // Top-level terminalId: a safe local binding only when the owner is this
+      // observer (or when no observer context is supplied — legacy callers).
+      const terminalId = typeof row.terminalId === 'string' ? row.terminalId : '';
+      if (terminalId && (!observer || owner === observer)) bind(terminalId, sessionId);
     }
+    for (const tid of ambiguous) result.delete(tid);
     return result;
   }
 

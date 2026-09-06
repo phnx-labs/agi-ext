@@ -9,49 +9,69 @@
 // Driven entirely by the leader elector (#65) — no vscode dependency — so it
 // runs and tests in a plain process (see gate.test.ts).
 
-import { Disposable, isLeader, onLeadershipChange } from './leader';
+import { isLeader, onLeadershipChange } from './leader';
 
 /**
  * Start `start()` only while this window is the elected monitor leader; dispose
  * it on leadership loss. The returned Disposable detaches the leadership
  * listener and tears down any running instance.
  */
-export function runOnLeaderOnly(start: () => Disposable): Disposable {
-  let current: Disposable | undefined;
+export interface LeaderDisposable {
+  dispose(): void | Promise<void>;
+}
 
-  const apply = (leader: boolean): void => {
-    if (leader && !current) {
+export function runOnLeaderOnly(start: () => LeaderDisposable): LeaderDisposable {
+  let current: LeaderDisposable | undefined;
+  let stopping: Promise<void> | undefined;
+  let wanted = false;
+  let disposed = false;
+
+  const apply = (leader: boolean): void | Promise<void> => {
+    wanted = leader && !disposed;
+    if (stopping) return stopping;
+    if (wanted && !current) {
       try {
         current = start();
       } catch (err) {
         console.error('[MONITOR] leader-only start threw:', err);
       }
-    } else if (!leader && current) {
+    } else if (!wanted && current) {
+      const previous = current;
+      current = undefined;
       try {
-        current.dispose();
+        const result = previous.dispose();
+        if (result) {
+          stopping = Promise.resolve(result);
+          void stopping.then(() => {
+            stopping = undefined;
+            apply(wanted);
+          }, (err) => {
+            // A failed teardown is not permission to overlap producers.
+            console.error('[MONITOR] leader-only dispose rejected:', err);
+          });
+        }
       } catch (err) {
+        stopping = Promise.reject(err);
+        void stopping.catch(() => {});
         console.error('[MONITOR] leader-only dispose threw:', err);
       }
-      current = undefined;
     }
+    // This promise also holds the elector's ON-DISK lease, not just this gate.
+    return stopping;
   };
 
-  // Cover the already-leader case: onLeadershipChange only fires on a FLIP, so a
-  // window that won the election before this gate was wired would never start.
-  apply(isLeader());
   const sub = onLeadershipChange(apply);
+  apply(isLeader());
 
   return {
-    dispose(): void {
-      sub.dispose();
-      if (current) {
-        try {
-          current.dispose();
-        } catch (err) {
-          console.error('[MONITOR] leader-only dispose threw:', err);
-        }
-        current = undefined;
-      }
+    dispose(): void | Promise<void> {
+      disposed = true;
+      apply(false);
+      // Subscription disposal order is not guaranteed. If the gate is disposed
+      // before the elector, its listener must still return the pending reap.
+      if (stopping) void stopping.then(() => sub.dispose(), () => {});
+      else sub.dispose();
+      return stopping;
     },
   };
 }
