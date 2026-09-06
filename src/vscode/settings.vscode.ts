@@ -11,6 +11,7 @@ import { promisify } from 'util';
 import { AgentSettings, getDefaultSettings, CustomAgentConfig, SwarmAgentType, ALL_SWARM_AGENTS, PromptEntry, DEFAULT_DISPLAY_PREFERENCES, DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_TASK_SOURCE_SETTINGS, DEFAULT_QUICK_LAUNCH, QuickLaunchSlot, migrateStaleClaudeQuickLaunch, migrateLegacyQuickLaunchSlots } from '../core/settings';
 import { readPromptsFromPath, writePromptsToPath, DEFAULT_PROMPTS } from '../core/prompts';
 import { openExternalUrl, isAllowedWebviewCommand } from './webviewSecurity';
+import { sendReplyToTerminal } from './sessionReply';
 import * as terminals from './terminals.vscode';
 import * as swarm from './swarm.vscode';
 import { notifyNewlyWaiting } from './waitingNotifier.vscode';
@@ -3040,6 +3041,18 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         });
         break;
       }
+      // ONE PREVIEW (PHNX-3939): a click on a Fleet row points the native
+      // `agentsPanel.terminal` sidebar at that session. Presentation state only —
+      // nothing is fetched, nothing is persisted, no terminal is opened. The
+      // sidebar re-renders from the session stream it already holds.
+      case 'session.select': {
+        const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
+        if (!sessionId) break;
+        const host = typeof message.host === 'string' ? message.host.trim() : '';
+        const { setAgentPanelSubjectFromFleet } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
+        setAgentPanelSubjectFromFleet(sessionId, isLocalDeviceHost(host) ? undefined : host);
+        break;
+      }
       case 'focusTerminal': {
         const entry = terminals.getById(message.terminalId);
         entry?.terminal.show(false);
@@ -3266,23 +3279,10 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           if (reply.kind === 'terminal') {
             const term = terminals.getAllTerminals().find((t) => t.id === reply.terminalId);
             if (!term) { postReplyResult(false, 'Terminal not found — it may have closed'); break; }
-            if (keystroke) {
-              // Select-list prompt: 'esc' cancels/denies (no CR); a digit selects then
-              // confirms with CR. Uses the same sendText rail the free-text reply does.
-              if (keystroke === 'esc') {
-                term.terminal.sendText('\x1b', false);
-              } else {
-                term.terminal.sendText(keystroke, false);
-                term.terminal.sendText('\r', false);
-              }
-            } else if (term.agentType === 'claude') {
-              // Claude's Ink TUI needs an explicit CR; other agents take a newline.
-              term.terminal.sendText(replyText, false);
-              term.terminal.sendText('\r', false);
-            } else {
-              term.terminal.sendText(replyText, true);
-            }
-            term.terminal.show();
+            // One rail, shared with the sidebar's reply field (sessionReply.ts):
+            // the Ink-vs-newline gotcha and the select-list keystroke rule live
+            // in exactly one place.
+            sendReplyToTerminal(term, replyText, keystroke || undefined);
             postReplyResult(true);
           } else if (reply.kind === 'tmux') {
             // Drive the agent's tmux pane: literal text, then Enter (matches the

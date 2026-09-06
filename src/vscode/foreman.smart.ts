@@ -11,7 +11,8 @@
 // against the live OpenAI API. The extension host injects the API key and the
 // tool runner (runForemanTool).
 
-import { FOREMAN_SYSTEM_PROMPT, FOREMAN_TOOLS, ForemanTool } from '../core/foreman.config';
+import { FOREMAN_SYSTEM_PROMPT, FOREMAN_TOOLS } from '../core/foreman.config';
+import type { ForemanTool } from '../core/foreman.config';
 
 const SMART_MODEL = 'gpt-4.1-mini';
 const CHAT_URL = 'https://api.openai.com/v1/chat/completions';

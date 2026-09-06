@@ -190,6 +190,96 @@ export interface RemoteCheckpoint {
   at: string;
 }
 
+/**
+ * The user's own latest genuine request, tidied by the CLI (PHNX-3939 follow-up).
+ * NEVER a rewrite: `text` is the user's prose with whitespace collapsed and the
+ * attachment/pasted-terminal noise lifted out into `attachments`/`pastedLines`,
+ * and `headline` is its first sentence. Absent on an older CLI — the Request card
+ * falls back to `userPromptClean`, then `topic`.
+ */
+export interface RemoteRequestAttachment {
+  kind: 'image' | 'file' | 'dir';
+  name: string;
+}
+
+export interface RemoteRequest {
+  text: string;
+  headline: string;
+  kind: 'text' | 'skill' | 'command' | 'image';
+  /** '/continue 8231082e', '$ make test' — the wrapper the turn arrived in. */
+  command?: string;
+  attachments: RemoteRequestAttachment[];
+  /** Lines of the raw turn classified as pasted terminal echo. */
+  pastedLines: number;
+  /** How many genuine user turns this session has had. */
+  turns: number;
+  /** The session this one continues, when the request was a /continue. */
+  continues?: { id: string; label?: string };
+}
+
+/**
+ * One narration-anchored step: the agent's own sentence plus the tool calls that
+ * ran under it, folded by the CLI daemon. `source` says where the headline came
+ * from, so a `derived` step (a harness with no narration) can render muted
+ * instead of pretending the agent said it.
+ */
+export interface RemoteTimelineStep {
+  text: string;
+  /** ISO timestamp. A numeric epoch on the wire is normalized to ISO here. */
+  at: string;
+  endedAt?: string;
+  source: 'narration' | 'thinking' | 'derived' | 'user';
+  tools: number;
+  /** Commands that RAN and failed. */
+  failed: number;
+  /** Calls a permission rule / hook / abort stopped before they ran. */
+  blocked: number;
+  /** Tool count by verb class (read, edit, run, git, test, browser, agent, other). */
+  mix?: Record<string, number>;
+  /** Milestones the CLI recognized under this step ("worktree created", "PR opened"). */
+  marks?: string[];
+  /** The newest step while the session is working — renders the amber now-line. */
+  live?: boolean;
+  /** The harness's own label for the tool running right now, on the live step. */
+  now?: string;
+}
+
+/**
+ * The bounded step list the row carries: the last few steps in full plus one
+ * counter for everything older. `state` is honest about harnesses the CLI cannot
+ * fold — 'unavailable' with a `reason` beats an empty card that reads as "the
+ * agent did nothing".
+ */
+export interface RemoteTimeline {
+  /** Newest LAST, as the CLI emits it. The card reverses for display. */
+  steps: RemoteTimelineStep[];
+  earlier: { steps: number; tools: number; failed: number };
+  tools: number;
+  failed: number;
+  spanMs: number;
+  state: 'ready' | 'partial' | 'unavailable';
+  reason?: string;
+}
+
+/** One file the session created, modified or deleted. */
+export interface RemoteFileChange {
+  path: string;
+  op: 'created' | 'modified' | 'deleted';
+  edits: number;
+  at: string;
+}
+
+/**
+ * The files the session touched. `source: 'harness'` means the harness recorded
+ * them itself (Codex FileChange, OpenCode patch, Claude file-history); 'tools'
+ * means they were derived from Edit/Write calls.
+ */
+export interface RemoteFiles {
+  changes: RemoteFileChange[];
+  total: number;
+  source: 'harness' | 'tools';
+}
+
 export interface RemoteSessionArtifact {
   path: string;
   basename: string;
@@ -275,6 +365,15 @@ export interface RemoteSession {
    *  'pending' → "summarizing…", 'ready'/'skipped' → "No checklist yet". Absent on an
    *  older CLI. */
   summaryState?: 'pending' | 'ready' | 'skipped';
+  /** The tidied latest genuine user turn. Absent on an older CLI — the Request
+   *  card falls back to `userPromptClean`, then `topic`, and never invents text. */
+  request?: RemoteRequest;
+  /** The narration-anchored step list the daemon folds. Absent on an older CLI —
+   *  the Timeline card falls back to `checkpoints`. */
+  timeline?: RemoteTimeline;
+  /** Files the session created/modified/deleted. Absent on an older CLI — the
+   *  Files card renders nothing rather than guessing from the transcript. */
+  files?: RemoteFiles;
   /** Raw CLI output text, when the active-session payload carries it. */
   output: string;
   /** Attachment refs/names from the CLI payload, normalized for thumbnail + preview. */
@@ -493,6 +592,13 @@ export interface RawActiveSession {
   /** Summarizer lifecycle: 'pending' (working on the digest), 'ready' (produced),
    *  'skipped' (nothing to summarize). Drives the always-on checklist's empty state. */
   summaryState?: string;
+  /** Tidied latest genuine user turn (`SessionRequest`). The CLI never rewrites the
+   *  user's words; it only lifts attachments and pasted terminal out of them. */
+  request?: unknown;
+  /** Narration-anchored fold (`SessionTimeline`): the last steps + an earlier counter. */
+  timeline?: unknown;
+  /** Files the session created/modified/deleted (`SessionFiles`). */
+  files?: unknown;
   output?: string;
   attachments?: unknown[];
   pr?: { url?: string; number?: number } | null;
@@ -576,6 +682,196 @@ function normalizeCheckpoints(raw: RawActiveSession['checkpoints']): RemoteCheck
 
 function normalizeSummaryState(raw: unknown): RemoteSession['summaryState'] {
   return raw === 'pending' || raw === 'ready' || raw === 'skipped' ? raw : undefined;
+}
+
+// ── Request / Timeline / Files (PHNX-3939 follow-up) ─────────────────────────
+// Pure field copies off the stream row, bounded exactly the way `checkpoints`
+// is. Nothing here fetches, parses a transcript, or invents a value: a field the
+// CLI did not send comes back `undefined` and the card falls back or says so.
+
+/** Row payload bounds. The mirror caps the row; this caps what reaches a webview. */
+const REQUEST_TEXT_MAX = 2_000;
+const REQUEST_HEADLINE_MAX = 200;
+const REQUEST_ATTACHMENTS_MAX = 8;
+const TIMELINE_STEPS_MAX = 8;
+const STEP_TEXT_MAX = 200;
+const STEP_NOW_MAX = 160;
+const STEP_MARKS_MAX = 4;
+const FILES_MAX = 8;
+
+/**
+ * A CLI timestamp as an ISO string. The contract says `at: string`, but a numeric
+ * epoch is a plausible encoding and the renderer only ever `Date.parse`es it, so
+ * accept both and normalize rather than dropping a step over its clock format.
+ */
+function asTimestamp(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return new Date(v).toISOString();
+  return '';
+}
+
+function clamp(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function normalizeRequestAttachments(raw: unknown): RemoteRequestAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RemoteRequestAttachment[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const value = entry as { kind?: unknown; name?: unknown };
+    const name = asStr(value.name).trim();
+    if (!name) continue;
+    const kind: RemoteRequestAttachment['kind'] =
+      value.kind === 'image' || value.kind === 'dir' ? value.kind : 'file';
+    out.push({ kind, name });
+    if (out.length >= REQUEST_ATTACHMENTS_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * Normalize `SessionRequest`. Returns undefined when the payload carries no
+ * usable prose AND no command — an empty Request card must fall back to the
+ * topic rather than render a blank headline.
+ */
+export function normalizeRequest(raw: unknown): RemoteRequest | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as {
+    text?: unknown; headline?: unknown; kind?: unknown; command?: unknown;
+    attachments?: unknown; pastedLines?: unknown; turns?: unknown; continues?: unknown;
+  };
+  const text = clamp(asStr(value.text).trim(), REQUEST_TEXT_MAX);
+  const command = asStr(value.command).trim();
+  // The headline is the CLI's first sentence of `text`; fall back to the text or
+  // the command so a command-only turn still reads as something.
+  const headline = clamp(asStr(value.headline).trim() || text || command, REQUEST_HEADLINE_MAX);
+  const attachments = normalizeRequestAttachments(value.attachments);
+  if (!headline && !attachments.length) return undefined;
+  const kind: RemoteRequest['kind'] =
+    value.kind === 'skill' || value.kind === 'command' || value.kind === 'image' ? value.kind : 'text';
+  const continuesRaw = value.continues && typeof value.continues === 'object'
+    ? value.continues as { id?: unknown; label?: unknown }
+    : undefined;
+  const continuesId = asStr(continuesRaw?.id).trim();
+  const continuesLabel = asStr(continuesRaw?.label).trim();
+  return {
+    text,
+    headline,
+    kind,
+    ...(command ? { command } : {}),
+    attachments,
+    pastedLines: Math.max(0, Math.round(asNum(value.pastedLines))),
+    turns: Math.max(0, Math.round(asNum(value.turns))),
+    ...(continuesId
+      ? { continues: { id: continuesId, ...(continuesLabel ? { label: continuesLabel } : {}) } }
+      : {}),
+  };
+}
+
+function normalizeStepMix(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const count = Math.round(asNum(value));
+    if (key && count > 0) out[key] = count;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function normalizeStep(raw: unknown): RemoteTimelineStep | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const value = raw as {
+    text?: unknown; at?: unknown; endedAt?: unknown; source?: unknown;
+    tools?: unknown; failed?: unknown; blocked?: unknown; mix?: unknown;
+    marks?: unknown; live?: unknown; now?: unknown;
+  };
+  const text = clamp(asStr(value.text).trim(), STEP_TEXT_MAX);
+  if (!text) return null;
+  const source: RemoteTimelineStep['source'] =
+    value.source === 'thinking' || value.source === 'derived' || value.source === 'user'
+      ? value.source
+      : 'narration';
+  const mix = normalizeStepMix(value.mix);
+  const marks = Array.isArray(value.marks)
+    ? value.marks.map((m) => asStr(m).trim()).filter(Boolean).slice(0, STEP_MARKS_MAX)
+    : [];
+  const endedAt = asTimestamp(value.endedAt);
+  const now = clamp(asStr(value.now).trim(), STEP_NOW_MAX);
+  return {
+    text,
+    at: asTimestamp(value.at),
+    ...(endedAt ? { endedAt } : {}),
+    source,
+    tools: Math.max(0, Math.round(asNum(value.tools))),
+    failed: Math.max(0, Math.round(asNum(value.failed))),
+    blocked: Math.max(0, Math.round(asNum(value.blocked))),
+    ...(mix ? { mix } : {}),
+    ...(marks.length ? { marks } : {}),
+    ...(value.live === true ? { live: true } : {}),
+    ...(now ? { now } : {}),
+  };
+}
+
+/**
+ * Normalize `SessionTimeline`. Returns undefined when the CLI sent nothing —
+ * the card then falls back to `checkpoints`. A payload that IS present but has
+ * no steps is kept when it explains itself (`state`/`reason`), because
+ * "unavailable for this harness" is a real answer the card must show.
+ */
+export function normalizeTimeline(raw: unknown): RemoteTimeline | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as {
+    steps?: unknown; earlier?: unknown; tools?: unknown; failed?: unknown;
+    spanMs?: unknown; state?: unknown; reason?: unknown;
+  };
+  const steps = (Array.isArray(value.steps) ? value.steps : [])
+    .map(normalizeStep)
+    .filter((s): s is RemoteTimelineStep => Boolean(s))
+    .slice(-TIMELINE_STEPS_MAX);
+  const state: RemoteTimeline['state'] =
+    value.state === 'partial' || value.state === 'unavailable' ? value.state : 'ready';
+  const reason = asStr(value.reason).trim();
+  if (!steps.length && state === 'ready' && !reason) return undefined;
+  const earlierRaw = value.earlier && typeof value.earlier === 'object'
+    ? value.earlier as { steps?: unknown; tools?: unknown; failed?: unknown }
+    : {};
+  return {
+    steps,
+    earlier: {
+      steps: Math.max(0, Math.round(asNum(earlierRaw.steps))),
+      tools: Math.max(0, Math.round(asNum(earlierRaw.tools))),
+      failed: Math.max(0, Math.round(asNum(earlierRaw.failed))),
+    },
+    tools: Math.max(0, Math.round(asNum(value.tools))),
+    failed: Math.max(0, Math.round(asNum(value.failed))),
+    spanMs: Math.max(0, Math.round(asNum(value.spanMs))),
+    state,
+    ...(reason ? { reason } : {}),
+  };
+}
+
+/** Normalize `SessionFiles`. Returns undefined when no usable change survives. */
+export function normalizeFiles(raw: unknown): RemoteFiles | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const value = raw as { changes?: unknown; total?: unknown; source?: unknown };
+  const changes: RemoteFileChange[] = [];
+  for (const entry of Array.isArray(value.changes) ? value.changes : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const change = entry as { path?: unknown; op?: unknown; edits?: unknown; at?: unknown };
+    const filePath = asStr(change.path).trim();
+    if (!filePath) continue;
+    const op: RemoteFileChange['op'] =
+      change.op === 'created' || change.op === 'deleted' ? change.op : 'modified';
+    changes.push({ path: filePath, op, edits: Math.max(0, Math.round(asNum(change.edits))), at: asTimestamp(change.at) });
+    if (changes.length >= FILES_MAX) break;
+  }
+  if (!changes.length) return undefined;
+  return {
+    changes,
+    total: Math.max(changes.length, Math.round(asNum(value.total))),
+    source: value.source === 'harness' ? 'harness' : 'tools',
+  };
 }
 
 function normalizeSessionArtifacts(raw: unknown): RemoteSessionArtifact[] {
@@ -813,6 +1109,13 @@ export function normalizeActiveSession(
     checkpoints,
     summaryChecklist: summaryChecklist.length ? summaryChecklist : undefined,
     summaryState: normalizeSummaryState(raw.summaryState),
+    // Request / Timeline / Files ride the same stream row, bounded like the
+    // checkpoints above. Absent on an older CLI: the cards fall back (request →
+    // userPromptClean → topic, timeline → checkpoints, files → nothing) and
+    // never fabricate a value.
+    request: normalizeRequest(raw.request),
+    timeline: normalizeTimeline(raw.timeline),
+    files: normalizeFiles(raw.files),
     output: asStr(raw.output),
     attachments: Array.isArray(raw.attachments)
       ? raw.attachments.map(normalizeAttachment).filter((a): a is RemoteAttachment => Boolean(a))

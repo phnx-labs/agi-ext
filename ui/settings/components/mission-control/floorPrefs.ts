@@ -3,7 +3,12 @@ import { FLOOR_SIDEBAR_DEFAULT_WIDTH, FLOOR_SIDEBAR_MAX_WIDTH, FLOOR_SIDEBAR_MIN
 // ---------- Floor shell persisted prefs ----------
 
 const FLOOR_PREFS_KEY = 'swarmify.floorPrefs.v1'
-export const FLOOR_PREFS_LAYOUT_VERSION = 2
+// v3 drops `right`: the Fleet detail rail is gone (PHNX-3939 follow-up). The
+// native sidebar is the only session preview, so a persisted "detail open" pref
+// has nothing left to open — and a stale `right: true` restored on the next
+// launch is exactly the empty-column defect PHNX-3938 chased. Bumping the layout
+// version re-baselines every existing install instead of carrying the dead key.
+export const FLOOR_PREFS_LAYOUT_VERSION = 3
 
 export interface FloorPrefs {
   layoutVersion: number
@@ -11,7 +16,6 @@ export interface FloorPrefs {
   sidebar: boolean
   // Collapsed icon rail (true) vs the full text sidebar when sidebar is open.
   rail: boolean
-  right: boolean
   pinned: string[]
   // Ordered pinned host names for the HOSTS sidebar. null = never customized
   // (the local machine is pinned by default); [] = user explicitly unpinned all.
@@ -25,7 +29,6 @@ export function defaultFloorPrefs(): FloorPrefs {
     plain: false,
     sidebar: false,
     rail: true,
-    right: false,
     pinned: [],
     hostPins: null,
     sidebarWidth: FLOOR_SIDEBAR_DEFAULT_WIDTH,
@@ -46,7 +49,7 @@ export function loadFloorPrefs(): FloorPrefs {
     const parsed = { ...defaultFloorPrefs(), ...saved }
     const migrated = saved.layoutVersion === FLOOR_PREFS_LAYOUT_VERSION
       ? parsed
-      : { ...parsed, layoutVersion: FLOOR_PREFS_LAYOUT_VERSION, sidebar: false, rail: true, right: false }
+      : { ...parsed, layoutVersion: FLOOR_PREFS_LAYOUT_VERSION, sidebar: false, rail: true }
     return { ...migrated, sidebarWidth: clampSidebarWidth(migrated.sidebarWidth) }
   } catch {
     return defaultFloorPrefs()

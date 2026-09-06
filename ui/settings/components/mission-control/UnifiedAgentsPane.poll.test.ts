@@ -107,19 +107,16 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
     expect(source).toContain('data-testid="per-host-freshness"')
   })
 
-  test('session-preview fetch is one-shot per selection, never a poll (PHNX-2973)', () => {
-    // The digest fetch fires on selection and is guarded so re-renders (from
-    // floorAgents rebuilding selectedFloorAgent's identity on every stream tick)
-    // do NOT re-spawn the CLI — exactly the per-tab spawn-loop the 2026-08-25
-    // CPU incident (agi-cli#3019 / RUSH-3184) warns against.
-    // The in-flight/ready guard: return early once the sessionId is recorded.
-    expect(source).toContain('if (sessionPreviews[sid]) return')
-    // Its only trigger is the effect above — no setInterval around it.
-    expect(source).not.toMatch(/setInterval\([\s\S]{0,40}fetchSessionPreview/)
-    expect(source).toContain("postMessage({ type: 'fetchSessionPreview', host: selectedFloorAgent!.host, sessionId: sid })")
-    // Exactly one fetchSessionPreview dispatch site in the pane.
-    const previewFetches = source.match(/type:\s*'fetchSessionPreview'/g)
-    expect(previewFetches?.length).toBe(1)
+  test('selecting a session spawns NO CLI process at all (PHNX-3939)', () => {
+    // The rail's one-shot `sessions preview --json` fetch went away with the rail.
+    // Selection is now pure presentation: it posts 'session.select' to the host,
+    // which points the native sidebar at that session. The sidebar renders from
+    // the warm session stream, so a click costs zero subprocesses — the strongest
+    // possible form of the guard the 2026-08-25 CPU incident (agi-cli#3019 /
+    // RUSH-3184) asked for.
+    expect(source).not.toContain('fetchSessionPreview')
+    expect(source).not.toContain('sessionPreviews')
+    expect(source).toContain("postMessage({ type: 'session.select', sessionId: agent.sessionId, host: agent.host })")
   })
 
   // The managed-Projects management pane (and its last-good-on-error handling)
@@ -243,15 +240,19 @@ test('Fleet paints no sub-tab strip or Dispatch button when there are no task ta
   expect(html).not.toContain('class="disp"')
 })
 
-test('Fleet layout defaults and legacy prefs keep both side panels closed', () => {
+test('Fleet layout prefs carry no detail-rail state, and a legacy one is dropped', () => {
+  // PHNX-3939 follow-up: the rail is gone, so `right` is gone from the pref. The
+  // layout version bump re-baselines an install whose stored pref still has it —
+  // no dead key survives to restore a column that no longer exists.
   expect(defaultFloorPrefs()).toMatchObject({
     layoutVersion: FLOOR_PREFS_LAYOUT_VERSION,
     sidebar: false,
     rail: true,
-    right: false,
   })
+  expect(defaultFloorPrefs()).not.toHaveProperty('right')
 
   localStorage.setItem('swarmify.floorPrefs.v1', JSON.stringify({
+    layoutVersion: 2,
     sidebar: true,
     rail: false,
     right: true,
@@ -259,11 +260,11 @@ test('Fleet layout defaults and legacy prefs keep both side panels closed', () =
     sidebarWidth: 320,
   }))
   try {
-    expect(loadFloorPrefs()).toMatchObject({
+    const loaded = loadFloorPrefs()
+    expect(loaded).toMatchObject({
       layoutVersion: FLOOR_PREFS_LAYOUT_VERSION,
       sidebar: false,
       rail: true,
-      right: false,
       pinned: ['keep-me'],
       sidebarWidth: 320,
     })
@@ -271,24 +272,17 @@ test('Fleet layout defaults and legacy prefs keep both side panels closed', () =
     localStorage.removeItem('swarmify.floorPrefs.v1')
   }
 
+  // Selection survives ONLY as the row highlight; there is no rail to open.
   expect(source).toContain('sessionsAgents.find((a) => a.id === selectedAgentId)')
-  expect(source).toContain('onSelect={(a) => selectSession(a.id)}')
-  // PHNX-3938: the detail rail renders only when rightOpen AND something is
-  // actually selected — otherwise a persisted rightOpen pref restored a blank
-  // third-width column on open. The old "Select an agent" placeholder is gone.
-  expect(source).toContain("{rightOpen && (center === 'host' ? selectedHostId : selectedFloorAgent) && (")
-  expect(source).not.toContain('{rightOpen && <div className="detail-col">')
+  expect(source).toContain('onSelect={selectSession}')
+  expect(source).not.toContain('rightOpen')
+  expect(source).not.toContain('setRightOpen')
+  expect(source).not.toContain('detail-col')
+  expect(source).not.toContain('closeDetail')
+  expect(source).not.toContain('<DetailPane')
+  expect(source).not.toContain('<SessionPreviewCard')
+  expect(source).not.toContain('aria-label="Close detail pane"')
   expect(source).not.toContain('Select an agent or issue to open its conversation')
-  expect(source).not.toContain("rightOpen && center !== 'sessions'")
-
-  // Closing the detail must drop rightOpen, not merely clear the selection — on the
-  // Sessions center there is no FloorControls toggle, so a close that left rightOpen
-  // set would wedge the pane open on the empty placeholder. Both detail branches close
-  // through the shared closeDetail, which resets both bits of state.
-  expect(source).toContain('const closeDetail = useCallback(() => {')
-  expect(source).toMatch(/closeDetail = useCallback\(\(\) => \{\s*setSelectedAgentId\(null\)\s*setRightOpen\(false\)/)
-  expect(source).toContain('onClose={closeDetail}')
-  expect(source).toContain('onClick={closeDetail} aria-label="Close detail pane"')
   // PHNX-3594: the left icon rail (FloorRail) and its expanded FloorSidebar are
   // removed from the Fleet view entirely — Projects/Devices moved to Settings.
   // Guard that neither the rail nor the sidebar is reintroduced as Fleet chrome.

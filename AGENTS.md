@@ -21,15 +21,35 @@ agents-cli owns all state and all mechanisms: sessions, devices, accounts,
 teams, watchdog, routines, lifecycle, scheduling. This extension is a
 presentation layer. Concretely:
 
-1. **One subprocess owns live state — demand-gated.** The elected leader window
-   spawns exactly one `agents feed watch --json` child
-   (`src/monitor/sessionCliStream.ts`), and only while a window actually needs it:
-   a visible Fleet dashboard or active-session sidebar, or a tracked-but-unresolved
-   agent tab (`src/monitor/sessionDemand.ts` → `MonitorHost`, PHNX-3939). When no
-   window demands it the producer is torn down; this is why the always-on version
-   was removed in e0f4831 (it pinned ~31% CPU + leaked ssh fan-out feeding a view
-   nobody was looking at). Every window and tab reads its broadcast projection
-   (`src/core/sessionPresentationStore.ts`). No other code may poll session state.
+1. **One subprocess owns live state — demand-gated, and scoped to open tabs.**
+   The elected leader window spawns exactly one
+   `agents sessions watch --json --local` child (`src/monitor/sessionCliStream.ts`),
+   plus one `-D <device>` child per REMOTE device that owns an open agent tab in
+   any window — keyed by device, reaped when that device loses its last tab. All
+   of them run only while a window actually needs the stream: a visible Fleet
+   dashboard or active-session sidebar, or a tracked-but-unresolved agent tab
+   (`src/monitor/sessionDemand.ts` → `MonitorHost`, PHNX-3939). When no window
+   demands it, every producer is torn down. Each window and tab reads the leader's
+   broadcast projection (`src/core/sessionPresentationStore.ts`). No other code
+   may poll session state.
+
+   Both bounds exist because of the same incident. e0f4831 deleted this producer
+   because it ran `agents feed watch --json` always-on: ~31% CPU and a leaked ssh
+   fan-out feeding a view nobody was looking at. The demand gate fixes *when* it
+   runs; the command fixes *what it costs while running*.
+   `sessions watch --json --local` is a journal tail — one `stat` per 250 ms and a
+   read of only the appended bytes. `feed watch` wraps that same tail and adds a
+   500 ms loop that re-reads every session file on disk (63 MB here) plus a `gh`
+   PR reconcile (agents-cli `feed/watch.ts:85-133`). Never put `feed` back in these
+   spawn args; `sessionCliStream.transport.test.ts` asserts it.
+
+   The trade the command makes, stated plainly: `feed watch` is the ONLY source of
+   attention (`attention.*`) and activity (`activity.append`) facts. On
+   `sessions watch` the store still understands them and
+   `adaptSessionWatchEnvelope` still passes them through — nothing is filtered —
+   but nothing produces them, so the Fleet "Needs you" lane and activity feed are
+   empty. Switching back is one line in `sessionWatchArgs`.
+
    If a field you need is missing from the stream, add it to the CLI's
    `SessionWatchRow` (backfill from the index, the way `version` landed) — do
    NOT add a side-channel fetch here. That side channel is how the 2026-08-25
@@ -44,6 +64,11 @@ presentation layer. Concretely:
    candidate/session-id cache, or a raw agents-config reader.
 4. **Fail loud.** A missing CLI noun is an upgrade error, never a filesystem
    fallback.
+
+The Fleet dashboard is a LIST, not a preview: it keeps search, filters, grouping,
+the row Resume button and the expand-in-place card, and it hands session preview to
+the native sidebar. It has no detail rail, no `rightOpen` layout pref and no
+per-selection `sessions preview` fetch — a row click costs zero subprocesses.
 
 The Sessions dashboard follows that same stream contract. Its full first-user
 request comes from `SessionWatchRow.firstUserMessage`; status filters and grouping
@@ -64,19 +89,45 @@ guess. Do not add a fetch, a transcript read, or a repo probe to fill it: put th
 missing fact on the CLI row, or let the user assign it by hand (a local presentation
 override, like pinned favorites).
 
-The `agentsPanel.terminal` activity-bar view is the focused session's work card,
-not a command catalog or tracker browser. It leads with a clean **◈ Goal**, live
-**Progress** checkpoints, and an **always-on Checklist** (`goal` / `checkpoints` /
-`summaryChecklist` + `summaryState` on the session row, PHNX-3939), then the raw
-**Request**/attachments demoted into a collapsible section, runtime and tokens,
-artifacts/delivery links, delegated-team summary, and current activity — all from
-the normalized session stream. Keep recent files secondary. The Goal/Progress/
-Checklist fill is a synchronous field copy off the warm `sessionPresentationStore`
-(Goal falls back to topic, Checklist to the live TodoWrite list) — never an `await`,
-fetch, or lazy enrich on tab-switch; that is the owner's zero-overhead guarantee.
-Do not reintroduce Quick Actions, Quick Prompts, worktree/CWD navigation, an Issues
-view, or a filesystem/transcript fallback to fill missing card fields; add missing
-facts to the CLI row instead.
+The `agentsPanel.terminal` activity-bar view is **the one session preview in the
+extension** (PHNX-3939). The Fleet webview has no detail rail; everything that
+described a session lives here.
+
+**Subject — two triggers, one subject, last wins.** The subject is the last of
+{the focused agent terminal's session, a clicked Fleet row `{sessionId, host}`}.
+It is presentation state only: module-local in `agentPanel.vscode.ts`, never
+persisted to settings or `workspaceState`. A subject with no local terminal still
+renders — the stream row alone is enough for a remote or finished session. The
+Fleet list posts `session.select` on a row click and keeps the PHNX-3879 split, so
+the chevron still expands the card in place without moving the subject.
+
+**Cards, in order.** Header (agent, session, version, label, cwd, branch, account)
+with **Focus** and **Resume**; **◈ Goal** when the summarizer produced one — it no
+longer falls back to the topic, because the Request card below now shows the
+user's own words; **Request** (bold headline, chips for images / files / `@dirs` /
+pasted terminal / the slash command, and a "Full request · N chars · T turns" fold
+carrying the whole turn plus the first one); **Timeline** (the CLI's
+narration-anchored fold: newest 5 steps, 3 more behind "more", one counter for
+everything older, an amber now-line on the live step showing its `now` label,
+chips for the top-3 verb mix, failures and blocks in red, milestones in green,
+user turns as hollow dots with quoted text, derived steps muted); **Checklist**;
+deliverables, delegated team and current activity; **Files** (≤ 8 rows,
+`+` created / `~` modified / `-` deleted, with the true total); and a **reply
+field** in the footer.
+
+**Two states it must never fake.** When the presentation store has seen no `reset`
+for the subject's scope, the Timeline card says "Waiting for the session stream…"
+and names the command it expects. When `timeline.state` is `unavailable`, it says
+so with the CLI's reason. Neither may render as an authoritative empty card.
+
+Every field is a synchronous copy off the warm `sessionPresentationStore`
+(`request` / `timeline` / `files` / `goal` / `checkpoints` / `summaryChecklist` +
+`summaryState` on the session row) — never an `await`, fetch, or lazy enrich on
+tab-switch; that is the owner's zero-overhead guarantee. Fall back honestly on an
+older CLI: request → `userPromptClean` → topic, timeline → `checkpoints`, files →
+nothing. Never fabricate a value. Do not reintroduce Quick Actions, Quick Prompts,
+worktree/CWD navigation, an Issues view, or a filesystem/transcript fallback to
+fill missing card fields; add missing facts to the CLI row instead.
 
 ## Known debt — scheduled for deletion, do NOT extend
 

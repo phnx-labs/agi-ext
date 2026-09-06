@@ -9,8 +9,6 @@ import { renderMarkdown } from '../../utils/markdown'
 import { CMD_PALETTE_EVENTS } from './CommandPalette'
 import { VerticalTimeline } from './Timeline'
 import { TodoChecklist } from './TodoChecklist'
-import { SessionPreviewCard } from './SessionPreviewCard'
-import { normalizeSessionPreview, type SessionPreview } from './sessionPreview'
 import { useNow } from './useNow'
 import {
   isTerminalActive,
@@ -30,18 +28,15 @@ import { FloorSubtabs, openTaskTab, closeTaskTab, type TaskTab } from './FloorSu
 import { TaskDetail } from '../bench/TaskDetail'
 import type { FlatTask } from '../bench/TaskCard'
 import { TicketDetail } from './TicketDetail'
-import { HostDetail } from './HostDetail'
 import { AttentionReceipt, FeedItem, FollowUpBox } from './FeedItem'
 import { SessionsPane } from './SessionsPane'
 import { NeedsYouClusters } from './NeedsYouClusters'
-import { AgentDecision } from './AgentDecision'
 import {
   clusterByQuestion,
   sortAgents,
   sortByAttention,
   groupAgents,
   partitionFloorAgents,
-  sessionTaskLine,
   isPrevious,
   mergeSessionAgents,
   visibleFloorAgents,
@@ -83,9 +78,7 @@ import type {
   InstalledAgent, DispatchHost, DispatchTarget, DispatchRequest, PendingPlan, PlanStep,
 } from './dispatch.types'
 import { loadFloorPrefs, saveFloorPrefs, FLOOR_PREFS_LAYOUT_VERSION } from './floorPrefs'
-import { DetailPane } from './DetailPane'
 export { defaultFloorPrefs, loadFloorPrefs, FLOOR_PREFS_LAYOUT_VERSION } from './floorPrefs'
-export { DetailPane } from './DetailPane'
 export { TaskDetailModal } from './TaskDetailModal'
 export type { CloudProviderId } from './dispatchPrefs'
 
@@ -561,7 +554,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // once when a session is selected (a user action, not a poll) via the one-shot
   // `sessions preview --json` CLI verb; the detail panel renders them at parity
   // with the CLI picker. `loading` guards against a duplicate in-flight fetch.
-  const [sessionPreviews, setSessionPreviews] = useState<Record<string, { state: 'loading' | 'ready'; data?: SessionPreview }>>({})
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [projFilter, setProjFilter] = useState<string | null>(null)
   // Host scope: click a HOSTS row to filter the feed to that machine; click again to clear.
@@ -583,7 +575,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [sidebarOpen, setSidebarOpen] = useState(floorPrefs0.sidebar)
   // Collapsed = the icon rail (mockup default); expanded = the full text sidebar.
   const [railCollapsed, setRailCollapsed] = useState(floorPrefs0.rail)
-  const [rightOpen, setRightOpen] = useState(floorPrefs0.right)
   const [pinned, setPinned] = useState<Set<string>>(() => new Set(floorPrefs0.pinned))
   const [sidebarWidth, setSidebarWidth] = useState(floorPrefs0.sidebarWidth)
   // Ordered pinned HOSTS names (null = default: pin the local machine).
@@ -684,10 +675,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Sessions surface's assign menus (PHNX-3796).
   const managedProjectNameList = useMemo(() => managedProjects.map((p) => p.name).filter(Boolean), [managedProjects])
 
-  // Persist the durable Floor prefs (pinned set, plain/sidebar/right toggles, group-by, host pins).
+  // Persist the durable Floor prefs (pinned set, plain/sidebar toggles, group-by, host pins).
   useEffect(() => {
-    saveFloorPrefs({ layoutVersion: FLOOR_PREFS_LAYOUT_VERSION, plain, sidebar: sidebarOpen, rail: railCollapsed, right: rightOpen, pinned: [...pinned], hostPins, sidebarWidth })
-  }, [plain, sidebarOpen, railCollapsed, rightOpen, pinned, hostPins, sidebarWidth])
+    saveFloorPrefs({ layoutVersion: FLOOR_PREFS_LAYOUT_VERSION, plain, sidebar: sidebarOpen, rail: railCollapsed, pinned: [...pinned], hostPins, sidebarWidth })
+  }, [plain, sidebarOpen, railCollapsed, pinned, hostPins, sidebarWidth])
 
   // Effective HOSTS pins: default to pinning just the local machine until the user
   // customizes. Pin/unpin and drag-reorder always write an explicit list.
@@ -1419,7 +1410,8 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     () => mergeSessionAgents(floorAgents, streamedFloorAgents.filter(isPrevious)),
     [floorAgents, streamedFloorAgents]
   )
-  // Lookup back to the source UnifiedAgent so the right pane can reuse the rich DetailPane.
+  // Lookup back to the source UnifiedAgent for the feed row's retry / option /
+  // kill actions, which need the terminal + cloud handles the FloorAgent drops.
   const unifiedById = useMemo(() => {
     const m = new Map<string, UnifiedAgent>()
     for (const i of items) m.set(i.id, i)
@@ -1786,31 +1778,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     [selectedAgentId, sessionsAgents]
   )
 
-  // Fetch the rich preview digest once when a session with an id is selected — a
-  // one-shot user-action CLI verb (`sessions preview --json`), NOT a poll. The
-  // in-flight/ready guard means re-selecting the same session doesn't re-spawn.
-  useEffect(() => {
-    const sid = selectedFloorAgent?.sessionId
-    if (!sid) return
-    if (sessionPreviews[sid]) return
-    setSessionPreviews((prev) => (prev[sid] ? prev : { ...prev, [sid]: { state: 'loading' } }))
-    postMessage({ type: 'fetchSessionPreview', host: selectedFloorAgent!.host, sessionId: sid })
-  }, [selectedFloorAgent, sessionPreviews])
-
-  // Receive the one-shot preview envelope and normalize it into the typed model.
-  // A dedicated listener (not the big session reducer) keeps this isolated.
-  useEffect(() => {
-    const onMsg = (event: MessageEvent) => {
-      const msg = event.data
-      if (msg?.type !== 'sessionPreview') return
-      const sid = typeof msg.sessionId === 'string' ? msg.sessionId : ''
-      if (!sid) return
-      const data = normalizeSessionPreview(msg.envelope, typeof msg.error === 'string' ? msg.error : undefined)
-      setSessionPreviews((prev) => ({ ...prev, [sid]: { state: 'ready', data: data ?? undefined } }))
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [])
+  // The rail's one-shot `sessions preview --json` fetch is GONE with the rail: the
+  // native sidebar renders the same facts straight off the warm session stream,
+  // so nothing here spawns a CLI process on selection any more.
 
   // Real hosts for the dispatch panel: this machine + every reachable remote.
   const floorHosts = useMemo(() => {
@@ -1991,292 +1961,24 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     setStatusChips((cur) => cur.filter((c) => c !== 'needs'))
   }, [])
 
-  // Selecting an agent opens its detail rail — the SAME setRightOpen(true) that
-  // onSelectHost does. These two were the drifted pair: this one omitted it, so
-  // clicking an agent card silently did nothing (the rail only renders when
-  // rightOpen). Keep them symmetric.
+  // Selecting a session no longer opens a rail — it points the ONE preview (the
+  // native sidebar) at that session. `selectedAgentId` survives only as the row
+  // highlight, so the list still shows what you picked.
+  //
+  // The click/expand split stays exactly as PHNX-3879 left it: the ROW selects,
+  // the chevron (which stops propagation) expands the card in place.
+  const selectSession = useCallback((agent: FloorAgent) => {
+    setSelectedAgentId(agent.id)
+    if (!agent.sessionId) return
+    postMessage({ type: 'session.select', sessionId: agent.sessionId, host: agent.host })
+  }, [])
+
   const selectFloorAgent = useCallback((id: string) => {
     setCenter('agents')
     setSelectedAgentId(id)
-    setRightOpen(true)
-  }, [])
-
-  // A Sessions row opens detail in place; it must not navigate the center away from
-  // the session list just to reveal the selected session (PHNX-3593).
-  const selectSession = useCallback((id: string) => {
-    setSelectedAgentId(id)
-    setRightOpen(true)
-  }, [])
-
-  // Closing the detail must fully collapse the pane, not just clear the selection.
-  // On the Sessions center there is no FloorControls toggle to drop rightOpen, so
-  // clearing selectedAgentId alone would wedge the column open on the empty
-  // placeholder (PHNX-3593 follow-up). Both detail branches (local DetailPane and
-  // the remote/cross-host fallback) close through here.
-  const closeDetail = useCallback(() => {
-    setSelectedAgentId(null)
-    setRightOpen(false)
-  }, [])
-
-  // Host detail pane: clicking a host in the sidebar opens its detail/config on
-  // the right and fetches its inventory (cached backend-side).
-  const onSelectHost = useCallback((hostName: string) => {
-    setCenter('host')
-    setSelectedHostId(hostName)
-    setHostConfigError(null)
-    setRightOpen(true)
-    postMessage({ type: 'fetchHostInventory', host: hostName })
-  }, [])
-  const refreshHost = useCallback((hostName: string) => {
-    postMessage({ type: 'fetchHostInventory', host: hostName, force: true })
-  }, [])
-  const enrollHostAction = useCallback((hostName: string, caps: string[]) => {
-    setHostConfigError(null)
-    postMessage({ type: 'enrollHost', host: hostName, caps })
-  }, [])
-  const removeHostAction = useCallback((hostName: string) => {
-    setHostConfigError(null)
-    postMessage({ type: 'removeHost', host: hostName })
-  }, [])
-
-  // Right-pane detail for the selected agent: a decision block when it needs you, then
-  // the reused rich DetailPane (local) or a light remote summary (cross-host).
-  // PHNX-2976: the detail panel must never present a blank pane for loading, empty,
-  // or upstream-failed states. We derive these from the same stream/props the pane
-  // already receives (no new fetches) and surface them inside DetailPane and the
-  // cross-host fallback.
-  const renderAgentDetail = () => {
-    const a = selectedFloorAgent
-    // The detail rail only mounts when a session is selected (see the detail-col
-    // gate in the page layout), so `a` is always set here. Guard defensively and
-    // render nothing rather than a blank placeholder if selection ever clears
-    // while the rail is mid-unmount (PHNX-3938).
-    if (!a) return null
-    // The "needs you" decision block (why blocked · original task · the question +
-    // option chips + reply). Extracted to AgentDecision so the preview harness renders
-    // the exact same markup.
-    const decision = a.needs ? (
-      <AgentDecision
-        agent={a}
-        error={replyErrors.get(a.id)}
-        onOption={(o) => onAgentOption(a, o)}
-        onFreeText={(t) => replyToAgent(a, t)}
-        onAttach={() => onAttachScreenshot(a)}
-        onNudge={() => nudgeFloorAgent(a)}
-      />
-    ) : null
-
-    const u = unifiedById.get(a.id)
-    const detailLoading = tasksLoading || unifiedTasksLoading || syncingHosts
-    const detailError = remoteSyncError
-    const detailDegraded = !detailError && (
-      (lastRemoteSync > 0 && nowMs - lastRemoteSync > REMOTE_STALE_MS) ||
-      (lastLocalSync > 0 && nowMs - lastLocalSync > REMOTE_STALE_MS)
-    )
-    const fallbackBanner = !u ? (
-      detailError ? (
-        <div className="sw-detail-fallback-banner error" role="alert" data-testid="detail-fallback-error">
-          <Icon name="alert" size={12} /> Upstream failed: {detailError}
-        </div>
-      ) : detailDegraded ? (
-        <div className="sw-detail-fallback-banner degraded" role="status" data-testid="detail-fallback-degraded">
-          <Icon name="clock" size={12} /> Snapshot is stale; retrying when the connection recovers.
-        </div>
-      ) : detailLoading ? (
-        <div className="sw-detail-fallback-banner" role="status" aria-busy="true" data-testid="detail-fallback-loading">
-          <Icon name="loader" size={12} style={{ animation: 'sw-spin 1s linear infinite' }} /> Loading full details…
-        </div>
-      ) : null
-    ) : null
-
-    // The picker-parity preview card (PHNX-2973): the version/account/token
-    // header + Changes(+per-file)/Tools/Tests/Errors/Links/Skills/Hooks/Repos/
-    // Dirs the CLI computes. Rendered inside BOTH detail branches so local and
-    // remote sessions read at parity with `agents sessions`.
-    const previewState = a.sessionId ? sessionPreviews[a.sessionId] : undefined
-    // Suppress the terminal detail's own msgs/tools/recent-files ONLY once the
-    // card's digest data is present (not merely loading), so those sections
-    // don't flicker out-and-in during the ~1s fetch.
-    const hasPreviewData = !!previewState?.data?.digest
-    const previewCard = previewState?.data
-      ? <SessionPreviewCard preview={previewState.data} />
-      : previewState?.state === 'loading'
-        ? (
-          <div className="sw-unified-detail-section">
-            <div className="sw-preview-note" style={{ color: 'var(--ds-text-muted)' }}>Loading session preview…</div>
-          </div>
-        )
-        : null
-    return (
-      <>
-        {decision}
-        {u ? (
-          <DetailPane
-            item={u}
-            previewCard={previewCard}
-            hasPreviewData={hasPreviewData}
-            onClose={closeDetail}
-            onFocusTerminal={handleFocusTerminal}
-            onRetry={handleRetry}
-            onKill={handleKill}
-            loading={detailLoading}
-            degraded={detailDegraded}
-            error={detailError}
-          />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'auto' }}>
-            {fallbackBanner}
-            <div className="dhead" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-              <button className="sw-btn secondary sm" style={{ alignSelf: 'flex-end' }} onClick={closeDetail} aria-label="Close detail pane">×</button>
-              <div className="title">{a.project} / {a.name}</div>
-              <div className="sub">host <b>{a.hostLabel ?? a.host}</b>{(a.worktreeSlug || a.branch) ? ` · ${a.worktreeSlug || a.branch}` : ''} · {a.phase}{a.tok ? ` · ${a.tok} tok/s` : ''}{a.ticket ? ` · ${a.ticket}` : ''}</div>
-              {/* Artifacts row: the agent's outputs at a glance — the PR (click-through),
-                  CI, the team it spawned, and tickets it created. Mirrors the card chips. */}
-              {(a.prUrl || a.ci || a.spawnedTeam || (a.createdTickets?.length ?? 0) > 0 || (a.createdCommits?.length ?? 0) > 0 || (a.plans?.length ?? 0) > 0 || (a.attachments?.length ?? 0) > 0) && (
-                <div className="arts">
-                  {(a.attachments ?? []).map((attachment) => (
-                    <button
-                      key={attachment.path}
-                      type="button"
-                      className="art attachment"
-                      title={`Preview ${attachment.path}`}
-                      onClick={() => openAttachmentPreview(a, attachment)}
-                    >
-                      <Icon name="paperclip" size={10} /> {attachment.label}
-                    </button>
-                  ))}
-                  {(a.plans ?? []).map((plan) => (
-                    <button
-                      key={plan.path}
-                      type="button"
-                      className="art plan"
-                      title={`Preview ${plan.path}`}
-                      onClick={() => openPlanPreview(a, plan)}
-                    >
-                      <Icon name="external" size={10} /> {plan.label}
-                    </button>
-                  ))}
-                  {a.prUrl && (
-                    <ExtLink href={a.prUrl} className="art pr" style={{ textDecoration: 'none' }}>
-                      <Icon name="chevR" size={10} /> PR {a.pr ?? ''}
-                    </ExtLink>
-                  )}
-                  {a.ci && <span className={`art ci ${a.ci}`}>CI {a.ci}</span>}
-                  {a.spawnedTeam && <span className="art team"><Icon name="grip" size={10} /> team · {a.spawnedTeam}</span>}
-                  {(a.createdTickets ?? []).map((t) => {
-                    const href = linearIssueUrl(t)
-                    const label = linearIssueLabel(t)
-                    return href
-                      ? <ExtLink key={t} href={href} className="art tk" style={{ textDecoration: 'none' }}><Icon name="plus" size={10} /> {label}</ExtLink>
-                      : <span key={t} className="art tk"><Icon name="plus" size={10} /> {label}</span>
-                  })}
-                  {(a.createdCommits ?? []).map((sha) => (
-                    <span key={sha} className="art commit"><Icon name="gitBranch" size={10} /> commit {sha}</span>
-                  ))}
-                </div>
-              )}
-              {/* Actions: give a selected agent something to DO (issue: clicking a card
-                  offered nothing). Focus opens the session's terminal — local via the
-                  live vscode terminal, remote via an editor-tab `agents sessions resume`
-                  (the CLI owns fleet routing + reconnect; no raw ssh/tmux here).
-                  Headless (background) runs have no reply terminal/tmux, so they get a
-                  dedicated Focus (attach a fresh terminal via `agents sessions focus`)
-                  plus a Stop that kills the run's pid. */}
-              <div className="opts" style={{ marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
-                {a.reply.kind === 'terminal' && a.reply.terminalId && (
-                  <button className="opt" onClick={() => postMessage({ type: 'focusTerminal', terminalId: a.reply.terminalId })}>
-                    <Icon name="chevR" size={11} /> Focus terminal
-                  </button>
-                )}
-                {a.reply.kind === 'tmux' && a.reply.muxTarget && (
-                  <button className="opt" onClick={() => postMessage({ type: 'focusRemoteSession', host: a.reply.host, muxSocket: a.reply.muxSocket, muxTarget: a.reply.muxTarget, sessionId: a.reply.sessionId, label: a.name })}>
-                    <Icon name="chevR" size={11} /> Focus in terminal
-                  </button>
-                )}
-                {a.context === 'headless' && a.sessionId && (
-                  <button className="opt" onClick={() => postMessage({ type: 'focusSession', sessionId: a.sessionId!, host: a.host })}>
-                    <Icon name="chevR" size={11} /> Focus
-                  </button>
-                )}
-                {a.context === 'headless' && a.pid ? (
-                  <button className="opt ghost" onClick={() => postMessage({ type: 'stopSession', sessionId: a.sessionId!, pid: a.pid })}>
-                    Stop
-                  </button>
-                ) : null}
-                {a.worktreePath && (
-                  <button className="opt" onClick={() => postMessage({ type: 'revealWorktree', path: a.worktreePath, host: a.host })}>
-                    <Icon name="chevR" size={11} /> Reveal worktree
-                  </button>
-                )}
-                {a.prUrl && (
-                  <ExtLink href={a.prUrl} className="opt ghost" style={{ textDecoration: 'none' }}>
-                    <Icon name="chevR" size={11} /> Open PR {a.pr ?? ''}
-                  </ExtLink>
-                )}
-              </div>
-            </div>
-            {/* Picker-parity preview card (PHNX-2973): the CLI-computed header +
-                Changes/Tools/Tests/Errors/Links/Skills/Hooks/Repos/Dirs. */}
-            {previewCard}
-            {/* Task anchor: the ORIGINAL prompt (markdown), distinct from the last message.
-                Falls back through sessionTaskLine (prompt -> summary -> resp -> slug/branch)
-                so the detail rail always shows a task, even for a promptless session. */}
-            {(() => {
-              const task = a.prompt?.trim() || sessionTaskLine(a)
-              return task ? (
-                <div className="sw-unified-detail-section">
-                  <div className="sw-section-label">Task</div>
-                  <div className="md">{renderMarkdown(task)}</div>
-                </div>
-              ) : null
-            })()}
-            {/* Plan checklist (RUSH-1380): the agent's latest TodoWrite, carried by the CLI
-                for remote / device-dispatched agents that have no local tool-call stream. */}
-            {a.todos.length > 0 && (
-              <div className="sw-unified-detail-section">
-                <div className="sw-section-label">Checklist</div>
-                <TodoChecklist todos={a.todos} />
-              </div>
-            )}
-            {/* Progress timeline: recent transcript events as a vertical rail, oldest -> now.
-                For cloud rows the existing CloudActivityFeed still drives the AgentDetailView. */}
-            {((a.recentEvents?.length ?? 0) > 0 || a.recent.length > 0) && (
-              <div className="sw-unified-detail-section">
-                <div className="sw-section-label">Progress <span className="sw-section-count">{Math.min(a.recentEvents?.length || a.recent.length, 8)} recent</span></div>
-                <VerticalTimeline recent={a.recentEvents?.length ? a.recentEvents : a.recent.map((call) => ({ kind: 'tool' as const, call, timestamp: call.timestamp }))} nowMs={nowMs} />
-              </div>
-            )}
-            {/* Streaming Activity feed: the recent assistant messages (markdown), newest at
-                the bottom, capped by a live "now" verb/target indicator updated from
-                monitor/webview events. Falls back to the single last response when only
-                `resp` is carried. */}
-            {(a.messages.length > 0 || a.resp || a.verb || a.target) && (
-              <div className="sw-unified-detail-section">
-                <div className="sw-section-label">Activity</div>
-                <div className="sw-activity-feed">
-                  {(a.messages.length > 0 ? a.messages : (a.resp ? [a.resp] : [])).map((m, i) => (
-                    <div key={i} className="sw-activity-msg md">{renderMarkdown(m)}</div>
-                  ))}
-                  {(a.verb || a.target) && (
-                    <div className={`sw-activity-now nowline ${a.attentionKind === 'stall' ? 'stall' : ''}`}>
-                      <span className="sw-activity-dot" />
-                      <span className="v">{a.verb}</span> {a.target}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            {!a.needs && (a.phase === 'idle' || a.phase === 'done') && a.reply.kind !== 'none' && (
-              <div style={{ padding: '0 16px 14px' }}>
-                <FollowUpBox key={a.id} onSend={(t) => replyToAgent(a, t)} />
-                {replyErrors.get(a.id) && <div className="reply-err" role="alert">{replyErrors.get(a.id)}</div>}
-              </div>
-            )}
-          </div>
-        )}
-      </>
-    )
-  }
+    const agent = sessionsAgents.find((a) => a.id === id)
+    if (agent?.sessionId) postMessage({ type: 'session.select', sessionId: agent.sessionId, host: agent.host })
+  }, [sessionsAgents])
 
   // Resolve the active task tab (if any) back to a bench FlatTask so its detail renders.
   const activeTab = activeTaskTab ? openTaskTabs.find((t) => t.id === activeTaskTab) ?? null : null
@@ -2319,7 +2021,7 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       onResumeOnDevice={resumeAgentOnDevice}
       onResumeMany={resumeManyAgents}
       devices={fleetDevices}
-      onSelect={(a) => selectSession(a.id)}
+      onSelect={selectSession}
       selectedId={selectedAgentId}
       streamDegraded={sessionStreamDegraded}
       managedProjectNames={managedProjectNameList}
@@ -2341,23 +2043,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       </div>
     </div>
   )
-
-  // PHNX-3592: the managed-Projects pane moved to Settings (FleetProjectsSection).
-  // After PHNX-3594 removed the Fleet left rail, nothing called setCenter('projects'),
-  // so this branch was dead — the pane lives in the Panel now.
-  const rightContent = center === 'host'
-    ? (selectedHostId
-      ? <HostDetail
-          host={selectedHostId}
-          inventory={hostInventories[selectedHostId] ?? null}
-          configError={hostConfigError}
-          onRefresh={() => refreshHost(selectedHostId)}
-          onEnroll={(caps) => enrollHostAction(selectedHostId, caps)}
-          onRemove={() => removeHostAction(selectedHostId)}
-          onDispatch={() => setDispatchOpen(true)}
-        />
-      : <div className="detail-empty">Select a device to see its installed agents and configuration.</div>)
-    : renderAgentDetail()
 
   return (
     <div className="sw-floor-dashboard" style={{ padding: 0, overflow: 'hidden' }}>
@@ -2383,8 +2068,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
           needsCount={needsAgents.length}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((o) => !o)}
-          rightOpen={rightOpen}
-          onToggleRight={() => setRightOpen((o) => !o)}
           plain={plain}
           onTogglePlain={() => setPlain((o) => !o)}
           sort={floorSort}
@@ -2405,19 +2088,15 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
             FloorSidebar are removed from the Fleet view. Their scopes (Backlog /
             Recap / Projects / Devices) are gone or moved to Settings; Dispatch stays
             pinned in the header sub-tab strip. The session list renders full-width. */}
-        {center === 'agents' ? centerContent : <div className="feed-col">{centerContent}</div>}
-        {/* The detail rail renders ONLY when the pane is open AND something is
-            actually selected. `rightOpen` alone is a persisted pref that restores
-            true on extension open, so gating on it alone left a blank third-width
-            column with a "Select an agent" placeholder and no selection (PHNX-3938,
-            folds PHNX-3592). Selecting a session sets both the selection and
-            rightOpen (selectFloorAgent / selectSession), so the rail still opens on
-            click; the list uses full width until then. The host branch mirrors the
-            same guard so it stays correct if the Hosts surface is re-wired (its
-            onSelectHost entry point is currently unused after PHNX-3594). */}
-        {rightOpen && (center === 'host' ? selectedHostId : selectedFloorAgent) && (
-          <div className="detail-col">{rightContent}</div>
-        )}
+        {/* The Fleet detail rail is GONE (PHNX-3939 follow-up). There is now ONE
+            session preview in the extension — the native agentsPanel.terminal
+            sidebar — and a row click points it at that session ('session.select').
+            The rail's three real actions moved there: Focus and Resume in its
+            header, the reply box in its footer. Removing it also removes the class
+            of defect PHNX-3938 and PHNX-3592 chased: a persisted layout pref
+            restoring a blank third-width column with nothing selected. The list is
+            full width, always. */}
+        {centerContent}
       </div>
 
       {cardDragActive && (

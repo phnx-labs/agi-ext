@@ -82,7 +82,9 @@ describe('readiness broadcast round-trip', () => {
   test('leader probes a reported pid once and the follower receives agentReady', async () => {
     const socketPath = tempSocketPath();
     const pid = spawnShellWithChild();
-    const host = new MonitorHost({ socketPath, detectors: { readiness: true } });
+    // sessionCli off: this test exercises the readiness path only, and the stream
+    // detector would otherwise spawn a real `agents sessions watch` child per run.
+    const host = new MonitorHost({ socketPath, detectors: { readiness: true, sessionCli: false } });
     await host.start();
 
     const readinessFacts: ReadinessFactPayload[] = [];

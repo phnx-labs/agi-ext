@@ -93,8 +93,14 @@ describe('wiring guard — infra must stay wired (issue 5 was dead code)', () =>
   test('UnifiedAgentsPane wires groupAgents (the Group-by control)', () => {
     expect(pane).toContain('groupAgents(')
   })
-  test('UnifiedAgentsPane wires sessionTaskLine (the detail rail)', () => {
-    expect(pane).toContain('sessionTaskLine(')
+  // sessionTaskLine's original consumer was the Fleet detail rail, removed with
+  // PHNX-3939's one-preview change. Its live consumer is now the feed row, which
+  // is where the guard has to point — otherwise this test passes on a file that
+  // no longer renders anything.
+  test('FeedItem wires sessionTaskLine (the compact row task line)', () => {
+    const feedItem = fs.readFileSync(path.join(__dirname, 'FeedItem.tsx'), 'utf8')
+    expect(feedItem).toContain('sessionTaskLine(')
+    expect(pane).not.toContain('sessionTaskLine(')
   })
   // The idle section's POSITION is the whole point of RUSH-2838 and no unit test can
   // reach it (rendering the pane needs React), so pin it at the source: the idle rows

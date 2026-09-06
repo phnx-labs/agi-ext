@@ -1,5 +1,13 @@
-// Agent Panel: an activity-bar sidebar view that always reflects the user's
-// currently focused agent terminal.
+// Agent Panel: the activity-bar sidebar view that is the ONE session preview in
+// the extension (PHNX-3939). The Fleet webview's detail rail is gone; everything
+// that described a session lives here.
+//
+// Subject model — two triggers, one subject, last wins:
+//   an agent terminal takes focus       -> onDidChangeActiveTerminal
+//   a Fleet row is clicked              -> webview 'session.select' {sessionId, host}
+// The subject is PRESENTATION STATE ONLY: never persisted, never written to a
+// config or workspaceState. A subject with no local terminal still renders — the
+// stream row alone is enough for a remote or finished session.
 //
 // Shows:
 //   - Agent logo + name + version + session chunk + label (manual or auto)
@@ -31,7 +39,6 @@ import * as terminals from './terminals.vscode';
 import { buildAgentTerminalEnv } from '../core/terminals';
 import { TeamWithMates } from './foreman.sources';
 import { extractLinearTicketId } from '../core/utils';
-import { readPrompts } from './settings.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { openExternalUrl } from './webviewSecurity';
 import { parseLineForActivity, formatActivity, todoProgressFromItems, type TodoProgress } from '../core/session.activity';
@@ -43,9 +50,20 @@ import {
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
-import type { RemoteAttachment, RemoteCheckpoint, RemoteSession, RemoteSessionArtifact, RemoteTodoItem } from '../core/remoteSessions';
+import type {
+  RemoteAttachment,
+  RemoteCheckpoint,
+  RemoteFiles,
+  RemoteRequest,
+  RemoteSession,
+  RemoteSessionArtifact,
+  RemoteTimeline,
+  RemoteTodoItem,
+} from '../core/remoteSessions';
+import { normalizeHost } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
+import { sendReplyToTerminal } from './sessionReply';
 
 const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
 
@@ -65,13 +83,6 @@ interface ActivityItem {
   kind: string;   // 'reading' | 'editing' | 'running' | 'thinking' | 'completed' | ...
   summary: string;
   ts: number;
-}
-
-interface QuickPromptLite {
-  id: string;
-  title: string;
-  preview: string;
-  favorite: boolean;
 }
 
 interface GitInfo {
@@ -103,7 +114,12 @@ interface RecentFile {
 }
 
 interface PanelSnapshot {
+  /** A local agent terminal backs the subject (drives terminal-only actions). */
   hasTerminal: boolean;
+  /** There is a session to render at all — from a terminal OR a Fleet row click. */
+  hasSubject?: boolean;
+  /** Where the subject came from; a Fleet subject shows "following the Fleet row". */
+  subjectSource?: 'terminal' | 'fleet';
   // Terminal facts
   terminalId?: string;       // internal id for action commands
   agentName?: string;        // "Claude"
@@ -137,6 +153,22 @@ interface PanelSnapshot {
   // empty state ('pending' → "summarizing…", else "No checklist yet").
   summaryChecklist?: RemoteTodoItem[];
   summaryState?: 'pending' | 'ready' | 'skipped';
+  // The user's own latest genuine request, tidied by the CLI. Falls back to
+  // userPromptClean, then the conversation topic — never a synthesized sentence.
+  request?: RemoteRequest;
+  // The narration-anchored step list the CLI daemon folds. Falls back to
+  // `checkpoints` on an older CLI (renderTimelineCard does the fold).
+  timeline?: RemoteTimeline;
+  // Files the session created / modified / deleted, from the harness's own record.
+  files?: RemoteFiles;
+  // The FIRST genuine turn, shown inside the Request fold beside the latest one.
+  firstRequest?: string;
+  // True while the presentation store has seen no `reset` for this subject's
+  // scope: the panel says "waiting for the session stream" instead of rendering
+  // an authoritative-looking empty card (the 0.9.361-0.9.364 defect).
+  streamDegraded?: boolean;
+  // The scope the panel is waiting on, named in the degraded card ('local' or a device).
+  streamScope?: string;
   // Fine-grained task checklist + done/total, from the agent's latest plan write.
   // Rides the transcript tail already read for recentActivity (no extra I/O).
   todoProgress?: TodoProgress;
@@ -160,12 +192,112 @@ interface PanelSnapshot {
   plan?: PlanFileInfo;
   // Teams
   teams: TeamWithMates[];
-  // Quick prompts (top N favorites + recent)
-  quickPrompts: QuickPromptLite[];
   // Derived state — drives state-driven Quick Actions
   agentState?: AgentState;
   // Errors / diagnostics
   teamsError?: string;
+}
+
+/**
+ * The sidebar's subject: the LAST of { the focused agent terminal's session, a
+ * clicked Fleet row }. Presentation state only — module-local, never persisted,
+ * never round-tripped through settings or workspaceState. It is stored rather
+ * than recomputed so a redraw triggered by something else (a stream fact, a
+ * PLAN.md write) cannot silently snap the panel back to the active terminal
+ * after the user picked a different session in the Fleet list.
+ */
+interface PanelSubject {
+  sessionId: string;
+  /** Owning device for a Fleet subject; '' when the row is on this machine. */
+  host?: string;
+  source: 'terminal' | 'fleet';
+}
+
+let panelSubject: PanelSubject | undefined;
+
+/** The focused agent terminal, when one is focused and it is an agent tab. */
+function activeAgentEntry(): terminals.EditorTerminal | undefined {
+  const active = vscode.window.activeTerminal;
+  if (!active) return undefined;
+  const entry = terminals.getByTerminal(active);
+  return entry && entry.agentConfig ? entry : undefined;
+}
+
+/**
+ * Resolve the subject to render: the stored subject when it still resolves to
+ * something (a live terminal, or a row the stream still carries), else the
+ * focused agent terminal. `entry` is undefined for a session with no local tab —
+ * that renders from the stream row alone.
+ */
+function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal; host?: string; source: 'terminal' | 'fleet' } | undefined {
+  const byId = (sessionId: string) =>
+    terminals.getAllTerminals().find((e) => e.agentConfig && e.sessionId === sessionId);
+  if (panelSubject) {
+    const entry = byId(panelSubject.sessionId);
+    // A terminal subject whose tab is gone stops being the subject: fall through
+    // to whatever is focused now rather than pinning a dead tab.
+    if (entry || panelSubject.source === 'fleet') {
+      return {
+        sessionId: panelSubject.sessionId,
+        entry,
+        ...(panelSubject.host ? { host: panelSubject.host } : {}),
+        source: panelSubject.source,
+      };
+    }
+    panelSubject = undefined;
+  }
+  const entry = activeAgentEntry();
+  if (!entry) return undefined;
+  return { sessionId: entry.sessionId ?? '', entry, source: 'terminal' };
+}
+
+/**
+ * Point the sidebar at a session the user clicked in the Fleet list. Called by
+ * the settings webview host on the 'session.select' message; the Fleet list keeps
+ * the click/expand split (PHNX-3879) so the chevron still expands in place.
+ */
+export function setAgentPanelSubjectFromFleet(sessionId: string, host?: string): void {
+  const id = (sessionId || '').trim();
+  if (!id) return;
+  panelSubject = { sessionId: id, source: 'fleet', ...(host ? { host } : {}) };
+  // Reveal WITHOUT stealing focus, so the click keeps the user in the Fleet list
+  // while the preview updates beside it. A direct user action gets a direct
+  // refresh (one shot, no timer) rather than the stream-fact coalescer, which
+  // would skip entirely while the view was hidden.
+  activeProvider?.revealPreservingFocus();
+  void activeProvider?.refresh();
+}
+
+/** Point the sidebar at the focused agent terminal (the other subject trigger). */
+function setSubjectFromActiveTerminal(): void {
+  const entry = activeAgentEntry();
+  if (!entry || !entry.sessionId) return;
+  panelSubject = { sessionId: entry.sessionId, source: 'terminal' };
+}
+
+/** Forget the subject entirely (dispose, and the reset point for tests). */
+export function clearAgentPanelSubject(): void {
+  panelSubject = undefined;
+}
+
+/**
+ * What the sidebar is currently showing, after last-wins resolution: the session,
+ * the device that owns it, which trigger picked it, and whether a local terminal
+ * backs it. Read-only — this is the same resolution `buildSnapshot` runs, exposed
+ * so another surface (and the subject tests) can ask without rebuilding a
+ * snapshot. undefined when nothing is focused and nothing was clicked.
+ */
+export function currentAgentPanelSubject():
+  | { sessionId: string; host?: string; source: 'terminal' | 'fleet'; hasTerminal: boolean }
+  | undefined {
+  const subject = resolveSubject();
+  if (!subject) return undefined;
+  return {
+    sessionId: subject.sessionId,
+    ...(subject.host ? { host: subject.host } : {}),
+    source: subject.source,
+    hasTerminal: !!subject.entry,
+  };
 }
 
 function computeAgentState(snap: PanelSnapshot): AgentState {
@@ -183,7 +315,7 @@ function computeAgentState(snap: PanelSnapshot): AgentState {
 
 class AgentPanelProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
-  private snapshot: PanelSnapshot = { hasTerminal: false, teams: [], quickPrompts: [] };
+  private snapshot: PanelSnapshot = { hasTerminal: false, teams: [] };
   // IN-FLIGHT GUARD (#71): overlapping refreshes (4s poll racing an event-driven
   // refresh, or a slow local-fallback `agents view`) coalesce onto one running
   // build so two snapshot computations never run concurrently.
@@ -198,6 +330,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   // Handshake-fallback timer (PHNX-3517): re-posts the snapshot until the webview
   // acks, so a single dropped 'ready' can never wedge the panel on "Loading…".
   private readyFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Needed by the Focus / Resume host entry points; set by registerAgentPanel. */
+  context?: vscode.ExtensionContext;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -304,8 +439,11 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       case 'runQuickAction':
         await this.runQuickAction(msg.action, msg.terminalId, msg.url);
         return;
-      case 'sendQuickPrompt':
-        await this.sendQuickPrompt(msg.promptId, msg.terminalId);
+      case 'replyToSession':
+        await this.replyToSession(
+          typeof msg.text === 'string' ? msg.text : '',
+          typeof msg.terminalId === 'string' ? msg.terminalId : undefined,
+        );
         return;
       case 'insertPathInTerminal':
         if (typeof msg.path === 'string' && msg.path) {
@@ -341,6 +479,30 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       return true;
     };
     switch (action) {
+      // Focus and Resume — the two verbs the removed Fleet detail rail owned,
+      // reusing the SAME host entry points it called. Focus prefers the live tab;
+      // with no local tab it attaches a fresh terminal to the session on its
+      // owning device. Resume runs the CLI's own recovery command for the row.
+      case 'focusSubject': {
+        if (terminal) { terminal.show(true); return; }
+        const sessionId = this.snapshot.fullSessionId;
+        if (!sessionId || !this.context) return;
+        const { openAgentSessionById } = require('./extension') as typeof import('./extension');
+        await openAgentSessionById(this.context, sessionId, this.snapshot.sessionHost || undefined);
+        return;
+      }
+      case 'resumeSubject': {
+        const sessionId = this.snapshot.fullSessionId;
+        if (!sessionId || !this.context) return;
+        const { openAgentSessionByRecovery } = require('./extension') as typeof import('./extension');
+        const device = this.snapshot.sessionHost || '';
+        await openAgentSessionByRecovery(this.context, {
+          sessionId,
+          agentType: this.snapshot.agentType ?? '',
+          ...(device && device !== LOCAL_LABEL && device !== LOCAL_MACHINE_ID ? { device } : {}),
+        });
+        return;
+      }
       case 'openPr':
         if (typeof url === 'string') {
           openExternalUrl(url);
@@ -362,25 +524,28 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async sendQuickPrompt(
-    promptId: string | undefined,
-    terminalId: string | undefined,
-  ): Promise<void> {
-    if (!promptId) return;
-    const all = readPrompts();
-    const entry = all.find((p) => p.id === promptId);
+  /**
+   * Deliver a reply into the subject session. The only injectable channel the
+   * sidebar owns is the session's own editor-tab terminal, over the shared rail
+   * the Fleet reply box used (`sessionReply.ts`). A subject with no local tab has
+   * no channel: say so inline rather than dropping the text silently.
+   */
+  private async replyToSession(text: string, terminalId: string | undefined): Promise<void> {
+    const body = text.trim();
+    const post = (ok: boolean, error?: string) =>
+      this.view?.webview.postMessage({ type: 'replyResult', ok, ...(error ? { error } : {}) });
+    if (!body) { post(false, 'Reply text is empty'); return; }
+    const entry = terminalId ? terminals.getById(terminalId) : undefined;
     if (!entry) {
-      vscode.window.showWarningMessage(`Prompt "${promptId}" no longer exists.`);
+      post(false, 'This session has no terminal here — press Focus first, then reply.');
       return;
     }
-    const terminal = terminalId ? terminals.getById(terminalId)?.terminal : vscode.window.activeTerminal;
-    if (!terminal) {
-      vscode.window.showInformationMessage('No agent terminal to send the prompt to.');
-      return;
+    try {
+      sendReplyToTerminal(entry, body);
+      post(true);
+    } catch (err) {
+      post(false, err instanceof Error ? err.message : String(err));
     }
-    terminal.show(true);
-    // Insert without submitting so the user can edit before pressing Enter.
-    terminal.sendText(entry.content, false);
   }
 
   // Public so the extension can poke a refresh on terminal lifecycle events
@@ -393,6 +558,11 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       this.view.webview.postMessage({ type: 'snapshot', data: this.snapshot });
     }
     // If not ready, snapshot stays cached; the 'ready' handler will push it.
+  }
+
+  /** Show the sidebar without taking keyboard focus from whatever opened it. */
+  revealPreservingFocus(): void {
+    this.view?.show(true);
   }
 
   // Called from the session CLI stream fact handler (PHNX-2833) — skip the
@@ -436,20 +606,20 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private async buildSnapshot(): Promise<PanelSnapshot> {
-    const active = vscode.window.activeTerminal;
-    if (!active) {
-      return { hasTerminal: false, teams: [], quickPrompts: [] };
+    // The subject — the focused agent terminal OR the clicked Fleet row, last
+    // wins. A Fleet subject with no local tab still renders: everything the card
+    // needs is on the stream row.
+    const subject = resolveSubject();
+    if (!subject) {
+      return { hasTerminal: false, hasSubject: false, teams: [] };
     }
-    const entry = terminals.getByTerminal(active);
-    if (!entry || !entry.agentConfig) {
-      return { hasTerminal: false, teams: [], quickPrompts: [] };
-    }
+    const entry = subject.entry;
 
-    const opts = active.creationOptions as vscode.TerminalOptions;
+    const opts = entry?.terminal.creationOptions as vscode.TerminalOptions | undefined;
     const env = opts?.env as Record<string, string | undefined> | undefined;
     const envWorkspaceDir = env?.AGENT_WORKSPACE_DIR?.trim() || undefined;
     const cwdRaw = opts?.cwd;
-    const cwd =
+    let cwd =
       typeof cwdRaw === 'string'
         ? cwdRaw
         : cwdRaw && 'fsPath' in cwdRaw
@@ -462,29 +632,31 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
     const plan = cwd ? readPlanFile(cwd) : undefined;
 
-    const sessionId = entry.sessionId;
+    const sessionId = subject.sessionId || entry?.sessionId;
     const sessionChunk = sessionId ? sessionId.slice(0, 8) : undefined;
 
     const snapshot: PanelSnapshot = {
-      hasTerminal: true,
-      terminalId: entry.id,
-      agentName: entry.agentConfig.title,
-      agentPrefix: entry.agentConfig.prefix,
-      agentType: entry.agentType,
-      agentIconUri: this.iconUriFor(entry.agentConfig.prefix),
+      hasTerminal: !!entry,
+      hasSubject: true,
+      subjectSource: subject.source,
+      terminalId: entry?.id,
+      agentName: entry?.agentConfig?.title,
+      agentPrefix: entry?.agentConfig?.prefix,
+      agentType: entry?.agentType,
+      agentIconUri: this.iconUriFor(entry?.agentConfig?.prefix),
       sessionChunk,
       fullSessionId: sessionId,
-      version: entry.statusVersion || entry.version,
-      label: entry.label,
-      autoLabel: entry.autoLabel,
-      account: entry.statusAccount || entry.account,
+      sessionHost: subject.host,
+      version: entry?.statusVersion || entry?.version,
+      label: entry?.label,
+      autoLabel: entry?.autoLabel,
+      account: entry?.statusAccount || entry?.account,
       cwd,
       worktreePath,
       worktreeName,
       workspaceRoot,
       plan,
       teams: [],
-      quickPrompts: pickQuickPrompts(),
     };
 
     // ── Fill from the CLI-normalized session stream (PHNX-3517) ─────────────
@@ -498,7 +670,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     // status` per team on EVERY switch (2-8 subprocesses), which behind the
     // all-or-nothing snapshot wedged the panel on "Loading…" for seconds.
     if (sessionId) {
-      const live = findLiveSession(sessionId);
+      const live = findLiveSession(sessionId, subject.host);
       if (live) {
         snapshot.sessionHost = live.host;
         snapshot.conversation = {
@@ -510,14 +682,27 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         const linear = extractLinearTicketId(live.topic) || extractLinearTicketId(live.lastResponse);
         if (linear) snapshot.linearIssue = linear;
 
-        // Goal + Progress + always-on Checklist (PHNX-3939) — synchronous field
-        // copies from the warm row, with fallbacks so the cards are always
-        // populated. NO await, NO fetch: the tab-switch path must stay instant, so
-        // these read only what the stream already carries (goal falls back to the
-        // topic; the checklist falls back to the live TodoWrite list).
-        snapshot.goal = live.goal ?? (live.topic || undefined);
+        // Goal + Checklist (PHNX-3939) — synchronous field copies from the warm
+        // row. NO await, NO fetch: the tab-switch path must stay instant, so these
+        // read only what the stream already carries (the checklist falls back to
+        // the live TodoWrite list).
+        //
+        // Goal NO LONGER falls back to the topic: the Request card below now shows
+        // the user's own words, so a Goal that is just the topic re-stated the same
+        // line twice. Goal is the summarizer's distillation or nothing.
+        snapshot.goal = live.goal || undefined;
         snapshot.checkpoints = live.checkpoints ?? [];
         snapshot.summaryState = live.summaryState;
+
+        // Request / Timeline / Files (PHNX-3939 follow-up) — the same synchronous
+        // field copy. Each falls back honestly when the CLI is older: the Request
+        // card drops to userPromptClean then topic, the Timeline card to
+        // `checkpoints`, and the Files card renders nothing at all rather than
+        // guessing from the filesystem.
+        snapshot.request = live.request;
+        snapshot.timeline = live.timeline;
+        snapshot.files = live.files;
+        snapshot.firstRequest = live.firstUserMessage || undefined;
         const summaryChecklist = live.summaryChecklist ?? live.todos ?? [];
         snapshot.summaryChecklist = summaryChecklist;
 
@@ -529,13 +714,30 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         // the recent-turn tail.
         if (live.activity && live.activity.trim()) {
           snapshot.recentActivity = [{ kind: 'working', summary: live.activity.trim(), ts: Date.now() }];
-        } else if (live.tail.length && entry.agentType) {
-          snapshot.recentActivity = collectRecentActivity(live.tail, entry.agentType, 5);
+        } else if (live.tail.length && (entry?.agentType || live.agentType)) {
+          snapshot.recentActivity = collectRecentActivity(live.tail, entry?.agentType || live.agentType, 5);
         }
 
         // PR: the CLI already extracted the url — structure it, don't re-scan.
         if (live.prUrl) snapshot.pullRequests = extractPrUrls([live.prUrl]);
 
+        // A Fleet subject has no local tab, so the agent identity, cwd and host
+        // come off the same row instead of the terminal's creation options.
+        if (!entry) {
+          snapshot.agentType = snapshot.agentType || live.agentType;
+          const def = BUILT_IN_AGENTS.find((a) => a.key === live.agentType);
+          if (def) {
+            snapshot.agentName = snapshot.agentName || def.title;
+            snapshot.agentPrefix = snapshot.agentPrefix || def.prefix;
+            snapshot.agentIconUri = snapshot.agentIconUri || this.iconUriFor(def.prefix);
+          }
+          snapshot.label = snapshot.label || live.label || undefined;
+          if (!snapshot.cwd && live.cwd) {
+            cwd = live.cwd;
+            snapshot.cwd = live.cwd;
+            snapshot.worktreeName = path.basename(live.cwd);
+          }
+        }
         if (live.branch) snapshot.git = { branch: live.branch };
         snapshot.durationMs = live.durationMs ?? live.sinceMs;
         snapshot.tokenCount = live.tokenCount;
@@ -574,11 +776,31 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.worktrees = await getWorktreesRouted(workspaceRoot, cwd);
       } catch { /* best-effort */ }
     }
-    if (entry.agentType) {
+    if (snapshot.agentType) {
       try {
         snapshot.usageStatus = getUsageStatusFromCli(sessionId);
       } catch { /* best-effort */ }
     }
+
+    // Degraded state (PHNX-3939): the store has heard no `reset` for the scope
+    // this session lives on, so nothing here is authoritative yet. Say so —
+    // 0.9.361-0.9.364 rendered "No checklist yet" for a stream that was not
+    // running at all. Scope names the device the row would arrive from, matching
+    // how the CLI scopes a peer (`normalizeHost(device.name)`).
+    // A REMOTE subject is asked for by name: its rows only ever arrive on that
+    // device's own scope, so "some other scope reset" says nothing about it. A
+    // local subject uses the bare form, because the local scope key on the wire
+    // is the CLI's `machineId()` (e.g. 'yosemite-s1'), which the extension has no
+    // business re-deriving — "has the stream established at all" is the honest
+    // question there.
+    const deviceScope = normalizeHost(subject.host || '');
+    const isRemote = !!deviceScope
+      && deviceScope !== LOCAL_MACHINE_ID
+      && deviceScope !== normalizeHost(LOCAL_LABEL);
+    snapshot.streamScope = isRemote ? deviceScope : 'this machine';
+    snapshot.streamDegraded = isRemote
+      ? !sessionPresentationStore.hasSeenReset(deviceScope)
+      : !sessionPresentationStore.hasSeenReset();
 
     // The full teammate DAG is NOT on the warm stream, and its per-team
     // `agents teams status` spawns are exactly what made a tab-switch slow. It is
@@ -930,6 +1152,192 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     color: var(--vscode-descriptionForeground);
     font-size: 11.5px;
     font-style: italic;
+  }
+  /* ── Request card (PHNX-3939 follow-up) ────────────────────────────────
+     The user's own sentence leads, bold; attachments and pasted terminal become
+     chips; the full turn folds away. Nothing here is a rewrite. */
+  .request-headline {
+    color: var(--vscode-foreground);
+    font-weight: 600;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .request-command {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-weight: 600;
+  }
+  .request-continues {
+    color: var(--vscode-descriptionForeground);
+    font-weight: 400;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+  }
+  .chip {
+    border: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 9px;
+    padding: 1px 6px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 10px;
+  }
+  .chip.mono { font-family: var(--vscode-editor-font-family, monospace); }
+  .request-first {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--vscode-widget-border, transparent);
+  }
+  .request-first-label {
+    color: var(--vscode-descriptionForeground);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+  }
+  /* ── Timeline card ─────────────────────────────────────────────────────
+     One row per folded step, newest first. The live step gets the amber
+     now-line; a 'user' step is a hollow dot with quoted text; a 'derived' step
+     (a harness that wrote no narration) renders muted so it never reads as
+     something the agent said. */
+  .step {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    padding: 3px 0;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .step-mk {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: 4px;
+    background: var(--vscode-descriptionForeground);
+  }
+  .step.live .step-mk { background: var(--vscode-charts-yellow, #e0a030); }
+  .step.src-user .step-mk {
+    background: transparent;
+    border: 1px solid var(--vscode-descriptionForeground);
+  }
+  .step-txt { color: var(--vscode-foreground); word-break: break-word; }
+  .step.src-user .step-txt { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .step.src-derived .step-txt { color: var(--vscode-descriptionForeground); }
+  .step-at {
+    color: var(--vscode-descriptionForeground);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .step.live .step-at { color: var(--vscode-charts-yellow, #e0a030); font-weight: 600; }
+  .step-now {
+    grid-column: 2 / span 2;
+    color: var(--vscode-charts-yellow, #e0a030);
+    font-size: 10.5px;
+    word-break: break-word;
+  }
+  .step-chips {
+    grid-column: 2 / span 2;
+    color: var(--vscode-descriptionForeground);
+    font-size: 10px;
+  }
+  .step-chips .bad { color: var(--vscode-errorForeground, #c0392b); }
+  .step-chips .mark { color: var(--vscode-charts-green, #3a7d44); }
+  .timeline-more, .timeline-earlier {
+    color: var(--vscode-textLink-foreground);
+    font-size: 10.5px;
+    cursor: pointer;
+    list-style: none;
+    padding-top: 4px;
+  }
+  .timeline-more::-webkit-details-marker, .timeline-earlier::-webkit-details-marker { display: none; }
+  .timeline-earlier { cursor: default; color: var(--vscode-descriptionForeground); }
+  h2 .head-meta {
+    float: right;
+    color: var(--vscode-descriptionForeground);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 10.5px;
+  }
+  .card-note {
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .card-note strong { color: var(--vscode-foreground); }
+  .card-note code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.16));
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+  /* ── Files card ────────────────────────────────────────────────────────── */
+  .file-row {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 2px 0;
+    font-size: 11.5px;
+  }
+  .file-op {
+    font-family: var(--vscode-editor-font-family, monospace);
+    flex-shrink: 0;
+    width: 8px;
+  }
+  .file-op.created { color: var(--vscode-charts-green, #3a7d44); }
+  .file-op.modified { color: var(--vscode-textLink-foreground); }
+  .file-op.deleted { color: var(--vscode-errorForeground, #c0392b); }
+  .file-row .path-link {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* ── Reply field ───────────────────────────────────────────────────────── */
+  .reply-box { margin-top: 14px; }
+  .reply-box textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 30px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, transparent));
+    border-radius: 4px;
+    padding: 6px 8px;
+    font: inherit;
+    font-size: 11.5px;
+  }
+  .reply-box textarea:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+  }
+  .reply-err {
+    color: var(--vscode-errorForeground);
+    font-size: 10.5px;
+    margin-top: 4px;
+  }
+  /* Header actions — Focus / Resume, the two verbs the removed Fleet rail owned. */
+  .head-actions {
+    display: flex;
+    gap: 5px;
+    margin-left: auto;
+    align-self: flex-start;
+  }
+  .head-btn {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: 1px solid var(--vscode-widget-border, transparent);
+    border-radius: 9px;
+    padding: 1px 8px;
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .head-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground));
   }
   /* Demoted, collapsible Request. */
   .request-details > summary {
@@ -1328,6 +1736,19 @@ function renderTerminalCard(s) {
       '<button type="button" class="branch-name" data-scm="1" title="Open Source Control">' + esc(s.git.branch) + '</button>' +
       dirty + '</div>';
   }
+  // Focus and Resume: the two verbs the removed Fleet detail rail owned. Focus
+  // shows the live tab when there is one and otherwise attaches a fresh terminal
+  // to the session; Resume runs the CLI's own recovery command for the row. Both
+  // need a session id, so a tab that has not reported one yet shows neither.
+  const actions = s.fullSessionId
+    ? '<div class="head-actions">' +
+        '<button type="button" class="head-btn" data-action="focusSubject" title="Open the terminal for this session">Focus</button>' +
+        '<button type="button" class="head-btn" data-action="resumeSubject" title="Resume this session">Resume</button>' +
+      '</div>'
+    : '';
+  const following = s.subjectSource === 'fleet' && !s.hasTerminal
+    ? '<div class="account-row">following the Fleet selection</div>'
+    : '';
   return (
     '<div class="card">' +
       '<div class="agent-head">' +
@@ -1338,7 +1759,9 @@ function renderTerminalCard(s) {
           worktree +
           branch +
           account +
+          following +
         '</div>' +
+        actions +
       '</div>' +
     '</div>'
   );
@@ -1451,28 +1874,244 @@ function renderLinksCard(s) {
   return html;
 }
 
-function renderConversationCard(s) {
-  if (!s.conversation) return '';
-  const c = s.conversation;
-  const topic = (c.topic || '').trim();
-  if (!topic && !c.messageCount) return '';
-  const meta = [];
-  if (c.messageCount) meta.push(c.messageCount + ' message' + (c.messageCount === 1 ? '' : 's'));
-  if (c.lastActivityMs) meta.push(relTime(c.lastActivityMs));
-  // Demoted below Goal/Progress/Checklist (PHNX-3939): the clean ◈ Goal is the
-  // primary read now, so the raw request collapses into a <details> the user can
-  // expand for the full ask.
+// ── Request ─────────────────────────────────────────────────────────────────
+// The user's OWN latest genuine turn: headline in bold, attachment / pasted-
+// terminal noise lifted into chips, the whole thing folded away behind
+// "Full request". The card NEVER synthesizes a sentence — when the CLI carries no
+// tidied 'request' it falls back to the conversation topic and says nothing more.
+function requestChips(s) {
+  const req = s.request;
+  const chips = [];
+  if (req && req.command) {
+    chips.push('<span class="chip mono">' + esc(req.command) + '</span>');
+  }
+  const atts = (req && req.attachments) || [];
+  const images = atts.filter((a) => a.kind === 'image');
+  const dirs = atts.filter((a) => a.kind === 'dir');
+  const others = atts.filter((a) => a.kind !== 'image' && a.kind !== 'dir');
+  if (images.length) {
+    chips.push('<span class="chip">' + images.length + ' image' + (images.length === 1 ? '' : 's') + '</span>');
+  }
+  if (others.length) {
+    chips.push('<span class="chip">' + others.length + ' file' + (others.length === 1 ? '' : 's') + '</span>');
+  }
+  for (const dir of dirs) chips.push('<span class="chip mono">' + esc(dir.name) + '</span>');
+  const pasted = (req && req.pastedLines) || 0;
+  if (pasted > 0) {
+    chips.push('<span class="chip">pasted terminal · ' + pasted + ' line' + (pasted === 1 ? '' : 's') + '</span>');
+  }
+  // Attachments the CLI resolved to real paths stay clickable (they open in an
+  // editor); the tidier's names above are just labels.
+  for (const a of (s.attachments || [])) {
+    chips.push('<a class="chip path-link" data-path="' + esc(a.path) + '">' + esc(a.label || a.path) + '</a>');
+  }
+  return chips.length ? '<div class="chips">' + chips.join('') + '</div>' : '';
+}
+
+function renderRequestCard(s) {
+  const req = s.request;
+  const topic = ((s.conversation && s.conversation.topic) || '').trim();
+  // Fallback chain, in order and no further: the CLI's tidied request, then the
+  // already-cleaned prompt line, then the raw topic. Never a rewrite.
+  const headline = (req && req.headline) || topic;
+  if (!headline) return '';
+  const full = (req && req.text) || topic;
+  const first = (s.firstRequest || '').trim();
+  const turns = (req && req.turns) || 0;
+  const continues = req && req.continues
+    ? '<span class="request-continues">  ·  continues ' + esc(req.continues.label || req.continues.id) + '</span>'
+    : '';
+  const headlineCls = req && (req.kind === 'skill' || req.kind === 'command')
+    ? 'request-headline request-command'
+    : 'request-headline';
+
+  const foldBits = [];
+  if (full) foldBits.push(full.length.toLocaleString() + ' chars');
+  if (turns > 1) foldBits.push(turns + ' turns');
+  // The fold carries the WHOLE latest turn, and the first turn beneath it when
+  // the session has moved on from it (a /continue, a redirect).
+  const foldBody =
+    (full ? '<div class="conv-topic">' + renderMarkdownPreview(full) + '</div>' : '') +
+    (first && first !== full
+      ? '<div class="request-first"><div class="request-first-label">First turn</div>' +
+        '<div class="conv-topic">' + renderMarkdownPreview(truncate(first, 1200)) + '</div></div>'
+      : '');
+  const fold = foldBody
+    ? '<details class="request-details">' +
+        '<summary><h2>Full request' + (foldBits.length ? ' · ' + esc(foldBits.join(' · ')) : '') + '</h2></summary>' +
+        foldBody +
+      '</details>'
+    : '';
+
   return (
-    '<details class="request-details">' +
-      '<summary><h2>Request</h2></summary>' +
-      '<div class="card">' +
-        (topic ? '<div class="conv-topic">' + renderMarkdownPreview(truncate(topic, 420)) + '</div>' : '') +
-        ((s.attachments || []).length ? '<div class="request-attachments">' + s.attachments.map((a) =>
-          '<a class="path-link attachment-link" data-path="' + esc(a.path) + '">' + esc(a.label || a.path) + '</a>'
-        ).join('') + '</div>' : '') +
-        (meta.length ? '<div class="conv-meta">' + esc(meta.join(' · ')) + '</div>' : '') +
-      '</div>' +
-    '</details>'
+    '<h2>Request</h2>' +
+    '<div class="card">' +
+      '<div class="' + headlineCls + '">' + esc(truncate(headline, 240)) + continues + '</div>' +
+      requestChips(s) +
+      fold +
+    '</div>'
+  );
+}
+
+// ── Timeline ────────────────────────────────────────────────────────────────
+// The CLI's narration-anchored fold: last 5 steps newest-first, 3 more behind
+// "more", everything older collapsed into one counter. On an older CLI the
+// summarizer's 'checkpoints' are projected into the same step shape so the card
+// degrades instead of disappearing.
+function timelineFromCheckpoints(s) {
+  const checkpoints = s.checkpoints || [];
+  if (!checkpoints.length) return null;
+  return {
+    steps: checkpoints.map((c) => ({
+      text: c.text, at: c.at, source: 'narration', tools: 0, failed: 0, blocked: 0,
+    })),
+    earlier: { steps: 0, tools: 0, failed: 0 },
+    tools: 0, failed: 0, spanMs: 0, state: 'ready',
+  };
+}
+
+function stepChips(step) {
+  const bits = [];
+  const mix = step.mix || {};
+  // Top 3 verb classes by count — the shape of the work, not a full histogram.
+  const top = Object.keys(mix)
+    .map((k) => ({ k: k, n: mix[k] }))
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 3);
+  for (const entry of top) bits.push(esc(entry.n + ' ' + entry.k));
+  if (step.failed > 0) bits.push('<span class="bad">' + step.failed + ' failed</span>');
+  if (step.blocked > 0) bits.push('<span class="bad">' + step.blocked + ' blocked</span>');
+  for (const mark of (step.marks || [])) bits.push('<span class="mark">' + esc(mark) + '</span>');
+  return bits.length ? '<div class="step-chips">' + bits.join(' · ') + '</div>' : '';
+}
+
+function renderStep(step) {
+  const at = Date.parse(step.at);
+  const when = Number.isFinite(at) ? relTime(at) : '';
+  const cls = 'step src-' + esc(step.source || 'narration') + (step.live ? ' live' : '');
+  // A user turn is the user's own words, so it renders quoted and muted — it is
+  // not something the agent did.
+  const text = step.source === 'user' ? '“' + truncate(step.text, 120) + '”' : truncate(step.text, 160);
+  return (
+    '<div class="' + cls + '">' +
+      '<span class="step-mk"></span>' +
+      '<span class="step-txt">' + esc(text) + '</span>' +
+      '<span class="step-at" title="' + esc(step.at || '') + '">' + esc(step.live ? 'now' : when) + '</span>' +
+      (step.live && step.now ? '<div class="step-now">▶ ' + esc(truncate(step.now, 120)) + '</div>' : '') +
+      stepChips(step) +
+    '</div>'
+  );
+}
+
+const TIMELINE_SHOWN = 5;
+
+function renderTimelineCard(s) {
+  // The stream has not established for this session's scope: say so instead of
+  // rendering an empty card that reads as "the agent has done nothing".
+  if (s.streamDegraded) {
+    return (
+      '<h2>Timeline</h2>' +
+      '<div class="card"><div class="card-note">' +
+        '<strong>Waiting for the session stream…</strong><br>' +
+        'No row has arrived for ' + esc(s.streamScope || 'this machine') + ' yet. The extension runs ' +
+        '<code>agents sessions watch --json --local</code> and renders whatever it carries. ' +
+        'Nothing here is fetched per click.' +
+      '</div></div>'
+    );
+  }
+  const t = s.timeline || timelineFromCheckpoints(s);
+  if (!t) return '';
+  if (t.state === 'unavailable') {
+    return (
+      '<h2>Timeline</h2>' +
+      '<div class="card"><div class="card-note">' +
+        '<strong>Timeline unavailable for this harness</strong>' +
+        (t.reason ? '<br>' + esc(t.reason) : '') +
+      '</div></div>'
+    );
+  }
+  const steps = (t.steps || []).slice().reverse();   // newest first
+  if (!steps.length && !t.earlier.steps) return '';
+  const head = [];
+  if (t.spanMs > 0) head.push(compactDuration(t.spanMs));
+  if (t.tools > 0) head.push(t.tools + ' tools');
+  if (t.failed > 0) head.push(t.failed + ' failed');
+  const meta = head.length ? '<span class="head-meta">' + esc(head.join(' · ')) + '</span>' : '';
+
+  const shown = steps.slice(0, TIMELINE_SHOWN).map(renderStep).join('');
+  const rest = steps.slice(TIMELINE_SHOWN);
+  const more = rest.length
+    ? '<details><summary class="timeline-more">' + rest.length + ' more</summary>' +
+      rest.map(renderStep).join('') + '</details>'
+    : '';
+  const earlierBits = [];
+  if (t.earlier.steps > 0) {
+    earlierBits.push(t.earlier.steps + ' earlier step' + (t.earlier.steps === 1 ? '' : 's'));
+    if (t.earlier.tools > 0) earlierBits.push(t.earlier.tools + ' tools');
+    if (t.earlier.failed > 0) earlierBits.push(t.earlier.failed + ' failed');
+  }
+  const earlier = earlierBits.length
+    ? '<div class="timeline-earlier">▸ ' + esc(earlierBits.join(' · ')) + '</div>'
+    : '';
+  const partial = t.state === 'partial'
+    ? '<div class="card-note" style="margin-top:6px">Partial: the transcript was capped this tick.</div>'
+    : '';
+  return (
+    '<h2>Timeline' + meta + '</h2>' +
+    '<div class="card">' + shown + more + earlier + partial + '</div>'
+  );
+}
+
+// ── Files ───────────────────────────────────────────────────────────────────
+// The paths the HARNESS recorded as created / modified / deleted. Nothing is
+// inferred from the filesystem: no 'files' on the row means no card.
+const FILE_OP_SYMBOL = { created: '+', modified: '~', deleted: '−' };
+
+function renderFilesCard(s) {
+  const files = s.files;
+  if (!files || !(files.changes || []).length) return '';
+  const counts = { created: 0, modified: 0, deleted: 0 };
+  for (const change of files.changes) counts[change.op] = (counts[change.op] || 0) + 1;
+  const head = [];
+  if (counts.created) head.push(counts.created + ' created');
+  if (counts.modified) head.push(counts.modified + ' modified');
+  if (counts.deleted) head.push(counts.deleted + ' deleted');
+  if (files.total > files.changes.length) head.push('of ' + files.total);
+  const rows = files.changes.map((change) => {
+    // Strip the cwd prefix and its ONE leading separator by char code (47 is a
+    // forward slash, 92 a back slash). A regex char class matching a backslash
+    // gets mangled when this template literal is emitted — the doubled backslash
+    // collapses to one and breaks the class — which throws "Invalid regular
+    // expression" and kills the ENTIRE webview script on parse. That is the
+    // stuck-"Loading…" bug PHNX-3517 chased; renderRecentFilesCard carries the
+    // same warning for the same reason.
+    let rel = change.path;
+    if (s.cwd && change.path.indexOf(s.cwd) === 0) {
+      rel = change.path.slice(s.cwd.length);
+      if (rel.charCodeAt(0) === 47 || rel.charCodeAt(0) === 92) rel = rel.slice(1);
+    }
+    return (
+      '<div class="file-row">' +
+        '<span class="file-op ' + esc(change.op) + '">' + esc(FILE_OP_SYMBOL[change.op] || '~') + '</span>' +
+        '<a class="path-link" data-path="' + esc(change.path) + '" title="' + esc(change.path) + '">' + esc(rel) + '</a>' +
+      '</div>'
+    );
+  }).join('');
+  return (
+    '<h2>Files' + (head.length ? '<span class="head-meta">' + esc(head.join(' · ')) + '</span>' : '') + '</h2>' +
+    '<div class="card">' + rows + '</div>'
+  );
+}
+
+// The reply rail the removed Fleet "Ask Foreman" box owned: type, press Enter,
+// the host injects it into the session over the same channel the Fleet used.
+function renderReplyBox(s) {
+  if (!s.fullSessionId) return '';
+  return (
+    '<div class="reply-box">' +
+      '<textarea id="reply-input" rows="1" placeholder="Reply to this session… (Enter to send)"></textarea>' +
+      '<div class="reply-err" id="reply-err" hidden></div>' +
+    '</div>'
   );
 }
 
@@ -1560,23 +2199,6 @@ function renderGoalCard(s) {
   );
 }
 
-function renderCheckpointsCard(s) {
-  const checkpoints = s.checkpoints || [];
-  if (!checkpoints.length) return '';
-  // Most-recent last on the wire; show newest first so the current state is on top.
-  const rows = checkpoints.slice().reverse().map((c) => (
-    '<div class="checkpoint">' +
-      '<span class="checkpoint-mk"></span>' +
-      '<span class="checkpoint-txt">' + esc(truncate(c.text, 120)) + '</span>' +
-      (c.at ? '<span class="checkpoint-at">' + esc(relTime(Date.parse(c.at))) + '</span>' : '') +
-    '</div>'
-  )).join('');
-  return (
-    '<h2>Progress</h2>' +
-    '<div class="card">' + rows + '</div>'
-  );
-}
-
 // The checklist is ALWAYS on (PHNX-3939): a populated list renders the progress
 // bar + rows; an empty one still renders a card so the summarizer's state is
 // visible — "summarizing…" while pending, "No checklist yet" once it settles.
@@ -1602,22 +2224,6 @@ function renderChecklistCard(s) {
       '<div class="todo-track"><i style="width:' + pct + '%"></i></div>' +
       rows +
     '</div>'
-  );
-}
-
-function renderPromptsCard(s) {
-  const prompts = s.quickPrompts || [];
-  if (!prompts.length) return '';
-  const rows = prompts.map((p) => (
-    '<button class="prompt-btn" data-prompt-id="' + esc(p.id) + '" title="' + esc(p.preview) + '">' +
-      (p.favorite ? '<span class="prompt-star">★</span>' : '') +
-      '<span class="prompt-title">' + esc(p.title) + '</span>' +
-      '<span class="prompt-preview">' + esc(p.preview) + '</span>' +
-    '</button>'
-  )).join('');
-  return (
-    '<h2>Quick prompts</h2>' +
-    '<div class="card"><div class="prompt-grid">' + rows + '</div></div>'
   );
 }
 
@@ -1825,25 +2431,30 @@ let lastSnapshot = null;
 
 function render(snap) {
   lastSnapshot = snap;
-  if (!snap || !snap.hasTerminal) {
+  // The empty state is about having NO SUBJECT — not about having no terminal.
+  // A session picked in the Fleet list renders here with no local tab at all.
+  if (!snap || !snap.hasSubject) {
     root.innerHTML = (
-      '<div class="empty">No agent terminal focused.<br><br>' +
-      'Click an agent tab in the editor, or open one with <b>Cmd+Shift+A</b>.</div>'
+      '<div class="empty">No session selected.<br><br>' +
+      'Click an agent tab in the editor, open one with <b>Cmd+Shift+A</b>, ' +
+      'or click a row in the Fleet list.</div>'
     );
     return;
   }
-  // Outcome-oriented order (PHNX-3574): what was asked, how far along it is,
-  // what the session produced, who it delegated to, and what is happening now.
+  // What was asked, what the agent has actually done, the checklist, what it
+  // produced, and the files it touched — then a reply field (PHNX-3939).
   root.innerHTML = (
     renderTerminalCard(snap) +
     renderSessionStats(snap) +
     renderGoalCard(snap) +
-    renderCheckpointsCard(snap) +
+    renderRequestCard(snap) +
+    renderTimelineCard(snap) +
     renderChecklistCard(snap) +
-    renderConversationCard(snap) +
     renderDeliverablesCard(snap) +
     renderSpawnedTeamCard(snap) +
     renderActivityCard(snap) +
+    renderFilesCard(snap) +
+    renderReplyBox(snap) +
     '<div class="footer"><button id="refresh-btn">Refresh</button></div>'
   );
   for (const el of root.querySelectorAll('.path-link')) {
@@ -1884,22 +2495,41 @@ function render(snap) {
       });
     });
   }
-  for (const el of root.querySelectorAll('[data-prompt-id]')) {
-    el.addEventListener('click', () => {
+  const reply = root.querySelector('#reply-input');
+  if (reply) {
+    reply.addEventListener('keydown', (e) => {
+      // Enter sends; Shift+Enter is a newline. Same convention as the reply box
+      // the Fleet rail used, so muscle memory carries over.
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      e.preventDefault();
+      const text = reply.value.trim();
+      if (!text) return;
       vscode.postMessage({
-        type: 'sendQuickPrompt',
-        promptId: el.getAttribute('data-prompt-id'),
+        type: 'replyToSession',
+        text: text,
+        sessionId: lastSnapshot && lastSnapshot.fullSessionId,
         terminalId: lastSnapshot && lastSnapshot.terminalId,
       });
+      reply.value = '';
     });
   }
   const btn = root.querySelector('#refresh-btn');
   if (btn) btn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
 }
 
+// The host answers a reply with its outcome; show a failure inline (never a
+// toast) exactly where the user typed.
+function showReplyError(message) {
+  const box = root.querySelector('#reply-err');
+  if (!box) return;
+  box.textContent = message || '';
+  box.hidden = !message;
+}
+
 window.addEventListener('message', (e) => {
   const msg = e.data;
   if (msg && msg.type === 'snapshot') render(msg.data);
+  else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
 });
 
 // The panel keeps retainContextWhenHidden so quick tab switches preserve scroll
@@ -2052,10 +2682,18 @@ async function getWorktreesRouted(
  *  sidebar reads the SAME normalized fields (`lastResponse`, `todos`, `activity`,
  *  `prUrl`, `branch`) every other surface does, never re-deriving them from the
  *  raw row. Synchronous, in-memory: no subprocess (PHNX-3517). */
-function findLiveSession(sessionId: string): RemoteSession | undefined {
-  return sessionPresentationStore
+function findLiveSession(sessionId: string, host?: string): RemoteSession | undefined {
+  const rows = sessionPresentationStore
     .presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
-    .find((s) => s.sessionId === sessionId);
+    .filter((s) => s.sessionId === sessionId);
+  if (rows.length < 2) return rows[0];
+  // A live row and its durable Previous twin can both be on the stream for one
+  // session id. Prefer the row on the device the subject names, then the live
+  // one — a finished twin must never shadow the session that is still running.
+  const wanted = normalizeHost(host || '');
+  const onDevice = wanted ? rows.filter((s) => normalizeHost(s.host) === wanted) : rows;
+  const pool = onDevice.length ? onDevice : rows;
+  return pool.find((s) => s.liveStatus !== 'closed') ?? pool[0];
 }
 
 /** Resolve a CLI-owned session path on the machine that produced it. */
@@ -2076,24 +2714,6 @@ function getUsageStatusFromCli(sessionId: string | undefined): UsageStatus {
     return row.usageStatus;
   }
   return row?.rateLimited === true ? 'rate_limited' : null;
-}
-
-function pickQuickPrompts(): QuickPromptLite[] {
-  try {
-    const all = readPrompts();
-    const sorted = [...all].sort((a, b) => {
-      if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1;
-      return (b.accessedAt || 0) - (a.accessedAt || 0);
-    });
-    return sorted.slice(0, 6).map((p) => ({
-      id: p.id,
-      title: p.title,
-      preview: p.content.replace(/\s+/g, ' ').trim().slice(0, 120),
-      favorite: !!p.isFavorite,
-    }));
-  } catch {
-    return [];
-  }
 }
 
 async function runInShellTerminal(command: string): Promise<void> {
@@ -2133,6 +2753,7 @@ export function notifyAgentPanelSessionUpdate(): void {
 
 export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanelProvider {
   const provider = new AgentPanelProvider(context.extensionUri);
+  provider.context = context;
   activeProvider = provider;
   context.subscriptions.push({ dispose: () => { if (activeProvider === provider) activeProvider = undefined; } });
 
@@ -2156,11 +2777,14 @@ export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanel
       void provider.refresh();
     }, 300);
   };
+  // Focusing an agent terminal makes it the subject — the other half of the
+  // last-wins pair with the Fleet row click. Set BEFORE the debounce so a burst
+  // of tab switches still leaves the subject on the tab the user landed on.
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTerminal(debouncedRefresh),
+    vscode.window.onDidChangeActiveTerminal(() => { setSubjectFromActiveTerminal(); debouncedRefresh(); }),
     vscode.window.onDidCloseTerminal(debouncedRefresh),
     vscode.window.onDidOpenTerminal(debouncedRefresh),
-    { dispose: () => { if (refreshTimer) clearTimeout(refreshTimer); } }
+    { dispose: () => { if (refreshTimer) clearTimeout(refreshTimer); clearAgentPanelSubject(); } }
   );
 
   return provider;

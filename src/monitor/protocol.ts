@@ -24,6 +24,16 @@ export interface TerminalTuple {
   workspacePath: string | null;
   /** 'claude' | 'codex' | 'gemini' | ..., or null when unknown. */
   agentType: string | null;
+  /**
+   * The REMOTE device this tab's agent runs on (`EditorTerminal.host`, set for a
+   * tab launched with `agents run --device <name>`), or null for a local tab.
+   * The elected monitor unions these to decide which devices need their own
+   * `agents sessions watch --json --local -D <device>` child: a device earns a
+   * child by owning at least one open tab, and loses it with its last tab
+   * (`MonitorHost.syncStreamScopes`). Optional so an older follower's tuples,
+   * which never carried it, still parse as local-only.
+   */
+  device?: string | null;
 }
 
 /** Request `op` discriminators carried on the persistent connection. */

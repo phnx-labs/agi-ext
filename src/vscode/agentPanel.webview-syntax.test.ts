@@ -64,16 +64,24 @@ test('Active Session render is outcome-oriented and drops utility-stack cards (P
 
   expect(renderOrder).toContain('renderSessionStats(snap)');
   expect(renderOrder).toContain('renderGoalCard(snap)');
-  expect(renderOrder).toContain('renderCheckpointsCard(snap)');
-  expect(renderOrder).toContain('renderConversationCard(snap)');
+  expect(renderOrder).toContain('renderRequestCard(snap)');
+  expect(renderOrder).toContain('renderTimelineCard(snap)');
   expect(renderOrder).toContain('renderChecklistCard(snap)');
   expect(renderOrder).toContain('renderDeliverablesCard(snap)');
   expect(renderOrder).toContain('renderSpawnedTeamCard(snap)');
   expect(renderOrder).toContain('renderActivityCard(snap)');
-  // PHNX-3939: Goal → Progress → Checklist lead, then the raw Request is demoted below.
-  expect(renderOrder.indexOf('renderGoalCard')).toBeLessThan(renderOrder.indexOf('renderCheckpointsCard'));
-  expect(renderOrder.indexOf('renderCheckpointsCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
-  expect(renderOrder.indexOf('renderChecklistCard')).toBeLessThan(renderOrder.indexOf('renderConversationCard'));
+  expect(renderOrder).toContain('renderFilesCard(snap)');
+  expect(renderOrder).toContain('renderReplyBox(snap)');
+  // PHNX-3939 follow-up: what was ASKED leads, then what the agent actually did,
+  // then the checklist; Files sit at the bottom and the reply field is last.
+  expect(renderOrder.indexOf('renderRequestCard')).toBeLessThan(renderOrder.indexOf('renderTimelineCard'));
+  expect(renderOrder.indexOf('renderTimelineCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
+  expect(renderOrder.indexOf('renderChecklistCard')).toBeLessThan(renderOrder.indexOf('renderFilesCard'));
+  expect(renderOrder.indexOf('renderFilesCard')).toBeLessThan(renderOrder.indexOf('renderReplyBox'));
+  // The Progress card folded INTO the Timeline card, which owns the checkpoints
+  // fallback for an older CLI — two producers for one strip is what it replaced.
+  expect(src).not.toContain('function renderCheckpointsCard');
+  expect(renderOrder).not.toContain('renderConversationCard');
   expect(renderOrder).not.toContain('renderActionsCard');
   expect(renderOrder).not.toContain('renderPromptsCard');
   expect(renderOrder).not.toContain('renderWorktreesCard');
