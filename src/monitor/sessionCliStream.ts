@@ -298,12 +298,25 @@ const execFileAsync = promisify(execFile);
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Signal only the group we created. Permission failures must retain ownership. */
-function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+async function signalGroup(pid: number, signal: NodeJS.Signals | 0): Promise<boolean> {
   try { process.kill(-pid, signal); return true; }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    // Darwin returns EPERM for a group containing only unreaped zombies. That
+    // is not a live permission-denied producer; verify the group before treating
+    // it as terminated. A live member or failed inspection still rejects.
+    if (process.platform === 'darwin' && (error as NodeJS.ErrnoException).code === 'EPERM'
+      && !await groupHasLiveMembers(pid)) return false;
     throw error;
   }
+}
+
+async function groupHasLiveMembers(pid: number): Promise<boolean> {
+  const { stdout } = await execFileAsync('ps', ['-axo', 'pgid=,stat='], { timeout: 1_000, maxBuffer: 4 * 1024 * 1024 });
+  return stdout.trim().split('\n').some((row) => {
+    const [group, state] = row.trim().split(/\s+/);
+    return Number(group) === pid && !state?.startsWith('Z');
+  });
 }
 
 async function terminateProducer(child: ChildProcessWithoutNullStreams, reaped: Promise<void>, graceMs: number): Promise<void> {
@@ -318,10 +331,10 @@ async function terminateProducer(child: ChildProcessWithoutNullStreams, reaped: 
   }
   const pid = child.pid;
   const deadline = Date.now() + graceMs;
-  signalGroup(pid, 'SIGTERM');
-  while (signalGroup(pid, 0)) {
+  await signalGroup(pid, 'SIGTERM');
+  while (await signalGroup(pid, 0)) {
     if (Date.now() >= deadline) {
-      signalGroup(pid, 'SIGKILL');
+      await signalGroup(pid, 'SIGKILL');
       break;
     }
     await pause(10);
@@ -331,13 +344,8 @@ async function terminateProducer(child: ChildProcessWithoutNullStreams, reaped: 
   // member remains. Orphan zombies have already terminated; only their new
   // parent can reap them (not this extension). Query only during owned teardown.
   const killDeadline = Date.now() + 2_000;
-  while (signalGroup(pid, 0)) {
-    const { stdout } = await execFileAsync('ps', ['-axo', 'pgid=,stat='], { timeout: 1_000, maxBuffer: 4 * 1024 * 1024 });
-    const live = stdout.trim().split('\n').some((row) => {
-      const [group, state] = row.trim().split(/\s+/);
-      return Number(group) === pid && !state?.startsWith('Z');
-    });
-    if (!live) break;
+  while (await signalGroup(pid, 0)) {
+    if (!await groupHasLiveMembers(pid)) break;
     if (Date.now() >= killDeadline) throw new Error(`process group ${pid} still running after SIGKILL`);
     await pause(10);
   }

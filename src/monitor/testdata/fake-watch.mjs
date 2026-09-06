@@ -22,6 +22,9 @@ function ready(descendantPid) {
 
 const sigtermDelay = Number(process.env.FAKE_WATCH_SIGTERM_DELAY_MS || 0);
 process.on('SIGTERM', () => {
+  process.stderr.write('SIGTERM\n');
+  // Lifecycle tests explicitly release this barrier with `exit 143` over stdin.
+  if (process.env.FAKE_WATCH_WAIT_FOR_EXIT_COMMAND === '1') return;
   if (process.env.FAKE_WATCH_IGNORE_SIGTERM !== '1') setTimeout(() => process.exit(143), sigtermDelay);
 });
 // Announce on STDERR (which the stream accumulates but never parses, so it's
