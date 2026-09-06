@@ -6,9 +6,11 @@ import { join } from 'node:path'
 // broke the surface behind it (RUSH-1522 follow-up):
 //
 //  1. The orb root is `position: fixed; bottom: 16; right: 16`, so it floats over
-//     the Fleet detail column. With no reserved space the newest Activity line
-//     rendered underneath the composer and could not be scrolled clear — measured
-//     71px of the now-line covered at a 430px column.
+//     the Fleet's scrolling column. With no reserved space the newest Activity
+//     line rendered underneath the composer and could not be scrolled clear —
+//     measured 71px of the now-line covered at a 430px column. That column was
+//     the detail rail; with the rail gone (PHNX-3939) the feed inherits both the
+//     overlay and the guard.
 //  2. The composer is `rows={1}` at width 260. The old placeholder wrapped to a
 //     second line the one-row box then clipped — measured 17px of clipped text.
 
@@ -58,10 +60,13 @@ describe('Foreman overlay does not cover the surface behind it', () => {
     expect(Number(declared![1])).toBeGreaterThanOrEqual(OVERLAY_FOOTPRINT)
   })
 
-  test('the Fleet detail column reserves that clearance', () => {
-    const rule = floorCss.match(/\.swarmify-root \.detail-col \{[^}]*\}/)
+  test('the Fleet feed column reserves that clearance', () => {
+    // The 430px detail column the orb used to float over is gone (PHNX-3939):
+    // the feed is the Fleet's only scrolling column now, so it is the surface
+    // whose bottom-right corner sits under the overlay stack.
+    const rule = floorCss.match(/\.swarmify-root \.feed \{[^}]*\}/)
     expect(rule).not.toBeNull()
-    expect(rule![0]).toContain('padding-bottom: var(--foreman-overlay-clear)')
+    expect(rule![0]).toContain('var(--foreman-overlay-clear)')
   })
 
   test('the Panel tab reserves that clearance', () => {
