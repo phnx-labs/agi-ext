@@ -49,7 +49,7 @@ import {
 } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
-import { LOCAL_MACHINE_ID, LOCAL_LABEL } from './remoteSessions.vscode';
+import { LOCAL_MACHINE_ID, LOCAL_LABEL, remoteDeviceArg } from './remoteSessions.vscode';
 import type {
   RemoteAttachment,
   RemoteCheckpoint,
@@ -488,18 +488,25 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         const sessionId = this.snapshot.fullSessionId;
         if (!sessionId || !this.context) return;
         const { openAgentSessionById } = require('./extension') as typeof import('./extension');
-        await openAgentSessionById(this.context, sessionId, this.snapshot.sessionHost || undefined);
+        // `sessionHost` is the PROJECTED host, so a local session carries the
+        // 'this-mac' sentinel (resolveSessionHost folds LOCAL_MACHINE_ID to it).
+        // Handing that through as a device pins the fresh tab to a device that
+        // does not exist: the auto-label poller then takes its offloaded branch
+        // and runs `agents sessions <id> --json --device this-mac` on a timer,
+        // failing into its silent catch every tick. remoteDeviceArg folds every
+        // local identity to undefined so the local case stays local.
+        await openAgentSessionById(this.context, sessionId, remoteDeviceArg(this.snapshot.sessionHost));
         return;
       }
       case 'resumeSubject': {
         const sessionId = this.snapshot.fullSessionId;
         if (!sessionId || !this.context) return;
         const { openAgentSessionByRecovery } = require('./extension') as typeof import('./extension');
-        const device = this.snapshot.sessionHost || '';
+        const device = remoteDeviceArg(this.snapshot.sessionHost);
         await openAgentSessionByRecovery(this.context, {
           sessionId,
           agentType: this.snapshot.agentType ?? '',
-          ...(device && device !== LOCAL_LABEL && device !== LOCAL_MACHINE_ID ? { device } : {}),
+          ...(device ? { device } : {}),
         });
         return;
       }

@@ -14,6 +14,7 @@ import {
   RegisteredDeviceInput,
   normalizeRecentSession,
   resolveSessionHost,
+  isLocalHostIdentity,
   normalizeHost,
   reconcileHosts,
   parseSessionLabelSource,
@@ -38,6 +39,25 @@ export const LOCAL_LABEL = 'this-mac';
 /** This machine's normalized device id (machineId() form), used to recognize the
  *  CLI's own `machine` tag on local rows and fold them back to LOCAL_LABEL. */
 export const LOCAL_MACHINE_ID = normalizeHost(LOCAL_HOST);
+
+/** True when `host` names THIS machine, in any of the identities a projected row
+ *  can carry ('this-mac', the machine id, the hostname, 'localhost', empty). */
+export function isLocalHost(host: string | undefined | null): boolean {
+  return isLocalHostIdentity(host, LOCAL_HOST, LOCAL_MACHINE_ID, LOCAL_LABEL);
+}
+
+/**
+ * The `--device` value for a host — or `undefined` when the host is this
+ * machine. THE one converter from "the host string on a projected row" to "the
+ * device argument a CLI verb may receive", so no caller has to re-derive which
+ * strings are local. Passing a local identity through as a device is a silent
+ * failure (`agents sessions <id> --device this-mac` resolves to no registered
+ * device and the catch swallows it), so the fold happens here, once.
+ */
+export function remoteDeviceArg(host: string | undefined | null): string | undefined {
+  const h = (host ?? '').trim();
+  return isLocalHost(h) ? undefined : h;
+}
 
 const HISTORY_TIMEOUT_LOCAL_MS = 6000;
 const HISTORY_TIMEOUT_REMOTE_MS = 10000;

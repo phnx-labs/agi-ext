@@ -20,7 +20,6 @@ import { getBuiltInByTitle, configFromDef } from './agents.vscode';
 import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById, openAgentSessionByMigration, openAgentSessionByRecovery } from './extension';
 import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
-import { nudgeSession } from '../mcp/watchdog-bridge';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '../core/agents';
 import { CLAUDE_TITLE } from '../core/utils';
@@ -72,7 +71,8 @@ import { inferProjectCandidates } from '../core/projectIndex';
 import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
-import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
+import { nudgeSession } from '../mcp/watchdog-bridge';
+import { LOCAL_LABEL, LOCAL_MACHINE_ID, isLocalHost, remoteDeviceArg } from './remoteSessions.vscode';
 import { rankRepos } from '../core/repoIndex';
 import { detectProjects } from '../core/projectDetect';
 import { getSyncStatus } from '../core/repoSync';
@@ -337,11 +337,9 @@ function composeDispatchPrompt(
 // ---------------------------------------------------------------------------
 // Registered-device dispatch (SSH to a real machine). A device is 'local' when
 // its host points at this machine; otherwise the agent is spawned over SSH.
+// `isLocalHost` / `remoteDeviceArg` (remoteSessions.vscode.ts) own that test —
+// this file used to keep its own hand-copied identity list.
 // ---------------------------------------------------------------------------
-function isLocalDeviceHost(host: string): boolean {
-  const h = hostname();
-  return host === 'this-mac' || host === 'localhost' || host === '' || host === h || host === h.split('.')[0];
-}
 
 // Single-quote a value for safe embedding in a remote /bin/sh command.
 function shq(value: string): string {
@@ -435,7 +433,7 @@ async function dispatchToDevice(input: {
       `nohup ${runCmd} > "$HOME/.agents/.tmp/dispatch-$(date +%s).log" 2>&1 &`;
   }
 
-  if (isLocalDeviceHost(host)) {
+  if (isLocalHost(host)) {
     // Local device: run through the host's native shell, no SSH hop.
     try {
       if (windows) {
@@ -2061,7 +2059,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           // Check sync AS IT EXISTS ON THE SELECTED DEVICE (incl. not-cloned),
           // not on the local mac. Falls back to the local repo for this-mac.
           let status;
-          if (syncHost && !isLocalDeviceHost(syncHost)) {
+          if (syncHost && !isLocalHost(syncHost)) {
             status = await getDeviceSyncStatus(syncHost, root, { isLocal: false });
           } else {
             status = await getSyncStatus(root, { fetch: true });
@@ -3050,7 +3048,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         if (!sessionId) break;
         const host = typeof message.host === 'string' ? message.host.trim() : '';
         const { setAgentPanelSubjectFromFleet } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
-        setAgentPanelSubjectFromFleet(sessionId, isLocalDeviceHost(host) ? undefined : host);
+        setAgentPanelSubjectFromFleet(sessionId, remoteDeviceArg(host));
         break;
       }
       case 'focusTerminal': {
@@ -3188,7 +3186,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
         if (!sessionId) break;
         const host = typeof message.host === 'string' ? message.host : '';
-        await openAgentSessionById(context, sessionId, isLocalDeviceHost(host) ? undefined : host);
+        await openAgentSessionById(context, sessionId, remoteDeviceArg(host));
         break;
       }
       // Resume a PREVIOUS (crashed/ended) session from the CLI's own recovery command
@@ -3207,11 +3205,11 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             agentType,
             sourceDevice,
             targetDevice: requestedDevice,
-            sourceIsLocal: isLocalDeviceHost(sourceDevice),
+            sourceIsLocal: isLocalHost(sourceDevice),
           });
           break;
         }
-        const device = requestedDevice && !isLocalDeviceHost(requestedDevice) ? requestedDevice : '';
+        const device = remoteDeviceArg(requestedDevice) ?? '';
         await openAgentSessionByRecovery(context, { sessionId, agentType, device });
         break;
       }
