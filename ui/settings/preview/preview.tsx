@@ -777,7 +777,7 @@ function Ticket() {
     agent({ id: 'w2', ticket: 'RUSH-1262', name: 'pkce-review', abbr: 'CX', phase: 'waiting' }),
   ])
   return (
-    <div className="detail-col" style={{ maxWidth: 420 }}>
+    <div className="feed-col" style={{ maxWidth: 420 }}>
       <TicketDetail ticket={tickets[0]!} hosts={['zion', 'mac-mini']} workers={workers['RUSH-1262']} onSelectAgent={noop} onDispatch={noop} />
     </div>
   )
