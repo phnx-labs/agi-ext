@@ -41,6 +41,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   yet" forever. The demand-gated producer restored above is what feeds them; every
   card below is a synchronous read of that warm store, with no fetch on tab switch.
 
+  *Dead code went with it.* `DetailPane`, `HostDetail`, `SessionPreviewCard`,
+  `AgentDecision` and the `sessionPreview` normalizer existed only to render inside
+  the rail; they and their two `?view=` preview-harness routes are deleted rather
+  than left behind to look used. The vestigial `selectedHostId` / `hostConfigError`
+  / `hostInventories` state and the host-inventory message listener go too — their
+  entry point had been dead since PHNX-3594 and the rail was their last reader.
+
   *One preview, two triggers.* The sidebar's subject is the last of {the focused
   agent terminal, a clicked Fleet row}. A session with no tab in this window still
   renders, from the stream row alone. The Fleet webview's right-hand detail rail is

@@ -21,8 +21,6 @@ const noop = () => {}
 const common = {
   sidebarOpen: true,
   onToggleSidebar: noop,
-  rightOpen: true,
-  onToggleRight: noop,
   plain: false,
   onTogglePlain: noop,
   sort: 'needs' as const,

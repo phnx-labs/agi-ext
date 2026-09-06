@@ -143,7 +143,8 @@ function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, on
   // Compare LINE COUNT, not text: firstLine() strips markdown (#, -, **bold**), so
   // `prompt !== firstLine(prompt)` is true for ANY single-line prompt containing markup
   // and would leave the duplicate in place for exactly the cards that read worst.
-  // AgentDecision.tsx:41 guards the same way against restating its question.
+  // The needs-you decision block used to guard the same way against restating its
+  // question; it went with the Fleet detail rail (PHNX-3939).
   const showTask = !plain && !!prompt && prompt.trim().includes('\n')
   // Only show the rolling summary line when it adds signal beyond the task block, the
   // response body, and the now-line (it merely echoes the prompt when they match).
