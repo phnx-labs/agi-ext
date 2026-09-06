@@ -6,7 +6,7 @@
 // spawn-error (ENOENT) retry + stop cancellation, and no orphaned children.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFileSync, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -16,6 +16,7 @@ import { MonitorBroadcastClient } from './broadcast';
 import { MONITOR_OP, isSessionCliFact } from './protocol';
 import type { MonitorEvent } from './broadcastTypes';
 import { SessionPresentationStore } from '../core/sessionPresentationStore';
+import { disposeFixture, fixtureEvent, observeFixture } from './testdata/fixture-lifecycle';
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'testdata', 'fake-watch.mjs');
 
@@ -31,22 +32,21 @@ function tempSocketPath(): string {
   return p;
 }
 
-/** Spawn the real fixture; env can set FAKE_WATCH_SIGTERM_DELAY_MS. Marks the
- *  child `__ready` once its SIGTERM handler is installed (fixture prints READY). */
+/** Spawn and observe the real fixture before any host can signal it. */
 function spawnFixture(env: NodeJS.ProcessEnv = {}): ChildProcessWithoutNullStreams {
   const child = spawn('node', [FIXTURE], {
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
     env: { ...process.env, ...env },
   });
-  child.stderr.on('data', (d) => { if (String(d).includes('READY')) (child as unknown as { __ready?: boolean }).__ready = true; });
+  observeFixture(child);
   spawnedChildren.push(child);
   return child;
 }
 
 /** Resolve once the fixture's SIGTERM handler is installed (so a delayed exit is honored). */
 function ready(child: ChildProcessWithoutNullStreams): Promise<void> {
-  return waitFor(() => (child as unknown as { __ready?: boolean }).__ready === true, 2000, 'fixture READY');
+  return fixtureEvent(child, 'READY');
 }
 
 /** A spawn that fails: no such binary -> the child emits an ENOENT 'error'. */
@@ -54,6 +54,7 @@ function spawnMissing(): ChildProcessWithoutNullStreams {
   const child = spawn(path.join(os.tmpdir(), `no-such-bin-${counter++}`), [], {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  observeFixture(child);
   spawnedChildren.push(child);
   return child;
 }
@@ -96,9 +97,12 @@ function resetEvent(scope = 'local', agents: unknown[] = []) {
 
 afterEach(async () => {
   for (const c of clients.splice(0)) { try { c.close(); } catch { /* gone */ } }
-  for (const h of hosts.splice(0)) { try { await h.stop(); } catch { /* gone */ } }
-  for (const child of spawnedChildren.splice(0)) { try { child.kill('SIGKILL'); } catch { /* gone */ } }
-  for (const p of tmpPaths.splice(0)) { try { fs.rmSync(p, { force: true }); } catch { /* gone */ } }
+  try {
+    await Promise.all(hosts.splice(0).map((host) => host.stop()));
+  } finally {
+    await Promise.all(spawnedChildren.splice(0).map(disposeFixture));
+    for (const p of tmpPaths.splice(0)) fs.rmSync(p, { force: true });
+  }
 });
 
 describe('demand-gated session-CLI stream (real subprocess)', () => {
@@ -368,7 +372,7 @@ test('host shutdown refuses renewed real-socket demand while SIGTERM is delayed'
   const socketPath = tempSocketPath();
   const children: ChildProcessWithoutNullStreams[] = [];
   const host = new MonitorHost({ socketPath, sessionStream: { enabled: true,
-    spawnWatch: () => { const child = spawnFixture({ FAKE_WATCH_SIGTERM_DELAY_MS: '200' }); children.push(child); return child; },
+    spawnWatch: () => { const child = spawnFixture({ FAKE_WATCH_WAIT_FOR_EXIT_COMMAND: '1' }); children.push(child); return child; },
   } });
   hosts.push(host);
   await host.start();
@@ -377,13 +381,52 @@ test('host shutdown refuses renewed real-socket demand while SIGTERM is delayed'
   await report(client, 'shutdown-race', true);
   await ready(children[0]);
   const stopped = host.stop();
+  let stopResolved = false;
+  void stopped.then(() => { stopResolved = true; }, () => {});
   // Queue bytes on the established socket in the same turn as shutdown.
-  const renewed = report(client, 'shutdown-race', true).catch(() => undefined);
+  const renewed = report(client, 'shutdown-race', true);
+  const [, ack] = await Promise.all([fixtureEvent(children[0], 'SIGTERM'), renewed]);
+  // An ACK proves the host handled renewed demand while the old child was held.
+  expect(ack).toEqual({ ok: true, windowId: 'shutdown-race', count: 0 });
+  expect(stopResolved).toBe(false);
+  expect(host.sessionStreamRunning).toBe(false);
+  expect(children.length).toBe(1);
   expect(isAlive(children[0].pid)).toBe(true);
-  await Promise.all([stopped, host.stop(), renewed]);
+  const repeatedStop = host.stop();
+  expect(repeatedStop).toBe(stopped);
+  children[0].stdin.write('exit 143\n');
+  await Promise.all([stopped, repeatedStop, fixtureEvent(children[0], 'close')]);
+  expect(children[0].exitCode).toBe(143);
   expect(host.sessionStreamRunning).toBe(false);
   expect(children.length).toBe(1);
   expect(isAlive(children[0].pid)).toBe(false);
+  expect(fs.existsSync(socketPath)).toBe(false);
+});
+
+test.skipIf(process.platform !== 'darwin')('shutdown reaps a real Darwin zombie group despite kill returning EPERM', async () => {
+  const socketPath = tempSocketPath();
+  const child = spawnFixture();
+  const host = new MonitorHost({ socketPath, sessionStream: { enabled: true, spawnWatch: () => child } });
+  hosts.push(host);
+  await host.start();
+  const client = connect(socketPath);
+  await waitConnected(client);
+  await report(client, 'darwin-zombie', true);
+  await ready(child);
+  child.kill('SIGTERM');
+  // Keep JS exit callbacks pending until the OS reports the actual zombie.
+  // This forces the EPERM window without a sleep, mock, or probabilistic retry.
+  const deadline = Date.now() + 3000;
+  while (!execFileSync('ps', ['-o', 'stat=', '-p', String(child.pid)], { encoding: 'utf8' }).trim().startsWith('Z')) {
+    if (Date.now() >= deadline) throw new Error('fixture did not enter zombie state');
+  }
+  expect(child.exitCode).toBeNull();
+  expect(() => process.kill(-child.pid!, 0)).toThrow('EPERM');
+  await host.stop();
+  await fixtureEvent(child, 'close');
+  expect(child.exitCode).toBe(143);
+  expect(isAlive(child.pid)).toBe(false);
+  expect(host.sessionStreamRunning).toBe(false);
   expect(fs.existsSync(socketPath)).toBe(false);
 });
 
