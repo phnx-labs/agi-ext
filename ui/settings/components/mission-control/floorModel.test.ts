@@ -20,6 +20,7 @@ import {
   sessionTaskLine,
   partitionFloorAgents,
   visibleFloorAgents,
+  mergeSessionAgents,
   todosWithFallback,
   linearIssueLabel,
   linearIssueUrl,
@@ -682,6 +683,21 @@ describe('sessionTaskLine — prompt anchors the card ahead of the drifting last
 })
 
 describe('floor visibility and section counts', () => {
+  test('an actual local tab stays visible without changing its headless execution context', () => {
+    const attached = makeAgent({ id: 'attached', host: 'worker', context: 'headless', localTerminalAttached: true })
+    const detached = makeAgent({ id: 'detached', host: 'worker', context: 'headless' })
+    expect(visibleFloorAgents([attached, detached], false)).toEqual([attached])
+    expect(attached.context).toBe('headless')
+  })
+
+  test('Previous dedupe uses execution owner and harness, preserving copied native ids elsewhere', () => {
+    const live = makeAgent({ id: 'live', host: 'worker', agentType: 'codex', sessionId: 'S' })
+    const duplicate = { ...live, id: 'previous', sessionState: 'inactive' }
+    const otherHost = { ...duplicate, id: 'other-host', host: 'other-worker' }
+    const otherHarness = { ...duplicate, id: 'other-harness', agentType: 'claude' }
+    expect(mergeSessionAgents([live], [duplicate, otherHost, otherHarness])).toEqual([live, otherHost, otherHarness])
+  })
+
   test('background agents are hidden by default and available through the toggle', () => {
     const foreground = makeAgent({ id: 'foreground', context: 'terminal' })
     const background = makeAgent({ id: 'background', context: 'headless' })

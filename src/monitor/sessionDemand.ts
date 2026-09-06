@@ -1,0 +1,64 @@
+// Per-window session-stream demand (PHNX-3939).
+//
+// One window "demands" the canonical `agents feed watch` producer while it is
+// actually showing live session state — its Fleet dashboard OR its active-session
+// sidebar is visible — or while it holds a tracked agent terminal whose identity
+// isn't resolved yet (the stream is what attributes it). The elected leader gates
+// the single producer on the UNION of every window's demand (host.ts), so an
+// idle, hidden window contributes nothing and the watcher stays torn down.
+//
+// Kept vscode-free (a tiny observable boolean) so it unit-tests without the
+// extension host and so settings/agentPanel/extension can share one source of
+// truth instead of each hand-rolling a flag.
+
+export class SessionStreamDemand {
+  private dashboardVisible = false;
+  private sidebarVisible = false;
+  private unresolvedTuples = false;
+  private readonly listeners = new Set<(demand: boolean) => void>();
+  private last = false;
+
+  /** True when this window currently needs the producer. */
+  get demand(): boolean {
+    return this.dashboardVisible || this.sidebarVisible || this.unresolvedTuples;
+  }
+
+  setDashboardVisible(visible: boolean): void {
+    if (this.dashboardVisible === visible) return;
+    this.dashboardVisible = visible;
+    this.notify();
+  }
+
+  setSidebarVisible(visible: boolean): void {
+    if (this.sidebarVisible === visible) return;
+    this.sidebarVisible = visible;
+    this.notify();
+  }
+
+  /** Whether this window holds a tracked agent terminal still awaiting identity. */
+  setUnresolvedTuples(unresolved: boolean): void {
+    if (this.unresolvedTuples === unresolved) return;
+    this.unresolvedTuples = unresolved;
+    this.notify();
+  }
+
+  /** Fire `cb` only when the net demand VALUE flips, so a visibility toggle that
+   *  doesn't change the union (e.g. sidebar hides while dashboard stays visible)
+   *  never triggers a redundant report. Returns an unsubscribe. */
+  onChange(cb: (demand: boolean) => void): () => void {
+    this.listeners.add(cb);
+    return () => { this.listeners.delete(cb); };
+  }
+
+  private notify(): void {
+    const now = this.demand;
+    if (now === this.last) return;
+    this.last = now;
+    for (const cb of this.listeners) {
+      try { cb(now); } catch { /* a listener must never wedge demand tracking */ }
+    }
+  }
+}
+
+/** Process-singleton — one extension host == one VS Code window. */
+export const sessionStreamDemand = new SessionStreamDemand();

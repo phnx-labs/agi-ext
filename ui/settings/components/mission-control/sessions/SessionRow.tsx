@@ -54,6 +54,12 @@ function SessionRowImpl({
   const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
   const phaseLabel = previous ? '' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
   const step = previous ? '' : ((a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : ''))
+  // "You ›" asserts the user actually typed something. Show it ONLY when the CLI
+  // carried a genuine first user turn (same signal ExpandedCard uses). A synthesized
+  // task label — topic, worktree slug, tab name — must never masquerade as the
+  // user's own words, so a row with no real first turn drops the line entirely and
+  // leads with its title instead (PHNX-3939).
+  const hasRealRequest = Boolean(a.firstUserMessage?.trim())
   const todos = a.todos ?? []
   const todoDone = todos.filter((todo) => String(todo.status) === 'completed').length
   return (
@@ -99,10 +105,12 @@ function SessionRowImpl({
             {!previous && todos.length > 0 && <span>{step ? ' · ' : ''}checklist {todoDone}/{todos.length}</span>}
           </div>
         ) : null}
-        <div className="sx-roleline">
-          <span className="sx-roletag you">You ›</span>
-          <span className="sx-rolebody clip"><PromptChips you={row.you} /></span>
-        </div>
+        {hasRealRequest && (
+          <div className="sx-roleline">
+            <span className="sx-roletag you">You ›</span>
+            <span className="sx-rolebody clip"><PromptChips you={row.you} /></span>
+          </div>
+        )}
         <RowLinks agent={a} row={row} mode="compact" />
         {expanded && <ExpandedCard agent={a} row={row} nowMs={nowMs} />}
       </span>

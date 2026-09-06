@@ -5032,7 +5032,9 @@ async function recordFork(
     readRemote: async (host, id) => {
       try {
         const { runAgents } = await import('../core/agentsBin');
-        return remoteForkSessionId(host, id);
+        // This desktop is the observer, so a remote fork's tab resolves via its
+        // observerTerminals binding rather than a top-level id (PHNX-3939).
+        return remoteForkSessionId(host, id, LOCAL_MACHINE_ID);
       } catch {
         return null;
       }
@@ -5488,9 +5490,18 @@ function initMonitorHost(context: vscode.ExtensionContext): void {
     // fetch is vscode-coupled, so it's injected here (host.ts stays vscode-free).
     const host = new MonitorHost({
       detectors: {},
+      // Own the single demand-gated `agents feed watch` producer (PHNX-3939). It
+      // spawns only while a window reports sessionDemand and is torn down when
+      // none do — restoring the feed the receive side still expects, without the
+      // always-on CPU/ssh load e0f4831 removed.
+      sessionStream: { enabled: true },
     });
     void host.start().catch((err) => console.error('[MONITOR] host start failed:', err));
-    return { dispose: () => { void host.stop().catch(() => {}); } };
+    // Async disposal: gate.ts awaits this so a replacement leader never starts a
+    // second producer before the old host's shutdown (and child reap) completes.
+    // Do NOT swallow the rejection — gate.ts rejects overlapping replacement on a
+    // teardown failure (PHNX-3939, monitor track).
+    return { dispose: () => host.stop() };
   });
   context.subscriptions.push(gate);
 }
@@ -5535,10 +5546,21 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
       }));
   };
 
+  const { sessionStreamDemand } = require('../monitor/sessionDemand') as typeof import('../monitor/sessionDemand');
+
   let follower: InstanceType<typeof MonitorFollower<vscode.Terminal>>;
   const report = () => {
-    if (follower?.connected) void follower.reportTuples(collectTuples());
+    const tuples = collectTuples();
+    // A tracked agent terminal with no sessionId yet needs the stream to attribute
+    // it (PHNX-3939) — that counts as demand even with no panel open.
+    sessionStreamDemand.setUnresolvedTuples(tuples.some((t) => t.agentType != null && t.sessionId == null));
+    if (follower?.connected) void follower.reportTuples(tuples, sessionStreamDemand.demand);
   };
+  // A visibility flip (dashboard/sidebar) changes demand between terminal events,
+  // so re-report the moment the net value flips — that is what starts/stops the
+  // leader's producer promptly instead of on the 60s heartbeat.
+  const demandSub = sessionStreamDemand.onChange(() => report());
+  context.subscriptions.push({ dispose: demandSub });
 
   follower = new MonitorFollower<vscode.Terminal>({
     windowId,
@@ -5611,11 +5633,16 @@ export async function deactivate(): Promise<void> {
     await markCleanShutdown(extensionContext);
   }
 
-  // Release the monitor lease so another window can take over immediately.
+  // Release the monitor lease — but only AFTER the leader's async disposers finish
+  // (the demand-gated producer is stopped and its child reaped, PHNX-3939). Awaiting
+  // disposeLeader() keeps the lease held until then, so a replacement window can't
+  // elect itself and spawn a second `agents feed watch` while ours is still exiting.
   try {
     const leader = require('../monitor/leader') as typeof import('../monitor/leader');
-    leader.disposeLeader();
-  } catch { /* best effort */ }
+    await leader.disposeLeader();
+  } catch (err) {
+    console.error('[MONITOR] leader disposal failed during deactivate:', err);
+  }
 
   // Clear internal tracking (don't dispose terminals - let VS Code handle them)
   terminals.clear();

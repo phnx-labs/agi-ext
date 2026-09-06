@@ -48,7 +48,14 @@ export async function fetchTerminalIdSessionMap(
   } = {},
 ): Promise<TerminalIdSessionMap> {
   const key = activeMapCacheKey(host, deps.localHostname);
-  return sessionPresentationStore.terminalSessionMap(isLocalActiveMapKey(key) ? undefined : host);
+  // Pass THIS desktop as the observer so a worker session's local tab resolves via
+  // its observerTerminals binding, and a remote owner's top-level terminalId is not
+  // mistaken for a local one (PHNX-3939).
+  const observerDevice = normalizeHost(deps.localHostname ?? os.hostname());
+  return sessionPresentationStore.terminalSessionMap(
+    isLocalActiveMapKey(key) ? undefined : host,
+    observerDevice,
+  );
 }
 
 /**

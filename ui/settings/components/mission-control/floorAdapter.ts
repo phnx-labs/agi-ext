@@ -18,6 +18,7 @@ import {
   todosWithFallback,
   resolveProject,
   worktreeSlugOf,
+  mergeSessionAgents,
   type FloorAgent,
   type FloorTicket,
   type AgentAbbr,
@@ -85,6 +86,7 @@ export interface UnifiedAgentLike {
   spawnedTeam?: string
   terminal?: {
     id?: string
+    sessionId?: string | null
     cwd?: string | null
     branch?: string | null
     waitingForInput?: boolean
@@ -502,25 +504,59 @@ export function deriveReplyTargetFromRemote(r: RemoteSessionLike): ReplyTarget {
 
 // ---------- adapters ----------
 
+type UnifiedAdapterOptions = { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[]; knownProjects?: string[] }
+
+/** The tab's session id is hydrated by the observer-scoped stream binding. It
+ * must resolve to one execution owner within the SAME harness. A raw terminal id
+ * is only meaningful on this desktop; a worker's terminal id cannot bind our tab. */
+function projectedSessionFor(u: UnifiedAgentLike, opts: UnifiedAdapterOptions): RemoteSessionLike | undefined {
+  const sameHarness = (opts.projectedSessions ?? []).filter((r) => r.agentType?.trim().toLowerCase() === u.agentType.trim().toLowerCase())
+  const sessionId = u.terminal?.sessionId || u.sessionId
+  const isLocal = (r: RemoteSessionLike) => r.host === 'this-mac' || (!!opts.localHostName && r.host.toLowerCase() === opts.localHostName.toLowerCase())
+  const candidates = sessionId
+    ? sameHarness.filter((r) => r.sessionId === sessionId && (!!u.terminal?.id || isLocal(r)))
+    : sameHarness.filter((r) => !!u.terminal?.id && r.terminalId === u.terminal.id && isLocal(r))
+  // Do not choose an arbitrary machine when a native id has been copied/resumed
+  // elsewhere. The UI has no owner evidence with which to resolve that ambiguity.
+  const owners = new Set(candidates.map((r) => JSON.stringify([
+    (r.host === 'this-mac' ? opts.localHostName || r.host : r.host).trim().toLowerCase(), r.sessionId,
+  ])))
+  if (owners.size !== 1) return undefined
+  return candidates.find((r) => r.state !== 'inactive') ?? candidates[0]
+}
+
 /**
- * Map a local editor tab to the CLI-projected agent with the same session/terminal id.
+ * Map a local editor tab to its unambiguous CLI-projected execution owner.
  * The terminal contributes only editor-owned display, reply, and recent-tool metadata.
  */
 export function toFloorAgentFromUnified(
   u: UnifiedAgentLike,
-  opts: { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[]; knownProjects?: string[] },
+  opts: UnifiedAdapterOptions,
 ): FloorAgent {
-  const projected = opts.projectedSessions?.find((r) =>
-    (!!u.sessionId && r.sessionId === u.sessionId) || (!!u.terminal?.id && r.terminalId === u.terminal.id))
+  const projected = projectedSessionFor(u, opts)
   if (projected) {
-    const floor = toFloorAgentFromRemote({ ...projected, host: 'this-mac' }, opts.pinned, opts.localHostName, opts.projectRules, opts.knownProjects)
+    // Preserve the projected row's EXECUTION host + source metadata. A session
+    // launched from the desktop can run on a remote worker box even though its
+    // live terminal is a tab in THIS window; the CLI's canonical reconciled row
+    // (PHNX-3939) carries that real host. Clobbering host/hostLabel to 'this-mac'
+    // here erased it and mislabeled the worker as local. Let the remote adapter
+    // carry host / hostLabel / sourceDevice through unchanged — a session already
+    // running on this machine reports host === 'this-mac' anyway, so the local
+    // case is identical while the worker case is finally truthful.
+    const floor = toFloorAgentFromRemote(projected, opts.pinned, opts.localHostName, opts.projectRules, opts.knownProjects)
     const firstUserMessage = firstNonEmptyStr(projected.firstUserMessage, u.terminal?.firstUserMessage, u.agent?.prompt)
     return {
       ...floor,
       id: u.id,
       name: u.displayName,
-      host: 'this-mac',
-      hostLabel: opts.localHostName || undefined,
+      // Pin key is the local tab id everywhere else (non-projected path below);
+      // recompute it against u.id so favorites survive the projected merge.
+      pinned: opts.pinned.has(u.id),
+      localTerminalAttached: !!u.terminal?.id,
+      // Reply transport is SEPARATE from the execution host: the live terminal in
+      // this window answers via sendText even when the agent executes on a remote
+      // worker. A tab-less row keeps the adapter's derived (cloud/team/tmux/none)
+      // reply so a headless worker still routes to its real channel.
       reply: u.terminal?.id
         ? { kind: 'terminal', host: 'this-mac', terminalId: u.terminal.id }
         : floor.reply,
@@ -575,7 +611,8 @@ export function toFloorAgentFromUnified(
   return {
     id: u.id,
     host: 'this-mac',
-    sessionId: u.sessionId ?? undefined,
+    sessionId: u.terminal?.sessionId || u.sessionId || undefined,
+    localTerminalAttached: !!u.terminal?.id,
     // In-window tab agents are always terminal-attached.
     context: 'terminal',
     // Display the machine's real device name (e.g. 'zion') instead of the
@@ -806,9 +843,17 @@ export function toFloorAgentFromRemote(
 /** Map local UnifiedAgents (watchdog rows should be filtered out by the caller). */
 export function adaptUnified(
   agents: UnifiedAgentLike[],
-  opts: { pinned: Set<string>; workspaceRepo?: string | null; nowMs: number; localHostName?: string; projectRules?: ProjectRule[]; projectedSessions?: RemoteSessionLike[]; knownProjects?: string[] },
+  opts: UnifiedAdapterOptions,
 ): FloorAgent[] {
   return agents.map((a) => toFloorAgentFromUnified(a, opts))
+}
+
+/** The pane's actual composition boundary: a projected execution represented by
+ * a local tab appears once, retaining its owner metadata and local reply channel. */
+export function composeFloorAgents(agents: UnifiedAgentLike[], opts: UnifiedAdapterOptions): FloorAgent[] {
+  const local = adaptUnified(agents, opts)
+  const remote = adaptRemote(opts.projectedSessions ?? [], opts.pinned, opts.localHostName, opts.projectRules, opts.knownProjects)
+  return mergeSessionAgents(local, remote)
 }
 
 /** Presentation-only mapping of the CLI's canonical AttentionItem. */

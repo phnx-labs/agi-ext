@@ -64,7 +64,7 @@ import {
 import { postTerminalOpenForAgent, previousResumeMessage } from './sessions/sessionActions'
 import { SavedViews } from './SavedViewsBar'
 import { loadSavedViews, persistSavedViews, upsertView, removeView, viewMatches, type SavedView } from './savedViews'
-import { adaptUnified, adaptRemote, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
+import { composeFloorAgents, adaptRemote, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
 import type { PlanFile } from '../../utils/planDetector'
 import {
   DispatchPanel,
@@ -1402,43 +1402,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // idle row's age text lags, by at most five seconds.
   const nowMs = useNow(5000)
 
-  // Local agents (drop the synthetic watchdog row) + genuinely-remote sessions
-  // (host !== 'this-mac' so we don't double count this machine's own agents).
-  const floorLocalAgents = useMemo(
-    () => adaptUnified(items.filter((i) => i.kind !== 'watchdog'), { pinned, workspaceRepo: workspaceRepoName, nowMs, localHostName, projectRules, projectedSessions: remoteSessions, knownProjects: managedProjectNameList }),
-    [items, pinned, workspaceRepoName, nowMs, localHostName, projectRules, remoteSessions, managedProjectNameList]
-  )
-  // Session UUIDs already open as a terminal tab in THIS window (the rich, local
-  // source). Used to avoid double-listing an agent that the machine-wide fetch also
-  // reports for this-mac.
-  const localTabSessionIds = useMemo(
-    () => new Set(items.map((i) => i.terminal?.sessionId).filter((x): x is string => !!x)),
-    [items]
-  )
-  const floorRemoteAgents = useMemo(
-    () =>
-      adaptRemote(
-        // Show every machine-wide agent, not just this window's tabs: all remote
-        // hosts, PLUS this-mac sessions running elsewhere (other windows / tmux /
-        // standalone / headless / cloud) that aren't already an open tab here. Cloud
-        // agents that are input_required are exactly the "needs you" case the field
-        // exists for, so they surface too (with a cloud reply channel).
-        remoteSessions.filter(
-          (s) => s.host !== 'this-mac' || !localTabSessionIds.has(s.sessionId)
-        ),
-        pinned,
-        localHostName,
-        projectRules,
-        // The curated project roster the pane already holds — no extra fetch. Weak
-        // hints (branch / worktree slug / team) may only bind to a project in here or
-        // one another row established from a real cwd (PHNX-3796).
-        managedProjectNameList
-      ),
-    [remoteSessions, localTabSessionIds, pinned, localHostName, projectRules, managedProjectNameList]
-  )
+  // Compose exact execution owners once, keeping this window's interactive tab
+  // and reply transport when the owner runs on another device.
   const streamedFloorAgents = useMemo(
-    () => [...floorLocalAgents, ...floorRemoteAgents],
-    [floorLocalAgents, floorRemoteAgents]
+    () => composeFloorAgents(items.filter((i) => i.kind !== 'watchdog'), { pinned, workspaceRepo: workspaceRepoName, nowMs, localHostName, projectRules, projectedSessions: remoteSessions, knownProjects: managedProjectNameList }),
+    [items, pinned, workspaceRepoName, nowMs, localHostName, projectRules, remoteSessions, managedProjectNameList]
   )
   // Durable Previous rows ride the SAME watch stream under an explicit marker.
   // Keep them out of the live Feed/Needs-you surfaces, then fold them into Sessions

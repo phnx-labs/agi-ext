@@ -35,6 +35,14 @@ export type MonitorRequestHandler = (
 export interface MonitorBroadcastServerOptions {
   socketPath?: string;
   onRequest?: MonitorRequestHandler;
+  /**
+   * Fired once when a follower connection drops (error/close/end), with the same
+   * socket the request handler received. Lets the leader release per-socket state
+   * — e.g. a demand lease (PHNX-3939) — so a disconnected window stops counting
+   * toward gating. Distinct from the tuple slice, which is keyed by windowId and
+   * intentionally persists across a reconnect.
+   */
+  onDisconnect?: (socket: net.Socket) => void;
 }
 
 /**
@@ -46,12 +54,14 @@ export interface MonitorBroadcastServerOptions {
 export class MonitorBroadcastServer {
   private readonly socketPath: string;
   private readonly onRequest?: MonitorRequestHandler;
+  private readonly onDisconnect?: (socket: net.Socket) => void;
   private server: net.Server | null = null;
   private readonly clients = new Set<net.Socket>();
 
   constructor(options: MonitorBroadcastServerOptions = {}) {
     this.socketPath = options.socketPath ?? MONITOR_SOCKET_PATH;
     this.onRequest = options.onRequest;
+    this.onDisconnect = options.onDisconnect;
   }
 
   /** Number of currently-connected follower sockets. */
@@ -91,8 +101,13 @@ export class MonitorBroadcastServer {
       }
     });
 
+    let dropped = false;
     const drop = () => {
+      // error/close/end can all fire for one teardown; release state exactly once.
+      if (dropped) return;
+      dropped = true;
       this.clients.delete(socket);
+      this.onDisconnect?.(socket);
     };
     socket.on('error', drop);
     socket.on('close', drop);

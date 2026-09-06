@@ -2,13 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { SessionPresentationStore } from './sessionPresentationStore';
 
 describe('SessionPresentationStore', () => {
-  test('joins projected attention by session id and removes it on resolution', () => {
+  test('joins projected attention by session id and drops it (to a receipt) on resolution', () => {
     const store = new SessionPresentationStore();
     const attention = { key: 'a1', sessionId: 's1', state: 'open', fingerprint: 'fp' };
     store.apply({ v: 1, type: 'reset', streamId: 's', sequence: 1, capturedAt: 1, scope: 'local', agents: [{ rowKey: 'r1', sessionId: 's1' }], attention: [attention] });
     expect(store.sessions()).toEqual([{ rowKey: 'r1', sessionId: 's1', attention }]);
     store.apply({ v: 1, type: 'attention.remove', streamId: 's', sequence: 2, capturedAt: 2, scope: 'local', rowKey: 'a1', resolution: { key: 'a1', state: 'answered' } });
-    expect(store.sessions()).toEqual([{ rowKey: 'r1', sessionId: 's1', attention: { ...attention, state: 'answered' } }]);
+    // Resolved attention is DROPPED from the live join (it lives on as a receipt),
+    // so the row no longer carries a stale open/answered item (PHNX-3939).
+    expect(store.sessions()).toEqual([{ rowKey: 'r1', sessionId: 's1' }]);
     expect(store.activityEvents()).toEqual([{
       type: 'attention.receipt', key: 'a1', sessionId: 's1', question: undefined,
       source: undefined, fingerprint: 'fp', state: 'answered', resolvedAt: 2,
@@ -17,6 +19,28 @@ describe('SessionPresentationStore', () => {
     store.apply({ v: 1, type: 'reset', streamId: 's', sequence: 3, capturedAt: 3, scope: 'local', agents: [], attention: [] });
     expect(store.sessions()).toEqual([]);
     expect(store.activityEvents()).toHaveLength(1);
+  });
+
+  test('ask A -> resolve A -> ask B: the NEW open attention attaches, not the stale one (PHNX-3939)', () => {
+    const store = new SessionPresentationStore();
+    const askA = { key: 'kA', sessionId: 's1', state: 'open', fingerprint: 'fpA', openedAt: '2026-09-06T00:00:00Z' };
+    const askB = { key: 'kB', sessionId: 's1', state: 'open', fingerprint: 'fpB', openedAt: '2026-09-06T00:01:00Z' };
+    store.apply({ v: 1, type: 'reset', streamId: 's', sequence: 1, capturedAt: 1, scope: 'local', agents: [{ rowKey: 'r1', sessionId: 's1' }], attention: [] });
+    store.apply({ v: 1, type: 'attention.upsert', streamId: 's', sequence: 2, capturedAt: 2, scope: 'local', rowKey: 'kA', attention: askA });
+    expect((store.sessions()[0] as { attention?: unknown }).attention).toEqual(askA);
+    // Resolve A, then a NEW question B arrives for the SAME session.
+    store.apply({ v: 1, type: 'attention.remove', streamId: 's', sequence: 3, capturedAt: 3, scope: 'local', rowKey: 'kA', resolution: { key: 'kA', state: 'answered' } });
+    store.apply({ v: 1, type: 'attention.upsert', streamId: 's', sequence: 4, capturedAt: 4, scope: 'local', rowKey: 'kB', attention: askB });
+    // The card must show B (the live open question), never the resolved A.
+    expect((store.sessions()[0] as { attention?: unknown }).attention).toEqual(askB);
+  });
+
+  test('among two open items for one session the most recent wins', () => {
+    const store = new SessionPresentationStore();
+    const older = { key: 'kA', sessionId: 's1', state: 'open', openedAt: 100 };
+    const newer = { key: 'kB', sessionId: 's1', state: 'open', openedAt: 200 };
+    store.apply({ v: 1, type: 'reset', streamId: 's', sequence: 1, capturedAt: 1, scope: 'local', agents: [{ rowKey: 'r1', sessionId: 's1' }], attention: [older, newer] });
+    expect((store.sessions()[0] as { attention?: unknown }).attention).toEqual(newer);
   });
   test('projects reset/upsert/remove without deriving lifecycle state', () => {
     const store = new SessionPresentationStore();
@@ -191,5 +215,70 @@ describe('SessionPresentationStore', () => {
     });
     expect(store.liveSession('grok-1')).toMatchObject({ version: '1.0.0', account: null });
     expect(store.liveSession('kimi-1')).toMatchObject({ version: null, account: null });
+  });
+
+  describe('terminalSessionMap observer binding (PHNX-3939)', () => {
+    let resetSeq = 0;
+    const reset = (store: SessionPresentationStore, agents: unknown[]) =>
+      store.apply({ v: 1, type: 'reset', streamId: `reset-${++resetSeq}`, sequence: 1, capturedAt: resetSeq, scope: 'local', attention: [], agents });
+
+    test('back-compat: with no observerDevice, top-level terminalId binds under the host filter', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [{ rowKey: 'a', sessionId: 'sid1', terminalId: 'T1', sourceDevice: 'worker' }]);
+      expect(store.terminalSessionMap('worker').get('T1')).toBe('sid1');
+      expect(store.terminalSessionMap().get('T1')).toBe('sid1');
+    });
+
+    test('a worker session with no top-level terminalId binds via observerTerminals for THIS desktop', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [{
+        rowKey: 'a', sessionId: 'sid1', sourceDevice: 'worker',
+        observerTerminals: [{ device: 'desktop', terminalId: 'TAB1' }],
+      }]);
+      // The owner runs on 'worker'; the desktop observes it via TAB1.
+      expect(store.terminalSessionMap('worker', 'desktop').get('TAB1')).toBe('sid1');
+      // A different observer gets nothing (no binding for its device).
+      expect(store.terminalSessionMap('worker', 'other-desktop').size).toBe(0);
+    });
+
+    test('a remote owner top-level terminalId is NOT a local binding when an observer is given', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [{ rowKey: 'a', sessionId: 'sid1', terminalId: 'T1', sourceDevice: 'worker' }]);
+      // owner (worker) !== observer (desktop) and no observerTerminals -> no binding.
+      expect(store.terminalSessionMap(undefined, 'desktop').size).toBe(0);
+      // owner === observer -> the top-level id is a safe local binding.
+      reset(store, [{ rowKey: 'a', sessionId: 'sid1', terminalId: 'T1', sourceDevice: 'desktop' }]);
+      expect(store.terminalSessionMap(undefined, 'desktop').get('T1')).toBe('sid1');
+    });
+
+    test('two desktops observing the same worker session each map only their own tab', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [{
+        rowKey: 'a', sessionId: 'sid1', sourceDevice: 'worker',
+        observerTerminals: [{ device: 'desktopA', terminalId: 'TA' }, { device: 'desktopB', terminalId: 'TB' }],
+      }]);
+      const a = store.terminalSessionMap('worker', 'desktopA');
+      const b = store.terminalSessionMap('worker', 'desktopB');
+      expect([...a.entries()]).toEqual([['TA', 'sid1']]);
+      expect([...b.entries()]).toEqual([['TB', 'sid1']]);
+    });
+
+    test('a terminalId two sessions both claim for one observer is ambiguous and omitted', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [
+        { rowKey: 'a', sessionId: 'sid1', sourceDevice: 'worker', observerTerminals: [{ device: 'desktop', terminalId: 'DUP' }] },
+        { rowKey: 'b', sessionId: 'sid2', sourceDevice: 'worker', observerTerminals: [{ device: 'desktop', terminalId: 'DUP' }] },
+      ]);
+      expect(store.terminalSessionMap('worker', 'desktop').has('DUP')).toBe(false);
+    });
+
+    test('filtering to the wrong execution host yields no binding', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [{
+        rowKey: 'a', sessionId: 'sid1', sourceDevice: 'worker',
+        observerTerminals: [{ device: 'desktop', terminalId: 'TAB1' }],
+      }]);
+      expect(store.terminalSessionMap('some-other-host', 'desktop').size).toBe(0);
+    });
   });
 });
