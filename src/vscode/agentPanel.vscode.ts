@@ -2013,9 +2013,9 @@ function renderTimelineCard(s) {
       '<h2>Timeline</h2>' +
       '<div class="card"><div class="card-note">' +
         '<strong>Waiting for the session stream…</strong><br>' +
-        'No row has arrived for ' + esc(s.streamScope || 'this machine') + ' yet. The extension runs ' +
-        '<code>agents sessions watch --json --local</code> and renders whatever it carries. ' +
-        'Nothing here is fetched per click.' +
+        'No row has arrived for ' + esc(s.streamScope || 'this machine') + ' yet. The elected ' +
+        'window runs <code>agents feed watch --json</code> while a session view is open, and ' +
+        'this panel renders whatever that stream carries. Nothing here is fetched per click.' +
       '</div></div>'
     );
   }

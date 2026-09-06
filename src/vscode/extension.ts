@@ -5488,31 +5488,20 @@ function initMonitorHost(context: vscode.ExtensionContext): void {
     // session watcher (#69), and the panel/floor
     // snapshot detector (#71) on the leader only. The snapshot detector's teams
     // fetch is vscode-coupled, so it's injected here (host.ts stays vscode-free).
-    // Stream diagnostics land in a real output channel, never /dev/null: a
-    // missing CLI flag or a dead ssh hop only ever reports on the child's
-    // stderr, and 0.9.361's fleet fan-out discarded it.
-    const channel = vscode.window.createOutputChannel('Agents: Monitor');
     const host = new MonitorHost({
       detectors: {},
-      // Own the demand-gated session producers (PHNX-3939): one
-      // `agents sessions watch --json --local` for this device, plus one
-      // `-D <device>` child per remote device that owns an open agent tab. They
-      // spawn only while a window reports sessionDemand and are torn down when
-      // none do — restoring the stream the receive side still expects, without the
-      // always-on CPU/ssh load e0f4831 removed. Diagnostics land in a real output
-      // channel, never /dev/null: an unsupported CLI flag or a dead ssh hop only
-      // ever reports on the child's stderr, and 0.9.361's fan-out discarded it.
-      sessionStream: {
-        enabled: true,
-        log: (message: string) => channel.appendLine(`[${new Date().toISOString()}] ${message}`),
-      },
+      // Own the single demand-gated `agents feed watch` producer (PHNX-3939). It
+      // spawns only while a window reports sessionDemand and is torn down when
+      // none do — restoring the feed the receive side still expects, without the
+      // always-on CPU/ssh load e0f4831 removed.
+      sessionStream: { enabled: true },
     });
     void host.start().catch((err) => console.error('[MONITOR] host start failed:', err));
     // Async disposal: gate.ts awaits this so a replacement leader never starts a
     // second producer before the old host's shutdown (and child reap) completes.
     // Do NOT swallow the rejection — gate.ts rejects overlapping replacement on a
     // teardown failure (PHNX-3939, monitor track).
-    return { dispose: () => host.stop().finally(() => channel.dispose()) };
+    return { dispose: () => host.stop() };
   });
   context.subscriptions.push(gate);
 }
@@ -5554,10 +5543,6 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
         sessionId: e.sessionId ?? null,
         workspacePath,
         agentType: e.agentType ?? null,
-        // The device an offloaded tab runs on (`agents run --device <name>`).
-        // The leader unions these to spawn exactly one remote session-watch
-        // child per device that has a tab, and to reap it with the last tab.
-        device: e.host ?? null,
       }));
   };
 
