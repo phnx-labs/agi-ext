@@ -95,6 +95,32 @@ export function resolveSessionHost(
   return norm === localMachineId ? localLabel : norm;
 }
 
+/**
+ * Does `host` name THIS machine? The inverse of `resolveSessionHost`: that
+ * function folds the local machine id to `localLabel`, so every local row that
+ * comes back off the stream carries one of a small set of local identities —
+ * the webview sentinel ('this-mac'), the CLI's machine id, this box's real
+ * hostname (bare or FQDN), 'localhost', or nothing at all.
+ *
+ * Every one of them is a value that must NEVER reach a `--device` argument: the
+ * CLI resolves `--device this-mac` against the device registry, finds nothing,
+ * and the caller fails silently. Callers ask this instead of re-listing the
+ * identities inline — that hand-copied list is how `focusSubject` shipped
+ * passing 'this-mac' as a device (PHNX-3939 review).
+ */
+export function isLocalHostIdentity(
+  host: string | undefined | null,
+  localHost: string,
+  localMachineId: string,
+  localLabel: string,
+): boolean {
+  const h = (host ?? '').trim();
+  if (!h) return true;
+  if (h === localLabel || h === 'localhost') return true;
+  if (h === localHost || h === localHost.split('.')[0]) return true;
+  return normalizeHost(h) === localMachineId;
+}
+
 /** A registered device as seen by the host reconciler (from `agents devices list`). */
 export interface RegisteredDeviceInput {
   name: string;
