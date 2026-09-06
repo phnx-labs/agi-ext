@@ -71,7 +71,6 @@ import { inferProjectCandidates } from '../core/projectIndex';
 import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
-import { nudgeSession } from '../mcp/watchdog-bridge';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, isLocalHost, remoteDeviceArg } from './remoteSessions.vscode';
 import { rankRepos } from '../core/repoIndex';
 import { detectProjects } from '../core/projectDetect';
@@ -2392,37 +2391,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         }
         break;
       }
-      case 'fetchSessionPreview': {
-        // Tier-2 on-demand: fetch one session's rich preview digest (file
-        // deltas, tool mix, tests, errors, links, cost/token header) so the
-        // Fleet detail panel renders at parity with the CLI picker. One-shot
-        // per selection — a user action, not a poll.
-        const previewHost = typeof message.host === 'string' ? message.host : '';
-        const previewSessionId = typeof message.sessionId === 'string' ? message.sessionId : '';
-        if (!previewHost || !previewSessionId) {
-          settingsPanel?.webview.postMessage({
-            type: 'sessionPreview',
-            host: previewHost,
-            sessionId: previewSessionId,
-            error: 'host and sessionId are required',
-          });
-          break;
-        }
-        try {
-          const { fetchSessionPreview } = await import('./remoteSessions.vscode');
-          const preview = await fetchSessionPreview(previewHost, previewSessionId);
-          settingsPanel?.webview.postMessage({ type: 'sessionPreview', ...preview });
-        } catch (err) {
-          console.error('[SETTINGS] Error fetching session preview:', err);
-          settingsPanel?.webview.postMessage({
-            type: 'sessionPreview',
-            host: previewHost,
-            sessionId: previewSessionId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-        break;
-      }
       case 'dispatchTask': {
         const agentType = typeof message.agentType === 'string' ? message.agentType : 'claude';
         // Device target: spawn the agent on a registered machine over SSH, in the
@@ -2859,23 +2827,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
               policy.notify,
             );
           }
-        }
-        break;
-      }
-      // Nudge a running agent to keep going (manual Floor action).
-      case 'nudgeAgent': {
-        const sessionId = typeof message.sessionId === 'string' ? message.sessionId : '';
-        if (!sessionId) {
-          vscode.window.showErrorMessage('Nudge: missing session id');
-          break;
-        }
-        const res = await nudgeSession(
-          sessionId,
-          'Continue — what is the current status? If you are stuck, say why.',
-          'dispatch-nudge',
-        );
-        if (!res.success) {
-          vscode.window.showErrorMessage(`Nudge failed: ${res.error ?? 'unknown error'}`);
         }
         break;
       }

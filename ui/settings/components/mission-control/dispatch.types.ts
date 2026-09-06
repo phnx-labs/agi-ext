@@ -99,7 +99,6 @@ export interface PendingPlan {
 //     { type: 'approvePlan', sessionId, edited?: PlanStep[] }
 //     { type: 'sendBackPlan', sessionId, note: string }
 //     { type: 'reassignAgent', sessionId, toAgent: string }
-//     { type: 'nudgeAgent', sessionId }
 //
 //   ext -> webview:
 //     { type: 'dispatchData', agents: InstalledAgent[], hosts: DispatchHost[], targets: DispatchTarget[] }

@@ -5,10 +5,7 @@ import { Icon } from './icons'
 import { relTime, taskNameToTitle, swarmOverallStatus, shortDuration } from './types'
 import { postMessage, usePanelVisibility } from '../../hooks'
 import { ExtLink } from '../common'
-import { renderMarkdown } from '../../utils/markdown'
 import { CMD_PALETTE_EVENTS } from './CommandPalette'
-import { VerticalTimeline } from './Timeline'
-import { TodoChecklist } from './TodoChecklist'
 import { useNow } from './useNow'
 import {
   isTerminalActive,
@@ -28,7 +25,7 @@ import { FloorSubtabs, openTaskTab, closeTaskTab, type TaskTab } from './FloorSu
 import { TaskDetail } from '../bench/TaskDetail'
 import type { FlatTask } from '../bench/TaskCard'
 import { TicketDetail } from './TicketDetail'
-import { AttentionReceipt, FeedItem, FollowUpBox } from './FeedItem'
+import { AttentionReceipt, FeedItem } from './FeedItem'
 import { SessionsPane } from './SessionsPane'
 import { NeedsYouClusters } from './NeedsYouClusters'
 import {
@@ -1310,17 +1307,9 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     postMessage({ type: 'draftPrompt', tickets: payload.tickets, hint: payload.hint })
   }, [])
 
-  const handleFocusTerminal = (t: TerminalInfo) => {
-    postMessage({ type: 'focusTerminal', terminalId: t.id })
-  }
-
   const handleRetry = useCallback((taskName: string) => {
     postMessage({ type: 'retrySwarm', taskName })
   }, [])
-
-  const handleKill = (taskName: string) => {
-    postMessage({ type: 'killSwarm', taskName })
-  }
 
   // Panel hosts: the ranked host list from `dispatchData`, folded with LIVE load —
   // online-ness from the hostSessions offline set + current agent counts per host from
@@ -1865,11 +1854,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   // Reassign a failed agent's work to a different installed agent (FailureCard action).
   const reassignFloorAgent = useCallback((a: FloorAgent, toAgent: string) => {
     postMessage({ type: 'reassignAgent', sessionId: a.id, host: a.host, toAgent })
-  }, [])
-
-  // Nudge a stalled (wedged) agent to wake it back up.
-  const nudgeFloorAgent = useCallback((a: FloorAgent) => {
-    postMessage({ type: 'nudgeAgent', sessionId: a.id, host: a.host })
   }, [])
 
   const openPlanPreview = useCallback((a: FloorAgent, plan: PlanFile) => {
