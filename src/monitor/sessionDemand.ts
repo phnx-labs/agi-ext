@@ -1,6 +1,6 @@
 // Per-window session-stream demand (PHNX-3939).
 //
-// One window "demands" the canonical `agents feed watch` producer while it is
+// One window "demands" the canonical `agents sessions watch` producers while it is
 // actually showing live session state — its Fleet dashboard OR its active-session
 // sidebar is visible — or while it holds a tracked agent terminal whose identity
 // isn't resolved yet (the stream is what attributes it). The elected leader gates
