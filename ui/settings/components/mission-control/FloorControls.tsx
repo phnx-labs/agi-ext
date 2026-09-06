@@ -45,8 +45,6 @@ interface FloorControlsProps {
 
   sidebarOpen: boolean
   onToggleSidebar: () => void
-  rightOpen: boolean
-  onToggleRight: () => void
   plain: boolean
   onTogglePlain: () => void
 
@@ -68,7 +66,7 @@ interface FloorControlsProps {
 export function FloorControls({
   mode,
   needsCount = 0,
-  sidebarOpen, onToggleSidebar, rightOpen, onToggleRight, plain, onTogglePlain,
+  sidebarOpen, onToggleSidebar, plain, onTogglePlain,
   sort, onSort,
   ticketGroup, onTicketGroup, ticketSubgroup, onTicketSubgroup, ticketSort, onTicketSort, srcFilter, onToggleSrc,
 }: FloorControlsProps) {
@@ -145,16 +143,6 @@ export function FloorControls({
         <svg width="16" height="16" viewBox="0 0 16 16" {...SVG}>
           <rect x="2.2" y="2.5" width="11.6" height="11" rx="1.4" />
           <line x1="6" y1="2.5" x2="6" y2="13.5" />
-        </svg>
-      </button>
-      <button
-        className={`iconbtn ${rightOpen ? 'on' : ''}`}
-        title="Show / hide the detail panel"
-        onClick={onToggleRight}
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" {...SVG}>
-          <rect x="2.2" y="2.5" width="11.6" height="11" rx="1.4" />
-          <line x1="10" y1="2.5" x2="10" y2="13.5" />
         </svg>
       </button>
     </div>

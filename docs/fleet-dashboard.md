@@ -31,6 +31,19 @@ The dashboard may group, filter, sort, and decorate those facts. It must not inf
 canonical session status from transcript text or process scans. Background work can be
 hidden by presentation policy without disappearing from the underlying model.
 
+## One preview
+
+The dashboard is a LIST. It does not preview a session: selecting a row posts
+`session.select` to the extension host, which points the native `agentsPanel.terminal`
+sidebar at that session and reveals it without taking focus. There is no detail rail, no
+persisted "detail open" layout pref, and no per-selection `sessions preview` fetch — a
+click costs zero subprocesses. The list keeps search, filters, grouping, the row Resume
+button, and the expand-in-place card behind its chevron.
+
+That collapses two competing session views into one and removes the whole class of
+defect a persisted rail pref produced: a blank third-width column restored on open with
+nothing selected.
+
 ## Interaction model
 
 Cards and lanes emit intent: focus a tab, resume a session, answer a request, dispatch a

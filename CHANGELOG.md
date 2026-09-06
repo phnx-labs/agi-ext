@@ -19,19 +19,75 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   genuine first user turn; a synthesized label (topic, worktree slug, tab name)
   stays the row title instead of being quoted back as the user's own words.
 - **Restored the canonical session stream — behind a demand gate (PHNX-3939).**
-  The elected leader again owns one `agents feed watch --json` producer feeding
-  the `sessionPresentationStore` every window reads (the receive side survived the
-  e0f4831 removal but was left unfed, so live host/attention attribution silently
-  went stale). It now spawns **only while a window needs it** — a visible Fleet
-  dashboard or active-session sidebar, or a tracked-but-unresolved agent tab — and
-  is torn down when none do, so the always-on CPU/ssh load that e0f4831 removed
-  does not return. One producer serves every follower; a window that gains demand
-  is replayed the current rows and then live events.
+  The elected leader again owns the producer feeding the
+  `sessionPresentationStore` every window reads (the receive side survived the
+  e0f4831 removal but was left unfed, so live host attribution silently went
+  stale). It spawns **only while a window needs it** — a visible Fleet dashboard or
+  active-session sidebar, or a tracked-but-unresolved agent tab — and is torn down
+  when none do, so the always-on CPU/ssh load that e0f4831 removed does not return.
+  One producer per scope serves every follower; a window that gains demand is
+  replayed the current rows and then live events.
 - **Fix: a new question no longer hides behind a resolved one (PHNX-3939).** The
   presentation store's attention join returned the first item by insertion order
   regardless of state, and kept a resolved copy — so *ask A → resolve A → ask B*
   left the card showing the stale, resolved A. Resolved attention is now dropped to
   a receipt and the join prefers the live (open, most-recent) item.
+- **The Active Terminal sidebar is the ONE session preview, and it finally has
+  data (PHNX-3939).** Three changes that only make sense together.
+
+  *The stream runs the cheap command, scoped to open tabs.* Deleting the producer
+  in 0.9.361 also deleted the sidebar's only data source, so 0.9.363's
+  Goal/Progress/Checklist cards were built on a store nothing wrote to and the
+  panel rendered a header and "No checklist yet" forever. The demand-gated producer
+  above fixes *when* it runs; this fixes what it costs while running. It is now
+  `agents sessions watch --json --local` — a journal tail, one `stat` per 250 ms,
+  reading only the appended bytes — instead of `feed watch`, which wraps that same
+  tail and adds a 500 ms re-read of every session file on disk plus a `gh` PR
+  reconcile. Remote devices get one `-D <device>` child EACH, ONLY while they own
+  an open agent tab, keyed by device and reaped with the last tab, so the
+  fleet-wide fan-out never returns. Child stderr goes to a new **Agents: Monitor**
+  output channel instead of `/dev/null`, on its own diagnostics path so ordinary
+  chatter is never reported as a fault. A test asserts the spawn args and that
+  `feed` never appears in them.
+
+  *The trade this makes, stated plainly:* `feed watch` is the only source of
+  attention (`attention.*`) and activity (`activity.append`) facts. The store still
+  understands them and the envelope adapter still passes them through — nothing is
+  filtered — but on `sessions watch` nothing produces them, so the Fleet
+  **Needs you** lane and the activity feed are empty. Reverting is one line in
+  `sessionWatchArgs`.
+
+  *One preview, two triggers.* The sidebar's subject is the last of {the focused
+  agent terminal, a clicked Fleet row}. A session with no tab in this window still
+  renders, from the stream row alone. The Fleet webview's right-hand detail rail is
+  gone — the stats dump, the tool histogram, tests/errors/hooks/dirs, the reply box
+  and the close button — along with the `rightOpen` layout pref that used to
+  restore a blank third-width column with nothing selected (the PHNX-3938 defect,
+  now impossible rather than merely gated). Its three real actions moved into the
+  sidebar: **Focus** and **Resume** in the header, the reply field in the footer.
+  The list keeps search, filters, grouping, the row Resume button and
+  expand-in-place, and selecting a row now spawns no CLI process at all.
+
+  *New cards.* **Request** shows the user's own sentence in bold, with images,
+  files, `@dirs`, pasted terminal and slash commands lifted out into chips and the
+  whole turn (plus the first one) behind a "Full request · N chars · T turns" fold
+  — never a rewrite. **Timeline** shows the CLI's narration-anchored fold: one step
+  per thing the agent said with its tool calls folded into counts, newest five,
+  three more on demand, one counter for everything older, an amber now-line on the
+  live step carrying the harness's own label for the running tool, and chips for
+  the verb mix, failures, blocked calls and milestones. User turns render as hollow
+  dots with quoted text; a harness that wrote no narration renders muted as
+  derived. **Files** lists what the harness recorded as created/modified/deleted.
+  `◈ Goal` no longer falls back to the topic — with the Request card leading, that
+  fallback printed the same line twice.
+
+  *States it stops faking.* When the presentation store has seen no `reset` for the
+  subject's scope, the Timeline card says "Waiting for the session stream…" and
+  names the command it expects. When the CLI marks a harness's timeline
+  `unavailable`, the card says so with the reason. On an older CLI the request
+  falls back to the cleaned prompt then the topic, the timeline falls back to the
+  summarizer checkpoints, and the Files card does not render — no value is ever
+  invented.
 
 ## [0.9.363] - 2026-09-05
 

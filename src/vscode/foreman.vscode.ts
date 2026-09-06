@@ -40,8 +40,11 @@ import {
   FOREMAN_VOICE,
   FOREMAN_SYSTEM_PROMPT,
   FOREMAN_TOOLS,
-  ForemanTool,
 } from '../core/foreman.config';
+// ForemanTool is an INTERFACE. Imported/re-exported as a value it survives into
+// the emitted ESM as a real binding, and any test that loads this chain dies with
+// "export 'ForemanTool' not found". Type-only on both sides.
+import type { ForemanTool } from '../core/foreman.config';
 
 // Re-export so existing importers (settings.vscode.ts) keep working without
 // caring that the canonical home is now core/foreman.config.
@@ -50,8 +53,8 @@ export {
   FOREMAN_VOICE,
   FOREMAN_SYSTEM_PROMPT,
   FOREMAN_TOOLS,
-  ForemanTool,
 };
+export type { ForemanTool };
 
 
 // Two canonical sources for "what's on the fleet":

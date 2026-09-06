@@ -90,14 +90,29 @@ naming exactly one box.
 
 ### Active Session sidebar
 
-The activity-bar sidebar is a work brief for the focused agent. It leads with a
-clean **◈ Goal**, live **Progress** checkpoints, and an **always-on Checklist**,
-then the raw request and attachments demoted into a collapsible section, runtime
-and token usage, created plans/artifacts, ticket and PR links, spawned-team
-summary, and current activity. Recent files are available as a compact disclosure
-under Deliverables. Generic
-slash-command buttons, saved prompts, duplicate worktree/CWD navigation, and the
-separate Issues view are deliberately absent; those belong to their owning
+The activity-bar sidebar is **the** session preview: what you asked, and what the
+agent has actually done about it. It follows the last of two things — the agent
+terminal you focus, or the row you click in Fleet — so it works for a session with
+no tab in this window at all.
+
+Its header carries **Focus** and **Resume**. Below that: **◈ Goal** when the
+summarizer has one; **Request**, the user's own sentence in bold with images,
+files, `@dirs`, pasted terminal and slash commands lifted out into chips and the
+whole turn behind a "Full request" fold; **Timeline**, a step per thing the agent
+narrated with its tool counts folded in — newest five, three more on demand, one
+counter for everything older, an amber now-line on the step running right now, and
+failures, blocks and milestones called out; the **Checklist**; created
+plans/artifacts, ticket and PR links, spawned-team summary and current activity;
+**Files** the session created, modified or deleted; and a reply field.
+
+Nothing is invented. On an older CLI the request falls back to the cleaned prompt
+and then the topic, the timeline falls back to the summarizer's checkpoints, and
+the Files card simply does not appear. When the session stream is not running the
+panel says so and names the command it expects, and a harness whose transcript
+cannot be folded says that too — neither renders as a confident empty card.
+
+Generic slash-command buttons, saved prompts, duplicate worktree/CWD navigation,
+and the separate Issues view are deliberately absent; those belong to their owning
 command, dashboard, Source Control, or tracker surfaces. All live facts ride the
 CLI session stream, so switching tabs does not start a transcript scan or poll.
 
@@ -129,16 +144,17 @@ Each row uses the harness logo without repeating its name. Its chevron expands t
 row in place, showing the CLI-indexed full first user turn as **Your request**
 (with **See more** for long requests), or labels an older CLI's topic fallback
 honestly as **Request summary** — independent of clicking the row itself, which
-only opens the right detail rail.
+points the Active Session sidebar at that session.
 Ended-session timing reads “Ran … · ended … ago” with the absolute range on hover,
 and names its device once as “Runs on …”. Ticket, PR, and repository pills navigate;
 branch pills copy. The single compact **Resume** targets the owning device, while
 right-clicking it offers **Resume on a different device…** from the already-loaded
 fleet roster; that path delegates transcript transport and liveness to
 `agents sessions migrate`, then focuses the target in the same editor terminal.
-The left navigation and right detail panel start closed; selecting a session opens
-its detail in place. Background/headless runs remain hidden by default in the agent
-feed; use the **Background** toggle when you need them.
+Selecting a session sends it to the Active Session sidebar — Fleet has one job,
+listing sessions, and the sidebar has the other, describing one. Background/headless
+runs remain hidden by default in the agent feed; use the **Background** toggle when
+you need them.
 
 **Needs you** projects the CLI feed's canonical attention ledger. Cards retain
 the exact choices and source; answered items leave the count immediately while
@@ -152,11 +168,8 @@ session attachments appear as thumbnail artifacts that click through to the host
 preview. The expanded project and host sidebar can be resized by dragging its
 right edge.
 
-Selecting a session opens a detail card at parity with the CLI's `agents sessions`
-picker: the version · model · account header, timing and cost, per-file changes,
-the tool mix, tests, errors, and PR/ticket links. It is fetched once per selection
-via a one-shot `agents sessions preview --json` — the CLI computes every field; the
-extension only renders it, never parsing a transcript itself.
+Selecting a session costs nothing: the sidebar renders it from the session stream
+the extension already holds, so a click starts no CLI process at all.
 
 ### Foreman Voice Orb
 

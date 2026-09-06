@@ -6,7 +6,7 @@ VS Code windows from multiplying process scans, transcript reads, and remote req
 
 ```mermaid
 sequenceDiagram
-  participant CLI as agents feed watch
+  participant CLI as agents sessions watch --json --local
   participant Leader as Elected leader window
   participant Bus as Cross-window broadcast
   participant Store as Presentation store
@@ -23,8 +23,22 @@ sequenceDiagram
 
 ## Leader and replay
 
-Exactly one elected extension window starts the long-lived CLI feed child. The leader
-normalizes newline-delimited events and broadcasts them to follower windows. It retains
+Exactly one elected extension window starts the long-lived CLI session child:
+`agents sessions watch --json --local`, plus one `-D <device>` child per remote device
+that owns an open agent tab in any window. A device earns a child by having a tab and
+loses it with its last tab, so the ssh fan-out is bounded by what the user is looking at
+rather than by the size of the fleet.
+
+The command choice is the difference between a journal tail (one `stat` per 250 ms, a
+read of only the appended bytes) and the `feed watch` loop that re-reads every session
+file on disk every 500 ms — the CPU/ssh regression that removed this producer entirely in
+0.9.361 and left the sidebar with no data source at all until 0.9.365.
+
+The leader adapts the `sessions watch` envelope (`reset`/`upsert`/`remove`, carrying
+`rows`/`row`) onto the store's event names, normalizes newline-delimited events, and
+broadcasts them to follower windows. Child stderr is surfaced on the "Agents: Monitor"
+output channel, never discarded, and a child that keeps dying is respawned with
+exponential backoff up to 30 s rather than on a fixed short timer. It retains
 the latest session rows, attention rows, and scope status so a newly opened window can
 recover those views without starting another CLI process. Activity events are forwarded
 live but are not currently included in leader replay; a late follower does not receive a
@@ -97,5 +111,16 @@ change (add it to the attention row), never a client re-derivation.
   that has not is rendered as degraded rather than as an authoritative empty state.
 - Resolved attention cannot reappear from an older session snapshot.
 
-The concrete stream owner is `src/monitor/sessionCliStream.ts`; the pure cross-surface
-model is `src/core/sessionPresentationStore.ts`.
+The concrete stream owner is `src/monitor/sessionCliStream.ts` (`SessionCliStream`,
+one `ScopeChild` per scope, started by `MonitorHost.startDetectors`); the pure
+cross-surface model is `src/core/sessionPresentationStore.ts`.
+
+## Row fields the sidebar reads
+
+Beyond the identity/lifecycle fields, the row carries the summarizer's `goal`,
+`checkpoints`, `summaryChecklist` and `summaryState`, and the daemon-computed
+`request`, `timeline` and `files` (PHNX-3939). `src/core/remoteSessions.ts`
+normalizes all three at the boundary — bounded to 2,000 request chars, 8 timeline
+steps and 8 file rows — and returns `undefined` for anything the CLI did not send, so
+an older CLI degrades to the documented fallbacks (request → `userPromptClean` →
+topic, timeline → `checkpoints`, files → nothing) instead of rendering a guess.

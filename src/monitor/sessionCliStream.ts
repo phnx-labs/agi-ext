@@ -1,17 +1,32 @@
 // Elected-leader session-CLI stream (PHNX-3939, restored from e0f4831^).
 //
-// One long-lived `agents feed watch --json` child, owned by the elected monitor,
-// projects the canonical session rows every window reads from the warm
-// `sessionPresentationStore`. This is the SINGLE producer for the whole machine
-// (the thin-client contract in AGENTS.md).
+// One long-lived `agents sessions watch --json --local` child per SCOPE, owned by
+// the elected monitor, projects the canonical session rows every window reads from
+// the warm `sessionPresentationStore`. This is the SINGLE producer for the whole
+// machine (the thin-client contract in AGENTS.md). `host.ts` owns one instance for
+// the local device plus one per REMOTE device that currently has an open agent tab.
 //
-// It was removed in e0f4831 (#52) because it ran 24/7 at ~31% CPU and leaked ssh
-// fan-out even with no consumer. It is restored here behind a DEMAND GATE owned by
-// `host.ts`: the host only calls start() while at least one window reports demand
-// (a visible dashboard/sidebar or a tracked-but-unresolved agent tuple) and calls
-// stop() — after a debounce — when demand drops to zero. The stream object itself
-// stays consumer-agnostic; the gate is the host's job. The exponential restart
-// backoff (PHNX-3818) is retained so a broken child can't drip a spawn/sec.
+// TRANSPORT — read this before changing the argv:
+//   `agents sessions watch --json --local` is a journal tail. Steady state is one
+//   `fs.watchFile` stat every 250 ms plus a 15 s heartbeat, and on append it reads
+//   only `size - offset` bytes (agents-cli `session/remote/watch.ts:366-368`,
+//   `:384-391`, `:407-413`).
+//   `agents feed watch --json` is NOT that. It adds a 500 ms `setInterval` that
+//   `readdirSync`s every session ever recorded and tail-parses 256 KiB of each
+//   (1,420 files / 63 MB on the owner's box), then reconciles PR rows with `gh`.
+//   That loop is the ~31% CPU / leaked-ssh-fan-out reason e0f4831 (#52) deleted
+//   this file outright. Never put `feed` back in these spawn args;
+//   `sessionCliStream.transport.test.ts` asserts it.
+//
+// Two independent guards, both required:
+//   - the DEMAND GATE in `host.ts` — start() only while a window reports demand
+//     (a visible dashboard/sidebar or a tracked-but-unresolved agent tuple), stop()
+//     after a debounce once demand hits zero. The stream stays consumer-agnostic.
+//   - the SCOPE SET — a remote device earns its own `-D <device>` child by owning
+//     an open tab and loses it with its last tab, so the fleet-wide ssh fan-out
+//     that removal fixed can never return.
+// The exponential restart backoff (PHNX-3818) is retained so a broken child can't
+// drip a spawn/sec.
 
 import { ChildProcessWithoutNullStreams, execFile, spawn } from 'child_process';
 import { createInterface } from 'readline';
@@ -21,9 +36,125 @@ import { bootstrapPath, resolveAgentsBin } from '../core/agentsBin';
 import type { SessionCliFactPayload as SessionCliEvent } from './protocol';
 export type { SessionCliEvent };
 
+/** The scope key for the local device's child. Not a device name. */
+export const LOCAL_SCOPE_KEY = 'local';
+
+/**
+ * The argv for one scope's watch child. Exported so the transport test asserts
+ * the exact command instead of re-deriving it — this is the load-bearing choice
+ * of the whole file (see the TRANSPORT note above).
+ */
+export function sessionWatchArgs(device?: string): string[] {
+  const args = ['sessions', 'watch', '--json', '--local'];
+  return device ? [...args, '-D', device] : args;
+}
+
+/**
+ * The canonical `agents sessions watch` NDJSON envelope (agents-cli
+ * `SessionWatchEnvelope`, `session/remote/watch.ts:30-36`). Rows ride as `rows`
+ * on a reset and `row` on an upsert; the presentation store speaks the older
+ * `agents`/`agent` names, so `adaptSessionWatchEnvelope` is the ONE place the two
+ * vocabularies meet.
+ */
+interface SessionWatchEnvelope {
+  version?: number;
+  v?: number;
+  type?: string;
+  streamId?: string;
+  sequence?: number;
+  capturedAt?: number;
+  scope?: string;
+  rows?: unknown[];
+  row?: unknown;
+  rowKey?: string;
+  status?: 'available' | 'unavailable';
+  reason?: string;
+}
+
+/**
+ * Bridge one producer line into the `SessionCliFactPayload` the receive path
+ * speaks (`extension.ts` -> `sessionPresentationStore.apply`).
+ *
+ * The store's event vocabulary is a SUPERSET of what any one producer emits, and
+ * the two producers name the same things differently:
+ *   `sessions watch` says reset/upsert/remove and carries `rows`/`row`;
+ *   the store says reset/agent.upsert/agent.remove and carries `agents`/`agent`,
+ *   and additionally understands attention.* and activity.append, which only
+ *   `feed watch` ever produces.
+ * So this renames the session vocabulary and passes the store vocabulary through
+ * untouched — it is a bridge, not a filter. Which facts actually exist is decided
+ * by `sessionWatchArgs`, not here.
+ *
+ * Returns undefined for anything that is not a well-formed v1 envelope, so a
+ * partial line or a future event type is dropped rather than half-applied.
+ */
+const STORE_EVENT_TYPES = new Set([
+  'reset', 'agent.upsert', 'agent.remove',
+  'attention.upsert', 'attention.remove', 'activity.append',
+  'scope', 'heartbeat',
+]);
+
+export function adaptSessionWatchEnvelope(raw: unknown): SessionCliEvent | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const e = raw as SessionWatchEnvelope;
+  if (e.version !== 1 && e.v !== 1) return undefined;
+  if (typeof e.streamId !== 'string' || !e.streamId) return undefined;
+  if (!Number.isInteger(e.sequence)) return undefined;
+  if (typeof e.scope !== 'string' || !e.scope) return undefined;
+  const base = {
+    v: 1 as const,
+    streamId: e.streamId,
+    sequence: e.sequence as number,
+    capturedAt: typeof e.capturedAt === 'number' ? e.capturedAt : Date.now(),
+    scope: e.scope,
+  };
+  switch (e.type) {
+    // `sessions watch` names, renamed onto the store's.
+    case 'upsert':
+      if (typeof e.rowKey !== 'string' || !e.rowKey || !e.row) return undefined;
+      return { ...base, type: 'agent.upsert', rowKey: e.rowKey, agent: e.row };
+    case 'remove':
+      if (typeof e.rowKey !== 'string' || !e.rowKey) return undefined;
+      return { ...base, type: 'agent.remove', rowKey: e.rowKey };
+    // `reset` exists in both; take rows from whichever field carries them.
+    case 'reset':
+      return {
+        ...base,
+        type: 'reset',
+        agents: Array.isArray(e.rows) ? e.rows : Array.isArray((raw as { agents?: unknown[] }).agents) ? (raw as { agents: unknown[] }).agents : [],
+        attention: Array.isArray((raw as { attention?: unknown[] }).attention) ? (raw as { attention: unknown[] }).attention : [],
+      };
+    default:
+      // Already the store's vocabulary (attention.*, activity.append,
+      // agent.*, scope, heartbeat): forward verbatim, field names and all.
+      return STORE_EVENT_TYPES.has(e.type as string) ? (raw as SessionCliEvent) : undefined;
+  }
+}
+
 export interface SessionCliStreamOptions {
   emit: (event: SessionCliEvent) => void;
+  /**
+   * A FAULT: spawn failure, a non-zero exit (with the retained stderr tail), or a
+   * failed cleanup. Not routine chatter — `leader.handoff.test.ts` asserts this
+   * channel stays silent through a clean handoff, and it should.
+   */
   onError?: (message: string) => void;
+  /**
+   * The child's live stderr, line by line, as it arrives. Separate from onError
+   * because a healthy child talks on stderr (a slow ssh hop, a deprecation) and
+   * that is diagnostics, not a fault. The extension routes this to the
+   * "Agents: Monitor" output channel, so in the shipping product nothing is
+   * discarded; with no sink it is still retained for the exit message below.
+   * 0.9.361's fleet fan-out threw stderr away outright and its failures were
+   * invisible.
+   */
+  onStderr?: (message: string) => void;
+  /**
+   * The REMOTE device this instance watches, i.e. the `-D <device>` target.
+   * Omitted for the local child. `host.ts` creates one instance per device that
+   * owns an open agent tab and disposes it with that device's last tab.
+   */
+  device?: string;
   /** Real child factory; MUST use detached:true on POSIX to own its group. */
   spawnWatch?: () => ChildProcessWithoutNullStreams;
   /** Resolve the executable before spawning (also permits delayed-resolution tests). */
@@ -81,6 +212,12 @@ export class SessionCliReplay {
     this.scopes.clear();
   }
 
+  /** Forget ONE scope — its device lost its last tab, so its child is gone and a
+   *  later window must not be replayed rows nothing is producing any more. */
+  drop(scope: string): void {
+    this.scopes.delete(scope);
+  }
+
   /** True once at least one scope has been observed (there is something to replay). */
   get hasState(): boolean {
     return this.scopes.size > 0;
@@ -117,7 +254,7 @@ export class SessionCliStream {
    * no-op once it is stale (stopped, or superseded by a newer spawn). This is
    * what stops a KILLED child's late `exit` from clearing the CURRENT child and
    * scheduling a phantom restart — the stop/start race that would leak a second
-   * `agents feed watch` process.
+   * session-watch process.
    */
   private gen = 0;
   /** Intentionally started (not stopped by the host). Exit restarts while true. */
@@ -141,6 +278,16 @@ export class SessionCliStream {
   private static readonly STDERR_CAP = 8 * 1024;
 
   constructor(private readonly options: SessionCliStreamOptions) {}
+
+  /** The scope this instance produces for: 'local', or the `-D` device name. */
+  get scopeKey(): string {
+    return this.options.device ?? LOCAL_SCOPE_KEY;
+  }
+
+  /** Diagnostics prefix naming the exact child a message came from. */
+  private get label(): string {
+    return `[${this.scopeKey}] agents ${sessionWatchArgs(this.options.device).join(' ')}`;
+  }
 
   /** True while the stream intends to run (started, not stopped). */
   get running(): boolean {
@@ -174,7 +321,7 @@ export class SessionCliStream {
         const bin = await Promise.race([(this.options.resolveBin ?? resolveAgentsBin)(), cancelled]);
         if (!current() || bin === undefined) return;
         const augmented = bootstrapPath(bin);
-        this.attach(spawn(bin, ['feed', 'watch', '--json'], {
+        this.attach(spawn(bin, sessionWatchArgs(this.options.device), {
           stdio: ['pipe', 'pipe', 'pipe'],
           // SIGKILL cannot run CLI cleanup. Own its POSIX process group so an
           // ssh descendant is still addressable after the producer exits.
@@ -205,21 +352,31 @@ export class SessionCliStream {
     const lines = createInterface({ input: child.stdout });
     lines.on('line', (line) => {
       if (!this.wantRunning || gen !== this.gen) return;
+      if (!line.trim()) return;
+      let parsed: unknown;
       try {
-        const event = JSON.parse(line) as SessionCliEvent;
-        if ((event?.v === 1 || event?.version === 1) && typeof event.streamId === 'string'
-          && Number.isInteger(event.sequence) && typeof event.type === 'string') {
-          // A valid event proves this child is healthy — reset the backoff.
-          this.restartAttempts = 0;
-          this.options.emit(event);
-        }
+        parsed = JSON.parse(line);
       } catch {
-        this.options.onError?.(`agents feed watch emitted invalid JSON: ${line.slice(0, 160)}`);
+        this.options.onError?.(`${this.label} emitted invalid JSON: ${line.slice(0, 160)}`);
+        return;
       }
+      const event = adaptSessionWatchEnvelope(parsed);
+      if (!event) return;
+      // A valid event proves this child is healthy — reset the backoff.
+      this.restartAttempts = 0;
+      this.options.emit(event);
     });
     let stderr = '';
     child.stderr.on('data', (chunk) => {
-      stderr = (stderr + String(chunk)).slice(-SessionCliStream.STDERR_CAP);
+      const text = String(chunk);
+      stderr = (stderr + text).slice(-SessionCliStream.STDERR_CAP);
+      // Surface stderr AS IT ARRIVES, not only on a non-zero exit: a child that
+      // stays up while complaining (an unsupported flag on an older CLI, a slow
+      // ssh hop) otherwise reports nothing at all. 0.9.361's fleet fan-out
+      // discarded stderr entirely and the failure was invisible.
+      for (const trimmed of text.split('\n').map((l) => l.trim()).filter(Boolean)) {
+        this.options.onStderr?.(`${this.label} ${trimmed}`);
+      }
     });
     // Spawn failure has no PID. Errors on a live child (such as a failed kill)
     // are not evidence of exit: retain ownership until the OS reports exit.
@@ -245,18 +402,18 @@ export class SessionCliStream {
       void cleanup.then(() => settle(exitReason), (error) => {
         // Keep the failed ownership promise and child identity. Neither a
         // demand restart nor a leadership handoff can treat failure as exit.
-        this.options.onError?.(`agents feed watch cleanup failed: ${String(error)}`);
+        this.options.onError?.(`${this.label} cleanup failed: ${String(error)}`);
         rejectExit(error);
       });
     };
     child.on('error', (err: Error) => {
-      const message = err?.message || 'agents feed watch failed';
+      const message = err?.message || `${this.label} failed`;
       if (!child.pid) { reaped(); settle(message); }
       else this.options.onError?.(message);
     });
     child.once('exit', (code) => {
       reaped();
-      exitReason = code === 0 ? undefined : (stderr.trim() || 'agents feed watch exited; restarting stream');
+      exitReason = code === 0 ? undefined : (stderr.trim() || `${this.label} exited ${code}; restarting stream`);
       // Even an unexpected producer exit must clean its remaining group before
       // restart; direct PID exit is not proof that its descendants are gone.
       this.stopChild?.();
