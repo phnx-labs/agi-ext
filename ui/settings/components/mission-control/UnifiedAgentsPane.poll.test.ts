@@ -22,6 +22,22 @@ const cssPath = join(import.meta.dir, 'design-system.css')
 const source = readFileSync(panePath, 'utf8')
 const css = readFileSync(cssPath, 'utf8')
 
+/** Source with comments stripped — the guards below are about what the code
+ *  DOES, and a tombstone comment naming the deleted call must not read as the
+ *  call still being there. */
+function codeOnly(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+}
+
+/** The extension-host files that answered this pane's messages. A webview-only
+ *  scan cannot see a side channel that still exists on the other side of
+ *  postMessage, so the no-subprocess guard reads them too. */
+const EXT_DIR = join(import.meta.dir, '../../../../src/vscode')
+const HOST_SOURCES: Record<string, string> = {
+  'settings.vscode.ts': codeOnly(readFileSync(join(EXT_DIR, 'settings.vscode.ts'), 'utf8')),
+  'remoteSessions.vscode.ts': codeOnly(readFileSync(join(EXT_DIR, 'remoteSessions.vscode.ts'), 'utf8')),
+}
+
 describe('Floor poll / timer budget (no recurring probes)', () => {
   test('mount-time registered devices feed Resume before Dispatch opens', () => {
     expect(registeredDevicesToDispatchDevices([
@@ -114,7 +130,19 @@ describe('Floor poll / timer budget (no recurring probes)', () => {
     // the warm session stream, so a click costs zero subprocesses — the strongest
     // possible form of the guard the 2026-08-25 CPU incident (agi-cli#3019 /
     // RUSH-3184) asked for.
-    expect(source).not.toContain('fetchSessionPreview')
+    //
+    // Scanning only this pane checked the CALLER and left the whole side channel
+    // standing behind it — the 'fetchSessionPreview' host case and the
+    // `agents sessions preview <id> --json` spawn it dispatched to survived the
+    // rail deletion (#59 review). Scan the host half too: the guard is that the
+    // subprocess does not exist anywhere, not that this one file stopped asking.
+    const scanned = { ...HOST_SOURCES, 'UnifiedAgentsPane.tsx': codeOnly(source) }
+    for (const [name, text] of Object.entries(scanned)) {
+      expect(`${name} calls fetchSessionPreview: ${text.includes('fetchSessionPreview')}`)
+        .toBe(`${name} calls fetchSessionPreview: false`)
+      expect(`${name} spawns sessions preview: ${text.includes("'sessions', 'preview'")}`)
+        .toBe(`${name} spawns sessions preview: false`)
+    }
     expect(source).not.toContain('sessionPreviews')
     expect(source).toContain("postMessage({ type: 'session.select', sessionId: agent.sessionId, host: agent.host })")
   })
