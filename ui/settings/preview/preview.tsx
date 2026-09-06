@@ -32,9 +32,6 @@ import { buildPrBoard, type PrStatusLike } from '../components/mission-control/p
 import { TicketDetail } from '../components/mission-control/TicketDetail'
 import { ProjectsPane } from '../components/mission-control/ProjectsPane'
 import { TerminalExpandedDetail } from '../components/mission-control/TerminalDetail'
-import { SessionPreviewCard } from '../components/mission-control/SessionPreviewCard'
-import { normalizeSessionPreview } from '../components/mission-control/sessionPreview'
-import { AgentDecision } from '../components/mission-control/AgentDecision'
 import { ticketWorkers, type FloorAgent, type FloorTicket, type StructuredQuestion, type FloorGroupBy, type FloorSort, type TicketGroupBy, type TicketSort, type CenterMode, type ManagedProject, type LinearProjectLite } from '../components/mission-control/floorModel'
 import { RecapPane } from '../components/mission-control/RecapPane'
 import { LaunchMatrix } from '../components/panel/LaunchMatrix'
@@ -330,8 +327,8 @@ function AgentsFeed(props: { stale?: boolean; showNeeds?: boolean; bulk?: number
       <FloorControls
         mode="agents"
         needsCount={2}
-        sidebarOpen rightOpen plain={PREVIEW_PLAIN}
-        onToggleSidebar={noop} onToggleRight={noop} onTogglePlain={noop}
+        sidebarOpen plain={PREVIEW_PLAIN}
+        onToggleSidebar={noop} onTogglePlain={noop}
         sort={srt} onSort={setSrt}
         ticketGroup="project" onTicketGroup={noop}
         ticketSubgroup="none" onTicketSubgroup={noop}
@@ -496,8 +493,8 @@ function Backlog() {
     <>
       <FloorControls
         mode="backlog"
-        sidebarOpen rightOpen plain={PREVIEW_PLAIN}
-        onToggleSidebar={noop} onToggleRight={noop} onTogglePlain={noop}
+        sidebarOpen plain={PREVIEW_PLAIN}
+        onToggleSidebar={noop} onTogglePlain={noop}
         sort="needs" onSort={noop}
         ticketGroup={group} onTicketGroup={setGroup}
         ticketSubgroup={subgroup} onTicketSubgroup={setSubgroup}
@@ -570,8 +567,8 @@ function Subtabs() {
         <FloorControls
           mode={controlsMode}
           needsCount={2}
-          sidebarOpen rightOpen plain={PREVIEW_PLAIN}
-          onToggleSidebar={noop} onToggleRight={noop} onTogglePlain={noop}
+          sidebarOpen plain={PREVIEW_PLAIN}
+          onToggleSidebar={noop} onTogglePlain={noop}
           sort={srt} onSort={setSrt}
           ticketGroup={tg} onTicketGroup={setTg}
           ticketSubgroup={tsg} onTicketSubgroup={setTsg}
@@ -766,103 +763,11 @@ function Detail() {
   )
 }
 
-// ?view=preview-card — the picker-parity SessionPreviewCard (PHNX-2973) on its
-// own, fed a representative `sessions preview --json` envelope, so the panel's
-// new field set can be screenshotted without the VS Code host.
-const previewEnvelope = {
-  schemaVersion: 1,
-  session: {
-    id: '3c7cb529aa', shortId: '3c7cb529', agent: 'claude', version: '2.1.218',
-    model: 'fable-5', account: 'muqsit@getrush.ai', machine: 'yosemite-m1',
-    cwd: '/home/muqsit/src/github.com/muqsitnawaz', project: 'muqsitnawaz', gitBranch: 'HEAD',
-    createdAt: new Date(Date.now() - 3.6 * 3600_000).toISOString(),
-    lastActivity: new Date(Date.now() - 1000).toISOString(),
-    durationMs: 3.6 * 3600_000, messageCount: 201, tokenCount: 54_600_000, costUsd: 4.21,
-    label: 'agents-cli-fe', topic: '', ticketId: 'PHNX-3409', prUrl: 'https://github.com/phnx-labs/agents-cli/pull/2844',
-  },
-  active: { status: 'running', activity: 'editing sessions-picker.ts', lastActivityMs: 1, startedAtMs: 1, pid: 1 },
-  preview: {
-    schemaVersion: 1,
-    firstUser: 'Converge the active-tab fork commands onto the agents sessions fork verb.',
-    lastAssistant: 'Landed the converge + trimmed the vestigial local path.',
-    filesRead: 9, toolCalls: 311, planFile: '', subAgentCount: 0, toolTags: [],
-    changes: { created: 3, modified: 3, deleted: 7 },
-    changedFiles: [
-      { path: 'cli/src/commands/sessions-picker.ts', op: 'modified' },
-      { path: 'cli/src/lib/session/digest.ts', op: 'modified' },
-      { path: 'cli/src/commands/fork.ts', op: 'created' },
-      { path: 'cli/src/commands/fork-active.ts', op: 'deleted' },
-    ],
-    dirs: ['~/src/github.com/muqsitnawaz'], repos: ['agents-cli'],
-    artifacts: [], plugins: [],
-    skills: [{ name: 'fleet:mint-auth', count: 1 }],
-    hooks: [
-      { name: 'UserPromptSubmit', event: 'UserPromptSubmit', count: 60, failed: 0 },
-      { name: 'PreToolUse:Bash', event: 'PreToolUse', count: 36, failed: 36 },
-    ],
-    links: [
-      { kind: 'other', url: 'https://github.com/phnx-labs/agents-cli/pull/2844', label: 'PR#2844' },
-      { kind: 'other', url: 'https://github.com/phnx-labs/agents-cli/pull/2849', label: 'PR#2849' },
-    ],
-    errorCount: 37, firstError: 'Bash',
-    toolHistogram: [{ tool: 'Bash', count: 280 }, { tool: 'Edit', count: 11 }, { tool: 'Read', count: 9 }, { tool: 'Write', count: 6 }],
-    test: { runner: 'tests', ok: true, passed: 1 },
-  },
-  error: null,
-}
-
-function PreviewCard() {
-  const preview = normalizeSessionPreview(previewEnvelope)!
-  return (
-    <div className="feed-col" style={{ maxWidth: 440 }}>
-      <div className="sw-unified-detail">
-        <div className="sw-mc-pane-body">
-          <SessionPreviewCard preview={preview} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// The three NEEDS-YOU decision-block shapes (RUSH-1521/1546): the real question + its
-// options + a why-blocked chip, extracted at the CLI source. Renders the exact markup the
-// right detail pane uses.
-const permAgent = agent({
-  id: 'a-perm', abbr: 'CC', name: 'headless-secrets', project: 'agents-cli', phase: 'waiting', needs: true,
-  prompt: 'Wire the Linux secret-service fallback into the BYOK resolver and add a regression test.',
-  question: {
-    kind: 'destructive', reason: 'permission', text: 'Permission — Bash: rm -rf build && bun run compile',
-    options: ['Approve', 'Deny'], optionKeys: ['1', 'esc'], clusterKey: 'perm-rm-build',
-  }, since: '2m',
-})
-const askAgentD = agent({
-  id: 'a-ask-d', abbr: 'CC', name: 'agent-readiness-review', project: 'agents-cli', phase: 'waiting', needs: true,
-  prompt: 'Make the NEEDS-YOU panel surface enough to unblock agents at a glance.',
-  question: {
-    kind: 'choice', reason: 'question', text: 'Ship v0.9.290 with the two follow-ups now, or pull more of the feed-UI backlog into this pass first?',
-    options: ['Build 0.9.290 now', 'Pull more backlog first'], optionKeys: ['1', '2'], clusterKey: 'ship-0-9-290',
-  }, since: '18h',
-})
-const planAgent = agent({
-  id: 'a-plan', abbr: 'GX', name: 'dispatch-refactor', project: 'rush', phase: 'waiting', needs: true,
-  prompt: 'Refactor the dispatch resolver so repo/owner parsing lives in one place.',
-  question: {
-    kind: 'confirm', reason: 'plan_review', text: 'Plan ready — review it',
-    options: ['Approve plan', 'Keep planning'], optionKeys: ['1', 'esc'], clusterKey: 'plan-dispatch',
-  }, since: '30s',
-})
-
-function Decision() {
-  return (
-    <div className="feed-col" style={{ maxWidth: 460 }}>
-      <div className="sw-unified-detail">
-        {[permAgent, askAgentD, planAgent].map((a) => (
-          <AgentDecision key={a.id} agent={a} onOption={noop} onFreeText={noop} onAttach={noop} onNudge={noop} />
-        ))}
-      </div>
-    </div>
-  )
-}
+// ?view=preview-card and ?view=decision are gone with the Fleet detail rail
+// (PHNX-3939): SessionPreviewCard and AgentDecision existed only to render inside
+// it, so there is nothing left for those routes to screenshot. The session preview
+// they stood in for is now the native VS Code sidebar, which this harness cannot
+// host — see agentPanel.render.test.ts for its card-level coverage.
 
 // Ticket detail with an in-flight worker — the dflight block + "Dispatch anyway"
 // caution at true size (?view=ticket).
@@ -1108,8 +1013,6 @@ function Preview() {
             : view === 'subtabs' ? <Subtabs />
             : view === 'projects' ? <div className="feed-col"><Projects /></div>
             : view === 'detail' ? <Detail />
-            : view === 'preview-card' ? <PreviewCard />
-            : view === 'decision' ? <Decision />
             : view === 'prs' ? <PrBoard />
             : view === 'ticket' ? <Ticket />
             : view === 'recap' ? <Recap />

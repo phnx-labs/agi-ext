@@ -44,7 +44,6 @@ import {
   type FloorAttachment,
   type FloorTicket,
   type CenterMode,
-  type HostInventory,
   type FloorGroupBy,
   type FloorSort,
   type TicketGroupBy,
@@ -663,9 +662,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
   const [remoteSyncError, setRemoteSyncError] = useState<string | null>(null)
   // Optional host signal: agents CLI missing / unusable (never blocks cached rows).
   const [cliUnavailable, setCliUnavailable] = useState(false)
-  const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
-  const [hostInventories, setHostInventories] = useState<Record<string, HostInventory>>({})
-  const [hostConfigError, setHostConfigError] = useState<string | null>(null)
   // Curated managed projects for the feed's linked-project lookup (the per-group
   // Linear-project pill). The Projects management pane moved to Settings
   // (FleetProjectsSection), which owns its own Linear-projects + folder-picker
@@ -790,20 +786,11 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     postMessage({ type: 'fetchHostSessions' })
   }, [panelVisible])
 
-  // Host detail pane: receive fetched inventories + config-action errors.
-  useEffect(() => {
-    const onMsg = (event: MessageEvent) => {
-      const msg = event.data
-      if (msg?.type === 'hostInventory' && msg.inventory && typeof msg.host === 'string') {
-        setHostInventories((prev) => ({ ...prev, [msg.host]: msg.inventory as HostInventory }))
-        setHostConfigError(null)
-      } else if (msg?.type === 'hostConfigError' && typeof msg.error === 'string') {
-        setHostConfigError(msg.error)
-      }
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [])
+  // The host detail pane (inventories + config-action errors) went with the detail
+  // rail: its onSelectHost entry point was already dead after PHNX-3594, and
+  // HostDetail was the last thing that read the fetched inventory. The extension
+  // host still answers 'fetchHostInventory'/'enrollHost'/'removeHost' for the
+  // Settings Devices surface; nothing in THIS pane listens for them any more.
 
   // Curated managed projects for the feed's linked-project lookup. Fetch on
   // mount; the host re-sends managedProjectsData after any save/delete (from the
