@@ -21,34 +21,26 @@ agents-cli owns all state and all mechanisms: sessions, devices, accounts,
 teams, watchdog, routines, lifecycle, scheduling. This extension is a
 presentation layer. Concretely:
 
-1. **One subprocess owns live state — demand-gated, and scoped to open tabs.**
-   The elected leader window spawns exactly one
-   `agents sessions watch --json --local` child (`src/monitor/sessionCliStream.ts`),
-   plus one `-D <device>` child per REMOTE device that owns an open agent tab in
-   any window — keyed by device, reaped when that device loses its last tab. All
-   of them run only while a window actually needs the stream: a visible Fleet
-   dashboard or active-session sidebar, or a tracked-but-unresolved agent tab
-   (`src/monitor/sessionDemand.ts` → `MonitorHost`, PHNX-3939). When no window
-   demands it, every producer is torn down. Each window and tab reads the leader's
-   broadcast projection (`src/core/sessionPresentationStore.ts`). No other code
-   may poll session state.
+1. **One subprocess owns live state — demand-gated.** The elected leader window
+   spawns exactly one `agents feed watch --json` child
+   (`src/monitor/sessionCliStream.ts`), and only while a window actually needs it:
+   a visible Fleet dashboard or active-session sidebar, or a tracked-but-unresolved
+   agent tab (`src/monitor/sessionDemand.ts` → `MonitorHost`, PHNX-3939). When no
+   window demands it the producer is torn down; this is why the always-on version
+   was removed in e0f4831 (it pinned ~31% CPU + leaked ssh fan-out feeding a view
+   nobody was looking at). Every window and tab reads its broadcast projection
+   (`src/core/sessionPresentationStore.ts`). No other code may poll session state.
 
-   Both bounds exist because of the same incident. e0f4831 deleted this producer
-   because it ran `agents feed watch --json` always-on: ~31% CPU and a leaked ssh
-   fan-out feeding a view nobody was looking at. The demand gate fixes *when* it
-   runs; the command fixes *what it costs while running*.
-   `sessions watch --json --local` is a journal tail — one `stat` per 250 ms and a
-   read of only the appended bytes. `feed watch` wraps that same tail and adds a
-   500 ms loop that re-reads every session file on disk (63 MB here) plus a `gh`
-   PR reconcile (agents-cli `feed/watch.ts:85-133`). Never put `feed` back in these
-   spawn args; `sessionCliStream.transport.test.ts` asserts it.
-
-   The trade the command makes, stated plainly: `feed watch` is the ONLY source of
-   attention (`attention.*`) and activity (`activity.append`) facts. On
-   `sessions watch` the store still understands them and
-   `adaptSessionWatchEnvelope` still passes them through — nothing is filtered —
-   but nothing produces them, so the Fleet "Needs you" lane and activity feed are
-   empty. Switching back is one line in `sessionWatchArgs`.
+   Switching this to the cheaper `agents sessions watch --json --local` journal
+   tail is tempting and was planned (PHNX-3939), but it is NOT a drop-in and must
+   not be done piecemeal. `feed watch` wraps that same tail and adds the two things
+   nothing else produces (agents-cli `feed/watch.ts:85-133`): `attention.*`, which
+   is the ONLY input to the Fleet needs-you lane (`floorModel.ts:173` — "the CLI
+   decides needs-you, the ext no longer re-derives it"), and `activity.append`.
+   Dropping to `--local` also drops every remote session from the roster unless
+   something replaces the fleet fan-out, and `agents sessions watch` declares no
+   `-D` option to replace it with (`cli/src/commands/sessions-watch.ts:7-11`;
+   its action ignores `optsWithGlobals().device`). Land the CLI side first.
 
    If a field you need is missing from the stream, add it to the CLI's
    `SessionWatchRow` (backfill from the index, the way `version` landed) — do

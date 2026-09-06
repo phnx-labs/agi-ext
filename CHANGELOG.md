@@ -35,27 +35,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - **The Active Terminal sidebar is the ONE session preview, and it finally has
   data (PHNX-3939).** Three changes that only make sense together.
 
-  *The stream runs the cheap command, scoped to open tabs.* Deleting the producer
-  in 0.9.361 also deleted the sidebar's only data source, so 0.9.363's
-  Goal/Progress/Checklist cards were built on a store nothing wrote to and the
-  panel rendered a header and "No checklist yet" forever. The demand-gated producer
-  above fixes *when* it runs; this fixes what it costs while running. It is now
-  `agents sessions watch --json --local` — a journal tail, one `stat` per 250 ms,
-  reading only the appended bytes — instead of `feed watch`, which wraps that same
-  tail and adds a 500 ms re-read of every session file on disk plus a `gh` PR
-  reconcile. Remote devices get one `-D <device>` child EACH, ONLY while they own
-  an open agent tab, keyed by device and reaped with the last tab, so the
-  fleet-wide fan-out never returns. Child stderr goes to a new **Agents: Monitor**
-  output channel instead of `/dev/null`, on its own diagnostics path so ordinary
-  chatter is never reported as a fault. A test asserts the spawn args and that
-  `feed` never appears in them.
-
-  *The trade this makes, stated plainly:* `feed watch` is the only source of
-  attention (`attention.*`) and activity (`activity.append`) facts. The store still
-  understands them and the envelope adapter still passes them through — nothing is
-  filtered — but on `sessions watch` nothing produces them, so the Fleet
-  **Needs you** lane and the activity feed are empty. Reverting is one line in
-  `sessionWatchArgs`.
+  *The cards finally have data.* Deleting the producer in 0.9.361 also deleted the
+  sidebar's only data source, so 0.9.363's Goal/Progress/Checklist cards were built
+  on a store nothing wrote to and the panel rendered a header and "No checklist
+  yet" forever. The demand-gated producer restored above is what feeds them; every
+  card below is a synchronous read of that warm store, with no fetch on tab switch.
 
   *One preview, two triggers.* The sidebar's subject is the last of {the focused
   agent terminal, a clicked Fleet row}. A session with no tab in this window still

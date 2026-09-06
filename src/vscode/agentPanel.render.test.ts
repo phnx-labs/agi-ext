@@ -260,7 +260,7 @@ test('renderTimelineCard says the stream is not running instead of faking an emp
   expect(html).toContain('Waiting for the session stream…');
   expect(html).toContain('this machine');
   // It names the exact command it expects, so the state is diagnosable.
-  expect(html).toContain('agents sessions watch --json --local');
+  expect(html).toContain('agents feed watch --json');
   expect(html).not.toContain('No checklist yet');
 
   const remote = cards.renderTimelineCard({ streamDegraded: true, streamScope: 'yosemite-m2' });
