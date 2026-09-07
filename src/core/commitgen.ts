@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { resolveAgentsBin, bootstrapPath } from './agentsBin';
+import { killProcessTree } from './processTree';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_MESSAGE_CHARS = 200;
@@ -27,14 +28,21 @@ export async function generateCommitMessageWithClaude(
     const child = spawn(
       bin,
       ['run', 'claude', prompt, '--mode', 'plan', '--model', 'haiku', '--quiet'],
-      { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PATH: runPath } }
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // Own its POSIX process group so a runaway grandchild (the 1.22.85
+        // fork-bomb incident) is reclaimed by killProcessTree below instead
+        // of orphaned when we kill only this direct pid.
+        detached: process.platform !== 'win32',
+        env: { ...process.env, PATH: runPath },
+      }
     );
 
     const finish = (result: string | null) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timer);
-      try { child.kill(); } catch { /* ignore */ }
+      killProcessTree(child);
       resolve(result);
     };
 

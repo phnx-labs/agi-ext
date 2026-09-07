@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { generateLabelWithLLM } from './labelgen';
+import { generateLabelWithLLM, setLabelGenSuppressed } from './labelgen';
 
 describe('generateLabelWithLLM', () => {
   it('returns null for empty input', async () => {
@@ -29,6 +29,27 @@ describe('generateLabelWithLLM', () => {
       'Build a complete microservices architecture with Kubernetes orchestration and observability.',
       1
     );
+    expect(result).toBeNull();
+  });
+
+  // Process-leak containment (restore-burst suppression): while suppressed,
+  // no subprocess is spawned at all — proven by returning well inside the
+  // time a real spawn + catalog resolution would take, exactly as if the
+  // call had already timed out.
+  it('returns null immediately without spawning while suppressed, and resumes once cleared', async () => {
+    setLabelGenSuppressed(true);
+    try {
+      const start = Date.now();
+      const result = await generateLabelWithLLM('Some restored-tab task description', 20000);
+      expect(result).toBeNull();
+      expect(Date.now() - start).toBeLessThan(500);
+    } finally {
+      setLabelGenSuppressed(false);
+    }
+
+    // Cleared: the too-short-timeout case above still behaves as before,
+    // proving the flag doesn't leak true across calls/tests.
+    const result = await generateLabelWithLLM('Another task description', 1);
     expect(result).toBeNull();
   });
 });

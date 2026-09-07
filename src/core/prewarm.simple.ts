@@ -4,6 +4,7 @@
 
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { killProcessTree } from './processTree';
 
 /**
  * Generate a session ID for Claude (no prewarming needed)
@@ -46,6 +47,10 @@ async function runCommand(
       cwd,
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Own its POSIX process group so a runaway grandchild is reclaimed by
+      // killProcessTree below instead of orphaned when we kill only this
+      // direct pid (the 1.22.85 fork-bomb incident).
+      detached: process.platform !== 'win32',
     });
 
     const finish = (value: string | null) => {
@@ -72,12 +77,7 @@ async function runCommand(
 
     setTimeout(() => {
       if (!resolved) {
-        if (!proc.killed) {
-          proc.kill('SIGTERM');
-          setTimeout(() => {
-            if (!proc.killed) proc.kill('SIGKILL');
-          }, 500);
-        }
+        if (!proc.killed) killProcessTree(proc);
         finish(null);
       }
     }, timeoutMs);

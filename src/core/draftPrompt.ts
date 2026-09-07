@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { resolveAgentsBin, bootstrapPath } from './agentsBin';
+import { killProcessTree } from './processTree';
 
 // Draft a dispatch prompt from one or more attached tickets, so the user doesn't
 // hand-write the agent's instructions. Mirrors labelgen.ts: spawn a headless
@@ -97,14 +98,21 @@ export async function draftDispatchPrompt(
     const child = spawn(
       bin,
       ['run', 'claude', prompt, '--mode', 'plan'],
-      { stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, PATH: runPath } },
+      {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        // Own its POSIX process group so a runaway grandchild (the 1.22.85
+        // fork-bomb incident) is reclaimed by killProcessTree below instead
+        // of orphaned when we kill only this direct pid.
+        detached: process.platform !== 'win32',
+        env: { ...process.env, PATH: runPath },
+      },
     );
 
     const finish = (result: string | null) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timer);
-      try { child.kill(); } catch { /* ignore */ }
+      killProcessTree(child);
       resolve(result);
     };
 
