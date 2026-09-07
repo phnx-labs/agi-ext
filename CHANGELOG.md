@@ -4,6 +4,35 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.367] - 2026-09-07
+
+- **Contain process leaks that could orphan a fork-bombed subtree and crash the
+  host.** In the agents-cli 1.22.85 incident, a spawned `agents` child
+  fork-bombed `secrets __serve`; every spot in the extension that spawns a
+  killable `agents`/CLI child killed only the direct pid, so the runaway
+  grandchildren were orphaned instead of reaped — swap exhaustion, then a Mac
+  crash. Three independent fixes, from the same crash-risk audit:
+  - **Process-group kill.** `labelgen.ts`, `commitgen.ts`, `draftPrompt.ts` and
+    `prewarm.simple.ts` now spawn their killable child detached (its own POSIX
+    process-group leader) and reap through a shared `killProcessTree` helper
+    (`src/core/processTree.ts`, SIGTERM then SIGKILL on the whole group) instead
+    of `child.kill()` on the direct pid alone.
+  - **Circuit-breaker the feed-watch respawn.** The elected stream leader's
+    `agents feed watch` child already backed off exponentially to a 30s cap
+    (PHNX-3818), but still respawned forever. It now trips a breaker and stops
+    respawning — with a loud, actionable error (`agents doctor` / `agents
+    upgrade`) — after 5 consecutive crashes within 3s of starting; a single
+    valid protocol event resets the streak, so a merely-flaky child never trips
+    it. A stop/start cycle (demand dropping to zero and back) gives a tripped
+    breaker a fresh slate.
+  - **Don't pile label-gen onto a restore burst.** Restoring a crash's persisted
+    tabs already fans out one resume per tab (PHNX-2477); each restored tab also
+    used to arm a headless `agents run claude` label-gen call immediately,
+    multiplying the CLI-spawn fan during the most fragile boot window. Label-gen
+    is now suppressed for the duration of the restore batch — each tab still
+    gets a label via the existing first-N-words fallback — and resumes normally
+    once the batch finishes.
+
 ## [0.9.366] - 2026-09-06
 
 - **The Active Terminal sidebar is the ONE session preview, and it finally has

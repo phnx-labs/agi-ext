@@ -79,7 +79,7 @@ import {
   prefixToAgentType,
   SessionAgentType
 } from '../core/utils';
-import { generateLabelWithLLM } from '../core/labelgen';
+import { generateLabelWithLLM, setLabelGenSuppressed } from '../core/labelgen';
 import { readClaudeSessionName, readClaudeSessionNameInfo } from '../core/sessionName';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -5342,10 +5342,25 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     }
   };
 
-  await runStaggered(toRestore, restoreOne, {
-    concurrency: RESTORE_MAX_CONCURRENCY,
-    staggerMs: RESTORE_STAGGER_MS,
-  });
+  // Process-leak containment: a restore burst already fans out one resume
+  // per tab (runStaggered above). Each restored tab also arms an auto-label
+  // poller (startAutoLabelPollerForTerminal below), which fires immediately
+  // and would stack a full headless `agents run claude` label-gen subprocess
+  // per tab on top of that resume fan — exactly the kind of CLI-spawn
+  // multiplier that turned a single fork-bombing child into a swap-exhausting
+  // crash in the 1.22.85 incident. Suppress label-gen spawns for the duration
+  // of the batch; each tab still gets a label via the existing first-N-words
+  // fallback (the same path a real LLM timeout already takes), and the
+  // normal (non-restore) labeling path is unaffected.
+  setLabelGenSuppressed(true);
+  try {
+    await runStaggered(toRestore, restoreOne, {
+      concurrency: RESTORE_MAX_CONCURRENCY,
+      staggerMs: RESTORE_STAGGER_MS,
+    });
+  } finally {
+    setLabelGenSuppressed(false);
+  }
 
   terminals.clearPersistedSessions(workspacePath);
   console.log(`[RESTORE] Restored ${toRestore.length} agent terminal(s)`);

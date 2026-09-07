@@ -139,12 +139,32 @@ export class SessionCliStream {
   private static readonly MAX_RESTART_MS = 30_000;
   /** Cap retained stderr so a chatty/looping child can't grow memory unbounded. */
   private static readonly STDERR_CAP = 8 * 1024;
+  /**
+   * Circuit breaker on top of the backoff above. The backoff alone still
+   * respawns forever — at 30s apart, but forever — so a durably broken
+   * `agents` install (the fork-bombed-`secrets __serve` shape from the
+   * 1.22.85 incident) drips a spawn every 30s for the life of the window. If
+   * the child exits within IMMEDIATE_FAILURE_WINDOW_MS of starting
+   * BREAKER_TRIP_THRESHOLD times in a row, stop respawning entirely and fail
+   * loud instead. A valid protocol event resets the counter (below, beside
+   * the existing restartAttempts reset) — a child that is genuinely healthy
+   * for a while never trips it.
+   */
+  private static readonly IMMEDIATE_FAILURE_WINDOW_MS = 3_000;
+  private static readonly BREAKER_TRIP_THRESHOLD = 5;
+  private consecutiveImmediateFailures = 0;
+  private breakerOpen = false;
 
   constructor(private readonly options: SessionCliStreamOptions) {}
 
   /** True while the stream intends to run (started, not stopped). */
   get running(): boolean {
     return this.wantRunning;
+  }
+
+  /** True once the circuit breaker has tripped and stopped auto-respawning. */
+  get breakerTripped(): boolean {
+    return this.breakerOpen;
   }
 
   start(): void {
@@ -193,6 +213,7 @@ export class SessionCliStream {
 
   private attach(child: ChildProcessWithoutNullStreams, gen: number): void {
     this.child = child;
+    const startedAt = Date.now();
     let settled = false;
     let resolveExit!: () => void;
     let rejectExit!: (error: unknown) => void;
@@ -209,8 +230,10 @@ export class SessionCliStream {
         const event = JSON.parse(line) as SessionCliEvent;
         if ((event?.v === 1 || event?.version === 1) && typeof event.streamId === 'string'
           && Number.isInteger(event.sequence) && typeof event.type === 'string') {
-          // A valid event proves this child is healthy — reset the backoff.
+          // A valid event proves this child is healthy — reset the backoff
+          // and the circuit breaker's failure streak.
           this.restartAttempts = 0;
+          this.consecutiveImmediateFailures = 0;
           this.options.emit(event);
         }
       } catch {
@@ -237,7 +260,27 @@ export class SessionCliStream {
       resolveExit();
       // Only the current, still-wanted generation restarts — a stopped or
       // superseded child never resurrects itself.
-      if (this.wantRunning && isCurrent) this.scheduleRestart();
+      if (this.wantRunning && isCurrent) {
+        // Circuit breaker: a child that exits within IMMEDIATE_FAILURE_WINDOW_MS
+        // of starting is crash-looping, not merely unlucky. The backoff above
+        // still lets that repeat forever (30s apart, forever); after
+        // BREAKER_TRIP_THRESHOLD in a row, stop respawning and fail loud
+        // instead of drip-spawning a broken `agents` install forever.
+        if (Date.now() - startedAt < SessionCliStream.IMMEDIATE_FAILURE_WINDOW_MS) {
+          this.consecutiveImmediateFailures += 1;
+          if (this.consecutiveImmediateFailures >= SessionCliStream.BREAKER_TRIP_THRESHOLD) {
+            this.breakerOpen = true;
+            this.options.onError?.(
+              `agents feed watch crashed ${this.consecutiveImmediateFailures} times in a row within ` +
+              `${SessionCliStream.IMMEDIATE_FAILURE_WINDOW_MS}ms of starting — giving up on the session ` +
+              'stream. Run `agents doctor` to check the install, or `agents upgrade` to update the CLI, ' +
+              'then reopen the Fleet dashboard or a session sidebar to retry.'
+            );
+            return;
+          }
+        }
+        this.scheduleRestart();
+      }
     };
     this.stopChild = () => {
       if (cleanup) return;
@@ -278,6 +321,11 @@ export class SessionCliStream {
   async stop(): Promise<void> {
     this.wantRunning = false;
     this.restartAttempts = 0;
+    // A stop/start cycle is a deliberate lifecycle transition (demand dropped
+    // to zero and came back) — give a tripped breaker a fresh slate rather
+    // than leaving the stream permanently wedged for the rest of the window.
+    this.consecutiveImmediateFailures = 0;
+    this.breakerOpen = false;
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = undefined;

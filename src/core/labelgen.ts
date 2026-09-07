@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { resolveAgentsBin, bootstrapPath } from './agentsBin';
 import { createConcurrencyLimiter } from './concurrencyLimiter';
+import { killProcessTree } from './processTree';
 
 const MAX_INPUT_CHARS = 4000;
 const MAX_LABEL_CHARS = 50;
@@ -19,6 +20,19 @@ const labelGenLimiter = createConcurrencyLimiter(MAX_CONCURRENT_LABEL_GENS);
 
 let fastModelCache: Promise<string> | null = null;
 
+// Process-leak containment: while true, generateLabelWithLLM returns null
+// (exactly its timeout outcome) instead of spawning. Set around a restore
+// burst (`restoreAgentTerminals`'s runStaggered), which already fans out one
+// resume per tab — stacking a full headless `agents run claude` label-gen
+// call per tab on top multiplies the CLI-spawn fan during the most fragile
+// post-crash boot window. Callers still get a label: the existing
+// first-N-words fallback (already exercised on a real timeout) takes over.
+let labelGenSuppressed = false;
+
+export function setLabelGenSuppressed(suppressed: boolean): void {
+  labelGenSuppressed = suppressed;
+}
+
 export async function generateLabelWithLLM(
   text: string | undefined,
   timeoutMs: number = DEFAULT_TIMEOUT_MS
@@ -26,6 +40,7 @@ export async function generateLabelWithLLM(
   if (!text) return null;
   const trimmed = text.trim();
   if (!trimmed) return null;
+  if (labelGenSuppressed) return null;
 
   const input = trimmed.length > MAX_INPUT_CHARS ? trimmed.slice(0, MAX_INPUT_CHARS) : trimmed;
   const prompt =
@@ -59,14 +74,21 @@ export async function generateLabelWithLLM(
     const child = spawn(
       bin,
       ['run', 'claude', prompt, '--mode', 'plan', '--model', model],
-      { stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, PATH: runPath } }
+      {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        // Own its POSIX process group so a runaway grandchild (the 1.22.85
+        // fork-bomb incident) is reclaimed by killProcessTree below instead
+        // of orphaned when we kill only this direct pid.
+        detached: process.platform !== 'win32',
+        env: { ...process.env, PATH: runPath },
+      }
     );
 
     const finish = (result: string | null) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timer);
-      try { child.kill(); } catch { /* ignore */ }
+      killProcessTree(child);
       resolve(result);
     };
 
@@ -104,6 +126,7 @@ function queryFastModel(): Promise<string> {
 
     const child = spawn(bin, ['models', 'claude', '--json'], {
       stdio: ['ignore', 'pipe', 'ignore'],
+      detached: process.platform !== 'win32',
       env: { ...process.env, PATH: `${bootstrapPath(bin)}:${process.env.PATH ?? ''}` },
     });
 
@@ -111,7 +134,7 @@ function queryFastModel(): Promise<string> {
       if (resolved) return;
       resolved = true;
       clearTimeout(timer);
-      try { child.kill(); } catch { /* ignore */ }
+      killProcessTree(child);
       if (result) resolve(result); else reject(new Error('catalog unavailable'));
     };
 

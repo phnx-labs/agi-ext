@@ -102,6 +102,89 @@ test.skipIf(process.platform === 'win32')('SIGTERM-ignoring Node child is SIGKIL
   expect(children.every((child) => !alive(child.pid))).toBe(true);
 });
 
+// Circuit breaker (process-leak containment): the exponential backoff alone
+// still respawns forever — 30s apart, but forever — so a durably broken
+// `agents` install (the fork-bombed-`secrets __serve` shape from the
+// 1.22.85 incident) would drip a spawn every 30s for the life of the window.
+test.skipIf(process.platform === 'win32')(
+  'circuit breaker trips after 5 consecutive immediate crashes and stops respawning',
+  async () => {
+    const errors: string[] = [];
+    let spawnCount = 0;
+    const stream = new SessionCliStream({
+      emit: () => {}, onError: (message) => errors.push(message), restartMs: 5,
+      spawnWatch: () => {
+        spawnCount += 1;
+        const child = spawn(process.execPath, ['-e', 'process.exit(1)'], { stdio: ['pipe', 'pipe', 'pipe'] });
+        children.push(child);
+        return child;
+      },
+    });
+    streams.push(stream);
+    stream.start();
+    await until(() => stream.breakerTripped);
+    expect(errors.some((message) => message.includes('giving up') && /doctor|upgrade/i.test(message))).toBe(true);
+    const countAtTrip = spawnCount;
+    await delay(200); // long enough for another restart if the breaker failed to hold
+    expect(spawnCount).toBe(countAtTrip);
+  },
+);
+
+test.skipIf(process.platform === 'win32')(
+  'a healthy protocol event resets the immediate-failure counter so a flaky-but-communicating child never trips',
+  async () => {
+    const errors: string[] = [];
+    const events: unknown[] = [];
+    let spawnCount = 0;
+    const validEvent = JSON.stringify({ v: 1, streamId: 'x', sequence: 1, type: 'reset', scope: 's', agents: [], attention: [] });
+    const stream = new SessionCliStream({
+      emit: (event) => events.push(event), onError: (message) => errors.push(message), restartMs: 5,
+      spawnWatch: () => {
+        spawnCount += 1;
+        // Emits one valid event (resets the breaker's failure streak) before
+        // exiting immediately — unhealthy, but never 5-in-a-row unhealthy.
+        const child = spawn(process.execPath, ['-e', `console.log(${JSON.stringify(validEvent)}); process.exit(1);`],
+          { stdio: ['pipe', 'pipe', 'pipe'] });
+        children.push(child);
+        return child;
+      },
+    });
+    streams.push(stream);
+    stream.start();
+    await until(() => spawnCount >= 8);
+    await until(() => events.length >= spawnCount - 1);
+    expect(stream.breakerTripped).toBe(false);
+    expect(errors.some((message) => message.includes('giving up'))).toBe(false);
+    await stream.stop();
+  },
+);
+
+test.skipIf(process.platform === 'win32')(
+  'stop then start gives a tripped breaker a fresh slate',
+  async () => {
+    let spawnCount = 0;
+    const stream = new SessionCliStream({
+      emit: () => {}, onError: () => {}, restartMs: 5,
+      spawnWatch: () => {
+        spawnCount += 1;
+        const child = spawn(process.execPath, ['-e', 'process.exit(1)'], { stdio: ['pipe', 'pipe', 'pipe'] });
+        children.push(child);
+        return child;
+      },
+    });
+    streams.push(stream);
+    stream.start();
+    await until(() => stream.breakerTripped);
+    await stream.stop();
+    expect(stream.breakerTripped).toBe(false);
+    const countAfterStop = spawnCount;
+    stream.start();
+    await until(() => spawnCount > countAfterStop);
+    expect(spawnCount).toBeGreaterThan(countAfterStop);
+    await stream.stop();
+  },
+);
+
 // Observe actual OS state: a zombie has exited but can only be reaped by its
 // new parent. A Linux container's PID 1 may not reap adopted descendants.
 function executing(pid: number): boolean {
