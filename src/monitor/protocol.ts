@@ -211,6 +211,7 @@ export function isReadinessFact(
 }
 
 /** Narrow a raw broadcast event to a shell-adoption fact. */
+/** @public reached as proto.isShellAdoptionFact via a namespace import in extension.ts, which knip cannot see */
 export function isShellAdoptionFact(
   event: MonitorEvent,
 ): event is MonitorEvent & { payload: ShellAdoptionFactPayload } {

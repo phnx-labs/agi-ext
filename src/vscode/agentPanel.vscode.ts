@@ -2761,6 +2761,7 @@ const STREAM_REFRESH_KEY = 'agentPanel';
 // only when the daemon says something actually changed, trailing-coalesced so
 // a burst of facts (many tool calls in a row) collapses into one rebuild plus
 // exactly one catch-up run for whatever arrived mid-flight.
+/** @public loaded with require('./agentPanel.vscode') in extension.ts, which knip cannot see */
 export function notifyAgentPanelSessionUpdate(): void {
   if (!activeProvider) return;
   void coalesceTrailing(streamRefreshCoalesce, STREAM_REFRESH_KEY, () => activeProvider!.refreshIfVisible());

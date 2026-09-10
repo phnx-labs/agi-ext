@@ -1036,7 +1036,7 @@ async function openFileOrDiffInEditor(
 }
 
 // Check which agents are installed
-export async function checkInstalledAgents(): Promise<Record<string, boolean>> {
+async function checkInstalledAgents(): Promise<Record<string, boolean>> {
   return checkInstalledAgentsViaCli();
 }
 

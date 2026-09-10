@@ -120,6 +120,7 @@ function hashEntries(entries: LiveTerminal[]): string {
 // is unchanged AND a keepalive isn't due — the previous implementation did
 // a sync read+write of the whole registry on every terminal event AND on a
 // 15s interval, blocking the extension-host thread for no information gain.
+/** @public called through the dynamic import in extension.ts, which knip cannot see */
 export async function publishLiveTerminals(terminals: LiveTerminal[]): Promise<void> {
   const hash = hashEntries(terminals);
   const now = Date.now();
@@ -171,6 +172,7 @@ export function readLiveTerminals(): LiveTerminal[] {
 
 // Scan vscode.window.terminals and build a LiveTerminal array for this window.
 // Returns [] if no agent terminals are open here.
+/** @public called through the dynamic import in extension.ts, which knip cannot see */
 export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
   const out: LiveTerminal[] = [];
   // Flatten the editor tab groups ONCE per snapshot so resolveTabIndex is a pure
