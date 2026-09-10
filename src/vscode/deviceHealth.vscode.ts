@@ -122,7 +122,7 @@ export async function probeReachable(host: string): Promise<boolean> {
   }
 }
 
-export async function fetchDeviceStats(
+async function fetchDeviceStats(
   host: string,
   opts: { isLocal: boolean },
 ): Promise<DeviceStats> {
@@ -155,7 +155,7 @@ async function fetchDeviceStatsOnce(
   }
 }
 
-export async function countRunningAgents(host: string, opts: { isLocal: boolean }): Promise<number | null> {
+async function countRunningAgents(host: string, opts: { isLocal: boolean }): Promise<number | null> {
   return cachedInFlight(agentCountStore, host, CACHE_TTL_MS, () => countRunningAgentsOnce(host, opts));
 }
 

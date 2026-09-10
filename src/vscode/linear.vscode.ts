@@ -39,7 +39,7 @@ interface LinearFetchResult {
   cycleInfo: CycleInfo | null;
 }
 
-export async function fetchLinearTasks(context: vscode.ExtensionContext): Promise<LinearFetchResult> {
+async function fetchLinearTasks(context: vscode.ExtensionContext): Promise<LinearFetchResult> {
   if (!(await isLinearAvailable(context))) return { tasks: [], cycleInfo: null };
 
   try {

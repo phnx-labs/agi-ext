@@ -6,13 +6,10 @@
         "src/vscode/extension.ts",
         "src/mcp/watchdog-bridge.ts",
         "src/mcp/watchdog-server.ts",
-        "app/main.ts",
-        "app/preload.ts",
         "scripts/*.ts"
       ],
       "project": [
         "src/**/*.ts",
-        "app/**/*.ts",
         "scripts/**/*.ts"
       ],
       "ignore": [
@@ -28,6 +25,11 @@
     "ui": {
       "project": [
         "**/*.{ts,tsx}"
+      ],
+      "ignoreDependencies": [
+        "autoprefixer",
+        "postcss",
+        "tailwindcss"
       ]
     }
   }

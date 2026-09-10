@@ -604,7 +604,7 @@ export const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
 }
 
 /** Prototype: factory-floor.html:396. */
-export const PRI_RANK: Record<TicketPriority, number> = {
+const PRI_RANK: Record<TicketPriority, number> = {
   urgent: 0,
   high: 1,
   med: 2,

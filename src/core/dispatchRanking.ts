@@ -17,7 +17,7 @@ import type { ManagedProject } from './managedProjects';
 
 // ---- mirrored contract types (dispatch.types.ts) ---------------------------
 
-export type HostKind = 'local' | 'remote' | 'cloud';
+type HostKind = 'local' | 'remote' | 'cloud';
 
 export interface InstalledAgent {
   id: string;

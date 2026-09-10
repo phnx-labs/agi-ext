@@ -1,8 +1,8 @@
 import type { AgentDetail, TaskSummary, TerminalDetail } from '../../types'
 
 // A "Swarm" in Mission Control is a TaskSummary from agents-cli teams.
-export type Swarm = TaskSummary
-export type Terminal = TerminalDetail
+type Swarm = TaskSummary
+type Terminal = TerminalDetail
 
 export function taskNameToTitle(taskName: string): string {
   // task_name is "task-id:description" or just a description

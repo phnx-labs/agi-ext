@@ -32,7 +32,7 @@ function getThemeMode(): ThemeMode {
 /**
  * Check if current theme is light.
  */
-export function isLightTheme(): boolean {
+function isLightTheme(): boolean {
   return getThemeMode() === 'light';
 }
 
