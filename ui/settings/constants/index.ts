@@ -8,28 +8,16 @@ import type {
   BuiltInAgentConfig,
 } from '../types'
 
-import { BUILT_IN_AGENTS, CLI_AGENT_META, CLI_AGENT_IDS, type CliAgentId } from '@shared/agents'
+import { BUILT_IN_AGENTS, CLI_AGENT_META, type CliAgentId } from '@shared/agents'
 
-// All swarm-capable agents — derived from BUILT_IN_AGENTS (presented agents).
-// Filters to the subset that matches SwarmAgentType union (the four agents the
-// UI's swarm settings panel offers).
-export const ALL_SWARM_AGENTS: SwarmAgentType[] = BUILT_IN_AGENTS
-  .filter(a => a.key !== 'shell' && !isNonSwarmAgent(a.key))
-  .map(a => a.key as SwarmAgentType)
+// The harnesses the swarm settings panel offers. This is the one hand-written
+// list in the UI; ids must be CLI ids (drift.test.ts checks) and labels come
+// from the CLI catalog.
+export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex', 'gemini', 'opencode']
 
-// Swarm agent display labels — derived from CLI_AGENT_META for each swarm agent.
-export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = {
-  claude: CLI_AGENT_META.claude.name,
-  codex: CLI_AGENT_META.codex.name,
-  gemini: CLI_AGENT_META.gemini.name,
-  opencode: CLI_AGENT_META.opencode.name,
-}
-
-// Helper to check if an agent key should not be in SwarmAgentType.
-// Extend this if the SwarmAgentType union changes.
-function isNonSwarmAgent(key: string): boolean {
-  return !['claude', 'codex', 'gemini', 'opencode'].includes(key)
-}
+export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = Object.fromEntries(
+  ALL_SWARM_AGENTS.map((id) => [id, CLI_AGENT_META[id].name]),
+) as Record<SwarmAgentType, string>
 
 // Default settings
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
