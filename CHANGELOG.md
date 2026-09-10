@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.369] - 2026-09-10
 
 - **Fix: reused agent terminals follow their new session (PHNX-3939).** Exiting
   session A and starting session B in the same still-focused Agents terminal no
