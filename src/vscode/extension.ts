@@ -1588,9 +1588,14 @@ export async function activate(context: vscode.ExtensionContext) {
   // Per-harness launch commands — every one is a thin route into launchAgent.
   // For each non-shell agent:
   //   New <Harness>                 -> configured device target + balanced account/version
-  //   New <Harness> (Pick Host)     -> device picker, then account/version picker
+  //   New <Harness> (Pick Host)     -> device picker, then balanced account on it
   //   New <Harness> (Auto)          -> automatic device + balanced account/version
   //   New <Harness> (Pick Project)  -> project quickpick, then automatic device + balanced
+  //   New <Harness> (Pick Account)  -> account picker (trailing `@`) on --device auto —
+  //                                    the orthogonal twin of Pick Host. Per-harness only:
+  //                                    `run auto@` has no concrete harness to pick an
+  //                                    account for and the CLI refuses it, so there is no
+  //                                    generic device-agnostic Pick Account below.
   for (const def of BUILT_IN_AGENTS) {
     if (def.key === 'shell') {
       // Shell is a plain terminal — no balancing, no host offload.

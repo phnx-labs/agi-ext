@@ -52,9 +52,16 @@ describe('launchOptsForHarnessCommand', () => {
     expect(launchOptsForHarnessCommand('default', 'ask')).toEqual({ pickHost: true });
   });
 
-  it('Pick Host asks for both layers while Auto asks for neither', () => {
-    expect(launchOptsForHarnessCommand('pick-host')).toEqual({ pickHost: true, accountPicker: true });
+  it('Pick Host pins the device and balances the account, while Auto pins neither', () => {
+    // Pick Host no longer prompts for an account: it pins the device and lets the
+    // CLI balance the account on it (`--strategy balanced`, added by the builder
+    // when no accountPicker is set). Pick Account is the orthogonal command.
+    expect(launchOptsForHarnessCommand('pick-host')).toEqual({ pickHost: true });
     expect(launchOptsForHarnessCommand('auto')).toEqual({});
+  });
+
+  it('Pick Account pins the account and auto-picks the device', () => {
+    expect(launchOptsForHarnessCommand('pick-account')).toEqual({ accountPicker: true });
   });
 
   it('Pick Project asks only for the project — never a host, so placement stays automatic', () => {
@@ -65,7 +72,7 @@ describe('launchOptsForHarnessCommand', () => {
 describe('registered harness launch commands', () => {
   const RUNNERS = BUILT_IN_AGENTS.filter(({ key }) => key !== 'shell' && key !== 'gemini');
 
-  it('registers the default, Pick Host, Auto, and Pick Project command ids for every active harness', () => {
+  it('registers the default, Pick Host, Auto, Pick Project, and Pick Account command ids for every active harness', () => {
     for (const agent of RUNNERS) {
       expect(harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto').map((entry) => ({
         commandId: entry.commandId,
@@ -75,6 +82,7 @@ describe('registered harness launch commands', () => {
         { commandId: `${agent.commandId}PickHost`, variant: 'pick-host' },
         { commandId: `${agent.commandId}Auto`, variant: 'auto' },
         { commandId: `${agent.commandId}PickProject`, variant: 'pick-project' },
+        { commandId: `${agent.commandId}PickAccount`, variant: 'pick-account' },
       ]);
     }
   });
@@ -100,13 +108,34 @@ describe('registered harness launch commands', () => {
     }
   });
 
-  it('builds each Pick Host command as an explicit device followed by the account picker', () => {
+  it('builds each Pick Host command as an explicit device with a balanced account, no picker', () => {
     for (const agent of RUNNERS) {
       const [, registration] = harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto');
-      expect(buildNewAgentLaunchCommand({
+      const command = buildNewAgentLaunchCommand({
         ...registration.launchOptions(),
         host: 'worker-box',
-      })).toBe(`agents run ${agent.key}@ --interactive --device 'worker-box' --mode auto`);
+      });
+      expect(command).toBe(
+        `agents run ${agent.key} --interactive --device 'worker-box' --strategy balanced --mode auto`,
+      );
+      // Pick Host balances the account on the chosen device; the trailing `@` that
+      // would stop for an interactive account choice now belongs to Pick Account.
+      expect(command).not.toContain(`${agent.key}@`);
+    }
+  });
+
+  it('builds each Pick Account command as the account picker on an auto-picked device', () => {
+    for (const agent of RUNNERS) {
+      const [, , , , registration] = harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto');
+      // Pins the account (trailing `@` → the CLI's interactive picker) and lets the
+      // CLI auto-pick a picker-eligible device (`--device auto`). No --strategy: the
+      // picker and an automatic strategy are mutually exclusive by construction.
+      expect(registration.launchOptions()).toEqual({ agentKey: agent.key, accountPicker: true });
+      const command = buildNewAgentLaunchCommand(registration.launchOptions());
+      expect(command).toBe(
+        `agents run ${agent.key}@ --interactive --device auto --mode auto`,
+      );
+      expect(command).not.toContain('--strategy');
     }
   });
 

@@ -439,6 +439,10 @@
         "title": "Agents: New Claude (Pick Project)"
       },
       {
+        "command": "agents.newClaudePickAccount",
+        "title": "Agents: New Claude (Pick Account)"
+      },
+      {
         "command": "agents.newCodexPickHost",
         "title": "Agents: New Codex (Pick Host)",
         "icon": {
@@ -453,6 +457,10 @@
       {
         "command": "agents.newCodexPickProject",
         "title": "Agents: New Codex (Pick Project)"
+      },
+      {
+        "command": "agents.newCodexPickAccount",
+        "title": "Agents: New Codex (Pick Account)"
       },
       {
         "command": "agents.newOpenCodePickHost",
@@ -471,6 +479,10 @@
         "title": "Agents: New OpenCode (Pick Project)"
       },
       {
+        "command": "agents.newOpenCodePickAccount",
+        "title": "Agents: New OpenCode (Pick Account)"
+      },
+      {
         "command": "agents.newCursorPickHost",
         "title": "Agents: New Cursor (Pick Host)",
         "icon": {
@@ -485,6 +497,10 @@
       {
         "command": "agents.newCursorPickProject",
         "title": "Agents: New Cursor (Pick Project)"
+      },
+      {
+        "command": "agents.newCursorPickAccount",
+        "title": "Agents: New Cursor (Pick Account)"
       },
       {
         "command": "agents.newAntigravityPickHost",
@@ -503,6 +519,10 @@
         "title": "Agents: New Antigravity (Pick Project)"
       },
       {
+        "command": "agents.newAntigravityPickAccount",
+        "title": "Agents: New Antigravity (Pick Account)"
+      },
+      {
         "command": "agents.newGrokPickHost",
         "title": "Agents: New Grok (Pick Host)",
         "icon": {
@@ -517,6 +537,10 @@
       {
         "command": "agents.newGrokPickProject",
         "title": "Agents: New Grok (Pick Project)"
+      },
+      {
+        "command": "agents.newGrokPickAccount",
+        "title": "Agents: New Grok (Pick Account)"
       },
       {
         "command": "agents.newKimiPickHost",
@@ -535,6 +559,10 @@
         "title": "Agents: New Kimi (Pick Project)"
       },
       {
+        "command": "agents.newKimiPickAccount",
+        "title": "Agents: New Kimi (Pick Account)"
+      },
+      {
         "command": "agents.newDroidPickHost",
         "title": "Agents: New Droid (Pick Host)",
         "icon": {
@@ -549,6 +577,10 @@
       {
         "command": "agents.newDroidPickProject",
         "title": "Agents: New Droid (Pick Project)"
+      },
+      {
+        "command": "agents.newDroidPickAccount",
+        "title": "Agents: New Droid (Pick Account)"
       },
       {
         "command": "agents.newAgentPickHost",
