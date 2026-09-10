@@ -6,7 +6,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
-- **Fix: ordinary remote launches preserve a shared monorepo root (PHNX-3970).**
+- **Fix: ordinary launches preserve the exact workspace locally and remotely (PHNX-3970).**
   New, Auto, and Pick Host used `agents projects view <workspace>` to turn any
   containing managed-project match into `--project`, then dropped the exact
   `--cwd`. When several child projects shared one monorepo root, the lookup's
@@ -14,6 +14,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   Ordinary launches now carry the open workspace through unchanged — either the
   monorepo root or a specifically opened nested project directory. Only the
   explicit Pick Project command may replace it with a project's configured path.
+  Local, version-pinned, and queued launches now pass that cwd explicitly too;
+  legacy custom commands and shells start their terminal in the active workspace.
 
 ## [0.9.367] - 2026-09-07
 
@@ -142,7 +144,6 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   regardless of state, and kept a resolved copy — so *ask A → resolve A → ask B*
   left the card showing the stale, resolved A. Resolved attention is now dropped to
   a receipt and the join prefers the live (open, most-recent) item.
-
 
 ## [0.9.363] - 2026-09-05
 

@@ -470,6 +470,29 @@ describe('buildAgentLaunchCommand', () => {
     expect(cmd).not.toContain(" --cwd ");
   });
 
+  test('local and pinned launches retain cwd independently of device selection', () => {
+    for (const cwd of ['/tmp/monorepo', '/tmp/monorepo/apps/web']) {
+      for (const agent of ['claude', 'codex', 'grok', 'custom-runner']) {
+        for (const pinnedVersion of [undefined, '1.2.3']) {
+          const cmd = buildAgentLaunchCommand(
+            agent, null, undefined, undefined, pinnedVersion, 'balanced', undefined,
+            { local: true, cwd },
+          );
+          expect(cmd).toContain(`--cwd '${cwd}'`);
+          expect(cmd.match(/ --cwd /g)).toHaveLength(1);
+          expect(cmd).not.toContain('--device');
+          expect(cmd).not.toContain('--project');
+          if (pinnedVersion) expect(cmd).not.toContain('--strategy');
+        }
+      }
+      const pinned = buildAgentLaunchCommand(
+        'codex', null, undefined, undefined, '1.2.3', undefined, undefined, { cwd },
+      );
+      expect(pinned).toContain(`--cwd '${cwd}'`);
+      expect(pinned).not.toContain('--device');
+    }
+  });
+
   test('rejects an ambiguous remote target with both cwd forms', () => {
     expect(() => buildAgentLaunchCommand(
       'codex', null, undefined, undefined, undefined, undefined, undefined,

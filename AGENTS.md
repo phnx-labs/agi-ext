@@ -59,8 +59,11 @@ presentation layer. Concretely:
 
 Launch location follows explicit user intent. Ordinary New, Auto, and Pick Host
 commands preserve the exact active workspace as the portable `--cwd`: a
-monorepo-root workspace lands at the root remotely, while a workspace opened at
-one nested project lands in that same nested directory. Only the explicit Pick
+monorepo-root workspace lands at the root locally or remotely, while a workspace
+opened at one nested project lands in that same nested directory. Emit `--cwd`
+once independently of device selection, including local and version-pinned
+launches. Legacy and queued launches pass the active workspace too; custom
+commands and shells receive it through the terminal cwd. Only the explicit Pick
 Project command emits `--project` and lets the CLI resolve that project's
 configured path. Never derive an ordinary launch target from `agents projects
 view <cwd>`: that command is a containment attribution lookup, and a shared root
@@ -70,7 +73,6 @@ The Fleet dashboard is a LIST, not a preview: it keeps search, filters, grouping
 the row Resume button and the expand-in-place card, and it hands session preview to
 the native sidebar. It has no detail rail, no `rightOpen` layout pref and no
 per-selection `sessions preview` fetch — a row click costs zero subprocesses.
-
 
 The Sessions dashboard follows that same stream contract. Its full first-user
 request comes from `SessionWatchRow.firstUserMessage`; status filters and grouping

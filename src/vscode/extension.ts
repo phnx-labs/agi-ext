@@ -1990,7 +1990,7 @@ async function openSingleAgent(
   }
 
   // Handle session ID for supported agent types
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+  const workspaceFolder = getActiveWorkspaceFolder()?.uri.fsPath || process.cwd();
 
   const terminalId = terminals.nextId(agentConfig.prefix);
   const cwd = workspaceFolder;
@@ -2046,7 +2046,7 @@ async function openSingleAgent(
         // Ordinary launches preserve the exact workspace. Choosing a managed
         // project's defaultPath is reserved for the explicit Pick Project flow
         // in launchAgent; this legacy launch path has no project picker.
-        cwd: targetHost ? cwd : undefined,
+        cwd,
       },
     );
   }
@@ -2062,6 +2062,7 @@ async function openSingleAgent(
     location: editorLocation,
     name: title,
     env: buildAgentTerminalEnv(terminalId, sessionId, cwd, undefined, { scrubSensitive: agentKey !== 'shell', kind: agentKey === 'shell' ? 'shell' : 'agent' }),
+    cwd,
     isTransient: true
   });
 
@@ -3473,7 +3474,7 @@ export async function openSingleAgentWithQueue(
     preserveFocus: false
   };
 
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+  const workspaceFolder = getActiveWorkspaceFolder()?.uri.fsPath || process.cwd();
   const terminalId = terminals.nextId(agentConfig.prefix);
   // An explicit cwd (task dispatch resolved the task's repo to a local clone)
   // pins the terminal there; otherwise use the workspace folder.
@@ -3507,14 +3508,14 @@ export async function openSingleAgentWithQueue(
       command = buildAgentLaunchCommand(agentKey, sessionId, defaultModel, undefined, undefined, opts?.strategy, opts?.mode, {
         host: targetHost,
         local: opts?.local,
-        cwd: targetHost && !opts?.remoteCwd ? cwd : undefined,
+        cwd: opts?.remoteCwd ? undefined : cwd,
         remoteCwd: opts?.remoteCwd,
       });
     } else {
       command = buildAgentLaunchCommand(agentKey, null, defaultModel, undefined, undefined, opts?.strategy, opts?.mode, {
         host: targetHost,
         local: opts?.local,
-        cwd: targetHost && !opts?.remoteCwd ? cwd : undefined,
+        cwd: opts?.remoteCwd ? undefined : cwd,
         remoteCwd: opts?.remoteCwd,
       });
     }
@@ -3526,7 +3527,7 @@ export async function openSingleAgentWithQueue(
     location: editorLocation,
     name: title,
     env: buildAgentTerminalEnv(terminalId, sessionId, cwd),
-    cwd: opts?.cwd ? cwd : undefined,
+    cwd,
     isTransient: true
   });
 
