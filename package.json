@@ -1001,6 +1001,7 @@
     "compile:ui": "cd ui && bun run build",
     "watch": "tsc -watch -p ./",
     "package": "bun run compile && vsce package",
+    "lint:dead": "knip",
     "test": "bun test --timeout 30000",
     "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/draftPrompt.test.ts src/core/labelgen.test.ts src/core/commitgen.test.ts"
   },

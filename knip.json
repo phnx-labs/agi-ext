@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/dist/knip.json",
+  "entry": [
+    "src/vscode/extension.ts",
+    "src/mcp/watchdog-bridge.ts"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "ui/**/*.ts",
+    "ui/**/*.tsx"
+  ],
+  "ignore": [
+    "src/testing/**"
+  ],
+  "ignoreExports": [
+    "default"
+  ],
+  "ignoreBinaries": [
+    "tsc",
+    "vsce",
+    "electron-rebuild"
+  ],
+  "workspaces": {
+    "ui": {
+      "entry": "ui/index.tsx",
+      "project": "ui/**/*.{ts,tsx}",
+      "ignore": ["ui/node_modules"]
+    }
+  }
+}

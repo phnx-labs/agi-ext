@@ -2198,7 +2198,7 @@ function identityLabel(item: UnifiedAgent): IdentityLabel {
   return { text: item.terminal?.autoLabel || item.displayName || item.agentType, variant: 'plain' }
 }
 
-export function statusPhrase(item: UnifiedAgent): { word: string; tone: 'running' | 'idle' | 'failed' | 'completed' | 'waiting'; when: string } {
+function statusPhrase(item: UnifiedAgent): { word: string; tone: 'running' | 'idle' | 'failed' | 'completed' | 'waiting'; when: string } {
   if (item.status === 'failed') {
     return { word: 'Failed', tone: 'failed', when: item.timestamp ? relTime(item.timestamp) : '' }
   }

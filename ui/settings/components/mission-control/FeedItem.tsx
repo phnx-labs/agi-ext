@@ -350,7 +350,7 @@ function FeedItemImpl({ agent: a, selected, plain, error, onSelect, onOption, on
 
 // Slim per-agent "queue a follow-up task" input, shown on idle/done rows in place of the
 // old standalone NEXT-UP dispatch list. Local state so a keystroke never re-renders the feed.
-export function FollowUpBox({ onSend }: { onSend: (text: string) => void }) {
+function FollowUpBox({ onSend }: { onSend: (text: string) => void }) {
   const [text, setText] = useState('')
   const send = () => {
     const t = text.trim()
