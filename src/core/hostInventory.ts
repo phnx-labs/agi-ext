@@ -233,18 +233,18 @@ export async function enrollHost(
   opts: { target?: string; caps?: string[]; os?: string } = {},
 ): Promise<void> {
   if (!isSafeHostToken(name)) throw new Error('invalid host name');
-  let args = `hosts add ${shellArg(name)}`;
+  let args = `hosts add ${shellQuote(name)}`;
   if (opts.target) {
     if (!isSafeHostToken(opts.target)) throw new Error('invalid target');
-    args += ` ${shellArg(opts.target)}`;
+    args += ` ${shellQuote(opts.target)}`;
   }
   for (const cap of opts.caps ?? []) {
     if (!isSafeCap(cap)) throw new Error(`invalid capability: ${cap}`);
-    args += ` --cap ${shellArg(cap)}`;
+    args += ` --cap ${shellQuote(cap)}`;
   }
   if (opts.os) {
     if (!isSafeCap(opts.os)) throw new Error('invalid os');
-    args += ` --os ${shellArg(opts.os)}`;
+    args += ` --os ${shellQuote(opts.os)}`;
   }
   args += ' --no-enroll';
   await runAgents(args, { timeout: 60_000 });
@@ -254,6 +254,6 @@ export async function enrollHost(
 /** Remove an enrolled host from the registry (does not touch ~/.ssh/config). */
 export async function removeHost(name: string): Promise<void> {
   if (!isSafeHostToken(name)) throw new Error('invalid host name');
-  await runAgents(`hosts remove ${shellArg(name)}`, { timeout: 15_000 });
+  await runAgents(`hosts remove ${shellQuote(name)}`, { timeout: 15_000 });
   hostCache.delete(name);
 }

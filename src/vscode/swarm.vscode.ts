@@ -7,6 +7,7 @@ import * as fsp from 'fs/promises';
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { shellQuote } from '../core/deviceDispatchShell';
 import { readTailLines } from './sessions.vscode';
 import {
   AgentCli,
@@ -899,13 +900,12 @@ export async function fetchTasksBySession(sessionId: string): Promise<TaskSummar
   if (!sessionId) return [];
 
   const argsJson = JSON.stringify({ parent_session_id: sessionId });
-  const safeArgs = argsJson.replace(/'/g, `'\\''`);
   const agents: AgentCli[] = ['claude', 'codex', 'gemini'];
 
   for (const agent of agents) {
     try {
       const { stdout } = await execAsync(
-        `${agent} mcp call Swarm status --args '${safeArgs}'`,
+        `${agent} mcp call Swarm status --args ${shellQuote(argsJson)}`,
         { timeout: 15000 }
       );
 
