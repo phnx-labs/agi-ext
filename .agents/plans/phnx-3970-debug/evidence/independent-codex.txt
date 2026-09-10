@@ -1,0 +1,104 @@
+I’ll compare current `origin/main` with PR #57, trace the launch command, and check nearby tests and history. This will remain read-only, with source quotes for each finding.
+`origin/main` still calls `resolveProjectForCwd(cwd)` during ordinary launch (`extension.ts:527`), then uses `cwd: context.projectSlug ? undefined : context.cwd` (`launchTarget.ts:180`). I’ll check the CLI’s project resolution and cwd translation next to assess whether PR #57 covers the full path.
+PR #57 adds `const project = options.pickProject === true ? context.projectSlug : undefined` (`launchTarget.ts:170`) and emits `--cwd` in the automatic-device branch (`agents.ts:258`). Its local path needs closer inspection: cwd emission remains inside `if (host)` and `if (!host && !pinnedVersion && !local)` (`agents.ts:246,253`).
+The in-memory command check produced `--cwd '/Users/example/src/agents'` and `--cwd '/Users/example/src/agents/apps/web'` from PR #57. With `local: true`, both produced `agents run claude --interactive --strategy balanced --mode auto`, consistent with the cwd-emission guards at `agents.ts:246–258`. No harness was launched.
+**Cause: ordinary New converts workspace attribution into an explicit project destination, then discards the workspace cwd.** PR #57 corrects that remote command path, but leaves a local-workspace gap.
+
+Checked live `origin/main` at `8fc4f7c` and PR #57 at `1f54bf9`. Evidence below quotes those revisions; CLI references are current main, `c98582f`.
+
+**Launch chain**
+
+1. **Command → workspace.** [extension.ts:1617](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/vscode/extension.ts:1617):
+   ```ts
+   launchAgent(context, registration.launchOptions())),
+   ```
+   [extension.ts:503](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/vscode/extension.ts:503):
+   ```ts
+   const cwd = getActiveWorkspaceFolder()?.uri.fsPath;
+   ```
+
+2. **Workspace → inferred project.** [extension.ts:527](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/vscode/extension.ts:527):
+   ```ts
+   const projectSlug = pickedProjectSlug ?? (cwd ? await resolveProjectForCwd(cwd) : undefined);
+   ```
+   [managedProjects.ts:236–238](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/core/managedProjects.ts:236):
+   ```ts
+   const { stdout } = await runAgentsArgv(['projects', 'view', cwd, '--json']);
+   const parsed = JSON.parse(stdout) as { name?: string | null };
+   return typeof parsed.name === 'string' ? parsed.name : undefined;
+   ```
+
+3. **Containment can select a child at a shared root.** CLI [projects.ts:525](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/lib/projects.ts#L525):
+   ```ts
+   if (rootAbs) out.push({ name: def.name, abs: rootAbs, weak: narrowed });
+   ```
+   [projects.ts:565–575](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/lib/projects.ts#L565):
+   ```ts
+   if (root.length > weakLen) {
+     weakBest = name;
+     weakLen = root.length;
+   ```
+   ```ts
+   return best ?? weakBest;
+   ```
+   Equal-length weak claims cannot replace the first. The incident’s actual project definitions/order were not inspected; attribution specifically to the first `prix` definition remains unverified.
+
+4. **Inferred project → lost cwd → emitted command.** [launchTarget.ts:179–180](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/core/launchTarget.ts:179):
+   ```ts
+   project: context.projectSlug,
+   cwd: context.projectSlug ? undefined : context.cwd,
+   ```
+   [agents.ts:253–260](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/core/agents.ts:253):
+   ```ts
+   if (!host && !pinnedVersion && !local) {
+     command += ' --device auto';
+   }
+   ```
+   ```ts
+   command += ` --project ${shquote(project)}`;
+   ```
+
+5. **CLI project → configured destination.** CLI [exec.ts:557](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/commands/exec.ts#L557):
+   ```ts
+   const { cwd, extraDirs } = await resolveProjectDirs(options.project, {
+   ```
+   [project-root.ts:242](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/lib/project-root.ts#L242):
+   ```ts
+   const resolved = await resolveProjectRef(ref, opts);
+   ```
+   [project-root.ts:211](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/lib/project-root.ts#L211):
+   ```ts
+   const fromDef = resolveDefinedProjectPath(def, worktree, opts.forRemote);
+   ```
+   [projects.ts:610,366](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/lib/projects.ts#L610):
+   ```ts
+   const base = projectBasePath(def, forRemote);
+   ```
+   ```ts
+   const base = def.defaultPath ?? def.root;
+   ```
+
+**PR #57: adequate for the reported remote command, incomplete for its broader contract.**
+
+- [extension.ts:528](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/vscode/extension.ts#L528): `const projectSlug = pickedProjectSlug;`
+- [launchTarget.ts:170,184](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/core/launchTarget.ts#L170): `const project = options.pickProject === true ? context.projectSlug : undefined;` and `cwd: project ? undefined : context.cwd,`
+- [agents.ts:258](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/core/agents.ts#L258): ``if (cwd) command += ` --cwd ${shquote(cwd)}`;``
+
+These preserve both root and explicitly opened child paths as CLI input. CLI [exec.ts:1801](https://github.com/phnx-labs/agents-cli/blob/c98582f47230fbed8185e09d963c26614b9a1a54/cli/src/commands/exec.ts#L1801) uses:
+```ts
+const explicitHostCwd = options.remoteCwd ?? (options.cwd ? toRemotePortable(options.cwd) : undefined);
+```
+
+**Finding — local launches still lack an explicit cwd guarantee.** PR [AGENTS.md:43–44](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/AGENTS.md#L43) promises “Ordinary New, Auto, and Pick Host commands preserve the exact active workspace as the portable `--cwd`”. But cwd emission is inside `if (host)` or `if (!host && !pinnedVersion && !local)` ([agents.ts:246–258](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/core/agents.ts#L246)); terminal creation supplies `env: buildAgentTerminalEnv(...)` without a `cwd` option ([extension.ts:563–572](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/vscode/extension.ts#L563)). A local launch whose shell cwd differs from the selected workspace remains unpinned.
+
+**History and test gaps**
+
+- The substitution already exists in historical `9113ce5d`, [extension.ts:2285,2335](https://github.com/phnx-labs/agents-cli/blob/9113ce5d/apps/ext/src/vscode/extension.ts#L2285): `await resolveProjectForCwd(workspaceFolder)` and `cwd: projectSlug ? undefined : (targetHost ? cwd : undefined)`.
+- Existing coverage supplies an already-selected project: [agents.test.ts:486](/home/muqsit/.agents/repos/phnx-3970-debug-0910/src/core/agents.test.ts:486), `{ project: 'agents-cli' }`.
+- PR coverage checks command strings: [launchTarget.test.ts:171](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/core/launchTarget.test.ts#L171), ``expect(automatic).toContain(`--cwd '${cwd}'`);`` Its extension test checks source text: [extension.vscode.test.ts:95](https://github.com/phnx-labs/agi-ext/blob/1f54bf9/src/vscode/extension.vscode.test.ts#L95), `expect(launchAgent).toContain('const projectSlug = pickedProjectSlug;');`
+
+Required acceptance evidence: actual root/child launch cwd, plus local and multi-root cases. I exercised command construction in memory; I did not launch a harness or verify deployment.
+
+1. **Did:** read-only source/history comparison and independent PR diagnosis.
+2. **Files modified:** none.
+3. **Classes/functions/components added or changed:** none.
