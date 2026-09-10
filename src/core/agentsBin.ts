@@ -88,8 +88,8 @@ export async function resolveAgentsBin(): Promise<string> {
 }
 
 /**
- * Build a PATH that lets the agents shebang find node: the binary's own dir,
- * the newest nvm node, the agents shims, the usual system dirs, then whatever
+ * Build a PATH that lets the agents shebang find node: the newest nvm node,
+ * the binary's own dir, the agents shims, the usual system dirs, then whatever
  * PATH the extension host already had.
  */
 export function bootstrapPath(binPath: string): string {
