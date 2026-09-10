@@ -87,7 +87,11 @@ export async function resolveAgentsBin(): Promise<string> {
   throw new AgentsBinNotFoundError();
 }
 
-/** Build a PATH that lets the agents shebang find node. */
+/**
+ * Build a PATH that lets the agents shebang find node: the binary's own dir,
+ * the newest nvm node, the agents shims, the usual system dirs, then whatever
+ * PATH the extension host already had.
+ */
 export function bootstrapPath(binPath: string): string {
   const dirs = [path.dirname(binPath)];
   try {
@@ -97,7 +101,8 @@ export function bootstrapPath(binPath: string): string {
   } catch {
     /* no nvm */
   }
-  dirs.push('/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
+  dirs.push(path.join(os.homedir(), '.agents', 'shims'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
+  dirs.push(...(process.env.PATH ?? '').split(':').filter(Boolean));
   return [...new Set(dirs)].join(':');
 }
 

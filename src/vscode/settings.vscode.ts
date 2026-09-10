@@ -2572,7 +2572,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             }
           }
 
-          const safePrompt = prompt.replace(/'/g, `'\\''`);
           const term = await getOrCreateRushCloudTerminal(context, workspacePath || process.cwd());
           // Single dispatch with repeatable --repo flags. The cloud agent
           // clones each repo into /workspace/<owner>/<name>/ and can commit
@@ -2580,12 +2579,12 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           // disconnected pods that can't coordinate.
           const repoFlags = targetRepos.map((r) => `--repo ${r}`).join(' ');
           if (cloudProvider === 'rush') {
-            term.sendText(`rush cloud run ${agentType} ${repoFlags} -p '${safePrompt}'`);
+            term.sendText(`rush cloud run ${agentType} ${repoFlags} -p ${shellQuote(prompt)}`);
           } else {
             // Route non-rush providers through the agents-cli abstraction so
             // codex/factory get the same repo-picker UX with a provider flag.
             term.sendText(
-              `agents cloud run --provider ${cloudProvider} --agent ${agentType} ${repoFlags} -p '${safePrompt}'`,
+              `agents cloud run --provider ${cloudProvider} --agent ${agentType} ${repoFlags} -p ${shellQuote(prompt)}`,
             );
           }
           term.show(true);
@@ -2690,9 +2689,8 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           // one — only pass --branch for a real, explicit branch name.
           const branchFlag = branch && !branch.toLowerCase().startsWith('auto') ? ` --branch ${branch}` : '';
           for (const unit of units) {
-            const safePrompt = unit.prompt.replace(/'/g, `'\\''`);
             term.sendText(
-              `agents cloud run --provider ${resolution.provider} --agent ${req.agent} --repo ${repo}${branchFlag} --mode ${cloudMode} -p '${safePrompt}'`,
+              `agents cloud run --provider ${resolution.provider} --agent ${req.agent} --repo ${repo}${branchFlag} --mode ${cloudMode} -p ${shellQuote(unit.prompt)}`,
             );
           }
           term.show(true);

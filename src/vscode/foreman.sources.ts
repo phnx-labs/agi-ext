@@ -29,21 +29,6 @@ const TEAM_STATUS_CACHE_TTL_MS = 5_000;
 
 let lastResolveError: string | undefined;
 
-// Probe a candidate binary by running `<bin> cloud --help`. Old versions
-// don't ship the cloud command and return non-zero. Takes ~200ms.
-async function binHasCloudCommand(bin: string): Promise<boolean> {
-  try {
-    const augmented = bootstrapPath(bin);
-    await execAsync(`${shellQuote(bin)} cloud --help`, {
-      timeout: 3_000,
-      env: { ...process.env, PATH: augmented },
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function getLastSourcesError(): string | undefined {
   return lastResolveError;
 }
@@ -359,7 +344,7 @@ async function runJson<T>(args: string[], fallback: T): Promise<T> {
     const { stdout } = await execAsync(cmd, {
       timeout: TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
-      env: { ...process.env, PATH: buildAugmentedPath(bin) },
+      env: { ...process.env, PATH: bootstrapPath(bin) },
     });
     const trimmed = stdout.trim();
     if (!trimmed) return fallback;
@@ -370,29 +355,3 @@ async function runJson<T>(args: string[], fallback: T): Promise<T> {
   }
 }
 
-function buildAugmentedPath(binPath: string): string {
-  const binDir = path.dirname(binPath);
-  const extras = [
-    binDir,
-    path.join(os.homedir(), '.agents', 'shims'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    '/usr/bin',
-    '/bin',
-  ];
-  // Also pick up the active nvm node bin dir if binPath isn't already there.
-  try {
-    const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
-    const versions = fs.readdirSync(nvmDir).sort().reverse();
-    if (versions[0]) extras.unshift(path.join(nvmDir, versions[0], 'bin'));
-  } catch { /* no nvm */ }
-  const existing = process.env.PATH ?? '';
-  const seen = new Set<string>();
-  const combined: string[] = [];
-  for (const p of [...extras, ...existing.split(':')]) {
-    if (!p || seen.has(p)) continue;
-    seen.add(p);
-    combined.push(p);
-  }
-  return combined.join(':');
-}

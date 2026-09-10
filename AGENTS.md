@@ -169,7 +169,6 @@ deleting it or shrinking it, never adding to it.
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | ext-invented lifecycle classifier (ps/pgrep loops) | move the signal into the CLI daemon, project it on the stream |
 | `src/vscode/agentPanel.vscode.ts` `buildSnapshot` | the transcript re-parse + `agents sessions --include tools` / `agents teams status` spawns are gone (PHNX-3517: renders synchronously from the warm `sessionPresentationStore` stream) | remaining: `messageCount` + `recentFiles` are not on the stream, so they're dropped from the instant paint. Put them on the CLI's `SessionWatchRow` — do NOT bring back a lazy enrich: `fetchSessionPreview` and its host message were the last of the rail's side channel and are DELETED (PHNX-3939). The sidebar is the one preview, and it is a synchronous read or nothing |
-| `src/vscode/foreman.sources.ts` `runJson` | second agents-bin resolver bypassing `src/core/agentsBin.ts` | fold into `agentsBin.ts` |
 | gemini anywhere (`src/core/agents.ts` `newGemini`, prewarm config) | harness is hard-deprecated in the CLI | DELETE |
 
 ## Layout

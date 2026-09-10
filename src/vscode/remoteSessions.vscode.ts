@@ -4,9 +4,7 @@
 
 import * as fs from 'fs';
 import * as os from 'os';
-import * as path from 'path';
-import { homedir } from 'os';
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
   RemoteSession,
@@ -29,7 +27,6 @@ import {
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 
 const execFileAsync = promisify(execFile);
-const execAsync = promisify(exec);
 
 /** This machine's name — its local sessions are queried directly (no SSH). */
 export const LOCAL_HOST = os.hostname();
