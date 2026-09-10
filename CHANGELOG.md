@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.368] - 2026-09-10
 
 - **Fix: ordinary launches preserve the exact workspace locally and remotely (PHNX-3970).**
   New, Auto, and Pick Host used `agents projects view <workspace>` to turn any
