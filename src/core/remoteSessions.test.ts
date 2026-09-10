@@ -982,12 +982,12 @@ describe('normalizeRecentSession — SessionPickerJsonRow lifecycle/recovery fie
 describe('buildRecoveryResumeCommand — device-targeted, injection-safe (PHNX-3593)', () => {
   test('a remote device targets --device and opens as an editor tab', () => {
     expect(buildRecoveryResumeCommand('49eae375-3669-4881-b1cc-02960453115e', 'yosemite-s0')).toBe(
-      'agents sessions resume 49eae375-3669-4881-b1cc-02960453115e --device yosemite-s0 --vscodium',
+      "agents sessions resume '49eae375-3669-4881-b1cc-02960453115e' --device 'yosemite-s0' --vscodium",
     );
   });
   test('no device omits --device (the CLI resolves it)', () => {
-    expect(buildRecoveryResumeCommand('abc-123', '')).toBe('agents sessions resume abc-123 --vscodium');
-    expect(buildRecoveryResumeCommand('abc-123')).toBe('agents sessions resume abc-123 --vscodium');
+    expect(buildRecoveryResumeCommand('abc-123', '')).toBe("agents sessions resume 'abc-123' --vscodium");
+    expect(buildRecoveryResumeCommand('abc-123')).toBe("agents sessions resume 'abc-123' --vscodium");
   });
   test('a shell-hostile id or device is single-quote escaped, never injected', () => {
     const cmd = buildRecoveryResumeCommand("x'; rm -rf ~ #", 'dev name');
@@ -1000,13 +1000,13 @@ describe('buildRecoveryResumeCommand — device-targeted, injection-safe (PHNX-3
 describe('buildRecoveryMigrationCommand — alternate-device recovery (PHNX-3621)', () => {
   test('transports from the owning peer before focusing the selected target', () => {
     expect(buildRecoveryMigrationCommand('abc-123', 'yosemite-s0', 'yosemite-m3')).toBe(
-      'agents ssh yosemite-s0 agents sessions migrate abc-123 --device yosemite-m3 --mode resume --keep && agents sessions focus abc-123 --device yosemite-m3',
+      "agents ssh 'yosemite-s0' agents sessions migrate 'abc-123' --device 'yosemite-m3' --mode resume --keep && agents sessions focus 'abc-123' --device 'yosemite-m3'",
     );
   });
 
   test('runs migration locally when the source is this device', () => {
     expect(buildRecoveryMigrationCommand('abc-123', 'zion', 'yosemite-m3', true)).toBe(
-      'agents sessions migrate abc-123 --device yosemite-m3 --mode resume --keep && agents sessions focus abc-123 --device yosemite-m3',
+      "agents sessions migrate 'abc-123' --device 'yosemite-m3' --mode resume --keep && agents sessions focus 'abc-123' --device 'yosemite-m3'",
     );
   });
 

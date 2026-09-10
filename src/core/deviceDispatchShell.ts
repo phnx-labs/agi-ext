@@ -14,12 +14,12 @@ export function encodePowershellScript(script: string): string {
 }
 
 /**
- * Single-quote a value for safe interpolation into a shell command.
- * Canonical shell quoter used everywhere. Fast path: skip quoting for
- * safe characters (alphanumerics, dots, underscores, colons, hyphens).
+ * Single-quote a value for interpolation into a POSIX shell command. The one
+ * shell quoter in the extension: always quotes, so the emitted command never
+ * depends on which characters a value happens to contain.
  */
 export function shellQuote(value: string): string {
-  return /^[A-Za-z0-9._:-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**

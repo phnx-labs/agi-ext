@@ -13,7 +13,7 @@ describe('buildVersionedResumeCommand', () => {
   test('every fleet agent delegates to the canonical sessions command', () => {
     for (const agent of FLEET_AGENTS) {
       expect(buildVersionedResumeCommand(agent, 'abc123')).toBe(
-        'agents sessions resume abc123 --vscodium',
+        "agents sessions resume 'abc123' --vscodium",
       );
     }
   });
@@ -21,7 +21,7 @@ describe('buildVersionedResumeCommand', () => {
   test('offloaded metadata does not override CLI routing', () => {
     for (const agent of FLEET_AGENTS) {
       expect(buildVersionedResumeCommand(agent, 'abc123', undefined, 'yosemite-s1')).toBe(
-        'agents sessions resume abc123 --vscodium',
+        "agents sessions resume 'abc123' --vscodium",
       );
     }
   });
@@ -42,7 +42,7 @@ describe('buildVersionedResumeCommand', () => {
         for (const pattern of rawPatterns) {
           expect(cmd).not.toMatch(pattern);
         }
-        expect(cmd).toBe('agents sessions resume abc123 --vscodium');
+        expect(cmd).toBe("agents sessions resume 'abc123' --vscodium");
       }
     }
   });
@@ -50,7 +50,7 @@ describe('buildVersionedResumeCommand', () => {
   test('version argument is ignored (CLI resolves originating version)', () => {
     // The CLI resolves the version; AGI EXT must not pin one.
     expect(buildVersionedResumeCommand('claude', 'abc123', '2.1.113')).toBe(
-      'agents sessions resume abc123 --vscodium',
+      "agents sessions resume 'abc123' --vscodium",
     );
   });
 
@@ -63,7 +63,7 @@ describe('buildVersionedResumeCommand', () => {
   test('resume launches with the original session id and zero tmux wrapper', () => {
     const sessionId = '7b1cf038-8761-4e46-af43-5336e7e5a776';
     const cmd = buildVersionedResumeCommand('claude', sessionId);
-    expect(cmd).toBe(`agents sessions resume ${sessionId} --vscodium`);
+    expect(cmd).toBe(`agents sessions resume '${sessionId}' --vscodium`);
     expect(cmd).not.toContain('tmux');
     expect(cmd).not.toContain('agents tmux');
     expect(cmd).not.toContain('\n');
@@ -71,7 +71,7 @@ describe('buildVersionedResumeCommand', () => {
 
   test('persisted remote metadata does not bypass canonical routing', () => {
     expect(buildVersionedResumeCommand('claude', '8a7b8d22-c741-4a51-91e7-2112948547dd', undefined, 'yosemite-s1')).toBe(
-      'agents sessions resume 8a7b8d22-c741-4a51-91e7-2112948547dd --vscodium',
+      "agents sessions resume '8a7b8d22-c741-4a51-91e7-2112948547dd' --vscodium",
     );
   });
 });
