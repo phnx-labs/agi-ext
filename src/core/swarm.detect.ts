@@ -10,8 +10,8 @@ const execAsync = promisify(exec);
 export type AgentCli = 'claude' | 'codex' | 'gemini' | 'opencode';
 export type PromptPackAgent = 'claude' | 'codex' | 'gemini' | 'cursor';
 
-// Exported paths for testing
-export const AGENT_COMMAND_PATHS: Record<AgentCli, string> = {
+// Paths for testing
+const AGENT_COMMAND_PATHS: Record<AgentCli, string> = {
   claude: path.join(os.homedir(), '.claude', 'commands', 'swarm.md'),
   codex: path.join(os.homedir(), '.codex', 'prompts', 'swarm.md'),
   gemini: path.join(os.homedir(), '.gemini', 'commands', 'swarm.toml'),

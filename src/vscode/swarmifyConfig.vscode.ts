@@ -17,11 +17,11 @@ import {
 // Cache for loaded configs per workspace
 const configCache = new Map<string, AgentsConfig>();
 
-export function getConfigPath(workspaceFolder: vscode.WorkspaceFolder): string {
+function getConfigPath(workspaceFolder: vscode.WorkspaceFolder): string {
   return path.join(workspaceFolder.uri.fsPath, AGENTS_CONFIG_FILENAME);
 }
 
-export function getUserConfigPath(): string {
+function getUserConfigPath(): string {
   return path.join(os.homedir(), AGENTS_CONFIG_FILENAME);
 }
 
@@ -49,7 +49,7 @@ export function hasEffectiveConfig(workspaceFolder: vscode.WorkspaceFolder): boo
   return configExists(workspaceFolder) || userConfigExists();
 }
 
-export function loadUserConfig(): AgentsConfig {
+function loadUserConfig(): AgentsConfig {
   const configPath = getUserConfigPath();
   try {
     const content = fs.readFileSync(configPath, 'utf-8');
@@ -101,7 +101,7 @@ export async function saveWorkspaceConfig(
   configCache.set(cacheKey, config);
 }
 
-export function clearConfigCache(workspaceFolder?: vscode.WorkspaceFolder): void {
+function clearConfigCache(workspaceFolder?: vscode.WorkspaceFolder): void {
   if (workspaceFolder) {
     configCache.delete(workspaceFolder.uri.toString());
   } else {
