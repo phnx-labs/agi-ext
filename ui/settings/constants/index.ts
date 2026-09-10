@@ -8,8 +8,28 @@ import type {
   BuiltInAgentConfig,
 } from '../types'
 
-// All swarm-capable agents
-export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex', 'gemini', 'opencode']
+import { BUILT_IN_AGENTS, CLI_AGENT_META, CLI_AGENT_IDS, type CliAgentId } from '@shared/agents'
+
+// All swarm-capable agents — derived from BUILT_IN_AGENTS (presented agents).
+// Filters to the subset that matches SwarmAgentType union (the four agents the
+// UI's swarm settings panel offers).
+export const ALL_SWARM_AGENTS: SwarmAgentType[] = BUILT_IN_AGENTS
+  .filter(a => a.key !== 'shell' && !isNonSwarmAgent(a.key))
+  .map(a => a.key as SwarmAgentType)
+
+// Swarm agent display labels — derived from CLI_AGENT_META for each swarm agent.
+export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = {
+  claude: CLI_AGENT_META.claude.name,
+  codex: CLI_AGENT_META.codex.name,
+  gemini: CLI_AGENT_META.gemini.name,
+  opencode: CLI_AGENT_META.opencode.name,
+}
+
+// Helper to check if an agent key should not be in SwarmAgentType.
+// Extend this if the SwarmAgentType union changes.
+function isNonSwarmAgent(key: string): boolean {
+  return !['claude', 'codex', 'gemini', 'opencode'].includes(key)
+}
 
 // Default settings
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -28,15 +48,6 @@ export const SOURCE_BADGES: Record<TaskSource, { label: string; color: string }>
   github: { label: 'GH', color: '#238636' }
 }
 
-// Reserved agent name prefixes (cannot be used for custom agents)
-// Swarm agent display labels
-export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = {
-  codex: 'Codex',
-  claude: 'Claude',
-  gemini: 'Gemini',
-  opencode: 'OpenCode'
-}
-
 // Tab display labels
 export const TAB_LABELS: Record<TabId, string> = {
   floor: 'Floor',
@@ -44,8 +55,10 @@ export const TAB_LABELS: Record<TabId, string> = {
   panel: 'Panel'
 }
 
-// Install commands/links for each agent
-export const AGENT_INSTALL_INFO: Record<string, { command?: string; url?: string }> = {
+// Install commands/links for each agent — keyed by CliAgentId so only valid CLI
+// agent IDs are permitted. Entries that existed on main are preserved; new agents
+// added to the CLI must be added here explicitly (they won't appear by accident).
+export const AGENT_INSTALL_INFO: Partial<Record<CliAgentId, { command?: string; url?: string }>> = {
   claude: { command: 'npm install -g @anthropic-ai/claude-code' },
   codex: { command: 'npm install -g @openai/codex' },
   gemini: { command: 'npm install -g @google/gemini-cli', url: 'https://github.com/google-gemini/gemini-cli' },
@@ -59,42 +72,31 @@ export const AGENT_INSTALL_INFO: Record<string, { command?: string; url?: string
 
 // agents-cli package for managing agent configurations
 export const AGENTS_CLI_PACKAGE = '@swarmify/agents-cli'
-// Map from agent title (CL, CX, etc.) to key (claude, codex, etc.)
-export const AGENT_TITLE_TO_KEY: Record<string, string> = {
-  'CC': 'claude',
-  'CX': 'codex',
-  'GX': 'gemini',
-  'OC': 'opencode',
-  'CR': 'cursor',
-  'SH': 'shell',
-  'AG': 'antigravity',
-  'GK': 'grok',
-  'KM': 'kimi',
-  'DR': 'droid',
-  'Claude': 'claude',
-  'Codex': 'codex',
-  'Gemini': 'gemini',
-  'OpenCode': 'opencode',
-  'Cursor': 'cursor',
-  'Shell': 'shell',
-  'Antigravity': 'antigravity',
-  'Grok': 'grok',
-  'Kimi': 'kimi',
-  'Droid': 'droid',
-}
 
-// Map from key to title (for dropdown)
-export const AGENT_KEY_TO_TITLE: Record<string, string> = {
-  'claude': 'CC',
-  'codex': 'CX',
-  'gemini': 'GX',
-  'opencode': 'OC',
-  'cursor': 'CR',
-  'antigravity': 'AG',
-  'grok': 'GK',
-  'kimi': 'KM',
-  'droid': 'DR',
-}
+// Map from agent title (uppercase prefix like 'CC', 'CX') or name ('Claude', 'Codex')
+// to key (claude, codex, etc.). Derived from BUILT_IN_AGENTS.
+export const AGENT_TITLE_TO_KEY: Record<string, string> = (() => {
+  const mapping: Record<string, string> = {}
+  for (const agent of BUILT_IN_AGENTS) {
+    mapping[agent.title] = agent.key
+    if (agent.key !== 'shell') {
+      const cliId = agent.key as CliAgentId
+      mapping[CLI_AGENT_META[cliId].name] = agent.key
+    }
+  }
+  return mapping
+})()
+
+// Map from key to title (uppercase prefix for dropdown). Derived from BUILT_IN_AGENTS.
+export const AGENT_KEY_TO_TITLE: Record<string, string> = (() => {
+  const mapping: Record<string, string> = {}
+  for (const agent of BUILT_IN_AGENTS) {
+    if (agent.key !== 'shell') {
+      mapping[agent.key] = agent.title
+    }
+  }
+  return mapping
+})()
 
 // Notification-capable agents
 // Markdown rendering allowed tags
