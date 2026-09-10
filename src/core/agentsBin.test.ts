@@ -41,6 +41,18 @@ describe('agentsBin', () => {
     expect(aug.includes('/bin')).toBe(true);
   });
 
+  test('bootstrapPath puts the newest nvm node ahead of the binary dir and homebrew', () => {
+    const dirs = bootstrapPath('/opt/homebrew/bin/agents').split(':');
+    const nvm = dirs.findIndex((d) => d.includes('/.nvm/versions/node/'));
+    const bin = dirs.indexOf('/opt/homebrew/bin');
+    const shims = dirs.findIndex((d) => d.endsWith('/.agents/shims'));
+    // A stale homebrew node must never shadow the nvm node the CLI was built for.
+    if (nvm !== -1) expect(nvm).toBe(0);
+    expect(bin).toBeGreaterThanOrEqual(0);
+    expect(bin).toBeLessThan(shims);
+    expect(dirs.indexOf('/usr/bin')).toBeGreaterThan(shims);
+  });
+
   test('AgentsBinNotFoundError carries a useful message', () => {
     const err = new AgentsBinNotFoundError();
     expect(err.message.includes('agents CLI not found')).toBe(true);
