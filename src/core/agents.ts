@@ -178,9 +178,8 @@ export function planTextToSteps(plan: string): PlanStepData[] {
   }));
 }
 
-// Version/account selection strategy passed to `agents run --strategy`. Mirrors
-// the agents-cli: pinned uses the configured default, balanced rotates across
-// healthy accounts. The CLI ignores --strategy when an @version is pinned.
+// Account selection strategy passed to `agents run --strategy`. Binary release
+// selection via harness@release is independent of account and device selection.
 export type RunStrategy = 'pinned' | 'available' | 'balanced';
 
 // Shell-quote a single token for safe interpolation into a `agents run …` shell
@@ -247,9 +246,8 @@ export function buildAgentLaunchCommand(
     command += ` --device ${shquote(host)}`;
     if (remoteCwd) command += ` --remote-cwd ${shquote(remoteCwd)}`;
   }
-  // Unpinned, no explicit host: affinity-pick device via --device auto.
-  // Explicit Pick Host / @version pin skip this.
-  if (!host && !pinnedVersion && !local) {
+  // Without an explicit host or local target, let the CLI place the launch.
+  if (!host && !local) {
     command += ' --device auto';
   }
   // Working directory is independent of placement and version selection. Local
@@ -265,9 +263,7 @@ export function buildAgentLaunchCommand(
   if (sessionId && agentKey === 'claude') {
     command += ` --session-id ${sessionId}`;
   }
-  // --strategy is meaningless (and ignored by the CLI) once a version is
-  // pinned, so only emit it for the unpinned, strategy-driven launches.
-  if (strategy && !pinnedVersion) {
+  if (strategy) {
     command += ` --strategy ${strategy}`;
   }
   if (defaultModel && (!additionalFlags || !additionalFlags.includes('--model'))) {

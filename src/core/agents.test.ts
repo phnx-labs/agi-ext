@@ -346,15 +346,28 @@ describe('launch contract — every runner uses the managed launch builder', () 
       )).toBe(`agents run ${key} --interactive --device auto --strategy balanced --mode auto`);
       // Automatic account selection on an explicit device.
       expect(buildAgentLaunchCommand(
-        key, null, undefined, undefined, undefined, 'balanced', undefined, { host: 'yosemite-s1' },
-      )).toBe(`agents run ${key} --interactive --device 'yosemite-s1' --strategy balanced --mode auto`);
+        key, null, undefined, undefined, undefined, 'balanced', undefined, { host: 'worker-box' },
+      )).toBe(`agents run ${key} --interactive --device 'worker-box' --strategy balanced --mode auto`);
     }
   });
 
-  test('a pinned @version is the one launch that omits --strategy (CLI ignores it against a pin)', () => {
-    expect(buildAgentLaunchCommand(
-      'claude', null, undefined, undefined, '1.2.3', 'balanced', undefined, { local: true },
-    )).toBe('agents run claude@1.2.3 --interactive --mode auto');
+  test('binary releases preserve account strategy, placement, and exact portable cwd for every runner', () => {
+    for (const key of [...RUNNERS, 'custom-runner']) {
+      for (const cwd of ['/tmp/mono repo', '/tmp/mono repo/apps/web']) {
+        for (const strategy of ['balanced', 'available', 'pinned'] as const) {
+          for (const [target, device] of [
+            [{}, ' --device auto'],
+            [{ local: true }, ''],
+            [{ host: 'worker-box' }, " --device 'worker-box'"],
+          ] as const) {
+            expect(buildAgentLaunchCommand(
+              key, null, undefined, undefined, '1.2.3', strategy, undefined,
+              { ...target, cwd },
+            )).toBe(`agents run ${key}@1.2.3 --interactive${device} --cwd '${cwd}' --strategy ${strategy} --mode auto`);
+          }
+        }
+      }
+    }
   });
 
   test('account picker keeps automatic placement but omits balanced account selection', () => {
@@ -384,9 +397,9 @@ describe('launch contract — every runner uses the managed launch builder', () 
 
   test('grok (Pick Host) never emits cursor-agent', () => {
     const cmd = buildAgentLaunchCommand(
-      'grok', null, undefined, undefined, undefined, 'balanced', undefined, { host: 'yosemite-s1' },
+      'grok', null, undefined, undefined, undefined, 'balanced', undefined, { host: 'worker-box' },
     );
-    expect(cmd).toBe("agents run grok --interactive --device 'yosemite-s1' --strategy balanced --mode auto");
+    expect(cmd).toBe("agents run grok --interactive --device 'worker-box' --strategy balanced --mode auto");
     expect(cmd).not.toContain('cursor-agent');
   });
 });
@@ -482,14 +495,15 @@ describe('buildAgentLaunchCommand', () => {
           expect(cmd.match(/ --cwd /g)).toHaveLength(1);
           expect(cmd).not.toContain('--device');
           expect(cmd).not.toContain('--project');
-          if (pinnedVersion) expect(cmd).not.toContain('--strategy');
+          expect(cmd).toContain('--strategy balanced');
         }
       }
       const pinned = buildAgentLaunchCommand(
         'codex', null, undefined, undefined, '1.2.3', undefined, undefined, { cwd },
       );
       expect(pinned).toContain(`--cwd '${cwd}'`);
-      expect(pinned).not.toContain('--device');
+      expect(pinned).toContain('--device auto');
+      expect(pinned).not.toContain('--strategy');
     }
   });
 
@@ -554,7 +568,7 @@ describe('buildAgentLaunchCommand', () => {
 
   // RUSH-2025: Pick Host / Auto Host / New Claude (Auto) launch with BOTH a host
   // and --strategy balanced so the CLI's account rotation routes around a
-  // signed-out / throttled version on the chosen device.
+  // signed-out / throttled account on the chosen device.
   test('balanced strategy + host emit --device and --strategy balanced together', () => {
     const cmd = buildAgentLaunchCommand(
       'claude', 'sess-1', undefined, undefined, undefined, 'balanced', undefined, { host: 'yosemite-s0' },
@@ -569,15 +583,14 @@ describe('buildAgentLaunchCommand', () => {
     )).toBe('agents run codex --interactive --strategy balanced --mode auto');
   });
 
-  test('a pinned version on a host launch suppresses --strategy (pin overrides balance)', () => {
-    // Pick Version & Host: the exact pin wins, so no --strategy is emitted even
-    // if a strategy is passed.
+  test('a pinned release on a host launch preserves balanced accounts and session identity', () => {
     const cmd = buildAgentLaunchCommand(
-      'claude', 'sess-2', undefined, undefined, '2.1.170', 'balanced', undefined, { host: 'yosemite-s1' },
+      'claude', 'sess-2', undefined, undefined, '2.1.170', 'balanced', undefined, { host: 'worker-box' },
     );
     expect(cmd).toContain('claude@2.1.170');
-    expect(cmd).toContain("--device 'yosemite-s1'");
-    expect(cmd).not.toContain('--strategy');
+    expect(cmd).toContain("--device 'worker-box'");
+    expect(cmd).toContain('--strategy balanced');
+    expect(cmd).toContain('--session-id sess-2');
   });
 });
 

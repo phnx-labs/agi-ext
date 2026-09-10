@@ -69,6 +69,13 @@ configured path. Never derive an ordinary launch target from `agents projects
 view <cwd>`: that command is a containment attribution lookup, and a shared root
 can belong to multiple child projects.
 
+Binary release pins (`harness@release`) constrain only the executable. Preserve
+`--strategy` and automatic `--device auto` independently of the pin; explicit
+local and host targets still control placement. This contract depends on the
+PHNX-3940 account-first CLI cutover. Keep accountPicker + pinnedVersion rejected
+until the CLI defines an unambiguous combined syntax; account selection and
+placement remain CLI mechanisms.
+
 The Fleet dashboard is a LIST, not a preview: it keeps search, filters, grouping,
 the row Resume button and the expand-in-place card, and it hands session preview to
 the native sidebar. It has no detail rail, no `rightOpen` layout pref and no
