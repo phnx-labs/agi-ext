@@ -8,5 +8,5 @@
 - [x] Add a failing A → B same-terminal regression including a late stale-A event and owner-host isolation.
 - [x] Implement the canonical stream-to-terminal rebind and update behavior documentation/changelog.
 - [x] Run focused tests, repository compile, and full suite.
-- [ ] Commit, push, open the PR, and post PHNX-3939 proof.
+- [x] Commit, push, open the PR, and post PHNX-3939 proof.
 - [x] Obtain independent non-author review; resolve findings without merging or releasing.
