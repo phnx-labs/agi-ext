@@ -43,7 +43,12 @@ export interface LaunchTargetOpts {
   pickProject?: boolean;
 }
 
-export type HarnessLaunchVariant = 'default' | 'pick-host' | 'auto' | 'pick-project';
+export type HarnessLaunchVariant =
+  | 'default'
+  | 'pick-host'
+  | 'auto'
+  | 'pick-project'
+  | 'pick-account';
 
 /** Launch choices layered on top of placement for per-harness palette commands. */
 export interface HarnessLaunchOpts extends LaunchTargetOpts {
@@ -79,20 +84,30 @@ export function launchOptsForTarget(target: LaunchTarget): LaunchTargetOpts {
 }
 
 /**
- * Keep the four per-harness command variants distinct:
+ * Keep the five per-harness command variants distinct. Pick Host and Pick Account
+ * are the orthogonal pair — each pins ONE placement axis and lets the CLI balance
+ * the other:
  *
  * - default: configured placement, balanced account — no prompt at all;
- * - pick-host: ask for the device, then ask which account on it to run;
+ * - pick-host: ask for the DEVICE, then balance the account on it — `--strategy
+ *   balanced`, no account prompt. Balancing weighs each account's usage headroom
+ *   where the CLI can read it and falls back to an unverified weight on a worker
+ *   whose long-term setup-token exposes no usage;
  * - auto: let agents-cli choose both the device and account without a prompt;
  * - pick-project: auto device + balanced account (like auto), but first ask
  *   which project to land in — the only prompt is the project quickpick, never
- *   a host prompt.
+ *   a host prompt;
+ * - pick-account: pin the ACCOUNT and auto-pick the device — the trailing-`@`
+ *   account picker on `--device auto`. The CLI routes to a picker-eligible worker
+ *   and shows its interactive account picker there; a sign-in-required account is
+ *   selectable and authenticates in place. Orthogonal to pick-host, which pins the
+ *   device instead.
  *
  * The bare `New <Harness>` is the command bound to a keybinding and pressed
  * dozens of times a day, so it must open an agent, not a question: RUSH-2961
  * put the account picker on it and every launch then stopped on a seven-row
- * prompt. Explicit choice lives on `(Pick Host)`, which is already the "I am
- * being specific about this launch" route.
+ * prompt. Explicit choice lives on `(Pick Host)` / `(Pick Account)`, which are
+ * already the "I am being specific about this launch" routes.
  */
 export function launchOptsForHarnessCommand(
   variant: HarnessLaunchVariant,
@@ -102,17 +117,21 @@ export function launchOptsForHarnessCommand(
     case 'default':
       return { ...launchOptsForTarget(defaultTarget) };
     case 'pick-host':
-      return { pickHost: true, accountPicker: true };
+      return { pickHost: true };
     case 'auto':
       return {};
     case 'pick-project':
       return { pickProject: true };
+    case 'pick-account':
+      return { accountPicker: true };
   }
 }
 
 /**
- * The four registered commands for one harness. The default target is read by
+ * The five registered commands for one harness. The default target is read by
  * the callback so a settings change applies without reloading the editor.
+ * Pick Account is appended last so the existing positional order (default,
+ * pick-host, auto, pick-project) that callers and tests index into is unchanged.
  */
 export function harnessLaunchRegistrations(
   agentKey: string,
@@ -142,6 +161,11 @@ export function harnessLaunchRegistrations(
       commandId: `${commandId}PickProject`,
       variant: 'pick-project',
       launchOptions: () => ({ agentKey, ...launchOptsForHarnessCommand('pick-project') }),
+    },
+    {
+      commandId: `${commandId}PickAccount`,
+      variant: 'pick-account',
+      launchOptions: () => ({ agentKey, ...launchOptsForHarnessCommand('pick-account') }),
     },
   ];
 }

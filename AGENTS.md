@@ -57,8 +57,8 @@ presentation layer. Concretely:
 4. **Fail loud.** A missing CLI noun is an upgrade error, never a filesystem
    fallback.
 
-Launch location follows explicit user intent. Ordinary New, Auto, and Pick Host
-commands preserve the exact active workspace as the portable `--cwd`: a
+Launch location follows explicit user intent. Ordinary New, Auto, Pick Host, and
+Pick Account commands preserve the exact active workspace as the portable `--cwd`: a
 monorepo-root workspace lands at the root locally or remotely, while a workspace
 opened at one nested project lands in that same nested directory. Emit `--cwd`
 once independently of device selection, including local and version-pinned
@@ -68,6 +68,18 @@ Project command emits `--project` and lets the CLI resolve that project's
 configured path. Never derive an ordinary launch target from `agents projects
 view <cwd>`: that command is a containment attribution lookup, and a shared root
 can belong to multiple child projects.
+
+Pick Host and Pick Account are the orthogonal placement pair, and each pins ONE
+axis and lets the CLI balance the other — the extension never scores devices or
+accounts itself (thin client). Pick Host prompts for the device, then emits
+`--strategy balanced` so agents-cli rotates the account on it by usage headroom.
+Pick Account pins the account via the trailing-`@` picker on `--device auto`: the
+CLI routes to a picker-eligible worker and runs its interactive account picker
+there (a signed-out account authenticates in place). Pick Account is per-harness
+only — `run auto@` has no concrete harness to pick an account for and the CLI
+refuses it — so there is no device-agnostic Pick Account. The account picker and
+`--strategy` are mutually exclusive by construction (`buildAgentLaunchCommand`),
+which is why Pick Account carries no strategy and Pick Host carries no picker.
 
 The Fleet dashboard is a LIST, not a preview: it keeps search, filters, grouping,
 the row Resume button and the expand-in-place card, and it hands session preview to

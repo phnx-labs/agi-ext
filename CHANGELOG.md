@@ -4,6 +4,26 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.370] - 2026-09-10
+
+- **`Agents: New <Harness> (Pick Account)` — pin the account, auto-pick the
+  device.** The orthogonal twin of Pick Host: where Pick Host pins the device and
+  balances the account, Pick Account pins the account and lets the CLI place it.
+  It launches `agents run <harness>@ --interactive --device auto`, so agents-cli
+  routes to a picker-eligible worker and shows that device's interactive account
+  picker there — the same usage-aware picker as elsewhere, with each account's
+  remaining headroom, and sign-in-required accounts selectable so they can
+  authenticate in place. Registered for every runnable harness (Claude, Codex,
+  OpenCode, Cursor, Antigravity, Grok, Kimi, Droid). Per-harness only: `run auto@`
+  has no concrete harness to pick an account for, so there is no device-agnostic
+  variant.
+- **`Agents: New <Harness> (Pick Host)` now balances the account on the chosen
+  device instead of prompting for it.** Picking the device no longer stops on a
+  second account/version prompt; the launch adds `--strategy balanced`, so the CLI
+  routes around signed-out or throttled accounts on that box, weighing usage
+  headroom where it can read it. To choose a specific account, use the new Pick
+  Account command.
+
 ## [0.9.369] - 2026-09-10
 
 - **Fix: reused agent terminals follow their new session (PHNX-3939).** Exiting
