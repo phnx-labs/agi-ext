@@ -122,11 +122,12 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     });
   });
 
-  test('feed A -> B rebind updates the focused sidebar/status and stale A cannot take them back', () => {
+  test('two A tabs keep the focused terminal subject on its exact tab when that tab rebinds to B', () => {
     const sessionA = '11111111-1111-4111-8111-111111111111';
     const sessionB = '22222222-2222-4222-8222-222222222222';
     const tabId = 'CC-subject-reused';
     const terminal = agentTab(tabId, sessionA, 'worker');
+    agentTab('CC-subject-other-a', sessionA, 'worker');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     panel.registerAgentPanel(context as any);
     win.activeTerminal = terminal;
@@ -137,15 +138,30 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     sessionPresentationStore.apply({
       v: 1,
       type: 'reset',
-      streamId: 'rebind', sequence: 1, capturedAt: 300, scope: 'worker', attention: [],
-      agents: [
-        { rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, startedAtMs: 100, observerTerminals },
-        { rowKey: 'b', sourceDevice: 'worker', machine: 'worker', sessionId: sessionB, startedAtMs: 200, observerTerminals },
-      ],
+      streamId: 'rebind', sequence: 1, capturedAt: 100, scope: 'worker', attention: [],
+      agents: [{ rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, startedAtMs: 100, observerTerminals }],
     });
     const entry = terminals.getById(tabId)!;
+    const tabs = () => terminals.getAllTerminals()
+      .filter((candidate) => candidate.id === tabId || candidate.id === 'CC-subject-other-a')
+      .map((candidate) => ({ id: candidate.id, host: candidate.host, sessionId: candidate.sessionId }));
+
+    // B appears before A has left the live projection. The stream join is
+    // ambiguous, so the registry and both consumers remain on A.
+    sessionPresentationStore.apply({
+      v: 1, type: 'agent.upsert', streamId: 'rebind', sequence: 2, capturedAt: 200, scope: 'worker', rowKey: 'b',
+      agent: { rowKey: 'b', sourceDevice: 'worker', machine: 'worker', sessionId: sessionB, startedAtMs: 200, observerTerminals },
+    });
+    expect(planSessionStreamRebinds(tabs(), 'desktop', { localHostname: 'desktop' })).toEqual([]);
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe(sessionA);
+
+    // Removing live A makes B the sole owner. Applying that plan to T1 must
+    // update the sidebar via T1's identity even though T2 still carries A.
+    sessionPresentationStore.apply({
+      v: 1, type: 'agent.remove', streamId: 'rebind', sequence: 3, capturedAt: 300, scope: 'worker', rowKey: 'a',
+    });
     const plan = planSessionStreamRebinds(
-      [{ id: entry.id, host: entry.host, sessionId: entry.sessionId }],
+      tabs(),
       'desktop',
       { localHostname: 'desktop' },
     );
@@ -159,20 +175,18 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     expect(formatAgentStatusBarText('Claude', undefined, undefined, null, entry.sessionId))
       .toContain(sessionB);
 
-    // A higher-sequence upsert for old A may arrive while its stop settles. Its
-    // CLI-owned start time is still older, so the canonical planner makes no
-    // correction and both visible consumers remain on B.
+    // The historical A row cannot reclaim the terminal.
     sessionPresentationStore.apply({
       v: 1,
       type: 'agent.upsert',
-      streamId: 'rebind', sequence: 2, capturedAt: 400, scope: 'worker', rowKey: 'a',
+      streamId: 'rebind', sequence: 4, capturedAt: 400, scope: 'worker', rowKey: 'a',
       agent: {
         rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA,
-        startedAtMs: 100, lastActivityMs: 390, observerTerminals,
+        previous: true, startedAtMs: 100, observerTerminals,
       },
     });
     expect(planSessionStreamRebinds(
-      [{ id: entry.id, host: entry.host, sessionId: entry.sessionId }],
+      tabs(),
       'desktop',
       { localHostname: 'desktop' },
     )).toEqual([]);
@@ -180,6 +194,13 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     const status = formatAgentStatusBarText('Claude', undefined, undefined, null, entry.sessionId);
     expect(status).toContain(sessionB);
     expect(status).not.toContain(sessionA);
+
+    // Fleet selection is session-sourced, not terminal-sourced, so selecting A
+    // deliberately remains on A and resolves to the other A tab.
+    panel.setAgentPanelSubjectFromFleet(sessionA);
+    expect(panel.currentAgentPanelSubject()).toEqual({
+      sessionId: sessionA, source: 'fleet', hasTerminal: true,
+    });
   });
 
   test('a Fleet row click wins over the focused terminal', () => {

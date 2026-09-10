@@ -146,7 +146,6 @@ async function ensureAgentsCliInstalled(): Promise<void> {
 }
 import { supportsPrewarming, buildVersionedResumeCommand, exitSequenceFor } from '../core/prewarm';
 import { generateClaudeSessionId, listOpencodeSessions } from '../core/prewarm.simple';
-import { liveSessionIdForShell } from '../core/liveSession';
 import { canonicalSessionId } from '../core/canonicalSessionId';
 import {
   activeMapCacheKey,
@@ -4281,12 +4280,9 @@ function syncTerminalSessionBindingsFromStream(): void {
 /**
  * Resolve the live session id for a tab without per-tab polling thrash.
  *
- * Order:
- *  1. Local pid-tree / SessionStart state file — only when the agent runs on
- *     THIS machine (no host, or --device targeting this host).
- *  2. CLI `agents sessions --active` joined on AGENT_TERMINAL_ID — one fetch
- *     per host, shared across all tabs on that host (TTL + in-flight coalesce,
- *     hard timeout). Uses `--device <device>` for real offloads; never `--where`.
+ * Reads the shared CLI session projection joined on AGENT_TERMINAL_ID. The
+ * stream is the only identity source for local and offloaded tabs; an awaited
+ * local state-file read must not race a pushed A -> B rebind.
  *
  * Failures leave the id unmapped (blank bar), never invent a wrong id.
  */
@@ -4313,23 +4309,8 @@ async function tryHydrateLiveSessionId(
       }
     }
 
-    const mapKey = activeMapCacheKey(entry.host);
-    const agentIsLocal = isLocalActiveMapKey(mapKey);
-
-    // (1) Local state-file path — only when the agent process is on this box.
-    // A true --device offload's terminal.processId is the local ssh client;
-    // reading state files for that pid would bind a stranger's recycled session.
-    if (agentIsLocal) {
-      const shellPid = await terminal.processId;
-      const liveId = await liveSessionIdForShell(shellPid, entry.createdAt);
-      if (liveId) {
-        applyHydratedSessionId(terminal, entry, prefix, liveId);
-        return;
-      }
-    }
-
-    // (2) Shared CLI stream map joined on this tab's AGENT_TERMINAL_ID.
-    // One elected extension window owns `agents sessions watch --json`; every
+    // Shared CLI stream map joined on this tab's AGENT_TERMINAL_ID.
+    // One elected extension window owns `agents feed watch --json`; every
     // window and tab reads its broadcast projection without another subprocess.
     // The one fetch stamps + arms labeling for this tab AND every host sibling
     // it resolves, so focusing a sibling needs no extra round-trip and each tab
