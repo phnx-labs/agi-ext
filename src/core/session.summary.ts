@@ -19,7 +19,7 @@ export interface RecentToolCall {
   timestamp?: string;
 }
 
-export type RecentEvent =
+type RecentEvent =
   | { kind: 'tool'; call: RecentToolCall; timestamp?: string }
   | { kind: 'message' | 'reasoning'; text: string; timestamp?: string };
 

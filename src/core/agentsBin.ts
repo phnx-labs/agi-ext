@@ -139,7 +139,7 @@ export async function runAgents(
 }
 
 /** Run agents through an argv boundary; use this whenever arguments contain user data. */
-export async function runAgentsArgs(
+async function runAgentsArgs(
   args: string[],
   options: RunAgentsOptions = {},
 ): Promise<{ stdout: string; stderr: string }> {

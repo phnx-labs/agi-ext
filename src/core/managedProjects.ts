@@ -12,7 +12,7 @@
 import { homedir } from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { resolveAgentsBin, bootstrapPath, runAgents, AgentsBinNotFoundError } from './agentsBin';
+import { resolveAgentsBin, bootstrapPath, runAgents } from './agentsBin';
 
 /**
  * A curated project. The webview mirrors this shape field-for-field in
@@ -265,5 +265,3 @@ export async function deleteManagedProject(id: string): Promise<ManagedProject[]
   await runAgentsArgv(['projects', 'rm', id, '--json']);
   return readManagedProjects();
 }
-
-export { AgentsBinNotFoundError };

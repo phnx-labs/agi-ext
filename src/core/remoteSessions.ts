@@ -17,7 +17,7 @@ import { shellQuote } from './deviceDispatchShell';
 // Re-exported so existing host importers keep their `from '../core/remoteSessions'`
 // path. The impls now live in src/shared/project so the webview (@shared) imports
 // the SAME source instead of a hand-mirrored copy that silently drifts.
-export { resolveProject, normalizeHost, worktreeSlugOf };
+export { resolveProject, normalizeHost };
 export type { ProjectRule } from '../shared/project';
 
 /** Mirror of floorModel.FloorPhase (kept in sync by hand; not imported). */

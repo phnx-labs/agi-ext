@@ -606,4 +606,3 @@ export async function runForemanTool(
 
 // Quiet prefix used in realtime instructions to remind the model to be tight.
 // Exposed as a separate export so the webview can optionally override.
-export { prefixToAgentType };

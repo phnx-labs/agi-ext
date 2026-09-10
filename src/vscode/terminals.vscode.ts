@@ -1302,7 +1302,7 @@ export function clearPersistedSessions(workspacePath: string): void {
 }
 
 // Update a session's metadata (e.g., when CLI sessionId is captured)
-export function updatePersistedSession(
+function updatePersistedSession(
   workspacePath: string,
   terminalId: string,
   updates: Partial<sessionsPersist.PersistedSession>

@@ -46,7 +46,7 @@ export function CardChecklist({ todos }: { todos: TodoItem[] }) {
 }
 
 /** Full checklist with a tally header -- the detail-pane affordance. */
-export function TodoChecklist({ todos }: { todos: TodoItem[] }) {
+function TodoChecklist({ todos }: { todos: TodoItem[] }) {
   const { done, total } = todoProgress(todos)
   if (total === 0) return null
   const pct = Math.round((done / total) * 100)

@@ -35,7 +35,7 @@ function homeDir(): string {
  * `rollout-<ts>-<uuid>.jsonl` — return the UUID only (matches the CLI and
  * Codex `/status`). Claude and other `<uuid>.jsonl` files pass through.
  */
-export function sessionIdFromFile(file: string): string {
+function sessionIdFromFile(file: string): string {
   const base = path.basename(file).replace(/\.jsonl$/, '');
   // Inline the UUID extract so this module stays free of core/ imports that
   // pull node-heavy deps into the monitor process graph.
@@ -44,7 +44,7 @@ export function sessionIdFromFile(file: string): string {
   return base;
 }
 
-export function workspaceHash(workspacePath: string): string {
+function workspaceHash(workspacePath: string): string {
   return createHash('sha256').update(workspacePath).digest('hex');
 }
 

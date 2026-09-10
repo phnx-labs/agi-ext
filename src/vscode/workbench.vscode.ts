@@ -7,9 +7,6 @@ import {
 
 export type { EditorAssociations } from '../core/editorAssociations';
 export {
-  AGENTS_HTML_READER,
-  AGENTS_MARKDOWN_EDITOR,
-  READER_PATTERNS,
   normalizeEditorAssociations,
   withReaderEditorAssociations,
 } from '../core/editorAssociations';
