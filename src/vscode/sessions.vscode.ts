@@ -6,7 +6,25 @@ import { homedir } from 'os';
 import type { Dirent, Stats } from 'fs';
 import { AgentSession } from '../core/sessions';
 import { runAgents } from '../core/agentsBin';
+import type { SqlJsStatic } from 'sql.js';
 import { cachedInFlight, createTimedCache } from '../core/cachedInFlight';
+
+// Cached SQL.js instance (lazy-loaded)
+let sqlJsPromise: Promise<SqlJsStatic | null> | null = null;
+
+async function getSqlJs(): Promise<SqlJsStatic | null> {
+  if (!sqlJsPromise) {
+    sqlJsPromise = (async () => {
+      try {
+        const initSqlJs = (await import('sql.js')).default;
+        return await initSqlJs();
+      } catch {
+        return null;
+      }
+    })();
+  }
+  return sqlJsPromise;
+}
 
 const SESSION_EXTENSIONS = new Set(['.jsonl', '.json', '.txt']);
 const MAX_PREVIEW_CHARS = 240;
@@ -778,6 +796,87 @@ export async function getOpenCodeSessionPreviewInfo(messageDir: string): Promise
   }
 }
 
-export async function getCursorSessionPreviewInfo(_dbPath: string): Promise<SessionPreviewInfo> {
-  return { messageCount: 0 };
+/**
+ * Get session preview info for Cursor Agent sessions.
+ * Cursor stores chats in SQLite databases at ~/.cursor/chats/{hash}/{chatId}/store.db
+ * Structure: blobs table contains JSON messages with role and content fields
+ * Uses sql.js (WebAssembly SQLite) for cross-platform compatibility.
+ */
+export async function getCursorSessionPreviewInfo(dbPath: string): Promise<SessionPreviewInfo> {
+  try {
+    const SQL = await getSqlJs();
+    if (!SQL) {
+      return { messageCount: 0 };
+    }
+
+    // Read the database file (async so it doesn't block the extension host)
+    const fileBuffer = await fs.readFile(dbPath);
+    const db = new SQL.Database(fileBuffer);
+
+    try {
+      // Get all blobs
+      const results = db.exec('SELECT data FROM blobs');
+      if (!results.length || !results[0].values.length) {
+        return { messageCount: 0 };
+      }
+
+      let firstUserMessage: string | undefined;
+      let messageCount = 0;
+
+      for (const row of results[0].values) {
+        try {
+          // sql.js returns blob data as Uint8Array
+          const data = row[0];
+          if (!(data instanceof Uint8Array)) continue;
+          if (data.length === 0 || data[0] !== 0x7B) continue; // Skip non-JSON blobs
+
+          const dataStr = new TextDecoder().decode(data);
+          const msg = JSON.parse(dataStr);
+
+          if (msg.role === 'user') {
+            messageCount++;
+            if (!firstUserMessage && msg.content) {
+              // Extract text from content array
+              // Format: [{type: "text", text: "..."}, ...]
+              const content = Array.isArray(msg.content) ? msg.content : [msg.content];
+              for (const part of content) {
+                if (typeof part === 'string') {
+                  if (!part.startsWith('<')) {
+                    firstUserMessage = normalizePreview(part);
+                    break;
+                  }
+                }
+                if (part && typeof part === 'object' && part.type === 'text' && part.text) {
+                  const text = part.text as string;
+                  // Extract text from <user_query> tags if present
+                  const queryMatch = text.match(/<user_query>\s*([\s\S]*?)\s*(?:<\/user_query>|$)/);
+                  if (queryMatch) {
+                    firstUserMessage = normalizePreview(queryMatch[1].trim());
+                    break;
+                  }
+                  if (!text.startsWith('<')) {
+                    firstUserMessage = normalizePreview(text);
+                    break;
+                  }
+                }
+              }
+            }
+          } else if (msg.role === 'assistant') {
+            messageCount++;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      return {
+        firstUserMessage,
+        messageCount
+      };
+    } finally {
+      db.close();
+    }
+  } catch {
+    return { messageCount: 0 };
+  }
 }
