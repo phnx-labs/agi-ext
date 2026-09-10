@@ -1008,7 +1008,6 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
-    "@happy-dom/global-registrator": "^20.11.6",
     "@types/node": "^20.x",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",

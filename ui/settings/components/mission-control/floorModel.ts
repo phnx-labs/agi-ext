@@ -26,9 +26,7 @@ export type { RecentEvent, RecentToolCall }
 // so existing importers (e.g. floorAdapter) keep their `from './floorModel'` path.
 import { resolveProject, worktreeSlugOf } from '@shared/project'
 import { UNASSIGNED_LABEL } from './sessionProjects'
-import type { ProjectRule } from '@shared/project'
 export { resolveProject, worktreeSlugOf }
-export type { ProjectRule }
 
 // ---------- agent view-model ----------
 
@@ -447,7 +445,7 @@ export interface ManagedProject {
 }
 
 /** One directory bound to a project — a repo's checkout, optionally pinned to a monorepo subpath. */
-export interface ManagedProjectDir {
+interface ManagedProjectDir {
   slug?: string                    // "owner/repo", when this dir has a bound repo
   path: string                     // absolute local folder for this dir (subpath already joined in)
 }
@@ -511,7 +509,7 @@ export type CenterMode = 'sessions' | 'agents' | 'backlog' | 'host' | 'projects'
 // Host detail pane payloads. Mirror of extension/src/core/hostInventory.ts —
 // the webview can't import from src/*, so the shape is redeclared here and
 // crosses the boundary as JSON via the `hostInventory` message.
-export interface HostResourceSummary {
+interface HostResourceSummary {
   skills: number
   plugins: number
   mcp: number
@@ -521,7 +519,7 @@ export interface HostResourceSummary {
   hooks: number
   drift: number
 }
-export interface HostAgentVersion {
+interface HostAgentVersion {
   version: string
   isDefault: boolean
   signedIn: boolean
@@ -532,11 +530,11 @@ export interface HostAgentVersion {
   lastActive: string | null
   resources: HostResourceSummary | null
 }
-export interface HostAgentInfo {
+interface HostAgentInfo {
   agent: string
   versions: HostAgentVersion[]
 }
-export interface HostMeta {
+interface HostMeta {
   name: string
   enrolled: boolean
   source: string | null
@@ -547,7 +545,7 @@ export interface HostMeta {
   addedAt: string | null
   status: string | null
 }
-export interface HostInventory {
+interface HostInventory {
   host: string
   reachable: boolean
   error: string | null
