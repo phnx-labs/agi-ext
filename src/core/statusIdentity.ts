@@ -3,6 +3,8 @@
 // (src/vscode/extension.ts) passes an EditorTerminal, which structurally provides
 // these fields.
 
+import { canonicalSessionId } from './canonicalSessionId';
+
 /** The subset of a terminal registry entry the status bar reads for identity. */
 export interface StatusIdentitySource {
   /** Session id the version/account below were APPLIED for (the display gate).
@@ -30,6 +32,27 @@ export interface StreamIdentityStamp {
   version: string | null;
   account: string | null;
   identityAppliedSessionId: string;
+}
+
+/** Build the complete status-bar label from the session currently bound to a tab. */
+export function formatAgentStatusBarText(
+  expandedName: string,
+  version: string | undefined,
+  account: string | undefined,
+  label: string | null,
+  sessionId: string | undefined,
+  showTrackingHint = false,
+  host: string | null = null,
+): string {
+  let text = `Agents: ${expandedName}`;
+  if (version) text += ` ${version}`;
+  if (account) text += ` <${account}>`;
+  if (host) text += ` $(vm) ${host}`;
+  if (label) text += ` - ${label}`;
+  const displayId = canonicalSessionId(sessionId);
+  if (displayId) text += ` (${displayId})`;
+  else if (showTrackingHint) text += ' (tracking session)';
+  return text;
 }
 
 /**

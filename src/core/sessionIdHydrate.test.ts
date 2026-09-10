@@ -1,10 +1,38 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { activeMapCacheKey, fetchTerminalIdSessionMap, needsSessionIdHydrate, resolveSessionIdForTerminal } from './sessionIdHydrate';
+import { activeMapCacheKey, fetchTerminalIdSessionMap, needsSessionIdHydrate, planSessionStreamRebinds, resolveSessionIdForTerminal } from './sessionIdHydrate';
 import { sessionPresentationStore } from './sessionPresentationStore';
 
 afterEach(() => sessionPresentationStore.clear());
 
 describe('session id hydration from the canonical CLI stream', () => {
+  test('plans A -> B for one observed terminal and ignores a late stale-A upsert', () => {
+    const sessionA = '11111111-1111-4111-8111-111111111111';
+    const sessionB = '22222222-2222-4222-8222-222222222222';
+    const observerTerminals = [{ device: 'desktop', terminalId: 'CX-reused' }];
+    sessionPresentationStore.apply({
+      v: 1,
+      type: 'reset',
+      streamId: 'rebind', sequence: 1, capturedAt: 300, scope: 'worker', attention: [],
+      agents: [
+        { rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, startedAtMs: 100, observerTerminals },
+        { rowKey: 'b', sourceDevice: 'worker', machine: 'worker', sessionId: sessionB, startedAtMs: 200, observerTerminals },
+      ],
+    });
+    const tab = { id: 'CX-reused', host: 'worker', sessionId: sessionA };
+
+    expect(planSessionStreamRebinds([tab], 'desktop', { localHostname: 'desktop' }))
+      .toEqual([{ id: 'CX-reused', canonicalId: sessionB }]);
+    tab.sessionId = sessionB;
+
+    sessionPresentationStore.apply({
+      v: 1,
+      type: 'agent.upsert',
+      streamId: 'rebind', sequence: 2, capturedAt: 400, scope: 'worker', rowKey: 'a',
+      agent: { rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, startedAtMs: 100, lastActivityMs: 390, observerTerminals },
+    });
+    expect(planSessionStreamRebinds([tab], 'desktop', { localHostname: 'desktop' })).toEqual([]);
+  });
+
   test('a local session (owner is this desktop) maps its top-level terminal id', async () => {
     sessionPresentationStore.apply({
       v: 1,

@@ -9,6 +9,7 @@ stateDiagram-v2
   [*] --> Opening
   Opening --> Active: terminal registered
   Active --> Identified: CLI session correlated
+  Identified --> Identified: newer session reuses tab
   Identified --> Persisted: tab metadata saved
   Persisted --> Restored: window reload
   Restored --> Identified: live stream rebinds identity
@@ -24,6 +25,11 @@ The terminal registry associates a VS Code terminal object with extension-local 
 harness, target device, version/account presentation, and the canonical session ID once
 known. The stream is authoritative for session identity and status. Local launch facts
 bridge only the interval before that identity is available.
+
+Reusing a tab does not create a new VS Code focus event. Accepted session-row facts
+therefore reconcile the stable terminal binding before visible consumers refresh;
+session start ordering comes from the CLI row, and observer/device ownership remains
+part of the join.
 
 Labels have two classes: a canonical session-derived title and an explicit user label.
 The user label wins because it is presentation intent; neither label changes the
@@ -59,4 +65,3 @@ flowchart LR
 The terminal registry and persistence seam live in `src/vscode/terminals.vscode.ts` and
 `src/core/sessions.persist.ts`. CLI location and invocation are centralized in
 `src/core/agentsBin.ts` so individual features cannot invent divergent binary lookup.
-

@@ -153,13 +153,14 @@ import {
   isLocalActiveMapKey,
   needsSessionIdHydrate,
   fetchTerminalIdSessionMap,
+  planSessionStreamRebinds,
 } from '../core/sessionIdHydrate';
 import {
   hydrateRemoteTabTick,
   planActiveMapHydration,
   type RemoteAutoLabelHooks,
 } from '../core/remoteAutoLabel';
-import { displayIdentity, resolveStreamIdentityStamp } from '../core/statusIdentity';
+import { displayIdentity, formatAgentStatusBarText, resolveStreamIdentityStamp } from '../core/statusIdentity';
 import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo } from './sessions.vscode';
 import * as tasksImport from './tasks.vscode';
 import { SOURCE_BADGES } from '../core/tasks';
@@ -4156,42 +4157,6 @@ function remoteHostBadge(host: string | null | undefined): string | null {
   return deviceBadge(host, (getRegisteredDevicesCache() ?? []).map((d) => d.name));
 }
 
-function formatAgentStatusBarText(
-  expandedName: string,
-  version: string | undefined,
-  account: string | undefined,
-  label: string | null,
-  sessionId: string | undefined,
-  showTrackingHint = false,
-  host: string | null = null,
-): string {
-  let text = `Agents: ${expandedName}`;
-  if (version) {
-    text += ` ${version}`;
-  }
-  if (account) {
-    text += ` <${account}>`;
-  }
-  // The executing device for an offloaded/remote session (its structured
-  // `machine`, shortened against the fleet roster). Local sessions pass null —
-  // nothing added. This is where the host lives now, not the tab title
-  // (PHNX-3893).
-  if (host) {
-    text += ` $(vm) ${host}`;
-  }
-  if (label) {
-    text += ` - ${label}`;
-  }
-  // Always show the CLI-canonical id (UUID), never a Codex rollout-… stem.
-  const displayId = canonicalSessionId(sessionId);
-  if (displayId) {
-    text += ` (${displayId})`;
-  } else if (showTrackingHint) {
-    text += ' (tracking session)';
-  }
-  return text;
-}
-
 // Stamp the running session's REAL version + account onto the tab from the
 // broadcast watch row — the single-stream projection (SessionPresentationStore),
 // NOT a per-tab CLI subprocess. The stream is the only source that knows which
@@ -4245,6 +4210,7 @@ function applyHydratedSessionId(
   entry: terminals.EditorTerminal,
   prefix: string,
   rawId: string,
+  options: { armLabeling?: boolean } = {},
 ): void {
   const liveId = canonicalSessionId(rawId);
   if (!liveId) return;
@@ -4255,13 +4221,14 @@ function applyHydratedSessionId(
     if (!entry.host && live?.machine && !isLocalDeviceName(live.machine)) {
       terminals.setHost(terminal, live.machine);
     }
-    // The tab just gained (or corrected to) its canonical id. Arm the auto-label
-    // lifecycle now — the same transition the local SessionStart watcher performs
-    // via onSessionChanged. Without this, a remote-hydrated tab (e.g. picked-host
-    // Codex) kept the bare agent chip because labeling was only ever started when
-    // an id was known up front (RUSH-2411). Idempotent: startAutoLabelPoller
-    // no-ops when a poller is already running or a real label already exists.
-    armLabelingAfterHydration(terminal, entry);
+    // Focus/poller hydration arms the auto-label lifecycle — the same transition
+    // the local SessionStart watcher performs via onSessionChanged. Stream-driven
+    // rebinding opts out because it must not create a side-channel session poll.
+    // Idempotent: startAutoLabelPoller no-ops when a poller is already running or
+    // a real label already exists (RUSH-2411).
+    if (options.armLabeling !== false) {
+      armLabelingAfterHydration(terminal, entry);
+    }
   }
   applyStreamIdentity(terminal, entry, liveId);
   if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
@@ -4276,6 +4243,39 @@ function applyHydratedSessionId(
     entry.agentType === 'codex',
     remoteHostBadge(entry.host),
   );
+}
+
+/**
+ * Reconcile every tracked editor tab against the canonical session stream.
+ *
+ * This runs only when a pushed stream fact is accepted. It is the missing
+ * event-driven half of tryHydrateLiveSessionId: reusing an already-focused
+ * terminal for session B produces no VS Code focus event, so the old A binding
+ * otherwise survives until an unrelated refocus. Grouping by execution host
+ * preserves the owner boundary, while terminalSessionMap applies the observer
+ * boundary and rejects genuinely ambiguous claims.
+ */
+function syncTerminalSessionBindingsFromStream(): void {
+  const plan = planSessionStreamRebinds(
+    terminals.getAllTerminals()
+      .filter((entry) => !!entry.agentConfig)
+      .map((entry) => ({ id: entry.id, host: entry.host, sessionId: entry.sessionId })),
+    LOCAL_MACHINE_ID,
+  );
+  for (const step of plan) {
+    const entry = terminals.getById(step.id);
+    if (!entry) continue;
+    // A stream-driven A -> B correction must stay purely event-driven. In
+    // particular it must not arm the legacy label poller, whose label source is
+    // a side-channel session fetch. Stream identity/labels refresh below.
+    applyHydratedSessionId(
+      entry.terminal,
+      entry,
+      entry.agentConfig?.prefix ?? '',
+      step.canonicalId,
+      { armLabeling: false },
+    );
+  }
 }
 
 /**
@@ -5613,6 +5613,16 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
       });
     } else if (proto.isSessionCliFact(event)) {
       if (sessionPresentationStore.apply(event.payload)) {
+        if (
+          event.payload.type === 'reset' ||
+          event.payload.type === 'agent.upsert' ||
+          event.payload.type === 'agent.remove'
+        ) {
+          // Rebind A -> B before either visible consumer reads the registry. The
+          // terminal tab itself never changed focus, so no VS Code event can do it.
+          // Activity/attention facts cannot change identity and skip this scan.
+          syncTerminalSessionBindingsFromStream();
+        }
         void settings.refreshFloorFromSessionStream();
         void syncCanonicalSessionTabLabels(context);
         const { notifyAgentPanelSessionUpdate } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');

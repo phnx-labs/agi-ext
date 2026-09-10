@@ -214,7 +214,11 @@ export class SessionPresentationStore {
    *   - each `observerTerminals` entry whose `device` matches `observerDevice`, and
    *   - the top-level `terminalId` ONLY when the owner IS the observer (a remote
    *     owner's top-level id has no provenance for this desktop).
-   * A terminalId two sessions both claim for this observer is AMBIGUOUS and omitted.
+   * A terminal reused for session B can briefly be claimed by both A and B while
+   * the CLI projection settles. In that case the newest non-previous row by the
+   * CLI-owned `startedAtMs` wins; a later stream upsert for old A cannot steal the
+   * binding back. Claims with no decisive session-start ordering remain ambiguous
+   * and are omitted.
    *
    * Back-compat: with no `observerDevice`, this keeps the pre-observer behaviour
    * (bind every row's top-level terminalId under the host filter), so callers that
@@ -225,36 +229,72 @@ export class SessionPresentationStore {
     const wanted = normalizeHost(executionHost || '');
     const observer = normalizeHost(observerDevice || '');
     const result = new Map<string, string>();
-    const ambiguous = new Set<string>();
-    const bind = (terminalId: string, sessionId: string) => {
+    const claims = new Map<string, Map<string, { startedAtMs?: number }>>();
+    const sessionStart = (row: { startedAtMs?: unknown; startedAt?: unknown }): number | undefined => {
+      if (typeof row.startedAtMs === 'number' && Number.isFinite(row.startedAtMs)) return row.startedAtMs;
+      if (typeof row.startedAtMs === 'string') {
+        const parsed = Number(row.startedAtMs);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      if (typeof row.startedAt === 'string') {
+        const parsed = Date.parse(row.startedAt);
+        if (!Number.isNaN(parsed)) return parsed;
+      }
+      return undefined;
+    };
+    const bind = (terminalId: string, sessionId: string, startedAtMs?: number) => {
       if (!terminalId || !sessionId) return;
-      const existing = result.get(terminalId);
-      if (existing && existing !== sessionId) { ambiguous.add(terminalId); return; }
-      result.set(terminalId, sessionId);
+      const bySession = claims.get(terminalId) ?? new Map<string, { startedAtMs?: number }>();
+      const existing = bySession.get(sessionId)?.startedAtMs;
+      // One session can be projected more than once (top-level + observer, or
+      // repeated rows during convergence). Preserve its strongest ordering fact.
+      if (existing === undefined || (startedAtMs !== undefined && startedAtMs > existing)) {
+        bySession.set(sessionId, startedAtMs === undefined ? {} : { startedAtMs });
+      }
+      claims.set(terminalId, bySession);
     };
     for (const value of this.sessions()) {
       if (!value || typeof value !== 'object') continue;
       const row = value as {
         terminalId?: unknown; sessionId?: unknown; id?: unknown; machine?: unknown; sourceDevice?: unknown;
-        observerTerminals?: unknown;
+        observerTerminals?: unknown; previous?: unknown; startedAtMs?: unknown; startedAt?: unknown;
       };
       const sessionId = typeof row.sessionId === 'string' ? row.sessionId : typeof row.id === 'string' ? row.id : '';
       if (!sessionId) continue;
+      // Historical rows are preview/resume material, never the live identity of
+      // an editor tab. Keeping them in this join makes every reused terminal look
+      // permanently ambiguous after A moves to Previous and B starts.
+      if (row.previous === true) continue;
       const owner = normalizeHost(typeof row.machine === 'string' ? row.machine : typeof row.sourceDevice === 'string' ? row.sourceDevice : '');
       if (wanted && owner && wanted !== owner) continue;
+      const startedAtMs = sessionStart(row);
       // Launcher bindings for THIS observer desktop (provenance-carrying).
       for (const entry of Array.isArray(row.observerTerminals) ? row.observerTerminals : []) {
         if (!entry || typeof entry !== 'object') continue;
         const dev = normalizeHost(typeof (entry as { device?: unknown }).device === 'string' ? (entry as { device?: string }).device! : '');
         const tid = typeof (entry as { terminalId?: unknown }).terminalId === 'string' ? (entry as { terminalId?: string }).terminalId! : '';
-        if (observer && dev && dev === observer) bind(tid, sessionId);
+        if (observer && dev && dev === observer) bind(tid, sessionId, startedAtMs);
       }
       // Top-level terminalId: a safe local binding only when the owner is this
       // observer (or when no observer context is supplied — legacy callers).
       const terminalId = typeof row.terminalId === 'string' ? row.terminalId : '';
-      if (terminalId && (!observer || owner === observer)) bind(terminalId, sessionId);
+      if (terminalId && (!observer || owner === observer)) bind(terminalId, sessionId, startedAtMs);
     }
-    for (const tid of ambiguous) result.delete(tid);
+    for (const [terminalId, bySession] of claims) {
+      if (bySession.size === 1) {
+        result.set(terminalId, bySession.keys().next().value!);
+        continue;
+      }
+      // With competing sessions, every claim must carry CLI-owned start order.
+      // An unknown claim can be newest, so selecting around it would depend on
+      // row iteration order and could silently bind the wrong session.
+      if ([...bySession.values()].some((claim) => claim.startedAtMs === undefined)) continue;
+      const ordered = [...bySession.entries()].sort(
+        (a, b) => b[1].startedAtMs! - a[1].startedAtMs!,
+      );
+      if (ordered[0]![1].startedAtMs === ordered[1]![1].startedAtMs) continue;
+      result.set(terminalId, ordered[0]![0]);
+    }
     return result;
   }
 
