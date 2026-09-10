@@ -14,6 +14,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { shellQuote } from './deviceDispatchShell';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -121,7 +122,7 @@ export async function runAgents(
 ): Promise<{ stdout: string; stderr: string }> {
   const bin = await resolveAgentsBin();
   const augmented = bootstrapPath(bin);
-  const escaped = `'${bin.replace(/'/g, `'\\''`)}'`;
+  const escaped = shellQuote(bin);
   return execAsync(`${escaped} ${args}`, {
     timeout: options.timeout ?? 30_000,
     maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,

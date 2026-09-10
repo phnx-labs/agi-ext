@@ -14,6 +14,7 @@ import {
   DROID_TITLE
 } from './utils';
 import { CLI_AGENT_META, CliAgentId } from './agents.cli';
+import { shellQuote as _shellQuote } from './deviceDispatchShell';
 
 // Built-in agent definition (static data)
 export interface BuiltInAgentDef {
@@ -183,11 +184,9 @@ export function planTextToSteps(plan: string): PlanStepData[] {
 // healthy accounts. The CLI ignores --strategy when an @version is pinned.
 export type RunStrategy = 'pinned' | 'available' | 'balanced';
 
-// Shell-quote a single token for safe interpolation into a `agents run …` shell
-// string. Device names and user-supplied values are quoted defensively so a stray
-// character can never break out of the command.
+// Wrapper for the canonical shell quoter (re-exported for compatibility).
 export function shquote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
+  return _shellQuote(s);
 }
 
 // Build the `agents run <agent> --interactive [--mode <m>] […]` shell string for

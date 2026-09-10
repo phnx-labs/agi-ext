@@ -9,6 +9,7 @@
 // unit tests; the CLI-calling functions cache per host (SSH is expensive).
 
 import { runAgents } from './agentsBin';
+import { shellQuote } from './deviceDispatchShell';
 
 const HOST_INVENTORY_TTL_MS = 60_000;
 const LOCAL_HOST = 'this-mac';
@@ -153,16 +154,11 @@ export function parseHostMeta(rawJson: string, host: string): HostMeta | null {
   };
 }
 
-/** Single-quote a value for safe interpolation into the runAgents command string. */
-function shellArg(value: string): string {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`;
-}
-
 /** CLI args for the canonical local or fleet-routed inventory read. */
 export function buildHostInventoryArgs(host: string): string {
   return host === LOCAL_HOST
     ? 'view --json --resources all'
-    : `view --device ${shellArg(host)} --no-tty --json --resources all`;
+    : `view --device ${shellQuote(host)} --no-tty --json --resources all`;
 }
 
 /** Reject host/cap values that could smuggle shell/flags before they reach the CLI. */

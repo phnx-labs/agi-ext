@@ -6,6 +6,8 @@
 // NOTE: version PICKING for rotations no longer lives here — the resume paths
 // delegate host/harness/account selection to `agents run auto` (RUSH-2132).
 
+import { shellQuote } from './deviceDispatchShell';
+
 export interface AgentsViewJsonVersion {
   version: string;
   isDefault: boolean;
@@ -57,17 +59,12 @@ export function buildAgentRunLaunchCommand(
 ): string {
   let cmd = `agents run ${agentKey} --interactive`;
   if (host) {
-    cmd += ` --device ${shellQuoteHost(host)}`;
+    cmd += ` --device ${shellQuote(host)}`;
   }
   if (agentKey === 'claude' && claudeSessionId) {
     cmd += ` --session-id ${claudeSessionId}`;
   }
   return cmd;
-}
-
-/** Single-quote a device name so it can never break out of the built command. */
-function shellQuoteHost(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -87,7 +84,7 @@ export function buildAutoRunLaunchCommand(opts: {
 }): string {
   let cmd = 'agents run auto --interactive';
   if (opts.host) {
-    cmd += ` --device ${shellQuoteHost(opts.host)}`;
+    cmd += ` --device ${shellQuote(opts.host)}`;
   }
   cmd += ` --session-id ${opts.sessionId}`;
   return cmd;

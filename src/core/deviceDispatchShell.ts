@@ -13,9 +13,13 @@ export function encodePowershellScript(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
 }
 
-/** Shell-quote for bash -lc outer payload (single-quote style). */
-function bashOuterQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
+/**
+ * Single-quote a value for safe interpolation into a shell command.
+ * Canonical shell quoter used everywhere. Fast path: skip quoting for
+ * safe characters (alphanumerics, dots, underscores, colons, hyphens).
+ */
+export function shellQuote(value: string): string {
+  return /^[A-Za-z0-9._:-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -26,5 +30,5 @@ export function buildDeviceDispatchRemoteCmd(remoteSnippet: string, platform?: s
   if (isWindowsDevicePlatform(platform)) {
     return `powershell -NoProfile -EncodedCommand ${encodePowershellScript(remoteSnippet)}`;
   }
-  return `bash -lc ${bashOuterQuote(remoteSnippet)}`;
+  return `bash -lc ${shellQuote(remoteSnippet)}`;
 }

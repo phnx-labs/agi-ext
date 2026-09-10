@@ -83,9 +83,12 @@ describe('buildAgentRunLaunchCommand', () => {
     expect(buildAgentRunLaunchCommand('codex')).toBe('agents run codex --interactive');
   });
 
-  test('host is shell-quoted', () => {
+  test('host is shell-quoted when unsafe, left bare when safe', () => {
     expect(buildAgentRunLaunchCommand('claude', 'yosemite-s0')).toBe(
-      "agents run claude --interactive --device 'yosemite-s0'",
+      "agents run claude --interactive --device yosemite-s0",
+    );
+    expect(buildAgentRunLaunchCommand('claude', 'host with spaces')).toBe(
+      "agents run claude --interactive --device 'host with spaces'",
     );
   });
 
@@ -113,9 +116,12 @@ describe('buildAutoRunLaunchCommand', () => {
     );
   });
 
-  test('host is shell-quoted; --session-id is always passed (claude-only on the CLI side)', () => {
+  test('host is shell-quoted when unsafe; --session-id is always passed (claude-only on the CLI side)', () => {
     expect(buildAutoRunLaunchCommand({ host: 'yosemite-s0', sessionId: 'new-id' })).toBe(
-      "agents run auto --interactive --device 'yosemite-s0' --session-id new-id",
+      "agents run auto --interactive --device yosemite-s0 --session-id new-id",
+    );
+    expect(buildAutoRunLaunchCommand({ host: 'host name', sessionId: 'new-id' })).toBe(
+      "agents run auto --interactive --device 'host name' --session-id new-id",
     );
   });
 
