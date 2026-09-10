@@ -180,6 +180,25 @@ describe('registered harness launch commands', () => {
     expect(pickedHost).not.toContain('--project');
   });
 
+  it('local settings and This Machine picks preserve root and nested workspaces', () => {
+    for (const cwd of ['/tmp/monorepo', '/tmp/monorepo/apps/web']) {
+      for (const agentKey of ['claude', 'codex', 'auto']) {
+        for (const options of [
+          launchOptsForHarnessCommand('default', 'local'),
+          launchOptsForHarnessCommand('pick-host'),
+        ]) {
+          const command = buildNewAgentLaunchCommand(
+            { agentKey, ...options }, { cwd, projectSlug: 'child-a' },
+          );
+          expect(command).toContain(`--cwd '${cwd}'`);
+          expect(command.match(/ --cwd /g)).toHaveLength(1);
+          expect(command).not.toContain('--project');
+          expect(command).not.toContain('--device');
+        }
+      }
+    }
+  });
+
   it('falls back to the plain Auto command when no project was picked', () => {
     // A cancelled quickpick leaves projectSlug undefined; the launch must still be
     // the Auto-equivalent command, not a broken one with a dangling --project.

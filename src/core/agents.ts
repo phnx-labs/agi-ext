@@ -245,19 +245,18 @@ export function buildAgentLaunchCommand(
   // grok/kimi/droid (which launch as raw binaries locally) get host parity.
   if (host) {
     command += ` --device ${shquote(host)}`;
-    if (cwd) command += ` --cwd ${shquote(cwd)}`;
     if (remoteCwd) command += ` --remote-cwd ${shquote(remoteCwd)}`;
   }
   // Unpinned, no explicit host: affinity-pick device via --device auto.
   // Explicit Pick Host / @version pin skip this.
   if (!host && !pinnedVersion && !local) {
     command += ' --device auto';
-    // Automatic placement is remote too. Pin the active workspace explicitly
-    // instead of depending on the integrated shell's inherited process.cwd(),
-    // which can differ from the active folder in a multi-root workspace.
-    if (cwd) command += ` --cwd ${shquote(cwd)}`;
   }
-  // A matched project owns the working directory on ANY target — local, picked
+  // Working directory is independent of placement and version selection. Local
+  // and pinned launches need it too: the terminal's inherited process.cwd() can
+  // differ from the active folder (and AGENT_WORKSPACE_DIR is only metadata).
+  if (cwd) command += ` --cwd ${shquote(cwd)}`;
+  // A picked project owns the working directory on ANY target — local, picked
   // host, or --device auto — so it is emitted once here rather than duplicated
   // in each branch above.
   if (project) {

@@ -93,7 +93,18 @@ describe('new-agent workspace routing', () => {
 
     expect(extensionSource).not.toContain('resolveProjectForCwd');
     expect(launchAgent).toContain('const projectSlug = pickedProjectSlug;');
-    expect(openSingleAgent).toContain('cwd: targetHost ? cwd : undefined');
+    expect(openSingleAgent).not.toContain('cwd: targetHost ? cwd : undefined');
+    expect(openSingleAgent).toMatch(/local: !targetHost,[\s\S]*?\n\s+cwd,/);
+    expect(openSingleAgent).toMatch(/createTerminal\(\{[\s\S]*?\n\s+cwd,/);
     expect(openSingleAgent).not.toMatch(/project:\s*projectSlug/);
+  });
+
+  test('queued launches pass cwd for local and auto placement while preserving exact remote paths', () => {
+    const start = extensionSource.indexOf('export async function openSingleAgentWithQueue');
+    const queued = extensionSource.slice(start, extensionSource.indexOf('\n}', start));
+    expect(queued).not.toContain('cwd: targetHost &&');
+    expect(queued.match(/cwd: opts\?\.remoteCwd \? undefined : cwd/g)).toHaveLength(2);
+    expect(queued.match(/remoteCwd: opts\?\.remoteCwd/g)).toHaveLength(2);
+    expect(queued).toMatch(/createTerminal\(\{[\s\S]*?\n\s+cwd,/);
   });
 });
