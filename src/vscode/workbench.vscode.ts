@@ -5,12 +5,6 @@ import {
   withReaderEditorAssociations,
 } from '../core/editorAssociations';
 
-export type { EditorAssociations } from '../core/editorAssociations';
-export {
-  normalizeEditorAssociations,
-  withReaderEditorAssociations,
-} from '../core/editorAssociations';
-
 /**
  * Update multiple VS Code settings at once.
  * Keys use dot notation (e.g., 'workbench.sideBar.location').

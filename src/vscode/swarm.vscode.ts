@@ -69,7 +69,7 @@ const AGENT_SWARM_DIR = path.join(os.homedir(), '.agents', 'swarm', 'agents');
 const AGENT_TEAMS_DIR = path.join(os.homedir(), '.agents', 'teams', 'agents');
 
 
-export interface AgentInstallStatus {
+interface AgentInstallStatus {
   installed: boolean;
   cliAvailable: boolean;
   mcpEnabled: boolean;
@@ -116,7 +116,7 @@ interface SkillDefinition {
   };
 }
 
-export interface SkillAgentStatus {
+interface SkillAgentStatus {
   installed: boolean;
   cliAvailable: boolean;
   builtIn: boolean;
@@ -583,7 +583,7 @@ interface AgentMeta {
   pr_url?: string | null;
 }
 
-export interface AgentDetail {
+interface AgentDetail {
   agent_id: string;
   agent_type: string;
   status: string;

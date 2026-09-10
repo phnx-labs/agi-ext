@@ -34,7 +34,7 @@ export interface ManagedProject {
 }
 
 /** One directory bound to a project — a repo's checkout, optionally pinned to a monorepo subpath. */
-export interface ManagedProjectDir {
+interface ManagedProjectDir {
   slug?: string;                              // "owner/repo", when this dir has a bound repo
   path: string;                               // absolute local folder for this dir (subpath already joined in)
 }

@@ -5,7 +5,7 @@
 // returns React.ReactNode because hints carry inline markup (e.g. <b>).
 import React from 'react'
 
-export interface SegmentedOption<T> {
+interface SegmentedOption<T> {
   value: T
   label: string
 }
