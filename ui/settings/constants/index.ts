@@ -67,10 +67,8 @@ export const AGENT_TITLE_TO_KEY: Record<string, string> = (() => {
   const mapping: Record<string, string> = {}
   for (const agent of BUILT_IN_AGENTS) {
     mapping[agent.title] = agent.key
-    if (agent.key !== 'shell') {
-      const cliId = agent.key as CliAgentId
-      mapping[CLI_AGENT_META[cliId].name] = agent.key
-    }
+    // Shell is presented but is not a CLI harness; its display name is fixed.
+    mapping[agent.key === 'shell' ? 'Shell' : CLI_AGENT_META[agent.key as CliAgentId].name] = agent.key
   }
   return mapping
 })()
