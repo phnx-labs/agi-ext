@@ -5,12 +5,10 @@ import { resolve } from 'path'
 
 // Dev-server config picked up by bare `vite` (the `dev` script). The production
 // bundles are built with explicit `--config vite.settings.config.ts` /
-// `vite.editor.config.ts`, which take precedence and are unaffected by this file.
-//
-// This exists so the documented preview flow works:
-//   bun run dev  ->  http://localhost:5173/settings/preview/?view=feed|launch
-// Without the `@shared` alias below, `settings/components/mission-control/floorModel.ts`
-// (`import ... from '@shared/project'`) 500s and the harness renders blank.
+// `vite.editor.config.ts` (and `vite.standalone.config.ts` for the agents-dbg
+// app), which take precedence and are unaffected by this file. It carries the
+// same `@shared` alias so `settings/components/mission-control/floorModel.ts`
+// (`import ... from '@shared/project'`) resolves under the dev server.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {

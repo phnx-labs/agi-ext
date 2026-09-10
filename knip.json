@@ -23,6 +23,15 @@
       ]
     },
     "ui": {
+      "entry": [
+        "settings/main.tsx",
+        "editor/main.tsx",
+        "vite.config.ts",
+        "vite.settings.config.ts",
+        "vite.editor.config.ts",
+        "vite.standalone.config.ts",
+        "test-setup.ts"
+      ],
       "project": [
         "**/*.{ts,tsx}"
       ],
@@ -30,6 +39,22 @@
         "autoprefixer",
         "postcss",
         "tailwindcss"
+      ]
+    },
+    "app": {
+      "entry": [
+        "main.ts",
+        "preload.ts"
+      ],
+      "project": [
+        "**/*.ts"
+      ],
+      "ignoreBinaries": [
+        "electron",
+        "electron-builder"
+      ],
+      "ignoreDependencies": [
+        "electron-builder"
       ]
     }
   }
