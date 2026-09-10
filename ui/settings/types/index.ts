@@ -1,3 +1,4 @@
+import type { ALL_SWARM_AGENTS } from '../constants'
 // Agent settings types
 interface BuiltInAgentSettings {
   login: boolean
@@ -80,7 +81,7 @@ export function setQuickLaunchSlotInConfig(
   return next
 }
 
-export type SwarmAgentType = 'claude' | 'codex' | 'gemini' | 'opencode'
+export type SwarmAgentType = (typeof ALL_SWARM_AGENTS)[number]
 export type PromptPackAgentType = 'claude' | 'codex' | 'gemini' | 'cursor'
 
 // Skills types
