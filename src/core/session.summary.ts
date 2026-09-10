@@ -11,6 +11,7 @@ export interface SessionQuickSummary {
   mcpCalls: number;
 }
 
+/** @public referenced as import('../core/session.summary').RecentToolCall in terminals.vscode.ts, which knip cannot see */
 export interface RecentToolCall {
   name: string;
   input?: unknown;
@@ -19,6 +20,7 @@ export interface RecentToolCall {
   timestamp?: string;
 }
 
+/** @public referenced as import('../core/session.summary').RecentEvent in terminals.vscode.ts, which knip cannot see */
 export type RecentEvent =
   | { kind: 'tool'; call: RecentToolCall; timestamp?: string }
   | { kind: 'message' | 'reasoning'; text: string; timestamp?: string };
