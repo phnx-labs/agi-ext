@@ -78,6 +78,12 @@ status bar instead, shortened to its unique suffix (`m3`) when fleet peers share
 a common prefix (`yosemite-`) — and left whole whenever shortening would stop
 naming exactly one box.
 
+An Agents terminal can also be reused: exit one agent and launch another in the
+same tab. The pushed session stream rebinds that tab to the newer session, so the
+status bar and Active Session sidebar follow it without a tab switch. The join
+remains scoped to the terminal's observer device and execution host; the extension
+does not poll or match raw terminal IDs across machines.
+
 ### Task Management
 
 - **Labels** - Tag agents by task (`Cmd+Shift+L`). Status bar shows the active agent, its label, and — for a session running on another device — that device.

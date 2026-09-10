@@ -121,4 +121,24 @@ describe('RUSH-2430 clean-but-stale session id reconciliation', () => {
     expect(hydrate).toBeGreaterThan(disabledGuard);
     expect(status).toBeGreaterThan(hydrate);
   });
+
+  test('accepted stream facts reconcile terminal bindings before status/sidebar consumers refresh', () => {
+    const handler = extensionSource.slice(extensionSource.indexOf('const factSub = follower.onMonitorEvent'));
+    const apply = handler.indexOf('sessionPresentationStore.apply(event.payload)');
+    const rebind = handler.indexOf('syncTerminalSessionBindingsFromStream()');
+    const sidebar = handler.indexOf('notifyAgentPanelSessionUpdate()');
+    expect(apply).toBeGreaterThan(-1);
+    expect(rebind).toBeGreaterThan(apply);
+    expect(sidebar).toBeGreaterThan(rebind);
+  });
+
+  test('stream-driven rebinding does not arm the side-channel label poller', () => {
+    const start = extensionSource.indexOf('function syncTerminalSessionBindingsFromStream()');
+    const end = extensionSource.indexOf('\n}\n', start);
+    const rebind = extensionSource.slice(start, end);
+    expect(rebind).toContain('planSessionStreamRebinds(');
+    expect(rebind).toContain('{ armLabeling: false }');
+    expect(rebind).not.toContain('armLabelingAfterHydration(');
+    expect(rebind).not.toContain('startAutoLabelPollerForTerminal(');
+  });
 });

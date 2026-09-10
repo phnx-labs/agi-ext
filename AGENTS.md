@@ -93,6 +93,14 @@ guess. Do not add a fetch, a transcript read, or a repo probe to fill it: put th
 missing fact on the CLI row, or let the user assign it by hand (a local presentation
 override, like pinned favorites).
 
+Terminal identity is rebound from that same stream. When the user exits session A
+and starts session B inside the existing Agents terminal, both rows can briefly
+claim the tab's stable observer terminal ID. The newest non-Previous row by the
+CLI-provided session start time wins within the same observer and execution-host
+scope; a late stale A upsert cannot move the tab, status bar, or Active Session
+sidebar back. Claims without decisive ordering remain unresolved rather than being
+guessed. Reconciliation runs only on pushed reset/agent row facts — never a poll.
+
 The `agentsPanel.terminal` activity-bar view is **the one session preview in the
 extension** (PHNX-3939). The Fleet webview has no detail rail; everything that
 described a session lives here.

@@ -61,6 +61,14 @@ reveal its native session identifier. Launch metadata and CLI stream facts conve
 the terminal registry. Once correlated, the canonical CLI session ID drives status,
 labels, resume, fork, stop, and dashboard links.
 
+That correlation is not launch-only. A user may stop session A and start session B in
+the same editor terminal, so the stable observer terminal ID can temporarily appear on
+both rows while the feed settles. On each pushed reset or agent-row change, the
+extension reconciles tracked tabs before refreshing the status bar or sidebar. It
+ignores Previous rows and chooses the later CLI-provided `startedAtMs` only within the
+same observer-device and execution-host scope. A late stale-A upsert therefore cannot
+revert B; equal or missing start times stay unresolved instead of being guessed.
+
 The extension may retain presentation metadata needed to restore a tab, but it does not
 cache a candidate harness session or parse transcript directories to manufacture one.
 When identity is absent from the stream, the correct fix is a CLI projection change.
@@ -99,6 +107,8 @@ change (add it to the attention row), never a client re-derivation.
   The presentation store records whether it has ever observed a `reset`; a follower
   that has not is rendered as degraded rather than as an authoritative empty state.
 - Resolved attention cannot reappear from an older session snapshot.
+- A historical or older session row cannot reclaim a terminal already rebound to a
+  newer session on the same owner host.
 
 The concrete stream owner is `src/monitor/sessionCliStream.ts`; the demand gate that
 starts and stops it is `MonitorHost` plus `src/monitor/sessionDemand.ts`; the pure

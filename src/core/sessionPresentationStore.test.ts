@@ -272,6 +272,65 @@ describe('SessionPresentationStore', () => {
       expect(store.terminalSessionMap('worker', 'desktop').has('DUP')).toBe(false);
     });
 
+    test('an unordered claim keeps competing sessions unresolved in every row permutation', () => {
+      const terminal = [{ device: 'desktop', terminalId: 'TAB-unknown' }];
+      const a = { rowKey: 'a', sessionId: 'session-a', sourceDevice: 'worker', startedAtMs: 100, observerTerminals: terminal };
+      const unknown = { rowKey: 'unknown', sessionId: 'session-unknown', sourceDevice: 'worker', observerTerminals: terminal };
+      const b = { rowKey: 'b', sessionId: 'session-b', sourceDevice: 'worker', startedAtMs: 200, observerTerminals: terminal };
+      const permutations = [
+        [a, unknown, b], [a, b, unknown], [unknown, a, b],
+        [unknown, b, a], [b, a, unknown], [b, unknown, a],
+      ];
+
+      for (const rows of permutations) {
+        const store = new SessionPresentationStore();
+        reset(store, rows);
+        expect(store.terminalSessionMap('worker', 'desktop').has('TAB-unknown')).toBe(false);
+      }
+    });
+
+    test('session A -> B in one terminal selects B and a late stale-A upsert cannot steal it back', () => {
+      const store = new SessionPresentationStore();
+      const terminal = [{ device: 'desktop', terminalId: 'TAB-reused' }];
+      store.apply({
+        v: 1, type: 'reset', streamId: 'rebind', sequence: 1, capturedAt: 300, scope: 'worker', attention: [],
+        agents: [
+          { rowKey: 'a', sessionId: 'session-a', sourceDevice: 'worker', startedAtMs: 100, observerTerminals: terminal },
+          { rowKey: 'b', sessionId: 'session-b', sourceDevice: 'worker', startedAtMs: 200, observerTerminals: terminal },
+        ],
+      });
+
+      expect(store.terminalSessionMap('worker', 'desktop').get('TAB-reused')).toBe('session-b');
+
+      // The old row can be republished after B (higher stream sequence) while a
+      // stop/index update settles. Its session birth is still older, so event
+      // arrival order must not revert the editor tab to A.
+      store.apply({
+        v: 1, type: 'agent.upsert', streamId: 'rebind', sequence: 2, capturedAt: 400, scope: 'worker', rowKey: 'a',
+        agent: { rowKey: 'a', sessionId: 'session-a', sourceDevice: 'worker', startedAtMs: 100, lastActivityMs: 390, observerTerminals: terminal },
+      });
+      expect(store.terminalSessionMap('worker', 'desktop').get('TAB-reused')).toBe('session-b');
+    });
+
+    test('a Previous row never competes with the current session for a reused terminal', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [
+        { rowKey: 'a', sessionId: 'session-a', sourceDevice: 'worker', previous: true, startedAtMs: 300, observerTerminals: [{ device: 'desktop', terminalId: 'TAB-reused' }] },
+        { rowKey: 'b', sessionId: 'session-b', sourceDevice: 'worker', previous: false, startedAtMs: 200, observerTerminals: [{ device: 'desktop', terminalId: 'TAB-reused' }] },
+      ]);
+      expect(store.terminalSessionMap('worker', 'desktop').get('TAB-reused')).toBe('session-b');
+    });
+
+    test('newest-session selection remains scoped to the requested execution host', () => {
+      const store = new SessionPresentationStore();
+      reset(store, [
+        { rowKey: 'a', sessionId: 'worker-a-session', sourceDevice: 'worker-a', startedAtMs: 100, observerTerminals: [{ device: 'desktop', terminalId: 'SAME' }] },
+        { rowKey: 'b', sessionId: 'worker-b-session', sourceDevice: 'worker-b', startedAtMs: 200, observerTerminals: [{ device: 'desktop', terminalId: 'SAME' }] },
+      ]);
+      expect(store.terminalSessionMap('worker-a', 'desktop').get('SAME')).toBe('worker-a-session');
+      expect(store.terminalSessionMap('worker-b', 'desktop').get('SAME')).toBe('worker-b-session');
+    });
+
     test('filtering to the wrong execution host yields no binding', () => {
       const store = new SessionPresentationStore();
       reset(store, [{

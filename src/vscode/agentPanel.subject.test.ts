@@ -73,6 +73,9 @@ mock.module('./extension', () => ({
 
 const terminals = await import('./terminals.vscode');
 const panel = await import('./agentPanel.vscode');
+const { sessionPresentationStore } = await import('../core/sessionPresentationStore');
+const { planSessionStreamRebinds } = await import('../core/sessionIdHydrate');
+const { formatAgentStatusBarText } = await import('../core/statusIdentity');
 
 const CLAUDE_CONFIG = { title: 'Claude', prefix: 'CC', icon: 'claude.png', commandId: 'agents.newClaude' };
 
@@ -101,6 +104,7 @@ const context = {
 describe('sidebar subject — last of { focused terminal, clicked Fleet row }', () => {
   beforeEach(() => {
     panel.clearAgentPanelSubject();
+    sessionPresentationStore.clear();
     win.activeTerminal = undefined;
   });
 
@@ -116,6 +120,66 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     expect(panel.currentAgentPanelSubject()).toEqual({
       sessionId: 'session-a', source: 'terminal', hasTerminal: true,
     });
+  });
+
+  test('feed A -> B rebind updates the focused sidebar/status and stale A cannot take them back', () => {
+    const sessionA = '11111111-1111-4111-8111-111111111111';
+    const sessionB = '22222222-2222-4222-8222-222222222222';
+    const tabId = 'CC-subject-reused';
+    const terminal = agentTab(tabId, sessionA, 'worker');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    panel.registerAgentPanel(context as any);
+    win.activeTerminal = terminal;
+    onActiveTerminal!();
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe(sessionA);
+
+    const observerTerminals = [{ device: 'desktop', terminalId: tabId }];
+    sessionPresentationStore.apply({
+      v: 1,
+      type: 'reset',
+      streamId: 'rebind', sequence: 1, capturedAt: 300, scope: 'worker', attention: [],
+      agents: [
+        { rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, startedAtMs: 100, observerTerminals },
+        { rowKey: 'b', sourceDevice: 'worker', machine: 'worker', sessionId: sessionB, startedAtMs: 200, observerTerminals },
+      ],
+    });
+    const entry = terminals.getById(tabId)!;
+    const plan = planSessionStreamRebinds(
+      [{ id: entry.id, host: entry.host, sessionId: entry.sessionId }],
+      'desktop',
+      { localHostname: 'desktop' },
+    );
+    expect(plan).toEqual([{ id: tabId, canonicalId: sessionB }]);
+    terminals.setSessionId(terminal, plan[0]!.canonicalId);
+
+    // No second focus event: the same registry entry now drives both consumers.
+    expect(panel.currentAgentPanelSubject()).toEqual({
+      sessionId: sessionB, source: 'terminal', hasTerminal: true,
+    });
+    expect(formatAgentStatusBarText('Claude', undefined, undefined, null, entry.sessionId))
+      .toContain(sessionB);
+
+    // A higher-sequence upsert for old A may arrive while its stop settles. Its
+    // CLI-owned start time is still older, so the canonical planner makes no
+    // correction and both visible consumers remain on B.
+    sessionPresentationStore.apply({
+      v: 1,
+      type: 'agent.upsert',
+      streamId: 'rebind', sequence: 2, capturedAt: 400, scope: 'worker', rowKey: 'a',
+      agent: {
+        rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA,
+        startedAtMs: 100, lastActivityMs: 390, observerTerminals,
+      },
+    });
+    expect(planSessionStreamRebinds(
+      [{ id: entry.id, host: entry.host, sessionId: entry.sessionId }],
+      'desktop',
+      { localHostname: 'desktop' },
+    )).toEqual([]);
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe(sessionB);
+    const status = formatAgentStatusBarText('Claude', undefined, undefined, null, entry.sessionId);
+    expect(status).toContain(sessionB);
+    expect(status).not.toContain(sessionA);
   });
 
   test('a Fleet row click wins over the focused terminal', () => {

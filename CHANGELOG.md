@@ -4,6 +4,18 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- **Fix: reused agent terminals follow their new session (PHNX-3939).** Exiting
+  session A and starting session B in the same still-focused Agents terminal no
+  longer leaves the status bar and Active Session sidebar pinned to A. Accepted
+  session-row stream facts now reconcile the terminal registry before either
+  consumer refreshes. During the brief A/B overlap, the newest non-Previous
+  CLI row wins by its session start time inside the existing observer-device and
+  execution-host boundary; late stale-A updates cannot steal the tab back, and
+  genuinely unordered claims remain unresolved. No poll, transcript read, or
+  cross-device raw terminal-ID fallback was added.
+
 ## [0.9.368] - 2026-09-10
 
 - **Fix: ordinary launches preserve the exact workspace locally and remotely (PHNX-3970).**

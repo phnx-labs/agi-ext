@@ -10,6 +10,7 @@
 import * as os from 'os';
 import { normalizeHost } from './remoteSessions';
 import { canonicalSessionId, isRolloutSessionStem } from './canonicalSessionId';
+import { planActiveMapHydration, type HydratePlanEntry, type RemoteAutoLabelTab } from './remoteAutoLabel';
 import { sessionPresentationStore } from './sessionPresentationStore';
 const LOCAL_CACHE_KEY = '__local__';
 
@@ -71,6 +72,44 @@ export async function resolveSessionIdForTerminal(
   if (!tid) return undefined;
   const map = await fetchTerminalIdSessionMap(host, deps);
   return map.get(tid);
+}
+
+/**
+ * Plan event-driven tab rebindings from the already-projected session stream.
+ *
+ * The extension calls this after accepted agent reset/upsert/remove facts. Tabs
+ * are grouped by execution owner before consulting terminalSessionMap, while
+ * observerDevice proves the editor-side terminal binding. This is deliberately
+ * synchronous: it starts no subprocess, poller, watcher, or retry loop.
+ */
+export function planSessionStreamRebinds(
+  tabs: RemoteAutoLabelTab[],
+  observerDevice: string,
+  deps: { localHostname?: string; localMachineId?: string } = {},
+): HydratePlanEntry[] {
+  const localHostname = deps.localHostname ?? observerDevice;
+  const localMachineId = deps.localMachineId ?? normalizeHost(localHostname);
+  const groups = new Map<string, RemoteAutoLabelTab[]>();
+  for (const tab of tabs) {
+    const key = activeMapCacheKey(tab.host, localHostname, localMachineId);
+    const group = groups.get(key) ?? [];
+    group.push(tab);
+    groups.set(key, group);
+  }
+
+  const plan: HydratePlanEntry[] = [];
+  for (const [key, group] of groups) {
+    const executionHost = isLocalActiveMapKey(key) ? undefined : group[0]?.host;
+    const map = sessionPresentationStore.terminalSessionMap(
+      executionHost,
+      normalizeHost(observerDevice),
+    );
+    plan.push(...planActiveMapHydration(map, group, {
+      needsHydrate: needsSessionIdHydrate,
+      canonical: (raw) => canonicalSessionId(raw) ?? '',
+    }));
+  }
+  return plan;
 }
 
 /**
