@@ -10,11 +10,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   session A and starting session B in the same still-focused Agents terminal no
   longer leaves the status bar and Active Session sidebar pinned to A. Accepted
   session-row stream facts now reconcile the terminal registry before either
-  consumer refreshes. During the brief A/B overlap, the newest non-Previous
-  CLI row wins by its session start time inside the existing observer-device and
-  execution-host boundary; late stale-A updates cannot steal the tab back, and
-  genuinely unordered claims remain unresolved. No poll, transcript read, or
-  cross-device raw terminal-ID fallback was added.
+  consumer refreshes. During the brief A/B overlap, distinct live claims remain
+  ambiguous regardless of start time, leaving the existing A binding unchanged.
+  Removing A makes B authoritative, while a later `previous: true` A row cannot
+  steal the tab back. Terminal-selected sidebar state follows the exact tab across
+  that rebind; an explicit Fleet selection remains session-based. The focus path
+  now uses the same stream join, with no local state-file read, poll, transcript
+  read, or cross-device raw terminal-ID fallback.
 
 ## [0.9.368] - 2026-09-10
 

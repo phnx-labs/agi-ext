@@ -79,10 +79,13 @@ a common prefix (`yosemite-`) — and left whole whenever shortening would stop
 naming exactly one box.
 
 An Agents terminal can also be reused: exit one agent and launch another in the
-same tab. The pushed session stream rebinds that tab to the newer session, so the
-status bar and Active Session sidebar follow it without a tab switch. The join
-remains scoped to the terminal's observer device and execution host; the extension
-does not poll or match raw terminal IDs across machines.
+same tab. The pushed session stream rebinds that tab once the new session is its
+sole live claimant, so the status bar and Active Session sidebar follow it without
+a tab switch. Overlapping live claims remain unresolved until the stream removes
+the old one; start time is not treated as terminal ownership. The join remains
+scoped to the terminal's observer device and execution host, and the extension
+does not poll or match raw terminal IDs across machines. This rebind path reads no
+local session-state file.
 
 ### Task Management
 

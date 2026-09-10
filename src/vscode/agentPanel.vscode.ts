@@ -208,6 +208,8 @@ interface PanelSnapshot {
  */
 interface PanelSubject {
   sessionId: string;
+  /** Stable editor-terminal identity for a terminal-origin subject. */
+  terminalId?: string;
   /** Owning device for a Fleet subject; '' when the row is on this machine. */
   host?: string;
   source: 'terminal' | 'fleet';
@@ -233,10 +235,17 @@ function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal
   const byId = (sessionId: string) =>
     terminals.getAllTerminals().find((e) => e.agentConfig && e.sessionId === sessionId);
   if (panelSubject) {
-    const entry = byId(panelSubject.sessionId);
-    // A terminal subject whose tab is gone stops being the subject: fall through
-    // to whatever is focused now rather than pinning a dead tab.
-    if (entry || panelSubject.source === 'fleet') {
+    if (panelSubject.source === 'terminal') {
+      const entry = panelSubject.terminalId ? terminals.getById(panelSubject.terminalId) : undefined;
+      if (entry?.agentConfig) {
+        return { sessionId: entry.sessionId ?? '', entry, source: 'terminal' };
+      }
+      // A terminal subject whose exact tab is gone stops being the subject:
+      // fall through to whatever is focused now rather than finding a different
+      // tab that happens to carry the same session id.
+      panelSubject = undefined;
+    } else {
+      const entry = byId(panelSubject.sessionId);
       return {
         sessionId: panelSubject.sessionId,
         entry,
@@ -244,7 +253,6 @@ function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal
         source: panelSubject.source,
       };
     }
-    panelSubject = undefined;
   }
   const entry = activeAgentEntry();
   if (!entry) return undefined;
@@ -272,7 +280,7 @@ export function setAgentPanelSubjectFromFleet(sessionId: string, host?: string):
 function setSubjectFromActiveTerminal(): void {
   const entry = activeAgentEntry();
   if (!entry || !entry.sessionId) return;
-  panelSubject = { sessionId: entry.sessionId, source: 'terminal' };
+  panelSubject = { sessionId: entry.sessionId, terminalId: entry.id, source: 'terminal' };
 }
 
 /** Forget the subject entirely (dispose, and the reset point for tests). */

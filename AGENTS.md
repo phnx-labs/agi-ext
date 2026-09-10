@@ -95,11 +95,13 @@ override, like pinned favorites).
 
 Terminal identity is rebound from that same stream. When the user exits session A
 and starts session B inside the existing Agents terminal, both rows can briefly
-claim the tab's stable observer terminal ID. The newest non-Previous row by the
-CLI-provided session start time wins within the same observer and execution-host
-scope; a late stale A upsert cannot move the tab, status bar, or Active Session
-sidebar back. Claims without decisive ordering remain unresolved rather than being
-guessed. Reconciliation runs only on pushed reset/agent row facts — never a poll.
+claim the tab's stable observer terminal ID. Distinct live claims are ambiguous,
+regardless of session start time, so the existing registry binding stays unchanged.
+Once A is removed or returns only as `previous: true`, B becomes the sole live
+claim and the tab, status bar, and Active Session sidebar bind to B. A
+terminal-selected sidebar subject follows that exact terminal ID across the rebind;
+a Fleet-selected subject remains tied to the selected session. Reconciliation runs
+only on pushed reset/agent row facts — never a poll or local state-file read.
 
 The `agentsPanel.terminal` activity-bar view is **the one session preview in the
 extension** (PHNX-3939). The Fleet webview has no detail rail; everything that

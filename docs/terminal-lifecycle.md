@@ -28,8 +28,10 @@ bridge only the interval before that identity is available.
 
 Reusing a tab does not create a new VS Code focus event. Accepted session-row facts
 therefore reconcile the stable terminal binding before visible consumers refresh;
-session start ordering comes from the CLI row, and observer/device ownership remains
-part of the join.
+two distinct live claims remain ambiguous until one leaves the projection, and
+observer/device ownership remains part of the join. A terminal-selected sidebar
+subject stores that terminal's stable ID, so it follows the same tab when the session
+binding changes instead of finding another tab with the prior session ID.
 
 Labels have two classes: a canonical session-derived title and an explicit user label.
 The user label wins because it is presentation intent; neither label changes the

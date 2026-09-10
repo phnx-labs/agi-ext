@@ -96,7 +96,7 @@ describe('RUSH-2430 clean-but-stale session id reconciliation', () => {
       'if (entry.sessionId && !needsSessionIdHydrate(entry.sessionId))',
       start,
     );
-    const authoritativeMap = extensionSource.indexOf('const mapKey = activeMapCacheKey(entry.host);', start);
+    const authoritativeMap = extensionSource.indexOf('const map = await fetchTerminalIdSessionMap(entry.host);', start);
     expect(start).toBeGreaterThan(-1);
     expect(cleanUuidGuard).toBeGreaterThan(start);
     expect(authoritativeMap).toBeGreaterThan(start);
@@ -106,6 +106,15 @@ describe('RUSH-2430 clean-but-stale session id reconciliation', () => {
       'if (entry.sessionId && !needsSessionIdHydrate(entry.sessionId))',
     );
     expect(beforeAuthoritativeLookup).not.toContain('return;');
+  });
+
+  test('focus hydration has one stream identity source and no local state-file race', () => {
+    const start = extensionSource.indexOf('async function tryHydrateLiveSessionId(');
+    const end = extensionSource.indexOf('\nfunction updateStatusBarForTerminal(', start);
+    const hydrate = extensionSource.slice(start, end);
+    expect(hydrate).toContain('fetchTerminalIdSessionMap(entry.host)');
+    expect(hydrate).not.toContain('liveSessionIdForShell');
+    expect(extensionSource).not.toContain("from '../core/liveSession'");
   });
 
   test('picked-host identity hydration runs when automatic tab labels are disabled', () => {

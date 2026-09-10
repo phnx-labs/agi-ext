@@ -5,8 +5,8 @@
 - [x] Fetch `origin/main` and create the linked `fix/session-rebind` worktree.
 - [x] Trace CLI stream identity through terminal hydration, status bar, and Active Terminal subject selection.
 - [x] Capture live `agents feed watch --json` evidence for the available `SessionWatchRow` ordering fields.
-- [x] Add a failing A → B same-terminal regression including a late stale-A event and owner-host isolation.
+- [x] Add A → B same-terminal regressions covering live ambiguity, A removal, historical Previous A, duplicate rows, and owner-host isolation.
 - [x] Implement the canonical stream-to-terminal rebind and update behavior documentation/changelog.
 - [x] Run focused tests, repository compile, and full suite.
 - [x] Commit, push, open the PR, and post PHNX-3939 proof.
-- [x] Obtain independent non-author review; resolve findings without merging or releasing.
+- [x] Address the blocking parent-review findings in a separate corrective worktree; parent owns final review and integration.
