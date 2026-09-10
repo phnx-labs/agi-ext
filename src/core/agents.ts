@@ -13,7 +13,8 @@ import {
   KIMI_TITLE,
   DROID_TITLE
 } from './utils';
-import { CLI_AGENT_META, CliAgentId } from './agents.cli';
+import { CLI_AGENT_META } from './agents.cli';
+import type { CliAgentId } from './agents.cli';
 import { shellQuote as _shellQuote } from './deviceDispatchShell';
 
 // Built-in agent definition (static data)
