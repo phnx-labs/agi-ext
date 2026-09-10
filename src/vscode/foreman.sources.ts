@@ -19,66 +19,22 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { shellQuote } from '../core/deviceDispatchShell';
+import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 
 const execAsync = promisify(exec);
 const TIMEOUT_MS = 3_000;
 const TEAM_LIST_CACHE_TTL_MS = 15_000;
 const TEAM_STATUS_CACHE_TTL_MS = 5_000;
 
-// VS Code extensions launched from Dock/Finder inherit a minimal PATH that
-// usually doesn't include ~/.agents/shims or nvm. We resolve the absolute path
-// to `agents` once at first call and reuse it. Falls through to a login shell
-// lookup if the canonical locations miss.
-let cachedAgentsBin: string | undefined;
 let lastResolveError: string | undefined;
 
-async function resolveAgentsBin(): Promise<string> {
-  if (cachedAgentsBin) return cachedAgentsBin;
-
-  // Resolve via the user's shell without the `-l` (login) flag. Login shells
-  // run /etc/zprofile which prepends /opt/homebrew/bin via path_helper, which
-  // can pick an outdated brew install. A non-login invocation reads only
-  // .zshenv (where user-specific PATH like nvm lives) and gets the right one.
-  try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const { stdout } = await execAsync(`${shell} -c 'command -v agents'`, { timeout: 5_000 });
-    const p = stdout.trim();
-    if (p && fs.existsSync(p) && await binHasCloudCommand(p)) {
-      cachedAgentsBin = p;
-      return p;
-    }
-  } catch { /* fall through to filesystem probes */ }
-
-  // FALLBACKS: probe common locations. nvm before brew because brew copies
-  // go stale; shims first because that's the canonical agents-cli install.
-  const candidates: string[] = [path.join(os.homedir(), '.agents', 'shims', 'agents')];
-  try {
-    const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
-    const versions = fs.readdirSync(nvmDir).sort().reverse();
-    for (const v of versions) candidates.push(path.join(nvmDir, v, 'bin', 'agents'));
-  } catch { /* no nvm */ }
-  candidates.push('/opt/homebrew/bin/agents', '/usr/local/bin/agents');
-
-  for (const p of candidates) {
-    try {
-      if (!fs.existsSync(p) || !fs.statSync(p).isFile()) continue;
-      if (!(await binHasCloudCommand(p))) continue;
-      cachedAgentsBin = p;
-      return p;
-    } catch { /* next */ }
-  }
-
-  lastResolveError = 'no agents CLI with cloud/teams support found (needs v1.13.0+; found stale copies)';
-  throw new Error(lastResolveError);
-}
-
 // Probe a candidate binary by running `<bin> cloud --help`. Old versions
-// don't ship the cloud command and return non-zero. Takes ~200ms; only
-// runs during cache miss, then we remember the winner.
+// don't ship the cloud command and return non-zero. Takes ~200ms.
 async function binHasCloudCommand(bin: string): Promise<boolean> {
   try {
-    const augmented = buildBootstrapPath(bin);
-    await execAsync(`'${bin.replace(/'/g, `'\\''`)}' cloud --help`, {
+    const augmented = bootstrapPath(bin);
+    await execAsync(`${shellQuote(bin)} cloud --help`, {
       timeout: 3_000,
       env: { ...process.env, PATH: augmented },
     });
@@ -86,19 +42,6 @@ async function binHasCloudCommand(bin: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function buildBootstrapPath(binPath: string): string {
-  // Slim version used only for the --version probe. Just enough for the
-  // shebang `#!/usr/bin/env node` to find node.
-  const dirs = [path.dirname(binPath)];
-  try {
-    const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
-    const versions = fs.readdirSync(nvmDir).sort().reverse();
-    if (versions[0]) dirs.push(path.join(nvmDir, versions[0], 'bin'));
-  } catch { /* no nvm */ }
-  dirs.push('/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
-  return dirs.join(':');
 }
 
 export function getLastSourcesError(): string | undefined {
@@ -452,8 +395,4 @@ function buildAugmentedPath(binPath: string): string {
     combined.push(p);
   }
   return combined.join(':');
-}
-
-function shellQuote(s: string): string {
-  return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }

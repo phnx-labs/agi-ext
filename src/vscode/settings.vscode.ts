@@ -21,6 +21,7 @@ import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById, openA
 import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
+import { shellQuote } from '../core/deviceDispatchShell';
 import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '../core/agents';
 import { CLAUDE_TITLE } from '../core/utils';
 import { discoverRecentSessions, getSessionPathBySessionId } from './sessions.vscode';
@@ -340,11 +341,6 @@ function composeDispatchPrompt(
 // this file used to keep its own hand-copied identity list.
 // ---------------------------------------------------------------------------
 
-// Single-quote a value for safe embedding in a remote /bin/sh command.
-function shq(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 // Build the auto-sync shell snippet run in the project dir before the agent
 // starts. Safe = fetch + fast-forward only (fails loudly on divergence rather
 // than forcing). Aggressive = also rebase, but never force: on a rebase
@@ -394,8 +390,8 @@ async function dispatchToDevice(input: {
     const pAssign = projectPath === '~' || projectPath === ''
       ? '$P = $env:USERPROFILE'
       : projectPath.startsWith('~/')
-        ? `$P = Join-Path $env:USERPROFILE ${shq(projectPath.slice(2))}`
-        : `$P = ${shq(projectPath)}`;
+        ? `$P = Join-Path $env:USERPROFILE ${shellQuote(projectPath.slice(2))}`
+        : `$P = ${shellQuote(projectPath)}`;
     const logDir = 'Join-Path $env:USERPROFILE ".agents\\.tmp"';
     const runArgs = ['run', agentType, '--mode', mode, prompt]
       .map((a) => a.replace(/'/g, "''"))
@@ -417,14 +413,14 @@ async function dispatchToDevice(input: {
       `Start-Process -FilePath agents -ArgumentList @(${runArgs}) -WorkingDirectory $P -RedirectStandardOutput $logOut -RedirectStandardError $logErr -WindowStyle Hidden`;
   } else {
     const syncShell = buildDeviceSyncShell(syncPolicy);
-    const runCmd = `agents run ${shq(agentType)} --mode ${mode} ${shq(prompt)}`;
+    const runCmd = `agents run ${shellQuote(agentType)} --mode ${mode} ${shellQuote(prompt)}`;
     const pAssign =
       projectPath === '~' ? 'P="$HOME"'
-        : projectPath.startsWith('~/') ? `P="$HOME/"${shq(projectPath.slice(2))}`
-          : `P=${shq(projectPath)}`;
+        : projectPath.startsWith('~/') ? `P="$HOME/"${shellQuote(projectPath.slice(2))}`
+          : `P=${shellQuote(projectPath)}`;
     const cloneUrl = repoSlug ? `git@github.com:${repoSlug}.git` : '';
     const ensureClone = cloneUrl
-      ? `if [ ! -d "$P/.git" ]; then mkdir -p "$(dirname "$P")" && git clone ${shq(cloneUrl)} "$P"; fi && `
+      ? `if [ ! -d "$P/.git" ]; then mkdir -p "$(dirname "$P")" && git clone ${shellQuote(cloneUrl)} "$P"; fi && `
       : '';
     remote =
       `mkdir -p "$HOME/.agents/.tmp"; ${pAssign}; ${ensureClone}cd "$P" && ` +
@@ -682,10 +678,9 @@ async function dispatchForForeman(
     };
   }
 
-  const safePrompt = prompt.replace(/'/g, `'\\''`);
   const term = await getOrCreateRushCloudTerminal(context, workspacePath || process.cwd());
   const repoFlags = targetRepos.map((r) => `--repo ${r}`).join(' ');
-  term.sendText(`rush cloud run ${agent} ${repoFlags} -p '${safePrompt}'`);
+  term.sendText(`rush cloud run ${agent} ${repoFlags} -p ${shellQuote(prompt)}`);
   term.show(true);
 
   return {
@@ -725,10 +720,9 @@ async function spawnAgentForForeman(
   if (!workspaceRepo) {
     return { ok: false, message: 'No workspace repo detected. Open a git repo first.' };
   }
-  const safePrompt = opts.prompt.replace(/'/g, `'\\''`);
   const term = await getOrCreateRushCloudTerminal(context, workspacePath || process.cwd());
   const repoFlag = owner && workspaceRepo ? `--repo ${workspaceRepo}` : '';
-  term.sendText(`rush cloud run ${agentKey} ${repoFlag} -p '${safePrompt}'`.trimEnd());
+  term.sendText(`rush cloud run ${agentKey} ${repoFlag} -p ${shellQuote(opts.prompt)}`.trimEnd());
   term.show(true);
   return { ok: true, message: `Dispatched to ${agentKey} on Rush Cloud (${workspaceRepo}).` };
 }
@@ -3195,7 +3189,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             name: `Factory answer - ${message.teamId}`,
             env: buildAgentTerminalEnv(terminals.nextId('SH'), null),
           });
-          term.sendText(`agents factory answer ${shq(message.teamId)} ${shq(message.text)}`, true);
+          term.sendText(`agents factory answer ${shellQuote(message.teamId)} ${shellQuote(message.text)}`, true);
           term.show();
         }
         break;
@@ -3220,8 +3214,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         const keystroke = typeof message.keystroke === 'string' ? message.keystroke.trim() : '';
         const postReplyResult = (ok: boolean, error?: string) =>
           settingsPanel?.webview.postMessage({ type: 'replyResult', agentId: replyAgentId, ok, error });
-        // Single-quote for the shell (runAgents/ssh run via a shell string).
-        const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
         const replyHost = reply.host && reply.host !== 'this-mac' ? reply.host : '';
         if (!replyText) { postReplyResult(false, 'Reply text is empty'); break; }
         try {
@@ -3242,7 +3234,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             const sendKeys = async (keyArgs: string[]) => {
               if (replyHost) {
                 const remote = ['tmux', '-S', reply.muxSocket!, 'send-keys', '-t', reply.muxTarget!, ...keyArgs]
-                  .map(shq).join(' ');
+                  .map(shellQuote).join(' ');
                 await runAgentsSsh(replyHost, remote, 20_000);
               } else {
                 await execFileAsync('tmux', ['-S', reply.muxSocket!, 'send-keys', '-t', reply.muxTarget!, ...keyArgs], { timeout: 20_000 });
@@ -3264,14 +3256,14 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             postReplyResult(true);
           } else if (reply.kind === 'cloud') {
             if (!reply.cloudTaskId) { postReplyResult(false, 'Missing cloud task id'); break; }
-            const args = `cloud message ${shq(reply.cloudTaskId)} ${shq(replyText)}`;
-            if (replyHost) await runAgentsSsh(replyHost, `agents cloud message ${shq(reply.cloudTaskId)} ${shq(replyText)}`, 30_000);
+            const args = `cloud message ${shellQuote(reply.cloudTaskId)} ${shellQuote(replyText)}`;
+            if (replyHost) await runAgentsSsh(replyHost, `agents cloud message ${shellQuote(reply.cloudTaskId)} ${shellQuote(replyText)}`, 30_000);
             else await runAgents(args);
             postReplyResult(true);
           } else if (reply.kind === 'team') {
             if (!reply.teamName) { postReplyResult(false, 'Missing team name'); break; }
-            if (replyHost) await runAgentsSsh(replyHost, `agents factory answer ${shq(reply.teamName)} ${shq(replyText)}`, 30_000);
-            else await runAgents(`factory answer ${shq(reply.teamName)} ${shq(replyText)}`);
+            if (replyHost) await runAgentsSsh(replyHost, `agents factory answer ${shellQuote(reply.teamName)} ${shellQuote(replyText)}`, 30_000);
+            else await runAgents(`factory answer ${shellQuote(reply.teamName)} ${shellQuote(replyText)}`);
             postReplyResult(true);
           } else {
             postReplyResult(false, reply.reason || 'No reply channel for this agent');

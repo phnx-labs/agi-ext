@@ -26,6 +26,7 @@ import {
   listRegisteredDevices,
   type DeviceRef,
 } from './deviceHealth.vscode';
+import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -83,51 +84,6 @@ export async function mapWithConcurrency<T, R>(
   return out;
 }
 
-// Common CLI install dirs a GUI-launched editor's PATH usually MISSES. A raw
-// exec (no login shell) on macOS often has only /usr/bin:/bin, so `which agents`
-// and `ssh` fail even though a terminal finds them. We prepend these to PATH for
-// every shell-out here. (Homebrew first so the running install wins over the
-// stale ~/.hermes copy that triggers the CLI's "multiple installs" warning.)
-const EXTRA_BIN_DIRS = [
-  '/opt/homebrew/bin',
-  '/usr/local/bin',
-  path.join(homedir(), '.local', 'bin'),
-  path.join(homedir(), '.bun', 'bin'),
-];
-function pathAugmentedEnv(): NodeJS.ProcessEnv {
-  const extra = EXTRA_BIN_DIRS.join(':');
-  return { ...process.env, PATH: `${extra}:${process.env.PATH || ''}` };
-}
-
-// Resolve the `agents` binary once. The extension-host PATH can differ from an
-// interactive shell's, so try `which` with an augmented PATH, then fall back to
-// probing known install dirs directly (mirrors linear.vscode.ts:findLinearCli).
-let cachedAgentsPath: string | null = null;
-async function findAgentsCli(): Promise<string> {
-  if (cachedAgentsPath !== null) return cachedAgentsPath || 'agents';
-  try {
-    const { stdout } = await execAsync('which agents', { env: pathAugmentedEnv() });
-    const p = stdout.trim();
-    if (p) {
-      cachedAgentsPath = p;
-      return p;
-    }
-  } catch {
-    // fall through to direct probing
-  }
-  for (const dir of EXTRA_BIN_DIRS) {
-    const candidate = path.join(dir, 'agents');
-    try {
-      await fs.promises.access(candidate, fs.constants.X_OK);
-      cachedAgentsPath = candidate;
-      return candidate;
-    } catch {
-      // keep probing
-    }
-  }
-  cachedAgentsPath = '';
-  return 'agents';
-}
 
 // --- Host discovery ---------------------------------------------------------
 
@@ -167,7 +123,7 @@ export async function fetchRecentForHost(
   limit: number,
   projectRules: ProjectRule[],
 ): Promise<RemoteSession[]> {
-  const agentsBin = await findAgentsCli();
+  const agentsBin = await resolveAgentsBin();
   const fetchedAt = Date.now();
   const args = ['sessions', '--json', '--limit', String(limit)];
   if (isLocal) args.push('--local');
@@ -176,7 +132,7 @@ export async function fetchRecentForHost(
     const { stdout } = await execFileAsync(agentsBin, args, {
       timeout: isLocal ? HISTORY_TIMEOUT_LOCAL_MS : HISTORY_TIMEOUT_REMOTE_MS,
       maxBuffer: 16 * 1024 * 1024,
-      env: pathAugmentedEnv(),
+      env: { ...process.env, PATH: `${bootstrapPath(agentsBin)}:${process.env.PATH ?? ''}` },
     });
     const parsed = JSON.parse(stdout);
     const raw: any[] = Array.isArray(parsed) ? parsed : [];
@@ -218,14 +174,14 @@ export async function fetchRemoteSessionLabelSource(
   sessionId: string,
   host?: string,
 ): Promise<SessionLabelSource | null> {
-  const agentsBin = await findAgentsCli();
+  const agentsBin = await resolveAgentsBin();
   const args = ['sessions', sessionId, '--json'];
   if (host) args.push('--device', host);
   try {
     const { stdout } = await execFileAsync(
       agentsBin,
       args,
-      { timeout: DETAIL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: pathAugmentedEnv() },
+      { timeout: DETAIL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PATH: `${bootstrapPath(agentsBin)}:${process.env.PATH ?? ''}` } },
     );
     return parseSessionLabelSource(stdout, sessionId);
   } catch {
@@ -282,7 +238,7 @@ export async function fetchHostSessionDetail(
   host: string,
   sessionId: string
 ): Promise<HostSessionDetail> {
-  const agentsBin = await findAgentsCli();
+  const agentsBin = await resolveAgentsBin();
   const isLocal = host === LOCAL_HOST || host === LOCAL_LABEL;
   const args = ['sessions', sessionId, '--markdown', '--include', 'tools'];
   if (!isLocal) args.push('--device', host);
@@ -290,7 +246,7 @@ export async function fetchHostSessionDetail(
     const { stdout } = await execFileAsync(agentsBin, args, {
       timeout: DETAIL_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,
-      env: pathAugmentedEnv(),
+      env: { ...process.env, PATH: `${bootstrapPath(agentsBin)}:${process.env.PATH ?? ''}` },
     });
     return { host, sessionId, markdown: stdout };
   } catch (err) {

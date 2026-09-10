@@ -12,6 +12,7 @@
 
 import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project';
 import type { ProjectRule } from '../shared/project';
+import { shellQuote } from './deviceDispatchShell';
 
 // Re-exported so existing host importers keep their `from '../core/remoteSessions'`
 // path. The impls now live in src/shared/project so the webview (@shared) imports
@@ -1248,11 +1249,6 @@ function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | 
   return cwd ? { command, args, cwd } : { command, args };
 }
 
-/** Single-quote a shell argument only when it isn't already a safe bare token. */
-function shellQuoteArg(value: string): string {
-  return /^[A-Za-z0-9._:@/-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
 /**
  * Build the CLI's device-targeted resume command for a PREVIOUS (crashed/ended)
  * session (PHNX-3593): `agents sessions resume <id> [--device <device>] --vscodium`.
@@ -1262,9 +1258,9 @@ function shellQuoteArg(value: string): string {
  * editor tab. Pure so the built command is unit-tested and quotable.
  */
 export function buildRecoveryResumeCommand(sessionId: string, device?: string): string {
-  const parts = ['agents', 'sessions', 'resume', shellQuoteArg(sessionId)];
+  const parts = ['agents', 'sessions', 'resume', shellQuote(sessionId)];
   const d = (device || '').trim();
-  if (d) parts.push('--device', shellQuoteArg(d));
+  if (d) parts.push('--device', shellQuote(d));
   parts.push('--vscodium');
   return parts.join(' ');
 }
@@ -1283,14 +1279,14 @@ export function buildRecoveryMigrationCommand(
   sourceIsLocal = false,
 ): string {
   const migrate = [
-    'agents', 'sessions', 'migrate', shellQuoteArg(sessionId),
-    '--device', shellQuoteArg(targetDevice), '--mode', 'resume', '--keep',
+    'agents', 'sessions', 'migrate', shellQuote(sessionId),
+    '--device', shellQuote(targetDevice), '--mode', 'resume', '--keep',
   ];
   const source = sourceDevice.trim();
   const migrateCommand = source && !sourceIsLocal
-    ? ['agents', 'ssh', shellQuoteArg(source), ...migrate].join(' ')
+    ? ['agents', 'ssh', shellQuote(source), ...migrate].join(' ')
     : migrate.join(' ');
-  const focus = ['agents', 'sessions', 'focus', shellQuoteArg(sessionId), '--device', shellQuoteArg(targetDevice)].join(' ');
+  const focus = ['agents', 'sessions', 'focus', shellQuote(sessionId), '--device', shellQuote(targetDevice)].join(' ');
   return `${migrateCommand} && ${focus}`;
 }
 

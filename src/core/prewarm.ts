@@ -1,6 +1,8 @@
 // Session pre-warming - pure functions and types
 // VS Code integration in prewarm.vscode.ts
 
+import { shellQuote } from './deviceDispatchShell';
+
 export type PrewarmAgentType = 'claude' | 'codex' | 'gemini' | 'cursor' | 'opencode';
 
 /** Configuration for pre-warming per agent type */
@@ -75,13 +77,7 @@ export function buildVersionedResumeCommand(
   _version?: string,
   _host?: string,
 ): string {
-  return `agents sessions resume ${shellQuoteArg(sessionId)} --vscodium`;
-}
-
-/** Quote a session selector only when shell syntax requires it. */
-function shellQuoteArg(value: string): string {
-  if (/^[A-Za-z0-9._:-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  return `agents sessions resume ${shellQuote(sessionId)} --vscodium`;
 }
 
 /**
