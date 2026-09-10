@@ -4,10 +4,17 @@ import * as readline from 'readline';
 import * as path from 'path';
 import { homedir } from 'os';
 import type { Dirent, Stats } from 'fs';
-import { AgentSession } from '../core/sessions';
 import { runAgents } from '../core/agentsBin';
 import type { SqlJsStatic } from 'sql.js';
 import { cachedInFlight, createTimedCache } from '../core/cachedInFlight';
+
+export interface AgentSession {
+  agentType: 'claude' | 'codex' | 'gemini';
+  sessionId: string;
+  timestamp: Date;
+  path: string;
+  preview?: string;
+}
 
 // Cached SQL.js instance (lazy-loaded)
 let sqlJsPromise: Promise<SqlJsStatic | null> | null = null;

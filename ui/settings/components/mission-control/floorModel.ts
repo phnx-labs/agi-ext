@@ -670,7 +670,7 @@ export function visibleFloorAgents(agents: FloorAgent[], showBackground: boolean
 }
 
 /** Execution identity, never the observer's terminal id or a fleet-wide UUID. */
-export function executionSessionKey(a: Pick<FloorAgent, 'host' | 'agentType' | 'abbr' | 'sessionId'>): string | undefined {
+function executionSessionKey(a: Pick<FloorAgent, 'host' | 'agentType' | 'abbr' | 'sessionId'>): string | undefined {
   if (!a.sessionId) return undefined
   // `host` is the normalized execution routing key. Neither the display label
   // (which can be "Cloud") nor the transcript's sourceDevice replaces it.

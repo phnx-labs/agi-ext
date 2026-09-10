@@ -203,6 +203,9 @@ secrets bundle (`--device <name>` pins it, `--here` refuses to route).
 Tests sit beside source and exercise real command boundaries — no mocking
 beyond the shared `vscodeDouble` (a hand-rolled partial double breaks OTHER
 files in the same bun run; `src/testing/vscodeDouble.test.ts` enforces this).
+Dead code is gated via `knip` (run locally with `bun run lint:dead`, wired into
+`scripts/build.sh` before compile) — zero exports in the gate output is
+enforced; every merge must keep the tree clean.
 
 ## Conventions
 
