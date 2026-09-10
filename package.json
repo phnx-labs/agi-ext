@@ -1001,38 +1001,25 @@
     "compile:ui": "cd ui && bun run build",
     "watch": "tsc -watch -p ./",
     "package": "bun run compile && vsce package",
-    "rebuild": "electron-rebuild -f -w node-pty",
     "test": "bun test --timeout 30000",
     "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/draftPrompt.test.ts src/core/labelgen.test.ts src/core/commitgen.test.ts"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.1",
     "@happy-dom/global-registrator": "^20.11.6",
     "@types/node": "^20.x",
-    "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.18.1",
-    "dompurify": "^3.4.14",
-    "gray-matter": "^4.0.3",
-    "lucide-react": "^1.34.0",
-    "marked": "15.0.12",
-    "react-dom": "^19.2.7",
     "typescript": "^5.3.3"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "@vscode/webview-ui-toolkit": "^1.4.0",
-    "node-pty": "^1.0.0",
-    "sql.js": "^1.13.0",
     "ws": "^8.20.0",
     "yaml": "^2.8.2"
   },
   "bundledDependencies": [
-    "node-pty",
     "yaml"
   ],
   "bundleDependencies": [
-    "node-pty",
     "yaml"
   ]
 }
