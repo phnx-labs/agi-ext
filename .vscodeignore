@@ -6,10 +6,7 @@ tsconfig.json
 node_modules/**
 **/node_modules/**
 !node_modules/yaml/**
-!node_modules/node-pty/**
-!node_modules/sql.js/**
 !node_modules/ws/**
-node_modules/node-pty/prebuilds/darwin-*/**
 ui/**
 scripts/**
 *.vsix
