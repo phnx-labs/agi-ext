@@ -1,7 +1,7 @@
 // Settings types and pure functions (no VS Code dependencies - testable)
 
 // Per-agent configuration for built-in agents
-export interface BuiltInAgentConfig {
+interface BuiltInAgentConfig {
   login: boolean;
   instances: number;
   defaultModel?: string;
@@ -17,7 +17,7 @@ export interface CustomAgentConfig {
 
 // Command alias for built-in agents with custom flags
 // e.g., "Fast" alias for Claude with "--model claude-haiku-4-5-20251001"
-export interface CommandAlias {
+interface CommandAlias {
   name: string;           // Display name (e.g., "Fast", "Max Context")
   agent: string;          // Built-in agent key: "claude" | "codex" | "gemini" | etc.
   flags: string;          // Additional CLI flags (e.g., "--model claude-haiku-4-5-20251001")
@@ -133,7 +133,7 @@ export interface AgentSettings {
   projectRules?: ProjectRule[];     // Ordered cwd->project mappings for Fleet grouping
 }
 
-export interface EditorPreferences {
+interface EditorPreferences {
   markdownViewerEnabled: boolean;
 }
 

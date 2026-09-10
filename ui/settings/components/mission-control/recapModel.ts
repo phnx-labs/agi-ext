@@ -17,7 +17,7 @@ export interface RecapForkEdge {
   forkedAt: number
 }
 
-export interface RecapEntry {
+interface RecapEntry {
   id: string
   abbr: AgentAbbr
   /** Task line: label/topic, else worktree slug, else branch, else a generic agent title. */

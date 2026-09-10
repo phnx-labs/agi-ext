@@ -107,8 +107,6 @@ const STATUS_BAR_LABELS_KEY = 'agentStatusBarLabels';
 
 type StatusBarLabelsStorage = { [pid: number]: string };
 
-// Re-export PersistedSession from sessions.persist for external use
-export type { PersistedSession } from '../core/sessions.persist';
 
 function loadStatusBarLabels(context: vscode.ExtensionContext): StatusBarLabelsStorage {
   const stored = context.globalState.get<StatusBarLabelsStorage>(STATUS_BAR_LABELS_KEY);
@@ -170,7 +168,7 @@ let persistTimeout: NodeJS.Timeout | null = null;
  * Schedule disk persistence (debounced to batch rapid changes).
  * Call this after any terminal state change.
  */
-export function schedulePersist(): void {
+function schedulePersist(): void {
   const workspacePath = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspacePath) return;
 

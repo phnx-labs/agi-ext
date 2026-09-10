@@ -4,10 +4,9 @@
 // UnifiedTask / TaskMetadata / TaskComment / TaskSource are canonical in
 // src/shared/tasks.ts — the ONE definition shared with the webview (@shared), so a
 // field (e.g. `project`) can never be present on one side of the postMessage
-// boundary and missing on the other. Imported for local use here + re-exported for
-// existing consumers.
-import type { TaskSource, UnifiedTask, TaskMetadata, TaskComment } from '../shared/tasks';
-export type { UnifiedTask, TaskMetadata, TaskComment, TaskSource };
+// boundary and missing on the other.
+import type { TaskSource, UnifiedTask, TaskComment, TaskMetadata } from '../shared/tasks';
+export type { UnifiedTask, TaskSource };
 
 export interface TaskDispatchPromptInput {
   title: string;

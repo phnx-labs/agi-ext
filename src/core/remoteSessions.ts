@@ -46,7 +46,7 @@ export interface RemoteQuestion {
   options: RemoteQuestionOption[];
 }
 
-export interface RemoteAttention {
+interface RemoteAttention {
   key: string;
   sessionId: string;
   kind: 'question' | 'permission' | 'plan_review' | 'declared' | 'failure' | 'stall' | 'review';
@@ -224,7 +224,7 @@ export interface RemoteCheckpoint {
  * and `headline` is its first sentence. Absent on an older CLI — the Request card
  * falls back to `userPromptClean`, then `topic`.
  */
-export interface RemoteRequestAttachment {
+interface RemoteRequestAttachment {
   kind: 'image' | 'file' | 'dir';
   name: string;
 }
@@ -250,7 +250,7 @@ export interface RemoteRequest {
  * from, so a `derived` step (a harness with no narration) can render muted
  * instead of pretending the agent said it.
  */
-export interface RemoteTimelineStep {
+interface RemoteTimelineStep {
   text: string;
   /** ISO timestamp. A numeric epoch on the wire is normalized to ISO here. */
   at: string;
@@ -289,7 +289,7 @@ export interface RemoteTimeline {
 }
 
 /** One file the session created, modified or deleted. */
-export interface RemoteFileChange {
+interface RemoteFileChange {
   path: string;
   op: 'created' | 'modified' | 'deleted';
   edits: number;

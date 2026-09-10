@@ -29,7 +29,7 @@ export interface HostResourceSummary {
   drift: number;
 }
 
-export interface HostAgentVersion {
+interface HostAgentVersion {
   version: string;
   isDefault: boolean;
   signedIn: boolean;

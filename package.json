@@ -1006,7 +1006,6 @@
     "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/draftPrompt.test.ts src/core/labelgen.test.ts src/core/commitgen.test.ts"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.11.6",
     "@types/node": "^20.x",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",
