@@ -2,7 +2,6 @@
 // Live session state is owned by `agents sessions watch --json` and projected by
 // SessionPresentationStore; this module never polls or reconstructs that state.
 
-import * as fs from 'fs';
 import * as os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';

@@ -93,7 +93,9 @@ export async function resolveAgentsBin(): Promise<string> {
  * PATH the extension host already had.
  */
 export function bootstrapPath(binPath: string): string {
-  const dirs = [path.dirname(binPath)];
+  // Newest nvm node goes first: a homebrew node in the binary's own dir can be
+  // stale, and the shebang must resolve the node the agents CLI was built for.
+  const dirs: string[] = [];
   try {
     const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
     const versions = fs.readdirSync(nvmDir).sort().reverse();
@@ -101,7 +103,7 @@ export function bootstrapPath(binPath: string): string {
   } catch {
     /* no nvm */
   }
-  dirs.push(path.join(os.homedir(), '.agents', 'shims'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
+  dirs.push(path.dirname(binPath), path.join(os.homedir(), '.agents', 'shims'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
   dirs.push(...(process.env.PATH ?? '').split(':').filter(Boolean));
   return [...new Set(dirs)].join(':');
 }
