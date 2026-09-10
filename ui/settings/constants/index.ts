@@ -7,9 +7,16 @@ import type {
   ThemedIcon,
   BuiltInAgentConfig,
 } from '../types'
+import {
+  SWARM_CAPABLE_HARNESSES,
+  HARNESS_LABELS,
+  HARNESS_INSTALL_INFO,
+  HARNESS_TITLE_TO_ID,
+  HARNESS_ID_TO_TITLE,
+} from '@shared/harnessRegistry'
 
-// All swarm-capable agents
-export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex', 'gemini', 'opencode']
+// All swarm-capable agents (derived from shared registry)
+export const ALL_SWARM_AGENTS: SwarmAgentType[] = SWARM_CAPABLE_HARNESSES as any
 
 // Default settings
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -28,13 +35,11 @@ export const SOURCE_BADGES: Record<TaskSource, { label: string; color: string }>
   github: { label: 'GH', color: '#238636' }
 }
 
-// Reserved agent name prefixes (cannot be used for custom agents)
-// Swarm agent display labels
+// Swarm agent display labels (derived from shared registry)
 export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = {
-  codex: 'Codex',
-  claude: 'Claude',
-  gemini: 'Gemini',
-  opencode: 'OpenCode'
+  codex: HARNESS_LABELS.codex,
+  claude: HARNESS_LABELS.claude,
+  opencode: HARNESS_LABELS.opencode,
 }
 
 // Tab display labels
@@ -44,57 +49,14 @@ export const TAB_LABELS: Record<TabId, string> = {
   panel: 'Panel'
 }
 
-// Install commands/links for each agent
-export const AGENT_INSTALL_INFO: Record<string, { command?: string; url?: string }> = {
-  claude: { command: 'npm install -g @anthropic-ai/claude-code' },
-  codex: { command: 'npm install -g @openai/codex' },
-  gemini: { command: 'npm install -g @google/gemini-cli', url: 'https://github.com/google-gemini/gemini-cli' },
-  opencode: { url: 'https://github.com/opencode-ai/opencode' },
-  cursor: { url: 'https://cursor.com' },
-  antigravity: { command: 'curl -fsSL https://antigravity.google/cli/install.sh | bash', url: 'https://antigravity.google' },
-  grok: { command: 'curl -fsSL https://x.ai/cli/install.sh | bash', url: 'https://x.ai' },
-  kimi: { command: 'curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash', url: 'https://code.kimi.com' },
-  droid: { command: 'curl -fsSL https://app.factory.ai/cli | sh', url: 'https://factory.ai' },
-}
+// Install commands/links for each agent (derived from shared registry)
+export const AGENT_INSTALL_INFO: Record<string, { command?: string; url?: string }> = HARNESS_INSTALL_INFO as any
 
-// agents-cli package for managing agent configurations
-export const AGENTS_CLI_PACKAGE = '@swarmify/agents-cli'
-// Map from agent title (CL, CX, etc.) to key (claude, codex, etc.)
-export const AGENT_TITLE_TO_KEY: Record<string, string> = {
-  'CC': 'claude',
-  'CX': 'codex',
-  'GX': 'gemini',
-  'OC': 'opencode',
-  'CR': 'cursor',
-  'SH': 'shell',
-  'AG': 'antigravity',
-  'GK': 'grok',
-  'KM': 'kimi',
-  'DR': 'droid',
-  'Claude': 'claude',
-  'Codex': 'codex',
-  'Gemini': 'gemini',
-  'OpenCode': 'opencode',
-  'Cursor': 'cursor',
-  'Shell': 'shell',
-  'Antigravity': 'antigravity',
-  'Grok': 'grok',
-  'Kimi': 'kimi',
-  'Droid': 'droid',
-}
+// Map from agent title (CC, CX, etc.) to key (claude, codex, etc.)
+export const AGENT_TITLE_TO_KEY: Record<string, string> = HARNESS_TITLE_TO_ID
 
 // Map from key to title (for dropdown)
-export const AGENT_KEY_TO_TITLE: Record<string, string> = {
-  'claude': 'CC',
-  'codex': 'CX',
-  'gemini': 'GX',
-  'opencode': 'OC',
-  'cursor': 'CR',
-  'antigravity': 'AG',
-  'grok': 'GK',
-  'kimi': 'KM',
-  'droid': 'DR',
-}
+export const AGENT_KEY_TO_TITLE: Record<string, string> = HARNESS_ID_TO_TITLE as any
 
 // Notification-capable agents
 // Markdown rendering allowed tags
