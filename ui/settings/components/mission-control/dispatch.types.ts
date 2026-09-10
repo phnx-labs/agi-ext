@@ -14,8 +14,8 @@
 
 export type DispatchMode = 'plan' | 'auto' | 'edit'
 export type WatchdogPolicy = 'off' | 'keep' | 'handsoff'
-export type HostKind = 'local' | 'remote' | 'cloud'
-export type HostLoad = 'idle' | 'free' | 'busy' | 'hot' | 'off'
+type HostKind = 'local' | 'remote' | 'cloud'
+type HostLoad = 'idle' | 'free' | 'busy' | 'hot' | 'off'
 
 /** An installed agent (from `agents view --json` via agentInventory). Only agents
  *  with an installed version appear; `signedIn` gates whether it can run. */

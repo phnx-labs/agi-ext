@@ -430,7 +430,7 @@ export function sinceFromMs(ms: number): string {
 }
 
 /** Human elapsed label from an ISO timestamp, measured against now. */
-export function sinceFromIso(iso: string, nowMs: number): string {
+function sinceFromIso(iso: string, nowMs: number): string {
   const started = new Date(iso).getTime()
   if (!isFinite(started)) return ''
   return sinceFromMs(nowMs - started)
@@ -473,7 +473,7 @@ function humanRemoteSessionName(r: RemoteSessionLike): string {
  * channel, so it resolves to 'none' with a reason the UI shows inline. `host`
  * rides through so the host handler can ssh cloud/team commands to the owner.
  */
-export function deriveReplyTargetFromRemote(r: RemoteSessionLike): ReplyTarget {
+function deriveReplyTargetFromRemote(r: RemoteSessionLike): ReplyTarget {
   const ctx = (r.context || '').toLowerCase()
   if (r.cloudTaskId || ctx === 'cloud') {
     if (!r.cloudTaskId) return { kind: 'none', host: r.host, reason: 'Cloud task id unknown' }
@@ -841,7 +841,7 @@ export function toFloorAgentFromRemote(
 }
 
 /** Map local UnifiedAgents (watchdog rows should be filtered out by the caller). */
-export function adaptUnified(
+function adaptUnified(
   agents: UnifiedAgentLike[],
   opts: UnifiedAdapterOptions,
 ): FloorAgent[] {

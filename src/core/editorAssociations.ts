@@ -15,7 +15,7 @@ export const AGENTS_MARKDOWN_EDITOR = 'agents.markdownEditor';
 /** Sandboxed HTML preview for artifacts-cli (and other) HTML docs. */
 export const AGENTS_HTML_READER = 'agents.htmlReader';
 
-export const READER_PATTERNS = ['*.md', '*.html', '*.htm'] as const;
+const READER_PATTERNS = ['*.md', '*.html', '*.htm'] as const;
 
 /**
  * Normalize whatever is stored for `workbench.editorAssociations` into the

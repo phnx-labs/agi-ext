@@ -95,7 +95,6 @@ export function registeredDevicesToDispatchDevices(devices: unknown[]): Dispatch
 // polling (issue #2030). Local tab agents stream via the extension's monitor /
 // webview pushes; remote rows refresh when the operator clicks the freshness
 // chip (or on the one-shot seed when the panel becomes visible).
-export { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 
 const NEW_AGENT_MENU: Array<{ agent: string; name: string; abbr: string; keys: string[] }> = [

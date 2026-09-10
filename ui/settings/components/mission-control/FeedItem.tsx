@@ -388,7 +388,7 @@ interface TicketStripProps {
 }
 
 // Next-Up backlog teaser row. Prototype ticketStrip(): factory-floor.html:621-623.
-export function TicketStrip({ ticket: t, onDispatch, onSelect }: TicketStripProps) {
+function TicketStrip({ ticket: t, onDispatch, onSelect }: TicketStripProps) {
   return (
     <div className="trow" data-tid={t.id} onClick={() => onSelect(t.id)}>
       <span className={`pri ${t.pri}`} />

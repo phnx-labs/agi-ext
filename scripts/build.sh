@@ -44,9 +44,9 @@ if [ ! -d "node_modules" ]; then
     bun install
 fi
 
-# Check for dead code (knip installation deferred pending npm cert fix)
-# echo "Checking for unused exports and dead modules..."
-# bun run lint:dead
+# Check for dead code (knip gate: ensure all exports are used)
+echo "Checking for unused exports and dead modules..."
+bun run lint:dead
 
 # Compile TypeScript
 echo "Compiling TypeScript..."

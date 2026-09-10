@@ -84,7 +84,7 @@ export type SwarmAgentType = 'claude' | 'codex' | 'gemini' | 'opencode'
 export type PromptPackAgentType = 'claude' | 'codex' | 'gemini' | 'cursor'
 
 // Skills types
-export type SkillName =
+type SkillName =
   | 'plan'
   | 'splan'
   | 'debug'
@@ -100,7 +100,7 @@ export type SkillName =
   | 'srecap'
   | 'simagine'
 
-export interface SkillAgentStatus {
+interface SkillAgentStatus {
   installed: boolean
   cliAvailable: boolean
   builtIn: boolean
@@ -126,7 +126,7 @@ export interface WatchdogPlaybookStatus {
 }
 
 // Prompt types
-export interface PromptEntry {
+interface PromptEntry {
   id: string
   title: string
   content: string
@@ -140,9 +140,9 @@ export interface PromptEntry {
 // in src/shared/tasks.ts and imported here via @shared — the SAME definition the
 // extension host uses, so a field (e.g. Linear `project`) can never be present on
 // one side of the postMessage boundary and missing on the other.
-export type { TaskSource, UnifiedTask, TaskMetadata, TaskComment } from '@shared/tasks'
+export type { TaskSource, UnifiedTask } from '@shared/tasks'
 
-export interface TaskSourceSettings {
+interface TaskSourceSettings {
   linear: boolean
   github: boolean
   githubAssignedOnly: boolean
@@ -219,7 +219,7 @@ export interface RunningCounts {
 }
 
 // Agent status types
-export interface AgentInstallStatus {
+interface AgentInstallStatus {
   installed: boolean
   cliAvailable: boolean
   mcpEnabled: boolean
@@ -333,7 +333,7 @@ export interface TaskSummary {
   mix?: string
 }
 
-export interface SessionQuickSummary {
+interface SessionQuickSummary {
   filesEdited: number
   filesRead: number
   filesCreated: number
@@ -478,7 +478,7 @@ export interface BuiltInAgentConfig {
 }
 
 // Workspace config types
-export interface ContextMapping {
+interface ContextMapping {
   source: string
   aliases: string[]
 }

@@ -71,7 +71,7 @@ export const BUILT_IN_AGENTS: BuiltInAgentDef[] = PRESENTED_AGENTS.map((p) => ({
 // path is gone. This is the ONE canonical source: the registration loop, the
 // webview spawn/execute guards, and the command allowlist all read it, so a
 // deprecation can never be enforced in one place and leak in another.
-export const DEPRECATED_AGENT_KEYS: ReadonlySet<string> = new Set(['gemini']);
+const DEPRECATED_AGENT_KEYS: ReadonlySet<string> = new Set(['gemini']);
 
 // True when `key` names an agent the extension no longer offers a launch command
 // for. A webview message that tries to spawn one must be refused with a clear
