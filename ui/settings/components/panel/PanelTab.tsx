@@ -246,7 +246,7 @@ export function PanelTab({
   }
 
   const toggleSwarmAgent = (agent: SwarmAgentType, enabled: boolean) => {
-    const current = settings.swarmEnabledAgents || ALL_SWARM_AGENTS
+    const current = settings.swarmEnabledAgents || [...ALL_SWARM_AGENTS]
     const next = enabled
       ? [...current, agent].filter((value, index, array) => array.indexOf(value) === index)
       : current.filter(value => value !== agent)
@@ -284,7 +284,7 @@ export function PanelTab({
     },
   ]
 
-  const agentRows = (['claude', 'codex', 'gemini', 'opencode'] as SwarmAgentType[]).map(agent => {
+  const agentRows = ALL_SWARM_AGENTS.map(agent => {
     const status = getAgentStatus(agent)
     const skillSummary = agent === 'opencode' ? { total: 0, installed: 0 } : getSkillSummary(agent)
     return {

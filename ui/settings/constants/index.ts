@@ -11,9 +11,9 @@ import type {
 import { BUILT_IN_AGENTS, CLI_AGENT_META, type CliAgentId } from '@shared/agents'
 
 // The harnesses the swarm settings panel offers. This is the one hand-written
-// list in the UI; ids must be CLI ids (drift.test.ts checks) and labels come
-// from the CLI catalog.
-export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex', 'gemini', 'opencode']
+// list in the UI: SwarmAgentType is derived from it, ids must be CLI ids
+// (drift.test.ts checks), and labels come from the CLI catalog.
+export const ALL_SWARM_AGENTS = ['claude', 'codex', 'gemini', 'opencode'] as const satisfies readonly CliAgentId[]
 
 export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = Object.fromEntries(
   ALL_SWARM_AGENTS.map((id) => [id, CLI_AGENT_META[id].name]),
