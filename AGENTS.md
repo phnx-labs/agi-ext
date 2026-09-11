@@ -94,6 +94,6 @@ Four tests assert on source text (`autoLabelHydration`, `statusBarIdentity.spawn
 
 - `AGENTS.md` is canonical; `CLAUDE.md` is a symlink to it. Edit only `AGENTS.md`.
 - Worktree under `.agents/worktrees/<slug>/` + PR for every change; never commit to `main`.
-  No stubs, no fallbacks, no second scheduler, no mocks beyond `vscodeDouble`.
+- No stubs, no fallbacks, no second scheduler, no mocks beyond `vscodeDouble`.
 - Every user-visible change updates `CHANGELOG.md`; a behavior change updates `docs/PRD.md`
   or `docs/ARCH.md` in the same PR, then `docs/render.sh`.
