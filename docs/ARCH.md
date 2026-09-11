@@ -135,25 +135,25 @@ The extension host is a single Node process per editor window. It holds the elec
 <rect x="1" y="1" width="998" height="518" rx="16" fill="#09090b" stroke="#3f3f46"/>
 <text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">UML SEQUENCE · ONE RESET THEN INCREMENTS · TIME FLOWS DOWN</text>
 <g font-family="system-ui,sans-serif" font-size="12" fill="#e7ece8" text-anchor="middle">
-<rect x="40" y="50" width="150" height="40" rx="6" fill="#12211a" stroke="#a3e635"/><text x="115" y="70">agents feed watch</text><text x="115" y="84" fill="#8b938c" font-size="10">child (CLI)</text>
-<rect x="240" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="315" y="70">Leader window</text><text x="315" y="84" fill="#8b938c" font-size="10">SessionCliStream · MonitorHost</text>
-<rect x="440" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="515" y="70">Broadcast socket</text><text x="515" y="84" fill="#8b938c" font-size="10">MonitorBroadcastServer</text>
-<rect x="640" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="715" y="70">Presentation store</text><text x="715" y="84" fill="#8b938c" font-size="10">per window</text>
-<rect x="830" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="905" y="70">Tabs · sidebar · Fleet</text><text x="905" y="84" fill="#8b938c" font-size="10">consumers</text>
+<rect x="40" y="50" width="150" height="40" rx="6" fill="#12211a" stroke="#a3e635"/><text x="115" y="70" font-size="12">agents feed watch</text><text x="115" y="84" fill="#8b938c" font-size="10">child (CLI)</text>
+<rect x="240" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="315" y="70" font-size="12">Leader window</text><text x="315" y="84" fill="#8b938c" font-size="10">SessionCliStream · MonitorHost</text>
+<rect x="440" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="515" y="70" font-size="12">Broadcast socket</text><text x="515" y="84" fill="#8b938c" font-size="10">MonitorBroadcastServer</text>
+<rect x="640" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="715" y="70" font-size="12">Presentation store</text><text x="715" y="84" fill="#8b938c" font-size="10">per window</text>
+<rect x="830" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="905" y="70" font-size="12">UI consumers</text><text x="905" y="84" fill="#8b938c" font-size="10">tabs · sidebar · Fleet</text>
 </g>
 <g stroke="#3f3f46" stroke-dasharray="4 4"><line x1="115" y1="90" x2="115" y2="470"/><line x1="315" y1="90" x2="315" y2="470"/><line x1="515" y1="90" x2="515" y2="470"/><line x1="715" y1="90" x2="715" y2="470"/><line x1="905" y1="90" x2="905" y2="470"/></g>
 <rect x="310" y="110" width="10" height="330" fill="#26302a"/><rect x="710" y="150" width="10" height="290" fill="#26302a"/>
 <path d="M120 130L308 130" stroke="#a3e635" stroke-width="1.5" marker-end="url(#sq-async)"/><text x="130" y="124" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">reset(scope, streamId, sequence, agents[], attention[])</text>
 <path d="M320 150L508 150" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="330" y="144" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">ingest into replay cache; broadcast frame</text>
 <path d="M520 170L708 170" stroke="#a3e635" stroke-width="1.5" marker-end="url(#sq-async)"/><text x="530" y="164" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">session-cli fact</text>
-<path d="M720 190L898 190" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="730" y="184" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">apply: replace scope; resetScopes += scope</text>
+<path d="M720 190L898 190" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="730" y="184" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">apply: replace scope, mark reset seen</text>
 <text x="730" y="206" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">consumers re-render from selectors</text>
 <path d="M120 240L308 240" stroke="#a3e635" stroke-width="1.5" marker-end="url(#sq-async)"/><text x="130" y="234" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">agent.upsert(rowKey, sequence n+1, row)</text>
 <path d="M320 260L508 260" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><path d="M520 280L708 280" stroke="#a3e635" stroke-width="1.5" marker-end="url(#sq-async)"/>
-<path d="M720 300L898 300" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="730" y="294" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">apply only if sequence &gt; last(streamId); minimal refresh</text>
+<path d="M720 300L898 300" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="730" y="294" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">apply if sequence &gt; last; minimal refresh</text>
 <path d="M120 340L308 340" stroke="#a3e635" stroke-width="1.5" marker-end="url(#sq-async)"/><text x="130" y="334" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">attention.remove(rowKey, sequence n+2)</text>
 <path d="M320 360L508 360" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><path d="M520 380L708 380" stroke="#a3e635" stroke-width="1.5" marker-end="url(#sq-async)"/>
-<path d="M720 400L898 400" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="730" y="394" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">needs-you card leaves; receipt in activity lane</text>
+<path d="M720 400L898 400" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="730" y="394" fill="#d4d4d8" font-family="ui-monospace,monospace" font-size="10">needs-you card leaves; activity receipt</text>
 <path d="M120 430L308 430" stroke="#a3e635" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sq-async)"/><text x="130" y="424" fill="#f5c451" font-family="ui-monospace,monospace" font-size="10">stale event (sequence ≤ last) → ignored at the store; a new streamId → next reset rebuilds</text>
 <text x="24" y="492" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="11" font-weight="600">Legend</text>
 <line x1="80" y1="489" x2="120" y2="489" stroke="#e7ece8" stroke-width="1.5" marker-end="url(#sq-sync)"/><text x="128" y="493" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">synchronous call</text>
@@ -184,13 +184,13 @@ Failure semantics: a missing CLI binary is a visible prerequisite failure; a mal
 <text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">UML STATE MACHINE · ONE AGENT TAB</text>
 <circle cx="60" cy="110" r="9" fill="#e7ece8"/>
 <g font-family="system-ui,sans-serif" font-size="13" fill="#e7ece8" text-anchor="middle">
-<rect x="110" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="175" y="115">Opening</text>
-<rect x="300" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="365" y="115">Active</text>
-<rect x="490" y="88" width="150" height="44" rx="14" fill="#12211a" stroke="#a3e635"/><text x="565" y="115">Identified</text>
-<rect x="710" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="115">Persisted</text>
-<rect x="710" y="230" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="257">Restored</text>
-<rect x="300" y="300" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="365" y="327">Closed</text>
-<rect x="490" y="300" width="150" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="565" y="327">Stopped</text>
+<rect x="110" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="175" y="115" font-size="13">Opening</text>
+<rect x="300" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="365" y="115" font-size="13">Active</text>
+<rect x="490" y="88" width="150" height="44" rx="14" fill="#12211a" stroke="#a3e635"/><text x="565" y="115" font-size="13">Identified</text>
+<rect x="710" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="115" font-size="13">Persisted</text>
+<rect x="710" y="230" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="257" font-size="13">Restored</text>
+<rect x="300" y="300" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="365" y="327" font-size="13">Closed</text>
+<rect x="490" y="300" width="150" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="565" y="327" font-size="13">Stopped</text>
 </g>
 <path d="M69 110L108 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/>
 <path d="M240 110L298 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="243" y="102" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">terminals.register</text>
@@ -202,7 +202,7 @@ Failure semantics: a missing CLI binary is a visible prerequisite failure; a mal
 <path d="M365 132L365 298" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="372" y="220" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">user closes tab</text>
 <path d="M530 132C480 200 420 260 400 298" stroke="#a1a1aa" stroke-width="1.4" fill="none" marker-end="url(#st-a)"/><text x="455" y="260" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">user closes tab</text>
 <path d="M430 322L488 322" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="434" y="314" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">TerminalExitReason.User only</text>
-<text x="490" y="366" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">Stopped = one agents sessions stop &lt;id&gt;</text>
+<text x="650" y="327" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">= one agents sessions stop &lt;id&gt;</text>
 <text x="24" y="366" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Reload and restore are never a close. Two distinct live claims stay ambiguous; start time is not ownership.</text>
 <text x="24" y="384" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Source: src/vscode/terminals.vscode.ts (registry), src/core/sessions.persist.ts (metadata), src/vscode/terminalReadiness.ts (close vs reload).</text>
 </svg>
@@ -240,11 +240,13 @@ The Fleet "Needs you" lane is a projection of the CLI attention rows the stream 
 
 Project attribution follows the same rule. `sessionProjects.ts` resolves a session's project only from hints the projected row carries (cwd or worktree path, the CLI's repo word, the PR's `owner/repo` slug, then branch, worktree slug, or team) through `matchLinearProject` in `src/shared/linearProjects.ts`, whose containment fallback is word-wise. A session no hint can attribute is the labeled Unassigned bucket with its reason; a manual assignment is a local presentation override.
 
+The rest of the dashboard composes the same way. Session rows describe conversations and progress; attention facts keep the exact question, choices, and resolution lifecycle; activity facts supply chronological evidence such as plans, pull requests, teams, and artifacts. The dashboard may group, filter, sort, and decorate them, may hide background work by presentation policy without removing it from the model, and must never infer a new canonical status from transcript text or process scans. Device, project, and ticket views still arrive through separate bounded CLI reads and do not live in the presentation store. Optimistic UI is limited to transient feedback; durable changes arrive back through the feed.
+
 <a id="findings"></a>
 
 ## Findings
 
-The module graph was measured on this branch on 2026-09-11 with the refactor scanner (`.agents/artifacts/2026-09-10/refactor/modules.json`): 140 of 156 TypeScript files under `src/` parsed, 7 directory modules, 12 import edges, 2 cycles, 1 god module.
+The module graph was measured on this branch on 2026-09-11 with the `code:refactor` module scanner (its `modules.json` lives in the session artifacts and is not committed): 140 of 156 TypeScript files under `src/` parsed, 7 directory modules, 12 import edges, 2 cycles, 1 god module.
 
 <figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" role="img" aria-label="Module dependency graph of src: vscode imports core 138 times and monitor 11 times; core, monitor, and shared form a cycle; mcp and vscode form a cycle">
@@ -256,7 +258,7 @@ The module graph was measured on this branch on 2026-09-11 with the refactor sca
 <g font-family="system-ui,sans-serif" fill="#e7ece8">
 <rect x="60" y="70" width="230" height="70" rx="8" fill="#161a18" stroke="#f5c451" stroke-width="2"/><text x="74" y="94" font-size="14" font-weight="600">vscode</text><text x="74" y="112" font-size="11" fill="#8b938c">35 files · 21,897 LOC · cohesion 0.31</text><text x="74" y="128" font-size="11" fill="#8b938c">fan-out 153 · extension.ts 5,659 LOC</text>
 <rect x="60" y="300" width="230" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="74" y="324" font-size="14" font-weight="600">mcp</text><text x="74" y="342" font-size="11" fill="#8b938c">3 files · 644 LOC</text><text x="74" y="358" font-size="11" fill="#8b938c">watchdog bridge + MCP server</text>
-<rect x="420" y="180" width="230" height="70" rx="8" fill="#12211a" stroke="#a3e635" stroke-width="2"/><text x="434" y="204" font-size="14" font-weight="600">core</text><text x="434" y="222" font-size="11" fill="#8b938c">80 files · 13,044 LOC · cohesion 0.90</text><text x="434" y="238" font-size="11" fill="#8b938c">fan-in 146 · god module · no vscode import</text>
+<rect x="420" y="180" width="230" height="70" rx="8" fill="#12211a" stroke="#a3e635" stroke-width="2"/><text x="434" y="204" font-size="14" font-weight="600">core</text><text x="434" y="222" font-size="11" fill="#8b938c">80 files · 13,044 LOC · cohesion 0.90</text><text x="434" y="238" font-size="11" fill="#8b938c">fan-in 146 · god module by size</text>
 <rect x="740" y="70" width="230" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="754" y="94" font-size="14" font-weight="600">monitor</text><text x="754" y="112" font-size="11" fill="#8b938c">13 files · 2,811 LOC · cohesion 0.80</text><text x="754" y="128" font-size="11" fill="#8b938c">leader, broadcast, stream, readiness</text>
 <rect x="740" y="300" width="230" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="754" y="324" font-size="14" font-weight="600">shared</text><text x="754" y="342" font-size="11" fill="#8b938c">4 files · 236 LOC</text><text x="754" y="358" font-size="11" fill="#8b938c">re-exports for ui/ via @shared</text>
 </g>
@@ -273,7 +275,7 @@ The module graph was measured on this branch on 2026-09-11 with the refactor sca
 <text x="24" y="400" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="11" font-weight="600">Legend</text>
 <line x1="80" y1="397" x2="120" y2="397" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="128" y="401" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">imports (count)</text>
 <line x1="260" y1="397" x2="300" y2="397" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="308" y="401" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">back-edge closing a cycle: core→monitor 1, shared→core 2, mcp→vscode 1</text>
-<text x="24" y="424" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Not drawn: monitor/testdata (4 files, imports monitor ×3) and testing (1 file). 16 files unparsed by the scanner. ui/ and app/ import src through the @shared alias and relative paths and are not in this graph.</text>
+<text x="24" y="424" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Not drawn: monitor/testdata (4 files) and testing (1 file); 16 files unparsed. ui/ and app/ are outside this graph.</text>
 </svg>
 <figcaption>core is the shape the rule wants: 80 pure files with fan-in 146 and one outbound dependency that should not exist. vscode is the problem: 35 files, 21,897 lines, cohesion 0.31.</figcaption>
 </figure>

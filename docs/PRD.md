@@ -59,19 +59,19 @@ Open the editor, press one chord, and an agent starts on the right machine with 
 <text x="180" y="306" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Reader · Autogit · Foreman orb</text>
 <text x="180" y="324" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">artifact viewers, AI commits, voice control of the floor</text>
 <path d="M100 170L148 170" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
-<text x="104" y="162" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">chords, clicks</text>
-<rect x="600" y="120" width="180" height="150" rx="12" fill="#12211a" stroke="#a3e635"/>
-<text x="618" y="146" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="15" font-weight="600">agents CLI</text>
-<text x="618" y="166" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">owns every fact</text>
-<text x="618" y="182" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">and every mechanism</text>
-<text x="618" y="208" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">sessions · devices</text>
-<text x="618" y="226" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">accounts · attention</text>
-<text x="618" y="244" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">daemon · watchdog</text>
-<path d="M600 160L532 160" stroke="#a3e635" stroke-width="1.8" marker-end="url(#ov-g)"/>
-<text x="538" y="152" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">agents feed watch --json</text>
-<path d="M532 230L598 230" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
+<text x="108" y="162" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">input</text>
+<rect x="640" y="120" width="170" height="150" rx="12" fill="#12211a" stroke="#a3e635"/>
+<text x="656" y="146" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="15" font-weight="600">agents CLI</text>
+<text x="656" y="166" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">owns every fact</text>
+<text x="656" y="182" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">and every mechanism</text>
+<text x="656" y="208" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">sessions · devices</text>
+<text x="656" y="226" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">accounts · attention</text>
+<text x="656" y="244" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">daemon · watchdog</text>
+<path d="M640 160L532 160" stroke="#a3e635" stroke-width="1.8" marker-end="url(#ov-g)"/>
+<text x="536" y="178" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">feed watch</text>
+<path d="M532 230L638 230" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
 <text x="540" y="246" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">one-shot verbs</text>
-<rect x="830" y="70" width="150" height="270" rx="12" fill="#111312" stroke="#3f3f46"/>
+<rect x="840" y="70" width="140" height="270" rx="12" fill="#111312" stroke="#3f3f46"/>
 <text x="848" y="96" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Fleet devices</text>
 <rect x="848" y="112" width="114" height="46" rx="6" fill="#161a18" stroke="#26302a"/>
 <text x="858" y="131" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">this laptop</text>
@@ -84,8 +84,8 @@ Open the editor, press one chord, and an agent starts on the right machine with 
 <text x="858" y="260" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">cursor · droid</text>
 <text x="848" y="300" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">real harness binaries</text>
 <text x="848" y="316" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">placed by the CLI</text>
-<path d="M780 195L828 195" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
-<text x="784" y="187" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">ssh · run</text>
+<path d="M810 195L838 195" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
+<text x="812" y="187" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">ssh</text>
 <text x="28" y="400" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Lime arrow: the single live stream every surface reads. Gray arrows: user gestures and the one-shot commands they become.</text>
 </svg>
 <figcaption>One editor window, one stream in, one verb out. The extension never talks to a device or a harness directly.</figcaption>
