@@ -8,7 +8,7 @@ repository: phnx-labs/agi-ext
 tracking: PHNX-4044
 date: "2026-09-11"
 facts:
-  - "7 modules · 12 import edges · 2 cycles (measured 2026-09-11)"
+  - "7 modules · 12 import edges (11 between source modules) · 2 cycles (measured 2026-09-11)"
   - "One agents feed watch child per machine, demand-gated"
   - "Every consumer reads the warm presentation store"
 links:
@@ -36,47 +36,47 @@ AGI EXT is a presentation and interaction layer over agents-cli. The CLI owns ev
 <text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">C4 · CONTAINER LEVEL · ONE MACHINE, PLUS THE FLEET THE CLI REACHES</text>
 <rect x="24" y="50" width="590" height="400" rx="12" fill="#0f1211" stroke="#5ad6c0" stroke-dasharray="6 4"/>
 <text x="40" y="74" fill="#5ad6c0" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Editor process boundary (VS Code / VSCodium, one window; N windows exist)</text>
-<rect x="40" y="90" width="330" height="340" rx="10" fill="#161a18" stroke="#26302a"/>
+<rect x="40" y="90" width="340" height="340" rx="10" fill="#161a18" stroke="#26302a"/>
 <text x="56" y="114" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Extension host</text>
 <text x="56" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">Node · out/vscode/extension.js</text>
-<rect x="56" y="144" width="300" height="40" rx="6" fill="#12211a" stroke="#a3e635"/><text x="66" y="161" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Stream leader + demand gate</text><text x="66" y="176" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/monitor/host.ts · sessionCliStream.ts · sessionDemand.ts</text>
-<rect x="56" y="192" width="300" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="209" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Cross-window broadcast (Unix socket)</text><text x="66" y="224" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/monitor/broadcast.ts · ~/.agents/.tmp/monitor-broadcast.sock</text>
-<rect x="56" y="240" width="300" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="257" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Presentation store (window-local projection)</text><text x="66" y="272" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/core/sessionPresentationStore.ts</text>
-<rect x="56" y="288" width="300" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="305" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Terminal registry + persistence</text><text x="66" y="320" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/vscode/terminals.vscode.ts · src/core/sessions.persist.ts</text>
-<rect x="56" y="336" width="300" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="353" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Command adapters + URI handler</text><text x="66" y="368" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/vscode/extension.ts · agents.ts · launchTarget.ts · agentsBin.ts</text>
-<rect x="56" y="384" width="300" height="36" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="401" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Webview bridge</text><text x="66" y="414" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/vscode/settings.vscode.ts · agentPanel.vscode.ts</text>
-<rect x="390" y="90" width="210" height="340" rx="10" fill="#161a18" stroke="#26302a"/>
-<text x="406" y="114" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Sandboxed webviews</text>
-<text x="406" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">React · Vite · postMessage</text>
-<rect x="406" y="144" width="180" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="416" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Fleet dashboard</text><text x="416" y="177" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ui/settings (floor · bench · panel)</text><text x="416" y="191" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">list, needs-you, dispatch, settings</text>
-<rect x="406" y="208" width="180" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="416" y="226" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Active Session sidebar</text><text x="416" y="241" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agentsPanel.terminal view</text><text x="416" y="255" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">the one session preview</text>
-<rect x="406" y="272" width="180" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="416" y="290" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Reader editors</text><text x="416" y="305" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ui/editor (TipTap) · htmlReader</text><text x="416" y="319" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">Markdown editor, HTML viewer</text>
-<rect x="406" y="336" width="180" height="84" rx="6" fill="#111312" stroke="#3f3f46"/><text x="416" y="354" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Agent terminals</text><text x="416" y="369" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">vscode.Terminal per agent</text><text x="416" y="383" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">the harness runs here (local) or</text><text x="416" y="397" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">behind ssh (remote); not a webview,</text><text x="416" y="411" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">drawn inside the editor boundary</text>
-<path d="M356 402L404 402" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/><text x="360" y="396" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">view model</text>
-<path d="M404 236L356 236" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/><text x="360" y="230" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">intent</text>
+<rect x="56" y="144" width="320" height="40" rx="6" fill="#12211a" stroke="#a3e635"/><text x="66" y="161" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Stream leader + demand gate</text><text x="66" y="176" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/monitor/host.ts · sessionCliStream.ts</text>
+<rect x="56" y="192" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="209" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Cross-window broadcast (Unix socket)</text><text x="66" y="224" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/monitor/broadcast.ts · monitor-broadcast.sock</text>
+<rect x="56" y="240" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="257" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Presentation store (window-local projection)</text><text x="66" y="272" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/core/sessionPresentationStore.ts</text>
+<rect x="56" y="288" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="305" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Terminal registry + persistence</text><text x="66" y="320" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">terminals.vscode.ts · sessions.persist.ts</text>
+<rect x="56" y="336" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="353" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Command adapters + URI handler</text><text x="66" y="368" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">extension.ts · agents.ts · launchTarget.ts</text>
+<rect x="56" y="384" width="320" height="36" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="401" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Webview bridge</text><text x="66" y="414" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">settings.vscode.ts · agentPanel.vscode.ts</text>
+<rect x="400" y="90" width="200" height="340" rx="10" fill="#161a18" stroke="#26302a"/>
+<text x="416" y="114" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Sandboxed webviews</text>
+<text x="416" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">React · Vite · postMessage</text>
+<rect x="416" y="144" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Fleet dashboard</text><text x="426" y="177" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ui/settings (3 tabs)</text><text x="426" y="191" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">list · needs-you · dispatch</text>
+<rect x="416" y="208" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="226" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Active Session sidebar</text><text x="426" y="241" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agentsPanel.terminal</text><text x="426" y="255" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">the one session preview</text>
+<rect x="416" y="272" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="290" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Reader editors</text><text x="426" y="305" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ui/editor · htmlReader.ts</text><text x="426" y="319" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">Markdown editor, HTML viewer</text>
+<rect x="416" y="336" width="170" height="84" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="354" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Agent terminals</text><text x="426" y="369" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">vscode.Terminal per agent</text><text x="426" y="383" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">local harness, or ssh to a</text><text x="426" y="397" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">host; not a webview, drawn</text><text x="426" y="411" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">here: it lives in the editor</text>
+<path d="M376 394L414 394" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/><text x="382" y="389" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">view</text>
+<path d="M414 410L378 410" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/><text x="381" y="426" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">intent</text>
 <rect x="660" y="90" width="316" height="160" rx="10" fill="#12211a" stroke="#a3e635"/>
 <text x="676" y="114" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">agents CLI (this machine)</text>
-<text x="676" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">daemon + one-shot commands · resolved by src/core/agentsBin.ts</text>
+<text x="676" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">daemon + one-shot commands · agentsBin.ts</text>
 <text x="676" y="156" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">owns sessions, devices, accounts, attention,</text>
 <text x="676" y="172" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">activity, placement, resume, fork, stop,</text>
 <text x="676" y="188" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">scheduling, watchdog, restore</text>
 <text x="676" y="216" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">agents feed watch --json  (NDJSON, long-lived)</text>
-<text x="676" y="232" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">agents run | sessions … | feed answer  (one-shot)</text>
+<text x="676" y="232" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">agents run · sessions · feed answer (one-shot)</text>
 <rect x="660" y="290" width="316" height="160" rx="10" fill="#161a18" stroke="#3f3f46"/>
 <text x="676" y="314" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Fleet devices</text>
-<text x="676" y="330" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">reached by the CLI over ssh; never by the extension</text>
-<text x="676" y="356" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">worker pool (agents devices role &lt;name&gt; worker)</text>
+<text x="676" y="330" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">reached only by the CLI, over ssh</text>
+<text x="676" y="356" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">worker pool (devices role &lt;name&gt; worker)</text>
 <text x="676" y="372" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">each runs real harness binaries and its own</text>
 <text x="676" y="388" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">agents daemon; the local CLI fans the feed out</text>
 <text x="676" y="404" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">per device as its own stream scope</text>
 <path d="M660 170L616 170" stroke="#a3e635" stroke-width="1.8" marker-end="url(#c4g)"/><text x="470" y="60" fill="#a3e635" font-family="ui-monospace,monospace" font-size="9"></text>
 <path d="M616 210L658 210" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/>
-<path d="M818 250L818 288" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/><text x="826" y="273" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">ssh · run · watch</text>
+<path d="M818 250L818 288" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#c4a)"/><text x="826" y="273" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">ssh · run</text>
 <text x="24" y="482" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Legend</text>
 <line x1="24" y1="500" x2="60" y2="500" stroke="#a3e635" stroke-width="1.8"/><text x="68" y="504" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">live stream in (NDJSON over a child's stdout)</text>
-<line x1="24" y1="520" x2="60" y2="520" stroke="#a1a1aa" stroke-width="1.4"/><text x="68" y="524" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">one-shot command out, or a postMessage between host and webview</text>
-<rect x="330" y="492" width="36" height="14" rx="3" fill="none" stroke="#5ad6c0" stroke-dasharray="6 4"/><text x="374" y="504" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">process boundary (the editor)</text>
-<rect x="330" y="512" width="36" height="14" rx="3" fill="#12211a" stroke="#a3e635"/><text x="374" y="524" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the CLI and the stream it owns</text>
+<line x1="24" y1="520" x2="60" y2="520" stroke="#a1a1aa" stroke-width="1.4"/><text x="68" y="524" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">one-shot command out, or host↔webview message</text>
+<rect x="440" y="492" width="36" height="14" rx="3" fill="none" stroke="#5ad6c0" stroke-dasharray="6 4"/><text x="484" y="504" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">process boundary (the editor)</text>
+<rect x="440" y="512" width="36" height="14" rx="3" fill="#12211a" stroke="#a3e635"/><text x="484" y="524" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the CLI and the stream it owns</text>
 <text x="24" y="548" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Every window has its own extension host and webviews; only the elected leader window's host runs the stream child.</text>
 </svg>
 <figcaption>Facts flow in on one lime arrow. Everything else the extension does is a gesture becoming one command.</figcaption>
@@ -134,12 +134,12 @@ The extension host is a single Node process per editor window. It holds the elec
 <defs><marker id="sq-sync" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#e7ece8"/></marker><marker id="sq-async" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5M0 10L10 5" fill="none" stroke="#a3e635" stroke-width="1.5"/></marker></defs>
 <rect x="1" y="1" width="998" height="518" rx="16" fill="#09090b" stroke="#3f3f46"/>
 <text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">UML SEQUENCE · ONE RESET THEN INCREMENTS · TIME FLOWS DOWN</text>
-<g font-family="system-ui,sans-serif" font-size="12" fill="#e7ece8" text-anchor="middle">
-<rect x="40" y="50" width="150" height="40" rx="6" fill="#12211a" stroke="#a3e635"/><text x="115" y="70" font-size="12">agents feed watch</text><text x="115" y="84" fill="#8b938c" font-size="10">child (CLI)</text>
-<rect x="240" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="315" y="70" font-size="12">Leader window</text><text x="315" y="84" fill="#8b938c" font-size="10">SessionCliStream · MonitorHost</text>
-<rect x="440" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="515" y="70" font-size="12">Broadcast socket</text><text x="515" y="84" fill="#8b938c" font-size="10">MonitorBroadcastServer</text>
-<rect x="640" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="715" y="70" font-size="12">Presentation store</text><text x="715" y="84" fill="#8b938c" font-size="10">per window</text>
-<rect x="830" y="50" width="150" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="905" y="70" font-size="12">UI consumers</text><text x="905" y="84" fill="#8b938c" font-size="10">tabs · sidebar · Fleet</text>
+<g font-family="system-ui,sans-serif" font-size="12" fill="#e7ece8">
+<rect x="25" y="50" width="180" height="40" rx="6" fill="#12211a" stroke="#a3e635"/><text x="35" y="67" font-size="12">agents feed watch</text><text x="35" y="83" fill="#8b938c" font-size="10">child process (CLI)</text>
+<rect x="225" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="235" y="67" font-size="12">Leader window</text><text x="235" y="83" fill="#8b938c" font-size="9">SessionCliStream · MonitorHost</text>
+<rect x="425" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="435" y="67" font-size="12">Broadcast socket</text><text x="435" y="83" fill="#8b938c" font-size="9">MonitorBroadcastServer</text>
+<rect x="625" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="635" y="67" font-size="12">Presentation store</text><text x="635" y="83" fill="#8b938c" font-size="10">per window</text>
+<rect x="815" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="825" y="67" font-size="12">UI consumers</text><text x="825" y="83" fill="#8b938c" font-size="10">tabs · sidebar · Fleet</text>
 </g>
 <g stroke="#3f3f46" stroke-dasharray="4 4"><line x1="115" y1="90" x2="115" y2="470"/><line x1="315" y1="90" x2="315" y2="470"/><line x1="515" y1="90" x2="515" y2="470"/><line x1="715" y1="90" x2="715" y2="470"/><line x1="905" y1="90" x2="905" y2="470"/></g>
 <rect x="310" y="110" width="10" height="330" fill="#26302a"/><rect x="710" y="150" width="10" height="290" fill="#26302a"/>
@@ -187,21 +187,21 @@ Failure semantics: a missing CLI binary is a visible prerequisite failure; a mal
 <rect x="110" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="175" y="115" font-size="13">Opening</text>
 <rect x="300" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="365" y="115" font-size="13">Active</text>
 <rect x="490" y="88" width="150" height="44" rx="14" fill="#12211a" stroke="#a3e635"/><text x="565" y="115" font-size="13">Identified</text>
-<rect x="710" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="115" font-size="13">Persisted</text>
+<rect x="710" y="88" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="115" font-size="12.6">Persisted</text>
 <rect x="710" y="230" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="775" y="257" font-size="13">Restored</text>
 <rect x="300" y="300" width="130" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="365" y="327" font-size="13">Closed</text>
 <rect x="490" y="300" width="150" height="44" rx="14" fill="#161a18" stroke="#3f3f46"/><text x="565" y="327" font-size="13">Stopped</text>
 </g>
 <path d="M69 110L108 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/>
-<path d="M240 110L298 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="243" y="102" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">terminals.register</text>
-<path d="M430 110L488 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="432" y="102" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">stream row claims id</text>
-<path d="M640 110L708 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="646" y="102" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">persistNow</text>
+<path d="M240 110L298 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="243" y="96" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">terminals.register</text>
+<path d="M430 110L488 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="432" y="96" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">stream row claims id</text>
+<path d="M640 110L708 110" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="646" y="96" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">persistNow</text>
 <path d="M565 88C540 40 590 40 570 86" stroke="#a3e635" stroke-width="1.4" fill="none" marker-end="url(#st-a)"/><text x="600" y="56" fill="#a3e635" font-family="ui-monospace,monospace" font-size="9">sole live claim changes → rebind</text>
 <path d="M775 132L775 228" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="784" y="185" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">window reload / extension restart</text>
 <path d="M710 252C640 252 620 160 600 134" stroke="#a1a1aa" stroke-width="1.4" fill="none" marker-end="url(#st-a)"/><text x="612" y="215" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">agents sessions resume; stream rebinds</text>
 <path d="M365 132L365 298" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="372" y="220" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">user closes tab</text>
 <path d="M530 132C480 200 420 260 400 298" stroke="#a1a1aa" stroke-width="1.4" fill="none" marker-end="url(#st-a)"/><text x="455" y="260" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">user closes tab</text>
-<path d="M430 322L488 322" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="434" y="314" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">TerminalExitReason.User only</text>
+<path d="M430 322L488 322" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#st-a)"/><text x="434" y="290" fill="#8b938c" font-family="ui-monospace,monospace" font-size="9">TerminalExitReason.User only</text>
 <text x="650" y="327" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">= one agents sessions stop &lt;id&gt;</text>
 <text x="24" y="366" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Reload and restore are never a close. Two distinct live claims stay ambiguous; start time is not ownership.</text>
 <text x="24" y="384" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Source: src/vscode/terminals.vscode.ts (registry), src/core/sessions.persist.ts (metadata), src/vscode/terminalReadiness.ts (close vs reload).</text>
@@ -243,40 +243,65 @@ Project attribution follows the same rule. `sessionProjects.ts` resolves a sessi
 
 The rest of the dashboard composes the same way. Session rows describe conversations and progress; attention facts keep the exact question, choices, and resolution lifecycle; activity facts supply chronological evidence such as plans, pull requests, teams, and artifacts. The dashboard may group, filter, sort, and decorate them, may hide background work by presentation policy without removing it from the model, and must never infer a new canonical status from transcript text or process scans. Device, project, and ticket views still arrive through separate bounded CLI reads and do not live in the presentation store. Optimistic UI is limited to transient feedback; durable changes arrive back through the feed.
 
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Flowchart: an attention row on the stream passes a membership filter on state open, is ranked by ATTENTION_KIND_RANK, and renders as a decision card, a failure card, or a plain row">
+<title>Needs-you projection</title>
+<desc>ISO 5807 flowchart. Parallelogram: input from the stream. Diamond: decision. Rectangle: process. The three outputs are the card types the lane renders.</desc>
+<defs><marker id="ny-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="16" fill="#09090b" stroke="#3f3f46"/>
+<text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">FLOWCHART · THE EXTENSION CLASSIFIES NOTHING</text>
+<path d="M40 70L210 70L190 126L20 126Z" fill="#12211a" stroke="#a3e635"/><text x="48" y="94" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">attention row</text><text x="48" y="112" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">RemoteAttention row</text>
+<path d="M330 60L410 98L330 136L250 98Z" fill="#161a18" stroke="#3f3f46"/><text x="330" y="94" fill="#e7ece8" font-family="ui-monospace,monospace" font-size="10" text-anchor="middle">state ===</text><text x="330" y="108" fill="#e7ece8" font-family="ui-monospace,monospace" font-size="10" text-anchor="middle">'open'?</text>
+<rect x="460" y="70" width="190" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="472" y="92" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">rank by kind</text><text x="472" y="110" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ATTENTION_KIND_RANK</text>
+<rect x="720" y="40" width="250" height="44" rx="6" fill="#161a18" stroke="#5ad6c0"/><text x="732" y="58" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">decision card</text><text x="732" y="74" fill="#8b938c" font-family="system-ui,sans-serif" font-size="9">question · permission · plan_review · declared</text>
+<rect x="720" y="100" width="250" height="44" rx="6" fill="#161a18" stroke="#ff6b6b"/><text x="732" y="118" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">failure card</text><text x="732" y="134" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">failure</text>
+<rect x="720" y="160" width="250" height="44" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="732" y="178" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">plain row</text><text x="732" y="194" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">stall · review</text>
+<path d="M210 98L248 98" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#ny-a)"/>
+<path d="M410 98L458 98" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#ny-a)"/><text x="414" y="92" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">yes</text>
+<path d="M330 136L330 200L440 200" stroke="#a1a1aa" stroke-width="1.4" fill="none" marker-end="url(#ny-a)"/><text x="336" y="170" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="9">no</text><text x="446" y="204" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">not in the lane</text>
+<path d="M650 90L718 62" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#ny-a)"/><path d="M650 98L718 122" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#ny-a)"/><path d="M650 106L718 182" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#ny-a)"/>
+<text x="24" y="226" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Rank order: question, permission, plan_review, declared, failure, stall, review; most-stuck-first within a kind.</text>
+<text x="24" y="241" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Border color names the card type only. A resolved row never returns from an older snapshot.</text>
+</svg>
+<figcaption>Membership and order are read off the row. No heartbeat threshold, no transcript, no process scan.</figcaption>
+</figure>
+
 <a id="findings"></a>
 
 ## Findings
 
-The module graph was measured on this branch on 2026-09-11 with the `code:refactor` module scanner (its `modules.json` lives in the session artifacts and is not committed): 140 of 156 TypeScript files under `src/` parsed, 7 directory modules, 12 import edges, 2 cycles, 1 god module.
+The module graph was measured on this branch on 2026-09-11 with the `code:refactor` module scanner (its `modules.json` lives in the session artifacts and is not committed): 140 of 156 TypeScript files under `src/` parsed, 7 directory modules, 12 import edges, 2 cycles, 1 god module. Eleven of the twelve edges run between the five source modules and are all drawn below; the twelfth is `monitor/testdata` importing `monitor` three times, which is test fixtures and is listed in the footnote instead.
 
 <figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" role="img" aria-label="Module dependency graph of src: vscode imports core 138 times and monitor 11 times; core, monitor, and shared form a cycle; mcp and vscode form a cycle">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 510" role="img" aria-label="Module dependency graph of src: eleven import edges between the five source modules, with the three back-edges that close two cycles drawn dashed in red">
 <title>Measured module graph, src/, depth 2</title>
-<desc>Boxes are directory modules with file and line counts from modules.json. Arrow labels are import counts. Red dashed arrows are the back-edges that close the two cycles.</desc>
+<desc>Boxes are directory modules with file and line counts from modules.json. Every arrow is one edge from modules.json labeled with its import count. Red dashed arrows are the back-edges that close the two cycles. The twelfth edge, monitor/testdata importing monitor, is test fixtures and is stated in the footnote rather than drawn.</desc>
 <defs><marker id="mg-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker><marker id="mg-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ff6b6b"/></marker></defs>
-<rect x="1" y="1" width="998" height="438" rx="16" fill="#09090b" stroke="#3f3f46"/>
-<text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">OBSERVED · src/ · modules.json 2026-09-11 · arrow label = import count</text>
+<rect x="1" y="1" width="998" height="508" rx="16" fill="#09090b" stroke="#3f3f46"/>
+<text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">OBSERVED · src/ · modules.json 2026-09-11 · 11 of 12 edges drawn · arrow label = import count</text>
 <g font-family="system-ui,sans-serif" fill="#e7ece8">
-<rect x="60" y="70" width="230" height="70" rx="8" fill="#161a18" stroke="#f5c451" stroke-width="2"/><text x="74" y="94" font-size="14" font-weight="600">vscode</text><text x="74" y="112" font-size="11" fill="#8b938c">35 files · 21,897 LOC · cohesion 0.31</text><text x="74" y="128" font-size="11" fill="#8b938c">fan-out 153 · extension.ts 5,659 LOC</text>
-<rect x="60" y="300" width="230" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="74" y="324" font-size="14" font-weight="600">mcp</text><text x="74" y="342" font-size="11" fill="#8b938c">3 files · 644 LOC</text><text x="74" y="358" font-size="11" fill="#8b938c">watchdog bridge + MCP server</text>
-<rect x="420" y="180" width="230" height="70" rx="8" fill="#12211a" stroke="#a3e635" stroke-width="2"/><text x="434" y="204" font-size="14" font-weight="600">core</text><text x="434" y="222" font-size="11" fill="#8b938c">80 files · 13,044 LOC · cohesion 0.90</text><text x="434" y="238" font-size="11" fill="#8b938c">fan-in 146 · god module by size</text>
-<rect x="740" y="70" width="230" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="754" y="94" font-size="14" font-weight="600">monitor</text><text x="754" y="112" font-size="11" fill="#8b938c">13 files · 2,811 LOC · cohesion 0.80</text><text x="754" y="128" font-size="11" fill="#8b938c">leader, broadcast, stream, readiness</text>
-<rect x="740" y="300" width="230" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="754" y="324" font-size="14" font-weight="600">shared</text><text x="754" y="342" font-size="11" fill="#8b938c">4 files · 236 LOC</text><text x="754" y="358" font-size="11" fill="#8b938c">re-exports for ui/ via @shared</text>
+<rect x="60" y="70" width="240" height="70" rx="8" fill="#161a18" stroke="#f5c451" stroke-width="2"/><text x="74" y="94" font-size="14" font-weight="600">vscode</text><text x="74" y="112" font-size="10" fill="#8b938c">35 files · 21,897 LOC · cohesion 0.31</text><text x="74" y="128" font-size="10" fill="#8b938c">fan-out 153 · extension.ts 5,659 LOC</text>
+<rect x="420" y="90" width="240" height="60" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="434" y="112" font-size="14" font-weight="600">shared</text><text x="434" y="130" font-size="10" fill="#8b938c">4 files · 236 LOC · re-exports for ui/</text>
+<rect x="730" y="70" width="240" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="744" y="94" font-size="14" font-weight="600">monitor</text><text x="744" y="112" font-size="10" fill="#8b938c">13 files · 2,811 LOC · cohesion 0.80</text><text x="744" y="128" font-size="10" fill="#8b938c">leader, broadcast, stream, readiness</text>
+<rect x="420" y="200" width="240" height="70" rx="8" fill="#12211a" stroke="#a3e635" stroke-width="2"/><text x="434" y="224" font-size="14" font-weight="600">core</text><text x="434" y="242" font-size="10" fill="#8b938c">80 files · 13,044 LOC · cohesion 0.90</text><text x="434" y="258" font-size="10" fill="#8b938c">fan-in 146 · god module by size</text>
+<rect x="60" y="330" width="240" height="70" rx="8" fill="#161a18" stroke="#3f3f46"/><text x="74" y="354" font-size="14" font-weight="600">mcp</text><text x="74" y="372" font-size="10" fill="#8b938c">3 files · 644 LOC</text><text x="74" y="388" font-size="10" fill="#8b938c">watchdog bridge + MCP server</text>
 </g>
-<path d="M290 110L418 190" stroke="#a1a1aa" stroke-width="2.2" marker-end="url(#mg-a)"/><text x="330" y="140" fill="#e7ece8" font-family="ui-monospace,monospace" font-size="11" font-weight="700">138</text>
-<path d="M290 95L738 95" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="500" y="88" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">11</text>
-<path d="M240 140L240 298" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="248" y="222" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">2</text>
-<path d="M120 300L120 142" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="80" y="222" fill="#ff6b6b" font-family="ui-monospace,monospace" font-size="11">1</text>
-<path d="M290 320L418 240" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="340" y="292" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">2</text>
-<path d="M290 350L738 350" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="500" y="343" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">vscode→shared 2 · mcp→monitor 1</text>
-<path d="M740 120L652 195" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="700" y="150" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">4</text>
-<path d="M650 200L738 130" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="672" y="185" fill="#ff6b6b" font-family="ui-monospace,monospace" font-size="11">1</text>
-<path d="M600 250L800 298" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="690" y="268" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">5</text>
-<path d="M780 298L560 252" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="640" y="292" fill="#ff6b6b" font-family="ui-monospace,monospace" font-size="11">2</text>
-<text x="24" y="400" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="11" font-weight="600">Legend</text>
-<line x1="80" y1="397" x2="120" y2="397" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="128" y="401" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">imports (count)</text>
-<line x1="260" y1="397" x2="300" y2="397" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="308" y="401" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">back-edge closing a cycle: core→monitor 1, shared→core 2, mcp→vscode 1</text>
-<text x="24" y="424" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Not drawn: monitor/testdata (4 files) and testing (1 file); 16 files unparsed. ui/ and app/ are outside this graph.</text>
+<path d="M300 78L728 78" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="470" y="72" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">vscode→monitor 11</text>
+<path d="M300 112L418 118" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="308" y="104" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">vscode→shared 2</text>
+<path d="M300 134L418 214" stroke="#a1a1aa" stroke-width="2.2" marker-end="url(#mg-a)"/><text x="312" y="186" fill="#e7ece8" font-family="ui-monospace,monospace" font-size="11" font-weight="700">vscode→core 138</text>
+<path d="M520 200L520 152" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="430" y="178" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">core→shared 5</text>
+<path d="M600 150L600 198" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="614" y="178" fill="#ff6b6b" font-family="ui-monospace,monospace" font-size="11">shared→core 2</text>
+<path d="M730 128L662 208" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="668" y="228" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">monitor→core 4</text>
+<path d="M655 198L728 118" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="736" y="162" fill="#ff6b6b" font-family="ui-monospace,monospace" font-size="11">core→monitor 1</text>
+<path d="M120 140L120 328" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="28" y="240" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">vscode→mcp 2</text>
+<path d="M200 330L200 142" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="208" y="240" fill="#ff6b6b" font-family="ui-monospace,monospace" font-size="11">mcp→vscode 1</text>
+<path d="M300 350L430 272" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="318" y="306" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">mcp→core 2</text>
+<path d="M300 382C620 470 930 330 860 142" stroke="#a1a1aa" stroke-width="1.4" fill="none" marker-end="url(#mg-a)"/><text x="560" y="440" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="11">mcp→monitor 1</text>
+<text x="24" y="462" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="11" font-weight="600">Legend</text>
+<line x1="80" y1="459" x2="120" y2="459" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="128" y="463" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">imports, with the count from modules.json</text>
+<line x1="420" y1="459" x2="460" y2="459" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="468" y="463" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">back-edge that closes a cycle (core↔monitor↔shared, mcp↔vscode)</text>
+<text x="24" y="482" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Not drawn: the twelfth edge, monitor/testdata→monitor ×3 (test fixtures, 4 files), and testing (1 file, no edges).</text>
+<text x="24" y="497" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">16 files unparsed by the scanner. ui/ and app/ are outside this graph.</text>
 </svg>
 <figcaption>core is the shape the rule wants: 80 pure files with fan-in 146 and one outbound dependency that should not exist. vscode is the problem: 35 files, 21,897 lines, cohesion 0.31.</figcaption>
 </figure>
@@ -313,16 +338,17 @@ Wave 1 of PHNX-4044 (released as 0.9.371) removed 31 dead files and 49 dead expo
 <rect x="1" y="1" width="998" height="198" rx="16" fill="#09090b" stroke="#3f3f46"/>
 <text x="24" y="30" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">FLOWCHART · scripts/ ARE THE ONLY ENTRY POINTS</text>
 <g font-family="system-ui,sans-serif" font-size="12" fill="#e7ece8">
-<rect x="24" y="60" width="150" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="36" y="82" font-weight="600">bun test</text><text x="36" y="100" fill="#8b938c" font-size="11">1,853 tests · 165 files</text>
-<rect x="214" y="60" width="150" height="56" rx="6" fill="#12211a" stroke="#a3e635"/><text x="226" y="82" font-weight="600">bun run lint:dead</text><text x="226" y="100" fill="#8b938c" font-size="11">knip gate, fails the build</text>
-<rect x="404" y="60" width="150" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="416" y="82" font-weight="600">bun run compile</text><text x="416" y="100" fill="#8b938c" font-size="11">tsc + vite (ui/)</text>
-<rect x="594" y="60" width="150" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="606" y="82" font-weight="600">vsce package</text><text x="606" y="100" fill="#8b938c" font-size="11">dist/swarm-ext-&lt;v&gt;.vsix</text>
-<path d="M784 60L960 60L960 116L784 116L764 88Z" fill="#161a18" stroke="#3f3f46"/><text x="796" y="82" font-weight="600">install.sh / release.sh</text><text x="796" y="100" fill="#8b938c" font-size="11">local editor · Marketplace + Open VSX</text>
+<rect x="24" y="60" width="168" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="36" y="82" font-weight="600">bun test</text><text x="36" y="100" fill="#8b938c" font-size="11">1,853 tests · 165 files</text>
+<rect x="212" y="60" width="168" height="56" rx="6" fill="#12211a" stroke="#a3e635"/><text x="224" y="82" font-weight="600">bun run lint:dead</text><text x="224" y="100" fill="#8b938c" font-size="11">knip gate, fails the build</text>
+<rect x="400" y="60" width="168" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="412" y="82" font-weight="600">bun run compile</text><text x="412" y="100" fill="#8b938c" font-size="11">tsc + vite (ui/)</text>
+<rect x="588" y="60" width="168" height="56" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="600" y="82" font-weight="600">vsce package</text><text x="600" y="100" fill="#8b938c" font-size="11">dist/swarm-ext-&lt;v&gt;.vsix</text>
+<path d="M796 60L976 60L976 116L796 116L776 88Z" fill="#161a18" stroke="#3f3f46"/><text x="808" y="82" font-weight="600">install.sh / release.sh</text><text x="808" y="100" fill="#8b938c" font-size="11">local · Marketplace + Open VSX</text>
 </g>
-<path d="M174 88L212 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/><path d="M364 88L402 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/><path d="M554 88L592 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/><path d="M744 88L766 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/>
-<text x="214" y="140" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">scripts/build.sh &lt;version&gt; runs the three middle steps; the version stamp is restored on exit</text>
-<text x="24" y="166" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">release.sh &lt;x.y.z&gt; --confirm routes itself to the box holding the vs-marketplace secrets bundle (--device pins it, --here refuses to route) and requires a CHANGELOG section for the version.</text>
-<text x="24" y="184" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Publisher swarmify, name swarm-ext: frozen. Changing either orphans the Marketplace listing and breaks the swarm-ext:// authority the CLI emits.</text>
+<path d="M192 88L210 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/><path d="M380 88L398 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/><path d="M568 88L586 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/><path d="M756 88L778 88" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#bp-a)"/>
+<text x="212" y="140" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">scripts/build.sh &lt;version&gt; runs the three middle steps; the version stamp is restored on exit</text>
+<text x="24" y="162" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">release.sh &lt;x.y.z&gt; --confirm routes itself to the box holding the vs-marketplace secrets (--device pins it, --here refuses to route)</text>
+<text x="24" y="176" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">and requires a CHANGELOG section for the version. Publisher swarmify, name swarm-ext: frozen; changing either orphans the</text>
+<text x="24" y="190" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Marketplace listing and breaks the swarm-ext:// authority the CLI emits.</text>
 </svg>
 <figcaption>Never hand-roll vsce publish or ovsx publish. release.sh owns version stamping, gates, and routing.</figcaption>
 </figure>
