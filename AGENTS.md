@@ -84,8 +84,9 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
 ## Known debt
 
 The thin-client violations still in the tree are listed with their fate in `docs/ARCH.md`
-("Findings"): prewarm restore mapping, `watchForPlan`, `sessionParse.ts`, the transcript
-`fs.watch`, `readinessDetector.ts`, gemini remnants, the Foreman OpenAI dependency. Touching
+("Findings"): `fetchRemoteSessionLabelSource`, prewarm restore mapping, `watchForPlan`,
+`sessionParse.ts`, the transcript `fs.watch`, `readinessDetector.ts`, gemini remnants, the
+Foreman OpenAI dependency. Touching
 one means deleting or shrinking it, never extending it. Four tests assert on source text
 (`autoLabelHydration`, `statusBarIdentity.spawnStorm`, `agentPanel.webview-syntax`,
 `pollTimers.replacement`); read the invariant each protects before changing it.
