@@ -4,6 +4,30 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.371] - 2026-09-11
+
+Internal refactor (PHNX-4044, wave 1). No user-visible behavior changes: the
+palette commands, settings panel, and session preview render as in 0.9.370.
+
+- **Dead-code gate.** `knip` runs in `scripts/build.sh` before compile
+  (`bun run lint:dead`), so a release build fails on a new unused file, export,
+  type, or dependency. 31 dead files (about 19,900 lines: unrendered UI panes,
+  design explorations, reference mockups, four unused core modules) and 49
+  unused exports and types are gone. (#68)
+- **One shell quoter, one `agents` resolver.** Twelve copies of the POSIX
+  single-quote escaper collapse onto `shellQuote()` in
+  `src/core/deviceDispatchShell.ts`; three binary resolvers and two PATH
+  builders collapse onto `resolveAgentsBin`/`bootstrapPath`/`runAgents` in
+  `src/core/agentsBin.ts`, with the newest nvm node ahead of the binary's own
+  dir. (#65)
+- **Smaller VSIX.** `node-pty` and `@vscode/webview-ui-toolkit` were shipped but
+  never imported; both are removed along with five duplicated root
+  devDependencies. `sql.js` stays: it reads Cursor chat previews. (#66)
+- **UI harness tables derive from the CLI catalog.** `ui/settings/constants`
+  no longer hand-writes labels, prefixes, and title maps; they come from
+  `src/core/agents.cli.ts` and `BUILT_IN_AGENTS` through `src/shared/agents.ts`,
+  with a drift test. Values are entry-for-entry identical to 0.9.370. (#67)
+
 ## [0.9.370] - 2026-09-10
 
 - **`Agents: New <Harness> (Pick Account)` — pin the account, auto-pick the
