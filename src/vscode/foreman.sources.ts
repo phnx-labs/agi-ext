@@ -308,19 +308,6 @@ export async function getTeamStatus(team: string): Promise<TeammateLite[]> {
   return pending;
 }
 
-// Two paths "belong together" if one is a path-prefix of the other (with a
-// segment boundary so /a/foo doesn't match /a/foobar). Equal paths count.
-export function pathsRelated(a: string | undefined, b: string | undefined): boolean {
-  if (!a || !b) return false;
-  const norm = (p: string) => path.resolve(p).replace(/\/+$/, '');
-  const A = norm(a);
-  const B = norm(b);
-  if (A === B) return true;
-  if (A.startsWith(B + path.sep)) return true;
-  if (B.startsWith(A + path.sep)) return true;
-  return false;
-}
-
 export interface TeamWithMates extends TeamLite {
   teammates: TeammateLite[];
 }
