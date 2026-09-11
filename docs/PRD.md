@@ -1,0 +1,429 @@
+---
+kind: report
+title: AGI EXT product requirements
+summary: "What the VS Code / VSCodium extension for agents-cli must do, for whom, and how each user journey should feel, with the journeys drawn."
+status: "Internal requirements"
+project: agi-ext
+repository: phnx-labs/agi-ext
+tracking: PHNX-4044
+date: "2026-09-11"
+facts:
+  - "Publisher identity is frozen: swarmify.swarm-ext"
+  - "Every fact on screen comes from one agents feed watch stream"
+  - "A row click in Fleet costs zero subprocesses"
+links:
+  - https://github.com/phnx-labs/agi-ext
+  - https://linear.app/getrush/issue/PHNX-4044
+---
+
+## What this is
+
+AGI EXT is the VS Code and VSCodium extension for [agents-cli](https://github.com/phnx-labs/agi-cli). It turns an open-source editor into an integrated agents environment: every coding agent (Claude Code, Codex, OpenCode, Cursor, Antigravity, Grok, Kimi, Droid) runs as a full editor tab, the Active Session sidebar shows what the focused agent is doing, and the Fleet dashboard lists every session on every machine you own and lets you answer the ones that need you. The editor becomes the place you steer a fleet from, the way it used to be the place you typed code.
+
+The extension is a presentation layer. agents-cli owns every fact (sessions, devices, accounts, attention, activity) and every mechanism (launch, placement, resume, fork, stop, scheduling, watchdog). The extension renders what the CLI streams and turns a gesture into exactly one CLI verb. That split is the product's one architecture rule and the source of almost every requirement below.
+
+It is for developers who already run several agents at once, usually across more than one machine, and who want to see and steer that work without leaving the editor. It is a private repository shipped publicly on the Marketplace and Open VSX under the frozen identity `swarmify.swarm-ext`.
+
+## Summary
+
+Open the editor, press one chord, and an agent starts on the right machine with the right account, in the folder you have open. Look at the sidebar and know what it asked, what it did, and what is left. Open Fleet and see every agent everywhere, answer the ones waiting on you, and dispatch the next ticket. Close the laptop, come back, and the tabs are exactly where you left them. None of that starts a poller, parses a transcript, or invents a status.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" role="img" aria-label="Product overview: a developer in the editor, the extension's surfaces, the agents CLI, and the fleet of devices running harnesses">
+<title>AGI EXT product overview</title>
+<desc>Conceptual product overview. The developer works in one editor window whose agent tabs, sidebar, and Fleet dashboard are rendered by the extension. The extension consumes one feed stream from the agents CLI and issues one-shot CLI verbs. The CLI places work on fleet devices where the real harness binaries run.</desc>
+<defs><marker id="ov-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker><marker id="ov-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a3e635"/></marker></defs>
+<rect x="1" y="1" width="998" height="418" rx="16" fill="#09090b" stroke="#3f3f46"/>
+<text x="28" y="34" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="12">PRODUCT OVERVIEW · CONCEPTUAL, NOT A DEPLOYMENT DIAGRAM</text>
+<g>
+<circle cx="70" cy="140" r="16" fill="none" stroke="#e7ece8" stroke-width="2"/>
+<path d="M70 156V200M70 170L48 190M70 170L92 190M45 215L70 200L95 215" fill="none" stroke="#e7ece8" stroke-width="2" stroke-linecap="round"/>
+<text x="70" y="248" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="13" text-anchor="middle">Developer</text>
+</g>
+<rect x="150" y="60" width="380" height="300" rx="12" fill="#111312" stroke="#5ad6c0"/>
+<text x="168" y="86" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="15" font-weight="600">Editor window (VS Code / VSCodium)</text>
+<text x="168" y="104" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">rendered by AGI EXT</text>
+<rect x="168" y="120" width="230" height="64" rx="8" fill="#161a18" stroke="#26302a"/>
+<text x="180" y="142" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Agent tabs</text>
+<text x="180" y="160" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">one terminal per agent, restorable</text>
+<text x="180" y="176" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">status bar: label · host</text>
+<rect x="410" y="120" width="104" height="64" rx="8" fill="#161a18" stroke="#26302a"/>
+<text x="422" y="142" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Sidebar</text>
+<text x="422" y="160" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">the one</text>
+<text x="422" y="176" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">preview</text>
+<rect x="168" y="198" width="346" height="72" rx="8" fill="#161a18" stroke="#26302a"/>
+<text x="180" y="220" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Fleet dashboard</text>
+<text x="180" y="238" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">list of every session on every device · needs-you lane · dispatch</text>
+<text x="180" y="256" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">a row click costs zero subprocesses</text>
+<rect x="168" y="284" width="346" height="56" rx="8" fill="#161a18" stroke="#26302a"/>
+<text x="180" y="306" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="13" font-weight="600">Reader · Autogit · Foreman orb</text>
+<text x="180" y="324" fill="#8b938c" font-family="system-ui,sans-serif" font-size="12">artifact viewers, AI commits, voice control of the floor</text>
+<path d="M100 170L148 170" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
+<text x="104" y="162" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">chords, clicks</text>
+<rect x="600" y="120" width="180" height="150" rx="12" fill="#12211a" stroke="#a3e635"/>
+<text x="618" y="146" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="15" font-weight="600">agents CLI</text>
+<text x="618" y="166" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">owns every fact</text>
+<text x="618" y="182" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11">and every mechanism</text>
+<text x="618" y="208" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">sessions · devices</text>
+<text x="618" y="226" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">accounts · attention</text>
+<text x="618" y="244" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">daemon · watchdog</text>
+<path d="M600 160L532 160" stroke="#a3e635" stroke-width="1.8" marker-end="url(#ov-g)"/>
+<text x="538" y="152" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">agents feed watch --json</text>
+<path d="M532 230L598 230" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
+<text x="540" y="246" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">one-shot verbs</text>
+<rect x="830" y="70" width="150" height="270" rx="12" fill="#111312" stroke="#3f3f46"/>
+<text x="848" y="96" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Fleet devices</text>
+<rect x="848" y="112" width="114" height="46" rx="6" fill="#161a18" stroke="#26302a"/>
+<text x="858" y="131" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">this laptop</text>
+<text x="858" y="148" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">claude · codex</text>
+<rect x="848" y="168" width="114" height="46" rx="6" fill="#161a18" stroke="#26302a"/>
+<text x="858" y="187" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">worker box</text>
+<text x="858" y="204" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">opencode · grok</text>
+<rect x="848" y="224" width="114" height="46" rx="6" fill="#161a18" stroke="#26302a"/>
+<text x="858" y="243" fill="#d4d4d8" font-family="system-ui,sans-serif" font-size="12">worker box</text>
+<text x="858" y="260" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">cursor · droid</text>
+<text x="848" y="300" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">real harness binaries</text>
+<text x="848" y="316" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">placed by the CLI</text>
+<path d="M780 195L828 195" stroke="#a1a1aa" stroke-width="1.6" marker-end="url(#ov-a)"/>
+<text x="784" y="187" fill="#a1a1aa" font-family="ui-monospace,monospace" font-size="10">ssh · run</text>
+<text x="28" y="400" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Lime arrow: the single live stream every surface reads. Gray arrows: user gestures and the one-shot commands they become.</text>
+</svg>
+<figcaption>One editor window, one stream in, one verb out. The extension never talks to a device or a harness directly.</figcaption>
+</figure>
+
+## Goals
+
+**An agent starts from the editor without a prompt.** `Agents: New <Harness>` opens a tab and the agent is running on a fleet worker with a balanced account in the open workspace. Check: press Cmd+Shift+A on a workspace, watch the tab open with `agents run <harness> --interactive --device auto --cwd <workspace>` and a live prompt inside it, with no picker shown.
+
+**The editor never invents a status.** Every phase, needs-you flag, label, and timeline step shown comes from a row the CLI streamed. Check: with the stream stopped, the sidebar says "Waiting for the session stream…" and names the command it expects instead of showing an empty card.
+
+**Seeing costs nothing.** Selecting a Fleet row, switching tabs, and opening the sidebar spawn no process. Check: `ps` shows exactly one `agents feed watch --json` child for all windows while a dashboard or sidebar is visible, and none when neither is.
+
+**Tabs survive the editor.** Reload, crash, or quit and the agent tabs come back bound to their live sessions. Check: reload the window with three agent tabs open; three tabs return with their labels, and none of the sessions were stopped.
+
+**Every session everywhere is one list.** Fleet shows local, remote, cloud, and finished sessions with the same row shape and the same needs-you rule. Check: a session started on a worker box by another machine appears in Fleet with its host in the row and Resume targeting that host.
+
+**A person can answer from where they are.** A permission, question, or plan review shows in Fleet with the exact choices the harness offered and one click answers it. Check: trigger a permission prompt in a tab; the card lists the same options as the terminal; picking one clears the card when the CLI removes the attention row.
+
+## Non-goals
+
+**No scheduler in the extension.** Nothing in the extension launches, resumes, kills, injects, or rotates anything on a timer. The CLI daemon is the only scheduler. A second scheduler in a UI process caused the resume storms and the 31 percent idle CPU incident the current design exists to end.
+
+**No transcript parsing or local state reads for facts.** The extension does not read `~/.claude/projects`, terminal registries, or session state files to decide anything the stream can carry. Remaining readers (`src/monitor/sessionParse.ts`, the recursive `fs.watch` in `src/vscode/terminalReadiness.ts`, `src/monitor/readinessDetector.ts`) are recorded debt, scheduled for deletion, never extended.
+
+**No second platform.** The extension does not score devices or accounts, resolve project paths, decide fork identity, or reproduce resume compatibility. Each of those has one owner in the CLI and the extension calls it.
+
+**No detail rail in Fleet.** Fleet is a list. The Active Session sidebar is the one session preview. A persisted rail preference produced a blank third-width column on open, and two previews of one session drifted.
+
+**No Gemini.** The harness is hard-deprecated in the CLI; remaining references in the extension are debt to delete, not a feature.
+
+**No local-first execution path or silent fallback.** A launch under the default target goes to the fleet worker pool. A missing CLI noun is an upgrade error, never a filesystem fallback.
+
+**No API keys held by the extension beyond the Foreman orb.** Autogit generates commit messages through `agents run claude --model haiku`; the `agents.openaiApiKey` setting exists only for the realtime voice model.
+
+## Findings
+
+Three observations from running the extension shaped these requirements more than any design preference.
+
+An always-on session watcher was removed in August 2026 because it pinned about 31 percent of a CPU core and leaked ssh fan-out to feed a view nobody had open. Restoring it behind a demand gate, so the single producer exists only while a dashboard, sidebar, or unresolved tab needs it, is what made the stream affordable again. The same month a side-channel fetch per row produced the CPU incident recorded as agi-cli#3019; that is why a missing field goes onto the CLI row and never into a client fetch.
+
+A persisted "detail rail open" preference in Fleet restored a blank third-width column on open with nothing selected, and two previews of one session (the rail and the sidebar) drifted from each other. Removing the rail and making the sidebar the one preview removed the whole class of defect.
+
+Ordinary launches once resolved the workspace through `agents projects view <cwd>`, and the first weak match in a monorepo silently sent the terminal to a child project's default path. Emitting the exact open workspace as `--cwd` and reserving `--project` for the explicit Pick Project command fixed it, and a recovery mapping that was machine-global instead of per-workspace produced a multi-window resume storm on reload. Both are now invariants enforced in code and tests.
+
+## Start an agent in a tab
+
+You are in a workspace and want an agent working on it now, without deciding where it runs or which account it uses.
+
+You press Cmd+Shift+A, or pick `Agents: New Claude` (or any presented harness) from the palette. The extension reads the one setting that matters, `agents.launch.defaultTarget`, and builds one command. Under the default `auto` that command is `agents run claude --interactive --device auto --cwd <workspace> --mode auto`. The workspace is passed exactly as opened: a monorepo root stays the root and a nested project folder stays that folder, locally and remotely. A tab opens named `CL` and the CLI places the run on a device from the worker pool, rotating the account by usage headroom.
+
+When you want to choose one axis and let the CLI balance the other, the harness has four explicit variants. `(Pick Host)` prompts for the device and emits `--device <name> --strategy balanced`. `(Pick Account)` emits `claude@ --device auto` so the CLI routes to a picker-eligible worker and shows that device's account picker in the tab; a signed-out account can be chosen and authenticates in place. `(Auto)` chooses both without a prompt, ignoring the configured target. `(Pick Project)` is the only variant that replaces the workspace: it shows a project quickpick and emits `--project <slug>` with `--device auto`, and the CLI resolves the project's configured path on the chosen worker.
+
+What should happen: within a second a terminal tab exists, the status bar shows the agent's label and, when it runs elsewhere, the executing host shortened to its unique suffix. The tab title takes the canonical session name once the stream reports it. The picker and `--strategy` never appear together; `--project` and `--cwd` never appear together. These exclusions are enforced by `buildAgentLaunchCommand` in `src/core/agents.ts`.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: start an agent in a tab. User lane on top, extension and CLI lane below.">
+<defs><marker id="j1a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · START AN AGENT</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Press Cmd+Shift+A</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">or New &lt;Harness&gt; (variant)</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Answer one prompt at most</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">host, account, or project</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Type into the running agent</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">tab titled CL, host in status bar</text>
+<path d="M270 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j1a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j1a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Build one command</text><text x="112" y="180" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agents run claude --interactive</text><text x="112" y="196" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">--device auto --cwd &lt;workspace&gt;</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">CLI places the run</text><text x="412" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">worker pool, balanced account,</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">cwd re-rooted on the host</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Stream row arrives</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">tab binds to the session id, title takes</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the canonical name, sidebar renders</text>
+<path d="M170 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j1a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j1a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j1a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j1a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Pick Host adds --strategy balanced. Pick Account uses claude@ and no strategy. Pick Project adds --project and drops --cwd.</text>
+</svg>
+<figcaption>The extension never scores a device or an account. It pins at most one axis and hands the rest to the CLI.</figcaption>
+</figure>
+
+## Come back after a reload or a crash
+
+You closed the editor, or it crashed, with agent tabs open. You want them back exactly as they were, and you want none of the agents killed by the reload itself.
+
+You reopen the workspace. The extension reads the persisted tab metadata for that workspace (terminal id, harness prefix, session id, host, label, pinned version) and reopens each tab through the CLI's resume path. Each restored tab then rebinds from the live stream: the first row that claims the tab's terminal id on the same observer device and host is the tab's session.
+
+What should happen: every tab returns with its label and icon; the status bar and sidebar follow the restored session once the stream reports it; the agent process was never signaled. Closing a tab by hand is different: only a real user close (`TerminalExitReason.User`) issues `agents sessions stop <id>`. A reload is never treated as a close. Crash-recovery mapping is stored per workspace (`workspaceState`) so a second window cannot trigger a resume storm.
+
+Where this is still debt: `src/vscode/prewarm.vscode.ts` holds the recovery mapping in the extension and `src/core/prewarm.simple.ts` still lists OpenCode sessions on tab open. Both are slated for deletion once the CLI daemon owns restore.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: return after a reload. User lane on top, extension and CLI lane below.">
+<defs><marker id="j2a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · RELOAD OR CRASH</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Editor reloads or crashes</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">three agent tabs were open</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Reopen the workspace</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">nothing else to do</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Same three tabs, same labels</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">agents still running</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j2a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j2a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Persisted tab metadata</text><text x="112" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">terminal id, prefix, session id, host,</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">label, version; no stop was sent</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Reopen through resume</text><text x="412" y="180" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agents sessions resume &lt;id&gt;</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">per workspace, never machine-global</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Rebind from the stream</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">first sole live claim on the tab's terminal</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">id binds it; a Previous row cannot</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j2a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j2a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j2a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j2a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Only a real user close sends agents sessions stop. Reload and restore are never a close.</text>
+</svg>
+<figcaption>Persisted metadata is enough to reopen a tab. It is never proof that a process is alive and never a transcript cache.</figcaption>
+</figure>
+
+## See what an agent is doing
+
+You have several tabs and you want to know, for the one you are looking at, what you asked, what it has done, and whether it is stuck, without scrolling its terminal.
+
+You focus an agent tab, or click a row in Fleet. The Active Session sidebar (the `agentsPanel.terminal` view) takes that session as its subject; the last of the two triggers wins. The sidebar renders synchronously from the warm presentation store: a header with agent, session, version, label, working directory, branch, and account, plus Focus and Resume; a Goal card when the summarizer produced one; a Request card with your own first sentence in bold and chips for attached images, files, directories, pasted terminal text, and the slash command, with the whole turn behind a fold; a Timeline of the newest five steps with three more on demand and one counter for everything older, an amber line on the running step, failures and blocks in red, milestones in green; the Checklist; deliverables, delegated team, and current activity; up to eight changed files with the true total; and a reply field. The status bar shows the active tab's label and, for a remote session, its host.
+
+What should happen: switching tabs paints instantly with no await, fetch, or lazy enrichment. On an older CLI the cards degrade honestly: request falls back to the cleaned prompt and then the topic, timeline falls back to checkpoints, and the Files card does not appear. Two states are never faked: when no reset has been seen for the subject's scope the Timeline says "Waiting for the session stream…" and names the command; when the CLI reports the timeline unavailable it says so with the CLI's reason.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: see what an agent is doing. User lane on top, extension and CLI lane below.">
+<defs><marker id="j3a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · SEE WHAT AN AGENT IS DOING</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Focus a tab or click a row</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">two triggers, last wins</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Read the sidebar</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">request, timeline, checklist, files</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Reply, Focus, or Resume</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">from the sidebar footer and header</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j3a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j3a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Subject = session row</text><text x="112" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">presentation state only, never</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">persisted; works with no local tab</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Synchronous paint</text><text x="412" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">every card is a copy off the warm store:</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">no await, no fetch, no transcript read</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Honest degradation</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">no reset yet: "Waiting for the session</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">stream…"; unavailable: the CLI's reason</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j3a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j3a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j3a)"/><path d="M515 138L500 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j3a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">The zero-overhead guarantee: a tab switch or a row click starts no CLI process.</text>
+</svg>
+<figcaption>The sidebar is the one session preview. Fleet has no detail rail.</figcaption>
+</figure>
+
+## Answer a request from Fleet
+
+Some agent, on some machine, is waiting on you. You want to see exactly what it asked and answer it from the editor.
+
+You open the dashboard (Cmd+Shift+F). The Needs you lane lists every attention row the CLI feed marks open, ranked question, permission, plan review, declared, failure, stall, review, most-stuck first within a kind. An interactive hand-back renders as a decision card carrying the harness's own choices; a failure renders as a failure card; a stall or review as a plain row. You click a choice, or type a reply.
+
+What should happen: the answer goes to the CLI as one verb and the card leaves the lane only when the feed removes the attention row, never optimistically. The activity lane keeps a compact receipt of the resolution. The extension classifies nothing: membership is `attention.state === 'open'`, the reason is `attention.kind`, and a stall is a CLI signal. A tab the stream has not indexed yet carries no attention and cannot enter the lane from the client side.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: answer a needs-you request. User lane on top, extension and CLI lane below.">
+<defs><marker id="j4a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · ANSWER A REQUEST</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Open Fleet (Cmd+Shift+F)</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Needs you lane at the top</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Read the exact question</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">and the harness's own choices</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Click a choice or type</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the card leaves when the CLI says so</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j4a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j4a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Pure projection</text><text x="112" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">membership = attention.state open;</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">order = attention.kind rank</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">One verb</text><text x="412" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the answer is sent once; no retry timer,</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">no optimistic removal</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Feed removes the row</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">attention.remove clears the card; the</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">activity lane keeps a receipt</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j4a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j4a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j4a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j4a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Resolved attention cannot reappear from an older snapshot. A stalled agent is a CLI fact, never a client heartbeat guess.</text>
+</svg>
+<figcaption>The CLI decides what needs a person. The extension shows it and carries the answer back.</figcaption>
+</figure>
+
+## Resume, fork, or move a session
+
+You want to continue an earlier conversation, branch it into a sibling, or carry it to another machine or harness.
+
+For resume you run `Agents: Resume`, which performs one bounded CLI listing when opened and sends only the chosen canonical ids to `agents sessions resume <id> --vscodium`. `Resume (Pick Session)` lists only abandoned sessions (detached, backgrounded, parked, idle, open nowhere) and resumes each on the device it was created on. `Resume (Pick Host)` reopens the active tab's session on a device you pick, same harness and version. `Resume (Pick Harness)` continues the active tab's session in a different harness on the same device through the universal `/continue` flow. `Resume (Best Profile)` (Cmd+Shift+Alt+J) rotates the active tab to the signed-in account with the most headroom.
+
+For fork you run `Agents: Fork`, `Fork (Recap)`, or `Fork (Pick Host)`; all delegate to `agents sessions fork <id>`, which resolves the source across the fleet and launches a recap-seeded same-harness sibling. The original is untouched. Fleet's Recap ledger reunites a fork and its parent as one side-by-side row, each stamped with the machine it ran on and its own duration, cost, and PR.
+
+For moving a session, right-click a Fleet row's Resume and choose a different device from the already-loaded roster; the extension delegates transport and liveness to `agents sessions migrate` and then focuses the target in the same editor terminal.
+
+What should happen: each action is one command, the extension resolves only the selection, and the new tab rebinds from the stream. The extension never reproduces resume compatibility, account selection, placement, or fork identity rules.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: resume, fork, or migrate a session. User lane on top, extension and CLI lane below.">
+<defs><marker id="j5a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · RESUME · FORK · MIGRATE</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Pick the verb</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Resume, Fork, or Resume on a device…</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Pick the session or device</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">from one bounded listing</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Continue in the new tab</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the original is untouched</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j5a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j5a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Resolve the selection only</text><text x="112" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">canonical id, target device, harness</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">from the roster already loaded</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">One owning verb</text><text x="412" y="180" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agents sessions resume | fork | migrate</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the CLI owns identity and transport</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">New row on the stream</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the tab binds to it; Recap reunites a</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">fork with its parent side by side</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j5a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j5a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j5a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j5a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Fork and Fork (Recap) behave identically: the CLI verb is always recap-seeded.</text>
+</svg>
+<figcaption>Every lifecycle action is a selection plus one CLI command.</figcaption>
+</figure>
+
+## Dispatch a ticket from Fleet
+
+You have a ticket and want an agent on it, on a worker, without opening a terminal yourself.
+
+From the Fleet header you press Dispatch (or Cmd+Shift+D). The dispatch panel takes the ticket or a free-text task, the harness, the mode, and where to run it, and hands the CLI one `agents run` command. The new session appears in the list as a row when the stream reports it, attributed to its project from the hints the row carries: working directory or worktree path first, then the CLI's repo word, the PR's owner and repo, then branch, worktree slug, or team.
+
+What should happen: the panel never scores devices or accounts; it composes flags the CLI already accepts. A session no hint can attribute lands in a labeled Unassigned group that states why, with a per-row and per-group assign action that is a local presentation override, never a fetch or a guess. The Project control beside Group and Sort scopes rows and status-chip counts to one project and remembers the pick.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: dispatch a ticket from Fleet. User lane on top, extension and CLI lane below.">
+<defs><marker id="j6a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · DISPATCH A TICKET</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Press Dispatch in Fleet</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">or Cmd+Shift+D</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Ticket, harness, mode, where</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">one panel, one submit</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Row appears under its project</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">or under a labeled Unassigned</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j6a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j6a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Compose flags the CLI accepts</text><text x="112" y="180" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agents run &lt;harness&gt; --mode … --device …</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">no device or account scoring here</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">CLI places and starts it</text><text x="412" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">worker pool, account rotation,</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">session id minted by the CLI</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Attribute from row hints</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">cwd → repo word → PR slug → branch;</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">a prompt is never mined</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j6a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j6a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j6a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j6a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Project attribution uses matchLinearProject with word-wise containment, so "crush-cli" is never filed under "Rush".</text>
+</svg>
+<figcaption>Dispatch is a form over the CLI's own flags. Attribution is a projection of the row.</figcaption>
+</figure>
+
+## Reuse a terminal for a new session
+
+You exit the agent in a tab and start another one in the same terminal. You expect the tab, the status bar, and the sidebar to follow the new session without opening a new tab.
+
+You type `exit` or quit the agent, then launch another in the same Agents terminal. For a moment two stream rows may both claim the tab's stable observer terminal id. The extension treats two distinct live claims as ambiguous and keeps the existing binding. Once the old session is removed from the stream, or returns only as a Previous row, the new session is the sole live claim and the tab rebinds to it.
+
+What should happen: no tab switch is needed; the status bar and the Active Session sidebar follow the new session, and a terminal-selected sidebar subject follows the exact terminal id across the rebind while a Fleet-selected subject stays tied to its session. Start time is never an ownership signal. Reconciliation runs only on pushed reset and agent-row facts, never on a poll or a local state-file read, and it stays scoped to the terminal's observer device and execution host.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: reuse a terminal for a new session. User lane on top, extension and CLI lane below.">
+<defs><marker id="j7a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · REUSE A TERMINAL</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Exit session A in the tab</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the shell stays open</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Start session B there</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">same terminal, no new tab</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Status bar and sidebar show B</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">without a tab switch</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j7a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j7a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Two live claims: ambiguous</text><text x="112" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">A and B both carry the terminal id;</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">the existing binding stays</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">A leaves the stream</text><text x="412" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">agent.remove, or previous: true;</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">B is now the sole live claim</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Rebind on the pushed fact</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">registry, status bar, sidebar follow B;</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">a later Previous A cannot revert it</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j7a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j7a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j7a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j7a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Reconciliation runs only on pushed reset and row facts, scoped to observer device and execution host. No poll, no state file.</text>
+</svg>
+<figcaption>Session start time is not ownership. The stream's removal of the old row is.</figcaption>
+</figure>
+
+## Commit with Autogit
+
+You have staged or working changes and want a commit message in your own style, committed and pushed, in one action.
+
+You press Cmd+Shift+G. The extension reads the git extension's repository state, builds the diff and the status summary while honoring the `agents.ignoreFiles` patterns, and asks `agents run claude --model haiku` for a message shaped by your `agents.commitMessageExamples`. It stages, commits, and pushes unless `agents.disableAutocommit` or `agents.disableAutopush` say otherwise.
+
+What should happen: one keystroke, one generated message, one commit. The timeout is `agents.commitGenTimeoutMs`. No OpenAI key is involved; Autogit stopped using it when message generation moved to the CLI.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: commit with Autogit. User lane on top, extension and CLI lane below.">
+<defs><marker id="j8a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · AUTOGIT</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Press Cmd+Shift+G</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">or the SCM title button</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Wait a few seconds</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">bounded by commitGenTimeoutMs</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Committed and pushed</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">unless a disable setting is on</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j8a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j8a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT · CLI</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Diff and status from git ext</text><text x="112" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">ignoreFiles applied; staged and</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">unstaged changes summarized</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Message from the CLI</text><text x="412" y="180" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agents run claude --model haiku</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">styled by commitMessageExamples</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Stage, commit, push</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">disableAutocommit stops after the message;</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">disableAutopush stops after the commit</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j8a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j8a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j8a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j8a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">No OpenAI key is used for commits. The agents.openaiApiKey setting exists only for the Foreman voice orb.</text>
+</svg>
+<figcaption>Autogit is one gesture that becomes one CLI call and one git transaction.</figcaption>
+</figure>
+
+## Read an artifact in the Reader
+
+An agent produced a plan or a report as Markdown or HTML and you want to read it like a document, not as source.
+
+You enable the Reader once with `Agents: Reader (Enable)`. From then on `.md` files can open in the Notion-style editor (TipTap, with a frontmatter panel, outline, slash commands, callouts, toggles, file attachments) and `.html` files open in a sandboxed viewer. Both are registered as optional custom editors, so the default text editor stays available. `.html` and `ref-*.md` plans detected in session output, worktree files, or attachments also appear as one-click preview chips on Fleet cards, and screenshots as thumbnails that click through to the host preview.
+
+What should happen: the HTML viewer never runs the page's scripts against the editor; it renders inside the webview sandbox. Images and attachments dropped into the Markdown editor land in the `agents.editor.assetFolder` folder next to the document. `Agents: Reader (Disable)` restores the default association.
+
+<figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: read an artifact in the Reader. User lane on top, extension lane below.">
+<defs><marker id="j9a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
+<rect x="1" y="1" width="998" height="248" rx="12" fill="#09090b" stroke="#3f3f46"/>
+<text x="20" y="28" fill="#8b938c" font-family="ui-monospace,monospace" font-size="11" letter-spacing="2">USER JOURNEY · READ AN ARTIFACT</text>
+<text x="20" y="72" fill="#5ad6c0" font-family="ui-monospace,monospace" font-size="10">YOU</text>
+<rect x="70" y="48" width="220" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="82" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Enable the Reader once</text><text x="82" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Agents: Reader (Enable)</text>
+<rect x="400" y="48" width="200" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="412" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Open a plan chip or file</text><text x="412" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">from Fleet or the explorer</text>
+<rect x="730" y="48" width="240" height="50" rx="8" fill="#161a18" stroke="#5ad6c0"/><text x="742" y="70" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Read and annotate</text><text x="742" y="88" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Markdown edits save in place</text>
+<path d="M290 73L398 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j9a)"/><path d="M600 73L728 73" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j9a)"/>
+<line x1="20" y1="120" x2="980" y2="120" stroke="#26302a" stroke-dasharray="4 4"/>
+<text x="20" y="170" fill="#a3e635" font-family="ui-monospace,monospace" font-size="10">EXT</text>
+<rect x="100" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="112" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Custom editors registered</text><text x="112" y="180" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agents.markdownEditor · agents.htmlReader</text><text x="112" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">priority option: the text editor stays</text>
+<rect x="400" y="140" width="230" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="412" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Sandboxed webview</text><text x="412" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">HTML renders in the webview sandbox;</text><text x="412" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">TipTap editor for Markdown</text>
+<rect x="700" y="140" width="270" height="64" rx="8" fill="#12211a" stroke="#a3e635"/><text x="712" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12" font-weight="600">Assets beside the document</text><text x="712" y="180" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">dropped images go to agents.editor.assetFolder</text><text x="712" y="196" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">(default .assets)</text>
+<path d="M180 98L200 138" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j9a)"/><path d="M330 172L398 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j9a)"/><path d="M630 172L698 172" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j9a)"/><path d="M835 138L850 100" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#j9a)"/>
+<text x="20" y="236" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">The Reader is opt-in and reversible. It never becomes the default association for a workspace that did not enable it.</text>
+</svg>
+<figcaption>The Reader turns agent output into something you read, without leaving the editor.</figcaption>
+</figure>
+
+## Requirements
+
+**Stream contract.** Exactly one `agents feed watch --json` child exists per machine for all editor windows, owned by the elected leader window, and only while some window demands it: a visible Fleet dashboard or Active Session sidebar, or a tracked agent tab whose identity the stream has not resolved. When no window demands it the producer is torn down after a short grace period. Every window reads a broadcast projection of that stream. A reset replaces a scope; upserts and removes apply only when newer; a stale event is ignored; a follower that has never seen a reset renders as degraded, never as an authoritative empty state. If a field the UI needs is missing from the stream, the fix is to add it to the CLI's row, never a side-channel fetch. That side channel caused the 2026-08-25 CPU incident.
+
+**One-shot verbs.** Launch, resume, fork, stop, migrate, dispatch, merge, and answer are each built with the owning CLI noun and run once per user action. No retry timers, no caches of CLI output beyond a short in-flight guard. Closing a tab tears the agent down only on a real user close.
+
+**Fail loud.** A missing CLI binary is a visible prerequisite failure. A missing CLI noun is an upgrade error. A malformed feed event is rejected and reported without corrupting the current scope. No filesystem fallback fills a gap.
+
+**Latency.** Opening the sidebar, switching tabs, and selecting a Fleet row spawn zero subprocesses; the sidebar paints from the warm store synchronously. The Fleet list keeps search, filters, grouping, the row Resume button, and the expand-in-place card and nothing that fetches per selection. Previous history defaults to at most 50 sessions active in the last seven days and pages older history ten rows at a time; after a longer gap it shows up to ten most-recently-active Previous sessions rather than an empty band.
+
+**Launch composition.** `--cwd` is emitted once, independently of device selection, for ordinary, Auto, Pick Host, Pick Account, local, and version-pinned launches, carrying the exact open workspace. Only Pick Project emits `--project`, and it never emits `--cwd`. The account picker (`harness@`) and `--strategy` are mutually exclusive, as are the picker and a pinned version. Ordinary launches never derive a target from `agents projects view <cwd>`.
+
+**Identity.** Publisher `swarmify` and name `swarm-ext` in `package.json` never change; the `swarm-ext://` URI the CLI emits names `swarmify.swarm-ext` as its authority, and the URI handler serves `/focus` and `/inject` for the CLI to raise a tab or deliver text into a live terminal by session id. Display names may change freely.
+
+**Multi-window.** Opening a second dashboard must not double long-lived watchers, transcript parsing, or schedulers. Followers recover replayable session and attention state from the leader's replay cache. Devices, projects, and tickets are still separate bounded CLI reads until the stream owns them; that is recorded debt.
+
+**Harness roster.** The presented harnesses, their labels, prefixes, and install info derive from the CLI catalog through one shared module with a drift test; no hand-written harness list exists in the UI. Gemini is not presented.
+
+## Evidence
+
+The suite runs with `bun test --timeout 30000` from the repository root and exercises real command boundaries; the only sanctioned double is `src/testing/vscodeDouble.ts`. The baseline on this branch is 1,853 tests across 165 files with 6 failures, all in the UI package when run from the root, unchanged from `origin/main`. `bun run lint:dead` (knip) runs inside `scripts/build.sh` and fails the build on any unused file, export, type, or dependency. `scripts/build.sh <version>` must produce a VSIX, and a local `scripts/install.sh` followed by `Agents: New Claude` must open a tab with a live prompt. Agent-integration tests (`bun run test:agent-integration`) require the `agents` binary on the box and hit it for real.
+
+The checks that matter for the journeys are the ones an agent or a person runs against the installed extension: one `agents feed watch` child across two windows; zero processes on a row click; tabs restored after reload with no session stopped; a permission card that shows the terminal's own options and clears on the feed's removal; a Pick Account launch that shows the worker's own picker.
+
+## Open decisions
+
+Whether restore should move entirely into the CLI daemon, which would delete `prewarm.vscode.ts` and `prewarm.simple.ts`, is decided in principle (yes) and blocked on the CLI carrying a restore projection. Whether `messageCount` and `recentFiles` return to the sidebar depends on the CLI adding them to the stream row; a lazy enrich is not an option. Whether the dashboard's device, project, and ticket reads move onto the stream is deferred until the CLI projects them. Switching the stream to `agents sessions watch --json --local` is rejected until the CLI side lands, because `feed watch` is the only producer of attention and activity events and the only fleet fan-out. The Foreman voice orb keeps its OpenAI dependency until the CLI offers a realtime voice path; that is the one feature that does not fit the thin-client rule and it is explicitly tolerated.
