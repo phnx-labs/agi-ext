@@ -104,7 +104,7 @@ const NAME_TO_PREFIX: Record<string, string> = {
   'droid': DROID_TITLE
 };
 
-export interface DisplayPreferences {
+interface DisplayPreferences {
   showFullAgentNames: boolean;
   showLabelsInTitles: boolean;
   showSessionIdInTitles: boolean;

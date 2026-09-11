@@ -1,7 +1,6 @@
 import type {
   SwarmAgentType,
   TabId,
-  TaskSource,
   NotificationSettings,
   EditorPreferences,
   ThemedIcon,
@@ -30,12 +29,6 @@ export const DEFAULT_EDITOR_PREFERENCES: EditorPreferences = {
   markdownViewerEnabled: true
 }
 
-// Source badges for task sources
-export const SOURCE_BADGES: Record<TaskSource, { label: string; color: string }> = {
-  linear: { label: 'LN', color: '#5e6ad2' },
-  github: { label: 'GH', color: '#238636' }
-}
-
 // Tab display labels
 export const TAB_LABELS: Record<TabId, string> = {
   floor: 'Floor',
@@ -58,8 +51,6 @@ export const AGENT_INSTALL_INFO: Partial<Record<CliAgentId, { command?: string; 
   droid: { command: 'curl -fsSL https://app.factory.ai/cli | sh', url: 'https://factory.ai' },
 }
 
-// agents-cli package for managing agent configurations
-export const AGENTS_CLI_PACKAGE = '@swarmify/agents-cli'
 
 // Map from agent title (uppercase prefix like 'CC', 'CX') or name ('Claude', 'Codex')
 // to key (claude, codex, etc.). Derived from BUILT_IN_AGENTS.
