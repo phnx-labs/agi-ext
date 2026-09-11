@@ -113,7 +113,7 @@ The extension host is a single Node process per editor window. It holds the elec
 | Terminal registry | Maps a `vscode.Terminal` to extension-local id, harness, host, version, account, label, and the canonical session id once known; persists per workspace | `src/vscode/terminals.vscode.ts`, `src/core/sessions.persist.ts`, `src/core/terminals.ts` |
 | Launch engine | Turns a command variant and the active workspace into one `agents run` line | `src/core/launchTarget.ts`, `src/core/agents.ts` `buildAgentLaunchCommand`, `src/core/deviceDispatchShell.ts` `shellQuote` |
 | CLI location | One resolver and one exec path for the `agents` binary; nvm node first on PATH, then the binary's dir | `src/core/agentsBin.ts` `resolveAgentsBin`, `bootstrapPath`, `runAgents` |
-| Command adapters | Every palette command; the `swarm-ext://` URI handler for `/focus` and `/inject`; status bar | `src/vscode/extension.ts`, `src/vscode/sessions.vscode.ts`, `src/vscode/forkCommands.vscode.ts` |
+| Command adapters | Every palette command; the `swarm-ext://` URI handler for `/focus`, `/inject`, and `/spawn` (the agents-cli terminal engine's `vscodium-agent` backend resumes a session into an editor tab through it); status bar | `src/vscode/extension.ts`, `src/vscode/sessions.vscode.ts`, `src/vscode/forkCommands.vscode.ts` |
 | Webview bridge | Serializes bounded view models into the Fleet webview and routes its messages to host actions | `src/vscode/settings.vscode.ts` (message router), `ui/settings/host/bridge.ts` |
 | Active Session sidebar | The one session preview; module-local subject; synchronous render from the store | `src/vscode/agentPanel.vscode.ts` |
 | Fleet dashboard | React app with `floor`, `bench`, `panel` tabs; floor model, needs-you ranking, project attribution, dispatch panel, recap ledger | `ui/settings/App.tsx`, `ui/settings/components/mission-control/*` |
@@ -223,14 +223,15 @@ Every `Agents: New <Harness>` variant routes through one engine (`src/core/launc
 
 | Variant | Emits | Never emits |
 |---|---|---|
-| `New <Harness>` (target `auto`) | `agents run <h> --interactive --device auto --cwd <workspace> --mode auto` | a prompt |
-| `(Pick Host)` | `--device <name> --strategy balanced --cwd <workspace>` | the account picker, `--device auto` |
-| `(Pick Account)` | `<h>@ --interactive --device auto --cwd <workspace>` | `--strategy`, a pinned version |
-| `(Auto)` | `--device auto --cwd <workspace>`, ignoring the configured target | a prompt |
-| `(Pick Project)` | `--device auto --project <slug>` | `--cwd`, `--remote-cwd`, a host prompt |
-| pinned version | `<h>@<version> --cwd <workspace>` | `--device auto`, `--strategy` |
+| `New <Harness>` (target `auto`) | `agents run <h> --interactive --device auto --cwd <workspace> --strategy balanced --mode auto` | a prompt |
+| `(Pick Host)` | `--device <name> --cwd <workspace> --strategy balanced --mode auto` | the account picker, `--device auto` |
+| `(Pick Account)` | `<h>@ --interactive --device auto --cwd <workspace> --mode auto` | `--strategy`, a pinned version |
+| `(Auto)` | `--device auto --cwd <workspace> --strategy balanced --mode auto`, ignoring the configured target | a prompt |
+| `(Pick Project)` | `--device auto --project <slug> --strategy balanced --mode auto` | `--cwd`, `--remote-cwd`, a host prompt |
+| pinned version | `<h>@<version> --interactive --cwd <workspace> --mode auto` | `--device auto`, `--strategy` |
+| target `local` | `--cwd <workspace> --strategy balanced --mode auto` | `--device` |
 
-The exclusions are thrown as errors inside `buildAgentLaunchCommand`: `cwd` with `remoteCwd`, `project` with either cwd form, the account picker with a pinned version, the account picker with a strategy. `--cwd` is emitted once, independent of placement, because the terminal's inherited `process.cwd()` can differ from the active folder. `--session-id` is emitted for Claude only. Ordinary launches never derive a target from `agents projects view <cwd>`: that command is a containment attribution lookup and a shared root can belong to several child projects (PHNX-3970). Native-mode launches are wrapped by `wrapNativeAgentCommand` so exit code 0 closes the tab and the CLI's ssh-loss codes (255, 254) read as a recoverable reconnect rather than a crash.
+Flag order is fixed by `buildAgentLaunchCommand`: agent spec, `--interactive`, `--device`, `--cwd` or `--project`, `--session-id` (Claude), `--strategy`, `--model`, `--mode`; `src/core/launchTarget.test.ts` asserts these strings without a workspace. `--strategy balanced` is set for every variant except the account picker (`src/core/launchTarget.ts` `strategy: options.accountPicker ? undefined : 'balanced'`) and is dropped for a pinned version, where the CLI would ignore it. The exclusions are thrown as errors inside `buildAgentLaunchCommand`: `cwd` with `remoteCwd`, `project` with either cwd form, the account picker with a pinned version, the account picker with a strategy. `--cwd` is emitted once, independent of placement, because the terminal's inherited `process.cwd()` can differ from the active folder. `--session-id` is emitted for Claude only. Ordinary launches never derive a target from `agents projects view <cwd>`: that command is a containment attribution lookup and a shared root can belong to several child projects (PHNX-3970). Native-mode launches are wrapped by `wrapNativeAgentCommand` so exit code 0 closes the tab and the CLI's ssh-loss codes (255, 254) read as a recoverable reconnect rather than a crash.
 
 <a id="attention"></a>
 
@@ -286,6 +287,7 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 
 | Path | Violation | Fate |
 |---|---|---|
+| `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | a client-side `agents sessions <id> --json` fetch for the label and topic, which are already on the stream row; still called from `src/vscode/extension.ts` | delete now |
 | `src/vscode/prewarm.vscode.ts`, `src/core/prewarm.simple.ts` | crash-recovery mapping kept in the extension (per-workspace since PHNX-3768, so the resume storm is fixed); `prewarm.simple.ts` still spawns `opencode session list` on every OpenCode tab open | delete once the CLI daemon owns restore |
 | `src/vscode/settings.vscode.ts` `watchForPlan` | polls `agents sessions <id> --json` for the plan (rate-bounded, PHNX-3817) | delete once the CLI carries `plan` on `SessionWatchRow` (PHNX-3819) |
 | `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
