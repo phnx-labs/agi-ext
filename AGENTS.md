@@ -86,15 +86,14 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
 The thin-client violations still in the tree are listed with their fate in `docs/ARCH.md`
 ("Findings"): `fetchRemoteSessionLabelSource`, prewarm restore mapping, `watchForPlan`,
 `sessionParse.ts`, the transcript `fs.watch`, `readinessDetector.ts`, gemini remnants, the
-Foreman OpenAI dependency. Touching
-one means deleting or shrinking it, never extending it. Four tests assert on source text
-(`autoLabelHydration`, `statusBarIdentity.spawnStorm`, `agentPanel.webview-syntax`,
-`pollTimers.replacement`); read the invariant each protects before changing it.
+Foreman OpenAI dependency. Touching one means deleting or shrinking it, never extending it.
+Four tests assert on source text (`autoLabelHydration`, `statusBarIdentity.spawnStorm`,
+`agentPanel.webview-syntax`, `pollTimers.replacement`); read what each protects first.
 
 ## Conventions
 
 - `AGENTS.md` is canonical; `CLAUDE.md` is a symlink to it. Edit only `AGENTS.md`.
 - Worktree under `.agents/worktrees/<slug>/` + PR for every change; never commit to `main`.
+  No stubs, no fallbacks, no second scheduler, no mocks beyond `vscodeDouble`.
 - Every user-visible change updates `CHANGELOG.md`; a behavior change updates `docs/PRD.md`
   or `docs/ARCH.md` in the same PR, then `docs/render.sh`.
-- No stubs, no fallbacks, no second scheduler, no mocks beyond `vscodeDouble`.
