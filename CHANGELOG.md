@@ -6,6 +6,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+- Remove proven-unused session classifiers, readiness shortcuts, device-stat
+  wrappers, layout helpers, and editor commands. Live session and command paths
+  are preserved (#74).
 - Dashboard and reader builds now enforce their strict TypeScript configuration,
   including tests and imported shared source. Correct initial harness status,
   editor command refs, and optional-data handling without relaxing compiler checks.
