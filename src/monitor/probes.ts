@@ -36,7 +36,7 @@ export const AGENT_READY_TIMEOUT_MS = 60_000;
 // fired within this grace window.
 export const PROMPT_FALLBACK_GRACE_MS = 300;
 
-// The agent process (Node-based TUIs like Claude/Codex/Gemini) sits in 'S'
+// The agent process (Node-based TUIs like Claude/Codex) sits in 'S'
 // state during ANY I/O wait — including auto-update network calls that fire
 // before the TUI renders. We defend with a minimum wall-clock floor since the
 // child appeared, and a longer continuous idle window than promptReady uses.

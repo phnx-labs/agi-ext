@@ -99,10 +99,14 @@ describe('mapInventoriesToInstalledAgents', () => {
 
   it('reports signedIn false when no version is signed in', () => {
     const agents = mapInventoriesToInstalledAgents(
-      { gemini: inventory({ agent: 'gemini', signedInCount: 0, versions: [version({ signedIn: false })] }) },
+      { cursor: inventory({ agent: 'cursor', signedInCount: 0, versions: [version({ signedIn: false })] }) },
       'claude',
     );
     expect(agents[0].signedIn).toBe(false);
+  });
+
+  it('does not offer a deprecated harness reported by a legacy inventory', () => {
+    expect(mapInventoriesToInstalledAgents({ gemini: inventory({ agent: 'gemini' }) }, 'gemini')).toEqual([]);
   });
 
   it('falls back to id + neutral color for an unknown agent', () => {

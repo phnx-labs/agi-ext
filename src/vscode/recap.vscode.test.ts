@@ -4,7 +4,6 @@ import {
   buildRecapPrompt,
   recapSidecarPath,
   stripFrontmatter,
-  stripGeminiToml,
   isRecapSupported,
 } from './recap.vscode';
 
@@ -52,19 +51,6 @@ describe('stripFrontmatter', () => {
   });
 });
 
-describe('stripGeminiToml', () => {
-  test('extracts triple-quoted prompt body', () => {
-    const toml = 'name = "recap"\nprompt = """\nDo the recap.\nFacts first.\n"""\n';
-    expect(stripGeminiToml(toml)).toContain('Do the recap.');
-    expect(stripGeminiToml(toml)).toContain('Facts first.');
-  });
-
-  test('falls back to single-quoted string', () => {
-    const toml = 'name = "recap"\nprompt = "Quick recap"\n';
-    expect(stripGeminiToml(toml)).toBe('Quick recap');
-  });
-});
-
 describe('buildRecapArgv', () => {
   test('pins the version when provided', () => {
     const argv = buildRecapArgv('claude', '2.1.140', '/work', 'PROMPT');
@@ -86,10 +72,10 @@ describe('buildRecapArgv', () => {
 });
 
 describe('isRecapSupported', () => {
-  test('accepts the five supported agents', () => {
+  test('accepts the supported agents', () => {
     expect(isRecapSupported('claude')).toBe(true);
     expect(isRecapSupported('codex')).toBe(true);
-    expect(isRecapSupported('gemini')).toBe(true);
+    expect(isRecapSupported('gemini')).toBe(false);
     expect(isRecapSupported('cursor')).toBe(true);
     expect(isRecapSupported('copilot')).toBe(true);
   });

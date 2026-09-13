@@ -186,7 +186,6 @@ function expand(kind: string): string {
   switch (kind) {
     case 'claude': return 'Claude';
     case 'codex': return 'Codex';
-    case 'gemini': return 'Gemini';
     case 'opencode': return 'OpenCode';
     case 'openclaw': return 'OpenClaw';
     default: return kind;

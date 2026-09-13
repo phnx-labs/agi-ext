@@ -18,7 +18,6 @@ import { extractSessionQuickDetails, SessionAttachment, SessionQuickDetails, Ses
 import {
   CLAUDE_TITLE,
   CODEX_TITLE,
-  GEMINI_TITLE,
   OPENCODE_TITLE,
   CURSOR_TITLE,
   SHELL_TITLE,
@@ -760,7 +759,7 @@ export async function scanExisting(
     if (!sessionId && info.sessionChunk && agentType) {
       const sessionPath = await getSessionPathBySessionId(
         info.sessionChunk,
-        agentType as 'claude' | 'codex' | 'gemini',
+        agentType as 'claude' | 'codex',
         workspacePath
       );
       if (sessionPath) {
@@ -825,7 +824,6 @@ export function countRunning(): RunningCounts {
   const counts: RunningCounts = {
     claude: 0,
     codex: 0,
-    gemini: 0,
     opencode: 0,
     cursor: 0,
     shell: 0,
@@ -848,9 +846,6 @@ export function countRunning(): RunningCounts {
         break;
       case CODEX_TITLE:
         counts.codex++;
-        break;
-      case GEMINI_TITLE:
-        counts.gemini++;
         break;
       case OPENCODE_TITLE:
         counts.opencode++;
@@ -931,7 +926,6 @@ function pickMostRecentTimestamp(...timestamps: Array<string | undefined>): stri
 const AGENT_KEY_TO_PREFIX: Record<string, string> = {
   claude: 'CC',
   codex: 'CX',
-  gemini: 'GX',
   opencode: 'OC',
   cursor: 'CR',
   shell: 'SH'
@@ -940,7 +934,6 @@ const AGENT_KEY_TO_PREFIX: Record<string, string> = {
 const AGENT_ROLE_HINTS: Record<string, { role: string; hint: string }> = {
   claude: { role: 'lead', hint: 'Strategy and orchestration' },
   codex: { role: 'fix', hint: 'Fast edits and implementation' },
-  gemini: { role: 'research', hint: 'Deep research and exploration' },
   cursor: { role: 'trace', hint: 'Debugging and tracing' },
   opencode: { role: 'assist', hint: 'Editor-style help' },
   shell: { role: 'shell', hint: 'Command execution' }
@@ -1042,7 +1035,7 @@ export async function getTerminalsByAgentType(
   const sessionPromises: Array<{
     index: number;
     sessionPath: Promise<string | undefined>;
-    agentType: 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'antigravity' | 'grok' | 'kimi' | 'droid';
+    agentType: 'claude' | 'codex' | 'opencode' | 'cursor' | 'antigravity' | 'grok' | 'kimi' | 'droid';
   }> = [];
   let index = 0;
 
@@ -1132,7 +1125,7 @@ export async function getTerminalsByAgentType(
       previewPromise = getSessionPreviewInfo(sessionPath);
     }
 
-    const summaryAgentType = (p.agentType === 'claude' || p.agentType === 'codex' || p.agentType === 'gemini') ? p.agentType : null;
+    const summaryAgentType = (p.agentType === 'claude' || p.agentType === 'codex') ? p.agentType : null;
     const [preview, sessionStat] = await Promise.all([
       previewPromise,
       fs.stat(sessionPath).catch(() => null)
@@ -1228,7 +1221,7 @@ export async function getTerminalsByAgentType(
 }
 
 export async function getFloorTerminalDetails(workspacePath?: string): Promise<TerminalDetail[]> {
-  const agentTypes = ['claude', 'codex', 'gemini', 'opencode', 'cursor'];
+  const agentTypes = ['claude', 'codex', 'opencode', 'cursor'];
   const localDetails = (await Promise.all(
     agentTypes.map((agentType) => getTerminalsByAgentType(agentType, workspacePath)),
   )).flat();

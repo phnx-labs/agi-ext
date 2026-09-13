@@ -7,7 +7,7 @@ import { renderTodoDescription } from '../../utils/markdown'
 // Backlog -> Dispatch -> running -> Needs-You -> Done is one closed loop; this is the
 // Dispatch step. Agent/host/mode selection is component-local UI state, raised on submit.
 
-const AGENTS = ['Claude', 'Codex', 'Gemini'] as const
+const AGENTS = ['Claude', 'Codex'] as const
 const MODES: { label: string; value: 'plan' | 'edit' }[] = [
   { label: 'Plan', value: 'plan' },
   { label: 'Edit', value: 'edit' },

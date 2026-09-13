@@ -3,12 +3,12 @@
 
 import { shellQuote } from './deviceDispatchShell';
 
-export type PrewarmAgentType = 'claude' | 'codex' | 'gemini' | 'cursor' | 'opencode';
+export type PrewarmAgentType = 'claude' | 'codex' | 'cursor' | 'opencode';
 
 /** Configuration for pre-warming per agent type */
 export interface PrewarmConfig {
   agentType: PrewarmAgentType;
-  command: string;              // CLI command (e.g., 'claude', 'codex', 'gemini')
+  command: string;              // CLI command (e.g., 'claude', 'codex')
   statusCommand: string;        // Command to get session info (e.g., '/status', '/stats')
   sessionIdPattern: RegExp;     // Pattern to extract session ID from output
   exitSequence: string[];       // Key sequences to cleanly exit
@@ -38,14 +38,6 @@ export const PREWARM_CONFIGS: Record<PrewarmAgentType, PrewarmConfig> = {
     command: 'codex',
     statusCommand: '/status',
     // Matches: "Session: 01J9..." or "Session ID: 01J9..."
-    sessionIdPattern: /Session(?:\s+ID)?:\s*([a-zA-Z0-9_-]+)/i,
-    exitSequence: ['\x03', '\x03'],  // Ctrl+C twice
-  },
-  gemini: {
-    agentType: 'gemini',
-    command: 'gemini',
-    statusCommand: '/stats',
-    // Matches session ID pattern
     sessionIdPattern: /Session(?:\s+ID)?:\s*([a-zA-Z0-9_-]+)/i,
     exitSequence: ['\x03', '\x03'],  // Ctrl+C twice
   },
@@ -84,12 +76,12 @@ export function buildVersionedResumeCommand(
  * Check if an agent type supports pre-warming
  */
 export function supportsPrewarming(agentType: string): agentType is PrewarmAgentType {
-  return agentType === 'claude' || agentType === 'codex' || agentType === 'gemini' || agentType === 'cursor' || agentType === 'opencode';
+  return agentType === 'claude' || agentType === 'codex' || agentType === 'cursor' || agentType === 'opencode';
 }
 
 /**
  * Ctrl+C twice — the exit sequence for any agent without a {@link PREWARM_CONFIGS}
- * entry. Four of the five prewarm agents already use exactly this; the fifth
+ * entry. Three of the four prewarm agents already use exactly this; the fourth
  * (Claude) needs a leading Esc. A resumable non-prewarm agent (grok/kimi/droid/
  * antigravity) is a Ctrl+C-to-quit CLI, so this is the safe default.
  */

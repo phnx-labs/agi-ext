@@ -55,7 +55,6 @@ function getAgentWithHighestRunningCount(runningCounts: RunningCounts): string |
   const candidates: Array<[string, number]> = [
     ['claude', runningCounts.claude],
     ['codex', runningCounts.codex],
-    ['gemini', runningCounts.gemini],
     ['opencode', runningCounts.opencode],
     ['cursor', runningCounts.cursor],
     ['shell', runningCounts.shell],
@@ -80,7 +79,7 @@ export default function App() {
   // Core settings state
   const [settings, setSettings] = useState<AgentSettings | null>(null)
   const [runningCounts, setRunningCounts] = useState<RunningCounts>({
-    claude: 0, codex: 0, gemini: 0, opencode: 0, cursor: 0, shell: 0, custom: {}
+    claude: 0, codex: 0, opencode: 0, cursor: 0, shell: 0, custom: {}
   })
   const [swarmStatus, setSwarmStatus] = useState<SwarmStatus>({
     mcpEnabled: false,
@@ -88,7 +87,6 @@ export default function App() {
     agents: {
       claude: { installed: false, cliAvailable: false, mcpEnabled: false, commandInstalled: false },
       codex: { installed: false, cliAvailable: false, mcpEnabled: false, commandInstalled: false },
-      gemini: { installed: false, cliAvailable: false, mcpEnabled: false, commandInstalled: false },
     }
   })
 
@@ -157,7 +155,7 @@ export default function App() {
   const [agentModels, setAgentModels] = useState<Record<string, string[]>>({})
   const [agentInventories, setAgentInventories] = useState<Record<string, AgentInventory>>({})
   const [installedAgents, setInstalledAgents] = useState<Record<string, boolean>>({
-    claude: true, codex: true, gemini: true, opencode: true, cursor: true, shell: true
+    claude: true, codex: true, opencode: true, cursor: true, shell: true
   })
   // Registered device fleet (agents devices list --json, no SSH) — surfaced in the
   // Settings panel now that the Fleet view no longer carries a Devices filter (PHNX-3594).
@@ -196,7 +194,7 @@ export default function App() {
   const [newAliasFlags, setNewAliasFlags] = useState('')
   const [aliasError, setAliasError] = useState('')
 
-  const hasCliInstalled = installedAgents.claude || installedAgents.codex || installedAgents.gemini
+  const hasCliInstalled = installedAgents.claude || installedAgents.codex
   const showIntegrationCallout = !hasCliInstalled && !swarmStatus.mcpEnabled
 
   // Coalesce live cloud-summary token updates: 15 streaming agents can fire
@@ -434,7 +432,7 @@ export default function App() {
   const inventoryRefreshAtRef = useRef(0)
   useEffect(() => {
     if (activeTab !== 'panel') return
-    const expected = ['claude', 'codex', 'gemini', 'opencode', 'cursor']
+    const expected = ['claude', 'codex', 'opencode', 'cursor']
     const missing = expected.some((key) => !agentInventories[key])
     if (!missing) return
     const now = Date.now()
@@ -770,7 +768,7 @@ export default function App() {
     vscode.postMessage({ type: 'saveWorkspaceConfig', config })
   }
 
-  const totalRunning = runningCounts.claude + runningCounts.codex + runningCounts.gemini
+  const totalRunning = runningCounts.claude + runningCounts.codex
     + runningCounts.opencode + runningCounts.cursor + runningCounts.shell
     + Object.values(runningCounts.custom).reduce((a, b) => a + b, 0)
 

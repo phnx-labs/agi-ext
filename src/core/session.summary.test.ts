@@ -91,43 +91,6 @@ describe('extractSessionQuickSummary', () => {
     expect(summary.mcpCalls).toBe(1);
   });
 
-  test('parses Gemini tool calls', () => {
-    const lines = [
-      JSON.stringify({
-        type: 'tool_use',
-        tool_name: 'write_file',
-        parameters: { file_path: 'src/b.ts' },
-      }),
-      JSON.stringify({
-        type: 'tool_call',
-        tool_name: 'run_shell_command',
-        parameters: { command: 'ls -la' },
-      }),
-      JSON.stringify({
-        type: 'tool_use',
-        tool_name: 'web_fetch',
-        parameters: { url: 'https://example.com' },
-      }),
-      JSON.stringify({
-        type: 'tool_use',
-        tool_name: 'mcp__linear__issues',
-        parameters: {},
-      }),
-      JSON.stringify({
-        type: 'tool_call',
-        tool_name: 'delete_file',
-        parameters: { file_path: 'src/old.ts' },
-      }),
-    ];
-
-    const summary = extractSessionQuickSummary(lines.join('\n'), 'gemini');
-    expect(summary.filesEdited).toBe(2);
-    expect(summary.filesDeleted).toBe(1);
-    expect(summary.toolCalls).toBe(5);
-    expect(summary.webFetches).toBe(1);
-    expect(summary.mcpCalls).toBe(1);
-  });
-
   test('captures Claude tool calls with inputs and matches results by id', () => {
     const lines = [
       JSON.stringify({
@@ -256,34 +219,6 @@ describe('extractSessionQuickSummary', () => {
       text: 'Inspecting how the progress data crosses into React.',
       timestamp: '2026-07-13T08:00:00.000Z',
     });
-  });
-
-  test('interleaves Gemini reasoning and prose in content order', () => {
-    const lines = [
-      JSON.stringify({
-        timestamp: '2026-07-13T08:00:00.000Z',
-        type: 'message',
-        role: 'assistant',
-        content: [
-          { type: 'thinking', text: 'I should check the timeline renderer before editing it.' },
-          { type: 'text', text: 'Checking the timeline renderer before making changes.' },
-        ],
-      }),
-    ];
-
-    const details = extractSessionQuickDetails(lines.join('\n'), 'gemini');
-    expect(details.recentEvents.map((event) => event.kind)).toEqual(['message', 'reasoning']);
-    expect(details.recentEvents[0]).toMatchObject({
-      kind: 'message',
-      text: 'Checking the timeline renderer before making changes.',
-      timestamp: '2026-07-13T08:00:00.000Z',
-    });
-    expect(details.recentEvents[1]).toMatchObject({
-      kind: 'reasoning',
-      text: 'I should check the timeline renderer before editing it.',
-      timestamp: '2026-07-13T08:00:00.000Z',
-    });
-    expect(details.narrative).toBe('Checking the timeline renderer before making changes.');
   });
 
   test('parses Codex custom apply_patch calls into edited files', () => {
@@ -439,11 +374,6 @@ describe('narrative extraction', () => {
   test('Codex: narrative is the last output_text message, not the apply_patch call', () => {
     const details = extractSessionQuickDetails(fixture('narrative-codex.jsonl'), 'codex');
     expect(details.narrative).toBe('Found the off-by-one in the loop bound; patching parser.ts now.');
-  });
-
-  test('Gemini: narrative is the last assistant message content, not the tool call', () => {
-    const details = extractSessionQuickDetails(fixture('narrative-gemini.jsonl'), 'gemini');
-    expect(details.narrative).toBe('Wiring the alias into vite.config.ts so the webview bundle resolves the shared model.');
   });
 
   test('narrative is empty when the session has no assistant prose', () => {

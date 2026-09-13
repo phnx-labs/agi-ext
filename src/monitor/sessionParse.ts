@@ -12,7 +12,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { createHash } from 'crypto';
-type SessionAgentKind = 'claude' | 'codex' | 'gemini' | 'opencode';
+type SessionAgentKind = 'claude' | 'codex' | 'opencode';
 import { runAgents } from '../core/agentsBin';
 
 const LINE_CAP = 100;
@@ -20,8 +20,6 @@ const LINE_CAP = 100;
 interface ParseResult {
   forkedFromId?: string;
   codexCwd?: string;
-  geminiProjectHash?: string;
-  geminiSessionId?: string;
   opencodeDirectory?: string;
   opencodeSessionId?: string;
 }
@@ -82,8 +80,6 @@ export function agentSessionRoots(agentKey: AgentRootKind): string[] {
       return claudeProjectRoots();
     case 'codex':
       return [path.join(home, '.codex', 'sessions')];
-    case 'gemini':
-      return [path.join(home, '.gemini', 'tmp')];
     case 'opencode':
       return [path.join(home, '.local', 'share', 'opencode', 'storage', 'message')];
     case 'cursor':
@@ -113,7 +109,6 @@ function watcherRoots(): WatcherRoot[] {
   const roots: WatcherRoot[] = [];
   for (const root of claudeProjectRoots()) roots.push({ root, agentType: 'claude' });
   roots.push({ root: path.join(home, '.codex', 'sessions'), agentType: 'codex' });
-  roots.push({ root: path.join(home, '.gemini', 'tmp'), agentType: 'gemini' });
   roots.push({
     root: path.join(home, '.local', 'share', 'opencode', 'storage', 'session'),
     agentType: 'opencode',

@@ -41,7 +41,7 @@ export function buildTaskDispatchPrompt(input: TaskDispatchPromptInput): string 
 
 // A Linear user whose name matches one of these is treated as an agent, so the
 // card renders an agent chip rather than a @mention. Case-insensitive match.
-const AGENT_ASSIGNEE_PATTERN = /^(claude|codex|gemini|cursor|opencode)$/i;
+const AGENT_ASSIGNEE_PATTERN = /^(claude|codex|cursor|opencode)$/i;
 
 function detectAssigneeKind(name: string | undefined | null): 'user' | 'agent' | undefined {
   if (!name) return undefined;

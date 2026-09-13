@@ -4,7 +4,6 @@
 import {
   CLAUDE_TITLE,
   CODEX_TITLE,
-  GEMINI_TITLE,
   OPENCODE_TITLE,
   CURSOR_TITLE,
   SHELL_TITLE,
@@ -15,7 +14,6 @@ import {
 export interface RunningCounts {
   claude: number;
   codex: number;
-  gemini: number;
   opencode: number;
   cursor: number;
   shell: number;
@@ -27,7 +25,6 @@ export function countRunningFromNames(terminalNames: string[]): RunningCounts {
   const counts: RunningCounts = {
     claude: 0,
     codex: 0,
-    gemini: 0,
     opencode: 0,
     cursor: 0,
     shell: 0,
@@ -44,9 +41,6 @@ export function countRunningFromNames(terminalNames: string[]): RunningCounts {
         break;
       case CODEX_TITLE:
         counts.codex++;
-        break;
-      case GEMINI_TITLE:
-        counts.gemini++;
         break;
       case OPENCODE_TITLE:
         counts.opencode++;
@@ -114,8 +108,8 @@ const SENSITIVE_PATTERNS = [
 ];
 
 // LLM provider keys are scrubbed too. Subscription auth (Claude Pro/Max,
-// ChatGPT Plus, Gemini Advanced) keeps working because the agent CLIs read
-// their tokens from ~/.claude/, ~/.codex/, ~/.gemini/ config dirs — not env
+// ChatGPT Plus) keeps working because the agent CLIs read
+// their tokens from ~/.claude/, ~/.codex/ config dirs — not env
 // vars. Users who genuinely need an API key for a particular run opt in
 // explicitly via `agents run <agent> --secrets <bundle>`, which agents-cli
 // injects from Keychain. That keeps credential storage centralized in

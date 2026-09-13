@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { vscodeDouble } from '../testing/vscodeDouble';
+import { AGENT_SYMLINK_TARGETS } from '../core/agentlinks';
+import { getDefaultConfig, parseAgentsConfig } from '../core/swarmifyConfig';
 
 // agentlinks.vscode imports 'vscode' at module load. The code paths exercised
 // here (createSymlinksInDirectory + ensureSymlinksOnWorkspaceOpen with an empty
@@ -54,16 +56,54 @@ function workspaceFolderFor(dir: string): any {
 }
 
 describe('createSymlinksInDirectory (async fs.promises, real fs)', () => {
+  test('default, legacy, and explicit old configurations never create GEMINI.md', async () => {
+    const mappings = [
+      getDefaultConfig().context[0].aliases,
+      [...AGENT_SYMLINK_TARGETS],
+      parseAgentsConfig('context:\n  - source: AGENTS.md\n    aliases: [CLAUDE.md, GEMINI.md, gemini.md, GROK.md]').context[0].aliases,
+    ];
+    for (const aliases of mappings) {
+      const dir = freshTmpDir();
+      try {
+        const source = path.join(dir, 'AGENTS.md');
+        fs.writeFileSync(source, '# canonical instructions');
+        const result = await createSymlinksInDirectory(source, aliases);
+        expect(result.errors).toEqual([]);
+        expect(fs.existsSync(path.join(dir, 'GEMINI.md'))).toBe(false);
+        expect(fs.existsSync(path.join(dir, 'gemini.md'))).toBe(false);
+        expect(fs.readlinkSync(path.join(dir, 'CLAUDE.md'))).toBe('AGENTS.md');
+        expect(result.created).toBe(aliases.filter(alias => alias.toUpperCase() !== 'GEMINI.MD').length);
+      } finally {
+        fs.rmSync(dir, { recursive: true });
+      }
+    }
+  });
+
+  test('leaves an existing deprecated alias untouched and does not count it as created', async () => {
+    const dir = freshTmpDir();
+    try {
+      const source = path.join(dir, 'AGENTS.md');
+      fs.writeFileSync(source, '# canonical instructions');
+      fs.writeFileSync(path.join(dir, 'GEMINI.md'), 'user-owned content');
+      const result = await createSymlinksInDirectory(source, ['GEMINI.md', 'CUSTOM.md']);
+      expect(result).toEqual({ created: 1, errors: [] });
+      expect(fs.readFileSync(path.join(dir, 'GEMINI.md'), 'utf8')).toBe('user-owned content');
+      expect(fs.readlinkSync(path.join(dir, 'CUSTOM.md'))).toBe('AGENTS.md');
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
+
   test('creates the configured alias symlinks pointing at the source file', async () => {
     const dir = freshTmpDir();
     const source = path.join(dir, 'AGENTS.md');
     fs.writeFileSync(source, '# agents');
 
-    const { created, errors } = await createSymlinksInDirectory(source, ['CLAUDE.md', 'GEMINI.md']);
+    const { created, errors } = await createSymlinksInDirectory(source, ['CLAUDE.md', 'GROK.md']);
 
     expect(errors).toEqual([]);
     expect(created).toBe(2);
-    for (const alias of ['CLAUDE.md', 'GEMINI.md']) {
+    for (const alias of ['CLAUDE.md', 'GROK.md']) {
       const aliasPath = path.join(dir, alias);
       expect(fs.lstatSync(aliasPath).isSymbolicLink()).toBe(true);
       expect(fs.readlinkSync(aliasPath)).toBe('AGENTS.md');
@@ -78,14 +118,14 @@ describe('createSymlinksInDirectory (async fs.promises, real fs)', () => {
     // Pre-existing real file at the alias path must be left untouched.
     fs.writeFileSync(path.join(dir, 'CLAUDE.md'), 'do not clobber');
 
-    const { errors } = await createSymlinksInDirectory(source, ['CLAUDE.md', 'GEMINI.md']);
+    const { errors } = await createSymlinksInDirectory(source, ['CLAUDE.md', 'GROK.md']);
 
     expect(errors).toEqual([]);
     // CLAUDE.md stays a regular file with its original contents.
     expect(fs.lstatSync(path.join(dir, 'CLAUDE.md')).isSymbolicLink()).toBe(false);
     expect(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8')).toBe('do not clobber');
-    // GEMINI.md is still created as a symlink.
-    expect(fs.lstatSync(path.join(dir, 'GEMINI.md')).isSymbolicLink()).toBe(true);
+    // GROK.md is still created as a symlink.
+    expect(fs.lstatSync(path.join(dir, 'GROK.md')).isSymbolicLink()).toBe(true);
   });
 
   test('reuses the existence cache instead of re-stat-ing the same path', async () => {

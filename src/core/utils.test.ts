@@ -24,7 +24,6 @@ import {
   prefixToAgentType,
   CLAUDE_TITLE,
   CODEX_TITLE,
-  GEMINI_TITLE,
   OPENCODE_TITLE,
   CURSOR_TITLE,
   SHELL_TITLE,
@@ -36,7 +35,7 @@ describe('parseTerminalName', () => {
   test('identifies exact agent prefixes', () => {
     expect(parseTerminalName('CC')).toEqual({ isAgent: true, prefix: 'CC', label: null, sessionChunk: null });
     expect(parseTerminalName('CX')).toEqual({ isAgent: true, prefix: 'CX', label: null, sessionChunk: null });
-    expect(parseTerminalName('GX')).toEqual({ isAgent: true, prefix: 'GX', label: null, sessionChunk: null });
+    expect(parseTerminalName('GX')).toEqual({ isAgent: false, prefix: null, label: null, sessionChunk: null });
     expect(parseTerminalName('OC')).toEqual({ isAgent: true, prefix: 'OC', label: null, sessionChunk: null });
     expect(parseTerminalName('CR')).toEqual({ isAgent: true, prefix: 'CR', label: null, sessionChunk: null });
     expect(parseTerminalName('SH')).toEqual({ isAgent: true, prefix: 'SH', label: null, sessionChunk: null });
@@ -45,7 +44,7 @@ describe('parseTerminalName', () => {
   test('accepts full agent names', () => {
     expect(parseTerminalName('Claude')).toEqual({ isAgent: true, prefix: 'CC', label: null, sessionChunk: null });
     expect(parseTerminalName('Codex')).toEqual({ isAgent: true, prefix: 'CX', label: null, sessionChunk: null });
-    expect(parseTerminalName('Gemini')).toEqual({ isAgent: true, prefix: 'GX', label: null, sessionChunk: null });
+    expect(parseTerminalName('Gemini')).toEqual({ isAgent: false, prefix: null, label: null, sessionChunk: null });
     expect(parseTerminalName('OpenCode')).toEqual({ isAgent: true, prefix: 'OC', label: null, sessionChunk: null });
     expect(parseTerminalName('Cursor')).toEqual({ isAgent: true, prefix: 'CR', label: null, sessionChunk: null });
   });
@@ -255,7 +254,7 @@ describe('getExpandedAgentName', () => {
   test('expands known prefixes', () => {
     expect(getExpandedAgentName(CLAUDE_TITLE)).toBe('Claude');
     expect(getExpandedAgentName(CODEX_TITLE)).toBe('Codex');
-    expect(getExpandedAgentName(GEMINI_TITLE)).toBe('Gemini');
+    expect(getExpandedAgentName('GX')).toBe('GX');
     expect(getExpandedAgentName(OPENCODE_TITLE)).toBe('OpenCode');
     expect(getExpandedAgentName(CURSOR_TITLE)).toBe('Cursor');
     expect(getExpandedAgentName(SHELL_TITLE)).toBe('Shell');
@@ -271,7 +270,7 @@ describe('getIconFilename', () => {
   test('returns correct icon filenames', () => {
     expect(getIconFilename(CLAUDE_TITLE)).toBe('claude.png');
     expect(getIconFilename(CODEX_TITLE)).toBe('chatgpt.png');
-    expect(getIconFilename(GEMINI_TITLE)).toBe('gemini.png');
+    expect(getIconFilename('GX')).toBe(null);
     expect(getIconFilename(OPENCODE_TITLE)).toBe('opencode.png');
     expect(getIconFilename(CURSOR_TITLE)).toBe('cursor.png');
     expect(getIconFilename(SHELL_TITLE)).toBe('agents.png');
@@ -289,7 +288,7 @@ describe('getIconFilename reverse lookup', () => {
   test('getPrefixFromIconFilename returns correct prefix', () => {
     expect(getPrefixFromIconFilename('claude.png')).toBe('CC');
     expect(getPrefixFromIconFilename('chatgpt.png')).toBe('CX');
-    expect(getPrefixFromIconFilename('gemini.png')).toBe('GX');
+    expect(getPrefixFromIconFilename('gemini.png')).toBe(null);
     expect(getPrefixFromIconFilename('opencode.png')).toBe('OC');
     expect(getPrefixFromIconFilename('cursor.png')).toBe('CR');
     expect(getPrefixFromIconFilename('agents.png')).toBe('SH');
@@ -363,7 +362,7 @@ describe('getTerminalDisplayInfo', () => {
     const result = getTerminalDisplayInfo({
       name: 'CC - explicit label',
       terminalId: 'CX-123', // Would suggest Codex
-      iconFilename: 'gemini.png' // Would suggest Gemini
+      iconFilename: 'cursor.png' // Would suggest Cursor
     });
     expect(result.prefix).toBe('CC');
     expect(result.label).toBe('explicit label');
@@ -373,7 +372,7 @@ describe('getTerminalDisplayInfo', () => {
     const result = getTerminalDisplayInfo({
       name: 'my task',
       terminalId: 'CX-123',
-      iconFilename: 'gemini.png'
+      iconFilename: 'cursor.png'
     });
     expect(result.prefix).toBe('CX');
     expect(result.label).toBe('my task');
@@ -833,7 +832,7 @@ describe('prefix conversion utilities', () => {
     test('converts canonical prefixes to config prefixes', () => {
       expect(canonicalToConfigPrefix('CC')).toBe('cl');
       expect(canonicalToConfigPrefix('CX')).toBe('cx');
-      expect(canonicalToConfigPrefix('GX')).toBe('gm');
+      expect(canonicalToConfigPrefix('GX')).toBe(null);
       expect(canonicalToConfigPrefix('OC')).toBe('oc');
       expect(canonicalToConfigPrefix('CR')).toBe('cr');
       expect(canonicalToConfigPrefix('SH')).toBe('sh');
@@ -842,7 +841,7 @@ describe('prefix conversion utilities', () => {
     test('is case insensitive', () => {
       expect(canonicalToConfigPrefix('cc')).toBe('cl');
       expect(canonicalToConfigPrefix('Cc')).toBe('cl');
-      expect(canonicalToConfigPrefix('gx')).toBe('gm');
+      expect(canonicalToConfigPrefix('gx')).toBe(null);
     });
 
     test('returns null for unknown prefixes', () => {
@@ -859,7 +858,7 @@ describe('prefix conversion utilities', () => {
     test('converts config prefixes to canonical prefixes', () => {
       expect(configToCanonicalPrefix('cl')).toBe('CC');
       expect(configToCanonicalPrefix('cx')).toBe('CX');
-      expect(configToCanonicalPrefix('gm')).toBe('GX');
+      expect(configToCanonicalPrefix('gm')).toBe(null);
       expect(configToCanonicalPrefix('oc')).toBe('OC');
       expect(configToCanonicalPrefix('cr')).toBe('CR');
       expect(configToCanonicalPrefix('sh')).toBe('SH');
@@ -868,7 +867,7 @@ describe('prefix conversion utilities', () => {
     test('is case insensitive', () => {
       expect(configToCanonicalPrefix('CL')).toBe('CC');
       expect(configToCanonicalPrefix('Cl')).toBe('CC');
-      expect(configToCanonicalPrefix('GM')).toBe('GX');
+      expect(configToCanonicalPrefix('GM')).toBe(null);
     });
 
     test('returns null for unknown prefixes', () => {
@@ -885,7 +884,7 @@ describe('prefix conversion utilities', () => {
     test('converts canonical prefixes to agent types', () => {
       expect(prefixToAgentType('CC')).toBe('claude');
       expect(prefixToAgentType('CX')).toBe('codex');
-      expect(prefixToAgentType('GX')).toBe('gemini');
+      expect(prefixToAgentType('GX')).toBe(null);
       expect(prefixToAgentType('OC')).toBe('opencode');
       expect(prefixToAgentType('CR')).toBe('cursor');
     });
@@ -893,7 +892,7 @@ describe('prefix conversion utilities', () => {
     test('converts config prefixes to agent types', () => {
       expect(prefixToAgentType('cl')).toBe('claude');
       expect(prefixToAgentType('cx')).toBe('codex');
-      expect(prefixToAgentType('gm')).toBe('gemini');
+      expect(prefixToAgentType('gm')).toBe(null);
       expect(prefixToAgentType('oc')).toBe('opencode');
       expect(prefixToAgentType('cr')).toBe('cursor');
     });

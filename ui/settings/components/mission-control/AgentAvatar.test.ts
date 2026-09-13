@@ -8,7 +8,7 @@ describe('agentIdFromPrefix', () => {
   test('maps the original built-in prefixes', () => {
     expect(agentIdFromPrefix('CC')).toBe('claude')
     expect(agentIdFromPrefix('CX')).toBe('codex')
-    expect(agentIdFromPrefix('GX')).toBe('gemini')
+    expect(agentIdFromPrefix('GX')).toBe(null)
     expect(agentIdFromPrefix('OC')).toBe('opencode')
     expect(agentIdFromPrefix('CR')).toBe('cursor')
     expect(agentIdFromPrefix('SH')).toBe('shell')

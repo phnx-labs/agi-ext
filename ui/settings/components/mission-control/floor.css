@@ -117,7 +117,6 @@
 .swarmify-root .av { width: 20px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex: 0 0 auto; }
 .swarmify-root .av.CC { background: var(--brand); color: #1a1a1a; }
 .swarmify-root .av.CX { background: #5B7CE0; color: #fff; }
-.swarmify-root .av.GX { background: #8b5cf6; color: #fff; }
 /* Real brand-logo avatars (AgentAvatar renders an <img> inside .sw-avatar). */
 .swarmify-root .sw-avatar { overflow: hidden; }
 .swarmify-root .sw-avatar-img { width: 72%; height: 72%; object-fit: contain; display: block; }

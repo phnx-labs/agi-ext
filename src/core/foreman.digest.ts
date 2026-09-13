@@ -10,7 +10,7 @@ import { getTerminalDisplayInfo, prefixToAgentType, SHELL_TITLE } from './utils'
 
 export interface ForemanTerminal {
   name: string;                    // used when kind is not provided (legacy path)
-  kind?: string;                   // preferred: 'claude' | 'codex' | 'gemini' | 'opencode' | 'openclaw'
+  kind?: string;                   // preferred: 'claude' | 'codex' | 'opencode' | 'openclaw'
   label?: string | null;
   sessionId?: string | null;
   project?: string | null;

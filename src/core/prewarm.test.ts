@@ -80,7 +80,7 @@ describe('supportsPrewarming', () => {
   test('returns true for supported agents', () => {
     expect(supportsPrewarming('claude')).toBe(true);
     expect(supportsPrewarming('codex')).toBe(true);
-    expect(supportsPrewarming('gemini')).toBe(true);
+    expect(supportsPrewarming('gemini')).toBe(false);
     expect(supportsPrewarming('cursor')).toBe(true);
     expect(supportsPrewarming('opencode')).toBe(true);
   });
@@ -117,12 +117,6 @@ describe('PREWARM_CONFIGS', () => {
   test('codex config has correct exit sequence', () => {
     // Codex just needs Ctrl+C twice
     expect(PREWARM_CONFIGS.codex.exitSequence).toEqual(['\x03', '\x03']);
-  });
-
-  test('gemini config has correct status command', () => {
-    // Gemini uses /stats instead of /status
-    expect(PREWARM_CONFIGS.gemini.statusCommand).toBe('/stats');
-    expect(PREWARM_CONFIGS.gemini.exitSequence).toEqual(['\x03', '\x03']);
   });
 
   test('cursor config has correct settings', () => {

@@ -181,7 +181,7 @@ export function dispose(entry: ReadinessEntry, reason: string = 'disposed'): voi
 export type AgentLauncherKey =
   | 'claude'
   | 'codex'
-  | 'gemini'
+
   | 'cursor'
   | 'opencode'
   | 'antigravity'
@@ -190,7 +190,7 @@ export type AgentLauncherKey =
   | 'droid';
 
 const AGENT_RUN_KEYS =
-  'claude|codex|gemini|cursor|opencode|antigravity|grok|kimi|droid';
+  'claude|codex|cursor|opencode|antigravity|grok|kimi|droid';
 
 /** Binary basenames (and node-wrapped *.js) that map to a launcher key. */
 const BINARY_TO_AGENT: Record<string, AgentLauncherKey> = {
@@ -198,8 +198,6 @@ const BINARY_TO_AGENT: Record<string, AgentLauncherKey> = {
   'claude.js': 'claude',
   codex: 'codex',
   'codex.js': 'codex',
-  gemini: 'gemini',
-  'gemini.js': 'gemini',
   'cursor-agent': 'cursor',
   opencode: 'opencode',
   // Antigravity's installed CLI is `agy` (agents.cli.ts CLI_AGENT_META).

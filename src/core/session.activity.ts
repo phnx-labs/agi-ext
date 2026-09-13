@@ -30,7 +30,7 @@ export interface CurrentActivity {
   timestamp: Date;
 }
 
-type AgentType = 'claude' | 'codex' | 'gemini';
+type AgentType = 'claude' | 'codex';
 
 type TodoProgressStatus = 'pending' | 'in_progress' | 'completed';
 
@@ -111,8 +111,6 @@ export function parseLineForActivity(line: string, agentType: AgentType): Curren
         return parseClaudeActivity(raw);
       case 'codex':
         return parseCodexActivity(raw);
-      case 'gemini':
-        return parseGeminiActivity(raw);
       default:
         return null;
     }
@@ -336,77 +334,6 @@ function parseCodexActivity(raw: any): CurrentActivity | null {
     return {
       type: 'completed',
       summary: 'done',
-      timestamp,
-    };
-  }
-
-  return null;
-}
-
-// --- Gemini parsing ---
-
-function parseGeminiActivity(raw: any): CurrentActivity | null {
-  const eventType = raw?.type;
-  const timestamp = raw?.timestamp ? new Date(raw.timestamp) : new Date();
-
-  if (eventType === 'tool_call' || eventType === 'tool_use') {
-    const toolName = String(raw?.tool_name || raw?.name || '').toLowerCase();
-    const toolArgs = raw?.parameters || raw?.args || {};
-
-    const filePath = toolArgs?.file_path || toolArgs?.path || '';
-    const command = toolArgs?.command || '';
-
-    // File write tools
-    const writeTools = ['replace', 'edit', 'patch', 'write_file', 'edit_file', 'update_file'];
-    if (writeTools.includes(toolName) || toolName.includes('write')) {
-      return {
-        type: 'editing',
-        summary: truncatePath(filePath),
-        timestamp,
-      };
-    }
-
-    // File read tools
-    const readTools = ['read_file', 'view_file', 'cat_file', 'get_file'];
-    if (readTools.includes(toolName) || toolName.includes('read')) {
-      return {
-        type: 'reading',
-        summary: truncatePath(filePath),
-        timestamp,
-      };
-    }
-
-    // Shell tools
-    if (['shell', 'bash', 'execute', 'run_command', 'run_shell_command'].includes(toolName)) {
-      return {
-        type: 'running',
-        summary: truncateCommand(command),
-        timestamp,
-      };
-    }
-
-    return {
-      type: 'thinking',
-      summary: `Using ${toolName}`,
-      timestamp,
-    };
-  }
-
-  if (eventType === 'message') {
-    const role = raw?.role || 'assistant';
-    if (role === 'assistant') {
-      return {
-        type: 'thinking',
-        summary: '',
-        timestamp,
-      };
-    }
-  }
-
-  if (eventType === 'result') {
-    return {
-      type: 'completed',
-      summary: raw?.status || 'done',
       timestamp,
     };
   }

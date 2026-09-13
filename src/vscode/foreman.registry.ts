@@ -36,7 +36,7 @@ const KEEPALIVE_FORCE_MS = 4 * 60_000;
 export interface LiveTerminal {
   sessionId: string;
   pid: number;
-  kind: string;              // 'claude' | 'codex' | 'gemini' | ...
+  kind: string;              // 'claude' | 'codex' | ...
   label?: string | null;
   cwd?: string | null;
   startedAtMs: number;
@@ -213,7 +213,6 @@ function kindFromTerminalId(terminalId: string): string {
   switch (prefix) {
     case 'CC': case 'CL': return 'claude';
     case 'CX': return 'codex';
-    case 'GX': return 'gemini';
     case 'OC': return 'opencode';
     case 'CR': return 'cursor';
     case 'CP': return 'copilot';
@@ -226,7 +225,6 @@ function kindFromName(name: string): string {
   const head = name.trim().split(/\s+|-/)[0]?.toLowerCase() ?? '';
   if (['claude', 'cc'].includes(head)) return 'claude';
   if (['codex', 'cx'].includes(head)) return 'codex';
-  if (['gemini', 'gx'].includes(head)) return 'gemini';
   if (['opencode', 'oc'].includes(head)) return 'opencode';
   if (['cursor', 'cr'].includes(head)) return 'cursor';
   if (['copilot', 'cp'].includes(head)) return 'copilot';

@@ -60,7 +60,6 @@ import {
 import {
   CLAUDE_TITLE,
   CODEX_TITLE,
-  GEMINI_TITLE,
   CURSOR_TITLE,
   OPENCODE_TITLE,
   findTerminalNameByTabLabel,
@@ -210,7 +209,7 @@ function buildTerminalTitle(
 // configured strategy (pinned/available/balanced) from agents.yaml. Claude
 // gets --session-id for resume; other agents detect their own session
 // post-spawn.
-type LaunchableAgent = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'antigravity';
+type LaunchableAgent = 'claude' | 'codex' | 'opencode' | 'cursor' | 'antigravity';
 
 // buildAgentLaunchCommand, RunStrategy, and shquote are now in core/agents.ts
 // so they can be unit-tested without a VS Code harness.
@@ -2347,7 +2346,7 @@ async function handoffToAgent(context: vscode.ExtensionContext) {
   let planInfo: { path: string; content: string } | null = null;
 
   if (terminalEntry.sessionId && terminalEntry.agentType) {
-    const agentType = terminalEntry.agentType as 'claude' | 'codex' | 'gemini';
+    const agentType = terminalEntry.agentType as 'claude' | 'codex';
 
     messages = await handoff.getSessionMessagesViaAgentsCli(terminalEntry.sessionId, 10, workspacePath);
 
@@ -2515,7 +2514,7 @@ async function continueFromSelection(context: vscode.ExtensionContext) {
 interface CliSessionItem {
   id: string;
   shortId: string;
-  agent: 'claude' | 'codex' | 'gemini' | 'opencode' | 'openclaw' | 'cursor';
+  agent: 'claude' | 'codex' | 'opencode' | 'openclaw' | 'cursor';
   timestamp: string;
   version?: string;
   account?: string;
@@ -3814,7 +3813,7 @@ async function fetchAndSetAutoLabel(
     //    the derived `<dirname>-<n>` placeholder. This is a clean human summary,
     //    needs no LLM call, and — unlike the summary path below — doesn't require
     //    a captured first message, so a session that already has a name gets it
-    //    even before its first turn is recorded. Codex/Gemini/Opencode don't
+    //    even before its first turn is recorded. Codex/Opencode don't
     //    persist an equivalent, so they fall through to the summary path.
     if (entry.agentType === 'claude') {
       const persistedName = await readClaudeSessionName(sessionId);
@@ -4049,7 +4048,7 @@ async function armAutoLabelPoller(
 }
 
 // Arm shell-adoption on an SH terminal: poll its descendant process tree for
-// a known agent CLI (claude/codex/gemini/cursor/opencode). On detection,
+// a known agent CLI (claude/codex/cursor/opencode). On detection,
 // re-register the entry as the detected agent so the dashboard, session
 // tracker, label generation, autogit, and recap all treat it as that agent.
 // The VS Code tab icon is immutable so it keeps the SH chip — internal
@@ -4736,7 +4735,6 @@ async function detectDefaultAgentTitle(): Promise<string> {
   const candidates = [
     { title: CLAUDE_TITLE, key: 'claude' },
     { title: CODEX_TITLE, key: 'codex' },
-    { title: GEMINI_TITLE, key: 'gemini' }
   ];
 
   for (const candidate of candidates) {
@@ -4771,7 +4769,7 @@ async function maybeRunFirstSetup(context: vscode.ExtensionContext, force = fals
   // Ensure swarm MCP + command is enabled for the detected default agent only
   try {
     const def = getBuiltInDefByTitle(defaultAgentTitle);
-    const cliAgent = def && ['claude', 'codex', 'gemini'].includes(def.key) ? def.key as swarm.AgentCli : undefined;
+    const cliAgent = def && ['claude', 'codex'].includes(def.key) ? def.key as swarm.AgentCli : undefined;
     if (cliAgent) {
       const status = await swarm.getSwarmStatus();
       const agentStatus = status.agents[cliAgent];

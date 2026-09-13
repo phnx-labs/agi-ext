@@ -23,16 +23,16 @@ afterEach(() => {
 });
 
 function ext(agent: AgentCli): string {
-  return agent === 'gemini' ? 'toml' : 'md';
+  return 'md';
 }
 
 describe('getAgentCommandPath', () => {
-  (['claude', 'codex', 'gemini'] as AgentCli[]).forEach(agent => {
+  (['claude', 'codex'] as AgentCli[]).forEach(agent => {
     test(`builds path for ${agent} using current home`, () => {
       const p = getAgentCommandPath(agent, 'plan');
       const expected = path.join(
         os.homedir(),
-        agent === 'codex' ? '.codex' : agent === 'claude' ? '.claude' : '.gemini',
+        agent === 'codex' ? '.codex' : '.claude',
         agent === 'codex' ? 'prompts' : 'commands',
         `plan.${ext(agent)}`
       );

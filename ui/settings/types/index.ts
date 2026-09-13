@@ -82,7 +82,7 @@ export function setQuickLaunchSlotInConfig(
 }
 
 export type SwarmAgentType = (typeof ALL_SWARM_AGENTS)[number]
-export type PromptPackAgentType = 'claude' | 'codex' | 'gemini' | 'cursor'
+export type PromptPackAgentType = 'claude' | 'codex' | 'cursor'
 
 // Skills types
 type SkillName =
@@ -185,7 +185,6 @@ export interface AgentSettings {
   builtIn: {
     claude: BuiltInAgentSettings
     codex: BuiltInAgentSettings
-    gemini: BuiltInAgentSettings
     opencode: BuiltInAgentSettings
     cursor: BuiltInAgentSettings
     shell: BuiltInAgentSettings
@@ -212,7 +211,6 @@ export interface AgentSettings {
 export interface RunningCounts {
   claude: number
   codex: number
-  gemini: number
   opencode: number
   cursor: number
   shell: number
@@ -235,7 +233,6 @@ export interface SwarmStatus {
   agents: {
     claude: AgentInstallStatus
     codex: AgentInstallStatus
-    gemini: AgentInstallStatus
     opencode: AgentInstallStatus
   }
 }
@@ -417,7 +414,7 @@ export interface TerminalDetail {
 
 // Session types
 export interface AgentSession {
-  agentType: 'claude' | 'codex' | 'gemini'
+  agentType: 'claude' | 'codex'
   sessionId: string
   timestamp: string
   path: string
@@ -425,7 +422,7 @@ export interface AgentSession {
 }
 
 // Context types
-export type ContextAgentType = 'claude' | 'gemini' | 'codex' | 'agents' | 'cursor' | 'opencode' | 'unknown'
+export type ContextAgentType = 'claude' | 'codex' | 'agents' | 'cursor' | 'opencode' | 'unknown'
 
 export interface ContextFile {
   path: string
@@ -452,7 +449,6 @@ export interface VsCodeApi {
 export interface IconConfig {
   claude: string
   codex: ThemedIcon
-  gemini: string
   opencode: string
   cursor: ThemedIcon
   agents: string

@@ -14,6 +14,7 @@
 import { RemoteSession, HostInfo, HostLoad } from './remoteSessions';
 import { AgentInventory } from './agentInventory';
 import type { ManagedProject } from './managedProjects';
+import { isDeprecatedAgentKey } from './agents';
 
 // ---- mirrored contract types (dispatch.types.ts) ---------------------------
 
@@ -56,7 +57,6 @@ export interface DispatchTarget {
 const AGENT_META: Record<string, { name: string; color: string }> = {
   claude: { name: 'Claude', color: '#d97757' },
   codex: { name: 'Codex', color: '#cfcfcf' },
-  gemini: { name: 'Gemini', color: '#4285f4' },
   kimi: { name: 'Kimi', color: '#7c5cff' },
   opencode: { name: 'OpenCode', color: '#f0b429' },
   cursor: { name: 'Cursor', color: '#6e6e6e' },
@@ -77,6 +77,7 @@ export function mapInventoriesToInstalledAgents(
 ): InstalledAgent[] {
   const out: InstalledAgent[] = [];
   for (const [id, inv] of Object.entries(inventories)) {
+    if (isDeprecatedAgentKey(id)) continue;
     if (!inv || !Array.isArray(inv.versions) || inv.versions.length === 0) continue;
     const meta = AGENT_META[id] ?? { name: id, color: '#9aa0a6' };
     out.push({

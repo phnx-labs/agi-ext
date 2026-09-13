@@ -214,6 +214,8 @@ export async function createSymlinksInDirectory(
 
   for (const target of aliases) {
     const targetPath = path.join(dirPath, target);
+    // Old workspace configurations can still explicitly request the retired alias.
+    if (path.basename(targetPath).toUpperCase() === 'GEMINI.MD') continue;
     const error = await createSymlink(sourcePath, targetPath, cache);
     if (error) {
       errors.push(`${targetPath}: ${error}`);

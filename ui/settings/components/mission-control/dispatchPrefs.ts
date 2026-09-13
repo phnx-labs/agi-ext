@@ -15,7 +15,7 @@ export type DispatchPrefs = {
   /**
    * Per-task-type overrides for agent/target/cloudProvider. Keyed by the
    * task's type bucket (see `taskTypeKey`) — e.g. `docs` tasks remember
-   * Gemini while `engineering` tasks remember Claude without either
+   * Codex while `engineering` tasks remember Claude without either
    * leaking into the other. Missing keys fall back to the global
    * `lastAgent`/`lastTarget`/`lastCloudProvider` fields above.
    */

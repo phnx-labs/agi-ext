@@ -100,7 +100,6 @@ import { REMOTE_STALE_MS, THROUGHPUT_TICK_MS } from './floorRefresh'
 const NEW_AGENT_MENU: Array<{ agent: string; name: string; abbr: string; keys: string[] }> = [
   { agent: 'claude', name: 'Claude', abbr: 'CC', keys: ['Cmd', 'Shift', 'A'] },
   { agent: 'codex', name: 'Codex', abbr: 'CX', keys: ['Cmd', 'Shift', 'B'] },
-  { agent: 'gemini', name: 'Gemini', abbr: 'GX', keys: ['Cmd', 'Shift', 'X'] },
   { agent: 'antigravity', name: 'Antigravity', abbr: 'AG', keys: [] },
   { agent: 'grok', name: 'Grok', abbr: 'GK', keys: [] },
   { agent: 'kimi', name: 'Kimi', abbr: 'KM', keys: [] },
