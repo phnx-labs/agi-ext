@@ -8,8 +8,8 @@ import { vscodeDouble } from '../testing/vscodeDouble';
 // test only exercises the leader-gated socket lifecycle, never a nudge.
 mock.module('vscode', () => vscodeDouble({}));
 
-const { startWatchdogBridge } = await import('./watchdog-bridge');
-const { requestWatchdog } = await import('./watchdogProtocol');
+const { startWatchdogBridge } = await import('./watchdogBridge.vscode');
+const { requestWatchdog } = await import('../mcp/watchdogProtocol');
 const { electLeader, disposeLeader } = await import('../monitor/leader');
 
 let counter = 0;

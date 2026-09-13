@@ -28,7 +28,7 @@ import {
   registerWatchdogPaletteCommands,
   migrateAutoRotateSettingOnce,
 } from './watchdog.vscode';
-import { startWatchdogBridge } from '../mcp/watchdog-bridge';
+import { startWatchdogBridge } from './watchdogBridge.vscode';
 import { ensureWatchdogMcpInstalled } from '../mcp/watchdogInstall';
 import * as terminals from './terminals.vscode';
 import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
