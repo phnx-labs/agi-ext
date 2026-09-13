@@ -12,6 +12,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Dashboard and reader builds now enforce their strict TypeScript configuration,
   including tests and imported shared source. Correct initial harness status,
   editor command refs, and optional-data handling without relaxing compiler checks.
+- Validate cloud dispatch requests before execution and pass arguments literally
+  through a native task terminal, preserving CLI prompts and budget enforcement.
+  Refuse malformed shared configuration updates without overwriting existing data.
 - The Active Terminal panel fills its canvas with the sidebar theme background,
   including the space below short content. Timeline, checklist, and usage colors
   use editor theme tokens throughout (PHNX-3938, original PHNX-3809; #36).

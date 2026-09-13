@@ -270,6 +270,13 @@ The rest of the dashboard composes the same way. Session rows describe conversat
 
 ## Findings
 
+Cloud dispatch validates webview requests in `settingsActions.ts` before building
+CLI arguments. The host runs those arguments with VS Code `ProcessExecution`,
+without shell interpolation, in a task terminal that retains CLI prompts and
+following. The CLI owns budget enforcement; the extension does not detach the
+request or impose a submission timeout. Shared configuration updates reject
+malformed existing content rather than replacing it with an empty object.
+
 The module graph was measured on this branch on 2026-09-11 with the `code:refactor` module scanner (its `modules.json` lives in the session artifacts and is not committed): 140 of 156 TypeScript files under `src/` parsed, 7 directory modules, 12 import edges, 2 cycles, 1 god module. Eleven of the twelve edges run between the five source modules and are all drawn below; the twelfth is `monitor/testdata` importing `monitor` three times, which is test fixtures and is listed in the footnote instead.
 
 <figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
