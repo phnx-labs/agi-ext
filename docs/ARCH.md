@@ -315,7 +315,7 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 | `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | a client-side `agents sessions <id> --json` fetch for the label and topic, which are already on the stream row; still called from `src/vscode/extension.ts` | delete now |
 | `src/vscode/prewarm.vscode.ts`, `src/core/prewarm.simple.ts` | crash-recovery mapping kept in the extension (per-workspace since PHNX-3768, so the resume storm is fixed); `prewarm.simple.ts` still spawns `opencode session list` on every OpenCode tab open | delete once the CLI daemon owns restore |
 | `src/vscode/settings.vscode.ts` `watchForPlan` | polls `agents sessions <id> --json` for the plan (rate-bounded, PHNX-3817) | delete once the CLI carries `plan` on `SessionWatchRow` (PHNX-3819) |
-| `src/monitor/sessionParse.ts` | parses raw `~/.claude/projects` transcripts | replace with CLI-provided fields |
+| `src/monitor/sessionParse.ts` | resolves session-root directories for the readiness detector's file scan; obsolete parsing helpers were deleted in #74 | replace the remaining file scan with CLI-provided fields |
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | extension-invented lifecycle classifier (ps and pgrep loops) | move the signal into the CLI daemon, project it on the stream |
 | `src/vscode/agentPanel.vscode.ts` | `messageCount` and `recentFiles` are not on the stream and are dropped from the instant paint | add them to `SessionWatchRow`; never a lazy enrich |
