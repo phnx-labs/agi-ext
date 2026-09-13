@@ -185,24 +185,16 @@ interface PidEntry {
   fired: Set<ReadinessEventName>;
   timers: Set<NodeJS.Timeout>;
   agentArmed: boolean;
-  agentKey?: string;
-  sessionIdLower?: string;
-  fastPathMatched: boolean;
   adoptionArmed: boolean;
   adoptionStartedAt: number;
-}
-
-interface PendingArm {
-  agentKey?: string;
-  sessionId?: string;
 }
 
 export class ReadinessDetector {
   private readonly emit: (fact: ReadinessFactPayload) => void;
   private readonly emitAdoption: (fact: ShellAdoptionFactPayload) => void;
   private readonly entries = new Map<number, PidEntry>();
-  // Arms that arrived before the pid was reported in a snapshot.
-  private readonly pendingAgentArms = new Map<number, PendingArm>();
+  // Pids whose agentReady arm arrived before the pid appeared in a snapshot.
+  private readonly pendingAgentArms = new Set<number>();
   private readonly pendingAdoptionArms = new Set<number>();
   private stopped = false;
 
@@ -230,15 +222,17 @@ export class ReadinessDetector {
     }
   }
 
-  /** Arm agentReady detection for a shell pid (mirrors armAgentReady). */
-  armAgent(pid: number, agentKey?: string, sessionId?: string): void {
+  /** Arm agentReady detection for a shell pid (mirrors armAgentReady). The
+   *  agentKey/sessionId the follower passes are not needed here — the probe is
+   *  pid-driven — but the signature mirrors the arm request for parity. */
+  armAgent(pid: number, _agentKey?: string, _sessionId?: string): void {
     if (this.stopped) return;
     const entry = this.entries.get(pid);
     if (!entry) {
-      this.pendingAgentArms.set(pid, { agentKey, sessionId });
+      this.pendingAgentArms.add(pid);
       return;
     }
-    this.applyAgentArm(entry, { agentKey, sessionId });
+    this.applyAgentArm(entry);
   }
 
   /** Arm shell-adoption detection for a shell pid (mirrors armShellAdoption). */
@@ -250,23 +244,6 @@ export class ReadinessDetector {
       return;
     }
     this.applyAdoptionArm(entry);
-  }
-
-  /**
-   * Session-file fast path: a new session file appeared. Any armed pid whose
-   * sessionId is in the filename reaches agentReady immediately (mirrors
-   * armSessionFileFastPath).
-   */
-  noteSessionFile(filename: string): void {
-    if (this.stopped) return;
-    const base = filename.toLowerCase();
-    for (const entry of this.entries.values()) {
-      if (!entry.agentArmed || entry.fastPathMatched || !entry.sessionIdLower) continue;
-      if (base.includes(entry.sessionIdLower)) {
-        entry.fastPathMatched = true;
-        this.fire(entry, 'agentReady');
-      }
-    }
   }
 
   stop(): void {
@@ -283,7 +260,6 @@ export class ReadinessDetector {
       fired: new Set(),
       timers: new Set(),
       agentArmed: false,
-      fastPathMatched: false,
       adoptionArmed: false,
       adoptionStartedAt: 0,
     };
@@ -293,10 +269,8 @@ export class ReadinessDetector {
     this.startShellProbe(entry);
     this.startPromptProbe(entry);
 
-    const pendingArm = this.pendingAgentArms.get(pid);
-    if (pendingArm) {
-      this.pendingAgentArms.delete(pid);
-      this.applyAgentArm(entry, pendingArm);
+    if (this.pendingAgentArms.delete(pid)) {
+      this.applyAgentArm(entry);
     }
     if (this.pendingAdoptionArms.delete(pid)) {
       this.applyAdoptionArm(entry);
@@ -382,13 +356,9 @@ export class ReadinessDetector {
     this.schedule(entry, tick, PROMPT_FALLBACK_GRACE_MS);
   }
 
-  private applyAgentArm(entry: PidEntry, arm: PendingArm): void {
+  private applyAgentArm(entry: PidEntry): void {
     if (entry.agentArmed || this.fired(entry, 'agentReady')) return;
     entry.agentArmed = true;
-    entry.agentKey = arm.agentKey;
-    if (arm.agentKey && arm.sessionId) {
-      entry.sessionIdLower = arm.sessionId.toLowerCase();
-    }
     this.startAgentProbe(entry);
   }
 

@@ -3,9 +3,6 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-
-type ThemeMode = 'light' | 'dark';
 
 // Icons that have light variants (dark logo for light backgrounds)
 const ICONS_WITH_LIGHT_VARIANTS = new Set([
@@ -16,25 +13,6 @@ const ICONS_WITH_LIGHT_VARIANTS = new Set([
   'grok.png',
   'droid.png'
 ]);
-
-/**
- * Get current theme mode from VS Code.
- * VS Code theme takes precedence over system settings.
- */
-function getThemeMode(): ThemeMode {
-  const kind = vscode.window.activeColorTheme.kind;
-  // Light (1) and HighContrastLight (4) are light themes
-  return kind === vscode.ColorThemeKind.Light || kind === vscode.ColorThemeKind.HighContrastLight
-    ? 'light'
-    : 'dark';
-}
-
-/**
- * Check if current theme is light.
- */
-function isLightTheme(): boolean {
-  return getThemeMode() === 'light';
-}
 
 /**
  * Get the light variant filename for an icon (if it exists).

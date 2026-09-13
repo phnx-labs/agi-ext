@@ -1,12 +1,3 @@
-export interface DeviceStats {
-  host: string
-  reachable: boolean
-  loadAvg1?: number
-  memPercent?: number
-  runningAgents?: number
-  fetchedAt: number
-}
-
 /**
  * Whether a registry device should be treated as online for the "run on…" picker
  * and host lists.

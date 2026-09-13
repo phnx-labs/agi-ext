@@ -55,35 +55,3 @@ export async function setMarkdownEditorAssociation(enabled: boolean): Promise<vo
   const next = withReaderEditorAssociations(getEditorAssociations(), enabled);
   await setEditorAssociations(next);
 }
-
-/**
- * Streamline layout: sidebar right, activity bar hidden.
- */
-async function enableStreamlineLayout(): Promise<void> {
-  await updateSettings({
-    'workbench.sideBar.location': 'right',
-    // VS Code replaced the boolean `workbench.activityBar.visible` with a string `workbench.activityBar.location`.
-    // `hidden` removes the activity bar while keeping other layout settings intact.
-    'workbench.activityBar.location': 'hidden'
-  });
-}
-
-/**
- * Normal layout: sidebar left, activity bar visible.
- */
-async function disableStreamlineLayout(): Promise<void> {
-  await updateSettings({
-    'workbench.sideBar.location': 'left',
-    // Restore the default placement of the activity bar.
-    'workbench.activityBar.location': 'side'
-  });
-}
-
-/**
- * Check if streamline layout is currently active.
- */
-function isStreamlineLayout(): boolean {
-  const sidebarLocation = getSetting<string>('workbench.sideBar.location');
-  const activityBarLocation = getSetting<string>('workbench.activityBar.location');
-  return sidebarLocation === 'right' && activityBarLocation === 'hidden';
-}

@@ -15,7 +15,7 @@ import {
   getBuiltInByTitle
 } from './agents.vscode';
 import * as claudemd from './claudemd.vscode';
-import { AgentsMarkdownEditorProvider, swarmCurrentDocument } from './customEditor';
+import { AgentsMarkdownEditorProvider } from './customEditor';
 import { AgentsHtmlReaderProvider } from './htmlReader';
 import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
@@ -31,7 +31,7 @@ import {
 import { startWatchdogBridge } from '../mcp/watchdog-bridge';
 import { ensureWatchdogMcpInstalled } from '../mcp/watchdogInstall';
 import * as terminals from './terminals.vscode';
-import { fetchRemoteSessionLabelSource, fetchRecapSessions, LOCAL_LABEL, LOCAL_MACHINE_ID, mapWithConcurrency } from './remoteSessions.vscode';
+import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   isScaffoldingSessionTopic,
@@ -53,15 +53,12 @@ import { ensureSymlinksOnWorkspaceOpen, createSymlinksCodebaseWide } from './age
 import {
   initWorkspaceConfig,
   getActiveWorkspaceFolder,
-  loadWorkspaceConfig,
   watchConfigFile,
   watchUserConfig,
 } from './swarmifyConfig.vscode';
 import {
   CLAUDE_TITLE,
   CODEX_TITLE,
-  CURSOR_TITLE,
-  OPENCODE_TITLE,
   findTerminalNameByTabLabel,
   getExpandedAgentName,
   getTerminalDisplayInfo,
@@ -84,7 +81,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { DEFAULT_DISPLAY_PREFERENCES } from '../core/settings';
 import * as readiness from './terminalReadiness';
-import { resolveAlias, isAgentInstalled, checkInstalledAgentsViaCli } from '../core/agentModels';
+import { resolveAlias, isAgentInstalled } from '../core/agentModels';
 import { buildForkSessionRequest, forkCommand } from '../core/forkSession';
 import { handleForkPickHost, registerForkPickHostCommand, remoteForkSessionId, resolveForkSessionId } from './forkCommands.vscode';
 import { FORK_LINEAGE_KEY, recordForkEdge, type ForkEdge } from '../core/forkLineage';
@@ -101,10 +98,8 @@ import {
   registerForkPickSessionCommand,
   runSessionBrowserPicker,
 } from './sessionBrowser.vscode';
-import type { RemoteSession } from '../core/remoteSessions';
 import {
   abandonedCandidates,
-  defaultPickedIds,
   distinctiveTopic,
   nextPreselection,
   sharedTopicPrefixes,
@@ -112,7 +107,7 @@ import {
   type ResumeCandidate,
   type ResumeState,
 } from '../core/resumePicker';
-import { buildHarnessOptions, type HarnessOption } from '../core/resumeTarget';
+import { buildHarnessOptions } from '../core/resumeTarget';
 import { fetchAgentInventories } from '../core/agentInventory';
 // readAgentRunStrategy no longer needed: agents-cli reads strategy from
 // agents.yaml itself when invoked via `agents run`.
@@ -171,7 +166,6 @@ import { decodeInjectQuery, selectInjectTarget } from '../core/inject';
 let agentStatusBarItem: vscode.StatusBarItem | undefined;
 let defaultAgentTitle: string = CLAUDE_TITLE;
 let secondaryAgentTitle: string = CODEX_TITLE;
-let lastFocusedTerminal: vscode.Terminal | null = null;
 
 // BUILT_IN_AGENTS is now imported from ./agents
 
@@ -209,8 +203,6 @@ function buildTerminalTitle(
 // configured strategy (pinned/available/balanced) from agents.yaml. Claude
 // gets --session-id for resume; other agents detect their own session
 // post-spawn.
-type LaunchableAgent = 'claude' | 'codex' | 'opencode' | 'cursor' | 'antigravity';
-
 // buildAgentLaunchCommand, RunStrategy, and shquote are now in core/agents.ts
 // so they can be unit-tested without a VS Code harness.
 
@@ -601,7 +593,6 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
  */
 async function detectOpencodeSessionId(
   terminal: vscode.Terminal,
-  terminalId: string,
   cwd: string,
   sessionsBefore: string[],
   context: vscode.ExtensionContext
@@ -672,9 +663,6 @@ async function updateTerminalTitleOnFocus(
   // left — the self-sustaining hop of #3019. The tab that lost focus keeps its
   // current title; the newly-focused tab (renamed above, while it is active) is
   // the only one we touch.
-
-  // Update tracking
-  lastFocusedTerminal = newTerminal || null;
 }
 
 interface PromptQuickPickItem extends vscode.QuickPickItem {
@@ -1547,10 +1535,6 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  interface TerminalQuickPickItem extends vscode.QuickPickItem {
-    terminal: vscode.Terminal;
-  }
-
   // Agents: Init - create .agents config and symlinks
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.init', async () => {
@@ -2099,7 +2083,7 @@ async function openSingleAgent(
 
   // OpenCode: Detect session ID asynchronously after spawn
   if (agentKey === 'opencode' && opencodeSessionsBefore !== null) {
-    detectOpencodeSessionId(terminal, terminalId, cwd, opencodeSessionsBefore, context);
+    detectOpencodeSessionId(terminal, cwd, opencodeSessionsBefore, context);
   }
 }
 
@@ -3014,8 +2998,6 @@ async function resumeSessionsBatch(
   };
   applyItems(initial);
 
-  let pickerDisposed = false;
-
   let chosen: ResumeCandidate[];
   try {
     chosen = await new Promise<ResumeCandidate[]>((resolve) => {
@@ -3031,7 +3013,6 @@ async function resumeSessionsBatch(
       quickPick.show();
     });
   } finally {
-    pickerDisposed = true;
     quickPick.dispose();
   }
 
@@ -3381,7 +3362,6 @@ async function goToTerminal(context: vscode.ExtensionContext) {
   const items: TerminalQuickPickItem[] = [];
   const previewPromises: Array<{ itemIndex: number; entry: terminals.EditorTerminal; promise: Promise<{ firstUserMessage?: string; lastUserMessage?: string; lastActivityMs?: number; messageCount: number } | null> }> = [];
 
-  const display = getDisplayPrefs(context);
   const extensionPath = context.extensionPath;
 
   for (const entry of allEntries) {
@@ -3580,7 +3560,7 @@ export async function openSingleAgentWithQueue(
     : {});
 
   if (agentKey === 'opencode' && opencodeSessionsBefore !== null) {
-    detectOpencodeSessionId(terminal, terminalId, cwd, opencodeSessionsBefore, context);
+    detectOpencodeSessionId(terminal, cwd, opencodeSessionsBefore, context);
   }
 
   // Flush queued messages once the agent is ready to accept input.
@@ -3698,7 +3678,7 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
           : {});
       }
       if (agentKey === 'opencode' && opencodeSessionsBefore !== null) {
-        detectOpencodeSessionId(terminal, terminalId, cwd, opencodeSessionsBefore, context);
+        detectOpencodeSessionId(terminal, cwd, opencodeSessionsBefore, context);
       }
       totalCount++;
     }
@@ -4731,21 +4711,6 @@ async function closeActiveAgentWithRecap(context: vscode.ExtensionContext): Prom
   }
 }
 
-async function detectDefaultAgentTitle(): Promise<string> {
-  const candidates = [
-    { title: CLAUDE_TITLE, key: 'claude' },
-    { title: CODEX_TITLE, key: 'codex' },
-  ];
-
-  for (const candidate of candidates) {
-    if (await isAgentInstalled(candidate.key)) {
-      return candidate.title;
-    }
-  }
-
-  return CLAUDE_TITLE;
-}
-
 async function maybeRunFirstSetup(context: vscode.ExtensionContext, force = false): Promise<void> {
   const already = context.globalState.get<boolean>('agents.setupComplete', false);
   if (already && !force) {
@@ -5013,7 +4978,6 @@ async function recordFork(
     readLocal: id => terminals.getById(id)?.sessionId ?? null,
     readRemote: async (host, id) => {
       try {
-        const { runAgents } = await import('../core/agentsBin');
         // This desktop is the observer, so a remote fork's tab resolves via its
         // observerTerminals binding rather than a top-level id (PHNX-3939).
         return remoteForkSessionId(host, id, LOCAL_MACHINE_ID);

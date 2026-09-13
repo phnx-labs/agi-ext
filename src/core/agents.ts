@@ -74,7 +74,8 @@ const DEPRECATED_AGENT_KEYS: ReadonlySet<string> = new Set(['gemini']);
 // for. A webview message that tries to spawn one must be refused with a clear
 // warning, not fired at an unregistered command (which throws "command not found").
 export function isDeprecatedAgentKey(key: string): boolean {
-  return DEPRECATED_AGENT_KEYS.has(key.trim().toLowerCase().split('@')[0]);
+  const base = key.trim().toLowerCase().split('@')[0] ?? '';
+  return DEPRECATED_AGENT_KEYS.has(base);
 }
 
 // The exact set of VS Code command ids a dashboard webview message is allowed to
@@ -163,7 +164,8 @@ export function planTextToSteps(plan: string): PlanStepData[] {
   const listItems: string[] = [];
   for (const line of lines) {
     const m = line.match(/^(?:\d+[.)]|[-*+])\s+(.*)$/);
-    if (m && m[1].trim()) listItems.push(m[1].trim());
+    const item = m?.[1]?.trim();
+    if (item) listItems.push(item);
   }
   const source = listItems.length > 0
     ? listItems
