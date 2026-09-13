@@ -59,9 +59,10 @@ export function ProjectSelect({ items, value, cloud, onChange }: ProjectSelectPr
   // confidence-first ranking (so the dropdown matches the sidebar); for cloud repos
   // it is usage order. The MOST USED badge still marks the genuine max-uses entry,
   // wherever it lands — never re-flatten confidence back into pure usage order.
-  const sel = items.find(i => i.id === value) ?? items[0]
-  if (!sel) return null
-  const top = items.reduce((m, i) => (i.uses > m.uses ? i : m), sel)
+  const [first] = items
+  if (!first) return null
+  const sel = items.find(i => i.id === value) ?? first
+  const top = items.reduce((m, i) => (i.uses > m.uses ? i : m), first)
 
   return (
     <>
