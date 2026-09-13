@@ -6,6 +6,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+## [0.9.372] - 2026-09-13
+
 - Watchdog requests and replies use validated newline-delimited JSON, so a
   client no longer has to close its connection before receiving a reply.
   Stream frames are structurally validated without dropping large fragmented
