@@ -119,14 +119,14 @@ export interface RunAgentsOptions {
  * that includes node so the shebang resolves. Throws if the binary can't
  * be found.
  *
- * Pass arguments as a single string (the same way you'd type them after
- * `agents` on the command line). Quote your own args if they contain
- * shell metacharacters.
+ * Pass an argv array whenever arguments contain user data. Legacy string
+ * callers are interpreted by the shell and must quote their own arguments.
  */
 export async function runAgents(
-  args: string,
+  args: string | readonly string[],
   options: RunAgentsOptions = {},
 ): Promise<{ stdout: string; stderr: string }> {
+  if (typeof args !== 'string') return runAgentsArgs(args, options);
   const bin = await resolveAgentsBin();
   const augmented = bootstrapPath(bin);
   const escaped = shellQuote(bin);
@@ -140,7 +140,7 @@ export async function runAgents(
 
 /** Run agents through an argv boundary; use this whenever arguments contain user data. */
 async function runAgentsArgs(
-  args: string[],
+  args: readonly string[],
   options: RunAgentsOptions = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const bin = await resolveAgentsBin();
