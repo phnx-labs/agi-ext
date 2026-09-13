@@ -28,10 +28,11 @@ describe('agentsBin', () => {
     expect(/\d+\.\d+\.\d+/.test(stdout)).toBe(true);
   });
 
-  test('runAgents passes args to the binary verbatim', async () => {
-    const { stdout } = await runAgents('view --json', { timeout: 12_000, maxBuffer: 8 * 1024 * 1024 });
-    const parsed = JSON.parse(stdout);
-    expect(Array.isArray(parsed)).toBe(true);
+  test('runAgents forwards nested subcommand arguments to the installed CLI', async () => {
+    const { stdout } = await runAgents('cloud run --help', { timeout: 5_000 });
+    expect(stdout).toContain('Usage: agents cloud run');
+    expect(stdout).toContain('--provider');
+    expect(stdout).toContain('--repo');
   });
 
   test('bootstrapPath includes the binary directory and node fallbacks', () => {
