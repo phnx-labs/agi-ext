@@ -148,9 +148,10 @@ export function BenchTab(props: BenchTabProps) {
   )
 
   useEffect(() => {
-    if (filteredTasks.length === 0) return
+    const firstTask = filteredTasks[0]
+    if (!firstTask) return
     if (selectedTaskId && filteredTasks.some(t => t.id === selectedTaskId)) return
-    setSelectedTaskId(filteredTasks[0].id)
+    setSelectedTaskId(firstTask.id)
   }, [filteredTasks, selectedTaskId])
 
   // Honor floor-jump requests: when the floor sends a task id, select it
@@ -165,7 +166,7 @@ export function BenchTab(props: BenchTabProps) {
     if (!activeFilters.has(task.source)) {
       setActiveFilters(prev => new Set(prev).add(task.source))
     }
-    if (repoFilter !== 'all' && task.metadata.repo !== repoFilter) {
+    if (repoFilter !== 'all' && task.metadata?.repo !== repoFilter) {
       setRepoFilter('all')
     }
     setView('list')

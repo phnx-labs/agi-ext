@@ -66,7 +66,7 @@ function render(a: FloorAgent, plain: boolean): string {
       onOption={noop}
       onFreeText={noop}
       onAttach={noop}
-      onOpenPlan={noop}
+      onOpenAttachment={() => {}} onOpenPlan={noop}
       onOpenTerminal={noop}
     />,
   )
@@ -158,7 +158,7 @@ describe('reply delivery failure is visible on a reachable feed row', () => {
         plain={false}
         error="tmux send-keys failed on yosemite-s1"
         onSelect={noop} onOption={noop} onFreeText={noop} onAttach={noop}
-        onOpenPlan={noop} onOpenTerminal={noop}
+        onOpenAttachment={() => {}} onOpenPlan={noop} onOpenTerminal={noop}
       />,
     )
     expect(withErr).toContain('tmux send-keys failed on yosemite-s1')

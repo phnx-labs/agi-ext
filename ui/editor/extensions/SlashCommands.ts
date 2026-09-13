@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { ReactRenderer } from '@tiptap/react';
+import type { SlashCommandsListRef, SlashCommandsListProps } from '../components/SlashCommandsList';
 import Suggestion from '@tiptap/suggestion';
 import tippy from 'tippy.js';
 import SlashCommandsList from '../components/SlashCommandsList';
@@ -141,12 +142,12 @@ export default Extension.create({
           ].filter((item) => item.title.toLowerCase().startsWith(query.toLowerCase()));
         },
         render: () => {
-          let component: ReactRenderer;
+          let component: ReactRenderer<SlashCommandsListRef, SlashCommandsListProps>;
           let popup: any;
 
           return {
             onStart: (props: any) => {
-              component = new ReactRenderer(SlashCommandsList, {
+              component = new ReactRenderer<SlashCommandsListRef, SlashCommandsListProps>(SlashCommandsList, {
                 props,
                 editor: props.editor,
               });

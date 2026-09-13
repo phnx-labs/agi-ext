@@ -6,7 +6,8 @@
     "dev": "vite",
     "build:settings": "vite build --config vite.settings.config.ts",
     "build:editor": "vite build --config vite.editor.config.ts",
-    "build": "bun run build:settings && bun run build:editor"
+    "typecheck": "tsc --noEmit -p .",
+    "build": "bun run typecheck && bun run build:settings && bun run build:editor"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.10.6",

@@ -664,6 +664,7 @@ describe('cleanWorktreeSlug — kills the WT=<path> leak', () => {
 describe('toFloorAgentFromRemote', () => {
   test('carries the remote host and normalized fields through', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-s0',
       sessionId: 'abcd1234efgh',
       agentType: 'codex',
@@ -718,6 +719,7 @@ describe('toFloorAgentFromRemote', () => {
     // sessionFileTimes), so a session started long ago but touched seconds ago reads
     // as freshly active — not "started 1h ago".
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-s0',
       sessionId: 'live999',
       agentType: 'claude',
@@ -751,6 +753,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('detects remote plan artifacts from output and attachment refs', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-s0',
       sessionId: 'plan123',
       agentType: 'codex',
@@ -789,6 +792,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('carries structured remote attachments onto the Floor card', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-s0',
       sessionId: 'shot123',
       agentType: 'codex',
@@ -835,6 +839,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('ignores remote plan-like paths that are only labels or task topics', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-s0',
       sessionId: 'plan456',
       agentType: 'codex',
@@ -870,6 +875,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('carries context/sessionId/pid so a headless run gets the bg badge + Focus/Stop', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'this-mac',
       sessionId: 'headless99abcd',
       agentType: 'claude',
@@ -907,8 +913,11 @@ describe('toFloorAgentFromRemote', () => {
 
   test("this machine's out-of-window sessions (host 'this-mac') take the real name as hostLabel so they fold, not duplicate", () => {
     const base: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'this-mac',
       sessionId: 'localsess1',
+      cloudTaskId: '', cloudProvider: '', teamName: '', pid: 0,
+      transport: '', replyRail: '', replyMuxTarget: '', replyMuxSocket: '',
       agentType: 'claude',
       cwd: '/home/u/src/web',
       project: 'web',
@@ -933,6 +942,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('a remote session with an unknown start (0) disables the heartbeat rather than false-stalling', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'zion',
       sessionId: 'deadbeef',
       agentType: 'claude',
@@ -966,6 +976,7 @@ describe('toFloorAgentFromRemote', () => {
     // The CLI attributes a cloud task to the querier ('zion') for reply routing, but
     // it runs in a provider sandbox — the feed must NOT show it under the local host.
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'zion',
       sessionId: 'task_e',
       agentType: 'codex',
@@ -1001,6 +1012,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('uses a remote manual label as the card name before topic or ids', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-s0',
       sessionId: '019e30a2-raw-session-id',
       agentType: 'codex',
@@ -1035,6 +1047,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('falls back to topic, never a raw session id slice, when label is absent', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'zion',
       sessionId: '019e30a2-dead-beef',
       agentType: 'claude',
@@ -1068,6 +1081,7 @@ describe('toFloorAgentFromRemote', () => {
 
   test('uses a generic agent label instead of a uuid when no human fields exist', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'zion',
       sessionId: '019e30a2-dead-beef',
       agentType: 'claude',
@@ -1102,13 +1116,14 @@ describe('toFloorAgentFromRemote', () => {
 
   test('uses a remote worktree slug as the task anchor when topic is absent', () => {
     const r: RemoteSessionLike = {
+      tmuxPane: '',
       host: 'yosemite-m0', sessionId: 'remote-1', agentType: 'codex',
       cwd: '/home/u/src/app/.agents/worktrees/rush-2031-factory-floor', project: 'app',
       phase: 'running', activity: '', tokPerSec: 0, waitingForInput: false,
       lastResponse: '', prUrl: null, ticket: null, branch: 'rush-2031-factory-floor',
       worktreeSlug: 'rush-2031-factory-floor', sinceMs: 0, startedAtMs: NOW,
       topic: '', context: 'terminal', cloudTaskId: '', cloudProvider: '', teamName: '',
-      pid: 0, transport: 'ssh', replyRail: '', replyMuxTarget: '', replyMuxSocket: '', tmuxPane: '',
+      pid: 0, transport: 'ssh', replyRail: '', replyMuxTarget: '', replyMuxSocket: '',
     }
     const a = toFloorAgentFromRemote(r, new Set())
     expect(a.prompt).toBe('rush-2031-factory-floor')
@@ -1134,6 +1149,7 @@ describe('toFloorAgentFromRemote', () => {
 
 describe('deriveReplyTargetFromRemote', () => {
   const base: RemoteSessionLike = {
+    tmuxPane: '',
     host: 'this-mac', sessionId: 's1', agentType: 'claude', cwd: '/x', project: 'x',
     phase: 'waiting', activity: '', tokPerSec: 0, waitingForInput: true, lastResponse: '',
     prUrl: null, ticket: null, branch: '', sinceMs: 0, startedAtMs: 0, topic: '',
@@ -1205,12 +1221,12 @@ describe('adaptTickets', () => {
       },
     ]
     const [t] = adaptTickets(tasks)
-    expect(t.id).toBe('RUSH-1')
-    expect(t.source).toBe('LN')
-    expect(t.pri).toBe('high')
-    expect(t.status).toBe('in-progress')
-    expect(t.project).toBe('swarmify')
-    expect(t.labels).toEqual(['bug'])
+    expect(t?.id).toBe('RUSH-1')
+    expect(t?.source).toBe('LN')
+    expect(t?.pri).toBe('high')
+    expect(t?.status).toBe('in-progress')
+    expect(t?.project).toBe('swarmify')
+    expect(t?.labels).toEqual(['bug'])
   })
 })
 
@@ -1279,7 +1295,7 @@ describe('project attribution across a real fleet batch (PHNX-3796)', () => {
     phase: 'running', activity: '', tokPerSec: 0, waitingForInput: false, lastResponse: '',
     prUrl: null, ticket: null, branch: '', sinceMs: 0, startedAtMs: 0, topic: '',
     context: 'cloud', cloudTaskId: '9hk9oiqv', cloudProvider: 'rush', teamName: '', pid: 0,
-    transport: '', replyRail: '', replyMuxTarget: '', replyMuxSocket: '',
+    transport: '', replyRail: '', replyMuxTarget: '', replyMuxSocket: '', tmuxPane: '',
     ...over,
   })
 

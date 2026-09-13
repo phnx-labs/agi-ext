@@ -316,7 +316,9 @@ export function detectCreatedCommits(toolCalls: RecentToolCall[] | undefined): s
     GIT_COMMIT_OUTPUT_RE.lastIndex = 0
     let match: RegExpExecArray | null
     while ((match = GIT_COMMIT_OUTPUT_RE.exec(call.output)) !== null) {
-      const sha = match[1].slice(0, 12)
+      const capturedSha = match[1]
+      if (!capturedSha) continue
+      const sha = capturedSha.slice(0, 12)
       if (seen.has(sha)) continue
       seen.add(sha)
       out.push(sha)
@@ -655,10 +657,6 @@ export function toFloorAgentFromUnified(
     messages,
     // A tab without a matching feed projection never invents a decision.
     question: structuredQuestionFromAttention(attention),
-    attentionKind: attention?.kind,
-    attentionSource: attention?.source,
-    attentionState: attention?.state,
-    attentionFingerprint: attention?.fingerprint,
     reply,
     // Persist the last non-empty checklist so it survives the recent-tool window cap.
     todos: stickyTodos(u.id, u.terminal?.recentToolCalls),

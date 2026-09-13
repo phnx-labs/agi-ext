@@ -1,4 +1,4 @@
-import type { DisplayPreferences } from '../types'
+import type { DisplayPreferences, RunningCounts } from '../types'
 
 const TERMINAL_PREFIX_NAMES: Record<string, string> = {
   CC: 'Claude',
@@ -59,4 +59,9 @@ export function formatPreviewTerminalTitle(
   }
 
   return `${base} - ${label}`
+}
+
+export function getRunningCount(counts: RunningCounts, key: string): number {
+  const value = Object.entries(counts).find(([name]) => name === key)?.[1]
+  return typeof value === 'number' ? value : 0
 }

@@ -15,7 +15,7 @@ describe('groupIntoCycles', () => {
     const events = [ev(0), ev(10_000), ev(20_000)]
     const cycles = groupIntoCycles(events)
     expect(cycles).toHaveLength(1)
-    expect(cycles[0].events).toHaveLength(3)
+    expect(cycles[0]?.events).toHaveLength(3)
   })
 
   test('splits into a new cycle when the gap exceeds 45s', () => {
@@ -23,8 +23,8 @@ describe('groupIntoCycles', () => {
     const cycles = groupIntoCycles(events)
     expect(cycles).toHaveLength(2)
     // reversed: newest cycle first
-    expect(cycles[0].events.map((e) => e.ts)).toEqual([100_000, 110_000])
-    expect(cycles[1].events.map((e) => e.ts)).toEqual([0, 10_000])
+    expect(cycles[0]?.events.map((e) => e.ts)).toEqual([100_000, 110_000])
+    expect(cycles[1]?.events.map((e) => e.ts)).toEqual([0, 10_000])
   })
 
   test('a gap of exactly 45s stays in the same cycle', () => {
@@ -36,7 +36,7 @@ describe('groupIntoCycles', () => {
     const events = [ev(0), ev(200_000), ev(400_000)]
     const cycles = groupIntoCycles(events)
     expect(cycles).toHaveLength(3)
-    expect(cycles[0].events[0].ts).toBe(400_000)
-    expect(cycles[2].events[0].ts).toBe(0)
+    expect(cycles[0]?.events[0]?.ts).toBe(400_000)
+    expect(cycles[2]?.events[0]?.ts).toBe(0)
   })
 })

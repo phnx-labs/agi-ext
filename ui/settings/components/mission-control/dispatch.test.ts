@@ -219,7 +219,7 @@ describe('reconcilePending', () => {
     const terminals = [makeTerminal({ agentType: 'claude', createdAt: FIXED_NOW })]
     const out = reconcilePending([p1, p2], terminals, [])
     expect(out).toHaveLength(1)
-    expect(out[0].id).toBe('p-2')
+    expect(out[0]?.id).toBe('p-2')
   })
 
   test('returns same reference when nothing consumed (enables React bail-out)', () => {
@@ -264,7 +264,7 @@ describe('pruneExpiredPending', () => {
     })
     const out = pruneExpiredPending([fresh, stale], FIXED_NOW)
     expect(out).toHaveLength(1)
-    expect(out[0].id).toBe('fresh')
+    expect(out[0]?.id).toBe('fresh')
   })
 })
 
@@ -294,7 +294,7 @@ describe('markTimedOutPending', () => {
   test('exact-TTL boundary entry flips (inclusive)', () => {
     const pending = [makePending({ createdAt: FIXED_NOW - PENDING_DISPATCH_TTL_MS })]
     const out = markTimedOutPending(pending, FIXED_NOW)
-    expect(out[0].status).toBe('timedOut')
+    expect(out[0]?.status).toBe('timedOut')
   })
 
   test('empty list returns same reference', () => {
@@ -311,7 +311,7 @@ describe('markCloudFailedPending', () => {
       agents: [makeAgent({ status: 'failed', started_at: new Date(FIXED_NOW).toISOString() })],
     })
     const out = markCloudFailedPending(pending, [failedTask])
-    expect(out[0].status).toBe('timedOut')
+    expect(out[0]?.status).toBe('timedOut')
   })
 
   test('local pending is untouched even if a failed cloud-run exists', () => {

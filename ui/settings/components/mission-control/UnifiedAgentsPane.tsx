@@ -229,6 +229,7 @@ function buildUnifiedList(terminals: TerminalInfo[], tasks: TaskSummary[]): Unif
       })
     } else if (task.agents.length === 1) {
       const a = task.agents[0]
+      if (!a) continue
       const isCloud = a.mode === 'cloud' || !!a.cloud_provider
       const lastCmd = a.bash_commands?.[a.bash_commands.length - 1]
       const lastFile = a.files_modified?.[a.files_modified.length - 1]
@@ -1480,7 +1481,10 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
         const key = `cluster:${cluster[0]?.question?.clusterKey ?? cluster.map((a) => a.id).join(',')}`
         out.push({ kind: 'needsCluster', cluster, height: measuredHeightsRef.current.get(key) ?? defaultHeight('needsCluster'), key })
       }
-      for (const c of questionClusters.filter((c) => c.length === 1)) addRow(c[0])
+      for (const c of questionClusters.filter((c) => c.length === 1)) {
+        const agent = c[0]
+        if (agent) addRow(agent)
+      }
       for (const a of failedAgents) out.push({ kind: 'failureCard', agent: a, height: measuredHeightsRef.current.get(`fail:${a.id}`) ?? defaultHeight('failureCard'), key: `fail:${a.id}` })
       for (const a of reviewNeedsAgents) addRow(a)
     }
@@ -2300,7 +2304,7 @@ const AgentCard = React.memo(function AgentCard({ item, selected, onSelect, dimm
 // time component and a task due "today" isn't late until the day is over.
 function formatDueDate(iso: string | undefined): { label: string; tone: 'overdue' | 'soon' | 'normal' } | null {
   if (!iso) return null
-  const parts = iso.split('T')[0].split('-')
+  const parts = iso.split('T', 1).join('').split('-')
   if (parts.length < 3) return null
   const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2])
   if (!y || !m || !d) return null

@@ -114,8 +114,11 @@ function makeAgent(overrides: Partial<FloorAgent> = {}): FloorAgent {
     pinned: false,
     pr: null,
     prUrl: null,
+    ci: null,
     ticket: null,
     branch: 'feat-auth',
+    worktreeSlug: '',
+    worktreePath: '',
     resp: '',
     messages: [],
     question: null,
@@ -274,8 +277,8 @@ describe('clusterByQuestion', () => {
     ]
     const clusters = clusterByQuestion(waiting)
     expect(clusters.length).toBe(2)
-    expect(clusters[0].map((a) => a.id)).toEqual(['a', 'b'])
-    expect(clusters[1].map((a) => a.id)).toEqual(['c'])
+    expect(clusters[0]?.map((a) => a.id)).toEqual(['a', 'b'])
+    expect(clusters[1]?.map((a) => a.id)).toEqual(['c'])
   })
 
   test('agents without a parsed question never batch together', () => {

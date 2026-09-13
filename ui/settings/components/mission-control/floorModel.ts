@@ -351,7 +351,7 @@ export interface HostRow {
  *  belongs to. Kept local — ui/ cannot import from src/*. */
 function normalizeHostKey(raw: string): string {
   return (raw || '')
-    .split('.')[0]
+    .split('.', 1).join('')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -931,7 +931,8 @@ function sinceSeconds(since: string): number {
   const m = /^(\d+)\s*([smhd])/.exec(since.trim())
   if (!m) return Number.MAX_SAFE_INTEGER
   const unit: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 }
-  return Number(m[1]) * unit[m[2]]
+  const multiplier = m[2] ? unit[m[2]] : undefined
+  return multiplier === undefined ? Number.MAX_SAFE_INTEGER : Number(m[1]) * multiplier
 }
 
 /**

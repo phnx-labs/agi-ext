@@ -52,7 +52,7 @@ describe('FeedItem open/resume terminal action (RUSH-1520)', () => {
         onOption={noop}
         onFreeText={noop}
         onAttach={noop}
-        onOpenPlan={noop}
+        onOpenAttachment={() => {}} onOpenPlan={noop}
         onOpenTerminal={noop}
       />,
     )
@@ -71,7 +71,7 @@ describe('FeedItem open/resume terminal action (RUSH-1520)', () => {
         onOption={noop}
         onFreeText={noop}
         onAttach={noop}
-        onOpenPlan={noop}
+        onOpenAttachment={() => {}} onOpenPlan={noop}
       />,
     )
     expect(html).not.toContain('open-term')
@@ -87,7 +87,7 @@ describe('FeedItem open/resume terminal action (RUSH-1520)', () => {
         onOption={noop}
         onFreeText={noop}
         onAttach={noop}
-        onOpenPlan={noop}
+        onOpenAttachment={() => {}} onOpenPlan={noop}
         onOpenTerminal={noop}
       />,
     )
@@ -109,7 +109,7 @@ describe('FeedItem produced artifacts (RUSH-1547)', () => {
         onOption={noop}
         onFreeText={noop}
         onAttach={noop}
-        onOpenPlan={noop}
+        onOpenAttachment={() => {}} onOpenPlan={noop}
       />,
     )
     expect(html).toContain('href="https://linear.app/issue/RUSH-1"')

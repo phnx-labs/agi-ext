@@ -9,7 +9,8 @@ const { act } = require('react')
 const { createRoot } = require('react-dom/client')
 
 type PostedMessage = { type?: string }
-type IntervalEntry = { delay?: number; handler: () => void }
+type IntervalEntry = { delay?: number; timer: ReturnType<typeof setInterval> }
+const activeIntervals: IntervalEntry[] = []
 
 const originalSetInterval = globalThis.setInterval
 const originalClearInterval = globalThis.clearInterval
@@ -42,26 +43,19 @@ function installIcons() {
 }
 
 function installBrowserShims(intervals: IntervalEntry[]) {
-  window.matchMedia = (() => ({
-    matches: false,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  })) as typeof window.matchMedia
-
-  globalThis.setInterval = ((handler: TimerHandler, delay?: number) => {
-    const entry = {
-      delay,
-      handler: () => {
-        if (typeof handler === 'function') handler()
-      },
-    }
-    intervals.push(entry)
-    return intervals.length as unknown as ReturnType<typeof setInterval>
-  }) as typeof setInterval
-  globalThis.clearInterval = (() => {}) as typeof clearInterval
+  globalThis.setInterval = new Proxy(originalSetInterval, {
+    apply(target, thisArg, args) {
+      const timer = Reflect.apply(target, thisArg, args)
+      const entry = { delay: args[1], timer }
+      intervals.push(entry)
+      activeIntervals.push(entry)
+      return timer
+    },
+  })
 }
 
 afterEach(() => {
+  for (const { timer } of activeIntervals.splice(0)) originalClearInterval(timer)
   globalThis.setInterval = originalSetInterval
   globalThis.clearInterval = originalClearInterval
   Date.now = originalDateNow

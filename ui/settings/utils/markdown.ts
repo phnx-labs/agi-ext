@@ -36,8 +36,6 @@ todoMarkdownRenderer.code = ({ text, lang }) => {
 marked.setOptions({
   gfm: true,
   breaks: true,
-  headerIds: false,
-  mangle: false,
   renderer: todoMarkdownRenderer
 })
 
@@ -55,7 +53,7 @@ marked.setOptions({
  */
 export function renderMarkdown(text: string, opts: { clamp?: boolean } = {}): React.ReactElement {
   const clamp = opts.clamp ?? false
-  const raw = marked.parse(text)
+  const raw = marked.parse(text, { async: false })
   const safe = DOMPurify.sanitize(raw, {
     ALLOWED_TAGS: TODO_MARKDOWN_ALLOWED_TAGS,
     ALLOWED_ATTR: TODO_MARKDOWN_ALLOWED_ATTRS
