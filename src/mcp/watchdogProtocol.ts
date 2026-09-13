@@ -191,9 +191,8 @@ export interface WatchdogServerOptions {
 export interface WatchdogServer {
   socketPath: string;
   /**
-   * Stop listening and drop all client connections. Safe to call after a new
-   * server has rebound the same path: the socket file is only removed when it
-   * still belongs to this server.
+   * Stop listening and drop all client connections. The leader gate must await
+   * completion before releasing ownership so a successor can bind this path.
    */
   close(): Promise<void>;
 }
