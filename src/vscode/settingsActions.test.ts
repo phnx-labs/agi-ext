@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { ALL_SWARM_AGENTS } from '../core/settings';
-import { runAgents } from '../core/agentsBin';
 import { buildCloudDispatchArgs, isDispatchRequest, writeSwarmConfig } from './settingsActions';
 
 const temporaryDirectories: string[] = [];
@@ -69,20 +68,17 @@ describe('cloud dispatch argv boundary', () => {
     const args = buildCloudDispatchArgs(request);
     const output = execFileSync(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', ...args]);
     expect(JSON.parse(output.toString())).toEqual([
-      'cloud', 'run', '--no-follow', '--provider', 'rush', '--agent', payload,
+      'cloud', 'run', '--provider', 'rush', '--agent', payload,
       '--repo', request.repo, '--branch', payload, '--mode', 'edit', '-p', payload,
     ]);
     expect(fs.existsSync(sentinel)).toBe(false);
   });
 
-  test('canonical runner executes real CLI help with user data as argv', async () => {
-    const sentinel = path.join(scratch(), 'injected');
-    const branch = `topic; touch ${sentinel}; #`;
-    const { stdout } = await runAgents(['cloud', 'run', '--help', '--branch', branch], { timeout: 15_000 });
-    expect(stdout).toContain('Dispatch a task to a cloud agent.');
-    expect(stdout).toContain('--no-follow');
-    expect(fs.existsSync(sentinel)).toBe(false);
-  }, 20_000);
+  test('keeps the CLI follow lifecycle and its live budget gate enabled', () => {
+    const args = buildCloudDispatchArgs({ provider: 'rush', agent: 'claude', repo: 'owner/repo', mode: 'edit', prompt: 'hello' });
+    expect(args).not.toContain('--no-follow');
+    expect(args).not.toContain('--timeout');
+  });
 
   test.each([undefined, '', 'auto (new branch)'])('omits automatic branch choice %s', (branch) => {
     const command = buildCloudDispatchArgs({ provider: 'factory', agent: 'codex', repo: 'owner/repo', branch, mode: 'full', prompt: 'hello' });

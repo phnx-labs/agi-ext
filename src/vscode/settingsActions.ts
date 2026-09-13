@@ -87,7 +87,7 @@ export function buildCloudDispatchArgs(request: {
   mode: 'plan' | 'edit' | 'full';
   prompt: string;
 }): string[] {
-  const args = ['cloud', 'run', '--no-follow', '--provider', request.provider,
+  const args = ['cloud', 'run', '--provider', request.provider,
     '--agent', request.agent, '--repo', request.repo];
   const branch = request.branch?.trim();
   if (branch && !branch.toLowerCase().startsWith('auto')) args.push('--branch', branch);
