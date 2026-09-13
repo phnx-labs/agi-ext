@@ -16,7 +16,7 @@ export interface ProjectRule {
 function projectGlobToRegExp(glob: string): RegExp {
   let re = '';
   for (let i = 0; i < glob.length; i++) {
-    const c = glob[i];
+    const c = glob.charAt(i);
     if (c === '*') {
       if (glob[i + 1] === '*') {
         re += '.*';
@@ -53,7 +53,7 @@ function pathBasename(p: string): string {
 export function worktreeSlugOf(cwd: string | null | undefined): string {
   if (!cwd) return '';
   const m = cwd.match(/\/\.agents\/worktrees\/([^/]+)/);
-  return m ? m[1] : '';
+  return m?.[1] ?? '';
 }
 
 /**
@@ -75,7 +75,8 @@ export function resolveProject(
     if (rule && matchesProjectRule(norm, rule.pattern)) return rule.project;
   }
   const wt = norm.match(/\/([^/]+)\/\.agents\/worktrees\//);
-  if (wt) return wt[1];
+  const worktreeProject = wt?.[1];
+  if (worktreeProject) return worktreeProject;
   if (repoRoot) {
     const base = pathBasename(repoRoot);
     if (base) return base;
@@ -87,8 +88,8 @@ export function resolveProject(
 /** Canonicalize a host name to its device label: 'mac-mini', 'ZION', a FQDN all
  *  fold onto the registry device id. */
 export function normalizeHost(raw: string): string {
-  return (raw || '')
-    .split('.')[0]
+  const [hostname = ''] = (raw || '').split('.');
+  return hostname
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
