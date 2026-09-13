@@ -6,6 +6,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+## [0.9.373] - 2026-09-13
+
+- Exclude internal agent workspace files from the extension package and fail
+  packaging if any `.agents` content is included.
+
 ## [0.9.372] - 2026-09-13
 
 - Watchdog requests and replies use validated newline-delimited JSON, so a

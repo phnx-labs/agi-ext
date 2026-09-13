@@ -69,6 +69,10 @@ bunx @vscode/vsce package --out "$VSIX_OUT"
 # escape to the marketplace.
 echo "Verifying packaged runtime dependencies..."
 VSIX_FILES="$(unzip -Z1 "$VSIX_OUT")"
+if printf '%s\n' "$VSIX_FILES" | grep -q '^extension/\.agents/'; then
+    echo "Error: VSIX contains private .agents files; refusing release packaging." >&2
+    exit 1
+fi
 MISSING=""
 # Exact-line literal match (-xF): the deps contain regex metachars (sql.js) and
 # we want the top-level entry, not a substring.
