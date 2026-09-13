@@ -1,14 +1,18 @@
-import * as net from 'net';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import * as os from 'os';
+import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
 import { getAllTerminals } from '../vscode/terminals.vscode';
 import { resolvePeerMessage } from '../core/peerMessaging';
 import { trimToLast, WATCHDOG_LOG_PATH } from '../core/watchdogLog';
 import { runOnLeaderOnly } from '../monitor/gate';
+import {
+  startWatchdogServer,
+  WatchdogRequest,
+  WatchdogResponse,
+  WatchdogServer,
+} from './watchdogProtocol';
 
-const SOCKET_PATH = path.join(os.homedir(), '.agents', '.tmp', 'watchdog.sock');
 const PEER_MESSAGES_LOG = path.join(os.homedir(), '.agents', 'peer-messages.log');
 
 // Hot path: append is O(1). Each log is trimmed back to LOG_MAX_LINES only
@@ -41,50 +45,17 @@ export interface WatchdogBridge {
   dispose(): void;
 }
 
-interface SendNudgeRequest {
-  sessionId: string;
-  text: string;
-  reason: string;
-}
+type NudgeRequest = Extract<WatchdogRequest, { kind: 'nudge' }>;
+type PeerRequest = Extract<WatchdogRequest, { kind: 'peer' }>;
 
-interface SendNudgeResponse {
-  success: boolean;
-  error?: string;
+interface SendNudgeResponse extends WatchdogResponse {
   nudgedAt?: number;
   terminalId?: string;
 }
 
-interface SendToAgentRequest {
-  kind: 'peer';
-  senderSessionId: string;
-  targetSessionId: string;
-  text: string;
-}
-
-interface SendToAgentResponse {
-  success: boolean;
-  error?: string;
+interface SendToAgentResponse extends WatchdogResponse {
   sentAt?: number;
   recipientTerminalId?: string;
-}
-
-type ExtensionRequest = SendNudgeRequest | SendToAgentRequest;
-
-function isPeerRequest(req: ExtensionRequest): req is SendToAgentRequest {
-  return (req as SendToAgentRequest).kind === 'peer';
-}
-
-async function ensureSocketDir(): Promise<void> {
-  const dir = path.dirname(SOCKET_PATH);
-  await fs.mkdir(dir, { recursive: true });
-}
-
-async function cleanupSocket(): Promise<void> {
-  try {
-    await fs.unlink(SOCKET_PATH);
-  } catch {
-    // Socket doesn't exist, that's fine
-  }
 }
 
 async function logNudge(entry: {
@@ -124,7 +95,7 @@ async function logPeerMessage(entry: {
 }
 
 async function handleSendToAgent(
-  request: SendToAgentRequest
+  request: PeerRequest
 ): Promise<SendToAgentResponse> {
   const { senderSessionId, targetSessionId, text } = request;
 
@@ -183,7 +154,7 @@ async function handleSendToAgent(
 }
 
 async function handleSendNudge(
-  request: SendNudgeRequest
+  request: NudgeRequest
 ): Promise<SendNudgeResponse> {
   const { sessionId, text, reason } = request;
 
@@ -270,57 +241,29 @@ export function startWatchdogBridge(
     'watchdog-server.js'
   );
 
-  let server: net.Server | null = null;
+  let server: WatchdogServer | null = null;
 
   const startServer = async () => {
-    await ensureSocketDir();
-    await cleanupSocket();
-
-    server = net.createServer((socket) => {
-      let data = '';
-
-      socket.on('data', (chunk) => {
-        data += chunk.toString();
-      });
-
-      socket.on('end', async () => {
-        try {
-          const request = JSON.parse(data) as ExtensionRequest;
-          const result = isPeerRequest(request)
-            ? await handleSendToAgent(request)
-            : await handleSendNudge(request);
-          socket.write(JSON.stringify(result));
-        } catch (err) {
-          socket.write(
-            JSON.stringify({
-              success: false,
-              error: `Parse error: ${err instanceof Error ? err.message : String(err)}`,
-            })
-          );
-        }
-        socket.end();
-      });
-
-      socket.on('error', (err) => {
-        console.error('[WATCHDOG] Socket error:', err);
-      });
-    });
-
-    server.listen(SOCKET_PATH, () => {
-      console.log(`[WATCHDOG] Bridge listening on ${SOCKET_PATH}`);
-    });
-
-    server.on('error', (err) => {
-      console.error('[WATCHDOG] Server error:', err);
+    // NDJSON both ways: the bridge dispatches each complete request line as it
+    // arrives instead of waiting for the client to half-close — the MCP client
+    // never sends EOF, so an EOF-bound server deadlocks until the client's own
+    // timeout fires.
+    server = await startWatchdogServer({
+      onListening: (socketPath) =>
+        console.log(`[WATCHDOG] Bridge listening on ${socketPath}`),
+      onError: (err) => console.error('[WATCHDOG] Socket error:', err),
+      onRequest: (request) =>
+        request.kind === 'peer'
+          ? handleSendToAgent(request)
+          : handleSendNudge(request),
     });
   };
 
   const stopServer = () => {
     if (server) {
-      server.close();
+      server.close().catch(() => {});
       server = null;
     }
-    cleanupSocket().catch(() => {});
   };
 
   // Only the elected monitor leader binds the shared socket (#70). Every window
