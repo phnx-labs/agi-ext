@@ -26,12 +26,20 @@ export const VSCODE_API_CONSTANTS = {
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
 } as const;
 
+const commands = {
+  executeCommand: async (..._args: unknown[]): Promise<unknown> => {
+    throw new Error('Configure commands.executeCommand in the vscode test double before invoking it');
+  },
+};
+
 /**
  * Build a `vscode` double: the shared API constants plus whatever surface this
  * test drives. Pass the result to `mock.module('vscode', () => vscodeDouble({…}))`.
  */
 export function vscodeDouble<T extends Record<string, unknown>>(
   surface: T = {} as T,
-): T & typeof VSCODE_API_CONSTANTS {
-  return { ...VSCODE_API_CONSTANTS, ...surface };
+): T & typeof VSCODE_API_CONSTANTS & { commands: typeof commands } {
+  // Bun fixes namespace export names on the first import. Later registrations
+  // can replace commands, but cannot add it to an already-imported namespace.
+  return { ...VSCODE_API_CONSTANTS, commands, ...surface };
 }
