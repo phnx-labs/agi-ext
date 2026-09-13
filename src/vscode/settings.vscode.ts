@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { homedir, hostname } from 'os';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -202,7 +202,6 @@ function resolveReposFromLabels(labels: string[] | undefined, owner: string | nu
 const RUSH_CLOUD_TERMINAL_NAME = 'Rush Cloud';
 const RUSH_CLOUD_PREFIX = 'rc';
 let rushCloudTerminal: vscode.Terminal | undefined;
-let cloudDispatchOutput: vscode.OutputChannel | undefined;
 
 async function getOrCreateRushCloudTerminal(
   context: vscode.ExtensionContext,
@@ -2631,26 +2630,28 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             vscode.window.showErrorMessage('Cloud dispatch: pick a repo (owner/name) first.');
             break;
           }
-          if (!cloudDispatchOutput) {
-            cloudDispatchOutput = vscode.window.createOutputChannel('Agents Cloud Dispatch');
-            context.subscriptions.push(cloudDispatchOutput);
-          }
-          cloudDispatchOutput.show(true);
           const cloudMode = cloudModeForDispatch(mode);
           const branch = typeof req.branch === 'string' ? req.branch.trim() : '';
           for (const unit of units) {
-            cloudDispatchOutput.appendLine(`Submitting ${req.agent} to ${resolution.provider} for ${repo}…`);
             try {
-              const result = await runAgents(buildCloudDispatchArgs({
+              const bin = await resolveAgentsBin();
+              const execution = new vscode.ProcessExecution(bin, buildCloudDispatchArgs({
                 provider: resolution.provider, agent: req.agent, repo, branch,
                 mode: cloudMode, prompt: unit.prompt,
-              }), { cwd: workspacePath, timeout: 120_000 });
-              cloudDispatchOutput.appendLine(result.stdout);
-              if (result.stderr) cloudDispatchOutput.appendLine(result.stderr);
+              }), { cwd: workspacePath, env: { PATH: bootstrapPath(bin) } });
+              const task = new vscode.Task(
+                { type: 'agents-cloud', dispatchId: randomUUID() },
+                vscode.workspace.workspaceFolders?.[0] ?? vscode.TaskScope.Global,
+                `Cloud: ${req.agent} on ${resolution.provider}`, 'Agents', execution, [],
+              );
+              task.presentationOptions = {
+                reveal: vscode.TaskRevealKind.Always, focus: false, echo: false,
+                panel: vscode.TaskPanelKind.New,
+              };
+              await vscode.tasks.executeTask(task);
             } catch (error) {
               const detail = error instanceof Error ? error.message : String(error);
-              cloudDispatchOutput.appendLine(detail);
-              void vscode.window.showErrorMessage('Cloud dispatch failed. See Agents Cloud Dispatch output for details.');
+              void vscode.window.showErrorMessage(`Cloud dispatch failed: ${detail}`);
               break;
             }
           }
