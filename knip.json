@@ -4,7 +4,6 @@
     ".": {
       "entry": [
         "src/vscode/extension.ts",
-        "src/mcp/watchdog-bridge.ts",
         "src/mcp/watchdog-server.ts",
         "scripts/*.ts"
       ],

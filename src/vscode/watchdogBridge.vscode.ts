@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
-import { getAllTerminals } from '../vscode/terminals.vscode';
+import { getAllTerminals } from './terminals.vscode';
 import { resolvePeerMessage } from '../core/peerMessaging';
 import { trimToLast, WATCHDOG_LOG_PATH } from '../core/watchdogLog';
 import { runOnLeaderOnly } from '../monitor/gate';
@@ -12,7 +12,7 @@ import {
   WatchdogRequest,
   WatchdogResponse,
   WatchdogServer,
-} from './watchdogProtocol';
+} from '../mcp/watchdogProtocol';
 
 const PEER_MESSAGES_LOG = path.join(os.homedir(), '.agents', 'peer-messages.log');
 

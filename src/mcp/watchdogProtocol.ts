@@ -6,7 +6,7 @@ import * as os from 'os';
 /**
  * Shared wire contract for the one-shot watchdog socket
  * (`~/.agents/.tmp/watchdog.sock`). The MCP server (`watchdog-server.ts`) is
- * the client; the extension host (`watchdog-bridge.ts`) is the server.
+ * the client; the extension host (`vscode/watchdogBridge.vscode.ts`) is the server.
  *
  * Both directions are newline-delimited JSON ("NDJSON"): one request line, one
  * response line. Neither side may wait for EOF to know a message is complete —

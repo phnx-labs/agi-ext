@@ -120,7 +120,7 @@ The extension host is a single Node process per editor window. It holds the elec
 | Reader | Optional custom editors for `.md` (TipTap) and `.html` (sandboxed viewer) | `src/vscode/customEditor.ts`, `src/vscode/htmlReader.ts`, `ui/editor/*` |
 | Autogit | Diff and status from the git extension; message from `agents run claude --model haiku`; stage, commit, push | `src/vscode/git.vscode.ts`, `src/core/commitgen.ts` |
 | Foreman orb | Realtime voice over OpenAI with ffmpeg audio capture; reads floor state, can dispatch and file issues | `src/vscode/foreman.*.ts`, `ui/settings/components/foreman/*` |
-| Watchdog bridge | Unix-socket bridge the CLI daemon uses to nudge a live terminal by session id; serves an MCP server by path | `src/mcp/watchdog-bridge.ts`, `src/mcp/watchdog-server.ts` |
+| Watchdog bridge | Editor adapter that delivers socket requests to live terminals; the wire protocol and MCP server remain editor-independent | `src/vscode/watchdogBridge.vscode.ts`, `src/mcp/watchdogProtocol.ts`, `src/mcp/watchdog-server.ts` |
 | agents-dbg | Standalone Electron shell over the same floor UI, IPC-fed, 5 s poll that pauses when hidden | `app/main.ts`, `app/floorPoll.ts` |
 
 <a id="projection"></a>
@@ -326,6 +326,15 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 </figure>
 
 **What the graph says.** `core` is healthy in kind and wrong in one edge: it imports `monitor` once (a type-only path through `src/monitor/protocol.ts` for `SessionCliFactPayload` in the presentation store) and `shared` imports `core` twice while `core` imports `shared` five times, which closes the `core ↔ monitor ↔ shared` cycle. `mcp ↔ vscode` is the second cycle: `src/mcp/watchdog-bridge.ts` imports `getAllTerminals` from `src/vscode/terminals.vscode.ts` while `vscode` imports `mcp` twice. `vscode` is the god area by size, not by fan-in: three files hold 12,090 of its 21,897 lines (`extension.ts` 5,659; `settings.vscode.ts` 3,625 with a 100-plus-case message router; `agentPanel.vscode.ts` 2,806 with inline webview HTML), and dynamic `import()` is what keeps the cycles compiling.
+
+**Watchdog boundary update (2026-09-13).** The graph above is the historical
+2026-09-11 measurement. The editor-specific watchdog adapter now lives in
+`src/vscode/watchdogBridge.vscode.ts`, beside the terminal registry it uses.
+The dependency is now `vscode → mcp` for the wire protocol; `src/mcp` no longer
+imports `vscode` or the terminal registry. The earlier callback proposal below
+is superseded for this boundary: relocating the existing adapter needs no new
+interface. Socket framing, leadership teardown, terminal delivery, and the MCP
+server's emitted path are unchanged. Other cycles remain separate work.
 
 **Known debt.** These violate the thin-client rule. Touching one means deleting it or shrinking it, never adding to it.
 
