@@ -280,16 +280,6 @@ export async function startWatchdogServer(
     });
   });
 
-  // Identity of the socket file we bound, so close() can tell "our file" from
-  // a replacement bound by a new leader after a leadership flip.
-  let socketIdentity: { dev: number; ino: number } | null = null;
-  try {
-    const st = await fs.stat(socketPath);
-    socketIdentity = { dev: st.dev, ino: st.ino };
-  } catch {
-    // Path vanished between listen and stat; nothing to guard.
-  }
-
   options.onListening?.(socketPath);
 
   return {
@@ -299,32 +289,8 @@ export async function startWatchdogServer(
         socket.destroy();
       }
       clients.clear();
-      // `server.close()` unlinks the socket path itself (libuv does it when
-      // the listening handle closes) — even if a new leader has already
-      // rebound the path. If the path no longer belongs to us, move it aside
-      // for the duration of the close and restore it afterwards, so a late
-      // teardown from an old leader cannot sever the new leader's socket.
-      let displaced: string | null = null;
-      try {
-        const st = await fs.stat(socketPath);
-        if (
-          socketIdentity &&
-          (st.dev !== socketIdentity.dev || st.ino !== socketIdentity.ino)
-        ) {
-          displaced = `${socketPath}.displaced-${process.pid}`;
-          await fs.rename(socketPath, displaced);
-        }
-      } catch {
-        // Path already gone: there is nothing for close() to unlink either.
-      }
+      // The leader gate awaits this before releasing ownership of the path.
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      if (displaced) {
-        try {
-          await fs.rename(displaced, socketPath);
-        } catch {
-          // The successor removed its own file; nothing to restore.
-        }
-      }
     },
   };
 }
