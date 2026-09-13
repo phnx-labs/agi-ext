@@ -272,6 +272,67 @@ describe('watchdog socket framing (server + client over real sockets)', () => {
     }
   });
 
+  test('close() during reacquisition leaves the new leader owning a live socket file', async () => {
+    const socketPath = tempSocketPath();
+    const a = await startWatchdogServer({
+      socketPath,
+      onRequest: () => ({ success: true, who: 'a' }),
+    });
+
+    try {
+      // Leadership flip interleaves with teardown: the new leader rebinds the
+      // path while the old server's close is still in flight. However the
+      // internal ordering lands, the path must end up serving the NEW leader.
+      const closing = a.close();
+      const b = await startWatchdogServer({
+        socketPath,
+        onRequest: () => ({ success: true, who: 'b' }),
+      });
+      try {
+        await closing;
+        expect(fs.existsSync(socketPath)).toBe(true);
+        const response = await requestWatchdog(
+          { kind: 'nudge', sessionId: 's', text: 't', reason: 'r' },
+          { socketPath, timeoutMs: 2000 }
+        );
+        expect(response.success).toBe(true);
+        expect(response.who).toBe('b');
+      } finally {
+        await b.close();
+      }
+    } finally {
+      await a.close();
+    }
+  });
+
+  test('a superseded close() never unlinks the rebound socket file', async () => {
+    const socketPath = tempSocketPath();
+    const a = await startWatchdogServer({
+      socketPath,
+      onRequest: () => ({ success: true, who: 'a' }),
+    });
+
+    // Force the worst interleaving directly: the new leader has ALREADY
+    // rebound the path before the old server's teardown reaches its unlink.
+    fs.unlinkSync(socketPath);
+    const b = await startWatchdogServer({
+      socketPath,
+      onRequest: () => ({ success: true, who: 'b' }),
+    });
+    try {
+      await a.close();
+      expect(fs.existsSync(socketPath)).toBe(true);
+      const response = await requestWatchdog(
+        { kind: 'nudge', sessionId: 's', text: 't', reason: 'r' },
+        { socketPath, timeoutMs: 2000 }
+      );
+      expect(response.who).toBe('b');
+    } finally {
+      await b.close();
+      await a.close();
+    }
+  });
+
   test('close() removes the socket file', async () => {
     const socketPath = tempSocketPath();
     const server: WatchdogServer = await startWatchdogServer({
