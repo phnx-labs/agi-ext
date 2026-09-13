@@ -116,22 +116,116 @@ describe('FrameDecoder', () => {
     expect(decoder.droppedCount).toBe(0);
   });
 
-  test('bounds an incomplete frame: oversized buffer is discarded', () => {
+  test('complete lines are never size-limited, whatever the bound', () => {
     const decoder = new FrameDecoder({ maxBufferedChars: 64 });
-    const huge = 'x'.repeat(200); // never terminated by a newline
-    expect(decoder.push(huge)).toEqual([]);
-    // The dangling partial is gone, so a later valid frame still decodes.
-    const frames = decoder.push(encodeFrame({ kind: 'request', id: 9, payload: 1 }));
-    expect(frames).toHaveLength(1);
-    expect(decoder.droppedCount).toBe(1);
-  });
-
-  test('a frame exactly at the bound still decodes once terminated', () => {
-    const decoder = new FrameDecoder({ maxBufferedChars: 4096 });
     const payload = 'y'.repeat(4000);
     const line = encodeFrame({ kind: 'request', id: 1, payload });
     expect(line.length).toBeGreaterThan(4000);
-    expect(decoder.push(line)).toHaveLength(1);
+    const frames = decoder.push(line);
+    expect(frames).toHaveLength(1);
+    expect((frames[0] as { payload: string }).payload).toBe(payload);
+    expect(decoder.droppedCount).toBe(0);
+  });
+
+  test('coalesced valid frames totaling far more than the bound all decode', () => {
+    const decoder = new FrameDecoder({ maxBufferedChars: 64 });
+    const lines = Array.from({ length: 8 }, (_, i) =>
+      encodeFrame({ kind: 'request', id: i, payload: 'z'.repeat(2048) })
+    );
+    const blob = lines.join('');
+    expect(blob.length).toBeGreaterThan(16 * 1024);
+    const frames = decoder.push(blob);
+    expect(frames).toHaveLength(8);
+    expect(frames.map((f) => (f as { id: number }).id)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7,
+    ]);
+    expect(decoder.droppedCount).toBe(0);
+  });
+
+  test('a large fragmented session-reset-shaped frame decodes across chunks', () => {
+    const decoder = new FrameDecoder();
+    // Shape mirrors the CLI stream reset replayed to followers: a versioned
+    // envelope whose payload carries a full floor of per-session rows.
+    const rows = Array.from({ length: 600 }, (_, i) => ({
+      sessionId: `sess-${i}`,
+      phase: 'working',
+      label: `Session ${i} doing a reasonably long task label`,
+      host: 'zion',
+      timeline: Array.from({ length: 12 }, (_, j) => ({
+        t: 1726000000000 + j * 1000,
+        kind: 'activity',
+        text: `step ${j} of the plan with some detail text`,
+      })),
+      files: Array.from({ length: 8 }, (_, j) => `/tmp/proj/file-${j}.ts`),
+    }));
+    const resetLine = encodeFrame({
+      kind: 'event',
+      event: {
+        type: 'session.cli',
+        payload: { v: 1, type: 'reset', streamId: 'main', sequence: 1, rows },
+        ts: 1726000000000,
+      },
+    });
+    expect(resetLine.length).toBeGreaterThan(64 * 1024);
+
+    // Delivered in 16 KiB chunks like a real socket read pattern.
+    const frames: unknown[] = [];
+    for (let i = 0; i < resetLine.length; i += 16 * 1024) {
+      frames.push(...decoder.push(resetLine.slice(i, i + 16 * 1024)));
+    }
+    expect(frames).toHaveLength(1);
+    const frame = frames[0] as {
+      kind: string;
+      event: { type: string; payload: { rows: unknown[] } };
+    };
+    expect(frame.kind).toBe('event');
+    expect(frame.event.type).toBe('session.cli');
+    expect(frame.event.payload.rows).toHaveLength(600);
+    expect(decoder.droppedCount).toBe(0);
+  });
+
+  test('an oversized incomplete tail is discarded and framing recovers through its newline', () => {
+    const decoder = new FrameDecoder({ maxBufferedChars: 64 });
+    // Unterminated partial far past the bound: dropped immediately.
+    expect(decoder.push('x'.repeat(200))).toEqual([]);
+    expect(decoder.droppedCount).toBe(1);
+
+    // The peer eventually terminates the junk line; the residue is discarded
+    // through its newline (not double-counted, not parsed) and the valid frame
+    // after it still decodes.
+    const frames = decoder.push(
+      'rest-of-junk\n' + encodeFrame({ kind: 'request', id: 1, payload: 'ok' })
+    );
+    expect(frames).toHaveLength(1);
+    expect(frames[0].kind).toBe('request');
+    expect(decoder.droppedCount).toBe(1);
+  });
+
+  test('a second oversized partial counts separately', () => {
+    const decoder = new FrameDecoder({ maxBufferedChars: 64 });
+    decoder.push('a'.repeat(100)); // first oversized partial, no newline
+    const frames = decoder.push(
+      '\n' + // terminates the first partial (already counted)
+        encodeFrame({ kind: 'request', id: 1, payload: 'ok' }) +
+        'b'.repeat(100) // second oversized partial, no newline yet
+    );
+    expect(frames).toHaveLength(1);
+    expect(decoder.droppedCount).toBe(2);
+    // And its newline clears the residue without a third count.
+    expect(decoder.push('\n')).toEqual([]);
+    expect(decoder.droppedCount).toBe(2);
+    expect(
+      decoder.push(encodeFrame({ kind: 'request', id: 2, payload: 'fine' }))
+    ).toHaveLength(1);
+  });
+
+  test('an incomplete tail just under the bound still decodes once terminated', () => {
+    const decoder = new FrameDecoder({ maxBufferedChars: 4096 });
+    const payload = 'y'.repeat(4000);
+    const line = encodeFrame({ kind: 'request', id: 1, payload });
+    // Deliver without the trailing newline first: under the bound, buffered.
+    expect(decoder.push(line.slice(0, -1))).toEqual([]);
+    expect(decoder.push('\n')).toHaveLength(1);
     expect(decoder.droppedCount).toBe(0);
   });
 });
