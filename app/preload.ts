@@ -28,7 +28,6 @@ ipcRenderer.on('to-renderer', (_event, message) => {
 contextBridge.exposeInMainWorld('__ICONS__', {
   claude: asset('claude.png'),
   codex: { dark: asset('chatgpt.png'), light: asset('chatgpt-light.png') },
-  gemini: asset('gemini.png'),
   opencode: asset('opencode.png'),
   cursor: { dark: asset('cursor.png'), light: asset('cursor-light.png') },
   shell: asset('agents.png'),

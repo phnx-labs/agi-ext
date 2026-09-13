@@ -84,7 +84,6 @@ export interface SwarmStatus {
   agents: {
     claude: AgentInstallStatus;
     codex: AgentInstallStatus;
-    gemini: AgentInstallStatus;
     opencode: AgentInstallStatus;
   };
 }
@@ -112,7 +111,6 @@ interface SkillDefinition {
     claude?: string | 'builtin';
     codex?: string;
     cursor?: string;
-    gemini?: string;
   };
 }
 
@@ -135,67 +133,67 @@ const SKILL_DEFS: SkillDefinition[] = [
   {
     name: 'plan',
     description: 'Create a concise implementation plan',
-    assets: { claude: 'builtin', codex: 'plan.md', gemini: 'plan.toml' },
+    assets: { claude: 'builtin', codex: 'plan.md' },
   },
   {
     name: 'splan',
     description: 'Sprint-sized plan with parallel steps',
-    assets: { claude: 'splan.md', codex: 'splan.md', cursor: 'splan.md', gemini: 'splan.toml' },
+    assets: { claude: 'splan.md', codex: 'splan.md', cursor: 'splan.md' },
   },
   {
     name: 'debug',
     description: 'Diagnose the root cause before fixing',
-    assets: { claude: 'debug.md', codex: 'debug.md', cursor: 'debug.md', gemini: 'debug.toml' },
+    assets: { claude: 'debug.md', codex: 'debug.md', cursor: 'debug.md' },
   },
   {
     name: 'sdebug',
     description: 'Parallelize the debugging investigation',
-    assets: { claude: 'sdebug.md', codex: 'sdebug.md', cursor: 'sdebug.md', gemini: 'sdebug.toml' },
+    assets: { claude: 'sdebug.md', codex: 'sdebug.md', cursor: 'sdebug.md' },
   },
   {
     name: 'sconfirm',
     description: 'Confirm with parallel checks',
-    assets: { claude: 'sconfirm.md', codex: 'sconfirm.md', cursor: 'sconfirm.md', gemini: 'sconfirm.toml' },
+    assets: { claude: 'sconfirm.md', codex: 'sconfirm.md', cursor: 'sconfirm.md' },
   },
   {
     name: 'clean',
     description: 'Refactor safely for clarity',
-    assets: { claude: 'clean.md', codex: 'clean.md', cursor: 'clean.md', gemini: 'clean.toml' },
+    assets: { claude: 'clean.md', codex: 'clean.md', cursor: 'clean.md' },
   },
   {
     name: 'sclean',
     description: 'Parallel refactor plan',
-    assets: { claude: 'sclean.md', codex: 'sclean.md', cursor: 'sclean.md', gemini: 'sclean.toml' },
+    assets: { claude: 'sclean.md', codex: 'sclean.md', cursor: 'sclean.md' },
   },
   {
     name: 'test',
     description: 'Design a lean test plan',
-    assets: { claude: 'test.md', codex: 'test.md', cursor: 'test.md', gemini: 'test.toml' },
+    assets: { claude: 'test.md', codex: 'test.md', cursor: 'test.md' },
   },
   {
     name: 'stest',
     description: 'Parallelize test creation',
-    assets: { claude: 'stest.md', codex: 'stest.md', cursor: 'stest.md', gemini: 'stest.toml' },
+    assets: { claude: 'stest.md', codex: 'stest.md', cursor: 'stest.md' },
   },
   {
     name: 'ship',
     description: 'Pre-launch verification',
-    assets: { claude: 'ship.md', codex: 'ship.md', cursor: 'ship.md', gemini: 'ship.toml' },
+    assets: { claude: 'ship.md', codex: 'ship.md', cursor: 'ship.md' },
   },
   {
     name: 'sship',
     description: 'Ship with independent assessment',
-    assets: { claude: 'sship.md', codex: 'sship.md', cursor: 'sship.md', gemini: 'sship.toml' },
+    assets: { claude: 'sship.md', codex: 'sship.md', cursor: 'sship.md' },
   },
   {
     name: 'recap',
     description: 'Facts + grounded hypotheses for handoff',
-    assets: { claude: 'recap.md', codex: 'recap.md', cursor: 'recap.md', gemini: 'recap.toml' },
+    assets: { claude: 'recap.md', codex: 'recap.md', cursor: 'recap.md' },
   },
   {
     name: 'srecap',
     description: 'Agents investigate gaps before handoff',
-    assets: { claude: 'srecap.md', codex: 'srecap.md', cursor: 'srecap.md', gemini: 'srecap.toml' },
+    assets: { claude: 'srecap.md', codex: 'srecap.md', cursor: 'srecap.md' },
   },
   {
     name: 'simagine',
@@ -212,39 +210,33 @@ export async function getSwarmStatus(): Promise<SwarmStatus> {
     agentsCliVer,
     claudeCliAvailable,
     codexCliAvailable,
-    geminiCliAvailable,
     opencodeCliAvailable,
   ] = await Promise.all([
     isAgentsCliAvailable(),
     getAgentsCliVersion(),
     isAgentCliAvailable('claude'),
     isAgentCliAvailable('codex'),
-    isAgentCliAvailable('gemini'),
     isAgentCliAvailable('opencode'),
   ]);
 
   // Run MCP checks in parallel (only for available CLIs)
-  const [claudeMcp, codexMcp, geminiMcp, opencodeMcp] = await Promise.all([
+  const [claudeMcp, codexMcp, opencodeMcp] = await Promise.all([
     claudeCliAvailable ? isAgentMcpEnabled('claude') : Promise.resolve(false),
     codexCliAvailable ? isAgentMcpEnabled('codex') : Promise.resolve(false),
-    geminiCliAvailable ? isAgentMcpEnabled('gemini') : Promise.resolve(false),
     opencodeCliAvailable ? isAgentMcpEnabled('opencode') : Promise.resolve(false),
   ]);
 
   // Command checks are sync (fs.existsSync) - no need to parallelize
   const claudeCmd = claudeCliAvailable ? isAgentCommandInstalled('claude', 'swarm') : false;
   const codexCmd = codexCliAvailable ? isAgentCommandInstalled('codex', 'swarm') : false;
-  const geminiCmd = geminiCliAvailable ? isAgentCommandInstalled('gemini', 'swarm') : false;
   const opencodeCmd = opencodeCliAvailable ? isAgentCommandInstalled('opencode', 'swarm') : false;
 
   const mcpEnabled = (!claudeCliAvailable || claudeMcp) &&
     (!codexCliAvailable || codexMcp) &&
-    (!geminiCliAvailable || geminiMcp) &&
     (!opencodeCliAvailable || opencodeMcp);
 
   const commandInstalled = (!claudeCliAvailable || claudeCmd) &&
     (!codexCliAvailable || codexCmd) &&
-    (!geminiCliAvailable || geminiCmd) &&
     (!opencodeCliAvailable || opencodeCmd);
 
   return {
@@ -264,12 +256,6 @@ export async function getSwarmStatus(): Promise<SwarmStatus> {
         cliAvailable: codexCliAvailable,
         mcpEnabled: codexMcp,
         commandInstalled: codexCmd,
-      },
-      gemini: {
-        installed: geminiMcp && geminiCmd && geminiCliAvailable,
-        cliAvailable: geminiCliAvailable,
-        mcpEnabled: geminiMcp,
-        commandInstalled: geminiCmd,
       },
       opencode: {
         installed: opencodeMcp && opencodeCmd && opencodeCliAvailable,
@@ -291,19 +277,17 @@ export async function getSkillsStatus(): Promise<SkillsStatus> {
   const results: SkillsStatus['commands'] = [];
 
   // Run ALL availability checks in parallel
-  const [claude, codex, gemini, cursor] = await Promise.all([
+  const [claude, codex, cursor] = await Promise.all([
     isPromptPackTargetAvailable('claude'),
     isPromptPackTargetAvailable('codex'),
-    isPromptPackTargetAvailable('gemini'),
     isPromptPackTargetAvailable('cursor'),
   ]);
-  const availability = { claude, codex, gemini, cursor };
+  const availability = { claude, codex, cursor };
 
   for (const skill of SKILL_DEFS) {
     const claudeAsset = skill.assets.claude;
     const codexAsset = skill.assets.codex;
     const cursorAsset = skill.assets.cursor;
-    const geminiAsset = skill.assets.gemini;
 
     const agents: Record<PromptPackAgent, SkillAgentStatus> = {
       claude: {
@@ -325,12 +309,6 @@ export async function getSkillsStatus(): Promise<SkillsStatus> {
         builtIn: false,
         supported: !!cursorAsset,
         installed: !!cursorAsset && availability.cursor && isPromptPackInstalled('cursor', skill.name),
-      },
-      gemini: {
-        cliAvailable: availability.gemini,
-        builtIn: false,
-        supported: !!geminiAsset,
-        installed: !!geminiAsset && availability.gemini && isPromptPackInstalled('gemini', skill.name),
       },
     };
 
@@ -380,18 +358,6 @@ export async function installSkillCommand(
   }
 }
 
-// Build Gemini TOML command content from markdown source
-function buildGeminiToml(markdown: string): string {
-  return [
-    'name = "swarm"',
-    'description = "Run Swarm MCP tasks"',
-    'prompt = """',
-    markdown.trimEnd(),
-    '"""',
-    ''
-  ].join('\n');
-}
-
 async function installPromptPacksForAgent(
   agent: PromptPackAgent,
   context: vscode.ExtensionContext
@@ -435,7 +401,7 @@ async function installPromptPacksForAgent(
 
 function installSwarmCommandForPromptPackAgent(agent: PromptPackAgent, context: vscode.ExtensionContext): boolean {
   const agentDir = agent === 'codex' ? 'prompts' : 'commands';
-  const extension = agent === 'gemini' ? 'toml' : 'md';
+  const extension = 'md';
   const sourcePath = path.join(context.extensionPath, '..', 'prompts', agent, agentDir, `swarm.${extension}`);
   if (!fs.existsSync(sourcePath)) {
     return false;
@@ -487,7 +453,7 @@ export async function setupSwarmIntegration(
   context: vscode.ExtensionContext,
   onUpdate?: (status: SwarmStatus) => void
 ): Promise<void> {
-  await setupSwarmIntegrationForAgents(['claude', 'codex', 'gemini', 'opencode'], context, onUpdate);
+  await setupSwarmIntegrationForAgents(['claude', 'codex', 'opencode'], context, onUpdate);
 }
 
 export async function setupSwarmIntegrationForAgent(
@@ -499,7 +465,7 @@ export async function setupSwarmIntegrationForAgent(
 }
 
 export async function installCommandPack(context: vscode.ExtensionContext): Promise<void> {
-  const promptPackAgents: PromptPackAgent[] = ['claude', 'codex', 'gemini', 'cursor'];
+  const promptPackAgents: PromptPackAgent[] = ['claude', 'codex', 'cursor'];
   for (const agent of promptPackAgents) {
     installSwarmCommandForPromptPackAgent(agent, context);
     await installPromptPacksForAgent(agent, context);
@@ -900,7 +866,7 @@ export async function fetchTasksBySession(sessionId: string): Promise<TaskSummar
   if (!sessionId) return [];
 
   const argsJson = JSON.stringify({ parent_session_id: sessionId });
-  const agents: AgentCli[] = ['claude', 'codex', 'gemini'];
+  const agents: AgentCli[] = ['claude', 'codex'];
 
   for (const agent of agents) {
     try {

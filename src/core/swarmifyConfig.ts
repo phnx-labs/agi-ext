@@ -12,7 +12,7 @@ export type AgentId = CliAgentId;
 // Context mapping: source file and its aliases
 export interface ContextMapping {
   source: string;    // source file (e.g., 'AGENTS.md')
-  aliases: string[]; // agent-specific aliases (e.g., ['CLAUDE.md', 'GEMINI.md'])
+  aliases: string[]; // agent-specific aliases (e.g., ['CLAUDE.md'])
 }
 
 interface TasksConfig {
@@ -37,10 +37,10 @@ export function getDefaultConfig(): AgentsConfig {
     context: [
       {
         source: 'AGENTS.md',
-        aliases: ['CLAUDE.md', 'GEMINI.md'],
+        aliases: ['CLAUDE.md'],
       },
     ],
-    agents: ['claude', 'codex', 'gemini'],
+    agents: ['claude', 'codex'],
     tasks: {
       ralph: 'RALPH.md',
       todo: 'TODO.md',

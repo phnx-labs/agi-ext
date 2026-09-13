@@ -7,28 +7,26 @@ import { runAgents } from './agentsBin';
 
 const execAsync = promisify(exec);
 
-export type AgentCli = 'claude' | 'codex' | 'gemini' | 'opencode';
-export type PromptPackAgent = 'claude' | 'codex' | 'gemini' | 'cursor';
+export type AgentCli = 'claude' | 'codex' | 'opencode';
+export type PromptPackAgent = 'claude' | 'codex' | 'cursor';
 
 // Paths for testing
 const AGENT_COMMAND_PATHS: Record<AgentCli, string> = {
   claude: path.join(os.homedir(), '.claude', 'commands', 'swarm.md'),
   codex: path.join(os.homedir(), '.codex', 'prompts', 'swarm.md'),
-  gemini: path.join(os.homedir(), '.gemini', 'commands', 'swarm.toml'),
   opencode: path.join(os.homedir(), '.opencode', 'commands', 'swarm.md'),
 };
 
 // Paths where the /swarm command file lives for each CLI
-// Claude, Codex use markdown; Gemini uses TOML commands
+// Supported harnesses use markdown commands.
 export function getAgentCommandPath(agent: AgentCli, command: string = 'swarm'): string {
   const baseDirs: Record<AgentCli, string> = {
     claude: path.join(os.homedir(), '.claude', 'commands'),
     codex: path.join(os.homedir(), '.codex', 'prompts'),
-    gemini: path.join(os.homedir(), '.gemini', 'commands'),
     opencode: path.join(os.homedir(), '.opencode', 'commands'),
   };
 
-  const ext = agent === 'gemini' ? 'toml' : 'md';
+  const ext = 'md';
   return path.join(baseDirs[agent], `${command}.${ext}`);
 }
 
@@ -55,7 +53,6 @@ export async function isAgentMcpEnabled(agent: AgentCli): Promise<boolean> {
   const commands: Record<AgentCli, string> = {
     claude: 'claude mcp list',
     codex: 'codex mcp list',
-    gemini: 'gemini mcp list',
     opencode: 'opencode mcp list',
   };
 

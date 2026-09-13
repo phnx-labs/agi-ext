@@ -19,13 +19,13 @@ export interface CustomAgentConfig {
 // e.g., "Fast" alias for Claude with "--model claude-haiku-4-5-20251001"
 interface CommandAlias {
   name: string;           // Display name (e.g., "Fast", "Max Context")
-  agent: string;          // Built-in agent key: "claude" | "codex" | "gemini" | etc.
+  agent: string;          // Built-in agent key: "claude" | "codex" | etc.
   flags: string;          // Additional CLI flags (e.g., "--model claude-haiku-4-5-20251001")
 }
 
 // Quick launch slot for keyboard shortcuts (Cmd+Shift+0..9)
 export interface QuickLaunchSlot {
-  agent: string;          // Built-in agent key: "claude" | "codex" | "gemini" | etc.
+  agent: string;          // Built-in agent key: "claude" | "codex" | etc.
   version?: string;       // Pinned agents-cli version (e.g., "1.2.6"); empty = default
   mode?: 'plan' | 'edit'; // CLI --mode; omit to use agent default
   model?: string;         // Concrete model id (e.g., "claude-opus-4-7-20260115")
@@ -95,8 +95,8 @@ export interface PromptEntry {
 }
 
 // Swarm agent types (subset of built-in agents that support swarm)
-export type SwarmAgentType = 'claude' | 'codex' | 'gemini';
-export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex', 'gemini'];
+export type SwarmAgentType = 'claude' | 'codex';
+export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex'];
 
 // User-defined mapping from a session cwd to a Fleet project group.
 // Canonical definition + resolveProject live in src/shared/project.ts (imported by
@@ -110,7 +110,6 @@ export interface AgentSettings {
   builtIn: {
     claude: BuiltInAgentConfig;
     codex: BuiltInAgentConfig;
-    gemini: BuiltInAgentConfig;
     opencode: BuiltInAgentConfig;
     cursor: BuiltInAgentConfig;
     shell: BuiltInAgentConfig;
@@ -187,7 +186,6 @@ export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
 export const AGENT_MODELS: Record<string, string[]> = {
   claude: ['claude-sonnet-4-5', 'claude-opus-4-5', 'claude-haiku-4-5'],
   codex: ['gpt-5.2-codex', 'gpt-5.1-codex-max'],
-  gemini: ['gemini-3-flash', 'gemini-3-pro'],
   cursor: ['composer-1'],
   opencode: [],
   shell: [],
@@ -240,7 +238,6 @@ export function getDefaultSettings(): AgentSettings {
     builtIn: {
       claude: { login: false, instances: 2 },
       codex: { login: false, instances: 2 },
-      gemini: { login: false, instances: 2 },
       opencode: { login: false, instances: 2 },
       cursor: { login: false, instances: 2 },
       shell: { login: false, instances: 1 },

@@ -57,7 +57,7 @@ ipcMain.on('to-host', (_event, message: { type?: string } | null) => {
     send({
       type: 'init',
       settings: getDefaultSettings(),
-      runningCounts: { claude: 0, codex: 0, gemini: 0, opencode: 0, cursor: 0, shell: 0, custom: {} },
+      runningCounts: { claude: 0, codex: 0, opencode: 0, cursor: 0, shell: 0, custom: {} },
       workspacePath: os.homedir(),
       dismissedTaskIds: [],
     })

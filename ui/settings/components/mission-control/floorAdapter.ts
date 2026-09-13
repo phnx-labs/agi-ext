@@ -210,7 +210,6 @@ export interface RemoteSessionLike {
 const ABBR_BY_TYPE: Record<string, AgentAbbr> = {
   claude: 'CC',
   codex: 'CX',
-  gemini: 'GX',
   cursor: 'CR',
   opencode: 'OC',
   amp: 'AG',

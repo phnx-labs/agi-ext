@@ -48,6 +48,8 @@ describe('isAllowedWebviewCommand', () => {
   // surfaced a "command not found" toast. The tightened allowlist rejects them.
   it('rejects an unregistered agents.new* command (deprecated harness / typo)', () => {
     expect(isDeprecatedAgentKey('gemini')).toBe(true);
+    expect(isDeprecatedAgentKey(' Gemini@legacy-account ')).toBe(true);
+    expect(isDeprecatedAgentKey('claude@current')).toBe(false);
     expect(isAllowedWebviewCommand('agents.newGemini')).toBe(false);
     expect(isAllowedWebviewCommand('agents.newTotallyMadeUp')).toBe(false);
   });

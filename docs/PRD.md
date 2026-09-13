@@ -115,7 +115,7 @@ Open the editor, press one chord, and an agent starts on the right machine with 
 
 **No detail rail in Fleet.** Fleet is a list. The Active Session sidebar is the one session preview. A persisted rail preference produced a blank third-width column on open, and two previews of one session drifted.
 
-**No Gemini.** The harness is hard-deprecated in the CLI; remaining references in the extension are debt to delete, not a feature.
+**No Gemini integration.** The extension has no Gemini launch definition, installer, watchdog registration, prewarm configuration, transcript parser, or context-file alias target. Opening a workspace never creates `GEMINI.md`, even when an old explicit alias mapping requests it. Existing files remain untouched. Other configured aliases still work. The CLI catalog snapshot retains legacy ids solely to match the CLI protocol, not to install or offer the retired harness.
 
 **No local-first execution path or silent fallback.** A launch under the default target goes to the fleet worker pool. A missing CLI noun is an upgrade error, never a filesystem fallback.
 

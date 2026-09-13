@@ -24,7 +24,7 @@ import * as os from 'os';
 //     resolve a session running on a different pinned version than the
 //     symlinked default).
 //
-// Codex/Gemini/Opencode do not persist an equivalent today — they fall
+// Codex/Opencode do not persist an equivalent today — they fall
 // through to the LLM-generated label path in extension.ts.
 
 interface ClaudeSessionFile {

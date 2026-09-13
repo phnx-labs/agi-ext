@@ -22,7 +22,7 @@ export interface TerminalTuple {
   sessionId: string | null;
   /** Workspace folder the terminal was opened in, or null. */
   workspacePath: string | null;
-  /** 'claude' | 'codex' | 'gemini' | ..., or null when unknown. */
+  /** 'claude' | 'codex' | ..., or null when unknown. */
   agentType: string | null;
 }
 

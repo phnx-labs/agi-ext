@@ -472,7 +472,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     const entry = terminalId ? terminals.getById(terminalId) : undefined;
     const terminal = entry?.terminal ?? vscode.window.activeTerminal;
-    // Claude's Ink TUI submits on \r; Codex/Gemini submit on the \n that
+    // Claude's Ink TUI submits on \r; Codex submit on the \n that
     // sendText(_, true) appends. Centralized here so action handlers below
     // don't duplicate the gotcha.
     const sendSlash = (slash: string) => {
@@ -2645,7 +2645,7 @@ function collectRecentActivity(tailLines: string[], agentType: string, max: numb
   // Walk backward so we end up with the most recent items first.
   const seen = new Set<string>();
   for (let i = tailLines.length - 1; i >= 0 && out.length < max; i--) {
-    const activity = parseLineForActivity(tailLines[i], agentType as 'claude' | 'codex' | 'gemini');
+    const activity = parseLineForActivity(tailLines[i], agentType as 'claude' | 'codex');
     if (!activity) continue;
     const formatted = formatActivity(activity);
     const dedupeKey = `${activity.type}|${activity.summary}`;

@@ -7,7 +7,7 @@ import {
   RunningCounts,
   SENSITIVE_ENV_KEYS
 } from './terminals';
-import { CLAUDE_TITLE, CODEX_TITLE, GEMINI_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE } from './utils';
+import { CLAUDE_TITLE, CODEX_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE } from './utils';
 
 describe('generateTerminalId', () => {
   test('creates id with prefix and counter', () => {
@@ -37,7 +37,6 @@ describe('countRunningFromNames', () => {
     const counts = countRunningFromNames([]);
     expect(counts.claude).toBe(0);
     expect(counts.codex).toBe(0);
-    expect(counts.gemini).toBe(0);
     expect(counts.opencode).toBe(0);
     expect(counts.cursor).toBe(0);
     expect(counts.shell).toBe(0);
@@ -55,11 +54,6 @@ describe('countRunningFromNames', () => {
     expect(counts.codex).toBe(3);
   });
 
-  test('counts gemini terminals', () => {
-    const counts = countRunningFromNames([GEMINI_TITLE]);
-    expect(counts.gemini).toBe(1);
-  });
-
   test('counts opencode terminals', () => {
     const counts = countRunningFromNames([OPENCODE_TITLE, OPENCODE_TITLE]);
     expect(counts.opencode).toBe(2);
@@ -74,7 +68,6 @@ describe('countRunningFromNames', () => {
     const counts = countRunningFromNames([
       CLAUDE_TITLE,
       CODEX_TITLE,
-      GEMINI_TITLE,
       OPENCODE_TITLE,
       CURSOR_TITLE,
       CLAUDE_TITLE,
@@ -82,7 +75,6 @@ describe('countRunningFromNames', () => {
     ]);
     expect(counts.claude).toBe(2);
     expect(counts.codex).toBe(1);
-    expect(counts.gemini).toBe(1);
     expect(counts.opencode).toBe(1);
     expect(counts.cursor).toBe(1);
     expect(counts.shell).toBe(1);
@@ -92,7 +84,6 @@ describe('countRunningFromNames', () => {
     const counts = countRunningFromNames(['bash', 'zsh', 'powershell']);
     expect(counts.claude).toBe(0);
     expect(counts.codex).toBe(0);
-    expect(counts.gemini).toBe(0);
     expect(counts.opencode).toBe(0);
     expect(counts.cursor).toBe(0);
     expect(counts.shell).toBe(0);

@@ -3,7 +3,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-type Agent = 'claude' | 'gemini';
+type Agent = 'claude';
 
 const SERVER_NAME = 'watchdog';
 
@@ -27,16 +27,11 @@ async function isInstalled(agent: Agent): Promise<boolean> {
 }
 
 async function install(agent: Agent, mcpServerPath: string): Promise<void> {
-  // Claude: `claude mcp add --scope user <name> <command> [args...]`
-  // Gemini: `gemini mcp add <name> <commandOrUrl> [args...]`
-  const cmd =
-    agent === 'claude'
-      ? `claude mcp add --scope user ${SERVER_NAME} node "${mcpServerPath}"`
-      : `gemini mcp add ${SERVER_NAME} node "${mcpServerPath}"`;
+  const cmd = `${agent} mcp add --scope user ${SERVER_NAME} node "${mcpServerPath}"`;
   await execAsync(cmd, { timeout: 10000 });
 }
 
-// Memoize per extension load: this runs on every activation, but the four
+// Memoize per extension load: this runs on every activation, but the two
 // `which`/`mcp list` subprocesses only need to run once per process. Repeat
 // callers get the in-flight/completed promise instead of re-forking.
 let installPromise: Promise<void> | null = null;
@@ -58,18 +53,11 @@ async function ensureOne(agent: Agent, mcpServerPath: string): Promise<void> {
 }
 
 /**
- * Register the watchdog MCP server in each supported agent's user-scope
- * config so peer terminals can call `send_to_agent`. Idempotent — skips
- * agents whose CLI is missing or that already have a `watchdog` entry.
- *
- * Agents are probed in parallel (no longer four sequential subprocesses on the
- * activation path) and the result is memoized for the process lifetime.
+ * Register the watchdog MCP server in Claude's user-scope config so peer
+ * terminals can call `send_to_agent`. Skip an absent CLI or existing entry.
  */
 export function ensureWatchdogMcpInstalled(mcpServerPath: string): Promise<void> {
   if (installPromise) return installPromise;
-  const agents: Agent[] = ['claude', 'gemini'];
-  installPromise = Promise.all(
-    agents.map((agent) => ensureOne(agent, mcpServerPath)),
-  ).then(() => undefined);
+  installPromise = ensureOne('claude', mcpServerPath);
   return installPromise;
 }

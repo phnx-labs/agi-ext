@@ -14,8 +14,8 @@ const realSwarmDetect = { ...(await import('./swarm.detect')) };
 let tempDir: string;
 let fakeExtensionPath: string;
 
-function makeTarget(agent: 'claude' | 'codex' | 'gemini' | 'cursor', command: string): string {
-  const ext = agent === 'gemini' ? 'toml' : 'md';
+function makeTarget(agent: 'claude' | 'codex' | 'cursor', command: string): string {
+  const ext = 'md';
   return path.join(tempDir, `${agent}-${command}.${ext}`);
 }
 
@@ -24,7 +24,7 @@ function makeTarget(agent: 'claude' | 'codex' | 'gemini' | 'cursor', command: st
 // sibling repo, not bundled with the extension, so a clean check-out won't
 // have it. Stage a minimal fake tree inside tempDir and point extensionPath
 // at tempDir/ext so the resolved source lands inside our sandbox.
-function stagePromptAsset(agent: 'codex' | 'claude' | 'gemini' | 'cursor', assetName: string): void {
+function stagePromptAsset(agent: 'codex' | 'claude' | 'cursor', assetName: string): void {
   const agentDir = agent === 'codex' ? 'prompts' : 'commands';
   const dir = path.join(tempDir, 'prompts', agent, agentDir);
   fs.mkdirSync(dir, { recursive: true });
@@ -34,16 +34,16 @@ function stagePromptAsset(agent: 'codex' | 'claude' | 'gemini' | 'cursor', asset
 function setupMocks() {
   mock.module('./swarm.detect', () => {
     return {
-      getAgentCommandPath: (agent: 'claude' | 'codex' | 'gemini', command = 'swarm') =>
+      getAgentCommandPath: (agent: 'claude' | 'codex', command = 'swarm') =>
         makeTarget(agent, command),
-      getPromptPackCommandPath: (agent: 'claude' | 'codex' | 'gemini' | 'cursor', command = 'swarm') =>
+      getPromptPackCommandPath: (agent: 'claude' | 'codex' | 'cursor', command = 'swarm') =>
         makeTarget(agent, command),
       isAgentCliAvailable: async () => true,
       isAgentMcpEnabled: async () => true,
-      isAgentCommandInstalled: (agent: 'claude' | 'codex' | 'gemini', command = 'swarm') =>
+      isAgentCommandInstalled: (agent: 'claude' | 'codex', command = 'swarm') =>
         fs.existsSync(makeTarget(agent, command)),
       isPromptPackTargetAvailable: async () => true,
-      isPromptPackInstalled: (agent: 'claude' | 'codex' | 'gemini' | 'cursor', command = 'swarm') =>
+      isPromptPackInstalled: (agent: 'claude' | 'codex' | 'cursor', command = 'swarm') =>
         fs.existsSync(makeTarget(agent, command)),
       isAgentsCliAvailable: async () => true,
       getAgentsCliVersion: async () => '0.0.0-test',
@@ -90,7 +90,6 @@ describe('skills status and install', () => {
     expect(plan?.agents.claude.builtIn).toBe(true);
     expect(plan?.agents.claude.supported).toBe(true);
     expect(plan?.agents.codex.installed).toBe(false);
-    expect(plan?.agents.gemini.installed).toBe(false);
     expect(plan?.agents.cursor.installed).toBe(false);
     expect(plan?.agents.cursor.supported).toBe(false);
   });

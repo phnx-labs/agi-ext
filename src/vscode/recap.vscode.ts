@@ -4,9 +4,9 @@ import { spawn } from 'child_process';
 import { getSessionPathBySessionId } from './sessions.vscode';
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 
-export type RecapAgentType = 'claude' | 'codex' | 'gemini' | 'cursor' | 'copilot';
+export type RecapAgentType = 'claude' | 'codex' | 'cursor' | 'copilot';
 
-const SUPPORTED: ReadonlySet<RecapAgentType> = new Set(['claude', 'codex', 'gemini', 'cursor', 'copilot']);
+const SUPPORTED: ReadonlySet<RecapAgentType> = new Set(['claude', 'codex', 'cursor', 'copilot']);
 
 export function isRecapSupported(agentType: string | undefined): agentType is RecapAgentType {
   return !!agentType && SUPPORTED.has(agentType as RecapAgentType);
@@ -44,22 +44,15 @@ export function stripFrontmatter(md: string): string {
   return md.replace(/^---\n[\s\S]*?\n---\n/, '');
 }
 
-export function stripGeminiToml(toml: string): string {
-  const match = toml.match(/prompt\s*=\s*"""([\s\S]*?)"""/);
-  if (match) return match[1];
-  const singleQuoted = toml.match(/prompt\s*=\s*"([^"]*)"/);
-  return singleQuoted ? singleQuoted[1] : toml;
-}
-
 async function readRecapTemplate(
   extensionPath: string,
   agentType: RecapAgentType,
 ): Promise<string> {
   const agentDir = agentType === 'codex' ? 'prompts' : 'commands';
-  const ext = agentType === 'gemini' ? 'toml' : 'md';
+  const ext = 'md';
   const filePath = path.join(extensionPath, '..', 'prompts', agentType, agentDir, `recap.${ext}`);
   const raw = await fs.readFile(filePath, 'utf-8');
-  return agentType === 'gemini' ? stripGeminiToml(raw) : stripFrontmatter(raw);
+  return stripFrontmatter(raw);
 }
 
 export function buildRecapArgv(

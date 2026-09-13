@@ -244,7 +244,6 @@ export interface SessionRowView {
 const HARNESS_BY_ABBR: Record<AgentAbbr, string> = {
   CC: 'Claude',
   CX: 'Codex',
-  GX: 'Gemini',
   CR: 'Cursor',
   AG: 'Agents',
   GK: 'Grok',

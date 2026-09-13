@@ -15,7 +15,7 @@ import {
   extractPlanFromSessionJson,
   planTextToSteps
 } from './agents';
-import { CLAUDE_TITLE, CODEX_TITLE, GEMINI_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, getIconFilename } from './utils';
+import { CLAUDE_TITLE, CODEX_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, getIconFilename } from './utils';
 import { CLI_AGENT_META, CliAgentId, isCliAgentId } from './agents.cli';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -124,10 +124,9 @@ describe('getBuiltInByKey', () => {
     expect(agent!.title).toBe(CODEX_TITLE);
   });
 
-  test('returns gemini agent', () => {
+  test('does not retain a Gemini presentation or launch definition', () => {
     const agent = getBuiltInByKey('gemini');
-    expect(agent).toBeDefined();
-    expect(agent!.title).toBe(GEMINI_TITLE);
+    expect(agent).toBeUndefined();
   });
 
   test('returns cursor agent', () => {
@@ -161,10 +160,9 @@ describe('getBuiltInByPrefix', () => {
     expect(agent!.key).toBe('codex');
   });
 
-  test('returns gemini for gm prefix', () => {
+  test('does not retain the Gemini prefix', () => {
     const agent = getBuiltInByPrefix('gm');
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('gemini');
+    expect(agent).toBeUndefined();
   });
 
   test('returns cursor for cr prefix', () => {

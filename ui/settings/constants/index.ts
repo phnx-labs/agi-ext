@@ -12,7 +12,7 @@ import { BUILT_IN_AGENTS, CLI_AGENT_META, type CliAgentId } from '@shared/agents
 // The harnesses the swarm settings panel offers. This is the one hand-written
 // list in the UI: SwarmAgentType is derived from it, ids must be CLI ids
 // (drift.test.ts checks), and labels come from the CLI catalog.
-export const ALL_SWARM_AGENTS = ['claude', 'codex', 'gemini', 'opencode'] as const satisfies readonly CliAgentId[]
+export const ALL_SWARM_AGENTS = ['claude', 'codex', 'opencode'] as const satisfies readonly CliAgentId[]
 
 export const SWARM_AGENT_LABELS: Record<SwarmAgentType, string> = Object.fromEntries(
   ALL_SWARM_AGENTS.map((id) => [id, CLI_AGENT_META[id].name]),
@@ -42,7 +42,6 @@ export const TAB_LABELS: Record<TabId, string> = {
 export const AGENT_INSTALL_INFO: Partial<Record<CliAgentId, { command?: string; url?: string }>> = {
   claude: { command: 'npm install -g @anthropic-ai/claude-code' },
   codex: { command: 'npm install -g @openai/codex' },
-  gemini: { command: 'npm install -g @google/gemini-cli', url: 'https://github.com/google-gemini/gemini-cli' },
   opencode: { url: 'https://github.com/opencode-ai/opencode' },
   cursor: { url: 'https://cursor.com' },
   antigravity: { command: 'curl -fsSL https://antigravity.google/cli/install.sh | bash', url: 'https://antigravity.google' },
@@ -111,7 +110,6 @@ export const SESSIONS_PER_PAGE = 20
 export function createBuiltInAgents(icons: {
   claude: string
   codex: ThemedIcon
-  gemini: string
   opencode: string
   cursor: ThemedIcon
   shell: string
@@ -123,10 +121,6 @@ export function createBuiltInAgents(icons: {
   return [
     { key: 'claude', name: 'Claude', icon: icons.claude },
     { key: 'codex', name: 'Codex', icon: icons.codex },
-    // gemini is hard-deprecated (Antigravity is the replacement) — the extension
-    // registers no `agents.newGemini` command, so it must never be offered as a
-    // launchable agent. supported:false filters it out of the spawn menus.
-    { key: 'gemini', name: 'Gemini', icon: icons.gemini, supported: false },
     { key: 'antigravity', name: 'Antigravity', icon: icons.antigravity },
     { key: 'grok', name: 'Grok', icon: icons.grok },
     { key: 'kimi', name: 'Kimi', icon: icons.kimi },

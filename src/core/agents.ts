@@ -4,7 +4,6 @@
 import {
   CLAUDE_TITLE,
   CODEX_TITLE,
-  GEMINI_TITLE,
   OPENCODE_TITLE,
   CURSOR_TITLE,
   SHELL_TITLE,
@@ -45,7 +44,6 @@ interface AgentPresentation {
 const PRESENTED_AGENTS: AgentPresentation[] = [
   { key: 'claude', title: CLAUDE_TITLE, icon: 'claude.png', prefix: 'cl', commandId: 'agents.newClaude' },
   { key: 'codex', title: CODEX_TITLE, icon: 'chatgpt.png', prefix: 'cx', commandId: 'agents.newCodex' },
-  { key: 'gemini', title: GEMINI_TITLE, icon: 'gemini.png', prefix: 'gm', commandId: 'agents.newGemini' },
   { key: 'opencode', title: OPENCODE_TITLE, icon: 'opencode.png', prefix: 'oc', commandId: 'agents.newOpenCode' },
   { key: 'cursor', title: CURSOR_TITLE, icon: 'cursor.png', prefix: 'cr', commandId: 'agents.newCursor' },
   { key: 'shell', title: SHELL_TITLE, icon: 'agents.png', prefix: 'sh', commandId: 'agents.newShell' },
@@ -69,17 +67,14 @@ export const BUILT_IN_AGENTS: BuiltInAgentDef[] = PRESENTED_AGENTS.map((p) => ({
 // Agents the extension deliberately no longer registers a launch command for.
 // Gemini is hard-deprecated — Antigravity is the replacement — so `agents.newGemini`
 // is never registered (extension.ts) and the webview must not present or fire it.
-// Session parsing/watching for a gemini transcript stays intact; only the launch
-// path is gone. This is the ONE canonical source: the registration loop, the
-// webview spawn/execute guards, and the command allowlist all read it, so a
-// deprecation can never be enforced in one place and leak in another.
+// Retained only to reject stale persisted choices from older extension versions.
 const DEPRECATED_AGENT_KEYS: ReadonlySet<string> = new Set(['gemini']);
 
 // True when `key` names an agent the extension no longer offers a launch command
 // for. A webview message that tries to spawn one must be refused with a clear
 // warning, not fired at an unregistered command (which throws "command not found").
 export function isDeprecatedAgentKey(key: string): boolean {
-  return DEPRECATED_AGENT_KEYS.has(key);
+  return DEPRECATED_AGENT_KEYS.has(key.trim().toLowerCase().split('@')[0]);
 }
 
 // The exact set of VS Code command ids a dashboard webview message is allowed to

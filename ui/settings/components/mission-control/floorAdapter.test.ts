@@ -56,7 +56,7 @@ describe('abbrFor', () => {
   test('maps known agent types to their tab prefix', () => {
     expect(abbrFor('claude')).toBe('CC')
     expect(abbrFor('Codex')).toBe('CX')
-    expect(abbrFor('gemini')).toBe('GX')
+    expect(abbrFor('gemini')).toBe('SH')
     expect(abbrFor('cursor')).toBe('CR')
     expect(abbrFor('opencode')).toBe('OC')
     expect(abbrFor('antigravity')).toBe('AG')

@@ -319,11 +319,12 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | extension-invented lifecycle classifier (ps and pgrep loops) | move the signal into the CLI daemon, project it on the stream |
 | `src/vscode/agentPanel.vscode.ts` | `messageCount` and `recentFiles` are not on the stream and are dropped from the instant paint | add them to `SessionWatchRow`; never a lazy enrich |
-| `gemini` anywhere (`src/core/agents.cli.ts` keeps the id; `PRESENTED_AGENTS` does not present it) | harness is hard-deprecated in the CLI | delete the remaining references |
 | `src/vscode/foreman.*` | realtime voice over an OpenAI key held by the extension | tolerated until the CLI offers a voice path |
 | Dashboard device, project, and ticket reads | separate bounded CLI reads outside the stream | move onto the stream when the CLI projects them |
 
 Wave 1 of PHNX-4044 (released as 0.9.371) removed 31 dead files and 49 dead exports, installed the knip gate, dropped `node-pty` and `@vscode/webview-ui-toolkit`, collapsed twelve shell quoters onto `shellQuote` and three binary resolvers onto `agentsBin.ts`, and derived the UI harness tables from the CLI catalog with a drift test.
+
+Gemini's executable integration is deleted: no CLI probes, setup commands, prompt-pack paths, watchdog registration, prewarming, transcript parsing, terminal recognition, or UI choice. `agents.cli.ts` still mirrors the CLI's legacy id; stale launch choices are rejected. The context-alias writer rejects the retired `GEMINI.md` basename even when explicitly requested by an old configuration, without touching existing files or narrowing other aliases.
 
 **Direction (proposal, not observation).** Wave 2 breaks the two cycles and splits the three large files: move `SessionCliFactPayload` and the protocol types under `core` so `core` has zero outbound edges; give `watchdog-bridge.ts` a terminal-list callback instead of importing `vscode`; extract launch, status bar, URI handling, first-run, and monitor bootstrap from `extension.ts`; split the `settings.vscode.ts` router into per-domain handlers; move the sidebar's inline webview HTML and script to files under `ui/`; retire the four tests that assert on source text once the behavior they guard is structural. Wave 3 generates `package.json` `contributes.commands` and `keybindings` from `harnessLaunchRegistrations` with a drift test, so adding a harness stops being four hand-written JSON blocks. The target graph has one edge direction: `vscode → monitor → core ← shared`, `mcp → core`.
 

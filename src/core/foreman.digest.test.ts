@@ -61,7 +61,7 @@ test('long idle agent becomes concern with label', () => {
   const d = buildForemanDigest(
     [
       {
-        name: 'Gemini - staging',
+        name: 'Codex - staging',
         label: 'staging',
         startedAtMs: now - 15 * 60_000,
         lastActivityMs: now - 5 * 60_000,

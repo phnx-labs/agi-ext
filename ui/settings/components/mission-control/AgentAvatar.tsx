@@ -3,12 +3,11 @@ import type { IconConfig } from '../../types'
 import { getIcons } from '../../hooks/useVscodeApi'
 import { getIcon } from '../../utils/icons'
 
-export type AgentId = 'claude' | 'codex' | 'gemini' | 'opencode' | 'cursor' | 'shell' | 'watchdog' | 'agents' | 'antigravity' | 'grok' | 'kimi' | 'droid'
+export type AgentId = 'claude' | 'codex' | 'opencode' | 'cursor' | 'shell' | 'watchdog' | 'agents' | 'antigravity' | 'grok' | 'kimi' | 'droid'
 
 const BG: Record<AgentId, string> = {
   claude: 'var(--claude)',
   codex: 'var(--codex)',
-  gemini: 'var(--gemini)',
   opencode: 'var(--opencode)',
   cursor: 'var(--cursor)',
   shell: 'var(--shell)',
@@ -23,7 +22,6 @@ const BG: Record<AgentId, string> = {
 const LETTER: Record<AgentId, string> = {
   claude: 'C',
   codex: 'X',
-  gemini: 'G',
   opencode: 'O',
   cursor: 'K',
   shell: '$',
@@ -37,7 +35,7 @@ const LETTER: Record<AgentId, string> = {
 
 // Which window.__ICONS__ key backs each agent id (letter fallback for the rest).
 const ICON_KEY: Partial<Record<string, keyof IconConfig>> = {
-  claude: 'claude', codex: 'codex', gemini: 'gemini', opencode: 'opencode',
+  claude: 'claude', codex: 'codex', opencode: 'opencode',
   cursor: 'cursor', shell: 'shell', agents: 'agents', antigravity: 'antigravity', grok: 'grok',
   kimi: 'kimi', droid: 'droid',
 }
@@ -84,7 +82,6 @@ export function agentIdFromPrefix(prefix: string | null | undefined): AgentId | 
   switch (prefix) {
     case 'CC': return 'claude'
     case 'CX': return 'codex'
-    case 'GX': return 'gemini'
     case 'OC': return 'opencode'
     case 'CR': return 'cursor'
     case 'SH': return 'shell'

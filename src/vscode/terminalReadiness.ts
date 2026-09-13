@@ -346,7 +346,7 @@ export async function maybeTearDownAgentOnClose(t: AgentCloseTeardown): Promise<
 // session id (when resolvable). Stops itself after firing.
 //
 // Detection handles:
-//   - direct invocation: `claude`, `codex`, `gemini`, `cursor-agent`, `opencode`
+//   - direct invocation: `claude`, `codex`, `cursor-agent`, `opencode`
 //   - node-wrapped binaries (where comm shows `node`) via args inspection
 //   - `agents run <agent>` wrappers from agents-cli
 //

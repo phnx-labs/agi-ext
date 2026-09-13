@@ -13,7 +13,6 @@
   --brand-ring: rgba(163,230,53,0.25);
   --claude: #a3e635;
   --codex: #1a1a1a;
-  --gemini: #4A7DFF;
   --antigravity: #5b8def;
   --grok: #1a1a1a;
   --kimi: #6f4cff;
@@ -2203,7 +2202,6 @@
 
 .sw-queue-agent-pick.claude { background: var(--brand); }
 .sw-queue-agent-pick.codex { background: #1a1a1a; }
-.sw-queue-agent-pick.gemini { background: #4A7DFF; }
 
 .sw-queue-agent-pick.selected {
   border-color: var(--ds-text);
@@ -2580,7 +2578,6 @@
 }
 
 .sw-dispatch-modal-agent.claude:hover { border-color: var(--claude); color: var(--claude); }
-.sw-dispatch-modal-agent.gemini:hover { border-color: var(--gemini); color: var(--gemini); }
 
 /* Bulk select bar */
 .sw-dispatch-modal-bulkbar {

@@ -20,13 +20,13 @@ const WORKFLOW_STEPS = [
 const TREE_EXAMPLE = [
   'Claude (lead)',
   '├─ Codex (fix)',
-  '├─ Gemini (research)',
+  '├─ Claude (research)',
   '└─ Cursor (trace)',
 ]
 
 const MIX_TIPS = [
   'State ratios up front (70% Claude, 20% Codex, 10% Cursor).',
-  'Tie mix to work type: Codex for edits, Gemini for research, Cursor for tracing.',
+  'Tie mix to work type: Codex for edits, Claude for research, Cursor for tracing.',
   'Adjust the mix in the approval prompt before agents launch.',
 ]
 

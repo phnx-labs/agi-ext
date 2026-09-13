@@ -107,7 +107,7 @@ describe('shell adoption — detectAgentKeyFromArgs', () => {
     expect(detectAgentKeyFromArgs('/usr/local/bin/codex')).toBe('codex');
     expect(detectAgentKeyFromArgs('cursor-agent chat')).toBe('cursor');
     expect(detectAgentKeyFromArgs('opencode')).toBe('opencode');
-    expect(detectAgentKeyFromArgs('gemini --model pro')).toBe('gemini');
+    expect(detectAgentKeyFromArgs('gemini --model pro')).toBe(null);
   });
 
   test('node-wrapped script path', () => {
@@ -118,7 +118,7 @@ describe('shell adoption — detectAgentKeyFromArgs', () => {
   test('agents-cli run wrapper', () => {
     expect(detectAgentKeyFromArgs('agents run claude --interactive --session-id abc')).toBe('claude');
     expect(detectAgentKeyFromArgs('/opt/homebrew/bin/agents run codex')).toBe('codex');
-    expect(detectAgentKeyFromArgs('agents run gemini --model pro')).toBe('gemini');
+    expect(detectAgentKeyFromArgs('agents run gemini --model pro')).toBe(null);
   });
 
   test('grok / kimi / droid / antigravity (added after the original five)', () => {

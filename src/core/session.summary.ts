@@ -1,4 +1,4 @@
-export type SessionSummaryAgentType = 'claude' | 'codex' | 'gemini';
+export type SessionSummaryAgentType = 'claude' | 'codex';
 
 export interface SessionQuickSummary {
   filesEdited: number;
@@ -684,92 +684,6 @@ function applyCodexEvent(summary: MutableSessionQuickSummary, event: Record<stri
   applyCodexToolCall(summary, toolName, args, callId, eventTimestamp);
 }
 
-function applyGeminiEvent(summary: MutableSessionQuickSummary, event: Record<string, unknown>): void {
-  const eventType = toStringValue(event.type);
-  const eventTimestamp = toStringValue(event.timestamp) || undefined;
-
-  if (eventType === 'tool_response' || eventType === 'tool_result') {
-    const callId = toStringValue(event.tool_call_id) || toStringValue(event.id);
-    if (!callId) return;
-    const output = stringifyToolResultContent(event.response ?? event.result ?? event.output);
-    const isError = event.is_error === true || event.success === false;
-    attachToolResult(summary, callId, output, isError);
-    return;
-  }
-
-  if (eventType === 'message' || eventType === 'assistant') {
-    const role = toStringValue(event.role) || 'assistant';
-    if (role === 'assistant') {
-      const content = Array.isArray(event.content) ? event.content : [];
-      const text = assistantTextFromContent(event.content) || toStringValue(event.text).trim();
-      if (text) summary.lastAssistantText = text;
-
-      if (content.length > 0) {
-        let sawTextBlock = false;
-        for (const block of content) {
-          const rec = toRecord(block);
-          if (!rec) continue;
-          const type = toStringValue(rec.type);
-          if (type === 'text' || type === 'output_text' || type === 'input_text') {
-            sawTextBlock = true;
-            pushTextEvent(summary, 'message', toStringValue(rec.text), eventTimestamp);
-            continue;
-          }
-          if (type === 'thinking' || type === 'reasoning') {
-            pushTextEvent(summary, 'reasoning', reasoningTextFromBlock(rec), eventTimestamp);
-          }
-        }
-        if (!sawTextBlock) pushTextEvent(summary, 'message', toStringValue(event.text), eventTimestamp);
-      } else {
-        pushTextEvent(summary, 'message', text, eventTimestamp);
-      }
-    }
-    return;
-  }
-
-  if (eventType !== 'tool_call' && eventType !== 'tool_use') return;
-
-  const toolName = toStringValue(event.tool_name) || toStringValue(event.name);
-  if (!toolName) return;
-
-  const args = parseArguments(event.parameters ?? event.args);
-  const name = lower(toolName);
-  const filePath = pathFromArgs(args);
-  const callId = toStringValue(event.tool_call_id) || toStringValue(event.id) || undefined;
-  const tsMs = parseTimestampMs(eventTimestamp);
-
-  summary.toolCalls++;
-  addToolCounters(summary, toolName);
-  pushToolCall(summary, { name: toolName, input: args, timestamp: eventTimestamp }, callId);
-
-  if (
-    name === 'replace' ||
-    name === 'edit' ||
-    name === 'patch' ||
-    name === 'write_file' ||
-    name === 'edit_file' ||
-    name === 'update_file' ||
-    name === 'modify_file'
-  ) {
-    addFileWrite(summary, filePath, tsMs);
-    return;
-  }
-
-  if (name === 'create_file') {
-    addFileCreate(summary, filePath, tsMs);
-    return;
-  }
-
-  if (name === 'read_file' || name === 'view_file' || name === 'cat_file' || name === 'get_file') {
-    addFileRead(summary, filePath, tsMs);
-    return;
-  }
-
-  if (name === 'delete_file' || name === 'remove_file' || name === 'rm_file') {
-    addFileDelete(summary, filePath, tsMs);
-  }
-}
-
 function applyEvent(
   summary: MutableSessionQuickSummary,
   agentType: SessionSummaryAgentType,
@@ -783,7 +697,6 @@ function applyEvent(
     applyCodexEvent(summary, event);
     return;
   }
-  applyGeminiEvent(summary, event);
 }
 
 function toQuickSummary(summary: MutableSessionQuickSummary): SessionQuickSummary {

@@ -2,7 +2,6 @@
 
 export const CLAUDE_TITLE = 'CC';
 export const CODEX_TITLE = 'CX';
-export const GEMINI_TITLE = 'GX';
 export const OPENCODE_TITLE = 'OC';
 export const CURSOR_TITLE = 'CR';
 export const SHELL_TITLE = 'SH';
@@ -12,18 +11,17 @@ export const KIMI_TITLE = 'KM';
 export const DROID_TITLE = 'DR';
 const LABEL_MAX_WORDS = 5;
 
-const KNOWN_PREFIXES = [CLAUDE_TITLE, CODEX_TITLE, GEMINI_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, ANTIGRAVITY_TITLE, GROK_TITLE, KIMI_TITLE, DROID_TITLE];
+const KNOWN_PREFIXES = [CLAUDE_TITLE, CODEX_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, ANTIGRAVITY_TITLE, GROK_TITLE, KIMI_TITLE, DROID_TITLE];
 
 // Agent type for session operations
-export type SessionAgentType = 'claude' | 'codex' | 'gemini' | 'cursor' | 'opencode' | 'antigravity' | 'grok' | 'kimi' | 'droid';
+export type SessionAgentType = 'claude' | 'codex' | 'cursor' | 'opencode' | 'antigravity' | 'grok' | 'kimi' | 'droid';
 
 // Bidirectional prefix mappings (case-insensitive)
-// Canonical: CC, CX, GX, OC, CR, SH (used in terminal names, utils.ts)
-// Config: cl, cx, gm, oc, cr, sh (used in agents.ts agentConfig.prefix)
+// Canonical: CC, CX, OC, CR, SH (used in terminal names, utils.ts)
+// Config: cl, cx, oc, cr, sh (used in agents.ts agentConfig.prefix)
 const PREFIX_MAPPINGS: Array<{ canonical: string; config: string; agentType: SessionAgentType | null }> = [
   { canonical: CLAUDE_TITLE, config: 'cl', agentType: 'claude' },
   { canonical: CODEX_TITLE, config: 'cx', agentType: 'codex' },
-  { canonical: GEMINI_TITLE, config: 'gm', agentType: 'gemini' },
   { canonical: OPENCODE_TITLE, config: 'oc', agentType: 'opencode' },
   { canonical: CURSOR_TITLE, config: 'cr', agentType: 'cursor' },
   { canonical: SHELL_TITLE, config: 'sh', agentType: null },
@@ -70,10 +68,6 @@ const NAME_TO_PREFIX: Record<string, string> = {
   'CODEX': CODEX_TITLE,
   'Codex': CODEX_TITLE,
   'codex': CODEX_TITLE,
-  [GEMINI_TITLE]: GEMINI_TITLE,
-  'GEMINI': GEMINI_TITLE,
-  'Gemini': GEMINI_TITLE,
-  'gemini': GEMINI_TITLE,
   [OPENCODE_TITLE]: OPENCODE_TITLE,
   'OPENCODE': OPENCODE_TITLE,
   'OpenCode': OPENCODE_TITLE,
@@ -203,7 +197,6 @@ export function getExpandedAgentName(prefix: string): string {
   const expandedNames: Record<string, string> = {
     [CLAUDE_TITLE]: 'Claude',
     [CODEX_TITLE]: 'Codex',
-    [GEMINI_TITLE]: 'Gemini',
     [OPENCODE_TITLE]: 'OpenCode',
     [CURSOR_TITLE]: 'Cursor',
     [SHELL_TITLE]: 'Shell',
@@ -214,7 +207,6 @@ export function getExpandedAgentName(prefix: string): string {
     // Also map lowercase prefixes from agents.ts
     'cl': 'Claude',
     'cx': 'Codex',
-    'gm': 'Gemini',
     'oc': 'OpenCode',
     'cr': 'Cursor',
     'sh': 'Shell',
@@ -225,7 +217,6 @@ export function getExpandedAgentName(prefix: string): string {
     // Allow already-expanded names to pass through
     'claude': 'Claude',
     'codex': 'Codex',
-    'gemini': 'Gemini',
     'opencode': 'OpenCode',
     'cursor': 'Cursor',
     'shell': 'Shell',
@@ -278,7 +269,6 @@ export function extractFirstNWords(text: string | undefined, n: number = 5): str
 const ICON_TO_PREFIX: Record<string, string> = {
   'claude.png': CLAUDE_TITLE,
   'chatgpt.png': CODEX_TITLE,
-  'gemini.png': GEMINI_TITLE,
   'opencode.png': OPENCODE_TITLE,
   'cursor.png': CURSOR_TITLE,
   'agents.png': SHELL_TITLE,
@@ -291,7 +281,6 @@ const ICON_TO_PREFIX: Record<string, string> = {
 const PREFIX_TO_ICON: Record<string, string> = {
   [CLAUDE_TITLE]: 'claude.png',
   [CODEX_TITLE]: 'chatgpt.png',
-  [GEMINI_TITLE]: 'gemini.png',
   [OPENCODE_TITLE]: 'opencode.png',
   [CURSOR_TITLE]: 'cursor.png',
   [SHELL_TITLE]: 'agents.png',

@@ -72,7 +72,7 @@ export interface RemoteAttachment {
 }
 
 /** Agent types whose session files session.activity.ts knows how to parse. */
-type ParsableAgentType = 'claude' | 'codex' | 'gemini';
+type ParsableAgentType = 'claude' | 'codex';
 
 // normalizeHost now lives in src/shared/project.ts (imported + re-exported above).
 
@@ -485,7 +485,7 @@ export interface RemoteSession {
    *  row rather than a live one. '' when unknown (a raw live-roster row). */
   state?: string;
   /** Whether an ended/idle session can be resumed (`SessionPickerJsonRow.resumable`).
-   *  A harness with no resume path (grok/gemini/droid/cursor/…) reports false. */
+   *  A harness with no resume path (grok/droid/cursor/…) reports false. */
   resumable?: boolean;
   /** The CLI's own recovery command (`SessionPickerJsonRow.recovery`):
    *  `agents sessions resume <id> --device <device>`. null for non-resumable. */

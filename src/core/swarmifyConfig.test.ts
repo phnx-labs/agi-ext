@@ -26,14 +26,14 @@ describe('swarmifyConfig', () => {
       expect(config.context[0].source).toBe('AGENTS.md');
     });
 
-    test('returns default aliases as CLAUDE.md and GEMINI.md', () => {
+    test('returns default aliases as CLAUDE.md', () => {
       const config = getDefaultConfig();
-      expect(config.context[0].aliases).toEqual(['CLAUDE.md', 'GEMINI.md']);
+      expect(config.context[0].aliases).toEqual(['CLAUDE.md']);
     });
 
-    test('returns default agents as claude, codex, gemini', () => {
+    test('returns default agents as claude and codex', () => {
       const config = getDefaultConfig();
-      expect(config.agents).toEqual(['claude', 'codex', 'gemini']);
+      expect(config.agents).toEqual(['claude', 'codex']);
     });
 
     test('returns default ralph filename as RALPH.md', () => {
@@ -139,7 +139,7 @@ agents:
 agents: []
 `;
       const config = parseAgentsConfig(yaml);
-      expect(config.agents).toEqual(['claude', 'codex', 'gemini']); // default
+      expect(config.agents).toEqual(['claude', 'codex']); // default
     });
 
     test('trims task file names', () => {
@@ -274,7 +274,7 @@ tasks:
     test('returns all context mappings', () => {
       const config: AgentsConfig = {
         context: [
-          { source: 'AGENTS.md', aliases: ['CLAUDE.md', 'GEMINI.md'] },
+          { source: 'AGENTS.md', aliases: ['CLAUDE.md'] },
           { source: 'TASKS.md', aliases: ['TASKS_CLAUDE.md'] },
         ],
         agents: ['claude'],
@@ -306,13 +306,13 @@ tasks:
     test('returns aliases for a specific source', () => {
       const config: AgentsConfig = {
         context: [
-          { source: 'AGENTS.md', aliases: ['CLAUDE.md', 'GEMINI.md'] },
+          { source: 'AGENTS.md', aliases: ['CLAUDE.md'] },
           { source: 'TASKS.md', aliases: ['TASKS_CLAUDE.md'] },
         ],
         agents: ['claude'],
         tasks: { ralph: 'RALPH.md', todo: 'TODO.md' },
       };
-      expect(getAliasesForSource(config, 'AGENTS.md')).toEqual(['CLAUDE.md', 'GEMINI.md']);
+      expect(getAliasesForSource(config, 'AGENTS.md')).toEqual(['CLAUDE.md']);
       expect(getAliasesForSource(config, 'TASKS.md')).toEqual(['TASKS_CLAUDE.md']);
     });
 

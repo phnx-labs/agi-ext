@@ -57,7 +57,7 @@ export type AttentionKind =
   | 'review'
 
 /** Terminal-tab prefix per agent CLI (ui utils is the reference map). */
-export type AgentAbbr = 'CC' | 'CX' | 'GX' | 'CR' | 'AG' | 'GK' | 'KM' | 'DR' | 'OC' | 'SH'
+export type AgentAbbr = 'CC' | 'CX' | 'CR' | 'AG' | 'GK' | 'KM' | 'DR' | 'OC' | 'SH'
 
 type StructuredQuestionKind = 'choice' | 'confirm' | 'destructive' | 'retry'
 
@@ -155,7 +155,7 @@ export interface FloorAgent {
   pid?: number          // process id (headless/background runs) — Stop kills it.
   project: string       // repo or cwd basename (worktrees folded to their repo)
   name: string          // displayName / branch-derived label
-  abbr: AgentAbbr       // agentType -> CC/CX/GX/...
+  abbr: AgentAbbr       // agentType -> CC/CX/...
   /** Exact CLI harness id. Resume uses this instead of reverse-mapping the avatar
    *  abbreviation, which is intentionally lossy for aliases and unknown harnesses. */
   agentType?: string
@@ -229,7 +229,7 @@ export interface FloorAgent {
    */
   sessionState?: string
   /** Whether an ended session can be resumed (`SessionPickerJsonRow.resumable`).
-   *  false for a harness with no resume path (grok/gemini/droid/cursor/…) — those
+   *  false for a harness with no resume path (grok/droid/cursor/…) — those
    *  rows expose no dead action. */
   resumable?: boolean
   /** The CLI's own recovery command for this session

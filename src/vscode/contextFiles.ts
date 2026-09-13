@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import * as fs from 'fs'
 import * as path from 'path'
 
-type AgentType = 'claude' | 'gemini' | 'codex' | 'agents' | 'cursor' | 'opencode' | 'unknown'
+type AgentType = 'claude' | 'codex' | 'agents' | 'cursor' | 'opencode' | 'unknown'
 
 export interface ContextFile {
   path: string // relative path from workspace root
@@ -13,12 +13,11 @@ export interface ContextFile {
   symlinkTarget?: string // if symlink, relative path it points to
 }
 
-const MEMORY_FILES = ['CLAUDE.MD', 'GEMINI.MD', 'AGENTS.MD', 'CODEX.MD', 'CURSOR.MD', 'OPENCODE.MD']
+const MEMORY_FILES = ['CLAUDE.MD', 'AGENTS.MD', 'CODEX.MD', 'CURSOR.MD', 'OPENCODE.MD']
 
 function getAgentType(filename: string): AgentType {
   const name = filename.toUpperCase()
   if (name === 'CLAUDE.MD') return 'claude'
-  if (name === 'GEMINI.MD') return 'gemini'
   if (name === 'CODEX.MD') return 'codex'
   if (name === 'AGENTS.MD') return 'agents'
   if (name === 'CURSOR.MD') return 'cursor'

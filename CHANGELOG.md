@@ -13,6 +13,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   full session ID and remote host; switching to an editor or plain terminal
   clears the tooltip. Remote attach titles drop host-only placeholders without
   inferring an execution host from task text (PHNX-3938, original PHNX-3809; #37).
+- Delete deprecated Gemini integration, including automatic `GEMINI.md` symlinks, CLI probes and setup, watchdog registration, prompt packs, transcript parsing, prewarming, and UI choices. Old explicit `GEMINI.md` alias mappings no longer create files; existing user files and supported aliases are preserved.
 
 ## [0.9.371] - 2026-09-11
 

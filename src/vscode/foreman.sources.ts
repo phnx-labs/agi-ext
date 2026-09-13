@@ -36,7 +36,7 @@ export function getLastSourcesError(): string | undefined {
 export interface SessionLite {
   id: string;
   shortId: string;
-  agent: string;          // 'claude' | 'codex' | 'gemini' | 'opencode' | 'openclaw'
+  agent: string;          // 'claude' | 'codex' | 'opencode' | 'openclaw'
   version?: string;
   account?: string;
   timestamp: string;

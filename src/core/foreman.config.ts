@@ -47,8 +47,8 @@ Tool usage and routing (pick the RIGHT tool, do not default to briefing):
   Do NOT use for free-form task descriptions — use spawn_agent for those.
 - spawn_agent(prompt, agent?, target?): open a NEW coding agent terminal with a
   free-form task description. Defaults: agent="claude", target="local".
-  agent can be any of: claude, codex, gemini, opencode, cursor, antigravity, grok
-  - honor the one the user names ("spin up a Codex", "open a Gemini").
+  agent can be any of: claude, codex, opencode, cursor, antigravity, grok
+  - honor the one the user names ("spin up a Codex").
   Use for "start a new Claude to fix X", "open an agent and do Y", "run this
   task", "spin up a Codex for Z". Use target="cloud" when the user says
   "background", "while I'm away", "autonomously", or the task is long-running
@@ -57,8 +57,8 @@ Tool usage and routing (pick the RIGHT tool, do not default to briefing):
 - message_agent(who, prompt): speak a follow-up into an ALREADY-RUNNING agent
   terminal - it types the text into that agent's prompt and submits it.
   Use for "tell the Codex agent to also update the tests", "ask Claude to run
-  the suite", "have the Gemini one check the migration", "nudge the auth agent".
-  who matches by label, kind (claude/codex/gemini/...), or session prefix, same
+  the suite", "have the Codex one check the migration", "nudge the auth agent".
+  who matches by label, kind (claude/codex/...), or session prefix, same
   as focus. Do NOT use to START new work - that's spawn_agent. If who is
   ambiguous (two of the same kind running), the tool returns the candidates;
   read them back and ask which one.
@@ -119,7 +119,7 @@ export const FOREMAN_TOOLS: ForemanTool[] = [
     parameters: {
       type: 'object',
       properties: {
-        who: { type: 'string', description: 'Agent label ("Philip Music"), topic keyword, kind (claude/codex/gemini/opencode/openclaw), or 8-char session id prefix.' },
+        who: { type: 'string', description: 'Agent label ("Philip Music"), topic keyword, kind (claude/codex/opencode/openclaw), or 8-char session id prefix.' },
       },
       required: ['who'],
     },
@@ -192,7 +192,7 @@ export const FOREMAN_TOOLS: ForemanTool[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Ticket identifier, e.g. "RUSH-557".' },
-        agent: { type: 'string', description: 'claude | codex | gemini | cursor (default: claude).' },
+        agent: { type: 'string', description: 'claude | codex | cursor (default: claude).' },
         target: { type: 'string', description: '"cloud" or "local" (default: cloud).' },
         repo: { type: 'string', description: 'Optional repo override, e.g. "agents-cli". Only set when the user explicitly names a repo; otherwise let the ticket\'s repo: label resolve it.' },
       },
@@ -207,7 +207,7 @@ export const FOREMAN_TOOLS: ForemanTool[] = [
       type: 'object',
       properties: {
         prompt: { type: 'string', description: 'Task description for the agent.' },
-        agent: { type: 'string', description: 'claude | codex | gemini | opencode | cursor | antigravity | grok (default: claude). Honor the agent the user names.' },
+        agent: { type: 'string', description: 'claude | codex | opencode | cursor | antigravity | grok (default: claude). Honor the agent the user names.' },
         target: { type: 'string', description: '"local" or "cloud" (default: local).' },
       },
       required: ['prompt'],
@@ -220,7 +220,7 @@ export const FOREMAN_TOOLS: ForemanTool[] = [
     parameters: {
       type: 'object',
       properties: {
-        who: { type: 'string', description: 'Which running agent: label ("Philip Music"), kind (claude/codex/gemini/opencode/cursor), or 8-char session id prefix. Same matching as focus.' },
+        who: { type: 'string', description: 'Which running agent: label ("Philip Music"), kind (claude/codex/opencode/cursor), or 8-char session id prefix. Same matching as focus.' },
         prompt: { type: 'string', description: 'The message/instruction to type into that agent.' },
       },
       required: ['who', 'prompt'],

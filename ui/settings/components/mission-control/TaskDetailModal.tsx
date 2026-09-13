@@ -124,7 +124,7 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
 }) {
   const prefs = useRef<DispatchPrefs>(loadDispatchPrefs())
   // Resolve per-task-type overrides at mount so e.g. `docs` tasks default
-  // to Gemini while `engineering` tasks default to Claude, without the
+  // to Codex while `engineering` tasks default to Claude, without the
   // two bleeding into each other. Falls back to global defaults when the
   // task's type has never been dispatched before.
   const seed = useMemo(() => prefsForTask(prefs.current, task), [task])
@@ -291,7 +291,6 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
     if (runTarget === 'local') return [
       { id: 'claude', label: 'Claude' },
       { id: 'codex', label: 'Codex' },
-      { id: 'gemini', label: 'Gemini' },
     ]
     if (runTarget === 'rush') return [
       { id: 'claude', label: 'Claude' },

@@ -3,7 +3,6 @@ import type { DisplayPreferences } from '../types'
 const TERMINAL_PREFIX_NAMES: Record<string, string> = {
   CC: 'Claude',
   CX: 'Codex',
-  GX: 'Gemini',
   OC: 'OpenCode',
   CR: 'Cursor',
   SH: 'Shell',
@@ -13,7 +12,6 @@ const TERMINAL_PREFIX_NAMES: Record<string, string> = {
   DR: 'Droid',
   claude: 'Claude',
   codex: 'Codex',
-  gemini: 'Gemini',
   antigravity: 'Antigravity',
   grok: 'Grok',
   kimi: 'Kimi',

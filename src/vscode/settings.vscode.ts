@@ -612,6 +612,7 @@ async function dispatchForForeman(
   context: vscode.ExtensionContext,
   opts: foreman.ForemanDispatchOpts,
 ): Promise<foreman.ForemanDispatchResult> {
+  if (opts.agent && isDeprecatedAgentKey(opts.agent)) return { ok: false, message: `Unsupported agent: ${opts.agent}. Choose a supported harness.` };
   const settings = getSettings(context);
   const { tasks } = await fetchAllTasks(context, settings.taskSources);
   const needle = opts.id.trim().toLowerCase();
@@ -699,6 +700,7 @@ async function spawnAgentForForeman(
   opts: { prompt: string; agent?: string; target?: string; repos?: string[] },
 ): Promise<{ ok: boolean; message: string }> {
   const agentKey = opts.agent?.trim() || 'claude';
+  if (isDeprecatedAgentKey(agentKey)) return { ok: false, message: `Unsupported agent: ${agentKey}. Choose a supported harness.` };
   const target = opts.target === 'cloud' ? 'cloud' : 'local';
 
   if (target === 'local') {
@@ -824,7 +826,7 @@ const DEFAULT_FACTORY_CONFIG = {
   supervisor_interval_seconds: 8,
 };
 const VALID_PROVIDERS = new Set(['rush', 'codex', 'factory', 'local']);
-const VALID_AGENTS = new Set(['claude', 'codex', 'gemini', 'cursor', 'opencode', 'copilot']);
+const VALID_AGENTS = new Set(['claude', 'codex', 'cursor', 'opencode', 'copilot']);
 
 function factoryConfigFilePath(): string {
   return path.join(homedir(), '.agents', 'factory', 'config.json');
@@ -1260,7 +1262,7 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
       stored.swarmEnabledAgents = [...ALL_SWARM_AGENTS];
       context.globalState.update('agentSettings', stored);
     } else {
-      // Filter to only include supported agents (claude, codex, gemini)
+      // Filter to only include supported agents (claude, codex)
       const filtered = stored.swarmEnabledAgents.filter(a => ALL_SWARM_AGENTS.includes(a));
       if (filtered.length !== stored.swarmEnabledAgents.length) {
         stored.swarmEnabledAgents = filtered.length > 0 ? filtered : [...ALL_SWARM_AGENTS];
@@ -1372,7 +1374,6 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
       builtIn: {
         claude: { login: autoStart, instances: config.get<number>('claudeCount', 2) },
         codex: { login: autoStart, instances: config.get<number>('codexCount', 2) },
-        gemini: { login: autoStart, instances: config.get<number>('geminiCount', 2) },
         opencode: { login: autoStart, instances: 2 },
         cursor: { login: autoStart, instances: config.get<number>('cursorCount', 2) },
         shell: { login: false, instances: 1 },
@@ -1455,7 +1456,7 @@ export function openPanelAndFocusQuickSpawn(context: vscode.ExtensionContext): v
 // vendor APIs for usage stats. Shared 60s SWR with panel/dispatch ONLY — the
 // SnapshotDetector 4s tick does not call agents view (see monitor/snapshotDetector).
 // Strategy mutations bust the cache so the UI reflects the new state.
-const INVENTORY_AGENT_KEYS = ['claude', 'codex', 'gemini', 'opencode', 'cursor', 'kimi', 'grok', 'droid', 'antigravity', 'copilot', 'amp'];
+const INVENTORY_AGENT_KEYS = ['claude', 'codex', 'opencode', 'cursor', 'kimi', 'grok', 'droid', 'antigravity', 'copilot', 'amp'];
 let cachedInventories: { data: Record<string, AgentInventory>; fetchedAt: number } | null = null;
 let inventoryFetchInflight: Promise<Record<string, AgentInventory>> | null = null;
 /** Activation seed ran once for this extension host lifetime. */
@@ -2113,10 +2114,6 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           const commandId = `agents.new${agentKey.replace(/[^a-zA-Z0-9]/g, '')}`;
           vscode.commands.executeCommand(commandId);
         } else {
-          // Built-in agent. A deprecated harness (e.g. gemini → Antigravity) has NO
-          // registered `agents.new<Harness>` command, so firing its commandId would
-          // surface a "command not found" toast. Refuse it with a clear message
-          // instead of dispatching at nothing.
           if (isDeprecatedAgentKey(agentKey)) {
             void vscode.window.showWarningMessage(
               `${agentKey} is deprecated and can no longer be launched from AGI EXT. Use Antigravity instead.`
@@ -2387,6 +2384,10 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
       }
       case 'dispatchTask': {
         const agentType = typeof message.agentType === 'string' ? message.agentType : 'claude';
+        if (isDeprecatedAgentKey(agentType)) {
+          vscode.window.showErrorMessage(`Unsupported agent: ${agentType}. Choose a supported harness.`);
+          break;
+        }
         // Device target: spawn the agent on a registered machine over SSH, in the
         // resolved project path, honoring the auto-sync policy.
         // Kept separate from the local/cloud branches below (which are unchanged).
@@ -3570,7 +3571,6 @@ function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): s
   const claudeIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'claude.png'));
   const codexIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'chatgpt.png'));
   const codexIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'chatgpt-light.png'));
-  const geminiIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'gemini.png'));
   const opencodeIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'opencode.png'));
   const cursorIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'cursor.png'));
   const cursorIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'cursor-light.png'));
@@ -3594,7 +3594,6 @@ function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): s
     window.__ICONS__ = {
       claude: "${claudeIcon}",
       codex: { dark: "${codexIcon}", light: "${codexIconLight}" },
-      gemini: "${geminiIcon}",
       opencode: "${opencodeIcon}",
       cursor: { dark: "${cursorIcon}", light: "${cursorIconLight}" },
       shell: "${agentsIcon}",
