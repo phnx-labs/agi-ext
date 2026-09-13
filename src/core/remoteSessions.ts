@@ -71,9 +71,6 @@ export interface RemoteAttachment {
   thumbnailUri?: string;
 }
 
-/** Agent types whose session files session.activity.ts knows how to parse. */
-type ParsableAgentType = 'claude' | 'codex';
-
 // normalizeHost now lives in src/shared/project.ts (imported + re-exported above).
 
 /**
@@ -428,9 +425,8 @@ export interface RemoteSession {
   /** Epoch ms of the most recent OBSERVED activity (the session file's last write).
    *  File-backed sessions get their mtime from the fan-out after enrichment; it is 0
    *  when there is no activity signal (a status-only remote/ssh session). NEVER
-   *  backfilled from startedAtMs — start time is not activity. Drives staleness
-   *  (isStaleSession) so an idle-for-days session stops being reported running /
-   *  needs-you, WITHOUT hiding a remote agent that merely started long ago. */
+   *  backfilled from startedAtMs — start time is not activity. Consumers read it
+   *  directly for freshness/heartbeat; an old value alone never hides a session. */
   lastActivityMs: number;
   /** The session's task/prompt line from the CLI payload (`topic`/`label`). Shown
    *  on the card when Tier-1 has no enriched activity yet (remote hosts). */
@@ -1413,54 +1409,6 @@ export function dedupeSessions(sessions: RemoteSession[]): RemoteSession[] {
 }
 
 /**
- * A session whose last OBSERVED ACTIVITY was this long ago is treated as dead and
- * dropped from the live roster so it can't be reported running or needs-you. Six
- * hours comfortably clears an idle-overnight agent while killing sessions abandoned
- * for days (e.g. an 11-day-old file-backed session last written to 11 days ago).
- */
-export const STALE_SESSION_THRESHOLD_MS = 6 * 60 * 60 * 1000;
-
-/**
- * A session's last-activity epoch — the enriched session-file mtime (set by the
- * fan-out for file-backed sessions). This is a GENUINE activity signal: the *last
- * write*, not the session start. It is deliberately NOT backfilled from startedAtMs,
- * because start time says nothing about recent activity — a remote agent that started
- * days ago may be working right now. 0 means we have no activity signal (a status-only
- * remote/ssh session, or a session with no file), and such a session is never aged out.
- */
-export function sessionLastActivityMs(s: RemoteSession): number {
-  return s.lastActivityMs || 0;
-}
-
-/**
- * True when a session's last observed activity is older than `thresholdMs`. A session
- * with no activity signal at all (0) is NEVER forced stale — we can't age what we
- * can't see, and a false positive would hide a live agent that merely STARTED long
- * ago (the key distinction: start time is not activity).
- */
-export function isStaleSession(
-  s: RemoteSession,
-  now: number,
-  thresholdMs: number = STALE_SESSION_THRESHOLD_MS
-): boolean {
-  const last = sessionLastActivityMs(s);
-  if (last <= 0) return false;
-  return now - last >= thresholdMs;
-}
-
-/**
- * Drop stale sessions so counts, the feed, and needs-you all exclude long-dead
- * sessions. Pure; the fan-out applies it to the merged cross-host set.
- */
-export function filterStaleSessions(
-  sessions: RemoteSession[],
-  now: number,
-  thresholdMs: number = STALE_SESSION_THRESHOLD_MS
-): RemoteSession[] {
-  return sessions.filter((s) => !isStaleSession(s, now, thresholdMs));
-}
-
-/**
  * Parse session rows from the CLI payload (string or array) into
  * RemoteSessions for one host. Malformed input yields an empty array rather than
  * throwing, so one bad host never sinks the whole fan-out.
@@ -1600,7 +1548,7 @@ function pickSessionRecord(data: unknown, sessionId?: string): Record<string, un
     // A by-id lookup normally returns exactly one row; match explicitly anyway so
     // a wider payload can never label a tab from someone else's session.
     if (sessionId) return records.find((r) => r.id === sessionId) ?? null;
-    return records.length === 1 ? records[0] : null;
+    return records.length === 1 ? (records[0] ?? null) : null;
   }
   if (!data || typeof data !== 'object') return null;
   const session = (data as Record<string, unknown>).session;

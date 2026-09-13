@@ -1,9 +1,8 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { DeviceStats, isDeviceOnline } from '../core/deviceHealth';
+import { isDeviceOnline } from '../core/deviceHealth';
 import { RepoSyncStatus } from '../core/repoSync';
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
-import { createTimedCache, cachedInFlight } from '../core/cachedInFlight';
 
 const execFileAsync = promisify(execFile);
 
@@ -93,16 +92,7 @@ export async function listRegisteredDevices(): Promise<Device[]> {
   }
 }
 
-const CACHE_TTL_MS = 6_000;
 const PROBE_TIMEOUT_MS = 20_000;
-
-// Both fleet probes coalesce concurrent + repeated calls per host through the
-// shared cachedInFlight guard, so N uncoordinated callers (the launch-health
-// timer, the Dispatch panel, each launch) never each spawn a full-fleet fan-out
-// of `agents` subprocesses for the same host.
-const statsStore = createTimedCache<DeviceStats>();
-// null means SSH-unreachable (not "zero agents") — see countRunningAgentsOnce (RUSH-2054).
-const agentCountStore = createTimedCache<number | null>();
 
 function augmentedEnv(binPath: string): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${bootstrapPath(binPath)}:${process.env.PATH ?? ''}` };
@@ -119,63 +109,6 @@ export async function probeReachable(host: string): Promise<boolean> {
     return device?.online !== false;
   } catch {
     return false;
-  }
-}
-
-async function fetchDeviceStats(
-  host: string,
-  opts: { isLocal: boolean },
-): Promise<DeviceStats> {
-  return cachedInFlight(statsStore, host, CACHE_TTL_MS, () => fetchDeviceStatsOnce(host, opts));
-}
-
-async function fetchDeviceStatsOnce(
-  host: string,
-  _opts: { isLocal: boolean },
-): Promise<DeviceStats> {
-  const fetchedAt = Date.now();
-  try {
-    const bin = await resolveAgentsBin();
-    const { stdout } = await execFileAsync(bin, ['devices', 'status', '--json'], {
-      timeout: PROBE_TIMEOUT_MS,
-      env: augmentedEnv(bin),
-    });
-    const parsed = JSON.parse(stdout) as { devices?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
-    const rows = Array.isArray(parsed) ? parsed : parsed.devices ?? [];
-    const row = rows.find((item) => item.name === host || item.host === host);
-    return {
-      host,
-      reachable: row ? row.online !== false && row.reachable !== false : isLocalHost(host),
-      loadAvg1: typeof row?.loadAvg1 === 'number' ? row.loadAvg1 : undefined,
-      memPercent: typeof row?.memPercent === 'number' ? row.memPercent : undefined,
-      fetchedAt,
-    };
-  } catch {
-    return { host, reachable: false, fetchedAt };
-  }
-}
-
-async function countRunningAgents(host: string, opts: { isLocal: boolean }): Promise<number | null> {
-  return cachedInFlight(agentCountStore, host, CACHE_TTL_MS, () => countRunningAgentsOnce(host, opts));
-}
-
-async function countRunningAgentsOnce(host: string, opts: { isLocal: boolean }): Promise<number | null> {
-  try {
-    const stats = await fetchDeviceStatsOnce(host, opts);
-    const bin = await resolveAgentsBin();
-    const { stdout } = await execFileAsync(bin, ['devices', 'status', '--json'], { timeout: PROBE_TIMEOUT_MS, env: augmentedEnv(bin) });
-    const parsed = JSON.parse(stdout) as { devices?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
-    const rows = Array.isArray(parsed) ? parsed : parsed.devices ?? [];
-    const row = rows.find((item) => item.name === host || item.host === host);
-    const count = row?.agents ?? row?.activeSessions ?? row?.running;
-    return typeof count === 'number' ? count : (stats.reachable ? 0 : null);
-  } catch {
-    // Local: a failing `agents sessions` means zero active sessions, not unreachable.
-    // Remote: any failure (timeout, SSH refused, CLI error) means the device is
-    // unreachable or non-functional — return null so callers never treat it as idle
-    // and select it as the least-busy candidate (RUSH-2054).
-    if (opts.isLocal) return 0;
-    return null;
   }
 }
 

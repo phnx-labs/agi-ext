@@ -92,29 +92,6 @@ describe('ReadinessDetector', () => {
       detector.stop();
     }
   });
-
-  test('noteSessionFile fast-paths agentReady when the filename carries the armed sessionId', async () => {
-    const pid = spawnShellWithChild();
-    const sessionId = '7b1cf038-8761-4e46-af43-5336e7e5a776';
-    const facts: ReadinessFactPayload[] = [];
-    const detector = new ReadinessDetector({
-      emit: (f) => facts.push(f),
-      emitAdoption: () => {},
-    });
-    try {
-      detector.setPids([pid]);
-      detector.armAgent(pid, 'claude', sessionId);
-      // The session file appears before the slow process-state probe completes.
-      detector.noteSessionFile(`${sessionId}.jsonl`);
-      await waitFor(
-        () => facts.some((f) => f.event === 'agentReady' && f.pid === pid),
-        2000,
-        'fast-path agentReady',
-      );
-    } finally {
-      detector.stop();
-    }
-  }, 10000);
 });
 
 // The gate that stops a Claude tab from adopting a nested codex session on

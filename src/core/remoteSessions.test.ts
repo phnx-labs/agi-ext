@@ -17,12 +17,8 @@ import {
   groupByHost,
   reconcileHosts,
   dialablePeerScopes,
-  isStaleSession,
-  filterStaleSessions,
-  sessionLastActivityMs,
   parseSessionLabelSource,
   isDerivedSessionName,
-  STALE_SESSION_THRESHOLD_MS,
   type RemoteSession,
   type RawActiveSession,
   type ProjectRule,
@@ -814,64 +810,6 @@ describe('dialablePeerScopes — the peers the follower-degraded gate may wait o
       { name: 'iphone182', online: true, platform: undefined },
     ], 'zion');
     expect(scopes).toEqual(['yosemite-s0']);
-  });
-});
-
-describe('staleness — long-dead sessions drop out of running / needs-you', () => {
-  const NOW = 1_700_000_000_000;
-  const mk = (over: Partial<RemoteSession>): RemoteSession => ({
-    ...normalizeActiveSession(
-      { kind: 'claude', status: 'input_required', sessionFile: '/x/abcd1234.jsonl' } as RawActiveSession,
-      'zion',
-      NOW,
-    ),
-    ...over,
-  });
-
-  test('sessionLastActivityMs is the observed-activity mtime ONLY — never start time', () => {
-    expect(sessionLastActivityMs(mk({ lastActivityMs: 500, startedAtMs: 100 }))).toBe(500);
-    // startedAtMs is NOT a fallback: a session that started at 100 with no observed
-    // activity has last-activity 0, so it can never be aged out on start time alone.
-    expect(sessionLastActivityMs(mk({ lastActivityMs: 0, startedAtMs: 100 }))).toBe(0);
-    expect(sessionLastActivityMs(mk({ lastActivityMs: 0, startedAtMs: 0 }))).toBe(0);
-  });
-
-  test('a session whose file was last written past the threshold is stale (kills the 11-day session)', () => {
-    const elevenDays = 11 * 24 * 60 * 60 * 1000;
-    const dead = mk({ lastActivityMs: NOW - elevenDays });
-    expect(isStaleSession(dead, NOW)).toBe(true);
-  });
-
-  test('a session active within the threshold is NOT stale', () => {
-    const fresh = mk({ lastActivityMs: NOW - (STALE_SESSION_THRESHOLD_MS - 1000) });
-    expect(isStaleSession(fresh, NOW)).toBe(false);
-  });
-
-  test('a session STARTED long ago but ACTIVE right now is NOT stale (the review defect)', () => {
-    // A remote agent that started days ago but wrote to its session file seconds ago
-    // must be retained. This is the case start-time-based staleness would wrongly hide.
-    const oldStartFreshActivity = mk({ startedAtMs: NOW - 5 * 24 * 60 * 60 * 1000, lastActivityMs: NOW - 3000 });
-    expect(isStaleSession(oldStartFreshActivity, NOW)).toBe(false);
-  });
-
-  test('a status-only remote session (no activity signal) is never staled, even if started days ago', () => {
-    // Remote/ssh sessions are status-only: lastActivityMs stays 0. An old startedAtMs
-    // must NOT age them out — we have no evidence they are idle.
-    const remoteOldStart = mk({ startedAtMs: NOW - 30 * 24 * 60 * 60 * 1000, lastActivityMs: 0 });
-    expect(isStaleSession(remoteOldStart, NOW)).toBe(false);
-  });
-
-  test('a session with no timestamp at all is never forced stale', () => {
-    const unknown = mk({ lastActivityMs: 0, startedAtMs: 0 });
-    expect(isStaleSession(unknown, NOW)).toBe(false);
-  });
-
-  test('filterStaleSessions drops only the aged-out sessions', () => {
-    const fresh = mk({ sessionId: 'aaaa1111', lastActivityMs: NOW - 1000 });
-    const stale = mk({ sessionId: 'bbbb2222', lastActivityMs: NOW - 2 * STALE_SESSION_THRESHOLD_MS });
-    const unknown = mk({ sessionId: 'cccc3333', lastActivityMs: 0, startedAtMs: 0 });
-    const kept = filterStaleSessions([fresh, stale, unknown], NOW);
-    expect(kept.map((s) => s.sessionId).sort()).toEqual(['aaaa1111', 'cccc3333']);
   });
 });
 

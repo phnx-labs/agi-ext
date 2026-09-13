@@ -164,12 +164,14 @@ export function parseTerminalName(name: string): ParsedTerminalName {
   if (processTitle) {
     const token = processTitle[1];
     const label = processTitle[2]?.trim() || null;
-    const canonical =
-      NAME_TO_PREFIX[token] ||
-      NAME_TO_PREFIX[token.toLowerCase()] ||
-      NAME_TO_PREFIX[token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()];
-    if (canonical) {
-      return { isAgent: true, prefix: canonical, label, sessionChunk: null };
+    if (token) {
+      const canonical =
+        NAME_TO_PREFIX[token] ||
+        NAME_TO_PREFIX[token.toLowerCase()] ||
+        NAME_TO_PREFIX[token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()];
+      if (canonical) {
+        return { isAgent: true, prefix: canonical, label, sessionChunk: null };
+      }
     }
   }
 

@@ -60,27 +60,6 @@ const HISTORY_TIMEOUT_LOCAL_MS = 6000;
 const HISTORY_TIMEOUT_REMOTE_MS = 10000;
 const DETAIL_TIMEOUT_MS = 15000;
 
-/** Run `tasks` with at most `limit` in flight at once, preserving input order. */
-export async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (true) {
-      const i = next++;
-      if (i >= items.length) return;
-      out[i] = await fn(items[i], i);
-    }
-  };
-  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
-  await Promise.all(workers);
-  return out;
-}
-
-
 // --- Host discovery ---------------------------------------------------------
 
 /**
