@@ -6,6 +6,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+- Watchdog requests and replies use validated newline-delimited JSON, so a
+  client no longer has to close its connection before receiving a reply.
+  Stream frames are structurally validated without dropping large fragmented
+  resets, and leader teardown completes before releasing socket ownership.
 - Remove proven-unused session classifiers, readiness shortcuts, device-stat
   wrappers, layout helpers, and editor commands. Live session and command paths
   are preserved (#74).
