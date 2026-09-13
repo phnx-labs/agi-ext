@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { ALL_SWARM_AGENTS } from '../core/settings';
-import { buildCloudDispatchArgs, isDispatchRequest, writeSwarmConfig } from './settingsActions';
+import { buildCloudDispatchArgs, buildCloudTaskEnv, isDispatchRequest, writeSwarmConfig } from './settingsActions';
 
 const temporaryDirectories: string[] = [];
 function scratch(): string {
@@ -60,6 +60,21 @@ describe('shared agent configuration writes', () => {
 });
 
 describe('cloud dispatch argv boundary', () => {
+  test('task environment clears static and dynamic credentials while preserving identity', () => {
+    const previous = process.env.TASK_VERIFY_TOKEN;
+    process.env.TASK_VERIFY_TOKEN = 'verification-sentinel';
+    try {
+      const env = buildCloudTaskEnv('rc-check', '/workspace');
+      expect(env.GITHUB_TOKEN).toBe('');
+      expect(env.TASK_VERIFY_TOKEN).toBe('');
+      expect(env.AGENT_TERMINAL_ID).toBe('rc-check');
+      expect(env.AGENT_WORKSPACE_DIR).toBe('/workspace');
+      expect(Object.values(env).every(value => typeof value === 'string')).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.TASK_VERIFY_TOKEN;
+      else process.env.TASK_VERIFY_TOKEN = previous;
+    }
+  });
   test('round-trips metacharacters as literal argv without executing them', () => {
     const dir = scratch();
     const sentinel = path.join(dir, 'injected');

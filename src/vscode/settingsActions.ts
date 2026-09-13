@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ALL_SWARM_AGENTS, type SwarmAgentType } from '../core/settings';
 import type { AgentLaunchMode } from '../core/agents';
+import { buildAgentTerminalEnv } from '../core/terminals';
 
 export type WatchdogPolicyMsg = 'off' | 'keep' | 'handsoff';
 export interface NotifyPrefsMsg {
@@ -93,4 +94,10 @@ export function buildCloudDispatchArgs(request: {
   if (branch && !branch.toLowerCase().startsWith('auto')) args.push('--branch', branch);
   args.push('--mode', request.mode, '-p', request.prompt);
   return args;
+}
+
+export function buildCloudTaskEnv(terminalId: string, cwd?: string): Record<string, string> {
+  // ProcessExecution accepts strings, unlike TerminalOptions' null-to-delete env.
+  return Object.fromEntries(Object.entries(buildAgentTerminalEnv(terminalId, null, cwd))
+    .map(([key, value]) => [key, value ?? '']));
 }

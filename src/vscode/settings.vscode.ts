@@ -22,7 +22,7 @@ import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { shellQuote } from '../core/deviceDispatchShell';
-import { buildCloudDispatchArgs, isDispatchRequest, writeSwarmConfig, type WatchdogPolicyMsg, type NotifyPrefsMsg, type DispatchAttachmentMsg } from './settingsActions';
+import { buildCloudDispatchArgs, buildCloudTaskEnv, isDispatchRequest, writeSwarmConfig, type WatchdogPolicyMsg, type NotifyPrefsMsg, type DispatchAttachmentMsg } from './settingsActions';
 import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '../core/agents';
 import { CLAUDE_TITLE } from '../core/utils';
 import { discoverRecentSessions, getSessionPathBySessionId } from './sessions.vscode';
@@ -2635,10 +2635,11 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           for (const unit of units) {
             try {
               const bin = await resolveAgentsBin();
+              const terminalId = terminals.nextId(RUSH_CLOUD_PREFIX);
               const execution = new vscode.ProcessExecution(bin, buildCloudDispatchArgs({
                 provider: resolution.provider, agent: req.agent, repo, branch,
                 mode: cloudMode, prompt: unit.prompt,
-              }), { cwd: workspacePath, env: { PATH: bootstrapPath(bin) } });
+              }), { cwd: workspacePath, env: { ...buildCloudTaskEnv(terminalId, workspacePath), PATH: bootstrapPath(bin) } });
               const task = new vscode.Task(
                 { type: 'agents-cloud', dispatchId: randomUUID() },
                 vscode.workspace.workspaceFolders?.[0] ?? vscode.TaskScope.Global,
