@@ -22,11 +22,7 @@ const origMatchMedia = window.matchMedia
   getState: () => undefined,
   setState: () => {},
 })
-window.matchMedia = (() => ({
-  matches: false,
-  addEventListener: () => {},
-  removeEventListener: () => {},
-})) as typeof window.matchMedia
+
 
 afterEach(() => {
   document.body.innerHTML = ''

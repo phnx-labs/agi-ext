@@ -1,6 +1,6 @@
 import React from 'react'
 import { Rocker } from './PanelTab'
-import { AgentSettings } from '../../types'
+import type { AgentSettings } from '../../types'
 
 interface SourcesSectionProps {
   settings: AgentSettings

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Button } from './components/ui/button'
 
 // Import extracted modules
-import {
+import type {
   AgentSettings,
   SwarmStatus,
   SkillsStatus,
@@ -82,11 +82,14 @@ export default function App() {
     claude: 0, codex: 0, opencode: 0, cursor: 0, shell: 0, custom: {}
   })
   const [swarmStatus, setSwarmStatus] = useState<SwarmStatus>({
+    agentsCliAvailable: false,
+    agentsCliVersion: null,
     mcpEnabled: false,
     commandInstalled: false,
     agents: {
       claude: { installed: false, cliAvailable: false, mcpEnabled: false, commandInstalled: false },
       codex: { installed: false, cliAvailable: false, mcpEnabled: false, commandInstalled: false },
+      opencode: { installed: false, cliAvailable: false, mcpEnabled: false, commandInstalled: false },
     }
   })
 

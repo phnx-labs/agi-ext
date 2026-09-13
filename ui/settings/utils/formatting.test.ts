@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { formatPreviewTerminalTitle } from './formatting'
+import { formatPreviewTerminalTitle, getRunningCount } from './formatting'
 import type { DisplayPreferences } from '../types'
 
 const DEFAULT_DISPLAY: DisplayPreferences = {
@@ -10,6 +10,13 @@ const DEFAULT_DISPLAY: DisplayPreferences = {
   labelReplacesTitle: false,
   showLabelOnlyOnFocus: false,
 }
+
+test('running count reads numeric harness fields without treating custom metadata as a count', () => {
+  const counts = { claude: 2, codex: 1, opencode: 0, cursor: 0, shell: 0, custom: { local: 3 } }
+  expect(getRunningCount(counts, 'claude')).toBe(2)
+  expect(getRunningCount(counts, 'unknown')).toBe(0)
+  expect(getRunningCount(counts, 'custom')).toBe(0)
+})
 
 test('uses short code when showFullAgentNames is false', () => {
   const display: DisplayPreferences = { ...DEFAULT_DISPLAY, showFullAgentNames: false, showSessionIdInTitles: false }

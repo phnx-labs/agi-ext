@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 
-interface SlashCommandsListProps {
+export interface SlashCommandsListProps {
   items: Array<{
     title: string;
     command: (props: any) => void;
@@ -8,7 +8,11 @@ interface SlashCommandsListProps {
   command: (props: any) => void;
 }
 
-const SlashCommandsList = forwardRef((props: SlashCommandsListProps, ref) => {
+export interface SlashCommandsListRef {
+  onKeyDown: (props: { event: KeyboardEvent }) => boolean;
+}
+
+const SlashCommandsList = forwardRef<SlashCommandsListRef, SlashCommandsListProps>((props, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const selectItem = (index: number) => {

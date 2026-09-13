@@ -4,6 +4,7 @@ import { Input } from '../ui/input'
 import { postMessage } from '../../hooks'
 import { AgentDial } from './AgentDial'
 import { HarnessRoster } from './HarnessRoster'
+import { getRunningCount } from '../../utils'
 import { AgentResources } from './AgentResources'
 import { LaunchMatrix } from './LaunchMatrix'
 import { StatusBank } from './StatusBank'
@@ -193,7 +194,7 @@ export function PanelTab({
 
   const getAgentStatus = (agent: SwarmAgentType) => {
     const agentStatus = swarmStatus.agents[agent]
-    const count = (runningCounts as Record<string, number>)[agent] ?? 0
+    const count = getRunningCount(runningCounts, agent)
     if (!agentStatus?.cliAvailable) return { label: 'CLI Missing', level: 'failed' as const }
     if (count > 0) return { label: `${count} running`, level: 'running' as const }
     if (!agentStatus?.mcpEnabled || !agentStatus?.commandInstalled) return { label: 'Setup', level: 'pending' as const }
@@ -339,7 +340,7 @@ export function PanelTab({
               version: primaryInventory?.defaultVersion || undefined,
               account: primaryInventory?.defaultAccount || undefined,
               plan: primaryInventory?.defaultPlan || undefined,
-              running: (runningCounts as Record<string, number>)[primaryKey] ?? 0,
+              running: getRunningCount(runningCounts, primaryKey),
               skillsInstalled: primaryKey !== 'opencode' ? getSkillSummary(primaryKey as any).installed : undefined,
               skillsTotal: primaryKey !== 'opencode' ? getSkillSummary(primaryKey as any).total : undefined,
             }}
@@ -363,7 +364,7 @@ export function PanelTab({
               version: secondaryInventory?.defaultVersion || undefined,
               account: secondaryInventory?.defaultAccount || undefined,
               plan: secondaryInventory?.defaultPlan || undefined,
-              running: (runningCounts as Record<string, number>)[secondaryKey] ?? 0,
+              running: getRunningCount(runningCounts, secondaryKey),
               skillsInstalled: secondaryKey !== 'opencode' ? getSkillSummary(secondaryKey as any).installed : undefined,
               skillsTotal: secondaryKey !== 'opencode' ? getSkillSummary(secondaryKey as any).total : undefined,
             }}
@@ -450,7 +451,7 @@ export function PanelTab({
                         value={config.instances}
                         onChange={(e) => updateBuiltIn(agent, 'instances', Number(e.target.value))}
                         className="sw-fader-input"
-                        orient="vertical"
+                        {...{ orient: 'vertical' }}
                       />
                       <div className="sw-fader-labels">
                         {[8,6,4,2].map(n => (

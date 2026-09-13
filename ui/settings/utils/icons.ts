@@ -7,3 +7,7 @@ export function getIcon(icon: string | ThemedIcon | null | undefined, isLight: b
   if (!icon) return ''
   return typeof icon === 'string' ? icon : isLight ? icon.light : icon.dark
 }
+
+export function getAgentIcon(icons: IconConfig, key: string, isLight: boolean): string {
+  return getIcon(Object.entries(icons).find(([name]) => name === key)?.[1], isLight)
+}

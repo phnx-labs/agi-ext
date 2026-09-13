@@ -1,6 +1,6 @@
 import React from 'react'
 import type { TaskSummary, TerminalDetail, UnifiedTask, ProjectRule } from '../../types'
-import { UnifiedAgentsPane, WatchdogEventUI } from './UnifiedAgentsPane'
+import { UnifiedAgentsPane, type WatchdogEventUI } from './UnifiedAgentsPane'
 
 interface MissionControlTabProps {
   tasks: TaskSummary[]

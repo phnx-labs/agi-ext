@@ -188,6 +188,7 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
   useEffect(() => {
     if (selectedRepos.length !== 1) return
     const repo = selectedRepos[0]
+    if (!repo) return
     if (branchesByRepo[repo]) return
     postMessage({ type: 'fetchGithubBranches', repo })
   }, [selectedRepos, branchesByRepo])
@@ -301,7 +302,8 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
 
   useEffect(() => {
     if (!modelsForTarget.some((m) => m.id === agent)) {
-      setAgent(modelsForTarget[0].id)
+      const firstModel = modelsForTarget[0]
+      if (firstModel) setAgent(firstModel.id)
     }
   }, [runTarget, agent, modelsForTarget])
 
@@ -309,7 +311,7 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
   const priorityLabel = task.priority ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) : 'Medium'
 
   const createdAt = (task as UnifiedTask & { createdAt?: string }).createdAt
-  const createdRel = createdAt ? relTime(new Date(createdAt).getTime()) : null
+  const createdRel = createdAt ? relTime(createdAt) : null
 
   // Show the task switcher only when there are sibling tasks to jump to.
   const switcherEnabled = !!onTaskSwitch && !!tasks && tasks.length > 1

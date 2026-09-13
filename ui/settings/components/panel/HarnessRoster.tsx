@@ -1,6 +1,6 @@
 import React from 'react'
 import { postMessage } from '../../hooks'
-import { getIcon } from '../../utils'
+import { getAgentIcon, getRunningCount } from '../../utils'
 import type { AgentInventory, AgentInventoryVersion, AgentRunStrategy, IconConfig, RunningCounts } from '../../types'
 
 const ROSTER_ORDER = ['claude', 'codex', 'antigravity', 'grok', 'kimi', 'droid', 'cursor', 'opencode']
@@ -56,11 +56,12 @@ export function HarnessRoster({ agentInventories, runningCounts, icons, isLightT
         <div className="sw-roster-grid">
           {allKeys.map(key => {
             const inv = agentInventories[key]
+            if (!inv) return null
             const dv = defaultVersion(inv)
             const usage = usageState(dv)
-            const running = (runningCounts as Record<string, number>)[key] ?? 0
+            const running = getRunningCount(runningCounts, key)
             const pct = dv?.sessionUsedPercent ?? 0
-            const iconSrc = getIcon(icons[key], isLightTheme)
+            const iconSrc = getAgentIcon(icons, key, isLightTheme)
             const name = DISPLAY_NAMES[key] || (key.charAt(0).toUpperCase() + key.slice(1))
             return (
               <div key={key} className={`sw-roster-card ${inv.signedInCount === 0 ? 'dim' : ''}`}>

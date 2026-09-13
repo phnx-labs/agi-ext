@@ -35,7 +35,9 @@ export function ProjectRulesSection({ settings, onSaveSettings }: ProjectRulesSe
     if (j < 0 || j >= rules.length) return
     const next = [...rules]
     const tmp = next[index]
-    next[index] = next[j]
+    const target = next[j]
+    if (!tmp || !target) return
+    next[index] = target
     next[j] = tmp
     writeRules(next)
   }

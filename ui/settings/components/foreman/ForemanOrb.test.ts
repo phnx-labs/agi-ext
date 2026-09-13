@@ -81,7 +81,7 @@ describe('Foreman overlay does not cover the surface behind it', () => {
     expect(orb).toContain('rows={1}')
     const placeholder = orb.match(/placeholder="([^"]+)"/)
     expect(placeholder).not.toBeNull()
-    expect(placeholder![1].length).toBeLessThanOrEqual(MAX_PLACEHOLDER_CHARS)
+    expect(placeholder![1]?.length).toBeLessThanOrEqual(MAX_PLACEHOLDER_CHARS)
   })
 
   test('the Foreman debug panel starts closed', () => {

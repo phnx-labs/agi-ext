@@ -30,7 +30,7 @@ describe('planDetector', () => {
       '/repo',
     )
     expect(plans).toHaveLength(1)
-    expect(plans[0].source).toBe('output')
+    expect(plans[0]?.source).toBe('output')
   })
 
   test('ignores ordinary markdown files', () => {
@@ -44,4 +44,3 @@ describe('planDetector', () => {
     expect(plans).toEqual([])
   })
 })
-

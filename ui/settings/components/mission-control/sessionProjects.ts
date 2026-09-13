@@ -92,7 +92,7 @@ function toLite(names: string[]): LinearProjectLite[] {
 /** "https://github.com/phnx-labs/agi-ext/pull/42" -> "phnx-labs/agi-ext". */
 export function repoSlugFromUrl(url: string | null | undefined): string {
   const m = (url || '').match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i)
-  if (!m) return ''
+  if (!m?.[1] || !m[2]) return ''
   return `${m[1]}/${m[2].replace(/\.git$/i, '')}`
 }
 

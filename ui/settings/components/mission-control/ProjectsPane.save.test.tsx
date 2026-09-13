@@ -56,9 +56,9 @@ describe('ProjectsPane save', () => {
     })
 
     expect(saved).toHaveLength(1)
-    expect(saved[0].id).toBe('phnx-labs-agents-cli')
-    expect(saved[0].repoSlug).toBe('phnx-labs/agents-cli')
-    expect(String(saved[0].id)).not.toContain('/')
+    expect(saved[0]?.id).toBe('phnx-labs-agents-cli')
+    expect(saved[0]?.repoSlug).toBe('phnx-labs/agents-cli')
+    expect(String(saved[0]?.id)).not.toContain('/')
 
     await act(async () => {
       root.unmount()
@@ -124,10 +124,10 @@ describe('ProjectsPane save', () => {
     })
 
     expect(saved).toHaveLength(1)
-    expect(saved[0].id).toBe('agents-cli')
-    expect(saved[0].name).toBe('agents-cli-renamed')
-    expect(saved[0].autoDispatch).toBe(true)
-    expect(saved[0].maxAgents).toBe(4)
+    expect(saved[0]?.id).toBe('agents-cli')
+    expect(saved[0]?.name).toBe('agents-cli-renamed')
+    expect(saved[0]?.autoDispatch).toBe(true)
+    expect(saved[0]?.maxAgents).toBe(4)
 
     await act(async () => {
       root.unmount()
@@ -188,7 +188,7 @@ describe('ProjectsPane save', () => {
     // The form only edits the primary directory — dirs[0] is rebuilt from
     // path/repoSlug (unchanged here), and dirs[1..] carry through from the
     // base project exactly as they were.
-    expect(saved[0].dirs).toEqual([
+    expect(saved[0]?.dirs).toEqual([
       { slug: 'phnx-labs/agents-cli', path: '/repo/agents-cli' },
       { slug: 'phnx-labs/agents-cli-docs', path: '/repo/agents-cli-docs' },
       { slug: 'phnx-labs/agents-system', path: '/repo/agents-system' },

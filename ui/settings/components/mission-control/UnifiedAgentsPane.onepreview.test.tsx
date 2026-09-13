@@ -34,11 +34,7 @@ const posted: Record<string, unknown>[] = []
   getState: () => undefined,
   setState: () => {},
 })
-window.matchMedia = (() => ({
-  matches: false,
-  addEventListener: () => {},
-  removeEventListener: () => {},
-})) as typeof window.matchMedia
+
 
 const noop = () => {}
 const paneProps = {

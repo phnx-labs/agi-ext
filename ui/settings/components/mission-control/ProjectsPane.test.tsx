@@ -51,12 +51,12 @@ describe('ProjectsPane edit interaction', () => {
 
     try {
       await act(async () => {
-        editButtons[1].click()
+        editButtons[1]?.click()
       })
 
       const highlightedRows = Array.from(rootElement.querySelectorAll('.dispatch-panel.editing'))
       expect(highlightedRows).toHaveLength(1)
-      expect(highlightedRows[0].querySelector('span')?.textContent).toBe('Beta')
+      expect(highlightedRows[0]?.querySelector('span')?.textContent).toBe('Beta')
 
       const folderInput = rootElement.querySelector(
         'input[placeholder="/absolute/path/to/repo"]',
@@ -64,6 +64,7 @@ describe('ProjectsPane edit interaction', () => {
       expect(document.activeElement).toBe(folderInput)
 
       const formContainer = folderInput.closest('.dispatch-panel')?.parentElement
+      if (!formContainer) throw new Error('Expected a project form container')
       expect(scrolledElements).toContain(formContainer)
     } finally {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView
