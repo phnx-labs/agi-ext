@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { ALL_SWARM_AGENTS } from '../core/settings';
-import { buildCloudDispatchCommand, writeSwarmConfig } from './settingsActions';
+import { runAgents } from '../core/agentsBin';
+import { buildCloudDispatchArgs, isDispatchRequest, writeSwarmConfig } from './settingsActions';
 
 const temporaryDirectories: string[] = [];
 function scratch(): string {
@@ -59,24 +60,59 @@ describe('shared agent configuration writes', () => {
   });
 });
 
-describe('cloud dispatch shell boundary', () => {
+describe('cloud dispatch argv boundary', () => {
   test('round-trips metacharacters as literal argv without executing them', () => {
     const dir = scratch();
     const sentinel = path.join(dir, 'injected');
     const payload = `topic'; touch ${sentinel}; echo '$(touch ${sentinel})\nnext`;
     const request = { provider: 'rush' as const, agent: payload, repo: `owner/${payload}`, branch: payload, mode: 'edit' as const, prompt: payload };
-    const command = buildCloudDispatchCommand(request);
-    // A shell function prints the real argv without launching an agent or cloud task.
-    const output = execFileSync('/bin/sh', ['-c', `agents() { printf '%s\\0' "$@"; }; ${command}`]);
-    expect(output.toString().split('\0').slice(0, -1)).toEqual([
-      'cloud', 'run', '--provider', 'rush', '--agent', payload,
+    const args = buildCloudDispatchArgs(request);
+    const output = execFileSync(process.execPath, ['-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', ...args]);
+    expect(JSON.parse(output.toString())).toEqual([
+      'cloud', 'run', '--no-follow', '--provider', 'rush', '--agent', payload,
       '--repo', request.repo, '--branch', payload, '--mode', 'edit', '-p', payload,
     ]);
     expect(fs.existsSync(sentinel)).toBe(false);
   });
 
+  test('canonical runner executes real CLI help with user data as argv', async () => {
+    const sentinel = path.join(scratch(), 'injected');
+    const branch = `topic; touch ${sentinel}; #`;
+    const { stdout } = await runAgents(['cloud', 'run', '--help', '--branch', branch], { timeout: 15_000 });
+    expect(stdout).toContain('Dispatch a task to a cloud agent.');
+    expect(stdout).toContain('--no-follow');
+    expect(fs.existsSync(sentinel)).toBe(false);
+  }, 20_000);
+
   test.each([undefined, '', 'auto (new branch)'])('omits automatic branch choice %s', (branch) => {
-    const command = buildCloudDispatchCommand({ provider: 'factory', agent: 'codex', repo: 'owner/repo', branch, mode: 'full', prompt: 'hello' });
+    const command = buildCloudDispatchArgs({ provider: 'factory', agent: 'codex', repo: 'owner/repo', branch, mode: 'full', prompt: 'hello' });
     expect(command).not.toContain('--branch');
+  });
+});
+
+describe('dispatch request validation', () => {
+  const valid = {
+    prompt: 'Check this', agent: 'claude', runOn: 'rush', mode: 'plan',
+    ticketIds: [], attachments: [], watchdog: 'off', batch: 'all', headless: false,
+    notify: { events: { stall: true, question: true, plan: true, finish: false, fail: true }, channel: 'desktop', dnd: false },
+  };
+  test.each(['plan', 'edit', 'auto'])('accepts explicit %s mode', mode => {
+    expect(isDispatchRequest({ ...valid, mode })).toBe(true);
+  });
+  test.each([{}, undefined, null, '', 'full'])('rejects malformed mode %j instead of increasing autonomy', mode => {
+    expect(isDispatchRequest({ ...valid, mode })).toBe(false);
+  });
+  test.each([
+    undefined, null, {}, { ...valid.notify, events: undefined },
+    { ...valid.notify, events: { ...valid.notify.events, plan: 'yes' } },
+    { ...valid.notify, channel: 'unknown' }, { ...valid.notify, dnd: 0 },
+  ])('rejects malformed notification settings %j', notify => {
+    expect(isDispatchRequest({ ...valid, notify })).toBe(false);
+  });
+  test.each([
+    { watchdog: 'unknown' }, { batch: {} }, { ticketIds: [null] }, { attachments: [null] },
+    { attachments: [{ type: 'image', name: 2 }] }, { projectPath: [] }, { runOn: null }, { agent: ' ' }, { headless: 'false' },
+  ])('rejects malformed request fields %j', fields => {
+    expect(isDispatchRequest({ ...valid, ...fields })).toBe(false);
   });
 });

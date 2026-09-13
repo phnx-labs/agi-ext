@@ -22,7 +22,7 @@ import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { shellQuote } from '../core/deviceDispatchShell';
-import { buildCloudDispatchCommand, writeSwarmConfig } from './settingsActions';
+import { buildCloudDispatchArgs, isDispatchRequest, writeSwarmConfig, type WatchdogPolicyMsg, type NotifyPrefsMsg, type DispatchAttachmentMsg } from './settingsActions';
 import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '../core/agents';
 import { CLAUDE_TITLE } from '../core/utils';
 import { discoverRecentSessions, getSessionPathBySessionId } from './sessions.vscode';
@@ -202,6 +202,7 @@ function resolveReposFromLabels(labels: string[] | undefined, owner: string | nu
 const RUSH_CLOUD_TERMINAL_NAME = 'Rush Cloud';
 const RUSH_CLOUD_PREFIX = 'rc';
 let rushCloudTerminal: vscode.Terminal | undefined;
+let cloudDispatchOutput: vscode.OutputChannel | undefined;
 
 async function getOrCreateRushCloudTerminal(
   context: vscode.ExtensionContext,
@@ -254,33 +255,6 @@ async function getOrCreateRushCloudTerminal(
 // hand. These shapes MUST stay in sync with that file.
 // ---------------------------------------------------------------------------
 type DispatchModeMsg = AgentLaunchMode; // 'plan' | 'auto' | 'edit'
-type WatchdogPolicyMsg = 'off' | 'keep' | 'handsoff';
-
-interface NotifyPrefsMsg {
-  events: { stall: boolean; question: boolean; plan: boolean; finish: boolean; fail: boolean };
-  channel: 'imessage' | 'slack' | 'desktop';
-  dnd: boolean;
-}
-
-interface DispatchAttachmentMsg { type: 'image' | 'file'; name: string; ref?: string }
-
-interface DispatchRequestMsg {
-  prompt: string;
-  ticketIds: string[];
-  attachments: DispatchAttachmentMsg[];
-  agent: string;
-  runOn: string;
-  project?: string;
-  projectPath?: string;
-  repo?: string;
-  branch?: string;
-  mode: DispatchModeMsg;
-  headless?: boolean;
-  watchdog: WatchdogPolicyMsg;
-  notify: NotifyPrefsMsg;
-  batch: 'all' | 'per';
-}
-
 interface PendingPlanMsg {
   sessionId: string;
   agentId: string;
@@ -2619,26 +2593,15 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
       // DispatchRequest (agent, host, project/repo, branch, mode, watchdog,
       // notify, batch) — replacing the field-by-field `dispatchTask` above.
       case 'dispatch': {
-        const req = message.request as DispatchRequestMsg | undefined;
-        if (!req || typeof req.prompt !== 'string' || typeof req.agent !== 'string'
-          || !req.agent.trim() || typeof req.runOn !== 'string'
-          || (req.branch !== undefined && typeof req.branch !== 'string')
-          || (req.repo !== undefined && typeof req.repo !== 'string')) {
+        const req: unknown = message.request;
+        if (!isDispatchRequest(req)) {
           vscode.window.showErrorMessage('Dispatch: malformed request');
           break;
         }
-        const ticketIds = Array.isArray(req.ticketIds)
-          ? req.ticketIds.filter((t: unknown): t is string => typeof t === 'string')
-          : [];
-        const attachments: DispatchAttachmentMsg[] = Array.isArray(req.attachments)
-          ? req.attachments.filter((attachment): attachment is DispatchAttachmentMsg =>
-            !!attachment && (attachment.type === 'image' || attachment.type === 'file')
-            && typeof attachment.name === 'string'
-            && (attachment.ref === undefined || typeof attachment.ref === 'string'))
-          : [];
+        const { ticketIds, attachments } = req;
         const notify = req.notify;
-        const watchdog: WatchdogPolicyMsg = req.watchdog === 'keep' || req.watchdog === 'handsoff' ? req.watchdog : 'off';
-        const mode: DispatchModeMsg = req.mode === 'plan' || req.mode === 'edit' ? req.mode : 'auto';
+        const watchdog = req.watchdog;
+        const mode = req.mode;
 
         if (!req.prompt.trim() && ticketIds.length === 0) {
           vscode.window.showErrorMessage('Dispatch: nothing to do — add a prompt or attach a ticket');
@@ -2668,16 +2631,29 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
             vscode.window.showErrorMessage('Cloud dispatch: pick a repo (owner/name) first.');
             break;
           }
-          const term = await getOrCreateRushCloudTerminal(context, workspacePath || process.cwd());
+          if (!cloudDispatchOutput) {
+            cloudDispatchOutput = vscode.window.createOutputChannel('Agents Cloud Dispatch');
+            context.subscriptions.push(cloudDispatchOutput);
+          }
+          cloudDispatchOutput.show(true);
           const cloudMode = cloudModeForDispatch(mode);
           const branch = typeof req.branch === 'string' ? req.branch.trim() : '';
           for (const unit of units) {
-            term.sendText(buildCloudDispatchCommand({
-              provider: resolution.provider, agent: req.agent, repo, branch,
-              mode: cloudMode, prompt: unit.prompt,
-            }));
+            cloudDispatchOutput.appendLine(`Submitting ${req.agent} to ${resolution.provider} for ${repo}…`);
+            try {
+              const result = await runAgents(buildCloudDispatchArgs({
+                provider: resolution.provider, agent: req.agent, repo, branch,
+                mode: cloudMode, prompt: unit.prompt,
+              }), { cwd: workspacePath, timeout: 120_000 });
+              cloudDispatchOutput.appendLine(result.stdout);
+              if (result.stderr) cloudDispatchOutput.appendLine(result.stderr);
+            } catch (error) {
+              const detail = error instanceof Error ? error.message : String(error);
+              cloudDispatchOutput.appendLine(detail);
+              void vscode.window.showErrorMessage('Cloud dispatch failed. See Agents Cloud Dispatch output for details.');
+              break;
+            }
           }
-          term.show(true);
           break;
         }
 
