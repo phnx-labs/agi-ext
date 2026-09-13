@@ -270,6 +270,18 @@ The rest of the dashboard composes the same way. Session rows describe conversat
 
 ## Findings
 
+The watchdog bridge and MCP client share the validated NDJSON contract in
+`src/mcp/watchdogProtocol.ts`; a newline, not EOF, completes a request or reply.
+Bridge teardown returns its completion promise to the leader gate, which retains
+ownership until pending startup and socket shutdown finish. The bridge never
+moves a successor's socket to repair ownership after the fact.
+
+Monitor frames are structurally validated before delivery. A complete valid
+frame has the same result whether received whole, coalesced, or fragmented.
+Incomplete-frame buffering remains unbounded: the CLI producer defines no maximum
+reset size, so a consumer-only cap would silently lose legitimate session facts.
+A shared producer/consumer size contract is required before adding that bound.
+
 Cloud dispatch validates webview requests in `settingsActions.ts` before building
 CLI arguments. The host runs those arguments with VS Code `ProcessExecution`,
 without shell interpolation, in a task terminal that retains CLI prompts and
