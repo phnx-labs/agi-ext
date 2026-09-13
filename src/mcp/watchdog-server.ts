@@ -4,11 +4,12 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import * as net from 'net';
-import * as path from 'path';
-import * as os from 'os';
-
-const SOCKET_PATH = path.join(os.homedir(), '.agents', '.tmp', 'watchdog.sock');
+import {
+  requestWatchdog,
+  WATCHDOG_SOCKET_PATH,
+  WatchdogRequest,
+  WatchdogResponse,
+} from './watchdogProtocol';
 
 const server = new Server(
   { name: 'watchdog', version: '1.0.0' },
@@ -72,40 +73,12 @@ Find peer session IDs with \`agents sessions --active\`. Sending to your own ses
   ],
 }));
 
-type ExtensionRequest =
-  | { sessionId: string; text: string; reason: string }
-  | { kind: 'peer'; senderSessionId: string; targetSessionId: string; text: string };
-
 async function sendToExtension(
-  msg: ExtensionRequest
-): Promise<{ success: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    const client = net.createConnection(SOCKET_PATH, () => {
-      client.write(JSON.stringify(msg));
-    });
-
-    let data = '';
-    client.on('data', (chunk) => {
-      data += chunk.toString();
-    });
-
-    client.on('end', () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch {
-        resolve({ success: false, error: 'Invalid response from extension' });
-      }
-    });
-
-    client.on('error', (err) => {
-      resolve({ success: false, error: `Socket error: ${err.message}` });
-    });
-
-    setTimeout(() => {
-      client.destroy();
-      resolve({ success: false, error: 'Timeout connecting to extension' });
-    }, 5000);
-  });
+  msg: WatchdogRequest
+): Promise<WatchdogResponse> {
+  // One NDJSON request line, one NDJSON response line — the newline is the
+  // frame boundary on both sides; the socket is never half-closed.
+  return requestWatchdog(msg, { socketPath: WATCHDOG_SOCKET_PATH });
 }
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -140,7 +113,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    const result = await sendToExtension({ sessionId, text, reason });
+    const result = await sendToExtension({ kind: 'nudge', sessionId, text, reason });
 
     return {
       content: [
