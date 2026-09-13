@@ -32,14 +32,21 @@ const commands = {
   },
 };
 
+const namespaceSurface = {
+  commands,
+  window: {},
+  workspace: {},
+  TabInputTerminal: class {},
+};
+
 /**
  * Build a `vscode` double: the shared API constants plus whatever surface this
  * test drives. Pass the result to `mock.module('vscode', () => vscodeDouble({…}))`.
  */
 export function vscodeDouble<T extends Record<string, unknown>>(
   surface: T = {} as T,
-): T & typeof VSCODE_API_CONSTANTS & { commands: typeof commands } {
+): T & typeof VSCODE_API_CONSTANTS & typeof namespaceSurface {
   // Bun fixes namespace export names on the first import. Later registrations
-  // can replace commands, but cannot add it to an already-imported namespace.
-  return { ...VSCODE_API_CONSTANTS, commands, ...surface };
+  // can replace these surfaces, but cannot add an already-imported export.
+  return { ...VSCODE_API_CONSTANTS, ...namespaceSurface, ...surface };
 }
