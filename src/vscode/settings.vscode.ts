@@ -22,6 +22,7 @@ import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { shellQuote } from '../core/deviceDispatchShell';
+import { buildCloudDispatchCommand, writeSwarmConfig } from './settingsActions';
 import { AgentLaunchMode, extractPlanFromSessionJson, planTextToSteps } from '../core/agents';
 import { CLAUDE_TITLE } from '../core/utils';
 import { discoverRecentSessions, getSessionPathBySessionId } from './sessions.vscode';
@@ -1209,35 +1210,6 @@ const AGENTS_CONFIG_DIR = path.join(homedir(), '.agents');
 const AGENTS_CONFIG_PATH = path.join(AGENTS_CONFIG_DIR, 'config.json');
 const PROMPTS_PATH = path.join(AGENTS_CONFIG_DIR, 'prompts.json');
 
-// Write swarm config file with enabled agents
-function writeSwarmConfig(enabledAgents: SwarmAgentType[]): void {
-  try {
-    fs.mkdirSync(AGENTS_CONFIG_DIR, { recursive: true });
-
-    // Read existing config to preserve agent settings
-    let existingConfig: any = { agents: {}, providers: {} };
-    if (fs.existsSync(AGENTS_CONFIG_PATH)) {
-      try {
-        existingConfig = JSON.parse(fs.readFileSync(AGENTS_CONFIG_PATH, 'utf-8'));
-      } catch {
-        // If file is invalid, use empty config
-      }
-    }
-
-    // Update enabled status for all agent types
-    for (const agentType of ALL_SWARM_AGENTS) {
-      if (!existingConfig.agents[agentType]) {
-        existingConfig.agents[agentType] = { enabled: false, models: {}, provider: '' };
-      }
-      existingConfig.agents[agentType].enabled = enabledAgents.includes(agentType);
-    }
-
-    fs.writeFileSync(AGENTS_CONFIG_PATH, JSON.stringify(existingConfig, null, 2));
-  } catch (err) {
-    console.error('Failed to write swarm config:', err);
-  }
-}
-
 // Read prompts from YAML file (persists across extension uninstall)
 export function readPrompts(): PromptEntry[] {
   const { prompts, usedDefaults } = readPromptsFromPath(PROMPTS_PATH);
@@ -1414,8 +1386,13 @@ export function getDefaultModel(
 
 // Save settings to global state and write configs to files
 export async function saveSettings(context: vscode.ExtensionContext, settings: AgentSettings): Promise<void> {
+  try {
+    writeSwarmConfig(AGENTS_CONFIG_PATH, settings.swarmEnabledAgents);
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Settings were not saved. Could not update ${AGENTS_CONFIG_PATH}: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
   await context.globalState.update('agentSettings', settings);
-  writeSwarmConfig(settings.swarmEnabledAgents);
   // Sync prompts to file for persistence across uninstall
   if (settings.prompts) {
     writePrompts(settings.prompts);
@@ -2643,14 +2620,22 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
       // notify, batch) — replacing the field-by-field `dispatchTask` above.
       case 'dispatch': {
         const req = message.request as DispatchRequestMsg | undefined;
-        if (!req || typeof req.prompt !== 'string' || typeof req.agent !== 'string') {
+        if (!req || typeof req.prompt !== 'string' || typeof req.agent !== 'string'
+          || !req.agent.trim() || typeof req.runOn !== 'string'
+          || (req.branch !== undefined && typeof req.branch !== 'string')
+          || (req.repo !== undefined && typeof req.repo !== 'string')) {
           vscode.window.showErrorMessage('Dispatch: malformed request');
           break;
         }
         const ticketIds = Array.isArray(req.ticketIds)
           ? req.ticketIds.filter((t: unknown): t is string => typeof t === 'string')
           : [];
-        const attachments: DispatchAttachmentMsg[] = Array.isArray(req.attachments) ? req.attachments : [];
+        const attachments: DispatchAttachmentMsg[] = Array.isArray(req.attachments)
+          ? req.attachments.filter((attachment): attachment is DispatchAttachmentMsg =>
+            !!attachment && (attachment.type === 'image' || attachment.type === 'file')
+            && typeof attachment.name === 'string'
+            && (attachment.ref === undefined || typeof attachment.ref === 'string'))
+          : [];
         const notify = req.notify;
         const watchdog: WatchdogPolicyMsg = req.watchdog === 'keep' || req.watchdog === 'handsoff' ? req.watchdog : 'off';
         const mode: DispatchModeMsg = req.mode === 'plan' || req.mode === 'edit' ? req.mode : 'auto';
@@ -2686,13 +2671,11 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           const term = await getOrCreateRushCloudTerminal(context, workspacePath || process.cwd());
           const cloudMode = cloudModeForDispatch(mode);
           const branch = typeof req.branch === 'string' ? req.branch.trim() : '';
-          // The panel's default "auto (new branch)" means let the cloud create
-          // one — only pass --branch for a real, explicit branch name.
-          const branchFlag = branch && !branch.toLowerCase().startsWith('auto') ? ` --branch ${branch}` : '';
           for (const unit of units) {
-            term.sendText(
-              `agents cloud run --provider ${resolution.provider} --agent ${req.agent} --repo ${repo}${branchFlag} --mode ${cloudMode} -p ${shellQuote(unit.prompt)}`,
-            );
+            term.sendText(buildCloudDispatchCommand({
+              provider: resolution.provider, agent: req.agent, repo, branch,
+              mode: cloudMode, prompt: unit.prompt,
+            }));
           }
           term.show(true);
           break;
