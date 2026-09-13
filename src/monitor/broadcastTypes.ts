@@ -95,27 +95,18 @@ export function isMonitorFrame(value: unknown): value is MonitorFrame {
  * Malformed or structurally invalid lines are dropped rather than throwing, so
  * one corrupt frame never tears down a persistent connection.
  *
- * Sizing: every push FIRST drains complete lines — those are never size-
- * limited, so a large but legitimate frame (e.g. a session reset replay)
- * decodes intact however it is fragmented. Only the unterminated tail is
- * bounded (`maxBufferedChars`, default 1 MiB, well above the largest real
- * frame): a tail past the bound is an incomplete frame from a silent or
- * dribbling peer, so it is discarded and the count goes to {@link droppedCount}.
- * When the peer finally terminates that oversized partial, the residue is
- * discarded through its newline without being parsed, and framing resumes.
+ * The incomplete tail is deliberately UNBOUNDED: the producer (the CLI's
+ * session stream) defines no maximum frame size — a full-floor session reset
+ * runs to multiple MB — so any decoder-side ceiling invents a consumer-only
+ * limit the producer does not honor and silently drops legitimate data.
+ * Bounding the buffer is deferred until the canonical producer contract
+ * defines a max frame size; do not reintroduce a cap here without it.
  */
 export class FrameDecoder {
   private buf = '';
   private dropped = 0;
-  /** Set when the tail outgrew the bound; the next line is residue to skip. */
-  private tailOversized = false;
-  private readonly maxBufferedChars: number;
 
-  constructor(options: { maxBufferedChars?: number } = {}) {
-    this.maxBufferedChars = options.maxBufferedChars ?? 1024 * 1024;
-  }
-
-  /** Number of lines dropped so far (unparseable, invalid, or oversized). */
+  /** Number of lines dropped so far (unparseable or failed validation). */
   get droppedCount(): number {
     return this.dropped;
   }
@@ -125,21 +116,13 @@ export class FrameDecoder {
     const frames: MonitorFrame[] = [];
     let idx: number;
     while ((idx = this.buf.indexOf('\n')) !== -1) {
-      const line = this.buf.slice(0, idx);
+      const line = this.buf.slice(0, idx).trim();
       this.buf = this.buf.slice(idx + 1);
-      if (this.tailOversized) {
-        // Remainder of a partial frame that outgrew the incomplete-tail bound.
-        // It was already counted when the bound tripped; discard it through
-        // this terminating newline and resume framing.
-        this.tailOversized = false;
-        continue;
-      }
-      const trimmed = line.trim();
-      if (!trimmed) {
+      if (!line) {
         continue;
       }
       try {
-        const parsed: unknown = JSON.parse(trimmed);
+        const parsed: unknown = JSON.parse(line);
         if (isMonitorFrame(parsed)) {
           frames.push(parsed);
         } else {
@@ -149,12 +132,6 @@ export class FrameDecoder {
         // Drop the malformed line; the connection stays alive.
         this.dropped += 1;
       }
-    }
-    // Bound only what is still incomplete. Anything complete was drained above.
-    if (this.buf.length > this.maxBufferedChars) {
-      this.tailOversized = true;
-      this.buf = '';
-      this.dropped += 1;
     }
     return frames;
   }
