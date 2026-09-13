@@ -354,6 +354,13 @@ Gemini's executable integration is deleted: no CLI probes, setup commands, promp
 <figcaption>Never hand-roll vsce publish or ovsx publish. release.sh owns version stamping, gates, and routing.</figcaption>
 </figure>
 
+The UI build runs `bun run typecheck` before either Vite bundle. Its TypeScript
+configuration includes tests and source imported through `@shared`, so shared
+helpers must satisfy `noUncheckedIndexedAccess` and `verbatimModuleSyntax` as
+well as the extension's compiler configuration. Vite transpilation alone is not
+the type-check gate. Run `cd ui && bun run typecheck` to check that boundary
+without producing a bundle.
+
 | Check | Command | Baseline on this branch (2026-09-11) |
 |---|---|---|
 | Unit and boundary tests | `bun test --timeout 30000` from the root | 1,853 tests, 165 files, 6 failures, all in `ui/` when run from the root (same as `origin/main`); `cd ui && bun test` for the UI suite on its own |
