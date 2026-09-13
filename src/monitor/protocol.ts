@@ -8,7 +8,7 @@
 // shared by `host.ts`, `follower.ts`, and the activation wiring — kept here so
 // neither side hand-rolls (and drifts) the same shapes.
 
-import { MonitorEvent } from './broadcastTypes';
+import type { MonitorEvent } from './broadcastTypes';
 
 /** A single agent terminal as seen by the window that owns it. */
 export interface TerminalTuple {
