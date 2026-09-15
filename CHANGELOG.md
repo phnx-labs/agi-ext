@@ -6,6 +6,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+## [0.9.375] - 2026-09-15
+
 - Fix HTML Reader rendering blank on documents containing `</script>` tags
   (e.g. artifacts-cli plans). The browser's HTML parser prematurely closed
   the host script block; escape `</script` in the srcdoc template literal.
