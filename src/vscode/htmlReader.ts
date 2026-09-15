@@ -58,11 +58,7 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
     const nonce = getNonce();
     const docDir = path.dirname(document.uri.fsPath);
     const rewritten = rewriteRelativeResources(document.getText(), docDir, webview, (fsPath) => vscode.Uri.file(fsPath));
-    // Escape for embedding as a JS template string assigned to srcdoc.
-    const escaped = rewritten
-      .replace(/\\/g, '\\\\')
-      .replace(/`/g, '\\`')
-      .replace(/\$\{/g, '\\${');
+    const escaped = escapeForTemplateLiteral(rewritten);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -73,7 +69,7 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
     default-src 'none';
     style-src ${webview.cspSource} 'unsafe-inline';
     script-src 'nonce-${nonce}';
-    frame-src 'none';
+    frame-src blob:;
     img-src ${webview.cspSource} https: data: blob:;
     font-src ${webview.cspSource} data:;
     media-src ${webview.cspSource} data: blob:;
@@ -125,6 +121,19 @@ export function rewriteRelativeResources(
       }
     }
   );
+}
+
+/**
+ * Escape HTML for safe embedding inside a JS template literal within a <script> block.
+ * Handles backslashes, backticks, template expressions, and </script> which would
+ * prematurely close the host script element.
+ */
+export function escapeForTemplateLiteral(html: string): string {
+  return html
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+    .replace(/<\/script/gi, '<\\/script');
 }
 
 function getNonce(): string {

@@ -14,7 +14,27 @@ mock.module('vscode', () => vscodeDouble({
   },
 }));
 
-const { rewriteRelativeResources } = await import('./htmlReader');
+const { rewriteRelativeResources, escapeForTemplateLiteral } = await import('./htmlReader');
+
+describe('escapeForTemplateLiteral', () => {
+  test('escapes </script> so host script block is not broken', () => {
+    const html = '<script>alert(1)</script><p>hello</p>';
+    const out = escapeForTemplateLiteral(html);
+    expect(out).not.toContain('</script');
+    expect(out).toContain('<\\/script');
+  });
+
+  test('escapes case-insensitively', () => {
+    const out = escapeForTemplateLiteral('</Script></SCRIPT>');
+    expect(out).not.toContain('</Script');
+    expect(out).not.toContain('</SCRIPT');
+  });
+
+  test('escapes backticks and template expressions', () => {
+    const out = escapeForTemplateLiteral('`${x}`');
+    expect(out).toBe('\\`\\${x}\\`');
+  });
+});
 
 describe('rewriteRelativeResources', () => {
   const docDir = '/tmp/artifacts/plans';
