@@ -69,7 +69,7 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
     default-src 'none';
     style-src ${webview.cspSource} 'unsafe-inline';
     script-src 'nonce-${nonce}';
-    frame-src blob:;
+    frame-src 'none';
     img-src ${webview.cspSource} https: data: blob:;
     font-src ${webview.cspSource} data:;
     media-src ${webview.cspSource} data: blob:;
