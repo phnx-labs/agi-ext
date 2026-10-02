@@ -244,10 +244,10 @@ export function buildAgentLaunchCommand(
     command += ` --device ${shquote(host)}`;
     if (remoteCwd) command += ` --remote-cwd ${shquote(remoteCwd)}`;
   }
-  // Unpinned, no explicit host: affinity-pick device via --device auto.
-  // Explicit Pick Host / @version pin skip this.
-  if (!host && !pinnedVersion && !local) {
-    command += ' --device auto';
+  // Bare interactive runs auto-place in the CLI. A hostless version pin keeps
+  // its local placement intent; an explicit host takes precedence.
+  if (!host) {
+    command += local || pinnedVersion ? ' --local' : ' --device auto';
   }
   // Working directory is independent of placement and version selection. Local
   // and pinned launches need it too: the terminal's inherited process.cwd() can

@@ -6,6 +6,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+- Add New <Harness> (Local) for every active harness. Local defaults, Pick Host’s
+  This Machine choice, and hostless version pins now emit `--local`, preventing
+  bare interactive launches from being automatically placed on another device.
+
 ## [0.9.375] - 2026-09-15
 
 - Fix HTML Reader rendering blank on documents containing `</script>` tags

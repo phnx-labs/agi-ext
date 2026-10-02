@@ -72,7 +72,7 @@ describe('launchOptsForHarnessCommand', () => {
 describe('registered harness launch commands', () => {
   const RUNNERS = BUILT_IN_AGENTS.filter(({ key }) => key !== 'shell' && key !== 'gemini');
 
-  it('registers the default, Pick Host, Auto, Pick Project, and Pick Account command ids for every active harness', () => {
+  it('registers the default, Pick Host, Auto, Pick Project, Pick Account, and Local command ids for every active harness', () => {
     for (const agent of RUNNERS) {
       expect(harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto').map((entry) => ({
         commandId: entry.commandId,
@@ -83,7 +83,20 @@ describe('registered harness launch commands', () => {
         { commandId: `${agent.commandId}Auto`, variant: 'auto' },
         { commandId: `${agent.commandId}PickProject`, variant: 'pick-project' },
         { commandId: `${agent.commandId}PickAccount`, variant: 'pick-account' },
+        { commandId: `${agent.commandId}Local`, variant: 'local' },
       ]);
+    }
+  });
+
+  it('builds Local for every active harness independently of the default target', () => {
+    for (const agent of RUNNERS) {
+      const registration = harnessLaunchRegistrations(agent.key, agent.commandId, () => 'ask')[5];
+      expect(registration.launchOptions()).toEqual({ agentKey: agent.key, local: true });
+      const command = buildNewAgentLaunchCommand(registration.launchOptions(), { cwd: '/w', sessionId: 'sess-local' });
+      expect(command).toBe(
+        `agents run ${agent.key} --interactive --local --cwd '/w'${agent.key === 'claude' ? ' --session-id sess-local' : ''} --strategy balanced --mode auto`,
+      );
+      expect(command).not.toContain('--device');
     }
   });
 
@@ -222,6 +235,7 @@ describe('registered harness launch commands', () => {
           expect(command).toContain(`--cwd '${cwd}'`);
           expect(command.match(/ --cwd /g)).toHaveLength(1);
           expect(command).not.toContain('--project');
+          expect(command).toContain('--local');
           expect(command).not.toContain('--device');
         }
       }
@@ -240,7 +254,7 @@ describe('registered harness launch commands', () => {
   it('keeps configured local and prompted-device defaults on the balanced path', () => {
     const [local] = harnessLaunchRegistrations('claude', 'agents.newClaude', () => 'local');
     expect(buildNewAgentLaunchCommand(local.launchOptions())).toBe(
-      'agents run claude --interactive --strategy balanced --mode auto',
+      'agents run claude --interactive --local --strategy balanced --mode auto',
     );
 
     const [ask] = harnessLaunchRegistrations('claude', 'agents.newClaude', () => 'ask');
@@ -255,7 +269,7 @@ describe('registered harness launch commands', () => {
   it('emits a caller-minted Claude session id on the local path', () => {
     const [local] = harnessLaunchRegistrations('claude', 'agents.newClaude', () => 'local');
     expect(buildNewAgentLaunchCommand(local.launchOptions(), { sessionId: 'sess-abc' })).toBe(
-      'agents run claude --interactive --session-id sess-abc --strategy balanced --mode auto',
+      'agents run claude --interactive --local --session-id sess-abc --strategy balanced --mode auto',
     );
   });
 
@@ -264,7 +278,7 @@ describe('registered harness launch commands', () => {
     // the CLI never pinned. The builder must drop it, not forward it.
     const [local] = harnessLaunchRegistrations('grok', 'agents.newGrok', () => 'local');
     expect(buildNewAgentLaunchCommand(local.launchOptions(), { sessionId: 'sess-abc' })).toBe(
-      'agents run grok --interactive --strategy balanced --mode auto',
+      'agents run grok --interactive --local --strategy balanced --mode auto',
     );
   });
 });

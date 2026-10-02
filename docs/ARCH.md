@@ -219,7 +219,7 @@ Restoration metadata (`~/.swarmify/agents/sessions.yaml`, per workspace: termina
 
 ## Launch command composition
 
-Every `Agents: New <Harness>` variant routes through one engine (`src/core/launchTarget.ts` → `src/core/agents.ts` `buildAgentLaunchCommand`). The setting `agents.launch.defaultTarget` (`auto` default, `local`, `ask`) decides the plain command; the four explicit variants pin one axis each and never both.
+Every `Agents: New <Harness>` variant routes through one engine (`src/core/launchTarget.ts` → `src/core/agents.ts` `buildAgentLaunchCommand`). The setting `agents.launch.defaultTarget` (`auto` default, `local`, `ask`) decides the plain command; the five explicit variants pin one axis each and never both.
 
 | Variant | Emits | Never emits |
 |---|---|---|
@@ -228,10 +228,12 @@ Every `Agents: New <Harness>` variant routes through one engine (`src/core/launc
 | `(Pick Account)` | `<h>@ --interactive --device auto --cwd <workspace> --mode auto` | `--strategy`, a pinned version |
 | `(Auto)` | `--device auto --cwd <workspace> --strategy balanced --mode auto`, ignoring the configured target | a prompt |
 | `(Pick Project)` | `--device auto --project <slug> --strategy balanced --mode auto` | `--cwd`, `--remote-cwd`, a host prompt |
-| pinned version | `<h>@<version> --interactive --cwd <workspace> --mode auto` | `--device auto`, `--strategy` |
-| target `local` | `--cwd <workspace> --strategy balanced --mode auto` | `--device` |
+| pinned version (no host) | `<h>@<version> --interactive --local --cwd <workspace> --mode auto` | `--device auto`, `--strategy` |
+| `(Local)` / target `local` / Pick Host This Machine | `--local --cwd <workspace> --strategy balanced --mode auto` | `--device` |
 
-Flag order is fixed by `buildAgentLaunchCommand`: agent spec, `--interactive`, `--device`, `--cwd` or `--project`, `--session-id` (Claude), `--strategy`, `--model`, `--mode`; `src/core/launchTarget.test.ts` asserts these strings without a workspace. `--strategy balanced` is set for every variant except the account picker (`src/core/launchTarget.ts` `strategy: options.accountPicker ? undefined : 'balanced'`) and is dropped for a pinned version, where the CLI would ignore it. The exclusions are thrown as errors inside `buildAgentLaunchCommand`: `cwd` with `remoteCwd`, `project` with either cwd form, the account picker with a pinned version, the account picker with a strategy. `--cwd` is emitted once, independent of placement, because the terminal's inherited `process.cwd()` can differ from the active folder. `--session-id` is emitted for Claude only. Ordinary launches never derive a target from `agents projects view <cwd>`: that command is a containment attribution lookup and a shared root can belong to several child projects (PHNX-3970). Native-mode launches are wrapped by `wrapNativeAgentCommand` so exit code 0 closes the tab and the CLI's ssh-loss codes (255, 254) read as a recoverable reconnect rather than a crash.
+Bare interactive runs auto-place in agents-cli 1.22.118, so local placement must be explicit. Hostless version pins also emit `--local` to preserve their local intent; an explicit host takes precedence.
+
+Flag order is fixed by `buildAgentLaunchCommand`: agent spec, `--interactive`, `--device` or `--local`, `--cwd` or `--project`, `--session-id` (Claude), `--strategy`, `--model`, `--mode`; `src/core/launchTarget.test.ts` asserts these strings without a workspace. `--strategy balanced` is set for every variant except the account picker (`src/core/launchTarget.ts` `strategy: options.accountPicker ? undefined : 'balanced'`) and is dropped for a pinned version, where the CLI would ignore it. The exclusions are thrown as errors inside `buildAgentLaunchCommand`: `cwd` with `remoteCwd`, `project` with either cwd form, the account picker with a pinned version, the account picker with a strategy. `--cwd` is emitted once, independent of placement, because the terminal's inherited `process.cwd()` can differ from the active folder. `--session-id` is emitted for Claude only. Ordinary launches never derive a target from `agents projects view <cwd>`: that command is a containment attribution lookup and a shared root can belong to several child projects (PHNX-3970). Native-mode launches are wrapped by `wrapNativeAgentCommand` so exit code 0 closes the tab and the CLI's ssh-loss codes (255, 254) read as a recoverable reconnect rather than a crash.
 
 <a id="attention"></a>
 
