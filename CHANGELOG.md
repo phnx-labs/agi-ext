@@ -4,11 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.376] - 2026-10-01
 
 - Add New <Harness> (Local) for every active harness. Local defaults, Pick Host’s
   This Machine choice, and hostless version pins now emit `--local`, preventing
   bare interactive launches from being automatically placed on another device.
+- `scripts/install.sh` skips an editor CLI that cannot list extensions (for example a
+  `cursor` on PATH that is the Cursor agent CLI, not the IDE) instead of aborting
+  before VS Code and VSCodium are installed.
 
 ## [0.9.375] - 2026-09-15
 
