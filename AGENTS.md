@@ -34,7 +34,6 @@ src/vscode   commands, terminals, sidebar, webview/watchdog bridges, URI handler
 src/mcp      watchdog wire protocol + MCP server loaded by path
 src/shared   re-exports ui/ imports through the @shared alias
 ui/settings  Fleet dashboard (React); ui/editor  Reader custom editors
-app/         agents-dbg Electron shell over the same floor UI
 scripts/     build.sh / install.sh / release.sh: the only entry points
 ```
 

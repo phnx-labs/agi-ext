@@ -2,17 +2,12 @@
 out/
 dist/
 ui/out/
-app/dist/
-app/release/
 *.vsix
 
 # Dependencies (match a real dir AND a dev worktree's node_modules symlink —
 # the trailing-slash form ignores directories only, not a symlink of that name)
 node_modules/
 node_modules
-
-# Vite standalone bundle for the Electron app
-app-ui/
 
 # local vite preview build output
 ui/.tmp/

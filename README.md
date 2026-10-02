@@ -35,7 +35,6 @@ src/mcp        watchdog socket bridge and the MCP server it serves by path
 src/shared     re-exports the ui/ bundle imports through the @shared alias
 ui/settings    Fleet dashboard (React, Vite)
 ui/editor      Reader: Markdown editor and HTML viewer
-app/           agents-dbg, a standalone Electron shell over the same floor UI
 assets/ icons/ extension artwork and the file-icon theme
 scripts/       build.sh, install.sh, release.sh: the only entry points
 ```
@@ -66,10 +65,6 @@ scripts/release.sh <x.y.z> --confirm   # publish to Marketplace + Open VSX
 `release.sh` routes itself to the machine holding the `vs-marketplace` secrets bundle
 (`--device <name>` pins it, `--here` refuses to route) and refuses to publish a version
 without a `CHANGELOG.md` section. Never hand-roll `vsce publish` or `ovsx publish`.
-
-`app/` (agents-dbg) builds with `app/scripts/build.sh`. Its `app/scripts/release.sh` is a
-compatibility shim that execs a monorepo-root `scripts/release.sh` four levels up, which does
-not exist in this repo; agents-dbg has no working release path here.
 
 ## License
 
