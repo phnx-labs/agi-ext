@@ -1,20 +1,25 @@
 interface DisplayPathOptions {
   cwd?: string;
   home?: string;
+  isRemote?: boolean;
+  hostHome?: string;
   sessionId?: string;
   maxLength?: number;
 }
 
 /** Compact directories while preserving the complete filename. */
-export function displayPath(file: string, { cwd, home, sessionId, maxLength = 56 }: DisplayPathOptions): string {
+export function displayPath(file: string, { cwd, home, isRemote = false, hostHome, sessionId, maxLength = 56 }: DisplayPathOptions): string {
+  file = file.replace(/\\/g, '/');
+  cwd = cwd?.replace(/\\/g, '/');
+  home = (hostHome ?? (isRemote ? undefined : home))?.replace(/\\/g, '/');
   const inside = (base: string | undefined) => base && file.startsWith(base.replace(/\/$/, '') + '/')
     ? file.slice(base.replace(/\/$/, '').length + 1) : undefined;
   let label = inside(cwd);
   if (label === undefined) {
-    const scratch = file.match(/^\/private\/tmp\/claude-[^/]+\/([^/]+)\/([^/]+)\/(.+)$/);
+    const scratch = file.match(/^\/(?:private\/)?tmp\/claude-[^/]+\/([^/]+)\/([^/]+)\/(.+)$/);
     const encodedCwd = cwd?.replace(/[^a-zA-Z0-9]/g, '-');
     if (scratch && scratch[1] === encodedCwd && scratch[2] === sessionId) label = scratch[3];
-    else if (file.startsWith('/private/tmp/claude-')) label = 'scratch/…/' + file.slice(file.lastIndexOf('/') + 1);
+    else if (/^\/(?:private\/)?tmp\/claude-/.test(file)) label = 'scratch/…/' + file.slice(file.lastIndexOf('/') + 1);
     else label = inside(home) !== undefined ? '~/' + inside(home) : file;
   }
   if (label.length <= maxLength) return label;

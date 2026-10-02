@@ -487,7 +487,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       // with no local tab it attaches a fresh terminal to the session on its
       // owning device. Resume runs the CLI's own recovery command for the row.
       case 'setSessionId':
-        if (this.snapshot.hasTerminal && terminalId) await vscode.commands.executeCommand('agents.setSessionId', { terminalId });
+        if (this.snapshot.hasTerminal && terminalId) {
+          try {
+            await vscode.commands.executeCommand('agents.setSessionId', { terminalId });
+          } catch {
+            void vscode.window.showWarningMessage('Set Session ID failed. Check that the extension build includes this command.');
+          }
+        }
         return;
       case 'focusSubject': {
         if (terminal) { terminal.show(true); return; }
@@ -712,7 +718,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         // guessing from the filesystem.
         snapshot.request = live.request;
         snapshot.timeline = live.timeline;
-        snapshot.files = live.files ? { ...live.files, changes: live.files.changes.map((change) => ({ ...change, display: displayPath(change.path, { cwd: live.cwd || cwd, home: os.homedir(), sessionId }) })) } : undefined;
+        const pathOptions = { cwd: live.cwd || cwd, home: os.homedir(), isRemote: !!remoteDeviceArg(live.host), sessionId };
+        snapshot.files = live.files ? { ...live.files, changes: live.files.changes.map((change) => ({ ...change, display: displayPath(change.path, pathOptions) })) } : undefined;
         snapshot.firstRequest = live.firstUserMessage || undefined;
         const summaryChecklist = live.summaryChecklist ?? live.todos ?? [];
         snapshot.summaryChecklist = summaryChecklist;
@@ -755,7 +762,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.tokPerSec = live.tokPerSec;
         snapshot.subAgentCount = live.subAgentCount;
         snapshot.spawnedTeam = live.spawnedTeam || live.teamName || undefined;
-        const pathOptions = { cwd: live.cwd || cwd, home: os.homedir(), sessionId };
         snapshot.artifacts = live.artifacts.map((artifact) => ({ ...artifact, display: displayPath(artifact.path, pathOptions) }));
         if (live.planFile) snapshot.plan = { path: live.planFile, display: displayPath(live.planFile, pathOptions) };
         snapshot.attachments = live.attachments;
@@ -931,15 +937,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     margin-top: 3px;
     color: var(--vscode-descriptionForeground);
     font-size: 11px;
-  }
-  .worktree-row {
-    margin-top: 3px;
-    color: var(--vscode-descriptionForeground);
-    font-size: 11px;
-    font-family: var(--vscode-editor-font-family, monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .branch-row {
     margin-top: 3px;
@@ -1738,7 +1735,11 @@ function renderTerminalCard(s) {
         actions +
       '</div>' +
       '<details id="session-details"' + (viewState.detailsOpen ? ' open' : '') + '><summary>Details</summary><div class="session-details">' +
-        [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.fullSessionId, s.cwd, s.git && s.git.branch, s.sessionHost].filter(Boolean).map((value) => '<div>' + esc(value) + '</div>').join('') +
+        [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.fullSessionId, s.cwd, s.sessionHost].filter(Boolean).map((value) => '<div>' + esc(value) + '</div>').join('') +
+        (s.git ? '<div class="branch-row">' +
+          (s.git.branch ? '<button type="button" class="branch-name" data-scm>' + esc(s.git.branch) + '</button>' : '') +
+          (s.git.dirtyCount > 0 ? '<button type="button" class="dirty-pill" data-scm>' + s.git.dirtyCount + ' changed</button>' : '') +
+        '</div>' : '') +
       '</div></details>' +
     '</div>'
   );
@@ -1959,7 +1960,7 @@ function stepChips(step) {
   if (step.failed > 0) bits.push('<span class="bad">' + step.failed + ' failed</span>');
   if (step.blocked > 0) bits.push('<span class="bad">' + step.blocked + ' blocked</span>');
   for (const mark of (step.marks || [])) bits.push('<span class="mark">' + esc(mark) + '</span>');
-  return bits.length ? '<div class="step-chips">' + bits.join(' · ') + '</div>' : '';
+  return bits.length ? '<span class="step-chips">' + bits.join(' · ') + '</span>' : '';
 }
 
 function renderStep(step) {
@@ -1969,12 +1970,14 @@ function renderStep(step) {
   // A user turn is the user's own words, so it renders quoted and muted — it is
   // not something the agent did.
   const text = step.source === 'user' ? '“' + truncate(step.text, 120) + '”' : truncate(step.text, 160);
+  const key = JSON.stringify([lastSnapshot && lastSnapshot.fullSessionId, step.at, step.source]);
+  const expanded = !!(viewState.expandedSteps && viewState.expandedSteps[key]);
   return (
-    '<button type="button" class="' + cls + '" data-expand="' + esc(step.source === 'user' ? '“' + step.text + '”' : step.text) + '" data-short="' + esc(text) + '" aria-expanded="false">' +
+    '<button type="button" data-step-key="' + esc(key) + '" class="' + cls + '" data-expand="' + esc(step.source === 'user' ? '“' + step.text + '”' : step.text) + '" data-short="' + esc(text) + '" aria-expanded="' + expanded + '">' +
       '<span class="step-mk"></span>' +
-      '<span class="step-txt">' + esc(text) + '</span>' +
+      '<span class="step-txt">' + esc(expanded ? (step.source === 'user' ? '“' + step.text + '”' : step.text) : text) + '</span>' +
       '<span class="step-at" title="' + esc(step.at || '') + '">' + esc(step.live ? 'now' : when) + '</span>' +
-      (step.live && step.now ? '<div class="step-now">▶ ' + esc(truncate(step.now, 120)) + '</div>' : '') +
+      (step.live && step.now ? '<span class="step-now">▶ ' + esc(truncate(step.now, 120)) + '</span>' : '') +
       stepChips(step) +
     '</button>'
   );
@@ -2085,7 +2088,7 @@ function renderArtifactsCard(s) {
   for (const artifact of (s.artifacts || [])) {
     rows.push(
       '<button type="button" class="deliverable path-link" data-path="' + esc(artifact.path) + '" title="' + esc(artifact.path) + '">' +
-        '<span class="deliverable-kind">' + (s.plan && artifact.path === s.plan.path ? 'PLAN' : 'DOC') + '</span>' +
+        '<span class="deliverable-kind">' + ({ artifacts: 'ARTIFACT', plans: 'PLAN', reports: 'REPORT', docs: 'DOC' }[artifact.bucket] || 'ARTIFACT') + '</span>' +
         '<span class="deliverable-name">' + esc(artifact.display) + '</span>' +
       '</button>'
     );
@@ -2368,6 +2371,11 @@ function render(snap) {
   for (const el of root.querySelectorAll('[data-expand]')) {
     el.addEventListener('click', () => {
       const expanded = el.getAttribute('aria-expanded') === 'true';
+      viewState.expandedSteps = viewState.expandedSteps || {};
+      const key = el.getAttribute('data-step-key');
+      if (expanded) delete viewState.expandedSteps[key];
+      else viewState.expandedSteps[key] = true;
+      vscode.setState(viewState);
       el.setAttribute('aria-expanded', String(!expanded));
       el.querySelector('.step-txt').textContent = expanded ? el.getAttribute('data-short') : el.getAttribute('data-expand');
     });

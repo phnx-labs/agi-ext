@@ -24,3 +24,20 @@ test('middle elision never cuts a basename, including one longer than the limit'
   expect(result).toEndWith('/report.md');
   expect(result).toContain('…');
 });
+
+test('Linux scratch uses the same ownership boundaries', () => {
+  const cwd = '/home/user/repo';
+  expect(displayPath('/tmp/claude-1000/-home-user-repo/session/scratchpad/test.md', { cwd, sessionId: 'session' })).toBe('scratchpad/test.md');
+  expect(displayPath('/tmp/claude-1000/-home-user-repo/other/test.md', { cwd, sessionId: 'session' })).toBe('scratch/…/test.md');
+});
+test('Windows separators compact without cutting the basename', () => {
+  expect(displayPath('C:\\Users\\user\\repo\\src\\test.ts', { cwd: 'C:\\Users\\user\\repo' })).toBe('src/test.ts');
+  const name = 'very-long-filename-'.repeat(8) + '.md';
+  expect(displayPath('C:\\outside\\directory\\' + name, {})).toBe('…/' + name);
+});
+test('remote paths never borrow the extension host home', () => {
+  const file = '/home/user/report.md';
+  expect(displayPath(file, { home: '/home/user', isRemote: true })).toBe(file);
+  expect(displayPath(file, { home: '/home/user', isRemote: false })).toBe('~/report.md');
+  expect(displayPath(file, { home: '/Users/local', isRemote: true, hostHome: '/home/user' })).toBe('~/report.md');
+});
