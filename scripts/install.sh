@@ -44,7 +44,9 @@ echo "Installing extension..."
 INSTALLED=0
 
 for CLI in cursor code codium; do
-    if command -v "$CLI" >/dev/null 2>&1; then
+    # `--list-extensions` separates an editor CLI from a same-named tool such as
+    # the Cursor agent CLI, which would otherwise abort the install under set -e.
+    if command -v "$CLI" >/dev/null 2>&1 && "$CLI" --list-extensions >/dev/null 2>&1; then
         echo "  -> $CLI"
         "$CLI" --install-extension "$VSIX_FILE" --force
         INSTALLED=$((INSTALLED + 1))
