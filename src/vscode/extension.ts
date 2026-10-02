@@ -1081,13 +1081,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       const persisted = workspacePath ? terminals.loadPersistedSessions(workspacePath).find((session) => session.terminalId === id) : undefined;
-      const restoredId = terminals.restoredSessionId(identOpts.sessionId, persisted?.sessionId);
-      if (restoredId) {
+      const restoredId = terminals.restoredSessionId(identOpts.sessionId, persisted);
+      if (restoredId !== undefined) {
         terminals.setSessionId(terminal, restoredId);
         if (agentType) {
           startAutoLabelPollerForTerminal(terminal, context);
         }
       }
+
+      const restoredEntry = terminals.getByTerminal(terminal);
+      if (restoredEntry) restoredEntry.manualSessionOverride = persisted?.manualSessionOverride;
 
       if (info.prefix === 'SH') {
         armShellAdoptionForTerminal(terminal, context);
@@ -3938,7 +3941,7 @@ function remoteAutoLabelHooks(labelsEnabled = true): RemoteAutoLabelHooks {
       id: t.id,
       host: t.host,
       sessionId: t.sessionId,
-      manualSessionRevision: t.manualSessionRevision,
+      manualSessionOverride: t.manualSessionOverride,
     })),
     onHydrated: (tabId, canonicalId) => {
       const t = terminals.getById(tabId);
@@ -4253,7 +4256,7 @@ function syncTerminalSessionBindingsFromStream(): void {
   const plan = planSessionStreamRebinds(
     terminals.getAllTerminals()
       .filter((entry) => !!entry.agentConfig)
-      .map((entry) => ({ id: entry.id, host: entry.host, sessionId: entry.sessionId, manualSessionRevision: entry.manualSessionRevision })),
+      .map((entry) => ({ id: entry.id, host: entry.host, sessionId: entry.sessionId, manualSessionOverride: entry.manualSessionOverride })),
     LOCAL_MACHINE_ID,
   );
   for (const step of plan) {
@@ -4286,7 +4289,7 @@ async function tryHydrateLiveSessionId(
   prefix: string
 ): Promise<void> {
   const entry = terminals.getByTerminal(terminal);
-  if (!entry || entry.manualSessionRevision !== undefined) return;
+  if (!entry || entry.manualSessionOverride !== undefined) return;
   const inflightKey = entry.id || `live:${terminal.name}`;
   if (liveSessionInFlight.has(inflightKey)) return;
   liveSessionInFlight.add(inflightKey);
@@ -4307,7 +4310,7 @@ async function tryHydrateLiveSessionId(
       .filter((t) => (t.host ?? '') === (entry.host ?? '') && needsSessionIdHydrate(t.sessionId));
     const plan = planActiveMapHydration(
       map,
-      hostTabs.map((t) => ({ id: t.id, host: t.host, sessionId: t.sessionId, manualSessionRevision: t.manualSessionRevision })),
+      hostTabs.map((t) => ({ id: t.id, host: t.host, sessionId: t.sessionId, manualSessionOverride: t.manualSessionOverride })),
       { needsHydrate: needsSessionIdHydrate, canonical: (raw) => canonicalSessionId(raw) ?? '' },
     );
     for (const step of plan) {
@@ -4546,9 +4549,7 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
       if (agentKey && supportsPrewarming(agentKey)) {
         terminals.setAgentType(terminal, agentKey);
       }
-      terminals.setSessionId(terminal, newSessionId ?? '');
-      const entry = terminals.getByTerminal(terminal);
-      if (entry) entry.manualSessionRevision = sessionPresentationStore.rowRevision;
+      terminals.setSessionId(terminal, newSessionId ?? '', true);
 
       // 5. Clear labels and start fresh poller
       await terminals.setLabel(terminal, undefined, context);
@@ -5236,9 +5237,12 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
       armShellAdoptionForTerminal(terminal, context);
     }
 
+    if (session.sessionId !== undefined) terminals.setSessionId(terminal, session.sessionId);
+    const restoredEntry = terminals.getByTerminal(terminal);
+    if (restoredEntry) restoredEntry.manualSessionOverride = session.manualSessionOverride;
+
     // Restore session tracking metadata if present
     if (session.sessionId && (session.agentType || session.recoveryAgent)) {
-      terminals.setSessionId(terminal, session.sessionId);
       if (session.agentType) {
         terminals.setAgentType(terminal, session.agentType as SessionAgentType);
       } else if (session.recoveryAgent) {

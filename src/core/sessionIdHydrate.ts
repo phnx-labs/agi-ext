@@ -103,15 +103,12 @@ export function planSessionStreamRebinds(
     const map = sessionPresentationStore.terminalSessionMap(
       executionHost,
       normalizeHost(observerDevice),
+      new Map(group.map(tab => [tab.id, tab.manualSessionOverride?.replaced ?? []])),
     );
-    for (const tab of group) {
-      const eligibleMap = tab.manualSessionRevision === undefined ? map
-        : sessionPresentationStore.terminalSessionMap(executionHost, normalizeHost(observerDevice), tab.manualSessionRevision);
-      plan.push(...planActiveMapHydration(eligibleMap, [{ ...tab, manualSessionRevision: undefined }], {
-        needsHydrate: needsSessionIdHydrate,
-        canonical: (raw) => canonicalSessionId(raw) ?? '',
-      }));
-    }
+    plan.push(...planActiveMapHydration(map, group, {
+      needsHydrate: needsSessionIdHydrate,
+      canonical: (raw) => canonicalSessionId(raw) ?? '',
+    }));
   }
   return plan;
 }

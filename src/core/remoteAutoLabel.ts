@@ -20,6 +20,11 @@
  * the real stamp / arm / label hooks.
  */
 
+export interface ManualSessionOverride {
+  sessionId: string;
+  replaced: string[];
+}
+
 /** Minimal view of an AGI EXT tab needed to resolve + label it. */
 export interface RemoteAutoLabelTab {
   /** AGENT_TERMINAL_ID — the join key against the active map. */
@@ -28,7 +33,7 @@ export interface RemoteAutoLabelTab {
   host?: string;
   /** Current session id (may be missing or a dirty rollout stem). */
   sessionId?: string;
-  manualSessionRevision?: number;
+  manualSessionOverride?: ManualSessionOverride;
 }
 
 /** One planned hydration: a tab and the canonical id the active map resolved. */
@@ -62,11 +67,10 @@ export function planActiveMapHydration(
 ): HydratePlanEntry[] {
   const plan: HydratePlanEntry[] = [];
   for (const tab of tabs) {
-    if (tab.manualSessionRevision !== undefined) continue;
     const raw = map.get(tab.id);
     if (!raw) continue;
     const canonicalId = deps.canonical(raw);
-    if (!canonicalId) continue;
+    if (!canonicalId || tab.manualSessionOverride?.replaced.includes(canonicalId)) continue;
     const currentCanonicalId = tab.sessionId ? deps.canonical(tab.sessionId) : '';
     if (!deps.needsHydrate(tab.sessionId) && currentCanonicalId === canonicalId) continue;
     plan.push({ id: tab.id, canonicalId });

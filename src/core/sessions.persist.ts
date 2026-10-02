@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
 import YAML from 'yaml';
+import type { ManualSessionOverride } from './remoteAutoLabel';
 
 const SWARMIFY_DIR = path.join(homedir(), '.swarmify');
 const AGENTS_DATA_DIR = path.join(SWARMIFY_DIR, 'agents');
@@ -12,6 +13,7 @@ const SESSIONS_PATH = path.join(AGENTS_DATA_DIR, 'sessions.yaml');
 
 // Persisted session data for a single terminal
 export interface PersistedSession {
+  manualSessionOverride?: ManualSessionOverride;
   terminalId: string;           // AGENT_TERMINAL_ID (e.g., "CL-1234567890-1")
   prefix: string;               // Agent prefix (e.g., "CL", "CX", "SH")
   sessionId?: string;           // CLI session ID for resume (e.g., Claude's session ID)

@@ -1,13 +1,10 @@
+import { canonicalSessionId } from './canonicalSessionId';
 import type { SessionCliFactPayload } from '../monitor/protocol';
 import { normalizeActiveSession, normalizeHost, resolveSessionHost, type RawActiveSession, type RemoteSession } from './remoteSessions';
 import type { ProjectRule } from './settings';
 
 /** Window-local projection of the canonical CLI stream; contains no lifecycle logic. */
 export class SessionPresentationStore {
-  private rowRevisions = new Map<string, number>();
-  private revision = 0;
-  get rowRevision(): number { return this.revision; }
-
   private rows = new Map<string, unknown>();
   private rowScopes = new Map<string, string>();
   private attention = new Map<string, unknown>();
@@ -31,13 +28,11 @@ export class SessionPresentationStore {
     const previous = this.sequences.get(event.streamId) ?? 0;
     if (event.sequence <= previous) return false;
     this.sequences.set(event.streamId, event.sequence);
-    if (event.type === 'reset' || event.type === 'agent.upsert') this.revision++;
     if (event.type === 'reset') {
       this.resetScopes.add(event.scope);
       for (const [rowKey, scope] of this.rowScopes) {
         if (scope === event.scope) {
           this.rows.delete(rowKey);
-          this.rowRevisions.delete(rowKey);
           this.rowScopes.delete(rowKey);
         }
       }
@@ -45,7 +40,6 @@ export class SessionPresentationStore {
         const rowKey = this.rowKeyOf(row);
         if (rowKey) {
           this.rows.set(rowKey, row);
-          this.rowRevisions.set(rowKey, this.revision);
           this.rowScopes.set(rowKey, event.scope);
         }
       }
@@ -66,12 +60,10 @@ export class SessionPresentationStore {
       const rowKey = event.rowKey || this.rowKeyOf(event.agent);
       if (rowKey && event.agent) {
         this.rows.set(rowKey, event.agent);
-        this.rowRevisions.set(rowKey, this.revision);
         this.rowScopes.set(rowKey, event.scope);
       }
     } else if (event.type === 'agent.remove' && event.rowKey) {
       this.rows.delete(event.rowKey);
-      this.rowRevisions.delete(event.rowKey);
       this.rowScopes.delete(event.rowKey);
     } else if (event.type === 'attention.upsert' && event.attention && !Array.isArray(event.attention)) {
       const key = event.rowKey || this.attentionKeyOf(event.attention);
@@ -153,7 +145,7 @@ export class SessionPresentationStore {
   scope(scope: string): { status: 'available' | 'unavailable'; reason?: string } | undefined {
     return this.scopes.get(scope);
   }
-  clear(): void { this.rowRevisions.clear(); this.rows.clear(); this.rowScopes.clear(); this.attention.clear(); this.attentionScopes.clear(); this.activity = []; this.sequences.clear(); this.scopes.clear(); this.resetScopes.clear(); }
+  clear(): void { this.rows.clear(); this.rowScopes.clear(); this.attention.clear(); this.attentionScopes.clear(); this.activity = []; this.sequences.clear(); this.scopes.clear(); this.resetScopes.clear(); }
 
   /**
    * Whether a `reset` has been observed — for one `scope` when given, or for
@@ -233,23 +225,20 @@ export class SessionPresentationStore {
    * predate the observer contract — and rows the CLI has not yet enriched — are
    * unaffected.
    */
-  terminalSessionMap(executionHost?: string, observerDevice?: string, afterRevision = -1): Map<string, string> {
+  terminalSessionMap(executionHost?: string, observerDevice?: string, replacedByTerminal: ReadonlyMap<string, readonly string[]> = new Map()): Map<string, string> {
     const wanted = normalizeHost(executionHost || '');
     const observer = normalizeHost(observerDevice || '');
     const result = new Map<string, string>();
     const ambiguous = new Set<string>();
-    const revisions = new Map<string, number>();
-    let rowRevision = 0;
     const bind = (terminalId: string, sessionId: string) => {
       if (!terminalId || !sessionId) return;
+      if (replacedByTerminal.get(terminalId)?.includes(canonicalSessionId(sessionId) ?? sessionId)) return;
       const existing = result.get(terminalId);
       if (existing && existing !== sessionId) { ambiguous.add(terminalId); return; }
       result.set(terminalId, sessionId);
-      revisions.set(terminalId, Math.max(revisions.get(terminalId) ?? 0, rowRevision));
     };
     for (const value of this.sessions()) {
       if (!value || typeof value !== 'object') continue;
-      rowRevision = this.rowRevisions.get(this.rowKeyOf(value) ?? '') ?? 0;
       const row = value as {
         terminalId?: unknown; sessionId?: unknown; id?: unknown; machine?: unknown; sourceDevice?: unknown;
         observerTerminals?: unknown; previous?: unknown;
@@ -275,9 +264,6 @@ export class SessionPresentationStore {
       if (terminalId && (!observer || owner === observer)) bind(terminalId, sessionId);
     }
     for (const terminalId of ambiguous) result.delete(terminalId);
-    for (const [terminalId, revision] of revisions) {
-      if (revision <= afterRevision) result.delete(terminalId);
-    }
     return result;
   }
 

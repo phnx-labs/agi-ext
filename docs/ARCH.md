@@ -224,12 +224,15 @@ unresolved tabs; corrections to established bindings run on pushed stream facts.
 `agents.setSessionId` accepts `{ terminalId?: string }`, defaults to the active
 agent terminal, and prefills the current id. It uses the existing canonical-id
 and hydration validators, calls the registry's `setSessionId`, and persists
-immediately. A manual binding records the current accepted row revision. Focus,
-attention changes, and other terminals' rows cannot replace it. A newer live row
-for the same observer terminal and execution host may replace it, subject to the
-same Previous and ambiguity rules. The revision gate is presentation metadata;
-it starts no watcher, poller, subprocess, or transcript read. Clear uses the same
-revision gate so an already-projected pre-clear row cannot rehydrate the tab.
+immediately. A manual id holds until a different session appears for that terminal;
+it survives reload. The tab persists the selected id and every superseded canonical
+id. Stream reconciliation filters those superseded claims for that tab before
+applying the same Previous, observer-device, execution-host, and ambiguity rules.
+A different eligible live claim replaces the binding and clears the override.
+Clear uses the same mechanism to exclude the pre-clear session. An exact persisted
+record is authoritative even when its id is empty, so reload leaves a cleared tab
+unbound until a different session appears. This uses only pushed stream facts;
+it starts no watcher, poller, subprocess, or transcript read.
 
 Restoration metadata (`~/.swarmify/agents/sessions.yaml`, per workspace: terminal id, prefix, session id, host, label, auto-label, harness, recovery harness, version, pid) is enough to reopen a tab through the CLI's resume path. It is never proof that a process is alive and never a transcript cache. Reload and user close are distinct: reload preserves the session; a genuine user close (`TerminalExitReason.User`, `src/vscode/terminalReadiness.ts`) issues one `agents sessions stop`.
 
