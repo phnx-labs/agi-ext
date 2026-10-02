@@ -48,7 +48,8 @@ export type HarnessLaunchVariant =
   | 'pick-host'
   | 'auto'
   | 'pick-project'
-  | 'pick-account';
+  | 'pick-account'
+  | 'local';
 
 /** Launch choices layered on top of placement for per-harness palette commands. */
 export interface HarnessLaunchOpts extends LaunchTargetOpts {
@@ -84,7 +85,7 @@ export function launchOptsForTarget(target: LaunchTarget): LaunchTargetOpts {
 }
 
 /**
- * Keep the five per-harness command variants distinct. Pick Host and Pick Account
+ * Keep the six per-harness command variants distinct. Pick Host and Pick Account
  * are the orthogonal pair — each pins ONE placement axis and lets the CLI balance
  * the other:
  *
@@ -102,6 +103,8 @@ export function launchOptsForTarget(target: LaunchTarget): LaunchTargetOpts {
  *   and shows its interactive account picker there; a sign-in-required account is
  *   selectable and authenticates in place. Orthogonal to pick-host, which pins the
  *   device instead.
+ *
+ * - local: pin this machine with `--local` and balance the account.
  *
  * The bare `New <Harness>` is the command bound to a keybinding and pressed
  * dozens of times a day, so it must open an agent, not a question: RUSH-2961
@@ -124,14 +127,15 @@ export function launchOptsForHarnessCommand(
       return { pickProject: true };
     case 'pick-account':
       return { accountPicker: true };
+    case 'local':
+      return { local: true };
   }
 }
 
 /**
- * The five registered commands for one harness. The default target is read by
+ * The six registered commands for one harness. The default target is read by
  * the callback so a settings change applies without reloading the editor.
- * Pick Account is appended last so the existing positional order (default,
- * pick-host, auto, pick-project) that callers and tests index into is unchanged.
+ * Local is appended last so callers indexing the existing five keep their order.
  */
 export function harnessLaunchRegistrations(
   agentKey: string,
@@ -166,6 +170,11 @@ export function harnessLaunchRegistrations(
       commandId: `${commandId}PickAccount`,
       variant: 'pick-account',
       launchOptions: () => ({ agentKey, ...launchOptsForHarnessCommand('pick-account') }),
+    },
+    {
+      commandId: `${commandId}Local`,
+      variant: 'local',
+      launchOptions: () => ({ agentKey, ...launchOptsForHarnessCommand('local') }),
     },
   ];
 }

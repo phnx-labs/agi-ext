@@ -15,6 +15,7 @@ import {
   extractPlanFromSessionJson,
   planTextToSteps
 } from './agents';
+import { harnessLaunchRegistrations } from './launchTarget';
 import { CLAUDE_TITLE, CODEX_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, getIconFilename } from './utils';
 import { CLI_AGENT_META, CliAgentId, isCliAgentId } from './agents.cli';
 import { readFileSync } from 'node:fs';
@@ -22,7 +23,7 @@ import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 describe('BUILT_IN_AGENTS', () => {
-  test('every non-shell built-in contributes and registers an Auto command', () => {
+  test('every non-shell built-in contributes every registered launch command', () => {
     const packageJson = JSON.parse(readFileSync(resolve(import.meta.dir, '../../package.json'), 'utf8'));
     const contributed = new Set(packageJson.contributes.commands.map((entry: { command: string }) => entry.command));
     const extensionSource = readFileSync(resolve(import.meta.dir, '../vscode/extension.ts'), 'utf8');
@@ -31,7 +32,9 @@ describe('BUILT_IN_AGENTS', () => {
       if (agent.key === 'shell') continue;
       // Gemini is deprecated and no longer gets launch commands in the palette.
       if (agent.key === 'gemini') continue;
-      expect(contributed.has(`${agent.commandId}Auto`)).toBe(true);
+      for (const registration of harnessLaunchRegistrations(agent.key, agent.commandId, () => 'auto')) {
+        expect(contributed.has(registration.commandId)).toBe(true);
+      }
     }
   });
 
@@ -337,7 +340,7 @@ describe('launch contract — every runner uses the managed launch builder', () 
       // Automatic account selection, local target.
       expect(buildAgentLaunchCommand(
         key, null, undefined, undefined, undefined, 'balanced', undefined, { local: true },
-      )).toBe(`agents run ${key} --interactive --strategy balanced --mode auto`);
+      )).toBe(`agents run ${key} --interactive --local --strategy balanced --mode auto`);
       // Automatic account selection and automatic device placement.
       expect(buildAgentLaunchCommand(
         key, null, undefined, undefined, undefined, 'balanced', undefined, {},
@@ -352,7 +355,7 @@ describe('launch contract — every runner uses the managed launch builder', () 
   test('a pinned @version is the one launch that omits --strategy (CLI ignores it against a pin)', () => {
     expect(buildAgentLaunchCommand(
       'claude', null, undefined, undefined, '1.2.3', 'balanced', undefined, { local: true },
-    )).toBe('agents run claude@1.2.3 --interactive --mode auto');
+    )).toBe('agents run claude@1.2.3 --interactive --local --mode auto');
   });
 
   test('account picker keeps automatic placement but omits balanced account selection', () => {
@@ -561,10 +564,16 @@ describe('buildAgentLaunchCommand', () => {
     expect(cmd).toContain('--strategy balanced');
   });
 
+  test('a hostless version pin explicitly stays local', () => {
+    const command = buildAgentLaunchCommand('claude', 'sess-pin', undefined, undefined, '1.2.3', 'balanced', undefined, { cwd: '/w' });
+    expect(command).toBe("agents run claude@1.2.3 --interactive --local --cwd '/w' --session-id sess-pin --mode auto");
+    expect(command).not.toContain('--device');
+  });
+
   test('explicit local launch suppresses automatic device selection', () => {
     expect(buildAgentLaunchCommand(
       'codex', null, undefined, undefined, undefined, 'balanced', undefined, { local: true },
-    )).toBe('agents run codex --interactive --strategy balanced --mode auto');
+    )).toBe('agents run codex --interactive --local --strategy balanced --mode auto');
   });
 
   test('a pinned version on a host launch suppresses --strategy (pin overrides balance)', () => {

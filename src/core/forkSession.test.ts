@@ -30,7 +30,7 @@ describe('buildForkSessionRequest', () => {
     expect(buildAgentLaunchCommand(
       request.agentKey, null, undefined, undefined, undefined, request.strategy, undefined,
       { host: request.host, local: request.local },
-    )).toBe('agents run codex --interactive --strategy balanced --mode auto');
+    )).toBe('agents run codex --interactive --local --strategy balanced --mode auto');
   });
 
   test('keeps a remote fork on the source host with balanced account selection', () => {

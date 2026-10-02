@@ -442,6 +442,10 @@
         "title": "Agents: New Claude (Pick Account)"
       },
       {
+        "command": "agents.newClaudeLocal",
+        "title": "Agents: New Claude (Local)"
+      },
+      {
         "command": "agents.newCodexPickHost",
         "title": "Agents: New Codex (Pick Host)",
         "icon": {
@@ -460,6 +464,10 @@
       {
         "command": "agents.newCodexPickAccount",
         "title": "Agents: New Codex (Pick Account)"
+      },
+      {
+        "command": "agents.newCodexLocal",
+        "title": "Agents: New Codex (Local)"
       },
       {
         "command": "agents.newOpenCodePickHost",
@@ -482,6 +490,10 @@
         "title": "Agents: New OpenCode (Pick Account)"
       },
       {
+        "command": "agents.newOpenCodeLocal",
+        "title": "Agents: New OpenCode (Local)"
+      },
+      {
         "command": "agents.newCursorPickHost",
         "title": "Agents: New Cursor (Pick Host)",
         "icon": {
@@ -500,6 +512,10 @@
       {
         "command": "agents.newCursorPickAccount",
         "title": "Agents: New Cursor (Pick Account)"
+      },
+      {
+        "command": "agents.newCursorLocal",
+        "title": "Agents: New Cursor (Local)"
       },
       {
         "command": "agents.newAntigravityPickHost",
@@ -522,6 +538,10 @@
         "title": "Agents: New Antigravity (Pick Account)"
       },
       {
+        "command": "agents.newAntigravityLocal",
+        "title": "Agents: New Antigravity (Local)"
+      },
+      {
         "command": "agents.newGrokPickHost",
         "title": "Agents: New Grok (Pick Host)",
         "icon": {
@@ -540,6 +560,10 @@
       {
         "command": "agents.newGrokPickAccount",
         "title": "Agents: New Grok (Pick Account)"
+      },
+      {
+        "command": "agents.newGrokLocal",
+        "title": "Agents: New Grok (Local)"
       },
       {
         "command": "agents.newKimiPickHost",
@@ -562,6 +586,10 @@
         "title": "Agents: New Kimi (Pick Account)"
       },
       {
+        "command": "agents.newKimiLocal",
+        "title": "Agents: New Kimi (Local)"
+      },
+      {
         "command": "agents.newDroidPickHost",
         "title": "Agents: New Droid (Pick Host)",
         "icon": {
@@ -580,6 +608,10 @@
       {
         "command": "agents.newDroidPickAccount",
         "title": "Agents: New Droid (Pick Account)"
+      },
+      {
+        "command": "agents.newDroidLocal",
+        "title": "Agents: New Droid (Local)"
       },
       {
         "command": "agents.newAgentPickHost",
@@ -691,7 +723,7 @@
             "Prompt for the host on every launch."
           ],
           "default": "auto",
-          "description": "Where the per-harness \"Agents: New <Harness>\" commands run. Device choice stays with the CLI: 'auto' emits --device auto, which draws from the fleet's worker pool (agents devices role). The (Pick Host), (Auto), and (Pick Project) command variants are unaffected."
+          "description": "Where the per-harness \"Agents: New <Harness>\" commands run. Device choice stays with the CLI: 'auto' emits --device auto, which draws from the fleet's worker pool (agents devices role). The (Pick Host), (Auto), (Pick Project), (Pick Account), and (Local) command variants are unaffected."
         }
       }
     },
