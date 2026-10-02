@@ -15,10 +15,10 @@ The code splits into two halves that talk only through `postMessage`:
 
 | Half | Scope | Production LOC | Separate reduction found |
 |---|---|---|---|
-| Back end (extension host) | `src/core`, `src/vscode`, `src/monitor`, `src/mcp`, `src/shared` | 38,292 | about 1,000 LOC of hand-rolled machinery |
+| Back end (extension host) | `src/core`, `src/vscode`, `src/monitor`, `src/mcp`, `src/shared` | 38,301 | about 1,000 LOC of hand-rolled machinery |
 | Front end (webviews) | `ui/settings`, `ui/editor`, `app/`, plus the sidebar's inline CSS and JS in `agentPanel.vscode.ts:840-2604` | 21,516, plus about 1,760 inline | about 2,000 LOC of hand-rolled UI |
 
-Agents wrote much of this code by hand, and both halves show the result: helpers and components already in the repo, or in an installed dependency, sit unused next to new copies. The back end has `cachedInFlight` with one caller next to about 12 hand-written caches. The front end has a `components/ui` folder whose `Button` is used 0 times next to 115 raw `<button>`s. See [Back end: hand-rolled machinery](#back-end-hand-rolled-machinery) and [Front end: hand-rolled UI](#front-end-hand-rolled-ui).
+Agents wrote much of this code by hand, and both halves show the result: helpers and components already in the repo, or in an installed dependency, sit unused next to new copies. The back end has `cachedInFlight` with one caller next to about 12 hand-written caches. The front end has a `components/ui` folder whose `Button` is used 0 times next to 147 raw `<button>`s. See [Back end: hand-rolled machinery](#back-end-hand-rolled-machinery) and [Front end: hand-rolled UI](#front-end-hand-rolled-ui).
 
 The main cost to anyone maintaining it is **re-derivation, not copy-paste**. jscpd finds only 280 cloned lines (0.59%). The real problem is that the extension drops most of what the CLI sends about each session, then rebuilds those facts itself:
 
@@ -69,7 +69,7 @@ These are estimates from line ranges. The three sources overlap: the dead-code a
 | The sidebar wipes a half-typed reply | Every pushed snapshot replaces the panel with `root.innerHTML` (`agentPanel.vscode.ts:2462,2471`) and recreates `#reply-input` (`:2137`). Nothing saves the draft or the focus. |
 | The Fleet webview starts host work for state it never renders | `App.tsx` auto-posts `fetchAgentTerminals` and `subscribeAgentTerminals` (`:550-551`), which start session-file watchers on the host (`settings.vscode.ts:1772`). The `agentTerminals` and `sessionTasks` results are never passed to a component. |
 | The webview can SIGTERM any pid | `case 'stopSession'` (`settings.vscode.ts:3122-3128`) runs `process.kill(pid, 'SIGTERM')` for any pid above 1, bypassing `agents sessions stop`. Nothing in the UI sends this message, so deleting the case is the fix. |
-| A webview value reaches the shell | `setGithubOwner` only trims `owner` (`settings.vscode.ts:1634`) before ``exec(`gh repo list ${owner} …`)`` (`:1658`). Like `stopSession`, nothing in the UI sends it. |
+| A webview value reaches the shell | `setGithubOwner` only trims `owner` (`settings.vscode.ts:1639`) before ``exec(`gh repo list ${owner} …`)`` (`:1658`). Nothing sends `setGithubOwner`, but the same value is live: `PanelTab.tsx:260` saves `githubOwner` through `saveSettings`, and `resolveGithubOwner` feeds it to the same `exec`. Fix it at the sink. |
 | `getSettings` writes global state on every read | The `display` and `notifications` branches (`settings.vscode.ts:1201-1296`) can fire up to 20 unawaited `globalState.update` calls per read, and `getSettings` is called 20 times in that file. Reported by the audit, not re-checked. |
 | PowerShell commands use POSIX quoting | `settings.vscode.ts:367-376` breaks on paths containing `'`. `gh repo list ${owner}` is unquoted (`:1658`, `:2460`). Reported by the audit, not re-checked. |
 
@@ -84,7 +84,7 @@ Ranked by user-visible value per unit of risk. Each wave lands as its own PR or 
 3. Done in #83 (0.9.376): `--local` for local launches, plus a `(Local)` variant for each harness. Follow-up: `resumeInBest.ts:60-67` (Resume, Pick Harness) still emits a bare run.
 4. Add one `psQuote` beside `shellQuote` in `src/core/deviceDispatchShell.ts`, and quote `owner`.
 5. Route every harness through `agents run` in `openAgentTerminals`/`clearActiveTerminal`.
-6. Delete the `stopSession` and `setGithubOwner` router cases (security; no sender).
+6. Security: delete the `stopSession` case (no sender), and replace the `gh repo list ${owner}` shell string with `execFile` plus owner validation. Deleting `setGithubOwner` alone is not enough, because `saveSettings` carries the owner too.
 7. Keep the reply draft and focus across sidebar re-renders, until wave F1 replaces the template.
 8. Delete the unused `App.tsx` terminal subscription and its host watchers.
 9. Make `getSettings` read-only: merge defaults once at activation and write once.
