@@ -1,3 +1,4 @@
+import { Modal } from '../ui/Modal';
 import { useState, useEffect } from 'react';
 import { postMessage } from '../../hooks';
 
@@ -47,7 +48,7 @@ export function ApiKeyDialog({ provider, onAuthComplete, onClose }: ApiKeyDialog
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+    <Modal onClose={onClose} aria-label={provider === 'linear' ? 'Connect Linear' : 'Connect GitHub'} className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
       <div className="bg-[var(--background)] border border-[var(--border)] rounded-lg p-6 max-w-md shadow-xl">
         <h2 className="text-lg font-semibold mb-4 text-[var(--foreground)]">
           {provider === 'linear' ? 'Connect Linear' : 'Connect GitHub'}
@@ -109,6 +110,6 @@ export function ApiKeyDialog({ provider, onAuthComplete, onClose }: ApiKeyDialog
           Cancel
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,3 +1,4 @@
+import { Modal } from './components/ui/Modal'
 import React, { useState, useEffect, useRef } from 'react'
 import { Button } from './components/ui/button'
 
@@ -27,7 +28,7 @@ import {
   SESSIONS_PER_PAGE,
   createBuiltInAgents,
 } from './constants'
-import { useSystemTheme, getVsCodeApi, getIcons, postMessage, usePanelVisibility, useWindowFocusRegained } from './hooks'
+import { useEditorTheme, getVsCodeApi, getIcons, postMessage, usePanelVisibility, useWindowFocusRegained } from './hooks'
 import { validateAliasName } from './utils'
 
 // New layout shell
@@ -73,7 +74,7 @@ function getAgentWithHighestRunningCount(runningCounts: RunningCounts): string |
 }
 
 export default function App() {
-  const isLightTheme = useSystemTheme()
+  const isLightTheme = useEditorTheme()
   const panelVisible = usePanelVisibility()
 
   // Core settings state
@@ -787,7 +788,7 @@ export default function App() {
 
   if (!settings) {
     return (
-      <div className={`swarmify-root ${isLightTheme ? 'theme-light' : 'theme-dark'} sw-app`}>
+      <div className="swarmify-root sw-app">
         <div style={{ display: 'grid', placeItems: 'center', height: '100vh', color: 'var(--ds-text-muted)' }}>
           Loading...
         </div>
@@ -796,7 +797,7 @@ export default function App() {
   }
 
   return (
-    <div className={`swarmify-root ${isLightTheme ? 'theme-light' : 'theme-dark'} sw-app`}>
+    <div className="swarmify-root sw-app">
       <TopBar
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -815,7 +816,7 @@ export default function App() {
 
       {/* Guide overlay */}
       {showGuide && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 30, background: 'rgba(0,0,0,0.5)', display: 'grid', placeItems: 'center' }}>
+        <Modal onClose={() => setShowGuide(false)} aria-label="Quick Guide" style={{ position: 'absolute', inset: 0, zIndex: 30, background: 'rgba(0,0,0,0.5)', display: 'grid', placeItems: 'center' }}>
           <div style={{ background: 'var(--ds-bg-panel)', border: '1px solid var(--ds-border)', borderRadius: 'var(--r-lg)', padding: 20, maxWidth: 520, width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <span style={{ fontWeight: 600, fontSize: 13 }}>Quick Guide</span>
@@ -825,7 +826,7 @@ export default function App() {
             </div>
             <GuideTab />
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Floor (main 3-pane view) */}

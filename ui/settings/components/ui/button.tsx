@@ -4,14 +4,14 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "../../lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--background)] disabled:pointer-events-none disabled:opacity-40",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ds-accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--ds-bg)] disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       variant: {
-        default: "bg-[var(--primary)] text-[var(--primary-foreground)] hover:brightness-110 active:brightness-90",
-        secondary: "bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:bg-[var(--border)] active:bg-[var(--muted)]",
-        ghost: "hover:bg-[var(--secondary)] active:bg-[var(--muted)]",
-        link: "text-[var(--primary)] underline-offset-4 hover:underline",
+        default: "bg-[var(--ds-button)] text-[var(--ds-accent-foreground)] hover:brightness-110 active:brightness-90",
+        secondary: "bg-[var(--ds-bg-inset)] text-[var(--ds-text)] hover:bg-[var(--ds-border)] active:bg-[var(--ds-bg-hover)]",
+        ghost: "hover:bg-[var(--ds-bg-inset)] active:bg-[var(--ds-bg-hover)]",
+        link: "text-[var(--ds-button)] underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2",

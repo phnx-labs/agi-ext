@@ -27,7 +27,8 @@ import { act } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { FloorAgent } from './floorModel'
 
-const { SessionRow, SessionsPane, SESSION_ROW_CSS, ROW_H } = await import('./SessionsPane')
+const SESSION_ROW_CSS = await Bun.file(new URL('./floor.css', import.meta.url)).text()
+const { SessionRow, SessionsPane, ROW_H } = await import('./SessionsPane')
 const { ResumeDeviceMenu } = await import('./sessions/ResumeDeviceMenu')
 
 const noop = () => {}
