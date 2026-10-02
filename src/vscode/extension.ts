@@ -1079,8 +1079,11 @@ export async function activate(context: vscode.ExtensionContext) {
         terminals.setAgentType(terminal, agentType);
       }
 
-      if (identOpts.sessionId) {
-        terminals.setSessionId(terminal, identOpts.sessionId);
+      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const persisted = workspacePath ? terminals.loadPersistedSessions(workspacePath).find((session) => session.terminalId === id) : undefined;
+      const restoredId = terminals.restoredSessionId(identOpts.sessionId, persisted?.sessionId);
+      if (restoredId) {
+        terminals.setSessionId(terminal, restoredId);
         if (agentType) {
           startAutoLabelPollerForTerminal(terminal, context);
         }
@@ -1499,6 +1502,15 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('agents.sessionTrace', () => copySessionTrace(context))
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agents.setSessionId', async (args?: { terminalId?: string }) => {
+      const entry = await terminals.promptSessionId(args);
+      if (!entry) return;
+      applyHydratedSessionId(entry.terminal, entry, entry.agentConfig?.prefix ?? '', entry.sessionId!, { armLabeling: false });
+      const { notifyAgentPanelSessionUpdate } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
+      notifyAgentPanelSessionUpdate();
+    })
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.sessionId', () => copySessionId())
   );
@@ -3922,10 +3934,11 @@ function remoteAutoLabelHooks(labelsEnabled = true): RemoteAutoLabelHooks {
     fetchMap: (host) => fetchTerminalIdSessionMap(host),
     needsHydrate: needsSessionIdHydrate,
     canonical: (raw) => canonicalSessionId(raw) ?? '',
-    siblings: () => terminals.getAllTerminals().map((t) => ({
+    siblings: () => terminals.getAllTerminals().filter((t) => needsSessionIdHydrate(t.sessionId)).map((t) => ({
       id: t.id,
       host: t.host,
       sessionId: t.sessionId,
+      manualSessionRevision: t.manualSessionRevision,
     })),
     onHydrated: (tabId, canonicalId) => {
       const t = terminals.getById(tabId);
@@ -4240,7 +4253,7 @@ function syncTerminalSessionBindingsFromStream(): void {
   const plan = planSessionStreamRebinds(
     terminals.getAllTerminals()
       .filter((entry) => !!entry.agentConfig)
-      .map((entry) => ({ id: entry.id, host: entry.host, sessionId: entry.sessionId })),
+      .map((entry) => ({ id: entry.id, host: entry.host, sessionId: entry.sessionId, manualSessionRevision: entry.manualSessionRevision })),
     LOCAL_MACHINE_ID,
   );
   for (const step of plan) {
@@ -4273,17 +4286,14 @@ async function tryHydrateLiveSessionId(
   prefix: string
 ): Promise<void> {
   const entry = terminals.getByTerminal(terminal);
-  if (!entry) return;
+  if (!entry || entry.manualSessionRevision !== undefined) return;
   const inflightKey = entry.id || `live:${terminal.name}`;
   if (liveSessionInFlight.has(inflightKey)) return;
   liveSessionInFlight.add(inflightKey);
 
   try {
-    // Canonicalize a dirty rollout stem, but do not return merely because the
-    // entry already contains a clean UUID. A fresh Codex tab can provisionally
-    // adopt an older same-cwd rollout before its own SessionStart row appears;
-    // the pid state / AGENT_TERMINAL_ID map below is authoritative and must be
-    // allowed to replace that syntactically-valid but wrong id (RUSH-2430).
+    // Normalize display metadata locally. Established bindings are reconciled
+    // only by syncTerminalSessionBindingsFromStream on accepted row facts.
     if (entry.sessionId && !needsSessionIdHydrate(entry.sessionId)) {
       const cleaned = canonicalSessionId(entry.sessionId);
       if (cleaned && cleaned !== entry.sessionId) {
@@ -4291,18 +4301,13 @@ async function tryHydrateLiveSessionId(
       }
     }
 
-    // Shared CLI stream map joined on this tab's AGENT_TERMINAL_ID.
-    // One elected extension window owns `agents feed watch --json`; every
-    // window and tab reads its broadcast projection without another subprocess.
-    // The one fetch stamps + arms labeling for this tab AND every host sibling
-    // it resolves, so focusing a sibling needs no extra round-trip and each tab
-    // enters the same auto-label lifecycle as the local watcher (RUSH-2411).
+    // Read the existing stream projection for unresolved host siblings.
     const map = await fetchTerminalIdSessionMap(entry.host);
     const hostTabs = terminals.getAllTerminals()
-      .filter((t) => (t.host ?? '') === (entry.host ?? ''));
+      .filter((t) => (t.host ?? '') === (entry.host ?? '') && needsSessionIdHydrate(t.sessionId));
     const plan = planActiveMapHydration(
       map,
-      hostTabs.map((t) => ({ id: t.id, host: t.host, sessionId: t.sessionId })),
+      hostTabs.map((t) => ({ id: t.id, host: t.host, sessionId: t.sessionId, manualSessionRevision: t.manualSessionRevision })),
       { needsHydrate: needsSessionIdHydrate, canonical: (raw) => canonicalSessionId(raw) ?? '' },
     );
     for (const step of plan) {
@@ -4375,10 +4380,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
       entry?.host,
     );
 
-    // Async-resolve the live session id from the SessionStart hook's state file,
-    // then hydrate its identity. Catches the case where the user exited and reran
-    // the agent in the same terminal, fired /clear, or ran the agent by hand so
-    // entry.sessionId was never stamped — the hook's per-pid file has the truth.
+    // Read the shared stream projection to hydrate an as-yet unidentified tab.
     void tryHydrateLiveSessionId(terminal, info.prefix);
 
     return;
@@ -4528,8 +4530,7 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
     }
 
     try {
-      // 2. Generate new IDs for fresh session
-      const newTerminalId = terminals.nextId(agentConfig.prefix);
+      // 2. Generate the session id; the shell keeps its terminal identity.
       let newSessionId: string | null = null;
       let command = agentConfig.command || '';
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
@@ -4541,18 +4542,13 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
         command = buildClaudeLaunchCommand(context, newSessionId, defaultModel);
       }
 
-      // 3. Unregister old entry, re-register with new IDs
-      terminals.unregister(terminal);
-      const pid = await terminal.processId;
-      terminals.register(terminal, newTerminalId, agentConfig, pid, context);
-
       // 4. Set new session/agent type
       if (agentKey && supportsPrewarming(agentKey)) {
         terminals.setAgentType(terminal, agentKey);
       }
-      if (newSessionId && agentKey && supportsPrewarming(agentKey)) {
-        terminals.setSessionId(terminal, newSessionId);
-      }
+      terminals.setSessionId(terminal, newSessionId ?? '');
+      const entry = terminals.getByTerminal(terminal);
+      if (entry) entry.manualSessionRevision = sessionPresentationStore.rowRevision;
 
       // 5. Clear labels and start fresh poller
       await terminals.setLabel(terminal, undefined, context);
@@ -4575,7 +4571,7 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
       // 9. Update status bar
       updateStatusBarForTerminal(terminal, context.extensionPath);
 
-      const agentNum = newTerminalId.split('-').pop() || '';
+      const agentNum = terminals.getByTerminal(terminal)?.id.split('-').pop() || '';
       const numSuffix = agentNum ? ` agent # ${agentNum}` : ' agent';
       vscode.window.showInformationMessage(`Cleared ${getExpandedAgentName(agentConfig.title)}${numSuffix} (new session)`);
     } catch (sendError) {

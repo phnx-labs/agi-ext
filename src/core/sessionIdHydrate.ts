@@ -104,10 +104,14 @@ export function planSessionStreamRebinds(
       executionHost,
       normalizeHost(observerDevice),
     );
-    plan.push(...planActiveMapHydration(map, group, {
-      needsHydrate: needsSessionIdHydrate,
-      canonical: (raw) => canonicalSessionId(raw) ?? '',
-    }));
+    for (const tab of group) {
+      const eligibleMap = tab.manualSessionRevision === undefined ? map
+        : sessionPresentationStore.terminalSessionMap(executionHost, normalizeHost(observerDevice), tab.manualSessionRevision);
+      plan.push(...planActiveMapHydration(eligibleMap, [{ ...tab, manualSessionRevision: undefined }], {
+        needsHydrate: needsSessionIdHydrate,
+        canonical: (raw) => canonicalSessionId(raw) ?? '',
+      }));
+    }
   }
   return plan;
 }

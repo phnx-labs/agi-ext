@@ -4,6 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- Preserve a terminal's identity when clearing or restarting its agent, and publish
+  that identity to the CLI's live-terminal registry.
+- Restore the persisted session binding before the shell's original session id.
+  Reload no longer replaces a stream-rebound session with its launch id.
+- Add “Agents: Set Session ID for Terminal”. A manual binding persists and holds
+  until a newer live stream row claims that terminal.
+- Remove process, transcript, and recency-based session recovery during reload;
+  terminal identity comes from exact persisted metadata, launch env, and the stream.
+
 ## [0.9.377] - 2026-10-02
 
 - Fleet menus support keyboard navigation and Escape; dialogs trap and restore focus.

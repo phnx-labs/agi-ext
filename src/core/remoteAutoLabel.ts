@@ -28,6 +28,7 @@ export interface RemoteAutoLabelTab {
   host?: string;
   /** Current session id (may be missing or a dirty rollout stem). */
   sessionId?: string;
+  manualSessionRevision?: number;
 }
 
 /** One planned hydration: a tab and the canonical id the active map resolved. */
@@ -61,6 +62,7 @@ export function planActiveMapHydration(
 ): HydratePlanEntry[] {
   const plan: HydratePlanEntry[] = [];
   for (const tab of tabs) {
+    if (tab.manualSessionRevision !== undefined) continue;
     const raw = map.get(tab.id);
     if (!raw) continue;
     const canonicalId = deps.canonical(raw);
