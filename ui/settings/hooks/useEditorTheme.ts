@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 
-/** VS Code sets this class alongside its theme variables. */
+/** VS Code marks the webview body with its theme kind; high-contrast light carries its own class. */
+export function isLightEditorTheme(body: HTMLElement = document.body): boolean {
+  return body.classList.contains('vscode-light') || body.classList.contains('vscode-high-contrast-light')
+}
+
 export function useEditorTheme(): boolean {
-  const read = () => document.body.classList.contains('vscode-light')
-  const [light, setLight] = useState(read)
+  const [light, setLight] = useState(() => isLightEditorTheme())
   useEffect(() => {
-    const observer = new MutationObserver(() => setLight(read()))
+    const observer = new MutationObserver(() => setLight(isLightEditorTheme()))
     observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
     return () => observer.disconnect()
   }, [])

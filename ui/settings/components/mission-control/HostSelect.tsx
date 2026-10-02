@@ -48,8 +48,11 @@ export function HostSelect({ hosts, value, onChange }: HostSelectProps) {
     setOpen(false)
   }
 
-  const Row = ({ h }: { h: DispatchHost }) => (
+  // A plain render function, not a component: a component defined in render
+  // remounts every row (and drops menu focus) whenever the panel re-renders.
+  const renderRow = (h: DispatchHost) => (
     <DropdownItem
+      key={h.id}
       disabled={!h.online}
       selected={h.id === sel.id}
       className={`opt ${h.id === sel.id ? 'sel' : ''} ${h.kind === 'cloud' ? 'cloud' : ''} ${!h.online ? 'dis' : ''}`}
@@ -81,9 +84,9 @@ export function HostSelect({ hosts, value, onChange }: HostSelectProps) {
         </DropdownTrigger>
         <DropdownMenu className="dd-menu">
           <DropdownSection className="dd-sec">MACHINES</DropdownSection>
-          {local.map(h => <Row key={h.id} h={h} />)}
+          {local.map(renderRow)}
           <DropdownSection className="dd-sec">CLOUD</DropdownSection>
-          {cloud.map(h => <Row key={h.id} h={h} />)}
+          {cloud.map(renderRow)}
         </DropdownMenu>
       </Dropdown>
       <div className="sub2">{subText}</div>

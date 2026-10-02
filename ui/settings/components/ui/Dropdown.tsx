@@ -72,10 +72,14 @@ export function DropdownMenu({ open: suppliedOpen, onClose: suppliedClose, onKey
         e.preventDefault(); e.stopPropagation(); callback.current(); return
       }
       const items = Array.from(ref.current!.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled):not([aria-disabled="true"])'))
+      if (items.length === 0) return
       const index = items.indexOf(document.activeElement as HTMLElement)
+      // A text field inside the menu keeps Home/End/Enter for editing its value.
+      const inField = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      if (inField && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
       let next: number
-      if (e.key === 'ArrowDown') next = (index + 1) % items.length
-      else if (e.key === 'ArrowUp') next = (index - 1 + items.length) % items.length
+      if (e.key === 'ArrowDown') next = index < 0 ? 0 : (index + 1) % items.length
+      else if (e.key === 'ArrowUp') next = index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length
       else if (e.key === 'Home') next = 0
       else if (e.key === 'End') next = items.length - 1
       else if (e.key === 'Enter' && index >= 0) { e.preventDefault(); items[index]?.click(); return }

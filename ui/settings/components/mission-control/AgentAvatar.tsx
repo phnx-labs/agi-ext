@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { isLightEditorTheme } from '../../hooks/useEditorTheme'
 import type { IconConfig } from '../../types'
 import { getIcons } from '../../hooks/useVscodeApi'
 import { getIcon } from '../../utils/icons'
@@ -47,7 +48,7 @@ function resolveIcon(id: string): string {
     if (!icons) return ''
     const key = ICON_KEY[id]
     if (!key) return ''
-    const isLight = typeof document !== 'undefined' && document.body.classList.contains('vscode-light')
+    const isLight = typeof document !== 'undefined' && isLightEditorTheme()
     return getIcon(icons[key] as string | { dark: string; light: string }, isLight)
   } catch {
     return ''
