@@ -11,7 +11,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Restore the persisted session binding before the shell's original session id.
   Reload no longer replaces a stream-rebound session with its launch id.
 - Add “Agents: Set Session ID for Terminal”. A manual binding persists and holds
-  until a newer live stream row claims that terminal.
+  until a different session appears for that terminal; it survives reload.
+  Re-sent old rows cannot undo it, and Clear stays unbound across reload.
 - Remove process, transcript, and recency-based session recovery during reload;
   terminal identity comes from exact persisted metadata, launch env, and the stream.
 

@@ -9,6 +9,7 @@ import { AgentConfig } from './agents.vscode';
 import { generateTerminalId, resolveRestoredVersion, RunningCounts } from '../core/terminals';
 import * as sessionsPersist from '../core/sessions.persist';
 import { canonicalSessionId } from '../core/canonicalSessionId';
+import type { ManualSessionOverride } from '../core/remoteAutoLabel';
 import { needsSessionIdHydrate } from '../core/sessionIdHydrate';
 import { restoredSessionTabLabels } from '../core/sessionTabLabelSync';
 import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo, SessionPreviewInfo } from './sessions.vscode';
@@ -83,7 +84,7 @@ export interface EditorTerminal {
   createdAt: number;
   pid?: number;             // Shell process ID
   messageQueue: string[];   // Queued messages to send after terminal ready
-  manualSessionRevision?: number;
+  manualSessionOverride?: ManualSessionOverride;
   sessionId?: string;       // CLI session ID (for resume, history reading)
   host?: string;            // Device the agent runs on when offloaded via `agents run --device`;
                             // undefined for a local tab. The session's transcript lives on THAT
@@ -401,9 +402,9 @@ export function stopAutoLabelPoller(terminal: vscode.Terminal): void {
   }
 }
 
-export function restoredSessionId(envId: string | null | undefined, persistedId?: string): string | undefined {
+export function restoredSessionId(envId: string | null | undefined, persisted?: sessionsPersist.PersistedSession): string | undefined {
   // The env is frozen at shell creation; persisted stream rebindings are newer.
-  return persistedId || envId || undefined;
+  return persisted ? persisted.sessionId : envId || undefined;
 }
 
 export async function promptSessionId(args: { terminalId?: string } = {}): Promise<EditorTerminal | undefined> {
@@ -419,18 +420,17 @@ export async function promptSessionId(args: { terminalId?: string } = {}): Promi
   if (raw === undefined) return undefined;
   const sessionId = canonicalSessionId(raw);
   if (!sessionId || needsSessionIdHydrate(sessionId) || getById(entry.id) !== entry) return undefined;
-  setSessionId(entry.terminal, sessionId);
-  entry.manualSessionRevision = sessionPresentationStore.rowRevision;
-  persistNow();
+  setSessionId(entry.terminal, sessionId, true);
   return entry;
 }
 
-export function setSessionId(terminal: vscode.Terminal, sessionId: string): void {
+export function setSessionId(terminal: vscode.Terminal, sessionId: string, manual = false): void {
   const entry = getByTerminal(terminal);
   if (entry) {
     const prevSessionId = entry.sessionId;
+    const replaced = [...(entry.manualSessionOverride?.replaced ?? []), ...(prevSessionId ? [canonicalSessionId(prevSessionId) ?? prevSessionId] : [])];
     entry.sessionId = sessionId;
-    entry.manualSessionRevision = undefined;
+    entry.manualSessionOverride = manual ? { sessionId, replaced: [...new Set(replaced)].filter(id => id !== sessionId) } : undefined;
     if (prevSessionId !== sessionId) {
       // Drop a stale auto-label only when a PRIOR real session owned it (a
       // rerun / /clear rebinds the tab to a new id whose label differs).
@@ -449,7 +449,8 @@ export function setSessionId(terminal: vscode.Terminal, sessionId: string): void
     console.log(`[TERMINALS] Set sessionId for terminal "${terminal.name}": ${sessionId}`);
 
     // Persist to disk
-    schedulePersist();
+    if (manual) persistNow();
+    else schedulePersist();
 
   } else {
     console.error(`[TERMINALS] FAILED to set sessionId - terminal "${terminal.name}" not found in registry. This may indicate a race condition.`);
@@ -736,15 +737,15 @@ export async function scanExisting(
 
     const agentType = prefixToAgentType(info.prefix);
     if (agentType) setAgentType(terminal, agentType, true);
-    const sessionId = restoredSessionId(identOpts.sessionId, persistedByTerminalId?.sessionId);
+    const sessionId = restoredSessionId(identOpts.sessionId, persistedByTerminalId);
 
-    if (sessionId) {
+    if (sessionId !== undefined) {
       setSessionId(terminal, sessionId);
       console.log(`[TERMINALS] Restored session: sessionId=${sessionId}, agentType=${agentType}`);
-      if (onSessionRestored) {
-        onSessionRestored(terminal);
-      }
     }
+    const restoredEntry = getByTerminal(terminal);
+    if (restoredEntry) restoredEntry.manualSessionOverride = persistedByTerminalId?.manualSessionOverride;
+    if (sessionId && onSessionRestored) onSessionRestored(terminal);
   }
 
   console.log(`[TERMINALS] Scan complete. Registered ${registeredCount} agent terminals.`);
@@ -1194,6 +1195,7 @@ export function buildPersistedSessions(): sessionsPersist.PersistedSession[] {
       terminalId: entry.id,
       prefix: entry.agentConfig.prefix,
       sessionId: entry.sessionId,
+      manualSessionOverride: entry.manualSessionOverride,
       host: entry.host,
       label: entry.label,
       autoLabel: entry.autoLabel,

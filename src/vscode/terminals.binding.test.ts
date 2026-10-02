@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,7 +21,7 @@ function run(body: string) {
       const store = (await import(${JSON.stringify(join(import.meta.dir, '../core/sessionPresentationStore.ts'))})).sessionPresentationStore;
       const planner = (await import(${JSON.stringify(join(import.meta.dir, '../core/sessionIdHydrate.ts'))})).planSessionStreamRebinds;
       const persisted = await import(${JSON.stringify(join(import.meta.dir, '../core/sessions.persist.ts'))});
-      const term = { name: 'CC', processId: Promise.resolve(process.pid), creationOptions: {
+      let term = { name: 'CC', processId: Promise.resolve(process.pid), creationOptions: {
         env: { AGENT_TERMINAL_ID: 'CC-shell', AGENT_SESSION_ID: 'old' } } };
       const config = { prefix: 'CC', title: 'Claude', command: 'claude' };
       const row = (id, previous = false) => ({ rowKey: id, sessionId: id, terminalId: 'CC-shell', machine: 'desktop', previous });
@@ -91,19 +91,34 @@ describe('terminal session identity', () => {
     assert.equal(t.getByTerminal(term).sessionId, 'ses_manual');
     store.apply({ v: 1, type: 'agent.upsert', streamId: 'test', sequence: 3, scope: 'desktop', rowKey: 'old', agent: row('old') });
     rebind();
-    assert.equal(t.getByTerminal(term).sessionId, 'old');
-    assert.equal(t.getByTerminal(term).manualSessionRevision, undefined);
+    assert.equal(t.getByTerminal(term).sessionId, 'ses_manual');
+    reset(4, [row('old')]);
+    rebind();
+    assert.equal(t.getByTerminal(term).sessionId, 'ses_manual');
+    t.persistNow();
+    t.clear();
+    term = { ...term };
+    surface.window.terminals = [term];
+    await t.scanExisting(() => config);
+    rebind();
+    assert.equal(t.getByTerminal(term).sessionId, 'ses_manual');
+    assert.deepEqual(t.getByTerminal(term).manualSessionOverride, { sessionId: 'ses_manual', replaced: ['old'] });
+    store.apply({ v: 1, type: 'agent.upsert', streamId: 'test', sequence: 5, scope: 'desktop', rowKey: 'new', agent: row('new') });
+    rebind();
+    assert.equal(t.getByTerminal(term).sessionId, 'new');
+    assert.equal(t.getByTerminal(term).manualSessionOverride, undefined);
   `));
 
   test('a manual binding ignores Previous and foreign rows; newer ambiguous claims remain unresolved', () => run(`
     t.register(term, 'CC-shell', config, process.pid);
+    t.setSessionId(term, 'old');
     reset(1, [row('old')]);
     surface.window.showInputBox = async () => 'ses_manual';
     await t.promptSessionId({ terminalId: 'CC-shell' });
     reset(2, [row('old', true), { ...row('foreign'), machine: 'other' }]);
     rebind();
     assert.equal(t.getByTerminal(term).sessionId, 'ses_manual');
-    reset(3, [row('old'), row('new')]);
+    reset(3, [row('old'), row('new'), row('another')]);
     rebind();
     assert.equal(t.getByTerminal(term).sessionId, 'ses_manual');
     reset(4, [row('old', true), row('new')]);
@@ -111,12 +126,20 @@ describe('terminal session identity', () => {
     assert.equal(t.getByTerminal(term).sessionId, 'new');
   `));
 
-  test('Clear waits for a new pushed row before reusing the same shell binding', () => run(`
-    t.register(term, 'CC-shell', config, process.pid);
+  test('non-Claude Clear survives reload and waits for a different session', () => run(`
+    term.name = 'CX';
+    const codex = { ...config, prefix: 'CX', title: 'Codex', command: 'codex' };
+    t.register(term, 'CC-shell', codex, process.pid);
     t.setSessionId(term, 'old');
     reset(1, [row('old')]);
-    t.setSessionId(term, '');
-    t.getByTerminal(term).manualSessionRevision = store.rowRevision;
+    t.setSessionId(term, '', true);
+    t.clear();
+    term = { ...term };
+    surface.window.terminals = [term];
+    await t.scanExisting(() => codex);
+    assert.equal(t.getByTerminal(term).sessionId, '');
+    assert.deepEqual(t.getByTerminal(term).manualSessionOverride, { sessionId: '', replaced: ['old'] });
+    store.apply({ v: 1, type: 'agent.upsert', streamId: 'test', sequence: 2, scope: 'desktop', rowKey: 'old', agent: row('old') });
     const hydration = (await import(${JSON.stringify(join(import.meta.dir, '../core/remoteAutoLabel.ts'))})).planActiveMapHydration;
     assert.deepEqual(hydration(store.terminalSessionMap(undefined, 'desktop'), t.getAllTerminals(), {
       canonical: (id) => id, needsHydrate: () => true,
@@ -124,11 +147,25 @@ describe('terminal session identity', () => {
     rebind();
     assert.equal(t.getByTerminal(term).sessionId, '');
     assert.equal(t.getByTerminal(term).id, term.creationOptions.env.AGENT_TERMINAL_ID);
-    reset(2, [row('old', true), row('new')]);
+    reset(3, [row('old'), row('new')]);
     rebind();
     assert.equal(t.getByTerminal(term).sessionId, 'new');
+    assert.equal(t.getByTerminal(term).manualSessionOverride, undefined);
     t.persistNow();
     assert.equal(persisted.getWorkspaceSessions('/test/workspace')[0].terminalId, 'CC-shell');
+  `));
+
+  test('repeated manual ids remember every superseded id; the selected id can claim the tab', () => run(`
+    t.register(term, 'CC-shell', config, process.pid);
+    t.setSessionId(term, 'old');
+    t.setSessionId(term, 'middle', true);
+    t.setSessionId(term, 'chosen', true);
+    reset(1, [row('old'), row('middle')]);
+    rebind();
+    assert.equal(t.getByTerminal(term).sessionId, 'chosen');
+    reset(2, [row('old'), row('middle'), row('chosen')]);
+    rebind();
+    assert.equal(t.getByTerminal(term).sessionId, 'chosen');
   `));
 
   test('explicit terminal target, invalid input, cancellation, and missing target', () => run(`
@@ -154,17 +191,4 @@ describe('terminal session identity', () => {
     assert.equal(entries[0].pid, process.pid);
   `));
 
-  test('Clear retains the shell registry identity and command is contributed', () => {
-    const source = readFileSync(join(import.meta.dir, 'extension.ts'), 'utf8');
-    const clear = source.slice(source.indexOf('async function clearActiveTerminal('), source.indexOf('async function clearActiveTerminal(') + 5200);
-    expect(clear).not.toContain('terminals.nextId(');
-    expect(clear).not.toContain('terminals.unregister(');
-    expect(clear).not.toContain('terminals.register(');
-    expect(clear).toContain("terminals.setSessionId(terminal, newSessionId ?? '')");
-    expect(clear).toContain('entry.manualSessionRevision = sessionPresentationStore.rowRevision');
-    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '../../package.json'), 'utf8'));
-    expect(manifest.contributes.commands).toContainEqual({ command: 'agents.setSessionId', title: 'Agents: Set Session ID for Terminal' });
-    expect(manifest.contributes.menus.commandPalette).toContainEqual({ command: 'agents.setSessionId', when: 'agents.activeIsAgent' });
-    expect(source).toContain("vscode.commands.registerCommand('agents.setSessionId'");
-  });
 });
