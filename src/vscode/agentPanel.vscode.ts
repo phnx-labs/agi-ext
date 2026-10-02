@@ -28,13 +28,13 @@
 // Refresh signals:
 //   onDidChangeActiveTerminal               -> re-render immediately
 //   onDidCloseTerminal / onDidOpenTerminal  -> re-render
-//   fs.watch on PLAN.md                     -> re-render
 //   session CLI stream fact (agents-cli daemon) -> re-render, trailing-coalesced
 //     (PHNX-2833: no local poll timer — the daemon is the only scheduler)
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
+import * as os from 'os';
+import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
 import { buildAgentTerminalEnv } from '../core/terminals';
 import { TeamWithMates } from './foreman.sources';
@@ -66,11 +66,6 @@ import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 
 const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
-
-interface PlanFileInfo {
-  path: string;
-  mtimeMs: number;
-}
 
 interface ConversationSummary {
   topic?: string;            // first user prompt — what this session is about
@@ -108,11 +103,6 @@ const STREAMING_MS = 10_000;
 type PullRequestRef = SharedPullRequestRef;
 type WorktreeRef = SharedWorktreeRef;
 
-interface RecentFile {
-  path: string;            // absolute file path
-  mtimeMs?: number;        // filesystem mtime, when readable
-}
-
 interface PanelSnapshot {
   /** A local agent terminal backs the subject (drives terminal-only actions). */
   hasTerminal: boolean;
@@ -134,6 +124,7 @@ interface PanelSnapshot {
   label?: string;
   autoLabel?: string;
   account?: string;
+  accountLabel?: string;
   // Filesystem
   cwd?: string;
   worktreePath?: string;     // when distinguishable from workspace root
@@ -160,7 +151,7 @@ interface PanelSnapshot {
   // `checkpoints` on an older CLI (renderTimelineCard does the fold).
   timeline?: RemoteTimeline;
   // Files the session created / modified / deleted, from the harness's own record.
-  files?: RemoteFiles;
+  files?: Omit<RemoteFiles, 'changes'> & { changes: (RemoteFiles['changes'][number] & { display: string })[] };
   // The FIRST genuine turn, shown inside the Request fold beside the latest one.
   firstRequest?: string;
   // True while the presentation store has seen no `reset` for this subject's
@@ -177,19 +168,17 @@ interface PanelSnapshot {
   tokPerSec?: number;
   subAgentCount?: number;
   spawnedTeam?: string;
-  artifacts?: RemoteSessionArtifact[];
+  artifacts?: (RemoteSessionArtifact & { display: string })[];
   attachments?: RemoteAttachment[];
   // Linked artifacts — multi-PR (the agent may have opened several in one session)
   linearIssue?: string;
   pullRequests?: PullRequestRef[];
-  // Recent file edits — surfaces what the agent has been touching
-  recentFiles?: RecentFile[];
   // All worktrees attached to the workspace, including the main checkout
   worktrees?: WorktreeRef[];
   // Account usage state — surfaces "out of credits" / "rate limited"
   usageStatus?: 'available' | 'rate_limited' | 'out_of_credits' | null;
   // Plan files
-  plan?: PlanFileInfo;
+  plan?: { path: string; display: string };
   // Teams
   teams: TeamWithMates[];
   // Derived state — drives state-driven Quick Actions
@@ -203,7 +192,7 @@ interface PanelSnapshot {
  * clicked Fleet row }. Presentation state only — module-local, never persisted,
  * never round-tripped through settings or workspaceState. It is stored rather
  * than recomputed so a redraw triggered by something else (a stream fact, a
- * PLAN.md write) cannot silently snap the panel back to the active terminal
+ * stream row update) cannot silently snap the panel back to the active terminal
  * after the user picked a different session in the Fleet list.
  */
 interface PanelSubject {
@@ -433,6 +422,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.path));
         }
         return;
+      case 'copySessionId':
+        if (this.snapshot.fullSessionId) {
+          await vscode.env.clipboard.writeText(this.snapshot.fullSessionId);
+          this.view?.webview.postMessage({ type: 'sessionIdCopied' });
+        }
+        return;
       case 'openUrl':
         if (typeof msg.url === 'string') {
           openExternalUrl(msg.url);
@@ -491,6 +486,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       // reusing the SAME host entry points it called. Focus prefers the live tab;
       // with no local tab it attaches a fresh terminal to the session on its
       // owning device. Resume runs the CLI's own recovery command for the row.
+      case 'setSessionId':
+        if (this.snapshot.hasTerminal && terminalId) await vscode.commands.executeCommand('agents.setSessionId', { terminalId });
+        return;
       case 'focusSubject': {
         if (terminal) { terminal.show(true); return; }
         const sessionId = this.snapshot.fullSessionId;
@@ -645,7 +643,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     const worktreePath = cwd && workspaceRoot && path.resolve(cwd) !== path.resolve(workspaceRoot) ? cwd : undefined;
     const worktreeName = cwd ? path.basename(cwd) : undefined;
 
-    const plan = cwd ? readPlanFile(cwd) : undefined;
 
     const sessionId = subject.sessionId || entry?.sessionId;
     const sessionChunk = sessionId ? sessionId.slice(0, 8) : undefined;
@@ -670,7 +667,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       worktreePath,
       worktreeName,
       workspaceRoot,
-      plan,
       teams: [],
     };
 
@@ -716,7 +712,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         // guessing from the filesystem.
         snapshot.request = live.request;
         snapshot.timeline = live.timeline;
-        snapshot.files = live.files;
+        snapshot.files = live.files ? { ...live.files, changes: live.files.changes.map((change) => ({ ...change, display: displayPath(change.path, { cwd: live.cwd || cwd, home: os.homedir(), sessionId }) })) } : undefined;
         snapshot.firstRequest = live.firstUserMessage || undefined;
         const summaryChecklist = live.summaryChecklist ?? live.todos ?? [];
         snapshot.summaryChecklist = summaryChecklist;
@@ -759,7 +755,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.tokPerSec = live.tokPerSec;
         snapshot.subAgentCount = live.subAgentCount;
         snapshot.spawnedTeam = live.spawnedTeam || live.teamName || undefined;
-        snapshot.artifacts = live.artifacts;
+        const pathOptions = { cwd: live.cwd || cwd, home: os.homedir(), sessionId };
+        snapshot.artifacts = live.artifacts.map((artifact) => ({ ...artifact, display: displayPath(artifact.path, pathOptions) }));
+        if (live.planFile) snapshot.plan = { path: live.planFile, display: displayPath(live.planFile, pathOptions) };
         snapshot.attachments = live.attachments;
       }
 
@@ -770,6 +768,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       if (identity) {
         if (identity.version) snapshot.version = identity.version;
         if (identity.account) snapshot.account = identity.account;
+        snapshot.accountLabel = identity.accountLabel ?? undefined;
         if (!snapshot.conversation?.topic && identity.topic) {
           snapshot.conversation = { ...(snapshot.conversation ?? { messageCount: 0 }), topic: identity.topic };
         }
@@ -928,23 +927,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     font-size: 11px;
     font-weight: 400;
   }
-  .version-pill {
-    margin-left: auto;
-    background: var(--vscode-badge-background);
-    color: var(--vscode-badge-foreground);
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: 500;
-  }
-  .label-row {
-    margin-top: 3px;
-    color: var(--vscode-foreground);
-  }
-  .label-auto {
-    color: var(--vscode-descriptionForeground);
-    font-style: italic;
-  }
   .account-row {
     margin-top: 3px;
     color: var(--vscode-descriptionForeground);
@@ -1032,12 +1014,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     font-size: 11px;
   }
   .path-link:hover { text-decoration: underline; }
-  .plan-line {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 0;
-  }
   .plan-meta {
     color: var(--vscode-descriptionForeground);
     font-size: 11px;
@@ -1100,15 +1076,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     letter-spacing: 0.05em;
   }
   .deliverable-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     font-family: var(--vscode-editor-font-family, monospace);
     font-size: 11px;
   }
-  .recent-files-disclosure { padding: 6px 0; color: var(--vscode-descriptionForeground); }
-  .recent-files-disclosure summary { cursor: pointer; font-size: 11px; }
-  .recent-files-disclosure a { display: block; margin: 5px 0 0 61px; }
   .team-summary { display: flex; align-items: center; gap: 8px; }
   .team-summary-name { color: var(--vscode-foreground); font-weight: 600; }
   .team-summary-count { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; }
@@ -1317,8 +1288,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
   /* ── Reply field ───────────────────────────────────────────────────────── */
   .reply-box { margin-top: 14px; }
@@ -1352,11 +1323,14 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     align-self: flex-start;
   }
   .head-btn {
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
+    background: transparent;
+    color: var(--vscode-foreground);
     border: 1px solid var(--vscode-widget-border, transparent);
     border-radius: 9px;
-    padding: 1px 8px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    line-height: 18px;
     font: inherit;
     font-size: 10px;
     cursor: pointer;
@@ -1542,30 +1516,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     color: var(--vscode-inputValidation-warningForeground);
     border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
   }
-  .recent-file {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: 11.5px;
-  }
-  .recent-file .path-link {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--vscode-editor-font-family, monospace);
-    color: var(--vscode-textLink-foreground);
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .recent-file .path-link:hover { text-decoration: underline; }
-  .recent-file-time {
-    color: var(--vscode-descriptionForeground);
-    font-size: 10.5px;
-    flex-shrink: 0;
-  }
+
   .worktree {
     display: flex;
     align-items: center;
@@ -1677,6 +1628,17 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     padding: 0;
   }
   .footer button:hover { text-decoration: underline; }
+  button.path-link, button.deliverable, button.step, button.session-chunk {
+    background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  }
+  button.path-link { color: var(--vscode-textLink-foreground); padding: 0; }
+  button.step { width: 100%; }
+  button.deliverable { width: 100%; color: var(--vscode-textLink-foreground); }
+  button.deliverable.path-link { padding: 6px 0; }
+  #session-details { margin-top: 8px; color: var(--vscode-descriptionForeground); }
+  #session-details summary { cursor: pointer; }
+  .session-details { font-size: 11px; overflow-wrap: anywhere; margin-top: 6px; }
+  button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
 </style>
 </head>
 <body>
@@ -1685,6 +1647,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 </div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+const viewState = vscode.getState() || {};
 const root = document.getElementById('root');
 
 function esc(s) {
@@ -1731,8 +1694,8 @@ function renderTerminalCard(s) {
     : '';
   const titleBits = [
     '<span class="agent-name">' + esc(s.agentName || s.agentPrefix || 'Agent') + '</span>',
-    s.sessionChunk ? '<span class="session-chunk">' + esc(s.sessionChunk) + '</span>' : '',
-    s.version ? '<span class="version-pill">v' + esc(s.version) + '</span>' : ''
+    s.sessionChunk ? '<button type="button" class="session-chunk" id="copy-session" title="Copy full session ID" aria-label="Copy full session ID">' + esc(s.sessionChunk) + '</button>' : '',
+    s.hasTerminal && s.terminalId ? '<button type="button" class="head-btn" data-action="setSessionId" title="Set session ID for terminal" aria-label="Set session ID for terminal">✎</button>' : ''
   ].join('');
   let label = '';
   if (s.label) {
@@ -1746,29 +1709,17 @@ function renderTerminalCard(s) {
   } else if (s.usageStatus === 'rate_limited') {
     usageBadge = '<span class="usage-badge usage-rate">⚠ rate-limited</span>';
   }
-  const account = (s.account || usageBadge)
-    ? '<div class="account-row">' + (s.account ? esc(s.account) : '') + usageBadge + '</div>'
+  const account = (s.accountLabel || s.account)
+    ? '<div class="account-row" title="' + esc(s.account || '') + '">' + esc(s.accountLabel ?? s.account) + usageBadge + '</div>'
     : '';
-  const worktree = s.worktreeName
-    ? '<div class="worktree-row">' + esc((s.worktreePath ? 'worktree ' : 'cwd ') + s.worktreeName) + '</div>'
-    : '';
-  let branch = '';
-  if (s.git && s.git.branch) {
-    const dirty = s.git.dirtyCount && s.git.dirtyCount > 0
-      ? '<button type="button" class="dirty-pill" data-scm="1" title="Open Source Control">' + s.git.dirtyCount + ' changed</button>'
-      : '';
-    branch = '<div class="branch-row"><span>branch</span>' +
-      '<button type="button" class="branch-name" data-scm="1" title="Open Source Control">' + esc(s.git.branch) + '</button>' +
-      dirty + '</div>';
-  }
   // Focus and Resume: the two verbs the removed Fleet detail rail owned. Focus
   // shows the live tab when there is one and otherwise attaches a fresh terminal
   // to the session; Resume runs the CLI's own recovery command for the row. Both
   // need a session id, so a tab that has not reported one yet shows neither.
   const actions = s.fullSessionId
     ? '<div class="head-actions">' +
-        '<button type="button" class="head-btn" data-action="focusSubject" title="Open the terminal for this session">Focus</button>' +
-        '<button type="button" class="head-btn" data-action="resumeSubject" title="Resume this session">Resume</button>' +
+        '<button type="button" class="head-btn" data-action="focusSubject" aria-label="Focus session" title="Focus session">◎</button>' +
+        '<button type="button" class="head-btn" data-action="resumeSubject" aria-label="Resume session" title="Resume session">↻</button>' +
       '</div>'
     : '';
   const following = s.subjectSource === 'fleet' && !s.hasTerminal
@@ -1781,13 +1732,14 @@ function renderTerminalCard(s) {
         '<div class="agent-head-text">' +
           '<div class="title-row">' + titleBits + '</div>' +
           label +
-          worktree +
-          branch +
           account +
           following +
         '</div>' +
         actions +
       '</div>' +
+      '<details id="session-details"' + (viewState.detailsOpen ? ' open' : '') + '><summary>Details</summary><div class="session-details">' +
+        [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.fullSessionId, s.cwd, s.git && s.git.branch, s.sessionHost].filter(Boolean).map((value) => '<div>' + esc(value) + '</div>').join('') +
+      '</div></details>' +
     '</div>'
   );
 }
@@ -2018,13 +1970,13 @@ function renderStep(step) {
   // not something the agent did.
   const text = step.source === 'user' ? '“' + truncate(step.text, 120) + '”' : truncate(step.text, 160);
   return (
-    '<div class="' + cls + '">' +
+    '<button type="button" class="' + cls + '" data-expand="' + esc(step.source === 'user' ? '“' + step.text + '”' : step.text) + '" data-short="' + esc(text) + '" aria-expanded="false">' +
       '<span class="step-mk"></span>' +
       '<span class="step-txt">' + esc(text) + '</span>' +
       '<span class="step-at" title="' + esc(step.at || '') + '">' + esc(step.live ? 'now' : when) + '</span>' +
       (step.live && step.now ? '<div class="step-now">▶ ' + esc(truncate(step.now, 120)) + '</div>' : '') +
       stepChips(step) +
-    '</div>'
+    '</button>'
   );
 }
 
@@ -2103,22 +2055,10 @@ function renderFilesCard(s) {
   if (counts.deleted) head.push(counts.deleted + ' deleted');
   if (files.total > files.changes.length) head.push('of ' + files.total);
   const rows = files.changes.map((change) => {
-    // Strip the cwd prefix and its ONE leading separator by char code (47 is a
-    // forward slash, 92 a back slash). A regex char class matching a backslash
-    // gets mangled when this template literal is emitted — the doubled backslash
-    // collapses to one and breaks the class — which throws "Invalid regular
-    // expression" and kills the ENTIRE webview script on parse. That is the
-    // stuck-"Loading…" bug PHNX-3517 chased; renderRecentFilesCard carries the
-    // same warning for the same reason.
-    let rel = change.path;
-    if (s.cwd && change.path.indexOf(s.cwd) === 0) {
-      rel = change.path.slice(s.cwd.length);
-      if (rel.charCodeAt(0) === 47 || rel.charCodeAt(0) === 92) rel = rel.slice(1);
-    }
     return (
       '<div class="file-row">' +
         '<span class="file-op ' + esc(change.op) + '">' + esc(FILE_OP_SYMBOL[change.op] || '~') + '</span>' +
-        '<a class="path-link" data-path="' + esc(change.path) + '" title="' + esc(change.path) + '">' + esc(rel) + '</a>' +
+        '<button type="button" class="path-link" data-path="' + esc(change.path) + '" title="' + esc(change.path) + '">' + esc(change.display) + '</button>' +
       '</div>'
     );
   }).join('');
@@ -2140,47 +2080,39 @@ function renderReplyBox(s) {
   );
 }
 
-function renderDeliverablesCard(s) {
+function renderArtifactsCard(s) {
   const rows = [];
   for (const artifact of (s.artifacts || [])) {
     rows.push(
-      '<a class="deliverable path-link" data-path="' + esc(artifact.path) + '">' +
-        '<span class="deliverable-kind">' + esc(artifact.bucket) + '</span>' +
-        '<span class="deliverable-name">' + esc(artifact.basename) + '</span>' +
-      '</a>'
+      '<button type="button" class="deliverable path-link" data-path="' + esc(artifact.path) + '" title="' + esc(artifact.path) + '">' +
+        '<span class="deliverable-kind">' + (s.plan && artifact.path === s.plan.path ? 'PLAN' : 'DOC') + '</span>' +
+        '<span class="deliverable-name">' + esc(artifact.display) + '</span>' +
+      '</button>'
     );
   }
   if (s.plan && !(s.artifacts || []).some((artifact) => artifact.path === s.plan.path)) {
     rows.push(
-      '<a class="deliverable path-link" data-path="' + esc(s.plan.path) + '">' +
-        '<span class="deliverable-kind">plan</span><span class="deliverable-name">PLAN.md</span>' +
-      '</a>'
+      '<button type="button" class="deliverable path-link" data-path="' + esc(s.plan.path) + '" title="' + esc(s.plan.path) + '">' +
+        '<span class="deliverable-kind">PLAN</span><span class="deliverable-name">' + esc(s.plan.display) + '</span>' +
+      '</button>'
     );
   }
   if (s.linearIssue) {
     rows.push(
-      '<a class="deliverable" data-url="' + esc('https://linear.app/issue/' + encodeURIComponent(s.linearIssue)) + '">' +
+      '<button type="button" class="deliverable" data-url="' + esc('https://linear.app/issue/' + encodeURIComponent(s.linearIssue)) + '">' +
         '<span class="deliverable-kind">ticket</span><span class="deliverable-name">' + esc(s.linearIssue) + '</span>' +
-      '</a>'
+      '</button>'
     );
   }
   for (const pr of (s.pullRequests || [])) {
     rows.push(
-      '<a class="deliverable" data-url="' + esc(pr.url) + '">' +
-        '<span class="deliverable-kind">pr</span><span class="deliverable-name">' + esc(pr.ownerRepo) + ' #' + pr.number + '</span>' +
-      '</a>'
-    );
-  }
-  const files = s.recentFiles || [];
-  if (files.length) {
-    rows.push(
-      '<details class="recent-files-disclosure"><summary>' + files.length + ' recent file' + (files.length === 1 ? '' : 's') + '</summary>' +
-      files.map((f) => '<a class="path-link" data-path="' + esc(f.path) + '">' + esc(f.path.split('/').pop() || f.path) + '</a>').join('') +
-      '</details>'
+      '<button type="button" class="deliverable" data-url="' + esc(pr.url) + '">' +
+        '<span class="deliverable-kind">PR</span><span class="deliverable-name">' + esc(pr.ownerRepo) + ' #' + pr.number + '</span>' +
+      '</button>'
     );
   }
   if (!rows.length) return '';
-  return '<h2>Deliverables</h2><div class="card deliverables">' + rows.join('') + '</div>';
+  return '<h2>Artifacts</h2><div class="card deliverables">' + rows.join('') + '</div>';
 }
 
 function renderSpawnedTeamCard(s) {
@@ -2294,40 +2226,6 @@ function renderMarkdownPreview(s) {
   return blocks.join('');
 }
 
-function renderRecentFilesCard(s) {
-  const files = s.recentFiles || [];
-  if (!files.length) return '';
-  // Show basename in the row and the full path in the title attr — the panel
-  // is narrow and absolute paths line-wrap into unreadable ribbon.
-  const rows = files.map((f) => {
-    // Show the path relative to cwd (strip the cwd prefix + its one leading
-    // separator); a path outside cwd is shown in full, untouched. IMPORTANT: this
-    // code is emitted INSIDE a template literal, so a regex char class matching a
-    // backslash gets mangled at generation (the double-backslash collapses to one,
-    // breaking the class), which throws "Invalid regular expression" and crashes
-    // the ENTIRE webview script on parse — the stuck-"Loading…" bug (PHNX-3517).
-    // Compare char codes (47 is forward slash, 92 is back slash) so no escaping can
-    // ever go wrong. The strip stays scoped to the cwd-relative branch only.
-    let rel = f.path;
-    if (s.cwd && f.path.startsWith(s.cwd)) {
-      rel = f.path.slice(s.cwd.length);
-      if (rel.charCodeAt(0) === 47 || rel.charCodeAt(0) === 92) rel = rel.slice(1);
-    }
-    const ts = f.mtimeMs ? '<span class="recent-file-time">' + esc(relTime(f.mtimeMs)) + '</span>' : '';
-    return (
-      '<div class="recent-file">' +
-        '<a class="path-link" data-path="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
-          esc(rel) +
-        '</a>' + ts +
-      '</div>'
-    );
-  }).join('');
-  return (
-    '<h2>Recently edited (' + files.length + ')</h2>' +
-    '<div class="card">' + rows + '</div>'
-  );
-}
-
 function renderWorktreesCard(s) {
   const wts = s.worktrees || [];
   // Suppress the card when there's only the main checkout — no useful list
@@ -2373,25 +2271,6 @@ function renderCwdCard(s) {
   return (
     '<h2>Working dir</h2>' +
     '<div class="card"><dl class="row-grid">' + rows.join('') + '</dl></div>'
-  );
-}
-
-function renderPlanCard(s) {
-  if (!s.plan) {
-    if (!s.cwd) return '';
-    return (
-      '<h2>Plan</h2>' +
-      '<div class="card"><div class="plan-meta">No PLAN.md in this directory.</div></div>'
-    );
-  }
-  return (
-    '<h2>Plan</h2>' +
-    '<div class="card">' +
-      '<div class="plan-line">' +
-        '<a class="path-link" data-path="' + esc(s.plan.path) + '">PLAN.md</a>' +
-        '<span class="plan-meta">' + esc(relTime(s.plan.mtimeMs)) + '</span>' +
-      '</div>' +
-    '</div>'
   );
 }
 
@@ -2475,13 +2354,24 @@ function render(snap) {
     renderRequestCard(snap) +
     renderTimelineCard(snap) +
     renderChecklistCard(snap) +
-    renderDeliverablesCard(snap) +
+    renderArtifactsCard(snap) +
     renderSpawnedTeamCard(snap) +
     renderActivityCard(snap) +
     renderFilesCard(snap) +
     renderReplyBox(snap) +
     '<div class="footer"><button id="refresh-btn">Refresh</button></div>'
   );
+  const details = root.querySelector('#session-details');
+  if (details) details.addEventListener('toggle', () => { viewState.detailsOpen = details.open; vscode.setState(viewState); });
+  const copy = root.querySelector('#copy-session');
+  if (copy) copy.addEventListener('click', () => vscode.postMessage({ type: 'copySessionId' }));
+  for (const el of root.querySelectorAll('[data-expand]')) {
+    el.addEventListener('click', () => {
+      const expanded = el.getAttribute('aria-expanded') === 'true';
+      el.setAttribute('aria-expanded', String(!expanded));
+      el.querySelector('.step-txt').textContent = expanded ? el.getAttribute('data-short') : el.getAttribute('data-expand');
+    });
+  }
   for (const el of root.querySelectorAll('.path-link')) {
     el.addEventListener('click', (e) => {
       e.preventDefault();
@@ -2553,7 +2443,11 @@ function showReplyError(message) {
 
 window.addEventListener('message', (e) => {
   const msg = e.data;
-  if (msg && msg.type === 'snapshot') render(msg.data);
+  if (msg && msg.type === 'sessionIdCopied') {
+    const copy = root.querySelector('#copy-session');
+    if (copy) { copy.textContent = 'Copied'; setTimeout(() => { if (lastSnapshot) copy.textContent = lastSnapshot.sessionChunk; }, 1200); }
+  }
+  else if (msg && msg.type === 'snapshot') render(msg.data);
   else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
 });
 
@@ -2604,17 +2498,6 @@ vscode.postMessage({ type: 'ready' });
 </script>
 </body>
 </html>`;
-  }
-}
-
-function readPlanFile(cwd: string): PlanFileInfo | undefined {
-  try {
-    const p = path.join(cwd, 'PLAN.md');
-    const st = fs.statSync(p);
-    if (!st.isFile()) return undefined;
-    return { path: p, mtimeMs: st.mtimeMs };
-  } catch {
-    return undefined;
   }
 }
 

@@ -282,7 +282,7 @@ export class SessionPresentationStore {
    * `null` for a harness the CLI records no identity for (Kimi has neither,
    * Grok/Cursor a version but no account) or before the CLI has indexed them.
    */
-  liveSession(sessionId: string): { machine: string; topic: string; label: string; cwd: string; version: string | null; account: string | null } | undefined {
+  liveSession(sessionId: string): { machine: string; topic: string; label: string; cwd: string; version: string | null; account: string | null; accountLabel: string | null } | undefined {
     const wanted = sessionId.trim();
     if (!wanted) return undefined;
     for (const value of this.sessions()) {
@@ -299,6 +299,7 @@ export class SessionPresentationStore {
         cwd?: unknown;
         version?: unknown;
         account?: unknown;
+        accountLabel?: unknown;
       };
       const id = typeof row.sessionId === 'string' ? row.sessionId
         : typeof row.id === 'string' ? row.id : '';
@@ -314,7 +315,8 @@ export class SessionPresentationStore {
       const cwd = typeof row.cwd === 'string' ? row.cwd : '';
       const version = typeof row.version === 'string' && row.version.trim() ? row.version.trim() : null;
       const account = typeof row.account === 'string' && row.account.trim() ? row.account.trim() : null;
-      return { machine, topic, label, cwd, version, account };
+      const accountLabel = typeof row.accountLabel === 'string' && row.accountLabel.trim() ? row.accountLabel.trim() : null;
+      return { machine, topic, label, cwd, version, account, accountLabel };
     }
     return undefined;
   }
