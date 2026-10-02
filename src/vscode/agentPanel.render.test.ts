@@ -1,4 +1,5 @@
 import { test, expect } from 'bun:test';
+import { vscodeDouble } from '../testing/vscodeDouble';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -52,7 +53,7 @@ const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL'];
 const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
   .join('\n')
   .replace(/\\\\/g, '\\');
-const cards = eval(`(function(){ const viewState = {}; ${combined}\n return {
+const cards = eval(`(function(){ const viewState = {}; const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
 }; })()`) as {
@@ -372,7 +373,7 @@ test('header separates identity Details and exposes terminal-only adoption', () 
 });
 
 test('Artifacts renders CLI plan and numbered PR with full paths and native buttons', () => {
-  const html = cards.renderArtifactsCard({ plan: { path: '/repo/plan.md', display: 'plan.md' }, artifacts: [{ path: '/repo/doc.md', display: 'doc.md' }], pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }] });
+  const html = cards.renderArtifactsCard({ plan: { path: '/repo/plan.md', display: 'plan.md' }, artifacts: [{ path: '/repo/doc.md', display: 'doc.md', bucket: 'docs' }], pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }] });
   expect(html).toContain('<h2>Artifacts</h2>');
   expect(html).toContain('>PLAN</span>');
   expect(html).toContain('>DOC</span>');
@@ -380,4 +381,40 @@ test('Artifacts renders CLI plan and numbered PR with full paths and native butt
   expect(html).toContain('title="/repo/doc.md"');
   expect(html).toContain('<button type="button"');
   expect(cards.renderArtifactsCard({})).toBe('');
+});
+
+ test('pencil message reaches the host command and reports command failures', async () => {
+  const method = (name: string) => {
+    const start = SRC.indexOf('  private async ' + name + '(');
+    const end = SRC.indexOf('\n  private ', start + 1);
+    return SRC.slice(start, end).replace('private async ', 'async ');
+  };
+  const calls: unknown[][] = [];
+  const warnings: string[] = [];
+  let fail = false;
+  const vscode = vscodeDouble({
+    commands: { executeCommand: async (...args: unknown[]) => { calls.push(args); if (fail) throw new Error('command unavailable'); } },
+    window: { showWarningMessage: (message: string) => { warnings.push(message); } },
+  });
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = { hasTerminal: true }; ' + method('handleMessage') + method('runQuickAction') + '}');
+  const host = new Function('vscode', 'terminals', code + '; return new Host();')(vscode, { getById: () => undefined });
+  await host.handleMessage({ type: 'runQuickAction', action: 'setSessionId', terminalId: 'CL-test' });
+  expect(calls).toEqual([['agents.setSessionId', { terminalId: 'CL-test' }]]);
+  fail = true;
+  await host.handleMessage({ type: 'runQuickAction', action: 'setSessionId', terminalId: 'CL-test' });
+  expect(warnings).toHaveLength(1);
+  host.snapshot.hasTerminal = false;
+  await host.handleMessage({ type: 'runQuickAction', action: 'setSessionId', terminalId: 'CL-test' });
+  expect(calls).toHaveLength(2);
+});
+
+test('Details preserves branch and dirty Source Control buttons', () => {
+  const html = cards.renderTerminalCard({ git: { branch: 'feature', dirtyCount: 3 } });
+  expect(html).toContain('class="branch-name" data-scm>feature</button>');
+  expect(html).toContain('class="dirty-pill" data-scm>3 changed</button>');
+});
+
+test('Artifacts respects each CLI bucket even when a plan path overlaps', () => {
+  const html = cards.renderArtifactsCard({ plan: { path: '/report', display: 'report' }, artifacts: ['artifacts', 'plans', 'reports', 'docs'].map(bucket => ({ bucket, path: bucket === 'reports' ? '/report' : '/' + bucket, display: bucket })) });
+  for (const label of ['ARTIFACT', 'PLAN', 'REPORT', 'DOC']) expect(html).toContain('>' + label + '</span>');
 });
