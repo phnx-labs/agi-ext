@@ -11,6 +11,15 @@ commit: 5bf79877527954f31cabd802a93bb4061eb9030e
 
 The extension has **59,860 lines of production TypeScript and 26,530 lines of tests** at `5bf7987`. Half of the production code sits in two places: `src/vscode` (21,916) and `ui/settings` (19,578). No size budget has been agreed, so this report sets a baseline rather than measuring against one.
 
+The code splits into two halves that talk only through `postMessage`:
+
+| Half | Scope | Production LOC | Separate reduction found |
+|---|---|---|---|
+| Back end (extension host) | `src/core`, `src/vscode`, `src/monitor`, `src/mcp`, `src/shared` | 38,292 | about 1,000 LOC of hand-rolled machinery |
+| Front end (webviews) | `ui/settings`, `ui/editor`, `app/`, plus the sidebar's inline CSS and JS in `agentPanel.vscode.ts:840-2604` | 21,516, plus about 1,760 inline | about 2,000 LOC of hand-rolled UI |
+
+Agents wrote much of this code by hand, and both halves show the result: helpers and components already in the repo, or in an installed dependency, sit unused next to new copies. The back end has `cachedInFlight` with one caller next to about 12 hand-written caches. The front end has a `components/ui` folder whose `Button` is used 0 times next to 115 raw `<button>`s. See [Back end: hand-rolled machinery](#back-end-hand-rolled-machinery) and [Front end: hand-rolled UI](#front-end-hand-rolled-ui).
+
 The main cost to anyone maintaining it is **re-derivation, not copy-paste**. jscpd finds only 280 cloned lines (0.59%). The real problem is that the extension drops most of what the CLI sends about each session, then rebuilds those facts itself:
 
 - `normalizeActiveSession` (`src/core/remoteSessions.ts:1056-1190`) passes on only a hand-picked set of fields from `SessionWatchRow`. It discards `phase`, `confirmedProject`, `generatedTitle`/`title`, `userPromptKind`, `recapSource`, `lastAgentLine`, `lastUserMessage`, `importantMessage` and `plan`.
@@ -50,13 +59,18 @@ These are estimates from line ranges. The three sources overlap: the dead-code a
 | Bug | Evidence |
 |---|---|
 | Dead agents show as idle | CLI `derivePhase` maps `orphaned`/`crashed` to `failed` (`agents-cli/cli/src/lib/session/active.ts:2885-2887`). The extension ignores `phase`. Its own `mapStatusToPhase` (`src/core/remoteSessions.ts:~1004`) has no case for those statuses and falls through to `default`, which means idle. |
-| The sidebar's recent-activity list is always empty | `agentPanel.vscode.ts:733` passes `live.tail`, which is plain assistant text, to `collectRecentActivity`. That calls `parseLineForActivity`, which runs `JSON.parse(line)` (`session.activity.ts:106`), throws, and returns nothing. |
-| "Local" launches are placed on another machine | `agents run --help` (1.22.118): "A bare interactive run otherwise places itself like --device auto; --local pins it here." The extension emits no flag for `local` (`src/core/agents.ts:249`). Fixed in phnx-labs/agi-ext#83 (awaiting merge). |
+| The sidebar's recent-activity fallback never produces anything | When `live.activity` is empty, `agentPanel.vscode.ts:733` passes `live.tail`, which is plain assistant text, to `collectRecentActivity`. That calls `parseLineForActivity`, which runs `JSON.parse(line)` (`session.activity.ts:106`), throws, and returns nothing. |
+| "Local" launches are placed on another machine | `agents run --help` (1.22.118): "A bare interactive run otherwise places itself like --device auto; --local pins it here." The extension emits no flag for `local` (`src/core/agents.ts:249`). Fixed in phnx-labs/agi-ext#83 and shipped in 0.9.376. |
 | The watchdog MCP server points at a file that doesn't exist | It is registered at `dist/mcp/watchdog-server.js` (`watchdogBridge.vscode.ts:250-255`), but the VSIX ships `out/mcp/`. `isInstalled` checks only the server name, so it never corrects the path. |
 | Activity buffer grows for as long as the window is open | `sessionPresentationStore.ts:86,99` only ever appends. `clear()` (`:147`) is called only from tests. The whole array is reposted on every Fleet rebuild (`settings.vscode.ts:1128`). |
 | Host keys don't match the CLI's | Extension: `/[^a-z0-9]+/g` → `-` (`src/shared/project.ts:90`, and again in `floorModel.ts:352`). CLI: `/[^a-z0-9_-]/g` (`machine-id.ts:16`). `mac_mini` becomes two different keys. Reported by the audit, not re-checked. |
 | Grouping ignores `confirmedProject` | The extension groups by `resolveProject(cwd)` basename (`sessionProjects.ts:137-169`). The CLI's `watch.ts:98` says not to. Reported by the audit, not re-checked. |
 | Non-Claude harnesses skip `agents run` | `openAgentTerminals` (`extension.ts:3630`) and `clearActiveTerminal` (`:4538`) route only Claude through the CLI. Reported by the audit, not re-checked. |
+| The sidebar wipes a half-typed reply | Every pushed snapshot replaces the panel with `root.innerHTML` (`agentPanel.vscode.ts:2462,2471`) and recreates `#reply-input` (`:2137`). Nothing saves the draft or the focus. |
+| The Fleet webview starts host work for state it never renders | `App.tsx` auto-posts `fetchAgentTerminals` and `subscribeAgentTerminals` (`:550-551`), which start session-file watchers on the host (`settings.vscode.ts:1772`). The `agentTerminals` and `sessionTasks` results are never passed to a component. |
+| The webview can SIGTERM any pid | `case 'stopSession'` (`settings.vscode.ts:3122-3128`) runs `process.kill(pid, 'SIGTERM')` for any pid above 1, bypassing `agents sessions stop`. Nothing in the UI sends this message, so deleting the case is the fix. |
+| A webview value reaches the shell | `setGithubOwner` only trims `owner` (`settings.vscode.ts:1634`) before ``exec(`gh repo list ${owner} …`)`` (`:1658`). Like `stopSession`, nothing in the UI sends it. |
+| `getSettings` writes global state on every read | The `display` and `notifications` branches (`settings.vscode.ts:1201-1296`) can fire up to 20 unawaited `globalState.update` calls per read, and `getSettings` is called 20 times in that file. Reported by the audit, not re-checked. |
 | PowerShell commands use POSIX quoting | `settings.vscode.ts:367-376` breaks on paths containing `'`. `gh repo list ${owner}` is unquoted (`:1658`, `:2460`). Reported by the audit, not re-checked. |
 
 ## Findings
@@ -67,9 +81,13 @@ Ranked by user-visible value per unit of risk. Each wave lands as its own PR or 
 
 1. Read `row.phase` instead of `mapStatusToPhase`. This removes the idle-for-dead bug and starts wave 3.
 2. Point the watchdog MCP path at `out/mcp/watchdog-server.js`, and re-register it when the stored path differs.
-3. Add `--local` for local launches, plus a `(Local)` variant for each harness: #83. Follow-up: `resumeInBest.ts:60-67` (Resume, Pick Harness) still emits a bare run.
+3. Done in #83 (0.9.376): `--local` for local launches, plus a `(Local)` variant for each harness. Follow-up: `resumeInBest.ts:60-67` (Resume, Pick Harness) still emits a bare run.
 4. Add one `psQuote` beside `shellQuote` in `src/core/deviceDispatchShell.ts`, and quote `owner`.
 5. Route every harness through `agents run` in `openAgentTerminals`/`clearActiveTerminal`.
+6. Delete the `stopSession` and `setGithubOwner` router cases (security; no sender).
+7. Keep the reply draft and focus across sidebar re-renders, until wave F1 replaces the template.
+8. Delete the unused `App.tsx` terminal subscription and its host watchers.
+9. Make `getSettings` read-only: merge defaults once at activation and write once.
 
 ### Wave 1: delete dead code (no behavior change, about 2,700 LOC plus about 800 test lines)
 
@@ -147,6 +165,55 @@ Deleting the transcript readers also removes performance findings 2 and 7: the p
 | `handoffToAgent` and `findRecentClaudePlan` (about 130) | `sessions fork --agent <other>` |
 | Message count and quick-summary counters | `messageCount` and counters on live rows |
 
+### Back end: hand-rolled machinery
+
+About 1,000 LOC net, beyond the waves above. Each item replaces copies with the owner that already exists, or with the Node, VS Code or installed-dependency API.
+
+| Hand-rolled | Copies (evidence) | Replace with | Net LOC |
+|---|---|---|---|
+| Stringly typed webview protocol | A 103-case `switch` (`settings.vscode.ts:1619`), `handleMessage(msg: any)` (`agentPanel.vscode.ts:407`), 61 `typeof message.x` guards, `isRecord` three times | `WebviewToHost`/`HostToWebview` discriminated unions in `src/shared`, one validator, per-domain handler maps | about -150 |
+| TTL and in-flight caches | About 12: `agentModels.ts:4-33`, `hostInventory.ts:175-195`, `agentResources.ts:55-75`, `swarm.vscode.ts:39-62,1017-1046`, `settings.vscode.ts:1410-1452`, `foreman.sources.ts:197,282`, `agentlinks.vscode.ts:164-185`, `swarmifyConfig.vscode.ts:18-104` | `cachedInFlight` (`core/cachedInFlight.ts:21`), which has one caller today | about -110 |
+| MCP server plumbing | `watchdog-server.ts` uses the low-level `Server`, hand-written JSON schemas and six content wrappers | `McpServer.registerTool` from the installed `@modelcontextprotocol/sdk` 1.30.0 | about -110 |
+| Crash-recovery state stored twice | `sessions.persist.ts` (one YAML file shared by all windows, unlocked read-modify-write at `:49-75`) and prewarm `workspaceState` (`prewarm.vscode.ts:23-27`), restored back to back (`extension.ts:1012-1018`); plus two per-window publishers on 60 s intervals (`extension.ts:5395-5422`, `:5580-5595`) | `context.workspaceState` only; the leader writes `live-terminals.json` from the tuples it already receives | about -280 |
+| Terminal replies outside `sessionReply.ts` | `agentPanel.vscode.ts:478-486`, `watchdogBridge.vscode.ts:136-140,211`, `extension.ts:1178-1187,3273,3581`, `settings.vscode.ts:736,2726-2749` | `sessionReply.ts`, which calls itself "the one terminal-reply rail" | about -30 |
+| Debounce, sleep, backoff, exec | 7 inline debounce copies, 6 `sleep` copies, 5 backoff loops, 7 `promisify(exec)` | `createCoalescingScheduler` moved to core; `node:timers/promises`; one backoff; `execFile` | about -80 |
+| Git and GitHub shell-outs | `exec('git remote get-url origin')` (`settings.vscode.ts:106`) next to the `vscode.git` wrapper (`git.vscode.ts:14`); `inferOwnerFromGhCli` (`:135`) | The `vscode.git` API and `vscode.authentication.getSession('github')` | about -40 |
+| Config watcher | `fs.watch` plus a 5 s poll for the file to appear (`swarmifyConfig.vscode.ts:185-240`) | `vscode.workspace.createFileSystemWatcher` | about -40 |
+| Logging | 163 `console.*` calls under about 26 tags, three file loggers, two writing the same `shell-adoption.log` | One `createOutputChannel('Agents', {log: true})` passed into core and monitor | small; users can finally see logs |
+| PATH lists | `bootstrapPath` (`agentsBin.ts:106`) and `commonBinDirs` (`binResolve.ts:18`); `runAgents` appends `PATH` twice | One list | about -10 |
+
+Structure:
+
+- A value-import cycle runs `extension.ts` ↔ `settings.vscode.ts` ↔ `linear.vscode.ts`. 17 inline `require()` calls work around it.
+- Ten `src/vscode` files (about 2,500 LOC) import no `vscode` and belong in `src/core` or deletion. Examples: `sessions.vscode.ts` 861, `foreman.audio.ts` 499, `remoteSessions.vscode.ts` 242.
+- 20 of the 80 `src/core` files do filesystem or process IO, so "pure presentation logic" in `AGENTS.md` is not true today.
+- Error handling has 20 empty catches and 59 that return null, `[]`, `{}` or false. The riskiest: `settings.vscode.ts:2374` defaults a device's platform to POSIX on failure, which sends the wrong shell to a Windows host.
+- 170 comment blocks of 8+ lines hold 2,021 lines, and the code has 234 ticket references. Most of them narrate history that belongs in commits.
+
+Adding a launch verb touches 6-8 files: `package.json`, `launchTarget.ts`, `agents.ts`, its test, `extension.ts`, and, if the Fleet exposes it, a UI `post`, a router `case`, and an import back into `extension.ts` that deepens the cycle.
+
+### Front end: hand-rolled UI
+
+About 2,000 LOC net. The repo already ships the pieces these copies rebuild: `components/ui` (cva and Radix slot), `lucide-react`, `marked` with DOMPurify in `renderMarkdown`, and `SegmentedControl`.
+
+| Wave | Hand-rolled | Copies (evidence) | Replace with | Net LOC |
+|---|---|---|---|---|
+| F1 | Sidebar webview as a string template | 831 lines of CSS and about 920 of JS (`agentPanel.vscode.ts:849-2604`) rebuilt with `innerHTML`; its own `esc`, regex markdown (`:2255-2296`) and time formatters | A third Vite entry, `ui/sidebar`, reusing `renderMarkdown`, `CardChecklist`, `VerticalTimeline` (no consumer today) and `AgentAvatar`; keep the `--vscode-*` CSS | about -550 |
+| F2 | Theming | `ui/settings` has 0 `var(--vscode-*)` references. Three theme mechanisms, 267 hex colors in CSS, and `sessionRowStyles.ts` holding 191 hard-coded dark colors injected with `<style>`; 178 inline `style={{}}` objects; about 37 pill and badge class families | `--ds-*` tokens defined once on top of `--vscode-*`, `SESSION_ROW_CSS` moved into `floor.css`, one `Badge` cva | about -300 |
+| F3 | Dropdowns and popovers | 12 copies (`HostSelect`, three in `DispatchPanel`, `ProjectSelect`, `NotifyBell`, two in `UnifiedAgentsPane`, `ResumeDeviceMenu`, `ProjectMenu`, three 150 ms `onBlur` comboboxes in `TaskDetailModal`); 34 clickable `div`s and only one has a role; `useClickAway` lives in an icon file | One `components/ui/Dropdown` with keyboard and Escape, or add `@radix-ui/react-dropdown-menu` beside the installed Radix packages | about -300 |
+| F4 | Webview messages | 17 `window.addEventListener('message')` sites while `bridge.onMessage` is unused; `devicesData` parsed three ways in `App.tsx`, `LaunchMatrix.tsx:71` and `UnifiedAgentsPane.tsx:829`; an 800 ms refetch `setTimeout` | The shared unions from the back-end table plus one `useHostMessage(type, fn)` hook | about -120 |
+| F5 | `UnifiedAgentsPane` god component | About 1,650 lines with 62 `useState`, 27 `useEffect` and 45 `useMemo`; about 470 lines of pure selectors (`:1003-1470`); derived state stored in state; `SessionsPane.tsx:57-102` hand-estimates row heights | `floorSelectors.ts` next to `floorModel`; row measurement inside `useVirtualList` | about -150 |
+| F6 | Copied icons | `mission-control/icons.tsx` (30 paths) and three in `dispatchIcons.tsx` are lucide paths | `lucide-react` 0.561.0, already used in 7 files | about -100 |
+| F7 | Modals, toggles, segmented controls | Five overlays with three Escape behaviors and no focus trap; five inline copies of the `Rocker` toggle in `PanelTab.tsx`; two controls that bypass `SegmentedControl` | `components/ui/Modal`, `Rocker` and `SegmentedControl` | about -135 |
+| F8 | Electron shell data backend | `app/floorData.ts` reads `~/.agents/*/meta.json` and regex-parses `access_token` from YAML; `floorPoll.ts` refetches every 5 s | The `agents feed watch --json` consumer, or delete `app/` (owner decision) | about -200 |
+| F9 | Editor shortcuts | `KeyboardShortcuts.ts` re-declares about 14 bindings that StarterKit, TaskList and Highlight already provide | The extensions' default bindings | about -35 |
+
+`components/ui` is the root cause of F2, F3 and F7. Its `Button` uses shadcn tokens (`--primary`) while 95% of the UI uses `--ds-*`, so nobody used it. Make it the primitive home on `--ds-*` tokens first, then migrate.
+
+Adding a column to the Fleet list touches 7-8 files across three layers: the CLI row, `settings.vscode.ts`, `ui/settings/types`, `floorModel.ts`, both paths in `floorAdapter.ts`, `SessionRow.tsx`, `sessionRowStyles.ts`, and the hand-tuned `ROW_H` in `SessionsPane.tsx`. After waves 3, F2, F4 and F5 it is three: the row field, the selector and the row markup.
+
+Five more tests assert on source text in `ui/`: `App.poll.test.ts`, `UnifiedAgentsPane.poll.test.ts` (334 lines), `ForemanOrb.test.ts`, and the wiring guard in `floorModel.fixes.test.ts:89-124`, which duplicates knip.
+
 ### Owner decisions (not counted above)
 
 - **`app/` Electron shell:** it runs its own 5 s poll, against the single-scheduler rule. Its `repository.directory` still points at `agi-cli`, and it hasn't been touched since 2026-09-13. Rewire it to the stream, or delete it.
@@ -209,6 +276,8 @@ Scripts written for this audit cross-checked non-test importers, webview message
 **Corrections made during verification:**
 
 - A finding that `sql.js` had no importers was wrong. `sessions.vscode.ts:26` loads it with a dynamic import, so it goes only with the wave 3 transcript readers.
+
+**Back-end and front-end audits (second pass):** value-import cycles were found with a Tarjan cycle finder run under `bun`, because `madge` was not available. Front-end library versions were read from `ui/bun.lock` (`lucide-react` 0.561.0, `@tiptap/*` 2.27.1, `marked` 14.1.4, `dompurify` 3.3.1), because `ui/node_modules` was not installed. Re-checked by hand: the `stopSession` kill, the `gh repo list ${owner}` interpolation, the sidebar `innerHTML` re-render of `#reply-input`, and the unused `App.tsx` terminal subscription.
 
 **Not measured:**
 
