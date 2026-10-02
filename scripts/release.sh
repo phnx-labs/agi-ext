@@ -450,7 +450,9 @@ fi
 
 if [ $PUBLISH_OVSX -eq 1 ]; then
     echo "Publishing $VSIX to Open VSX..."
-    ovsx publish "$VSIX"
+    # ovsx gives up on a request after 30 s by default, which a 15 MB upload
+    # over a slow uplink exceeds; OVSX_TIMEOUT (ms) is read by ovsx itself.
+    OVSX_TIMEOUT="${OVSX_TIMEOUT:-600000}" ovsx publish "$VSIX"
 fi
 
 echo
@@ -500,7 +502,9 @@ echo
 echo "Installing $VSIX locally..."
 INSTALLED=0
 for CLI in cursor code codium; do
-    if command -v "$CLI" >/dev/null 2>&1; then
+    # Same editor check as scripts/install.sh: a `cursor` on PATH can be the
+    # Cursor agent CLI, which cannot install extensions.
+    if command -v "$CLI" >/dev/null 2>&1 && "$CLI" --list-extensions >/dev/null 2>&1; then
         echo "  -> $CLI"
         "$CLI" --install-extension "$VSIX" --force
         INSTALLED=$((INSTALLED + 1))
