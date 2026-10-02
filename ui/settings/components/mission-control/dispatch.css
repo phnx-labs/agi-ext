@@ -37,7 +37,7 @@
 .swarmify-root .panel .ph .t { font-weight: 700; letter-spacing: .06em; font-size: 12px; }
 .swarmify-root .panel .ph .sub { color: var(--ds-text-dim); font-size: 11px; }
 .swarmify-root .panel .ph .sp { margin-left: auto; }
-.swarmify-root .panel .ph .icon { color: var(--ds-text-dim); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--r-md); position: relative; }
+.swarmify-root .panel .ph .icon { border: 0; background: transparent; color: var(--ds-text-dim); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--r-md); position: relative; }
 .swarmify-root .panel .ph .icon:hover { color: var(--ds-text); background: var(--ds-bg-sunken); }
 .swarmify-root .panel .ph .icon.act { color: var(--brand-600); }
 .swarmify-root .panel .belldot { position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
@@ -90,7 +90,7 @@
 .swarmify-root .panel .sug .pl { margin-left: auto; color: var(--ds-text-dim); font-size: 14px; }
 
 /* ---- express summary line ---- */
-.swarmify-root .panel .summary { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 9px 11px; background: var(--ds-bg-sunken); border: 1px solid var(--ds-border-strong); border-radius: 9px; cursor: pointer; }
+.swarmify-root .panel .summary { width: 100%; color: var(--ds-text); font: inherit; text-align: left; display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 9px 11px; background: var(--ds-bg-sunken); border: 1px solid var(--ds-border-strong); border-radius: 9px; cursor: pointer; }
 .swarmify-root .panel .summary:hover { border-color: var(--ds-border-strong); }
 .swarmify-root .panel .summary .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--status-running); }
 .swarmify-root .panel .summary .txt { font-size: 12px; }
@@ -196,3 +196,5 @@
 .swarmify-root .panel .sw.on { background: var(--brand); }
 .swarmify-root .panel .sw i { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: .12s; }
 .swarmify-root .panel .sw.on i { left: 15px; }
+
+.swarmify-root .panel .dd-menu .ui-menu-item { width: 100%; }

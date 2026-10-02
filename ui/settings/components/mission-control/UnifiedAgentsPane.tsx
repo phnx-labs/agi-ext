@@ -480,8 +480,6 @@ function MeasuredRow({ vKey, onMeasure, children }: { vKey: string; onMeasure: (
 
 export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks, unifiedTasksLoading, onDispatch, onNavigate, onOpenInBench, openDispatchTrigger, quickSpawnTrigger, openDetailTaskId, onDetailTaskConsumed, onThroughputChange, search: floorSearch, onSearch: setFloorSearch, githubRepo, watchdogEnabled = false, watchdogEvents = [], projectRules = [], sessionStreamDegraded = false }: UnifiedAgentsPaneProps) {
   const panelVisible = usePanelVisibility()
-  const [newMenuOpen, setNewMenuOpen] = useState(false)
-  const [statPopover, setStatPopover] = useState<'shipped' | 'open' | 'running' | 'nextup' | 'files' | null>(null)
   const [dispatchOpen, setDispatchOpen] = useState(false)
   const [dispatchPrefill, setDispatchPrefill] = useState('')
   const [dispatchPrefillTicketId, setDispatchPrefillTicketId] = useState<string | undefined>(undefined)
@@ -928,8 +926,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     }, 800)
   }, [])
 
-  const newMenuRef = useRef<HTMLDivElement>(null)
-  const statPopoverRef = useRef<HTMLDivElement>(null)
   const nextUpSectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -955,24 +951,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
       return pruned
     })
   }, [tick, pendingDispatches, tasks])
-
-  useEffect(() => {
-    if (!newMenuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) setNewMenuOpen(false)
-    }
-    window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [newMenuOpen])
-
-  useEffect(() => {
-    if (!statPopover) return
-    const handler = (e: MouseEvent) => {
-      if (statPopoverRef.current && !statPopoverRef.current.contains(e.target as Node)) setStatPopover(null)
-    }
-    window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [statPopover])
 
   // Listen for command-palette-dispatched events. We can't call into App.tsx's
   // state from here, so the palette fires window-level CustomEvents we pick up.
@@ -2121,7 +2099,6 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
     </div>
   )
 }
-
 
 /**
  * Inline banner for teammates waiting on human input.

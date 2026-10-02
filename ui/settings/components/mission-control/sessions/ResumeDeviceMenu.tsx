@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import { DropdownMenu, DropdownItem } from '../../ui/Dropdown'
+import React, { useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import type { FloorAgent } from '../floorModel'
 import { resumeSourceDevice } from './sessionActions'
@@ -20,33 +21,17 @@ export function ResumeDeviceMenu({ state, devices, onChoose, onClose }: {
   onChoose: (agent: FloorAgent, device: string) => void
   onClose: () => void
 }) {
-  const ref = useRef<HTMLDivElement>(null)
   const current = resumeSourceDevice(state.agent)
   const alternatives = useMemo(
     () => devices.filter((device) => device.name && device.name !== current),
     [current, devices],
   )
 
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [onClose])
-
   const left = Math.max(8, Math.min(state.x, window.innerWidth - 260))
   const top = Math.max(8, Math.min(state.y, window.innerHeight - 280))
   return createPortal(
-    <div
-      ref={ref}
+    <DropdownMenu
+      onClose={onClose}
       className="sx-resume-menu"
       role="menu"
       aria-label="Resume on a different device"
@@ -55,7 +40,7 @@ export function ResumeDeviceMenu({ state, devices, onChoose, onClose }: {
     >
       <div className="sx-resume-menu-title">Resume on a different device…</div>
       {alternatives.length > 0 ? alternatives.map((device) => (
-        <button
+        <DropdownItem
           key={device.name}
           type="button"
           role="menuitem"
@@ -66,9 +51,9 @@ export function ResumeDeviceMenu({ state, devices, onChoose, onClose }: {
           <span className={`sx-resume-device-dot${device.online ? '' : ' offline'}`} aria-hidden />
           {device.name}
           {!device.online && <span className="sx-resume-device-state">offline</span>}
-        </button>
+        </DropdownItem>
       )) : <div className="sx-resume-menu-empty">No other devices available</div>}
-    </div>,
+    </DropdownMenu>,
     document.body,
   )
 }

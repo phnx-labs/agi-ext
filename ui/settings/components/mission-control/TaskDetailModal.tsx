@@ -1,3 +1,4 @@
+import { Modal } from '../ui/Modal'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { UnifiedTask } from '../../types'
 import { Icon } from './icons'
@@ -157,8 +158,6 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
   const [branchesByRepo, setBranchesByRepo] = useState<Record<string, { branches: string[]; defaultBranch: string }>>({})
 
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', esc)
     postMessage({ type: 'fetchGithubRepos' })
     const onMsg = (event: MessageEvent) => {
       const msg = event.data
@@ -176,7 +175,6 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
     }
     window.addEventListener('message', onMsg)
     return () => {
-      window.removeEventListener('keydown', esc)
       window.removeEventListener('message', onMsg)
     }
   }, [onClose])
@@ -342,8 +340,8 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
   }
 
   return (
-    <div className="sw-dispatch-modal-overlay" onMouseDown={onClose} role="dialog" aria-modal="true">
-      <div className="sw-task-detail-modal" onMouseDown={(e) => e.stopPropagation()}>
+    <Modal className="sw-dispatch-modal-overlay" onClose={onClose} aria-label="Task details">
+      <div className="sw-task-detail-modal">
         <div className="sw-task-detail-head">
           <div className="sw-task-detail-head-top">
             {onBack && (
@@ -608,6 +606,6 @@ export function TaskDetailModal({ task, tasks, onClose, onBack, onDispatch, onTa
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

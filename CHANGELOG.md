@@ -4,6 +4,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- Fleet menus support keyboard navigation and Escape; dialogs trap and restore focus.
+- The Fleet follows the editor theme through shared VS Code-backed design tokens.
+
 ## [0.9.376] - 2026-10-01
 
 - Add New <Harness> (Local) for every active harness. Local defaults, Pick Host’s

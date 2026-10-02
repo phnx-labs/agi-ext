@@ -47,7 +47,7 @@ function resolveIcon(id: string): string {
     if (!icons) return ''
     const key = ICON_KEY[id]
     if (!key) return ''
-    const isLight = typeof document !== 'undefined' && !!document.querySelector('.swarmify-root.theme-light')
+    const isLight = typeof document !== 'undefined' && document.body.classList.contains('vscode-light')
     return getIcon(icons[key] as string | { dark: string; light: string }, isLight)
   } catch {
     return ''

@@ -2,7 +2,6 @@
 // file). The prototype renders these as literal emoji (bell / image / file); the
 // hard rule is no literal emoji in TSX, so they render as stroked SVG (lucide look).
 import React from 'react'
-import { useEffect } from 'react'
 
 function Svg({ size = 14, className, children }: {
   size?: number
@@ -52,20 +51,4 @@ export function FileIcon({ size = 14, className }: { size?: number; className?: 
       <polyline points="14 2 14 8 20 8" />
     </Svg>
   )
-}
-
-/** Close the popover/dropdown when a pointer lands outside `ref`. */
-export function useClickAway<T extends HTMLElement>(
-  ref: React.RefObject<T | null>,
-  onAway: () => void,
-  active: boolean,
-) {
-  useEffect(() => {
-    if (!active) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onAway()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [ref, onAway, active])
 }

@@ -1,3 +1,4 @@
+import { DropdownMenu, DropdownItem, DropdownSection } from '../ui/Dropdown'
 // Notify bell popover — the header-bell surface. Ports the prototype's renderBell()
 // (dispatch.html): ON EVENTS (Stalled/Needs-input/Plan-ready/Finished/Failed, the
 // silent-stall ones emphasized), WHERE (iMessage/Slack/Desktop + integration), DND
@@ -38,41 +39,43 @@ export function NotifyBell({ prefs, onChange }: NotifyBellProps) {
   const toggleDnd = () => onChange({ ...prefs, dnd: !prefs.dnd })
 
   return (
-    <div className="bellpop" onClick={e => e.stopPropagation()}>
+    <DropdownMenu aria-label="Notification preferences" className="bellpop" onClick={e => e.stopPropagation()}>
       <div className="bp-h">
         <Bell size={13} />&nbsp;Notify me
-        <span className="dnd" onClick={e => { e.stopPropagation(); toggleDnd() }}>
+        <DropdownItem role="menuitemcheckbox" aria-checked={prefs.dnd} className="dnd" onClick={e => { e.stopPropagation(); toggleDnd() }}>
           <span className={`sw ${prefs.dnd ? 'on' : ''}`}><i /></span> DND
-        </span>
+        </DropdownItem>
       </div>
-      <div className="bp-sec">ON EVENTS</div>
+      <DropdownSection className="bp-sec">ON EVENTS</DropdownSection>
       {EVENTS.map(({ key, label, em }) => (
-        <div
+        <DropdownItem
           key={key}
+          role="menuitemcheckbox" aria-checked={prefs.events[key]}
           className={`chk ${prefs.events[key] ? 'on' : ''}`}
           onClick={e => { e.stopPropagation(); toggleEvent(key) }}
         >
           <span className="box">{prefs.events[key] ? <Icon name="check" size={10} /> : null}</span>
           <span className={em ? 'em' : ''}>{label}</span>
-        </div>
+        </DropdownItem>
       ))}
-      <div className="bp-sec">WHERE</div>
+      <DropdownSection className="bp-sec">WHERE</DropdownSection>
       <div className="chan">
         {CHANNELS.map(c => (
-          <span
+          <DropdownItem
             key={c}
+            selected={prefs.channel === c}
             className={`c ${prefs.channel === c ? 'on' : ''}`}
             onClick={e => { e.stopPropagation(); setChannel(c) }}
           >
             {CHANNEL_LABEL[c]}
-          </span>
+          </DropdownItem>
         ))}
         <span className="c">+ integration</span>
       </div>
-      <div className="bp-sec">QUIET HOURS</div>
+      <DropdownSection className="bp-sec">QUIET HOURS</DropdownSection>
       <div className="chk">
         <span className="mono" style={{ color: 'var(--tx-mut)' }}>10pm – 8am · queue non-urgent</span>
       </div>
-    </div>
+    </DropdownMenu>
   )
 }

@@ -43,10 +43,8 @@ import {
   UNASSIGNED_PROJECT,
   type ProjectAssignments,
 } from './sessionProjects'
-import { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 export { SessionRow } from './sessions/SessionRow'
-export { SESSION_ROW_CSS } from './sessions/sessionRowStyles'
 
 // The Sessions surface: one place to see every session you own — local + remote,
 // active + orphaned — and resume any of them, or a whole project's worth after a
@@ -273,7 +271,6 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
 
   return (
     <div className="sw-sessions">
-      <style>{SESSION_ROW_CSS}</style>
       {/* Only show the filter toolbar when there is something to filter. With
           zero sessions the chips/search/sort chrome is dead weight — the empty
           state below carries the whole message. */}

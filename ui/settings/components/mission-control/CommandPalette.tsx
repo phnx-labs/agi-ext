@@ -1,3 +1,4 @@
+import { Modal } from '../ui/Modal'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { UnifiedTask } from '../../types'
 import { Icon } from './icons'
@@ -131,7 +132,6 @@ export function CommandPalette({
   }
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       if (filtered.length === 0) return
@@ -147,10 +147,9 @@ export function CommandPalette({
   }
 
   return (
-    <div className="sw-dispatch-modal-overlay" onMouseDown={onClose} role="dialog" aria-modal="true">
+    <Modal className="sw-dispatch-modal-overlay" onClose={onClose} aria-label="Command palette">
       <div
         className="sw-dispatch-modal"
-        onMouseDown={(e) => e.stopPropagation()}
         style={{ maxWidth: 640, width: '90%' }}
       >
         <div className="sw-dispatch-modal-search">
@@ -231,6 +230,6 @@ export function CommandPalette({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

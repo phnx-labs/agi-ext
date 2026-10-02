@@ -3,9 +3,10 @@
 // usage order for cloud repos), a MOST USED badge on the genuine max-uses entry, a
 // Linear pill + confidence meter, and the mono path sub-line for local projects.
 import React from 'react'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Icon } from './icons'
-import { useClickAway } from './dispatchIcons'
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownSection, DropdownItem } from '../ui/Dropdown'
+import { Badge } from '../ui/Badge'
 import type { DispatchTarget } from './dispatch.types'
 
 export interface ProjectSelectProps {
@@ -15,27 +16,14 @@ export interface ProjectSelectProps {
   onChange: (id: string) => void
 }
 
-// Small violet chip naming the linked Linear project. Inline-styled (dispatch.css
-// is owned by another surface) — violet #8b8ce8 per the managed-projects spec.
 function LinearPill({ name }: { name: string }) {
-  return (
-    <span
-      title={`Linear · ${name}`}
-      style={{
-        fontSize: 9, fontWeight: 700, lineHeight: '14px', color: '#8b8ce8',
-        border: '1px solid #8b8ce8', borderRadius: 4, padding: '0 4px',
-        maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}
-    >
-      {name}
-    </span>
-  )
+  return <Badge variant="linear" title={`Linear · ${name}`}>{name}</Badge>
 }
 
 // Tiny confidence meter: high = full lime, medium = ~60% cyan, low = ~25% dim.
 function ConfMeter({ level }: { level: 'high' | 'medium' | 'low' }) {
   const pct = level === 'high' ? 100 : level === 'medium' ? 60 : 25
-  const color = level === 'high' ? '#a3e635' : level === 'medium' ? '#5ad6c0' : 'var(--ds-text-dim)'
+  const color = level === 'high' ? 'var(--ds-success)' : level === 'medium' ? 'var(--ds-info)' : 'var(--ds-text-dim)'
   return (
     <span
       title={`${level} confidence`}
@@ -52,8 +40,6 @@ function ConfMeter({ level }: { level: 'high' | 'medium' | 'low' }) {
 
 export function ProjectSelect({ items, value, cloud, onChange }: ProjectSelectProps) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useClickAway(ref, () => setOpen(false), open)
 
   // Preserve the incoming order: for managed projects that is buildManagedTargets'
   // confidence-first ranking (so the dropdown matches the sidebar); for cloud repos
@@ -66,27 +52,28 @@ export function ProjectSelect({ items, value, cloud, onChange }: ProjectSelectPr
 
   return (
     <>
-      <div ref={ref} className={`dd ${open ? 'open' : ''}`}>
-        <button className="dd-btn" onClick={e => { e.stopPropagation(); setOpen(o => !o) }}>
+      <Dropdown open={open} onOpenChange={setOpen} className={`dd ${open ? 'open' : ''}`}>
+        <DropdownTrigger className="dd-btn">
           <span>{sel.label}</span>
           <span className="caret" style={{ marginLeft: 'auto' }}><Icon name="chevD" size={13} /></span>
-        </button>
-        <div className="dd-menu">
+        </DropdownTrigger>
+        <DropdownMenu className="dd-menu">
           {items.map(i => (
-            <div
+            <DropdownItem
               key={i.id}
+              selected={i.id === sel.id}
               className={`opt ${i.id === sel.id ? 'sel' : ''}`}
               onClick={() => { onChange(i.id); setOpen(false) }}
             >
               <span className="nm">{i.label}</span>
-              {top && i.id === top.id ? <span className="badge used">MOST USED</span> : null}
+              {top && i.id === top.id ? <Badge variant="used">MOST USED</Badge> : null}
               {i.linearProject ? <LinearPill name={i.linearProject} /> : null}
               {i.confidence ? <ConfMeter level={i.confidence} /> : null}
               <span className="right"><span className="use">{i.uses}×</span></span>
-            </div>
+            </DropdownItem>
           ))}
-        </div>
-      </div>
+        </DropdownMenu>
+      </Dropdown>
       {cloud ? null : <div className="sub2 mono">{sel.path}</div>}
     </>
   )

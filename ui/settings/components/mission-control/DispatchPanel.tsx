@@ -1,3 +1,5 @@
+import { Modal } from '../ui/Modal'
+import { HostLoad } from '../ui/HostLoad'
 // Consolidated Dispatch panel — replaces the 5 legacy dispatch surfaces.
 // Presentational + local state only; data + actions arrive via DispatchPanelProps.
 // Matches extension/docs/prototypes/dispatch.html 1:1 (layout, class names,
@@ -6,7 +8,9 @@
 import React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
-import { Bell, useClickAway } from './dispatchIcons'
+import { Bell } from './dispatchIcons'
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownSection, DropdownItem } from '../ui/Dropdown'
+import { Badge } from '../ui/Badge'
 import { DispatchInput, ticketKey } from './dispatchInput'
 import { resolveAutoProject } from './dispatch'
 import { AgentSelect } from './AgentSelect'
@@ -216,8 +220,6 @@ export function DispatchPanel(props: DispatchPanelProps) {
   const [drafting, setDrafting] = useState(false)
   const [draftError, setDraftError] = useState<string | undefined>(undefined)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const bellRef = useRef<HTMLSpanElement>(null)
-  useClickAway(bellRef, () => setBellOpen(false), bellOpen)
 
   // Restore the saved draft + autofocus each time the panel opens (never wipe).
   useEffect(() => {
@@ -423,22 +425,17 @@ export function DispatchPanel(props: DispatchPanelProps) {
       : `Dispatch ${effAgent?.name ?? 'agent'} → ${projectLabel}${S.mode !== 'auto' ? ' · ' + cap(S.mode) : ''}`
 
   return (
-    <div className="dispatch-overlay">
-    <div className={`panel${bellOpen ? ' bell' : ''}`} onKeyDown={e => { if (e.key === 'Escape') onClose() }}>
+    <Modal className="dispatch-overlay" onClose={onClose} aria-label="Dispatch">
+    <Dropdown open={bellOpen} onOpenChange={setBellOpen} className={`panel${bellOpen ? ' bell' : ''}`}>
       <div className="ph">
         <span className="t">DISPATCH</span>
         <span className="sub">{phsub}</span>
         <span className="sp" />
-        <span
-          ref={bellRef}
-          className={`icon ${bellActive ? 'act' : ''}`}
-          title="Notifications"
-          onClick={e => { e.stopPropagation(); setBellOpen(o => !o) }}
-        >
+        <DropdownTrigger className={`icon ${bellActive ? 'act' : ''}`} title="Notifications" aria-label="Notifications">
           <Bell size={15} />
           <span className="belldot" />
-        </span>
-        <span className="icon" onClick={onClose}><Icon name="x" size={15} /></span>
+        </DropdownTrigger>
+        <button type="button" className="icon" aria-label="Close dispatch" onClick={onClose}><Icon name="x" size={15} /></button>
       </div>
 
       <div className="body">
@@ -560,7 +557,7 @@ export function DispatchPanel(props: DispatchPanelProps) {
             </div>
           </div>
         ) : (
-          <div className="summary" onClick={() => patch({ expanded: true })}>
+          <button type="button" className="summary" onClick={() => patch({ expanded: true })}>
             <span className="dot" />
             <span className="txt">
               <b>{effAgent?.name ?? 'agent'}</b> · {deviceMode && effDevice
@@ -568,7 +565,7 @@ export function DispatchPanel(props: DispatchPanelProps) {
                 : `${projectLabel} on ${effHost?.label ?? '—'}`} · {cap(S.mode)}
             </span>
             <span className="cfg">Configure <Icon name="chevD" size={12} /></span>
-          </div>
+          </button>
         )}
 
         {attachedCount >= 2 && (
@@ -589,8 +586,8 @@ export function DispatchPanel(props: DispatchPanelProps) {
       </div>
 
       <NotifyBell prefs={S.notify} onChange={n => patch({ notify: n })} />
-    </div>
-    </div>
+    </Dropdown>
+    </Modal>
   )
 }
 
@@ -653,37 +650,6 @@ function joinPath(root: string, relPath: string): string {
   return !relPath || relPath === '.' ? root : `${root}/${relPath}`
 }
 
-function DeviceLoadBar({ d }: { d: DispatchDevice }) {
-  const running = d.runningAgents ?? 0
-  const limit = d.softLimit ?? 5
-  const filledCount = Math.min(5, Math.ceil((running / Math.max(1, limit)) * 5))
-  const hot = deviceAtLimit(d)
-  return (
-    <span className="loadbar">
-      {Array.from({ length: 5 }, (_, i) => (
-        <i key={i} className={i < filledCount ? (hot ? 'hot' : 'f') : ''} />
-      ))}
-    </span>
-  )
-}
-
-function DeviceRight({ d }: { d: DispatchDevice }) {
-  if (!d.reachable) return <span className="loadtxt busy">offline</span>
-  const running = d.runningAgents ?? 0
-  const atLimit = deviceAtLimit(d)
-  const txt = atLimit
-    ? 'At limit'
-    : d.softLimit !== undefined
-      ? `${running}/${d.softLimit}`
-      : `${running} agents`
-  return (
-    <>
-      <DeviceLoadBar d={d} />
-      <span className={`loadtxt ${atLimit ? 'busy' : 'free'}`}>{txt}</span>
-    </>
-  )
-}
-
 function DeviceSelect({ devices, value, onChange, onManage }: {
   devices: DispatchDevice[]
   value: string
@@ -691,8 +657,6 @@ function DeviceSelect({ devices, value, onChange, onManage }: {
   onManage?: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useClickAway(ref, () => setOpen(false), open)
 
   // Only show reachable devices; offline/pending nodes just clutter the list.
   const online = devices.filter(d => d.reachable)
@@ -707,38 +671,40 @@ function DeviceSelect({ devices, value, onChange, onManage }: {
 
   return (
     <>
-      <div ref={ref} className={`dd ${open ? 'open' : ''}`}>
-        <button className="dd-btn" onClick={e => { e.stopPropagation(); setOpen(o => !o) }}>
+      <Dropdown open={open} onOpenChange={setOpen} className={`dd ${open ? 'open' : ''}`}>
+        <DropdownTrigger className="dd-btn">
           <span className={`dot ${sel && sel.reachable ? '' : 'off'}`} />
           <span>{sel ? sel.name : 'Off — run on host above'}</span>
-          <span className="right">{sel ? <DeviceRight d={sel} /> : null}</span>
+          <span className="right">{sel ? <HostLoad device={sel} /> : null}</span>
           <span className="caret"><Icon name="chevD" size={13} /></span>
-        </button>
-        <div className="dd-menu">
-          <div className="dd-sec">DEVICES</div>
-          <div className={`opt ${!sel ? 'sel' : ''}`} onClick={() => { onChange(''); setOpen(false) }}>
+        </DropdownTrigger>
+        <DropdownMenu className="dd-menu">
+          <DropdownSection className="dd-sec">DEVICES</DropdownSection>
+          <DropdownItem selected={!sel} className={`opt ${!sel ? 'sel' : ''}`} onClick={() => { onChange(''); setOpen(false) }}>
             <span className="dot off" />
             <span className="nm">Off — run on host above</span>
-          </div>
+          </DropdownItem>
           {online.map(d => (
-            <div
+            <DropdownItem
               key={d.name}
+              disabled={!deviceReady(d)}
+              selected={d.name === value}
               className={`opt ${d.name === value ? 'sel' : ''} ${!deviceReady(d) ? 'dis' : ''}`}
               onClick={() => pick(d)}
             >
               <span className={`dot ${d.reachable ? '' : 'off'}`} />
               <span className="nm">{d.name}</span>
-              {sug && d.name === sug.name ? <span className="badge">SUGGESTED</span> : null}
-              <span className="right"><DeviceRight d={d} /></span>
-            </div>
+              {sug && d.name === sug.name ? <Badge>SUGGESTED</Badge> : null}
+              <span className="right"><HostLoad device={d} /></span>
+            </DropdownItem>
           ))}
           {onManage && (
-            <div className="opt" onClick={() => { onManage(); setOpen(false) }}>
+            <DropdownItem className="opt" onClick={() => { onManage(); setOpen(false) }}>
               <span className="nm" style={{ color: 'var(--brand-600)' }}>Manage devices…</span>
-            </div>
+            </DropdownItem>
           )}
-        </div>
-      </div>
+        </DropdownMenu>
+      </Dropdown>
       <div className="sub2">{sel ? `Runs over SSH on ${sel.host}` : 'Off — dispatch uses the Run on host above'}</div>
     </>
   )
@@ -750,33 +716,32 @@ function DeviceRepoSelect({ repos, value, onChange }: {
   onChange: (slug: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useClickAway(ref, () => setOpen(false), open)
 
   const ranked = [...repos].sort((a, b) => b.freq - a.freq)
   const sel = ranked.find(r => r.slug === value)
   const top = ranked[0]
 
   return (
-    <div ref={ref} className={`dd ${open ? 'open' : ''}`}>
-      <button className="dd-btn" onClick={e => { e.stopPropagation(); setOpen(o => !o) }}>
+    <Dropdown open={open} onOpenChange={setOpen} className={`dd ${open ? 'open' : ''}`}>
+      <DropdownTrigger className="dd-btn">
         <span>{sel ? sel.slug : 'Pick a repo'}</span>
         <span className="caret" style={{ marginLeft: 'auto' }}><Icon name="chevD" size={13} /></span>
-      </button>
-      <div className="dd-menu">
+      </DropdownTrigger>
+      <DropdownMenu className="dd-menu">
         {ranked.map(r => (
-          <div
+          <DropdownItem
             key={r.slug}
+            selected={r.slug === value}
             className={`opt ${r.slug === value ? 'sel' : ''}`}
             onClick={() => { onChange(r.slug); setOpen(false) }}
           >
             <span className="nm">{r.slug}</span>
-            {top && r.slug === top.slug ? <span className="badge used">MOST USED</span> : null}
+            {top && r.slug === top.slug ? <Badge variant="used">MOST USED</Badge> : null}
             <span className="right"><span className="use">{r.freq}×</span></span>
-          </div>
+          </DropdownItem>
         ))}
-      </div>
-    </div>
+      </DropdownMenu>
+    </Dropdown>
   )
 }
 
@@ -787,8 +752,6 @@ function DeviceProjectSelect({ projects, root, value, onChange }: {
   onChange: (relPath: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useClickAway(ref, () => setOpen(false), open)
 
   // The repo root is the default; picking a subdirectory is optional.
   const atRoot = value === root
@@ -796,28 +759,29 @@ function DeviceProjectSelect({ projects, root, value, onChange }: {
   const subdirs = projects.filter(p => p.relPath !== '.' && p.relPath !== '')
 
   return (
-    <div ref={ref} className={`dd ${open ? 'open' : ''}`} style={{ marginTop: 6 }}>
-      <button className="dd-btn" onClick={e => { e.stopPropagation(); setOpen(o => !o) }}>
+    <Dropdown open={open} onOpenChange={setOpen} className={`dd ${open ? 'open' : ''}`} style={{ marginTop: 6 }}>
+      <DropdownTrigger className="dd-btn">
         <span>Subdirectory (optional): {selName}</span>
         <span className="caret" style={{ marginLeft: 'auto' }}><Icon name="chevD" size={13} /></span>
-      </button>
-      <div className="dd-menu">
-        <div className={`opt ${atRoot ? 'sel' : ''}`} onClick={() => { onChange('.'); setOpen(false) }}>
+      </DropdownTrigger>
+      <DropdownMenu className="dd-menu">
+        <DropdownItem selected={atRoot} className={`opt ${atRoot ? 'sel' : ''}`} onClick={() => { onChange('.'); setOpen(false) }}>
           <span className="nm">whole repo</span>
           <span className="right"><span className="use">root</span></span>
-        </div>
+        </DropdownItem>
         {subdirs.map(p => (
-          <div
+          <DropdownItem
             key={p.relPath}
+            selected={joinPath(root, p.relPath) === value}
             className={`opt ${joinPath(root, p.relPath) === value ? 'sel' : ''}`}
             onClick={() => { onChange(p.relPath); setOpen(false) }}
           >
             <span className="nm">{p.name}</span>
             <span className="right"><span className="use">{p.relPath}</span></span>
-          </div>
+          </DropdownItem>
         ))}
-      </div>
-    </div>
+      </DropdownMenu>
+    </Dropdown>
   )
 }
 

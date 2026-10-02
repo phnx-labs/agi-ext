@@ -164,7 +164,7 @@
   background: rgba(242,109,91,0.04);
 }
 
-.theme-dark .sw-task-card.selected {
+.vscode-dark .sw-task-card.selected {
   background: rgba(242,109,91,0.06);
 }
 
@@ -648,7 +648,7 @@
   box-shadow: 0 0 0 1.5px var(--stale-rotten), 0 0 12px var(--stale-rotten-glow);
 }
 
-.theme-dark .sw-calendar-day.in-cycle {
+.vscode-dark .sw-calendar-day.in-cycle {
   background: rgba(34,197,94,0.06);
 }
 

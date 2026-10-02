@@ -1,11 +1,13 @@
+import { HostLoad } from '../ui/HostLoad'
 // Run-on host picker with LIVE load. Ports the prototype's renderHost() +
 // loadBar()/hostRight() (dispatch.html): MACHINES/CLOUD sections, load bars,
 // SUGGESTED (least-busy) + MOST USED badges, cloud cost, offline-disabled rows,
 // and the busy-host nudge to the free machine.
 import React from 'react'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Icon } from './icons'
-import { useClickAway } from './dispatchIcons'
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownSection, DropdownItem } from '../ui/Dropdown'
+import { Badge } from '../ui/Badge'
 import type { DispatchHost } from './dispatch.types'
 
 export interface HostSelectProps {
@@ -28,41 +30,8 @@ function mostUsedHost(hosts: DispatchHost[]): DispatchHost | undefined {
     .sort((a, b) => b.uses - a.uses)[0]
 }
 
-function LoadBar({ host }: { host: DispatchHost }) {
-  const n = Math.min(5, host.agents || 0)
-  return (
-    <span className="loadbar">
-      {Array.from({ length: 5 }, (_, i) => {
-        const filled = i < n
-        const cls = filled ? (host.load === 'hot' ? 'hot' : 'f') : ''
-        return <i key={i} className={cls} />
-      })}
-    </span>
-  )
-}
-
-function HostRight({ host }: { host: DispatchHost }) {
-  if (host.kind === 'cloud') {
-    return <span className="use">{host.costHint ?? 'usage 60%'}</span>
-  }
-  if (!host.online) return <span className="loadtxt busy">offline</span>
-  const st = host.load === 'idle'
-    ? 'idle'
-    : host.load === 'free'
-      ? `${host.agents} agent · free`
-      : `${host.agents} agents · busy`
-  return (
-    <>
-      <LoadBar host={host} />
-      <span className={`loadtxt ${host.load === 'busy' ? 'busy' : 'free'}`}>{st}</span>
-    </>
-  )
-}
-
 export function HostSelect({ hosts, value, onChange }: HostSelectProps) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useClickAway(ref, () => setOpen(false), open)
 
   const sel = hosts.find(h => h.id === value) ?? hosts[0]
   if (!sel) return null
@@ -80,17 +49,19 @@ export function HostSelect({ hosts, value, onChange }: HostSelectProps) {
   }
 
   const Row = ({ h }: { h: DispatchHost }) => (
-    <div
+    <DropdownItem
+      disabled={!h.online}
+      selected={h.id === sel.id}
       className={`opt ${h.id === sel.id ? 'sel' : ''} ${h.kind === 'cloud' ? 'cloud' : ''} ${!h.online ? 'dis' : ''}`}
       onClick={() => pick(h)}
     >
       <span className={`dot ${h.online ? '' : 'off'}`} />
       <span className="nm">{h.label}</span>
       {sug && h.id === sug.id
-        ? <span className="badge">SUGGESTED</span>
-        : (most && h.id === most.id ? <span className="badge used">MOST USED</span> : null)}
-      <span className="right"><HostRight host={h} /></span>
-    </div>
+        ? <Badge>SUGGESTED</Badge>
+        : (most && h.id === most.id ? <Badge variant="used">MOST USED</Badge> : null)}
+      <span className="right"><HostLoad host={h} /></span>
+    </DropdownItem>
   )
 
   const subText = isCloud
@@ -101,20 +72,20 @@ export function HostSelect({ hosts, value, onChange }: HostSelectProps) {
 
   return (
     <>
-      <div ref={ref} className={`dd ${open ? 'open' : ''}`}>
-        <button className="dd-btn" onClick={e => { e.stopPropagation(); setOpen(o => !o) }}>
+      <Dropdown open={open} onOpenChange={setOpen} className={`dd ${open ? 'open' : ''}`}>
+        <DropdownTrigger className="dd-btn">
           <span className={`dot ${sel.online ? '' : 'off'}`} />
           <span>{sel.label}</span>
-          <span className="right">{isCloud ? null : <HostRight host={sel} />}</span>
+          <span className="right">{isCloud ? null : <HostLoad host={sel} />}</span>
           <span className="caret"><Icon name="chevD" size={13} /></span>
-        </button>
-        <div className="dd-menu">
-          <div className="dd-sec">MACHINES</div>
+        </DropdownTrigger>
+        <DropdownMenu className="dd-menu">
+          <DropdownSection className="dd-sec">MACHINES</DropdownSection>
           {local.map(h => <Row key={h.id} h={h} />)}
-          <div className="dd-sec">CLOUD</div>
+          <DropdownSection className="dd-sec">CLOUD</DropdownSection>
           {cloud.map(h => <Row key={h.id} h={h} />)}
-        </div>
-      </div>
+        </DropdownMenu>
+      </Dropdown>
       <div className="sub2">{subText}</div>
       {busy && sug && (
         <div className="nudge">
