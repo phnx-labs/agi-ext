@@ -9,8 +9,7 @@ import * as path from 'path';
 // CLI-projected stream row. None of these functions use `${}`, so the raw
 // substring evaluates identically to the runtime template.
 //
-// Anything that needs to match a path separator does it by CHAR CODE, never a
-// regex char class — see the warning in renderFilesCard.
+// Path labels arrive preformatted by the host; the template preserves them.
 const SRC = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
 
 function extractFn(name: string): string {
@@ -43,7 +42,7 @@ const NAMES = [
   'renderGoalCard', 'renderChecklistCard',
   'requestChips', 'renderRequestCard',
   'timelineFromCheckpoints', 'stepChips', 'renderStep', 'renderTimelineCard',
-  'renderFilesCard', 'renderReplyBox', 'renderTerminalCard',
+  'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
 ];
 const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
@@ -53,9 +52,9 @@ const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL'];
 const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
   .join('\n')
   .replace(/\\\\/g, '\\');
-const cards = eval(`(function(){ ${combined}\n return {
+const cards = eval(`(function(){ const viewState = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
-  renderFilesCard, renderReplyBox, renderTerminalCard,
+  renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
 }; })()`) as {
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
@@ -64,6 +63,7 @@ const cards = eval(`(function(){ ${combined}\n return {
   renderFilesCard: (s: unknown) => string;
   renderReplyBox: (s: unknown) => string;
   renderTerminalCard: (s: unknown) => string;
+  renderArtifactsCard: (s: unknown) => string;
 };
 
 test('renderGoalCard shows the ◈ goal, empty when absent (PHNX-3939)', () => {
@@ -300,14 +300,14 @@ test('renderFilesCard lists what the harness recorded, relative to cwd, with a c
       source: 'harness',
       total: 2,
       changes: [
-        { path: '/home/muqsit/src/agents-cli/musl-smoke/Cargo.toml', op: 'created', edits: 1, at: '2026-09-06T10:00:00Z' },
-        { path: '/home/muqsit/src/agents-cli/musl-smoke/src/main.rs', op: 'created', edits: 1, at: '2026-09-06T10:00:30Z' },
+        { path: '/home/muqsit/src/agents-cli/musl-smoke/Cargo.toml', display: 'musl-smoke/Cargo.toml', op: 'created', edits: 1, at: '2026-09-06T10:00:00Z' },
+        { path: '/home/muqsit/src/agents-cli/musl-smoke/src/main.rs', display: 'musl-smoke/src/main.rs', op: 'created', edits: 1, at: '2026-09-06T10:00:30Z' },
       ],
     },
   });
   expect(html).toContain('Files');
   expect(html).toContain('2 created');
-  expect(html).toContain('musl-smoke/Cargo.toml');
+  expect(html).toContain('>musl-smoke/Cargo.toml</button>');
   // Paths render relative to the session cwd, with the absolute path clickable.
   expect(html).not.toContain('>/home/muqsit/src/agents-cli/musl-smoke/Cargo.toml<');
   expect(html).toContain('data-path="/home/muqsit/src/agents-cli/musl-smoke/Cargo.toml"');
@@ -343,8 +343,10 @@ test('the header carries Focus and Resume, and the reply field needs a session',
   const header = cards.renderTerminalCard({ fullSessionId: 'c9d700d5', agentName: 'Claude', sessionChunk: 'c9d700d5' });
   expect(header).toContain('data-action="focusSubject"');
   expect(header).toContain('data-action="resumeSubject"');
-  expect(header).toContain('>Focus<');
-  expect(header).toContain('>Resume<');
+  expect(header).toContain('aria-label="Focus session"');
+  expect(header).toContain('>◎<');
+  expect(header).toContain('aria-label="Resume session"');
+  expect(header).toContain('>↻<');
   // A tab that has not reported a session id yet gets neither verb (both need one).
   expect(cards.renderTerminalCard({ agentName: 'Claude' })).not.toContain('data-action="focusSubject"');
 
@@ -354,4 +356,28 @@ test('the header carries Focus and Resume, and the reply field needs a session',
 
   expect(cards.renderReplyBox({ fullSessionId: 's1' })).toContain('Reply to this session…');
   expect(cards.renderReplyBox({})).toBe('');
+});
+
+
+test('header separates identity Details and exposes terminal-only adoption', () => {
+  const header = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CL-test', fullSessionId: 'session-full', sessionChunk: 'session', agentType: 'claude', version: '2.1.280', account: 'muqsit@getrush.ai', accountLabel: 'gmail', cwd: '/repo', git: { branch: 'feature' }, sessionHost: 'peer' });
+  expect(header).toContain('id="copy-session"');
+  expect(header).toContain('data-action="setSessionId"');
+  expect(header).toContain('title="muqsit@getrush.ai">gmail');
+  expect(header).toContain('claude 2.1.280');
+  expect(header).toContain('session-full');
+  expect(header).not.toContain('version-pill');
+  expect(cards.renderTerminalCard({ hasTerminal: false, fullSessionId: 'remote' })).not.toContain('setSessionId');
+  expect(cards.renderTerminalCard({})).not.toContain('class="account-row"');
+});
+
+test('Artifacts renders CLI plan and numbered PR with full paths and native buttons', () => {
+  const html = cards.renderArtifactsCard({ plan: { path: '/repo/plan.md', display: 'plan.md' }, artifacts: [{ path: '/repo/doc.md', display: 'doc.md' }], pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }] });
+  expect(html).toContain('<h2>Artifacts</h2>');
+  expect(html).toContain('>PLAN</span>');
+  expect(html).toContain('>DOC</span>');
+  expect(html).toContain('#3716');
+  expect(html).toContain('title="/repo/doc.md"');
+  expect(html).toContain('<button type="button"');
+  expect(cards.renderArtifactsCard({})).toBe('');
 });

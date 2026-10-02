@@ -173,6 +173,7 @@ describe('SessionPresentationStore', () => {
       cwd: '/home/muqsit/src/github.com/muqsitnawaz/svatlas',
       version: null,
       account: null,
+      accountLabel: null,
     });
     expect(store.liveSession('missing')).toBeUndefined();
   });
@@ -192,6 +193,7 @@ describe('SessionPresentationStore', () => {
         machine: 'yosemite-s1',
         version: '2.1.207',
         account: 'muqsit@getrush.ai',
+        accountLabel: 'gmail',
         sourceDevice: 'yosemite-s1',
         status: 'running',
       }],
@@ -199,6 +201,7 @@ describe('SessionPresentationStore', () => {
     const live = store.liveSession('022fe0a8-7674-402a-a5e0-248195894663');
     expect(live?.version).toBe('2.1.207');
     expect(live?.account).toBe('muqsit@getrush.ai');
+    expect(live?.accountLabel).toBe('gmail');
   });
 
   // A harness the CLI records no account for (or a session the CLI has indexed a

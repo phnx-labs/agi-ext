@@ -90,7 +90,7 @@ test('Active Session render is outcome-oriented and drops utility-stack cards (P
   expect(renderOrder).toContain('renderRequestCard(snap)');
   expect(renderOrder).toContain('renderTimelineCard(snap)');
   expect(renderOrder).toContain('renderChecklistCard(snap)');
-  expect(renderOrder).toContain('renderDeliverablesCard(snap)');
+  expect(renderOrder).toContain('renderArtifactsCard(snap)');
   expect(renderOrder).toContain('renderSpawnedTeamCard(snap)');
   expect(renderOrder).toContain('renderActivityCard(snap)');
   expect(renderOrder).toContain('renderFilesCard(snap)');

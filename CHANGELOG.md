@@ -15,6 +15,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   Re-sent old rows cannot undo it, and Clear stays unbound across reload.
 - Remove process, transcript, and recency-based session recovery during reload;
   terminal identity comes from exact persisted metadata, launch env, and the stream.
+- Active Terminal adds persistent Details, account slot labels, copyable session IDs,
+  and a terminal session-ID action. Focus and Resume use compact icon buttons.
+- Files preserve filenames in compact paths; Artifacts opens CLI-provided plans,
+  documents, tickets and numbered PRs. Timeline rows expand with mouse or keyboard.
 
 ## [0.9.377] - 2026-10-02
 
