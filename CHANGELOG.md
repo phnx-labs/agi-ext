@@ -4,24 +4,31 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.378] - 2026-10-02
 
-- Preserve a terminal's identity when clearing or restarting its agent, and publish
-  that identity to the CLI's live-terminal registry.
-- Restore the persisted session binding before the shell's original session id.
-  Reload no longer replaces a stream-rebound session with its launch id.
-- Add “Agents: Set Session ID for Terminal”. A manual binding persists and holds
-  until a different session appears for that terminal; it survives reload.
-  Re-sent old rows cannot undo it, and Clear stays unbound across reload.
-- Remove process, transcript, and recency-based session recovery during reload;
-  terminal identity comes from exact persisted metadata, launch env, and the stream.
-- Branch and changed-file Source Control buttons move into Details. Timeline
-  expansion survives stream updates; artifact labels follow CLI buckets, and path
-  compaction supports Linux scratch, Windows separators and remote host boundaries.
-- Active Terminal adds persistent Details, account slot labels, copyable session IDs,
-  and a terminal session-ID action. Focus and Resume use compact icon buttons.
-- Files preserve filenames in compact paths; Artifacts opens CLI-provided plans,
-  documents, tickets and numbered PRs. Timeline rows expand with mouse or keyboard.
+Active Terminal sidebar:
+
+- A Details disclosure now holds the version, full session id, cwd, branch, host and the
+  Source Control buttons. The header shows the account slot label (or email), and Focus
+  and Resume become compact icon buttons. Clicking the session id copies it.
+- File rows keep the filename visible in compact paths (`scratchpad/merge-tb.sh`,
+  repo-relative, `~/…`), including Linux scratch, Windows separators and remote hosts.
+- Deliverables becomes Artifacts: numbered PRs, CLI-provided plans and documents
+  (labelled by the CLI's bucket), and tickets, each openable. Timeline rows expand with
+  mouse or keyboard, and the expansion survives stream updates.
+
+Session binding:
+
+- Add "Agents: Set Session ID for Terminal" (also the pencil in the sidebar header). A
+  manual binding persists and holds until a different session appears for that terminal.
+  It survives reload, and re-sent old rows cannot undo it.
+- A terminal keeps its identity across Clear and an agent restart, and publishes it to the
+  CLI's live-terminal registry. Once the agents-cli release with PHNX-4218 is installed,
+  restarting `claude` inside a tab rebinds that tab to the new session automatically.
+- Restore prefers the persisted, stream-rebound session over the shell's launch id, and
+  Clear stays unbound across reload. Process, transcript and recency-based session
+  recovery during reload is removed; identity comes from persisted metadata, the launch
+  env and the stream.
 
 ## [0.9.377] - 2026-10-02
 
