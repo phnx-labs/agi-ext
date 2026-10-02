@@ -7,8 +7,7 @@ let vscodeInstance: VsCodeApi | null = null
 /**
  * Get the host API instance (singleton).
  *
- * Named for history; it now routes through the HostBridge, so the same call
- * works under both the VS Code webview and the standalone Electron host. State
+ * Routes through the HostBridge. State
  * getters are no-ops — nothing in the webview persists through the VS Code state
  * API (all durable state lives host-side and is re-sent on the ready handshake).
  */

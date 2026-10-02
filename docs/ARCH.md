@@ -101,7 +101,7 @@ The invariants, each checkable against the file named:
 
 ## Runtime components
 
-The extension host is a single Node process per editor window. It holds the elected stream leader (or a follower client), the broadcast server or client, the window-local presentation store, the terminal registry, the command adapters, and the webview bridge. React webviews render serializable view models and post typed intent back; native VS Code APIs and CLI execution never leave the host. The separate agents-dbg Electron app (`app/`) loads the same React bundle built by `ui/vite.standalone.config.ts` and feeds it floor data over IPC with the same message protocol; it is another presentation shell, not a state owner.
+The extension host is a single Node process per editor window. It holds the elected stream leader (or a follower client), the broadcast server or client, the window-local presentation store, the terminal registry, the command adapters, and the webview bridge. React webviews render serializable view models and post typed intent back; native VS Code APIs and CLI execution never leave the host.
 
 | Component | Role | Source |
 |---|---|---|
@@ -121,7 +121,6 @@ The extension host is a single Node process per editor window. It holds the elec
 | Autogit | Diff and status from the git extension; message from `agents run claude --model haiku`; stage, commit, push | `src/vscode/git.vscode.ts`, `src/core/commitgen.ts` |
 | Foreman orb | Realtime voice over OpenAI with ffmpeg audio capture; reads floor state, can dispatch and file issues | `src/vscode/foreman.*.ts`, `ui/settings/components/foreman/*` |
 | Watchdog bridge | Editor adapter that delivers socket requests to live terminals; the wire protocol and MCP server remain editor-independent | `src/vscode/watchdogBridge.vscode.ts`, `src/mcp/watchdogProtocol.ts`, `src/mcp/watchdog-server.ts` |
-| agents-dbg | Standalone Electron shell over the same floor UI, IPC-fed, 5 s poll that pauses when hidden | `app/main.ts`, `app/floorPoll.ts` |
 
 <a id="projection"></a>
 
@@ -322,7 +321,7 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 <line x1="80" y1="459" x2="120" y2="459" stroke="#a1a1aa" stroke-width="1.4" marker-end="url(#mg-a)"/><text x="128" y="463" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">imports, with the count from modules.json</text>
 <line x1="420" y1="459" x2="460" y2="459" stroke="#ff6b6b" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#mg-r)"/><text x="468" y="463" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">back-edge that closes a cycle (core↔monitor↔shared, mcp↔vscode)</text>
 <text x="24" y="482" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">Not drawn: the twelfth edge, monitor/testdata→monitor ×3 (test fixtures, 4 files), and testing (1 file, no edges).</text>
-<text x="24" y="497" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">16 files unparsed by the scanner. ui/ and app/ are outside this graph.</text>
+<text x="24" y="497" fill="#8b938c" font-family="system-ui,sans-serif" font-size="11">16 files unparsed by the scanner. ui/ is outside this graph.</text>
 </svg>
 <figcaption>core is the shape the rule wants: 80 pure files with fan-in 146 and one outbound dependency that should not exist. vscode is the problem: 35 files, 21,897 lines, cohesion 0.31.</figcaption>
 </figure>

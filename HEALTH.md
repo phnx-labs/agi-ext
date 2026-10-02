@@ -16,7 +16,7 @@ The code splits into two halves that talk only through `postMessage`:
 | Half | Scope | Production LOC | Separate reduction found |
 |---|---|---|---|
 | Back end (extension host) | `src/core`, `src/vscode`, `src/monitor`, `src/mcp`, `src/shared` | 38,301 | about 1,000 LOC of hand-rolled machinery |
-| Front end (webviews) | `ui/settings`, `ui/editor`, `app/`, plus the sidebar's inline CSS and JS in `agentPanel.vscode.ts:840-2604` | 21,516, plus about 1,760 inline | about 2,000 LOC of hand-rolled UI |
+| Front end (webviews) | `ui/settings`, `ui/editor` (`app/` was deleted after this baseline), plus the sidebar's inline CSS and JS in `agentPanel.vscode.ts:840-2604` | 21,516, plus about 1,760 inline | about 2,000 LOC of hand-rolled UI |
 
 Agents wrote much of this code by hand, and both halves show the result: helpers and components already in the repo, or in an installed dependency, sit unused next to new copies. The back end has `cachedInFlight` with one caller next to about 12 hand-written caches. The front end has a `components/ui` folder whose `Button` is used 0 times next to 147 raw `<button>`s. See [Back end: hand-rolled machinery](#back-end-hand-rolled-machinery) and [Front end: hand-rolled UI](#front-end-hand-rolled-ui).
 
@@ -147,7 +147,7 @@ Deleting the transcript readers also removes performance findings 2 and 7: the p
 
 - **One tab opener:** a single `openAgentTab(spec)` replaces about 10 copies of `createTerminal` → `registerAgentTerminal` → `armAgentReady` in `extension.ts` (`:554`, `2050`, `2159`, `2742`, `3226`, `3511`, `3639`, `4571`, `4842`, `5216`, `5336`). Then split `extension.ts` (5,620 lines) into launch, resume, statusBar, commands and uri modules.
 - **One spawn path:** `spawnAgents(argv, {timeout})` in `agentsBin.ts` replaces about 12 hand-rolled spawns (`commitgen`, `labelgen`, `draftPrompt`, `managedProjects`, `deviceHealth`, `watchdog`, `foreman.sources`, and the bare `spawn('agents')` at `extension.ts:236,283`).
-- **One harness catalog:** `CLI_AGENT_META` gains `abbr`, `color` and `installHint`. That deletes about 15 hand-written harness lists and unions, for example in `formatting.ts`, `AgentAvatar.tsx`, `dispatchRanking.ts`, `settings.vscode.ts:803,1409`, `extension.ts:2501`, and `app/preload.ts:36`.
+- **One harness catalog:** `CLI_AGENT_META` gains `abbr`, `color` and `installHint`. That deletes about 15 hand-written harness lists and unions, for example in `formatting.ts`, `AgentAvatar.tsx`, `dispatchRanking.ts`, `settings.vscode.ts:803,1409`, and `extension.ts:2501`.
 - **Shared types:** about 9 hand-copied types in `ui/settings/types/index.ts` and `dispatch.types.ts` move to `@shared` re-exports. `HostLoad` has already drifted between the two copies.
 - **One dispatch path:** merge router cases `dispatchTask` (`settings.vscode.ts:2335-2562`) and `dispatch` (`:2594-2717`), and build cloud runs only through `buildCloudDispatchArgs`.
 - **One home for time and path helpers:** `src/core/time.ts` and path helpers replace 10 relative-time and duration formatters and 8 basename shorteners.
@@ -205,7 +205,7 @@ About 2,000 LOC net. The repo already ships the pieces these copies rebuild: `co
 | F5 | `UnifiedAgentsPane` god component | About 1,650 lines with 62 `useState`, 27 `useEffect` and 45 `useMemo`; about 470 lines of pure selectors (`:1003-1470`); derived state stored in state; `SessionsPane.tsx:57-102` hand-estimates row heights | `floorSelectors.ts` next to `floorModel`; row measurement inside `useVirtualList` | about -150 |
 | F6 | Copied icons | `mission-control/icons.tsx` (30 paths) and three in `dispatchIcons.tsx` are lucide paths | `lucide-react` 0.561.0, already used in 7 files | about -100 |
 | F7 | Modals, toggles, segmented controls | Five overlays with three Escape behaviors and no focus trap; five inline copies of the `Rocker` toggle in `PanelTab.tsx`; two controls that bypass `SegmentedControl` | `components/ui/Modal`, `Rocker` and `SegmentedControl` | about -135 |
-| F8 | Electron shell data backend | `app/floorData.ts` reads `~/.agents/*/meta.json` and regex-parses `access_token` from YAML; `floorPoll.ts` refetches every 5 s | The `agents feed watch --json` consumer, or delete `app/` (owner decision) | about -200 |
+| F8 | Electron shell data backend | `app/floorData.ts` reads `~/.agents/*/meta.json` and regex-parses `access_token` from YAML; `floorPoll.ts` refetches every 5 s | Done: `app/` deleted (owner decision, 2026-10-02) | about -400 production, plus its tests and scripts |
 | F9 | Editor shortcuts | `KeyboardShortcuts.ts` re-declares about 14 bindings that StarterKit, TaskList and Highlight already provide | The extensions' default bindings | about -35 |
 
 `components/ui` is the root cause of F2, F3 and F7. Its `Button` uses shadcn tokens (`--primary`) while 95% of the UI uses `--ds-*`, so nobody used it. Make it the primitive home on `--ds-*` tokens first, then migrate.
@@ -216,7 +216,6 @@ Five more tests assert on source text in `ui/`: `App.poll.test.ts`, `UnifiedAgen
 
 ### Owner decisions (not counted above)
 
-- **`app/` Electron shell:** it runs its own 5 s poll, against the single-scheduler rule. Its `repository.directory` still points at `agi-cli`, and it hasn't been touched since 2026-09-13. Rewire it to the stream, or delete it.
 - **Migration shims:** about 200 LOC across `watchdog.vscode.ts`, `prewarm.vscode.ts`, `core/settings.ts`, `editorAssociations.ts` and `agentInventory.ts`. How long should the upgrade window stay open?
 - **Older-CLI fallbacks:** `handoff.ts:133,161` and `remoteSessions.ts:381-437,1136`. These can go once a minimum CLI version is enforced.
 - **Markdown editor `aiAction`:** it posts `aiResult`, which nothing handles. Finish it or delete it.

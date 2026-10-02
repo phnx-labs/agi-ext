@@ -1,7 +1,5 @@
 // Single source of truth for mapping a cloud-run's raw status string onto the
-// four floor statuses the UI understands. Both hosts — the Electron standalone
-// app (app/floorData.ts) and the VS Code extension (src/vscode/swarm.vscode.ts)
-// — import this so a given cloud run renders identically regardless of host.
+// four floor statuses the UI understands (used by src/vscode/swarm.vscode.ts).
 //
 // The switch is the UNION of the two tables that previously diverged, matched
 // case-insensitively:
