@@ -6,10 +6,10 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { AgentConfig } from './agents.vscode';
 
-import { findAgentInTree, SHELL_ADOPTION_TREE_DEPTH } from '../monitor/readinessDetector';
-import type { AgentLauncherKey } from '../core/terminalReadiness';
 import { generateTerminalId, resolveRestoredVersion, RunningCounts } from '../core/terminals';
 import * as sessionsPersist from '../core/sessions.persist';
+import { canonicalSessionId } from '../core/canonicalSessionId';
+import { needsSessionIdHydrate } from '../core/sessionIdHydrate';
 import { restoredSessionTabLabels } from '../core/sessionTabLabelSync';
 import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo, SessionPreviewInfo } from './sessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -24,7 +24,6 @@ import {
   getTerminalDisplayInfo,
   TerminalIdentificationOptions,
   prefixToAgentType,
-  canonicalToConfigPrefix,
   SessionAgentType
 } from '../core/utils';
 
@@ -84,6 +83,7 @@ export interface EditorTerminal {
   createdAt: number;
   pid?: number;             // Shell process ID
   messageQueue: string[];   // Queued messages to send after terminal ready
+  manualSessionRevision?: number;
   sessionId?: string;       // CLI session ID (for resume, history reading)
   host?: string;            // Device the agent runs on when offloaded via `agents run --device`;
                             // undefined for a local tab. The session's transcript lives on THAT
@@ -401,11 +401,36 @@ export function stopAutoLabelPoller(terminal: vscode.Terminal): void {
   }
 }
 
+export function restoredSessionId(envId: string | null | undefined, persistedId?: string): string | undefined {
+  // The env is frozen at shell creation; persisted stream rebindings are newer.
+  return persistedId || envId || undefined;
+}
+
+export async function promptSessionId(args: { terminalId?: string } = {}): Promise<EditorTerminal | undefined> {
+  const entry = args.terminalId ? getById(args.terminalId)
+    : vscode.window.activeTerminal ? getByTerminal(vscode.window.activeTerminal) : undefined;
+  if (!entry?.agentConfig) return undefined;
+  const raw = await vscode.window.showInputBox({
+    title: 'Set Session ID for Terminal',
+    value: entry.sessionId ?? '',
+    validateInput: (value) => canonicalSessionId(value) && !needsSessionIdHydrate(canonicalSessionId(value))
+      ? undefined : 'Enter a session ID.',
+  });
+  if (raw === undefined) return undefined;
+  const sessionId = canonicalSessionId(raw);
+  if (!sessionId || needsSessionIdHydrate(sessionId) || getById(entry.id) !== entry) return undefined;
+  setSessionId(entry.terminal, sessionId);
+  entry.manualSessionRevision = sessionPresentationStore.rowRevision;
+  persistNow();
+  return entry;
+}
+
 export function setSessionId(terminal: vscode.Terminal, sessionId: string): void {
   const entry = getByTerminal(terminal);
   if (entry) {
     const prevSessionId = entry.sessionId;
     entry.sessionId = sessionId;
+    entry.manualSessionRevision = undefined;
     if (prevSessionId !== sessionId) {
       // Drop a stale auto-label only when a PRIOR real session owned it (a
       // rerun / /clear rebinds the tab to a new id whose label differs).
@@ -623,7 +648,6 @@ export async function scanExisting(
   // Load persisted sessions for session recovery
   const workspacePath = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
   const persistedSessions = workspacePath ? sessionsPersist.getWorkspaceSessions(workspacePath) : [];
-  const usedPersistedIds = new Set<string>();
   console.log(`[TERMINALS] Loaded ${persistedSessions.length} persisted sessions`);
 
   for (const terminal of vscode.window.terminals) {
@@ -710,101 +734,9 @@ export async function scanExisting(
       setVersion(terminal, pinnedVersion);
     }
 
-    // Restore session tracking - prefer env var sessionId, fallback to sessionChunk from name
     const agentType = prefixToAgentType(info.prefix);
-    if (agentType) {
-      // Register agent type even when session id is unknown so sessionTracker
-      // can adopt new Codex/Claude session files later.
-      setAgentType(terminal, agentType, true);
-    }
-    let sessionId = identOpts.sessionId;
-
-    // Strategy 0 (authoritative): ask the process ACTUALLY running in this
-    // pane. env (AGENT_SESSION_ID), the tab-name chunk, and the persisted
-    // store are all captured at spawn time and go stale the moment the live
-    // session changes (a /continue or a resume/rotate switches the running
-    // session id) — and VS Code frequently drops `creationOptions.env` across
-    // a Remote-SSH window reload, forcing the recency-based fallbacks below.
-    // Those fallbacks match only by agent prefix + "most recent", so on reload
-    // a tab can be bound to a SIBLING session (wrong id, account, and version)
-    // that merely looks newest. The live process's own `--session-id`/`--resume`
-    // arg is the only signal tied to THIS pane, so it wins over every heuristic.
-    //
-    // Gate on THIS tab's agent: findAgentInTree only returns a descendant of
-    // `agentType`, so a nested/stray other-agent process (e.g. a codex spawned
-    // under a Claude tab's shell) can never bind this tab to the wrong agent's
-    // session. Only override an existing env id when the live id actually
-    // disagrees — a matching id is left untouched.
-    if (pid !== undefined && agentType) {
-      try {
-        const live = await findAgentInTree(
-          pid,
-          SHELL_ADOPTION_TREE_DEPTH,
-          agentType as AgentLauncherKey
-        );
-        if (live?.sessionId && live.sessionId !== sessionId) {
-          console.log(
-            `[TERMINALS] Live-process sessionId ${live.sessionId} (pid=${pid}, ` +
-              `${live.agentKey}) overrides ${sessionId ?? 'none'} from env`
-          );
-          sessionId = live.sessionId;
-        }
-      } catch {
-        // Process may have exited or the probe failed; fall through to the
-        // best-effort heuristics below.
-      }
-    }
-
-    // Strategy 1: Try to recover from sessionChunk in terminal name
-    if (!sessionId && info.sessionChunk && agentType) {
-      const sessionPath = await getSessionPathBySessionId(
-        info.sessionChunk,
-        agentType as 'claude' | 'codex',
-        workspacePath
-      );
-      if (sessionPath) {
-        // Extract full sessionId from file path (filename without extension)
-        const filename = path.basename(sessionPath);
-        const ext = path.extname(filename);
-        sessionId = filename.slice(0, -ext.length);
-        console.log(`[TERMINALS] Recovered sessionId from chunk: ${info.sessionChunk} -> ${sessionId}`);
-      }
-    }
-
-    // Strategy 2: Try to match with persisted session by prefix
-    // Use the most recently created persisted session for this prefix that hasn't been used yet
-    // Note: info.prefix is canonical (CC, CX), persisted uses config format (cl, cx)
-    if (!sessionId && info.prefix) {
-      const configPrefix = canonicalToConfigPrefix(info.prefix);
-      const matchingSessions = persistedSessions
-        .filter(p => p.prefix === configPrefix && p.sessionId && !usedPersistedIds.has(p.terminalId))
-        .sort((a, b) => b.createdAt - a.createdAt); // Most recent first
-
-      if (matchingSessions.length > 0) {
-        const matched = matchingSessions[0];
-        sessionId = matched.sessionId;
-        usedPersistedIds.add(matched.terminalId);
-        console.log(`[TERMINALS] Recovered sessionId from persisted session: ${matched.terminalId} -> ${sessionId}`);
-
-        // Also recover the agentType if available
-        if (matched.agentType && !agentType) {
-          setAgentType(terminal, matched.agentType as SessionAgentType);
-        }
-
-        // Version recovery for this branch only — when env.terminalId was
-        // absent so the persisted-by-terminalId lookup above missed. Prefer
-        // the existing pin from env if present.
-        if (!pinnedVersion && matched.version) {
-          setVersion(terminal, matched.version);
-        }
-
-        const matchedLabels = restoredSessionTabLabels(info.label || undefined, matched);
-        if (matchedLabels.manualLabel !== getByTerminal(terminal)?.label) {
-          await setLabel(terminal, matchedLabels.manualLabel, context);
-        }
-        if (matchedLabels.autoLabel) setAutoLabel(terminal, matchedLabels.autoLabel);
-      }
-    }
+    if (agentType) setAgentType(terminal, agentType, true);
+    const sessionId = restoredSessionId(identOpts.sessionId, persistedByTerminalId?.sessionId);
 
     if (sessionId) {
       setSessionId(terminal, sessionId);

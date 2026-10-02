@@ -370,6 +370,10 @@
         "title": "Agents: Session Trace"
       },
       {
+        "command": "agents.setSessionId",
+        "title": "Agents: Set Session ID for Terminal"
+      },
+      {
         "command": "agents.sessionId",
         "title": "Agents: Session ID"
       },
@@ -753,6 +757,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "agents.setSessionId",
+          "when": "agents.activeIsAgent"
+        },
         {
           "command": "agents.newAntigravity",
           "when": "true",

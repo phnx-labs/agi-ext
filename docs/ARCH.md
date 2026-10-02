@@ -212,6 +212,25 @@ An editor terminal has an extension-local id (`CL-<ts>-<n>`) before the harness 
 
 Correlation is not launch-only. A user may stop session A and start session B in the same terminal, so the stable observer terminal id can appear on both rows while the feed settles. On each pushed reset or agent-row change the extension reconciles tracked tabs before the status bar or sidebar refreshes: it ignores Previous rows, treats two distinct live claims as ambiguous within the same observer-device and execution-host scope, and keeps the existing binding during the overlap. When A is removed, B becomes the sole claim and the tab rebinds; a later historical A upsert marked Previous cannot revert it. A terminal-selected sidebar subject stores the terminal's stable id and follows it across the rebind; a Fleet-selected subject stays tied to its session.
 
+The shell's `AGENT_TERMINAL_ID` remains stable across `agents.clear` and harness
+restarts. Each `live-terminals.json` entry publishes that `terminalId` alongside
+the launch `sessionId` and shell pid, allowing the CLI to associate the current
+child session with the same tab. Shell start time never proves session ownership.
+Reload restores a session id from the exact persisted terminal-id record before
+using the shell's frozen `AGENT_SESSION_ID`; it does not scan processes, read
+transcripts, or pick a recent same-prefix session. Focus hydration identifies
+unresolved tabs; corrections to established bindings run on pushed stream facts.
+
+`agents.setSessionId` accepts `{ terminalId?: string }`, defaults to the active
+agent terminal, and prefills the current id. It uses the existing canonical-id
+and hydration validators, calls the registry's `setSessionId`, and persists
+immediately. A manual binding records the current accepted row revision. Focus,
+attention changes, and other terminals' rows cannot replace it. A newer live row
+for the same observer terminal and execution host may replace it, subject to the
+same Previous and ambiguity rules. The revision gate is presentation metadata;
+it starts no watcher, poller, subprocess, or transcript read. Clear uses the same
+revision gate so an already-projected pre-clear row cannot rehydrate the tab.
+
 Restoration metadata (`~/.swarmify/agents/sessions.yaml`, per workspace: terminal id, prefix, session id, host, label, auto-label, harness, recovery harness, version, pid) is enough to reopen a tab through the CLI's resume path. It is never proof that a process is alive and never a transcript cache. Reload and user close are distinct: reload preserves the session; a genuine user close (`TerminalExitReason.User`, `src/vscode/terminalReadiness.ts`) issues one `agents sessions stop`.
 
 <a id="launch"></a>

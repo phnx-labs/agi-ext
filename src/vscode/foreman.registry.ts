@@ -35,6 +35,7 @@ const KEEPALIVE_FORCE_MS = 4 * 60_000;
 
 export interface LiveTerminal {
   sessionId: string;
+  terminalId?: string;
   pid: number;
   kind: string;              // 'claude' | 'codex' | ...
   label?: string | null;
@@ -197,6 +198,7 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     const tabIndex = resolveTabIndex(tabGroups, t.name);
     out.push({
       sessionId: sid,
+      terminalId: tid,
       pid,
       kind,
       label: deriveLabel(t.name),
