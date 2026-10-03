@@ -176,6 +176,33 @@ describe('resolveProject', () => {
     expect(s.project).toBe('Prix API');
   });
 
+  test('copies the glance fields verbatim and drops malformed entries', () => {
+    const s = normalizeActiveSession(
+      {
+        kind: 'claude', status: 'running', cwd: '/x/y/agents-cli', sessionFile: '/x/aaaaaaaa.jsonl',
+        model: 'claude-opus-5-5',
+        failures: [{ atMs: 1, tool: 'Bash', summary: 'git fetch origin', error: 'exit 7', blocked: false }, { tool: 'Bash' }],
+        activityHistogram: { startMs: 10, endMs: 20, buckets: [{ tools: 3, failed: 1 }, {}], userAtMs: [10, 'x'] },
+        userTurns: [{ atMs: 5, text: 'Check now..', images: 1 }, { atMs: 6, text: '' }],
+        subagents: [{ id: 'agent-a', agentType: 'code-reviewer', description: 'Review PR 3716', status: 'weird', toolCount: 44, transcriptPath: '/t/a.jsonl' }, { description: 'no id' }],
+        artifacts: [{ path: '/a/plan.html', basename: 'plan.html', bucket: 'plans', title: 'Direct tools' }],
+      } as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+    );
+    expect(s.model).toBe('claude-opus-5-5');
+    expect(s.failures).toEqual([{ atMs: 1, tool: 'Bash', summary: 'git fetch origin', error: 'exit 7', blocked: false }]);
+    expect(s.activityHistogram).toEqual({ startMs: 10, endMs: 20, buckets: [{ tools: 3, failed: 1, blocked: 0 }, { tools: 0, failed: 0, blocked: 0 }], userAtMs: [10] });
+    expect(s.userTurns).toEqual([{ atMs: 5, text: 'Check now..', images: 1 }]);
+    expect(s.subagents?.map((x) => [x.id, x.status, x.toolCount])).toEqual([['agent-a', 'done', 44]]);
+    expect(s.artifacts[0].title).toBe('Direct tools');
+  });
+
+  test('an older CLI row leaves every glance field absent rather than empty', () => {
+    const s = normalizeActiveSession({ kind: 'claude', status: 'running', cwd: '/x', sessionFile: '/x/b.jsonl' } as RawActiveSession, 'zion', FETCHED_AT);
+    expect([s.model, s.failures, s.activityHistogram, s.userTurns, s.subagents]).toEqual([undefined, undefined, undefined, undefined, undefined]);
+  });
+
   test('copies the summarizer signals verbatim — goal, checkpoints, checklist, state (PHNX-3939)', () => {
     const s = normalizeActiveSession(
       {

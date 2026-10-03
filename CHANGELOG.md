@@ -4,6 +4,31 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.379] - 2026-10-03
+
+Active Terminal sidebar, read at a glance:
+
+- The header leads with the session's title (your `/rename`, else the CLI's generated
+  title) and the running model, instead of the harness prefix. The short session id sits
+  under it with copy and the rebind pencil. Chips show project, branch, a `worktree` badge
+  only when the agent works in a linked worktree, and the host.
+- An open ask from the harness appears under the header in its own words, with how long it
+  has waited, Reply and Focus.
+- Times read as clock times ("yesterday 10:13 PM", "5 min ago").
+- Failed and policy-blocked tool calls collapse into one line that appears only when there
+  are any; it opens to each call's time, command and error.
+- Pasted images show as thumbnails in Request, and Artifacts sits directly under Request.
+  A plan or report opens as an editor tab in the Agents Reader instead of a browser.
+- The Timeline gets a seek bar of tool activity across the whole session, with idle
+  stretches collapsed and markers for your messages, subagents and the open ask. Filters
+  switch to your messages, the failures, or (one `agents sessions --include` call per
+  click) the agent's messages, tool calls or reasoning.
+- Subagents list what each one did, its verdict and a link to its transcript.
+
+The model, failure list, seek bar, your-messages filter, subagent list, image thumbnails
+and plan titles need the agents-cli release that adds those row fields; with an older CLI
+those parts show counts only or stay hidden.
+
 ## [0.9.378] - 2026-10-02
 
 Active Terminal sidebar:
