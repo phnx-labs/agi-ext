@@ -190,6 +190,8 @@ interface PanelSnapshot {
   model?: string;
   project?: string;
   hostLabel?: string;
+  // The heavy timeline filters read this machine's session index, so they exist only here.
+  sessionLocal?: boolean;
   inWorktree?: boolean;
   startedAtMs?: number;
   lastActivityMs?: number;
@@ -455,7 +457,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         }
         return;
       case 'loadTimelineFilter':
-        await this.loadTimelineFilter(msg.role);
+        await this.loadTimelineFilter(msg.role, msg.sessionId);
         return;
       case 'openWorktree':
         // Worktree paths are DIRECTORIES — `vscode.open` shows an error toast
@@ -516,9 +518,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
    * call per explicit click, never per selection. The result goes back to the
    * webview as-is; a CLI error is shown, not hidden.
    */
-  private async loadTimelineFilter(role: unknown): Promise<void> {
+  private async loadTimelineFilter(role: unknown, requested: unknown): Promise<void> {
     const sessionId = this.snapshot.fullSessionId;
-    if (typeof role !== 'string' || !VERB_FILTER_ROLES.has(role) || !sessionId) return;
+    if (typeof role !== 'string' || !VERB_FILTER_ROLES.has(role) || !sessionId || requested !== sessionId) return;
+    if (!this.snapshot.sessionLocal) return;
     try {
       const { stdout } = await runAgents(`sessions ${shellQuote(sessionId)} --include ${role} --json`, { timeout: 20_000 });
       const parsed = JSON.parse(stdout);
@@ -844,6 +847,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
         snapshot.hostLabel = remoteDevice || os.hostname().split('.')[0];
+        snapshot.sessionLocal = !remoteDevice;
         snapshot.inWorktree = !!live.worktreeSlug;
         snapshot.startedAtMs = live.startedAtMs || undefined;
         snapshot.lastActivityMs = live.lastActivityMs || undefined;
@@ -2258,14 +2262,14 @@ function renderSeekBar(s) {
   const bucketOf = (ms) => Math.max(0, Math.min(n - 1, Math.floor((ms - h.startMs) / bucketMs)));
   const bars = segs.map((seg) => {
     if (seg.gap) {
-      return '<div class="seek-gap" style="flex:3">' + esc(compactDuration((seg.to - seg.from) * bucketMs)) + '<br>idle</div>';
+      return '<div class="seek-gap" style="flex:3" role="img" aria-label="' + esc(compactDuration((seg.to - seg.from) * bucketMs) + ' idle') + '">' + esc(compactDuration((seg.to - seg.from) * bucketMs)) + '<br>idle</div>';
     }
     const b = h.buckets[seg.i];
     const height = b.tools ? Math.max(8, Math.round(b.tools / max * 100)) : 4;
     const at = Math.round(h.startMs + (seg.i + 0.5) * bucketMs);
     const bad = b.failed + b.blocked;
     const tip = clockTime(at) + ' · ' + b.tools + ' tools' + (b.failed ? ' · ' + b.failed + ' failed' : '') + (b.blocked ? ' · ' + b.blocked + ' blocked' : '');
-    return '<button type="button" class="seek-bar' + (bad ? ' bad' : '') + '" style="flex:1" data-seek="' + at + '" title="' + esc(tip) + '"><i style="height:' + height + '%"></i></button>';
+    return '<button type="button" class="seek-bar' + (bad ? ' bad' : '') + '" style="flex:1" data-seek="' + at + '" title="' + esc(tip) + '" aria-label="' + esc('Jump to ' + tip) + '"><i style="height:' + height + '%"></i></button>';
   }).join('');
   const marks = [];
   // Messages that land in one bucket share one marker (its tooltip lists them all);
@@ -2275,7 +2279,7 @@ function renderSeekBar(s) {
   for (const key of Object.keys(youByBucket)) {
     const nums = youByBucket[key];
     const label = nums.length === 1 ? String(nums[0]) : nums[0] + '+';
-    marks.push('<span class="seek-mk you" style="left:' + leftOf[key].toFixed(2) + '%" title="Your message' + (nums.length > 1 ? 's ' : ' ') + esc(nums.join(', ')) + '">' + esc(label) + '</span>');
+    marks.push('<span class="seek-mk you" role="img" aria-label="' + esc('Your message' + (nums.length > 1 ? 's ' : ' ') + nums.join(', ')) + '" style="left:' + leftOf[key].toFixed(2) + '%" title="Your message' + (nums.length > 1 ? 's ' : ' ') + esc(nums.join(', ')) + '">' + esc(label) + '</span>');
   }
   const lower = {};
   for (const x of (s.subagents || [])) {
@@ -2284,11 +2288,11 @@ function renderSeekBar(s) {
     (lower[b] = lower[b] || []).push(x.description);
   }
   for (const key of Object.keys(lower)) {
-    marks.push('<span class="seek-mk sub low" style="left:' + leftOf[key].toFixed(2) + '%" title="Subagent: ' + esc(lower[key].join('; ')) + '">' + (lower[key].length > 1 ? lower[key].length : 'S') + '</span>');
+    marks.push('<span class="seek-mk sub low" role="img" aria-label="' + esc('Subagent: ' + lower[key].join('; ')) + '" style="left:' + leftOf[key].toFixed(2) + '%" title="Subagent: ' + esc(lower[key].join('; ')) + '">' + (lower[key].length > 1 ? lower[key].length : 'S') + '</span>');
   }
-  if (s.needsYou) marks.push('<span class="seek-mk ask low" style="left:' + leftOf[n - 1].toFixed(2) + '%" title="Needs you">!</span>');
+  if (s.needsYou) marks.push('<span class="seek-mk ask low" role="img" aria-label="Needs you" style="left:' + leftOf[n - 1].toFixed(2) + '%" title="Needs you">!</span>');
   return (
-    '<div class="seek">' +
+    '<div class="seek" role="group" aria-label="Session activity">' +
       '<div class="seek-bars">' + bars + '</div>' +
       '<div class="seek-marks">' + marks.join('') + '</div>' +
       '<div class="seek-axis"><span>' + esc(clockTime(h.startMs)) + '</span><span>' + esc(clockTime(h.endMs)) + '</span></div>' +
@@ -2300,6 +2304,12 @@ function renderSeekBar(s) {
 // Agent, Tools and Reasoning are one agents-sessions call per click (cached).
 const TIMELINE_FILTERS = [{ id: 'summary', label: 'Summary' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }];
 const filterCache = {};
+const VERB_FILTERS = ['assistant', 'tools', 'thinking'];
+
+// A live session keeps writing: the cached list is for one activity stamp only.
+function filterKey(s, role) {
+  return (s.fullSessionId || '') + ':' + role + ':' + (s.lastActivityMs || 0);
+}
 
 function currentFilter(s) {
   const f = (viewState.timelineFilter || {})[(s && s.fullSessionId) || ''];
@@ -2312,8 +2322,9 @@ function renderFilterChips(s, active) {
   return '<div class="tl-filters">' + TIMELINE_FILTERS.map((f) => {
     if (f.id === 'user' && !s.userTurns) return '';
     if (f.id === 'failed' && !(s.failures && s.failures.length)) return '';
+    if (VERB_FILTERS.indexOf(f.id) >= 0 && !s.sessionLocal) return '';
     const count = counts[f.id] ? '<em>' + counts[f.id] + '</em>' : '';
-    return '<button type="button" class="tl-filter' + (f.id === active ? ' on' : '') + '" data-filter="' + f.id + '">' + esc(f.label) + count + '</button>';
+    return '<button type="button" class="tl-filter' + (f.id === active ? ' on' : '') + '" data-filter="' + f.id + '" aria-pressed="' + (f.id === active) + '">' + esc(f.label) + count + '</button>';
   }).join('') + '</div>';
 }
 
@@ -2340,7 +2351,7 @@ function renderFilteredBody(s, active) {
       atMs: f.atMs, label: f.blocked ? 'blocked' : 'failed', text: f.tool + ': ' + f.summary + ' → ' + f.error, bad: true,
     })));
   }
-  const cached = filterCache[(s.fullSessionId || '') + ':' + active];
+  const cached = filterCache[filterKey(s, active)];
   if (!cached) return '<div class="card-note">Loading…</div>';
   if (cached.error) return '<div class="card-note">Could not load: ' + esc(cached.error) + '</div>';
   return filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).reverse());
@@ -2772,8 +2783,10 @@ function render(snap) {
       next[key] = id;
       viewState.timelineFilter = next;
       vscode.setState(viewState);
-      if ((id === 'assistant' || id === 'tools' || id === 'thinking') && !filterCache[key + ':' + id]) {
-        vscode.postMessage({ type: 'loadTimelineFilter', role: id });
+      const cached = filterCache[filterKey(lastSnapshot, id)];
+      if (VERB_FILTERS.indexOf(id) >= 0 && (!cached || cached.error)) {
+        delete filterCache[filterKey(lastSnapshot, id)];
+        vscode.postMessage({ type: 'loadTimelineFilter', role: id, sessionId: key });
       }
       render(lastSnapshot);
     });
@@ -2894,8 +2907,10 @@ window.addEventListener('message', (e) => {
   }
   else if (msg && msg.type === 'snapshot') render(msg.data);
   else if (msg && msg.type === 'timelineFilter') {
-    filterCache[msg.sessionId + ':' + msg.role] = msg.error ? { error: msg.error } : { items: msg.items || [] };
-    if (lastSnapshot && lastSnapshot.fullSessionId === msg.sessionId) render(lastSnapshot);
+    if (lastSnapshot && lastSnapshot.fullSessionId === msg.sessionId) {
+      filterCache[filterKey(lastSnapshot, msg.role)] = msg.error ? { error: msg.error } : { items: msg.items || [] };
+      render(lastSnapshot);
+    }
   }
   else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
 });

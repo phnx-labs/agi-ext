@@ -46,9 +46,9 @@ const NAMES = [
   'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
-  'renderSpawnedTeamCard',
+  'renderSpawnedTeamCard', 'filterKey',
 ];
-const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache'];
+const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'VERB_FILTERS'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -473,13 +473,17 @@ test('the seek bar collapses idle runs into labeled gaps and marks your messages
 });
 
 test('the timeline offers row-backed filters and renders your turns under You', () => {
-  const s = { fullSessionId: 'abc', timeline: { steps: [{ text: 'Did a thing', at: new Date().toISOString(), source: 'narration', tools: 1, failed: 0, blocked: 0 }], earlier: { steps: 0, tools: 0, failed: 0 }, tools: 1, failed: 0, spanMs: 0, state: 'ready' },
+  const s = { fullSessionId: 'abc', sessionLocal: true, timeline: { steps: [{ text: 'Did a thing', at: new Date().toISOString(), source: 'narration', tools: 1, failed: 0, blocked: 0 }], earlier: { steps: 0, tools: 0, failed: 0 }, tools: 1, failed: 0, spanMs: 0, state: 'ready' },
     userTurns: [{ atMs: Date.now(), text: 'Check now..', images: 0 }] };
   const html = cards.renderTimelineCard(s);
   expect(html).toContain('data-filter="summary"');
-  expect(html).toContain('data-filter="user">You<em>1</em>');
-  expect(html).toContain('data-filter="thinking">Reasoning');
+  expect(html).toContain('data-filter="user" aria-pressed="false">You<em>1</em>');
+  expect(html).toContain('data-filter="thinking" aria-pressed="false">Reasoning');
   expect(html).not.toContain('data-filter="failed"');
+  // a remote session has no local index to read, so the heavy filters are not offered
+  const remote = cards.renderTimelineCard({ ...s, sessionLocal: false });
+  expect(remote).toContain('data-filter="user"');
+  expect(remote).not.toContain('data-filter="thinking"');
 });
 
 test('subagents list what each one did and link its transcript', () => {
@@ -496,4 +500,39 @@ test('subagents list what each one did and link its transcript', () => {
 test('Artifacts respects each CLI bucket even when a plan path overlaps', () => {
   const html = cards.renderArtifactsCard({ plan: { path: '/report', display: 'report' }, artifacts: ['artifacts', 'plans', 'reports', 'docs'].map(bucket => ({ bucket, path: bucket === 'reports' ? '/report' : '/' + bucket, display: bucket })) });
   for (const label of ['ARTIFACT', 'PLAN', 'REPORT', 'DOC']) expect(html).toContain('>' + label + '</span>');
+});
+
+test('plans open in the Agents Reader and the heavy filters run one CLI call for the current local subject only', async () => {
+  const method = (name: string) => {
+    const start = SRC.indexOf('  private async ' + name + '(');
+    const end = SRC.indexOf('\n  private ', start + 1);
+    return SRC.slice(start, end).replace('private async ', 'async ');
+  };
+  const opened: unknown[][] = [];
+  const posted: Record<string, unknown>[] = [];
+  const calls: string[] = [];
+  let cli: () => { stdout: string } = () => ({ stdout: JSON.stringify({ events: [{ timestamp: '2026-10-03T00:00:00Z', content: 'checking' }] }) });
+  const vscode = vscodeDouble({ commands: { executeCommand: async (...args: unknown[]) => { opened.push(args); } } });
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('handleMessage') + method('loadTimelineFilter') + '}');
+  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', code + '; return new Host();')(
+    vscode, (p: string) => 'file://' + p, async (args: string) => { calls.push(args); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted);
+
+  await host.handleMessage({ type: 'openArtifact', path: '/a/plan.html' });
+  await host.handleMessage({ type: 'openArtifact', path: '/a/notes.md' });
+  expect(opened).toEqual([['vscode.openWith', 'file:///a/plan.html', 'agents.htmlReader'], ['vscode.openWith', 'file:///a/notes.md', 'agents.markdownEditor']]);
+
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 'old-subject' });
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'rm -rf', sessionId: 's-1' });
+  expect(calls).toEqual([]);
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 's-1' });
+  expect(calls).toEqual(["sessions 's-1' --include assistant --json"]);
+  expect(posted.at(-1)).toMatchObject({ type: 'timelineFilter', role: 'assistant', sessionId: 's-1', items: [{ text: 'checking' }] });
+
+  cli = () => { throw new Error('unknown session s-1\nmore'); };
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'thinking', sessionId: 's-1' });
+  expect(posted.at(-1)).toMatchObject({ role: 'thinking', error: 'unknown session s-1' });
+
+  host.snapshot.sessionLocal = false;
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'tools', sessionId: 's-1' });
+  expect(calls).toHaveLength(2);
 });
