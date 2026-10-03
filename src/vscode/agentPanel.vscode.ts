@@ -1781,6 +1781,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .tl-filter { font-size: 10.5px; padding: 0 8px; line-height: 18px; border-radius: 9px; cursor: pointer; border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); background: transparent; color: var(--vscode-foreground); }
   .tl-filter.on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: var(--vscode-button-background); }
   .tl-filter em { font-style: normal; opacity: .7; margin-left: 4px; }
+  .tl-refresh { background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font-size: inherit; }
   .tl-item { padding: 5px 7px; margin-bottom: 4px; border-radius: 5px; background: color-mix(in srgb, var(--vscode-charts-blue) 9%, transparent); }
   .tl-item.bad { background: color-mix(in srgb, var(--vscode-errorForeground) 9%, transparent); }
   .tl-item-at { font-size: 10px; color: var(--vscode-descriptionForeground); }
@@ -2306,13 +2307,16 @@ const TIMELINE_FILTERS = [{ id: 'summary', label: 'Summary' }, { id: 'user', lab
 const filterCache = {};
 const VERB_FILTERS = ['assistant', 'tools', 'thinking'];
 
-// A live session keeps writing: the cached list is for one activity stamp only.
+// One loaded list per session and filter. A live session keeps writing, so the list
+// remembers the activity stamp it was loaded at and offers a refresh; it never refetches
+// on its own.
 function filterKey(s, role) {
-  return (s.fullSessionId || '') + ':' + role + ':' + (s.lastActivityMs || 0);
+  return (s.fullSessionId || '') + ':' + role;
 }
 
 function currentFilter(s) {
   const f = (viewState.timelineFilter || {})[(s && s.fullSessionId) || ''];
+  if (VERB_FILTERS.indexOf(f) >= 0 && !(s && s.sessionLocal)) return 'summary';
   return TIMELINE_FILTERS.some((x) => x.id === f) ? f : 'summary';
 }
 
@@ -2353,8 +2357,11 @@ function renderFilteredBody(s, active) {
   }
   const cached = filterCache[filterKey(s, active)];
   if (!cached) return '<div class="card-note">Loading…</div>';
-  if (cached.error) return '<div class="card-note">Could not load: ' + esc(cached.error) + '</div>';
-  return filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).reverse());
+  if (cached.error) return '<div class="card-note">Could not load: ' + esc(cached.error) + ' <button type="button" class="tl-refresh" data-refresh-filter="' + active + '">Retry</button></div>';
+  const stale = (s.lastActivityMs || 0) > (cached.atStamp || 0)
+    ? '<div class="card-note">Newer activity since this loaded. <button type="button" class="tl-refresh" data-refresh-filter="' + active + '">Refresh</button></div>'
+    : '';
+  return stale + filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).reverse());
 }
 
 function renderTimelineCard(s) {
@@ -2791,6 +2798,14 @@ function render(snap) {
       render(lastSnapshot);
     });
   }
+  for (const el of root.querySelectorAll('[data-refresh-filter]')) {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-refresh-filter');
+      delete filterCache[filterKey(lastSnapshot, id)];
+      vscode.postMessage({ type: 'loadTimelineFilter', role: id, sessionId: (lastSnapshot && lastSnapshot.fullSessionId) || '' });
+      render(lastSnapshot);
+    });
+  }
   for (const el of root.querySelectorAll('[data-seek]')) {
     el.addEventListener('click', () => {
       const at = Number(el.getAttribute('data-seek'));
@@ -2908,7 +2923,7 @@ window.addEventListener('message', (e) => {
   else if (msg && msg.type === 'snapshot') render(msg.data);
   else if (msg && msg.type === 'timelineFilter') {
     if (lastSnapshot && lastSnapshot.fullSessionId === msg.sessionId) {
-      filterCache[filterKey(lastSnapshot, msg.role)] = msg.error ? { error: msg.error } : { items: msg.items || [] };
+      filterCache[filterKey(lastSnapshot, msg.role)] = msg.error ? { error: msg.error } : { items: msg.items || [], atStamp: lastSnapshot.lastActivityMs || 0 };
       render(lastSnapshot);
     }
   }

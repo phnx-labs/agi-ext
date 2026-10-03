@@ -536,3 +536,18 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'tools', sessionId: 's-1' });
   expect(calls).toHaveLength(2);
 });
+
+test('a loaded heavy filter stays visible as the session moves on, with a click-only refresh', () => {
+  const at = Date.now();
+  const base = { fullSessionId: 'live', sessionLocal: true, lastActivityMs: at, timeline: { steps: [], earlier: { steps: 1, tools: 0, failed: 0 }, tools: 0, failed: 0, spanMs: 0, state: 'ready' } };
+  const harness = eval(`(function(){ const viewState = { timelineFilter: { live: 'assistant' } }; const lastSnapshot = {}; ${combined}
+    filterCache[filterKey(base, 'assistant')] = { items: [{ at: new Date(at).toISOString(), text: 'checking s0' }], atStamp: at };
+    return { fresh: renderTimelineCard(base), moved: renderTimelineCard({ ...base, lastActivityMs: at + 5000 }), remote: renderTimelineCard({ ...base, sessionLocal: false }) };
+  })()`) as { fresh: string; moved: string; remote: string };
+  expect(harness.fresh).toContain('checking s0');
+  expect(harness.fresh).not.toContain('data-refresh-filter');
+  expect(harness.moved).toContain('checking s0');
+  expect(harness.moved).toContain('data-refresh-filter="assistant">Refresh');
+  expect(harness.remote).not.toContain('checking s0');
+  expect(harness.remote).toContain('data-filter="summary" aria-pressed="true"');
+});
