@@ -55,7 +55,11 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
 - A missing field goes onto the CLI's `SessionWatchRow`, never into a client fetch, transcript
   read, or lazy enrich. The sidebar (`src/vscode/agentPanel.vscode.ts`) renders synchronously
   from the store and honestly shows "Waiting for the session stream…" or the CLI's
-  `unavailable` reason; it never fakes an empty card.
+  `unavailable` reason; it never fakes an empty card. One named exception: a timeline filter
+  too large for every row (agent messages, tool calls, reasoning) is one
+  `agents sessions <id> --include <role> --json` call on an explicit click, cached per
+  session activity, never on selection or a timer, and only for a session on this machine
+  (`loadTimelineFilter`).
 - Fleet is a list, the sidebar is the one preview: a row click posts `session.select` and
   spawns nothing. No detail rail, no `rightOpen` pref, no per-selection fetch.
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`) and
