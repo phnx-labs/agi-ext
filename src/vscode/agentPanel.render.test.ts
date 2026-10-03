@@ -44,8 +44,11 @@ const NAMES = [
   'requestChips', 'renderRequestCard',
   'timelineFromCheckpoints', 'stepChips', 'renderStep', 'renderTimelineCard',
   'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
+  'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
+  'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
+  'renderSpawnedTeamCard',
 ];
-const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL'];
+const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -56,6 +59,7 @@ const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
 const cards = eval(`(function(){ const viewState = {}; const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
+  renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
 }; })()`) as {
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
@@ -65,6 +69,13 @@ const cards = eval(`(function(){ const viewState = {}; const lastSnapshot = {}; 
   renderReplyBox: (s: unknown) => string;
   renderTerminalCard: (s: unknown) => string;
   renderArtifactsCard: (s: unknown) => string;
+  renderNeedsYou: (s: unknown) => string;
+  renderSessionStats: (s: unknown) => string;
+  renderFailures: (s: unknown) => string;
+  renderSeekBar: (s: unknown) => string;
+  renderSpawnedTeamCard: (s: unknown) => string;
+  prettyModel: (id: string) => string;
+  clockTime: (ms: number) => string;
 };
 
 test('renderGoalCard shows the ◈ goal, empty when absent (PHNX-3939)', () => {
@@ -378,7 +389,7 @@ test('Artifacts renders CLI plan and numbered PR with full paths and native butt
   expect(html).toContain('>PLAN</span>');
   expect(html).toContain('>DOC</span>');
   expect(html).toContain('#3716');
-  expect(html).toContain('title="/repo/doc.md"');
+  expect(html).toContain('data-artifact="/repo/doc.md"');
   expect(html).toContain('<button type="button"');
   expect(cards.renderArtifactsCard({})).toBe('');
 });
@@ -408,10 +419,78 @@ test('Artifacts renders CLI plan and numbered PR with full paths and native butt
   expect(calls).toHaveLength(2);
 });
 
-test('Details preserves branch and dirty Source Control buttons', () => {
+test('the branch is a Source Control chip in the header, and Details keeps the dirty count', () => {
   const html = cards.renderTerminalCard({ git: { branch: 'feature', dirtyCount: 3 } });
-  expect(html).toContain('class="branch-name" data-scm>feature</button>');
+  expect(html).toContain('data-scm title="Open Source Control">⎇ feature</button>');
   expect(html).toContain('class="dirty-pill" data-scm>3 changed</button>');
+});
+
+test('the header leads with the session title and model, never the harness prefix', () => {
+  const html = cards.renderTerminalCard({
+    agentPrefix: 'CC', agentName: 'Claude', sessionTitle: 'Grok accounts login verification', model: 'claude-opus-5-5',
+    account: 'muqsit@getrush.ai', sessionChunk: 'c0d7375b', project: 'agents-cli', git: { branch: 'main' }, hostLabel: 'zion',
+  });
+  expect(html).toContain('>Grok accounts login verification</div>');
+  expect(html).toContain('>Opus 5.5</b>');
+  expect(html).not.toContain('>CC<');
+  expect(html).toContain('where-chip proj">agents-cli<');
+  expect(html).toContain('>zion</span>');
+  expect(html).not.toContain('>worktree<');
+  expect(cards.renderTerminalCard({ inWorktree: true, cwd: '/r/.agents/worktrees/x' })).toContain('>worktree</span>');
+  expect(cards.prettyModel('gpt-6-astra')).toBe('gpt-6-astra');
+});
+
+test('needs-you shows the harness ask under the header, and nothing when no item is open', () => {
+  const html = cards.renderNeedsYou({ hasTerminal: true, needsYou: { kind: 'question', text: 'Approve 2 device logins', openedAtMs: Date.now() - 6 * 60_000 } });
+  expect(html).toContain('ASKS · WAITING 6 MIN');
+  expect(html).toContain('Approve 2 device logins');
+  expect(html).toContain('id="needs-you-reply"');
+  expect(cards.renderNeedsYou({})).toBe('');
+});
+
+test('failures stay hidden behind one line and vanish for a clean session', () => {
+  expect(cards.renderFailures({ failedCount: 0, blockedCount: 0 })).toBe('');
+  const failures = [
+    { atMs: Date.now() - 60_000, tool: 'Bash', summary: 'git fetch origin', error: 'exit 7', blocked: false },
+    { atMs: Date.now(), tool: 'Bash', summary: 'rm -rf x', error: 'Permission denied', blocked: true },
+  ];
+  const html = cards.renderFailures({ failedCount: 1, blockedCount: 1, failures });
+  expect(html).toContain('<details class="failures"');
+  expect(html).not.toContain(' open id="failures"');
+  expect(html).toContain('⚠ 1 failed · 1 blocked');
+  expect(html).toContain('1 blocked by policy or permission');
+});
+
+test('the seek bar collapses idle runs into labeled gaps and marks your messages', () => {
+  const startMs = Date.parse('2026-10-02T05:13:00Z');
+  const buckets = Array.from({ length: 48 }, (_, i) => ({ tools: i < 5 ? 10 - i : i === 18 ? 6 : 0, failed: i === 0 ? 2 : 0, blocked: 0 }));
+  const html = cards.renderSeekBar({ activityHistogram: { startMs, endMs: startMs + 48 * 22 * 60_000, buckets, userAtMs: [startMs, startMs + 18 * 22 * 60_000] } });
+  expect((html.match(/class="seek-gap"/g) || []).length).toBe(2);
+  expect((html.match(/class="seek-bar[ "]/g) || []).length).toBe(6);
+  expect(html).toContain('seek-bar bad');
+  expect(html).toContain('title="Your message 2">2</span>');
+  expect(cards.renderSeekBar({})).toBe('');
+});
+
+test('the timeline offers row-backed filters and renders your turns under You', () => {
+  const s = { fullSessionId: 'abc', timeline: { steps: [{ text: 'Did a thing', at: new Date().toISOString(), source: 'narration', tools: 1, failed: 0, blocked: 0 }], earlier: { steps: 0, tools: 0, failed: 0 }, tools: 1, failed: 0, spanMs: 0, state: 'ready' },
+    userTurns: [{ atMs: Date.now(), text: 'Check now..', images: 0 }] };
+  const html = cards.renderTimelineCard(s);
+  expect(html).toContain('data-filter="summary"');
+  expect(html).toContain('data-filter="user">You<em>1</em>');
+  expect(html).toContain('data-filter="thinking">Reasoning');
+  expect(html).not.toContain('data-filter="failed"');
+});
+
+test('subagents list what each one did and link its transcript', () => {
+  const html = cards.renderSpawnedTeamCard({ subagents: [
+    { id: 'agent-a', agentType: 'code-reviewer', description: 'Review PR 3716', status: 'done', startedAtMs: 0, endedAtMs: 11 * 60_000, toolCount: 44, resultExcerpt: 'CHANGES REQUESTED', transcriptPath: '/t/agent-a.jsonl' },
+    { id: 'agent-b', agentType: 'code-reviewer', description: 'Review PR 3717', status: 'running', toolCount: 3, transcriptPath: '/t/agent-b.jsonl' },
+  ] });
+  expect(html).toContain('2 · 1 running');
+  expect(html).toContain('Review PR 3716');
+  expect(html).toContain('code-reviewer · 11m · 44 tools');
+  expect(html).toContain('data-path="/t/agent-a.jsonl"');
 });
 
 test('Artifacts respects each CLI bucket even when a plan path overlaps', () => {

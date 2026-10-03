@@ -308,6 +308,45 @@ export interface RemoteSessionArtifact {
   path: string;
   basename: string;
   bucket: 'artifacts' | 'plans' | 'reports' | 'docs';
+  /** Human title from the artifact's `.artifact.json` sidecar, when it has one. */
+  title?: string;
+}
+
+/** One failed or policy-blocked tool call, newest last (CLI `failures[]`). */
+export interface RemoteFailure {
+  atMs: number;
+  tool: string;
+  summary: string;
+  error: string;
+  blocked: boolean;
+}
+
+/** Whole-session activity histogram: 48 equal buckets over [startMs, endMs]. */
+export interface RemoteActivity {
+  startMs: number;
+  endMs: number;
+  buckets: { tools: number; failed: number; blocked: number }[];
+  userAtMs: number[];
+}
+
+/** One genuine user turn, oldest first (CLI `userTurns[]`). */
+export interface RemoteUserTurn {
+  atMs: number;
+  text: string;
+  images: number;
+}
+
+/** One Claude subagent of the session (CLI `subagents[]`). */
+export interface RemoteSubagent {
+  id: string;
+  agentType: string;
+  description: string;
+  status: 'running' | 'done' | 'failed';
+  startedAtMs?: number;
+  endedAtMs?: number;
+  toolCount: number;
+  resultExcerpt?: string;
+  transcriptPath: string;
 }
 
 /**
@@ -433,6 +472,16 @@ export interface RemoteSession {
   topic: string;
   /** CLI-authored recap title. This is the row header, never the request body. */
   title: string;
+  /** Model id of the latest assistant reply (e.g. `claude-opus-5-5`). Absent when unknown. */
+  model?: string;
+  /** Failed and policy-blocked tool calls, newest last. Absent on an older CLI. */
+  failures?: RemoteFailure[];
+  /** Whole-session activity histogram for the seek bar. Absent on an older CLI. */
+  activityHistogram?: RemoteActivity;
+  /** The user's genuine turns, oldest first. Absent on an older CLI. */
+  userTurns?: RemoteUserTurn[];
+  /** Subagents this session ran. Absent on an older CLI. */
+  subagents?: RemoteSubagent[];
   /** Full genuine first user turn from the durable session index. Empty on an
    *  older CLI, where the UI labels its topic fallback as a summary. */
   firstUserMessage: string;
@@ -545,6 +594,11 @@ export interface RawActiveSession {
   label?: string;
   topic?: string;
   title?: string;
+  model?: string;
+  failures?: unknown;
+  activityHistogram?: unknown;
+  userTurns?: unknown;
+  subagents?: unknown;
   /** Compatibility task fields emitted by older/alternate session producers. */
   prompt?: string;
   firstUserMessage?: string;
@@ -907,7 +961,71 @@ function normalizeSessionArtifacts(raw: unknown): RemoteSessionArtifact[] {
     const bucket = value.bucket;
     if (!path || !basename) return [];
     if (bucket !== 'artifacts' && bucket !== 'plans' && bucket !== 'reports' && bucket !== 'docs') return [];
-    return [{ path, basename, bucket }];
+    const title = asStr(value.title);
+    return [title ? { path, basename, bucket, title } : { path, basename, bucket }];
+  });
+}
+
+function finiteNum(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeFailures(raw: unknown): RemoteFailure[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const v = entry as Record<string, unknown>;
+    const atMs = finiteNum(v.atMs);
+    if (atMs === undefined) return [];
+    return [{ atMs, tool: asStr(v.tool), summary: asStr(v.summary), error: asStr(v.error), blocked: v.blocked === true }];
+  });
+}
+
+function normalizeActivityHistogram(raw: unknown): RemoteActivity | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const v = raw as Record<string, unknown>;
+  const startMs = finiteNum(v.startMs);
+  const endMs = finiteNum(v.endMs);
+  if (startMs === undefined || endMs === undefined || endMs < startMs || !Array.isArray(v.buckets)) return undefined;
+  const buckets = v.buckets.map((b) => {
+    const o = (b && typeof b === 'object' ? b : {}) as Record<string, unknown>;
+    return { tools: finiteNum(o.tools) ?? 0, failed: finiteNum(o.failed) ?? 0, blocked: finiteNum(o.blocked) ?? 0 };
+  });
+  const userAtMs = Array.isArray(v.userAtMs) ? v.userAtMs.filter((t): t is number => typeof t === 'number' && Number.isFinite(t)) : [];
+  return { startMs, endMs, buckets, userAtMs };
+}
+
+function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const v = entry as Record<string, unknown>;
+    const atMs = finiteNum(v.atMs);
+    const text = asStr(v.text);
+    if (atMs === undefined || !text) return [];
+    return [{ atMs, text, images: finiteNum(v.images) ?? 0 }];
+  });
+}
+
+function normalizeSubagents(raw: unknown): RemoteSubagent[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const v = entry as Record<string, unknown>;
+    const id = asStr(v.id);
+    if (!id) return [];
+    const status = v.status === 'running' || v.status === 'failed' ? v.status : 'done';
+    return [{
+      id,
+      agentType: asStr(v.agentType),
+      description: asStr(v.description),
+      status,
+      startedAtMs: finiteNum(v.startedAtMs),
+      endedAtMs: finiteNum(v.endedAtMs),
+      toolCount: finiteNum(v.toolCount) ?? 0,
+      resultExcerpt: asStr(v.resultExcerpt) || undefined,
+      transcriptPath: asStr(v.transcriptPath),
+    }];
   });
 }
 
@@ -1163,6 +1281,11 @@ export function normalizeActiveSession(
     lastActivityMs: typeof raw.lastActivityMs === 'number' ? raw.lastActivityMs : 0,
     topic: asStr(raw.topic) || asStr(raw.prompt) || asStr(raw.firstUserMessage) || asStr(raw.label),
     title: asStr(raw.title),
+    model: asStr(raw.model) || undefined,
+    failures: normalizeFailures(raw.failures),
+    activityHistogram: normalizeActivityHistogram(raw.activityHistogram),
+    userTurns: normalizeUserTurns(raw.userTurns),
+    subagents: normalizeSubagents(raw.subagents),
     firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
     // Current watch rows mark index-backed history explicitly; older picker-shaped
@@ -1213,6 +1336,7 @@ export interface RawRecentSession {
   prNumber?: number;
   topic?: string;
   title?: string;
+  model?: string;
   firstUserMessage?: string;
   label?: string;
   machine?: string;
@@ -1339,6 +1463,7 @@ export function normalizeRecentSession(
     lastActivityMs,
     topic: asStr(raw.topic) || asStr(raw.label),
     title: asStr(raw.title),
+    model: asStr(raw.model) || undefined,
     firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
     sessionFile: '',

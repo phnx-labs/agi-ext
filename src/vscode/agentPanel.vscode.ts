@@ -51,8 +51,12 @@ import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL, remoteDeviceArg } from './remoteSessions.vscode';
 import type {
+  RemoteActivity,
   RemoteAttachment,
   RemoteCheckpoint,
+  RemoteFailure,
+  RemoteSubagent,
+  RemoteUserTurn,
   RemoteFiles,
   RemoteRequest,
   RemoteSession,
@@ -64,6 +68,19 @@ import { normalizeHost } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
+import { runAgents } from '../core/agentsBin';
+import { shellQuote } from '../core/deviceDispatchShell';
+
+/** Where the CLI materializes pasted images; the only image root the webview may read. */
+const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
+
+function isInside(filePath: string, dir: string): boolean {
+  const rel = path.relative(dir, path.resolve(filePath));
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/** Timeline filters that need the full transcript stream, one `agents sessions` call per click. */
+const VERB_FILTER_ROLES = new Set(['assistant', 'thinking', 'tools']);
 
 const AGENT_PANEL_VIEW_ID = 'agentsPanel.terminal';
 
@@ -168,6 +185,24 @@ interface PanelSnapshot {
   tokPerSec?: number;
   subAgentCount?: number;
   spawnedTeam?: string;
+  // Glance header (v3): the session's own title, the running model, and where it runs.
+  sessionTitle?: string;
+  model?: string;
+  project?: string;
+  hostLabel?: string;
+  inWorktree?: boolean;
+  startedAtMs?: number;
+  lastActivityMs?: number;
+  // The open attention item in the harness's own words; absent when nothing waits on the user.
+  needsYou?: { kind: string; text: string; openedAtMs?: number };
+  failures?: RemoteFailure[];
+  failedCount?: number;
+  blockedCount?: number;
+  activityHistogram?: RemoteActivity;
+  userTurns?: RemoteUserTurn[];
+  subagents?: RemoteSubagent[];
+  // Local image attachments the webview may load (inside the CLI's attachment cache).
+  imageThumbs?: { path: string; label: string; uri: string }[];
   artifacts?: (RemoteSessionArtifact & { display: string })[];
   attachments?: RemoteAttachment[];
   // Linked artifacts — multi-PR (the agent may have opened several in one session)
@@ -363,7 +398,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'assets')],
+      // The CLI materializes pasted images into its attachment cache; only that
+      // directory is readable, never an arbitrary path a transcript names.
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'assets'), vscode.Uri.file(ATTACHMENT_CACHE_DIR)],
     };
 
     webviewView.webview.html = this.renderShell(webviewView.webview);
@@ -406,6 +443,19 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (typeof msg.path === 'string') {
           vscode.commands.executeCommand('vscode.open', sessionPathUri(msg.path, this.snapshot.sessionHost));
         }
+        return;
+      case 'openArtifact':
+        // A plan or report opens as an editor tab in the Agents Reader, beside the
+        // agent that wrote it; anything else opens normally.
+        if (typeof msg.path === 'string') {
+          const uri = sessionPathUri(msg.path, this.snapshot.sessionHost);
+          const viewType = /\.html?$/i.test(msg.path) ? 'agents.htmlReader' : /\.md$/i.test(msg.path) ? 'agents.markdownEditor' : undefined;
+          if (viewType) await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
+          else await vscode.commands.executeCommand('vscode.open', uri);
+        }
+        return;
+      case 'loadTimelineFilter':
+        await this.loadTimelineFilter(msg.role);
         return;
       case 'openWorktree':
         // Worktree paths are DIRECTORIES — `vscode.open` shows an error toast
@@ -457,6 +507,30 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           }
         }
         return;
+    }
+  }
+
+  /**
+   * A heavy timeline filter (agent messages, reasoning, tool calls) is too big to
+   * ride every stream row, so it is one `agents sessions <id> --include <role>`
+   * call per explicit click, never per selection. The result goes back to the
+   * webview as-is; a CLI error is shown, not hidden.
+   */
+  private async loadTimelineFilter(role: unknown): Promise<void> {
+    const sessionId = this.snapshot.fullSessionId;
+    if (typeof role !== 'string' || !VERB_FILTER_ROLES.has(role) || !sessionId) return;
+    try {
+      const { stdout } = await runAgents(`sessions ${shellQuote(sessionId)} --include ${role} --json`, { timeout: 20_000 });
+      const parsed = JSON.parse(stdout);
+      const items = role === 'tools'
+        ? ((parsed.sessions || []).find((x: { id?: string }) => x.id === sessionId)?.calls || []).map((c: { timestamp?: string; tool?: string; input?: string; outcome?: string }) => ({
+            at: c.timestamp, text: (c.tool || 'tool') + ': ' + String(c.input || '').slice(0, 300), bad: c.outcome && c.outcome !== 'ok',
+          }))
+        : (parsed.events || []).map((e: { timestamp?: string; content?: string }) => ({ at: e.timestamp, text: String(e.content || '').slice(0, 600) }));
+      this.view?.webview.postMessage({ type: 'timelineFilter', role, sessionId, items });
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split('\n')[0] : String(err);
+      this.view?.webview.postMessage({ type: 'timelineFilter', role, sessionId, error: message });
     }
   }
 
@@ -765,6 +839,35 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.artifacts = live.artifacts.map((artifact) => ({ ...artifact, display: displayPath(artifact.path, pathOptions) }));
         if (live.planFile) snapshot.plan = { path: live.planFile, display: displayPath(live.planFile, pathOptions) };
         snapshot.attachments = live.attachments;
+        const remoteDevice = remoteDeviceArg(live.host);
+        snapshot.sessionTitle = live.title || live.label || undefined;
+        snapshot.model = live.model;
+        snapshot.project = live.project || undefined;
+        snapshot.hostLabel = remoteDevice || os.hostname().split('.')[0];
+        snapshot.inWorktree = !!live.worktreeSlug;
+        snapshot.startedAtMs = live.startedAtMs || undefined;
+        snapshot.lastActivityMs = live.lastActivityMs || undefined;
+        if (live.attention && live.attention.state === 'open') {
+          const openedAtMs = Date.parse(live.attention.openedAt);
+          snapshot.needsYou = {
+            kind: live.attention.kind,
+            text: live.attention.question?.text || live.awaitingReason || '',
+            openedAtMs: Number.isFinite(openedAtMs) ? openedAtMs : undefined,
+          };
+        }
+        snapshot.failures = live.failures;
+        snapshot.failedCount = live.failures ? live.failures.filter((f) => !f.blocked).length : live.timeline?.failed;
+        snapshot.blockedCount = live.failures ? live.failures.filter((f) => f.blocked).length : undefined;
+        snapshot.activityHistogram = live.activityHistogram;
+        snapshot.userTurns = live.userTurns;
+        snapshot.subagents = live.subagents;
+        if (live.subagents) snapshot.subAgentCount = live.subagents.length;
+        const webview = this.view?.webview;
+        if (webview && !remoteDevice) {
+          snapshot.imageThumbs = live.attachments
+            .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, ATTACHMENT_CACHE_DIR))
+            .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }));
+        }
       }
 
       // version + account aren't on the normalized RemoteSession; the store
@@ -891,20 +994,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     padding: 8px 10px;
     background: var(--vscode-sideBar-background);
     margin-top: 4px;
-  }
-  .session-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin: 7px 0 0;
-  }
-  .session-stats span {
-    border: 1px solid var(--vscode-widget-border, transparent);
-    border-radius: 9px;
-    padding: 1px 6px;
-    color: var(--vscode-descriptionForeground);
-    font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 10px;
   }
   .agent-head {
     display: flex;
@@ -1636,6 +1725,74 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   #session-details summary { cursor: pointer; }
   .session-details { font-size: 11px; overflow-wrap: anywhere; margin-top: 6px; }
   button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+  /* Glance header (v3): title, model, id, where it runs. */
+  .session-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .model-name { font-weight: 600; color: var(--vscode-foreground); }
+  .id-row { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+  .id-row .session-chunk { font-size: 10.5px; opacity: .8; }
+  .head-btn.small { width: 16px; height: 16px; font-size: 10px; }
+  .where-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .where-chip { font-size: 10.5px; padding: 0 7px; border-radius: 9px; line-height: 17px; border: 0; color: var(--vscode-foreground); background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent); white-space: nowrap; }
+  .where-chip.proj { font-weight: 600; background: color-mix(in srgb, var(--vscode-charts-green) 22%, transparent); }
+  .where-chip.mono { font-family: var(--vscode-editor-font-family, monospace); font-size: 10px; cursor: pointer; }
+  .where-chip.wt { background: color-mix(in srgb, var(--vscode-charts-purple) 24%, transparent); }
+  .needs-you { margin: 8px 0 2px; border-radius: 6px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--vscode-charts-yellow) 60%, transparent); background: color-mix(in srgb, var(--vscode-charts-yellow) 14%, transparent); }
+  .needs-you-k { font-size: 10px; font-weight: 700; letter-spacing: .05em; color: var(--vscode-charts-yellow); }
+  .needs-you-t { font-size: 12.5px; margin-top: 3px; line-height: 1.4; }
+  .needs-you-btns { display: flex; gap: 6px; margin-top: 7px; }
+  .ny-btn { font-size: 11px; padding: 2px 9px; border-radius: 4px; cursor: pointer; border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, transparent)); background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  .ny-btn.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .session-stats { display: block; margin: 7px 0 0; font-size: 11.5px; color: var(--vscode-descriptionForeground); }
+  .failures { margin-top: 4px; font-size: 11.5px; }
+  .failures > summary { cursor: pointer; list-style: none; color: var(--vscode-charts-orange, var(--vscode-errorForeground)); }
+  .failures > summary::-webkit-details-marker { display: none; }
+  .failures-show { color: var(--vscode-textLink-foreground); margin-left: 4px; }
+  .failures[open] .failures-show { display: none; }
+  .fail-list { margin-top: 6px; border-radius: 6px; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 35%, transparent); background: color-mix(in srgb, var(--vscode-errorForeground) 7%, transparent); }
+  .fail-row { display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 18%, transparent); }
+  .fail-row:first-child { border-top: 0; }
+  .fail-at { font-size: 10px; color: var(--vscode-descriptionForeground); white-space: nowrap; padding-top: 1px; }
+  .fail-cmd { font-family: var(--vscode-editor-font-family, monospace); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fail-err { font-size: 10.5px; color: var(--vscode-errorForeground); }
+  .fail-blocked > summary { cursor: pointer; font-size: 10.5px; color: var(--vscode-descriptionForeground); padding: 4px 0; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+  .thumb { position: relative; padding: 0; border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); border-radius: 4px; overflow: hidden; width: 96px; height: 54px; background: var(--vscode-editor-background); cursor: pointer; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: left top; display: block; }
+  .thumb-n { position: absolute; right: 2px; bottom: 2px; font-size: 9px; padding: 0 3px; border-radius: 2px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .seek { margin: 2px 0 8px; }
+  .seek-bars { display: flex; align-items: flex-end; gap: 2px; height: 34px; border-bottom: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); }
+  .seek-bar { height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; display: flex; align-items: flex-end; min-width: 3px; }
+  .seek-bar i { display: block; width: 100%; background: color-mix(in srgb, var(--vscode-charts-blue) 55%, transparent); border-radius: 1px 1px 0 0; }
+  .seek-bar.bad i { box-shadow: inset 0 -3px 0 var(--vscode-charts-red); }
+  .seek-bar:hover i { background: var(--vscode-charts-blue); }
+  .seek-gap { align-self: stretch; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 8.5px; line-height: 1.1; color: var(--vscode-descriptionForeground); border-left: 1px dashed var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); border-right: 1px dashed var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); }
+  .seek-marks { position: relative; height: 27px; }
+  .seek-mk.low { top: 15px; }
+  .seek-mk { position: absolute; top: 2px; transform: translateX(-50%); width: 11px; height: 11px; border-radius: 50%; font-size: 7.5px; font-weight: 700; line-height: 11px; text-align: center; color: var(--vscode-editor-background); }
+  .seek-mk.you { background: var(--vscode-charts-blue); }
+  .seek-mk.sub { background: var(--vscode-charts-purple); border-radius: 2px; }
+  .seek-mk.ask { background: var(--vscode-charts-yellow); }
+  .seek-axis { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--vscode-descriptionForeground); }
+  .tl-filters { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 8px; }
+  .tl-filter { font-size: 10.5px; padding: 0 8px; line-height: 18px; border-radius: 9px; cursor: pointer; border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); background: transparent; color: var(--vscode-foreground); }
+  .tl-filter.on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: var(--vscode-button-background); }
+  .tl-filter em { font-style: normal; opacity: .7; margin-left: 4px; }
+  .tl-item { padding: 5px 7px; margin-bottom: 4px; border-radius: 5px; background: color-mix(in srgb, var(--vscode-charts-blue) 9%, transparent); }
+  .tl-item.bad { background: color-mix(in srgb, var(--vscode-errorForeground) 9%, transparent); }
+  .tl-item-at { font-size: 10px; color: var(--vscode-descriptionForeground); }
+  .tl-item-text { font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .step.flash { outline: 2px solid var(--vscode-focusBorder); border-radius: 4px; }
+  .subagent { border-radius: 5px; padding: 5px 8px; margin-bottom: 5px; background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent); }
+  .subagent > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .subagent > summary::-webkit-details-marker { display: none; }
+  .sub-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--vscode-charts-green); }
+  .subagent.status-running .sub-dot { background: var(--vscode-charts-blue); }
+  .subagent.status-failed .sub-dot { background: var(--vscode-charts-red); }
+  .sub-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub-status { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--vscode-descriptionForeground); }
+  .sub-meta { font-family: var(--vscode-editor-font-family, monospace); font-size: 10px; color: var(--vscode-descriptionForeground); margin: 3px 0 0 13px; }
+  .sub-result { font-size: 11.5px; margin: 4px 0 0 13px; padding-left: 7px; border-left: 2px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 30%, transparent)); }
+  .sub-open { font-size: 11px; margin: 4px 0 0 13px; background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; }
 </style>
 </head>
 <body>
@@ -1658,7 +1815,7 @@ function relTime(ms) {
   const delta = Date.now() - ms;
   if (delta < 60_000) return 'just now';
   const m = Math.floor(delta / 60_000);
-  if (m < 60) return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+  if (m < 60) return m + ' min ago';
   const h = Math.floor(m / 60);
   if (h < 24) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
   const d = Math.floor(h / 24);
@@ -1685,34 +1842,59 @@ function compactDuration(ms) {
   return hours ? hours + 'h ' + minutes + 'm' : minutes + 'm';
 }
 
+function prettyModel(id) {
+  if (!id) return '';
+  const m = id.match(/^claude-(opus|sonnet|haiku|fable)-(\\d+)-(\\d+)/);
+  if (m) return m[1].charAt(0).toUpperCase() + m[1].slice(1) + ' ' + m[2] + '.' + m[3];
+  return id;
+}
+
+// "today 3:54 PM", "yesterday 10:13 PM", or "Oct 1, 10:13 PM": a person reads a
+// clock time, not a bare 24-hour stamp.
+function clockTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return 'today ' + time;
+  if (diff === 1) return 'yesterday ' + time;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + time;
+}
+
 function renderTerminalCard(s) {
   const logo = s.agentIconUri
-    ? '<img class="agent-logo" src="' + esc(s.agentIconUri) + '" alt="" />'
+    ? '<img class="agent-logo" src="' + esc(s.agentIconUri) + '" alt="' + esc(s.agentName || '') + '" title="' + esc(s.agentName || '') + '" />'
     : '';
-  const titleBits = [
-    '<span class="agent-name">' + esc(s.agentName || s.agentPrefix || 'Agent') + '</span>',
-    s.sessionChunk ? '<button type="button" class="session-chunk" id="copy-session" title="Copy full session ID" aria-label="Copy full session ID">' + esc(s.sessionChunk) + '</button>' : '',
-    s.hasTerminal && s.terminalId ? '<button type="button" class="head-btn" data-action="setSessionId" title="Set session ID for terminal" aria-label="Set session ID for terminal">✎</button>' : ''
-  ].join('');
-  let label = '';
-  if (s.label) {
-    label = '<div class="label-row">' + esc(s.label) + '</div>';
-  } else if (s.autoLabel) {
-    label = '<div class="label-row label-auto">' + esc(s.autoLabel) + '</div>';
-  }
+  // The title is WHAT the session is: a /rename, else the generated title, else
+  // the tab label. The harness icon already says which agent it is.
+  const title = s.sessionTitle || s.label || s.autoLabel || s.agentName || 'Agent';
   let usageBadge = '';
   if (s.usageStatus === 'out_of_credits') {
     usageBadge = '<span class="usage-badge usage-out">⚠ out of credits</span>';
   } else if (s.usageStatus === 'rate_limited') {
     usageBadge = '<span class="usage-badge usage-rate">⚠ rate-limited</span>';
   }
-  const account = (s.accountLabel || s.account)
-    ? '<div class="account-row" title="' + esc(s.account || '') + '">' + esc(s.accountLabel ?? s.account) + usageBadge + '</div>'
+  const who = [];
+  if (s.model) who.push('<b class="model-name" title="' + esc(s.model) + '">' + esc(prettyModel(s.model)) + '</b>');
+  if (s.accountLabel || s.account) who.push('<span title="' + esc(s.account || '') + '">' + esc(s.accountLabel ?? s.account) + '</span>');
+  const whoRow = who.length || usageBadge ? '<div class="account-row">' + who.join(' · ') + usageBadge + '</div>' : '';
+  const idRow = s.sessionChunk
+    ? '<div class="id-row">' +
+        '<button type="button" class="session-chunk" id="copy-session" title="Copy full session ID" aria-label="Copy full session ID">' + esc(s.sessionChunk) + '</button>' +
+        (s.hasTerminal && s.terminalId ? '<button type="button" class="head-btn small" data-action="setSessionId" title="Set session ID for terminal" aria-label="Set session ID for terminal">✎</button>' : '') +
+      '</div>'
     : '';
-  // Focus and Resume: the two verbs the removed Fleet detail rail owned. Focus
-  // shows the live tab when there is one and otherwise attaches a fresh terminal
-  // to the session; Resume runs the CLI's own recovery command for the row. Both
-  // need a session id, so a tab that has not reported one yet shows neither.
+  // Where it runs: project, branch, a worktree badge only for a linked worktree
+  // (never the worktree's folder name), and the host.
+  const branch = s.git && s.git.branch;
+  const chips = [];
+  if (s.project) chips.push('<span class="where-chip proj">' + esc(s.project) + '</span>');
+  if (branch) chips.push('<button type="button" class="where-chip mono" data-scm title="Open Source Control">⎇ ' + esc(branch) + '</button>');
+  if (s.inWorktree) chips.push('<span class="where-chip wt" title="' + esc(s.cwd || '') + '">worktree</span>');
+  if (s.hostLabel) chips.push('<span class="where-chip">' + esc(s.hostLabel) + '</span>');
+  const where = chips.length ? '<div class="where-row">' + chips.join('') + '</div>' : '';
   const actions = s.fullSessionId
     ? '<div class="head-actions">' +
         '<button type="button" class="head-btn" data-action="focusSubject" aria-label="Focus session" title="Focus session">◎</button>' +
@@ -1727,36 +1909,83 @@ function renderTerminalCard(s) {
       '<div class="agent-head">' +
         logo +
         '<div class="agent-head-text">' +
-          '<div class="title-row">' + titleBits + '</div>' +
-          label +
-          account +
+          '<div class="title-row session-title" title="' + esc(title) + '">' + esc(title) + '</div>' +
+          whoRow +
+          idRow +
+          where +
           following +
         '</div>' +
         actions +
       '</div>' +
       '<details id="session-details"' + (viewState.detailsOpen ? ' open' : '') + '><summary>Details</summary><div class="session-details">' +
-        [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.fullSessionId, s.cwd, s.sessionHost].filter(Boolean).map((value) => '<div>' + esc(value) + '</div>').join('') +
-        (s.git ? '<div class="branch-row">' +
-          (s.git.branch ? '<button type="button" class="branch-name" data-scm>' + esc(s.git.branch) + '</button>' : '') +
-          (s.git.dirtyCount > 0 ? '<button type="button" class="dirty-pill" data-scm>' + s.git.dirtyCount + ' changed</button>' : '') +
-        '</div>' : '') +
+        [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.model, s.fullSessionId, s.cwd, s.sessionHost].filter(Boolean).map((value) => '<div>' + esc(value) + '</div>').join('') +
+        (s.git && s.git.dirtyCount > 0 ? '<div class="branch-row"><button type="button" class="dirty-pill" data-scm>' + s.git.dirtyCount + ' changed</button></div>' : '') +
       '</div></details>' +
     '</div>'
   );
 }
 
+const NEEDS_YOU_LABEL = { question: 'Asks', permission: 'Needs permission', plan_review: 'Plan ready for review', declared: 'Needs you', failure: 'Failed', stall: 'Stalled', review: 'Ready for review' };
+
+// The harness's own open ask, under the header so you see who is asking first.
+function renderNeedsYou(s) {
+  const n = s.needsYou;
+  if (!n) return '';
+  const label = NEEDS_YOU_LABEL[n.kind] || 'Needs you';
+  const waited = n.openedAtMs ? ' · waiting ' + relTime(n.openedAtMs).replace(' ago', '') : '';
+  return (
+    '<div class="needs-you">' +
+      '<div class="needs-you-k">' + esc(label.toUpperCase() + waited.toUpperCase()) + '</div>' +
+      (n.text ? '<div class="needs-you-t">' + renderInlineMarkdown(truncate(n.text, 400)) + '</div>' : '') +
+      '<div class="needs-you-btns">' +
+        '<button type="button" class="ny-btn primary" id="needs-you-reply">Reply…</button>' +
+        (s.hasTerminal ? '<button type="button" class="ny-btn" data-action="focusSubject">Focus terminal</button>' : '') +
+      '</div>' +
+    '</div>'
+  );
+}
 function renderSessionStats(s) {
   const stats = [];
+  if (s.startedAtMs) stats.push('Started ' + clockTime(s.startedAtMs));
   const duration = compactDuration(s.durationMs);
   const tokens = compactTokens(s.tokenCount);
   if (duration) stats.push(duration);
   if (tokens) stats.push(tokens);
   if (s.tokPerSec > 0) stats.push(Math.round(s.tokPerSec) + ' tok/s');
-  if (s.subAgentCount > 0) stats.push(s.subAgentCount + ' subagent' + (s.subAgentCount === 1 ? '' : 's'));
   if (!stats.length) return '';
-  return '<div class="session-stats">' + stats.map((stat) => '<span>' + esc(stat) + '</span>').join('') + '</div>';
+  return '<div class="session-stats">' + esc(stats.join(' · ')) + '</div>';
 }
 
+// Failures stay out of the way: one quiet line only when something failed, and
+// the list opens on a click. A clean session shows nothing here.
+function renderFailures(s) {
+  const failed = s.failedCount || 0;
+  const blocked = s.blockedCount || 0;
+  if (!failed && !blocked) return '';
+  const bits = [];
+  if (failed) bits.push(failed + ' failed');
+  if (blocked) bits.push(blocked + ' blocked');
+  const list = s.failures || [];
+  const row = (f) => (
+    '<div class="fail-row">' +
+      '<span class="fail-at" title="' + esc(new Date(f.atMs).toLocaleString()) + '">' + esc(clockTime(f.atMs)) + '</span>' +
+      '<div class="fail-body"><div class="fail-cmd" title="' + esc(f.summary) + '">' + esc((f.tool ? f.tool + ': ' : '') + f.summary) + '</div>' +
+      '<div class="fail-err">' + esc(f.error) + '</div></div>' +
+    '</div>'
+  );
+  const realRows = list.filter((f) => !f.blocked).slice().reverse().map(row).join('');
+  const blockedList = list.filter((f) => f.blocked);
+  const blockedRows = blockedList.length
+    ? '<details class="fail-blocked"><summary>' + blockedList.length + ' blocked by policy or permission</summary>' + blockedList.slice().reverse().map(row).join('') + '</details>'
+    : '';
+  const body = list.length ? realRows + blockedRows : '<div class="card-note">This CLI reports only the counts. Upgrade agents-cli for the list.</div>';
+  return (
+    '<details class="failures"' + (viewState.failuresOpen ? ' open' : '') + ' id="failures">' +
+      '<summary>⚠ ' + esc(bits.join(' · ')) + ' <span class="failures-show">Show</span></summary>' +
+      '<div class="fail-list">' + body + '</div>' +
+    '</details>'
+  );
+}
 function renderActionsCard(s) {
   if (!s.cwd) return '';
   const state = s.agentState || 'idle_clean';
@@ -1880,10 +2109,22 @@ function requestChips(s) {
   }
   // Attachments the CLI resolved to real paths stay clickable (they open in an
   // editor); the tidier's names above are just labels.
+  const thumbed = new Set((s.imageThumbs || []).map((t) => t.path));
   for (const a of (s.attachments || [])) {
+    if (thumbed.has(a.path)) continue;
     chips.push('<a class="chip path-link" data-path="' + esc(a.path) + '">' + esc(a.label || a.path) + '</a>');
   }
   return chips.length ? '<div class="chips">' + chips.join('') + '</div>' : '';
+}
+
+function renderImageThumbs(s) {
+  const thumbs = s.imageThumbs || [];
+  if (!thumbs.length) return '';
+  return '<div class="thumbs">' + thumbs.map((t, i) => (
+    '<button type="button" class="thumb path-link" data-path="' + esc(t.path) + '" title="' + esc(t.label) + '">' +
+      '<img src="' + esc(t.uri) + '" alt="' + esc(t.label) + '" /><span class="thumb-n">' + (i + 1) + '</span>' +
+    '</button>'
+  )).join('') + '</div>';
 }
 
 function renderRequestCard(s) {
@@ -1925,6 +2166,7 @@ function renderRequestCard(s) {
     '<h2>Request</h2>' +
     '<div class="card">' +
       '<div class="' + headlineCls + '">' + esc(truncate(headline, 240)) + continues + '</div>' +
+      renderImageThumbs(s) +
       requestChips(s) +
       fold +
     '</div>'
@@ -1973,7 +2215,7 @@ function renderStep(step) {
   const key = JSON.stringify([lastSnapshot && lastSnapshot.fullSessionId, step.at, step.source]);
   const expanded = !!(viewState.expandedSteps && viewState.expandedSteps[key]);
   return (
-    '<button type="button" data-step-key="' + esc(key) + '" class="' + cls + '" data-expand="' + esc(step.source === 'user' ? '“' + step.text + '”' : step.text) + '" data-short="' + esc(text) + '" aria-expanded="' + expanded + '">' +
+    '<button type="button" data-at="' + (Number.isFinite(at) ? at : '') + '" data-step-key="' + esc(key) + '" class="' + cls + '" data-expand="' + esc(step.source === 'user' ? '“' + step.text + '”' : step.text) + '" data-short="' + esc(text) + '" aria-expanded="' + expanded + '">' +
       '<span class="step-mk"></span>' +
       '<span class="step-txt">' + esc(expanded ? (step.source === 'user' ? '“' + step.text + '”' : step.text) : text) + '</span>' +
       '<span class="step-at" title="' + esc(step.at || '') + '">' + esc(step.live ? 'now' : when) + '</span>' +
@@ -1984,6 +2226,125 @@ function renderStep(step) {
 }
 
 const TIMELINE_SHOWN = 5;
+
+// One strip of tool activity across the whole session. A run of 3+ empty buckets
+// collapses into a labeled gap so a 17-hour session with 10 idle hours still
+// shows its bursts. Markers: your messages (numbered), subagent starts, and the
+// open ask at the end. Clicking a bar jumps the step list to that moment.
+function renderSeekBar(s) {
+  const h = s.activityHistogram;
+  if (!h || !h.buckets || !h.buckets.length || !(h.endMs > h.startMs)) return '';
+  const n = h.buckets.length;
+  const bucketMs = (h.endMs - h.startMs) / n;
+  const max = Math.max(1, ...h.buckets.map((b) => b.tools));
+  const empty = (b) => b.tools === 0 && b.failed === 0 && b.blocked === 0;
+  const segs = [];
+  for (let i = 0; i < n;) {
+    if (empty(h.buckets[i])) {
+      let j = i;
+      while (j < n && empty(h.buckets[j])) j++;
+      if (j - i >= 3) { segs.push({ gap: true, from: i, to: j }); i = j; continue; }
+    }
+    segs.push({ gap: false, i: i });
+    i++;
+  }
+  const units = segs.reduce((acc, seg) => acc + (seg.gap ? 3 : 1), 0);
+  const leftOf = {};
+  let u = 0;
+  for (const seg of segs) {
+    if (seg.gap) { for (let k = seg.from; k < seg.to; k++) leftOf[k] = (u + 1.5) / units * 100; u += 3; }
+    else { leftOf[seg.i] = (u + 0.5) / units * 100; u += 1; }
+  }
+  const bucketOf = (ms) => Math.max(0, Math.min(n - 1, Math.floor((ms - h.startMs) / bucketMs)));
+  const bars = segs.map((seg) => {
+    if (seg.gap) {
+      return '<div class="seek-gap" style="flex:3">' + esc(compactDuration((seg.to - seg.from) * bucketMs)) + '<br>idle</div>';
+    }
+    const b = h.buckets[seg.i];
+    const height = b.tools ? Math.max(8, Math.round(b.tools / max * 100)) : 4;
+    const at = Math.round(h.startMs + (seg.i + 0.5) * bucketMs);
+    const bad = b.failed + b.blocked;
+    const tip = clockTime(at) + ' · ' + b.tools + ' tools' + (b.failed ? ' · ' + b.failed + ' failed' : '') + (b.blocked ? ' · ' + b.blocked + ' blocked' : '');
+    return '<button type="button" class="seek-bar' + (bad ? ' bad' : '') + '" style="flex:1" data-seek="' + at + '" title="' + esc(tip) + '"><i style="height:' + height + '%"></i></button>';
+  }).join('');
+  const marks = [];
+  // Messages that land in one bucket share one marker (its tooltip lists them all);
+  // subagents and the open ask sit on a second row so they never cover a message.
+  const youByBucket = {};
+  (h.userAtMs || []).forEach((t, k) => { (youByBucket[bucketOf(t)] = youByBucket[bucketOf(t)] || []).push(k + 1); });
+  for (const key of Object.keys(youByBucket)) {
+    const nums = youByBucket[key];
+    const label = nums.length === 1 ? String(nums[0]) : nums[0] + '+';
+    marks.push('<span class="seek-mk you" style="left:' + leftOf[key].toFixed(2) + '%" title="Your message' + (nums.length > 1 ? 's ' : ' ') + esc(nums.join(', ')) + '">' + esc(label) + '</span>');
+  }
+  const lower = {};
+  for (const x of (s.subagents || [])) {
+    if (!x.startedAtMs) continue;
+    const b = bucketOf(x.startedAtMs);
+    (lower[b] = lower[b] || []).push(x.description);
+  }
+  for (const key of Object.keys(lower)) {
+    marks.push('<span class="seek-mk sub low" style="left:' + leftOf[key].toFixed(2) + '%" title="Subagent: ' + esc(lower[key].join('; ')) + '">' + (lower[key].length > 1 ? lower[key].length : 'S') + '</span>');
+  }
+  if (s.needsYou) marks.push('<span class="seek-mk ask low" style="left:' + leftOf[n - 1].toFixed(2) + '%" title="Needs you">!</span>');
+  return (
+    '<div class="seek">' +
+      '<div class="seek-bars">' + bars + '</div>' +
+      '<div class="seek-marks">' + marks.join('') + '</div>' +
+      '<div class="seek-axis"><span>' + esc(clockTime(h.startMs)) + '</span><span>' + esc(clockTime(h.endMs)) + '</span></div>' +
+    '</div>'
+  );
+}
+
+// Filters swap the default summary for one stream. You and Failed ride the row;
+// Agent, Tools and Reasoning are one agents-sessions call per click (cached).
+const TIMELINE_FILTERS = [{ id: 'summary', label: 'Summary' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }];
+const filterCache = {};
+
+function currentFilter(s) {
+  const f = (viewState.timelineFilter || {})[(s && s.fullSessionId) || ''];
+  return TIMELINE_FILTERS.some((x) => x.id === f) ? f : 'summary';
+}
+
+function renderFilterChips(s, active) {
+  if (!s.fullSessionId) return '';
+  const counts = { user: (s.userTurns || []).length, failed: (s.failures || []).length };
+  return '<div class="tl-filters">' + TIMELINE_FILTERS.map((f) => {
+    if (f.id === 'user' && !s.userTurns) return '';
+    if (f.id === 'failed' && !(s.failures && s.failures.length)) return '';
+    const count = counts[f.id] ? '<em>' + counts[f.id] + '</em>' : '';
+    return '<button type="button" class="tl-filter' + (f.id === active ? ' on' : '') + '" data-filter="' + f.id + '">' + esc(f.label) + count + '</button>';
+  }).join('') + '</div>';
+}
+
+function filteredRows(items) {
+  if (!items.length) return '<div class="card-note">Nothing here.</div>';
+  return items.map((it) => (
+    '<div class="tl-item' + (it.bad ? ' bad' : '') + '">' +
+      '<div class="tl-item-at">' + esc((it.label ? it.label + ' · ' : '') + (it.atMs ? clockTime(it.atMs) : '')) + '</div>' +
+      '<div class="tl-item-text">' + esc(it.text) + '</div>' +
+    '</div>'
+  )).join('');
+}
+
+function renderFilteredBody(s, active) {
+  if (active === 'user') {
+    return filteredRows((s.userTurns || []).map((t, i) => ({
+      atMs: t.atMs,
+      label: 'turn ' + (i + 1) + (t.images ? ' · ' + t.images + ' image' + (t.images === 1 ? '' : 's') : ''),
+      text: t.text,
+    })));
+  }
+  if (active === 'failed') {
+    return filteredRows((s.failures || []).slice().reverse().map((f) => ({
+      atMs: f.atMs, label: f.blocked ? 'blocked' : 'failed', text: f.tool + ': ' + f.summary + ' → ' + f.error, bad: true,
+    })));
+  }
+  const cached = filterCache[(s.fullSessionId || '') + ':' + active];
+  if (!cached) return '<div class="card-note">Loading…</div>';
+  if (cached.error) return '<div class="card-note">Could not load: ' + esc(cached.error) + '</div>';
+  return filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).reverse());
+}
 
 function renderTimelineCard(s) {
   // The stream has not established for this session's scope: say so instead of
@@ -2013,10 +2374,14 @@ function renderTimelineCard(s) {
   const steps = (t.steps || []).slice().reverse();   // newest first
   if (!steps.length && !t.earlier.steps) return '';
   const head = [];
-  if (t.spanMs > 0) head.push(compactDuration(t.spanMs));
+  if (s.lastActivityMs) head.push('last active ' + relTime(s.lastActivityMs));
   if (t.tools > 0) head.push(t.tools + ' tools');
-  if (t.failed > 0) head.push(t.failed + ' failed');
   const meta = head.length ? '<span class="head-meta">' + esc(head.join(' · ')) + '</span>' : '';
+  const active = currentFilter(s);
+  const seekAndFilters = renderSeekBar(s) + renderFilterChips(s, active);
+  if (active !== 'summary') {
+    return '<h2>Timeline' + meta + '</h2><div class="card">' + seekAndFilters + '<div class="tl-filtered">' + renderFilteredBody(s, active) + '</div></div>';
+  }
 
   const shown = steps.slice(0, TIMELINE_SHOWN).map(renderStep).join('');
   const rest = steps.slice(TIMELINE_SHOWN);
@@ -2038,7 +2403,7 @@ function renderTimelineCard(s) {
     : '';
   return (
     '<h2>Timeline' + meta + '</h2>' +
-    '<div class="card">' + shown + more + earlier + partial + '</div>'
+    '<div class="card">' + seekAndFilters + shown + more + earlier + partial + '</div>'
   );
 }
 
@@ -2087,15 +2452,15 @@ function renderArtifactsCard(s) {
   const rows = [];
   for (const artifact of (s.artifacts || [])) {
     rows.push(
-      '<button type="button" class="deliverable path-link" data-path="' + esc(artifact.path) + '" title="' + esc(artifact.path) + '">' +
+      '<button type="button" class="deliverable artifact-open" data-artifact="' + esc(artifact.path) + '" title="Open in the editor: ' + esc(artifact.path) + '">' +
         '<span class="deliverable-kind">' + ({ artifacts: 'ARTIFACT', plans: 'PLAN', reports: 'REPORT', docs: 'DOC' }[artifact.bucket] || 'ARTIFACT') + '</span>' +
-        '<span class="deliverable-name">' + esc(artifact.display) + '</span>' +
+        '<span class="deliverable-name">' + esc(artifact.title || artifact.display) + '</span>' +
       '</button>'
     );
   }
   if (s.plan && !(s.artifacts || []).some((artifact) => artifact.path === s.plan.path)) {
     rows.push(
-      '<button type="button" class="deliverable path-link" data-path="' + esc(s.plan.path) + '" title="' + esc(s.plan.path) + '">' +
+      '<button type="button" class="deliverable artifact-open" data-artifact="' + esc(s.plan.path) + '" title="Open in the editor: ' + esc(s.plan.path) + '">' +
         '<span class="deliverable-kind">PLAN</span><span class="deliverable-name">' + esc(s.plan.display) + '</span>' +
       '</button>'
     );
@@ -2119,6 +2484,25 @@ function renderArtifactsCard(s) {
 }
 
 function renderSpawnedTeamCard(s) {
+  const subs = s.subagents || [];
+  if (subs.length) {
+    const running = subs.filter((x) => x.status === 'running').length;
+    const rows = subs.map((x) => {
+      const dur = typeof x.startedAtMs === 'number' && typeof x.endedAtMs === 'number' ? compactDuration(x.endedAtMs - x.startedAtMs) : '';
+      const meta = [x.agentType, dur, x.toolCount ? x.toolCount + ' tools' : ''].filter(Boolean).join(' · ');
+      return (
+        '<details class="subagent status-' + esc(x.status) + '">' +
+          '<summary><span class="sub-dot"></span><span class="sub-name">' + esc(x.description || x.id) + '</span>' +
+          '<span class="sub-status">' + esc(x.status) + '</span></summary>' +
+          '<div class="sub-meta">' + esc(meta) + '</div>' +
+          (x.resultExcerpt ? '<div class="sub-result">' + esc(x.resultExcerpt) + '</div>' : '') +
+          (x.transcriptPath ? '<button type="button" class="sub-open path-link" data-path="' + esc(x.transcriptPath) + '">Open transcript ▸</button>' : '') +
+        '</details>'
+      );
+    }).join('');
+    const head = subs.length + (running ? ' · ' + running + ' running' : ' · all finished');
+    return '<h2>Subagents<span class="head-meta">' + esc(head) + '</span></h2><div class="card subagents">' + rows + '</div>';
+  }
   if (!s.spawnedTeam && !s.subAgentCount) return '';
   const count = s.subAgentCount > 0
     ? s.subAgentCount + ' subagent' + (s.subAgentCount === 1 ? '' : 's')
@@ -2131,7 +2515,6 @@ function renderSpawnedTeamCard(s) {
     '</div>'
   );
 }
-
 function renderActivityCard(s) {
   const items = s.recentActivity || [];
   if (!items.length) return '';
@@ -2352,12 +2735,14 @@ function render(snap) {
   // produced, and the files it touched — then a reply field (PHNX-3939).
   root.innerHTML = (
     renderTerminalCard(snap) +
+    renderNeedsYou(snap) +
     renderSessionStats(snap) +
+    renderFailures(snap) +
     renderGoalCard(snap) +
     renderRequestCard(snap) +
+    renderArtifactsCard(snap) +
     renderTimelineCard(snap) +
     renderChecklistCard(snap) +
-    renderArtifactsCard(snap) +
     renderSpawnedTeamCard(snap) +
     renderActivityCard(snap) +
     renderFilesCard(snap) +
@@ -2366,6 +2751,58 @@ function render(snap) {
   );
   const details = root.querySelector('#session-details');
   if (details) details.addEventListener('toggle', () => { viewState.detailsOpen = details.open; vscode.setState(viewState); });
+  const failures = root.querySelector('#failures');
+  if (failures) failures.addEventListener('toggle', () => { viewState.failuresOpen = failures.open; vscode.setState(viewState); });
+  const nyReply = root.querySelector('#needs-you-reply');
+  if (nyReply) nyReply.addEventListener('click', () => {
+    const r = root.querySelector('#reply-input');
+    if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
+  });
+  for (const el of root.querySelectorAll('.artifact-open')) {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      vscode.postMessage({ type: 'openArtifact', path: el.getAttribute('data-artifact') });
+    });
+  }
+  for (const el of root.querySelectorAll('[data-filter]')) {
+    el.addEventListener('click', () => {
+      const id = el.getAttribute('data-filter');
+      const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
+      const next = Object.assign({}, viewState.timelineFilter);
+      next[key] = id;
+      viewState.timelineFilter = next;
+      vscode.setState(viewState);
+      if ((id === 'assistant' || id === 'tools' || id === 'thinking') && !filterCache[key + ':' + id]) {
+        vscode.postMessage({ type: 'loadTimelineFilter', role: id });
+      }
+      render(lastSnapshot);
+    });
+  }
+  for (const el of root.querySelectorAll('[data-seek]')) {
+    el.addEventListener('click', () => {
+      const at = Number(el.getAttribute('data-seek'));
+      const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
+      if (currentFilter(lastSnapshot) !== 'summary') {
+        const next = Object.assign({}, viewState.timelineFilter);
+        next[key] = 'summary';
+        viewState.timelineFilter = next;
+        vscode.setState(viewState);
+        render(lastSnapshot);
+      }
+      let best = null;
+      for (const step of root.querySelectorAll('.step[data-at]')) {
+        const t = Number(step.getAttribute('data-at'));
+        if (!Number.isFinite(t) || !t) continue;
+        if (!best || Math.abs(t - at) < Math.abs(Number(best.getAttribute('data-at')) - at)) best = step;
+      }
+      if (!best) return;
+      const fold = best.closest('details');
+      if (fold) fold.open = true;
+      best.scrollIntoView({ block: 'center' });
+      best.classList.add('flash');
+      setTimeout(() => best.classList.remove('flash'), 1200);
+    });
+  }
   const copy = root.querySelector('#copy-session');
   if (copy) copy.addEventListener('click', () => vscode.postMessage({ type: 'copySessionId' }));
   for (const el of root.querySelectorAll('[data-expand]')) {
@@ -2456,6 +2893,10 @@ window.addEventListener('message', (e) => {
     if (copy) { copy.textContent = 'Copied'; setTimeout(() => { if (lastSnapshot) copy.textContent = lastSnapshot.sessionChunk; }, 1200); }
   }
   else if (msg && msg.type === 'snapshot') render(msg.data);
+  else if (msg && msg.type === 'timelineFilter') {
+    filterCache[msg.sessionId + ':' + msg.role] = msg.error ? { error: msg.error } : { items: msg.items || [] };
+    if (lastSnapshot && lastSnapshot.fullSessionId === msg.sessionId) render(lastSnapshot);
+  }
   else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
 });
 
