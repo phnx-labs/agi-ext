@@ -519,9 +519,25 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
    * webview as-is; a CLI error is shown, not hidden.
    */
   private async loadTimelineFilter(role: unknown, requested: unknown): Promise<void> {
-    const sessionId = this.snapshot.fullSessionId;
-    if (typeof role !== 'string' || !VERB_FILTER_ROLES.has(role) || !sessionId || requested !== sessionId) return;
-    if (!this.snapshot.sessionLocal) return;
+    const sessionId = typeof requested === 'string' ? requested : '';
+    const reply = (body: { items?: unknown; error?: string }) => {
+      if (typeof role !== 'string' || !sessionId) return;
+      this.view?.webview.postMessage({ type: 'timelineFilter', role, sessionId, ...body });
+    };
+    // Every return answers the webview. A cleared cache paints "Loading…", and
+    // a silent return leaves that line up with no fetch in flight.
+    if (typeof role !== 'string' || !VERB_FILTER_ROLES.has(role) || !sessionId) {
+      reply({ error: 'That filter is not available.' });
+      return;
+    }
+    if (requested !== this.snapshot.fullSessionId) {
+      reply({ error: 'Session changed before the filter loaded.' });
+      return;
+    }
+    if (!this.snapshot.sessionLocal) {
+      reply({ error: 'This session is on another machine.' });
+      return;
+    }
     try {
       const { stdout } = await runAgents(`sessions ${shellQuote(sessionId)} --include ${role} --json`, { timeout: 20_000 });
       const parsed = JSON.parse(stdout);
@@ -530,10 +546,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
             at: c.timestamp, text: (c.tool || 'tool') + ': ' + String(c.input || '').slice(0, 300), bad: c.outcome && c.outcome !== 'ok',
           }))
         : (parsed.events || []).map((e: { timestamp?: string; content?: string }) => ({ at: e.timestamp, text: String(e.content || '').slice(0, 600) }));
-      this.view?.webview.postMessage({ type: 'timelineFilter', role, sessionId, items });
+      reply({ items });
     } catch (err) {
       const message = err instanceof Error ? err.message.split('\n')[0] : String(err);
-      this.view?.webview.postMessage({ type: 'timelineFilter', role, sessionId, error: message });
+      reply({ error: message });
     }
   }
 
@@ -2305,18 +2321,36 @@ function renderSeekBar(s) {
 // Agent, Tools and Reasoning are one agents-sessions call per click (cached).
 const TIMELINE_FILTERS = [{ id: 'summary', label: 'Summary' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }];
 const filterCache = {};
+const pendingFilters = {};
 const VERB_FILTERS = ['assistant', 'tools', 'thinking'];
 
 // One loaded list per session and filter. A live session keeps writing, so the list
 // remembers the activity stamp it was loaded at and offers a refresh; it never refetches
-// on its own.
+// on its own. The id can outlive the page (webview state); the payload cannot, so a
+// restored heavy filter with no request in this page falls back to Summary.
 function filterKey(s, role) {
-  return (s.fullSessionId || '') + ':' + role;
+  return ((s && s.fullSessionId) || '') + ':' + role;
+}
+
+function requestTimelineFilter(sessionId, role) {
+  const key = (sessionId || '') + ':' + role;
+  delete filterCache[key];
+  pendingFilters[key] = true;
+}
+
+function applyTimelineFilter(msg, snapshot) {
+  const key = (msg.sessionId || '') + ':' + msg.role;
+  delete pendingFilters[key];
+  const current = snapshot && snapshot.fullSessionId === msg.sessionId;
+  filterCache[key] = msg.error ? { error: msg.error } : { items: msg.items || [], atStamp: current ? (snapshot.lastActivityMs || 0) : 0 };
+  return !!current;
 }
 
 function currentFilter(s) {
-  const f = (viewState.timelineFilter || {})[(s && s.fullSessionId) || ''];
+  const id = (s && s.fullSessionId) || '';
+  const f = (viewState.timelineFilter || {})[id];
   if (VERB_FILTERS.indexOf(f) >= 0 && !(s && s.sessionLocal)) return 'summary';
+  if (VERB_FILTERS.indexOf(f) >= 0 && !filterCache[id + ':' + f] && !pendingFilters[id + ':' + f]) return 'summary';
   return TIMELINE_FILTERS.some((x) => x.id === f) ? f : 'summary';
 }
 
@@ -2792,7 +2826,7 @@ function render(snap) {
       vscode.setState(viewState);
       const cached = filterCache[filterKey(lastSnapshot, id)];
       if (VERB_FILTERS.indexOf(id) >= 0 && (!cached || cached.error)) {
-        delete filterCache[filterKey(lastSnapshot, id)];
+        requestTimelineFilter(key, id);
         vscode.postMessage({ type: 'loadTimelineFilter', role: id, sessionId: key });
       }
       render(lastSnapshot);
@@ -2801,8 +2835,9 @@ function render(snap) {
   for (const el of root.querySelectorAll('[data-refresh-filter]')) {
     el.addEventListener('click', () => {
       const id = el.getAttribute('data-refresh-filter');
-      delete filterCache[filterKey(lastSnapshot, id)];
-      vscode.postMessage({ type: 'loadTimelineFilter', role: id, sessionId: (lastSnapshot && lastSnapshot.fullSessionId) || '' });
+      const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
+      requestTimelineFilter(key, id);
+      vscode.postMessage({ type: 'loadTimelineFilter', role: id, sessionId: key });
       render(lastSnapshot);
     });
   }
@@ -2922,10 +2957,7 @@ window.addEventListener('message', (e) => {
   }
   else if (msg && msg.type === 'snapshot') render(msg.data);
   else if (msg && msg.type === 'timelineFilter') {
-    if (lastSnapshot && lastSnapshot.fullSessionId === msg.sessionId) {
-      filterCache[filterKey(lastSnapshot, msg.role)] = msg.error ? { error: msg.error } : { items: msg.items || [], atStamp: lastSnapshot.lastActivityMs || 0 };
-      render(lastSnapshot);
-    }
+    if (applyTimelineFilter(msg, lastSnapshot)) render(lastSnapshot);
   }
   else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
 });
