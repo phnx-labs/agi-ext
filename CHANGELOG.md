@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.380] - 2026-10-04
+
+Monitor ownership across editor windows:
+
+- Windows that open in the same instant elect exactly one leader, which alone binds the
+  monitor socket and starts one `agents feed watch` child. A window running an older
+  installed version keeps its leadership; the new window follows it.
+- A window that can't bind the monitor or watchdog socket because another process serves
+  it leaves that server alone and retries with backoff up to 30 s, logging the failure
+  once, instead of leading with nothing behind it.
+- Closing or replacing a leader never deletes the socket its successor just published,
+  and a leader that crashed is taken over along with its leftover socket.
+- A sidebar or dashboard that asks for the session stream while the new leader is still
+  starting gets the stream, instead of waiting on "Waiting for the session stream…".
+
 ## [0.9.379] - 2026-10-03
 
 Active Terminal sidebar, read at a glance:

@@ -261,31 +261,28 @@ export function startWatchdogBridge(
   // instead of publishing a socket for a window that no longer owns it.
   let stopped = true;
 
+  // Rejects on a failed bind so the gate retries it under the lease.
   const startServer = async (): Promise<void> => {
-    try {
-      // NDJSON both ways: the bridge dispatches each complete request line as
-      // it arrives instead of waiting for the client to half-close — the MCP
-      // client never sends EOF, so an EOF-bound server deadlocks until the
-      // client's own timeout fires.
-      const instance = await startWatchdogServer({
-        socketPath,
-        onListening: (boundPath) =>
-          console.log(`[WATCHDOG] Bridge listening on ${boundPath}`),
-        onError: (err) => console.error('[WATCHDOG] Socket error:', err),
-        onRequest: (request) =>
-          request.kind === 'peer'
-            ? handleSendToAgent(request)
-            : handleSendNudge(request),
-      });
-      if (stopped) {
-        // Leadership was lost while the bind was in flight.
-        await instance.close();
-        return;
-      }
-      server = instance;
-    } catch (err) {
-      console.error('[WATCHDOG] Failed to start bridge:', err);
+    // NDJSON both ways: the bridge dispatches each complete request line as
+    // it arrives instead of waiting for the client to half-close — the MCP
+    // client never sends EOF, so an EOF-bound server deadlocks until the
+    // client's own timeout fires.
+    const instance = await startWatchdogServer({
+      socketPath,
+      onListening: (boundPath) =>
+        console.log(`[WATCHDOG] Bridge listening on ${boundPath}`),
+      onError: (err) => console.error('[WATCHDOG] Socket error:', err),
+      onRequest: (request) =>
+        request.kind === 'peer'
+          ? handleSendToAgent(request)
+          : handleSendNudge(request),
+    });
+    if (stopped) {
+      // Leadership was lost while the bind was in flight.
+      await instance.close();
+      return;
     }
+    server = instance;
   };
 
   // Async on purpose: the gate awaits this before releasing the elector
@@ -297,7 +294,7 @@ export function startWatchdogBridge(
       try {
         await starting;
       } catch {
-        // startServer logs its own failures.
+        // The gate reports a failed bind.
       }
     }
     if (server) {
@@ -315,10 +312,11 @@ export function startWatchdogBridge(
   // server path is static, so followers still return it for `--mcp` wiring.
   const gate = runOnLeaderOnly(() => {
     stopped = false;
-    starting = startServer().finally(() => {
+    const ready = startServer().finally(() => {
       starting = null;
     });
-    return { dispose: stopServer };
+    starting = ready;
+    return { ready, dispose: stopServer };
   });
 
   return {

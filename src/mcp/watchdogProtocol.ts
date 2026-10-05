@@ -1,7 +1,7 @@
 import * as net from 'net';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import * as os from 'os';
+import { listenOwned } from '../monitor/endpoint';
 
 /**
  * Shared wire contract for the one-shot watchdog socket
@@ -210,13 +210,6 @@ export async function startWatchdogServer(
   const onError = options.onError ?? ((err) => console.error('[WATCHDOG] Socket error:', err));
   const clients = new Set<net.Socket>();
 
-  await fs.mkdir(path.dirname(socketPath), { recursive: true });
-  try {
-    await fs.unlink(socketPath);
-  } catch {
-    // Socket doesn't exist, that's fine.
-  }
-
   const server = net.createServer((socket) => {
     clients.add(socket);
     socket.setEncoding('utf8');
@@ -270,15 +263,7 @@ export async function startWatchdogServer(
     }
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (err: Error) => reject(err);
-    server.once('error', onError);
-    server.listen(socketPath, () => {
-      server.removeListener('error', onError);
-      resolve();
-    });
-  });
-
+  const endpoint = await listenOwned(server, socketPath);
   options.onListening?.(socketPath);
 
   return {
@@ -289,7 +274,7 @@ export async function startWatchdogServer(
       }
       clients.clear();
       // The leader gate awaits this before releasing ownership of the path.
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await endpoint.close();
     },
   };
 }

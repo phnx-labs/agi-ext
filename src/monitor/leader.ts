@@ -13,14 +13,7 @@
 // this module — and the lease logic it drives — runs and tests in plain
 // subprocesses (see leader.test.ts).
 
-import {
-  MonitorLease,
-  canClaim,
-  readLease,
-  writeLease,
-  releaseLease,
-  LEASE_FILE,
-} from './lease';
+import { holdLease, releaseLease, LEASE_FILE } from './lease';
 
 export interface Disposable {
   dispose(): void;
@@ -115,33 +108,13 @@ export class MonitorLeader {
 
   private tick(): void {
     if (this.disposed || this.transition) return;
-    const now = Date.now();
-    let lease: MonitorLease | undefined;
+    let held = false;
     try {
-      lease = readLease(this.leaseFile);
+      held = holdLease(this.selfId, this.pid, this.ttlMs, this.leaseFile);
     } catch {
-      lease = undefined;
+      held = false;
     }
-
-    if (!canClaim(lease, this.selfId, now)) {
-      this.setLeader(false);
-      return;
-    }
-
-    try {
-      writeLease(
-        { leaderId: this.selfId, pid: this.pid, expiresAt: now + this.ttlMs },
-        this.leaseFile,
-      );
-    } catch {
-      this.setLeader(false);
-      return;
-    }
-
-    // Read back: under concurrent claims the last rename wins. Whoever does not
-    // see their own id steps down, so the cluster converges to a single leader.
-    const after = readLease(this.leaseFile);
-    this.setLeader(after?.leaderId === this.selfId);
+    this.setLeader(held);
   }
 
   private setLeader(next: boolean): void {

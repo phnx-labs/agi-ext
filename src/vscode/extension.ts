@@ -159,6 +159,7 @@ import * as tasksImport from './tasks.vscode';
 import { SOURCE_BADGES } from '../core/tasks';
 import * as handoff from '../core/handoff';
 import { decodeInjectQuery, selectInjectTarget } from '../core/inject';
+import { runMonitorHostOnLeader } from '../monitor/host';
 
 // Settings types are now imported from ./settings
 // Settings functions are in ./settings.vscode
@@ -5437,34 +5438,16 @@ function initMonitorLeader(context: vscode.ExtensionContext): void {
 }
 
 // Run the monitor host (the broadcast server) ONLY while this window is the
-// elected leader (#67). `runOnLeaderOnly` starts it on leadership gain and
-// disposes it on loss; the next leader binds the same socket and followers
-// auto-reconnect. This is also the seam the migration issues (#68-71) wrap
+// elected leader (#67). The gate starts it on leadership gain, retries a failed
+// bind, and disposes it on loss; the next leader binds the same socket and
+// followers auto-reconnect. This is also the seam the migration issues (#68-71) wrap
 // their heavy starters in — they are intentionally NOT moved here.
 function initMonitorHost(context: vscode.ExtensionContext): void {
-  const { runOnLeaderOnly } = require('../monitor/gate') as typeof import('../monitor/gate');
-  const { MonitorHost } = require('../monitor/host') as typeof import('../monitor/host');
-  const gate = runOnLeaderOnly(() => {
-    // detectors enables the centralized readiness probes (#68), the machine-wide
-    // session watcher (#69), and the panel/floor
-    // snapshot detector (#71) on the leader only. The snapshot detector's teams
-    // fetch is vscode-coupled, so it's injected here (host.ts stays vscode-free).
-    const host = new MonitorHost({
-      detectors: {},
-      // Own the single demand-gated `agents feed watch` producer (PHNX-3939). It
-      // spawns only while a window reports sessionDemand and is torn down when
-      // none do — restoring the feed the receive side still expects, without the
-      // always-on CPU/ssh load e0f4831 removed.
-      sessionStream: { enabled: true },
-    });
-    void host.start().catch((err) => console.error('[MONITOR] host start failed:', err));
-    // Async disposal: gate.ts awaits this so a replacement leader never starts a
-    // second producer before the old host's shutdown (and child reap) completes.
-    // Do NOT swallow the rejection — gate.ts rejects overlapping replacement on a
-    // teardown failure (PHNX-3939, monitor track).
-    return { dispose: () => host.stop() };
-  });
-  context.subscriptions.push(gate);
+  // detectors enables the centralized readiness probes (#68) on the leader only.
+  // The session stream is the single demand-gated `agents feed watch` producer
+  // (PHNX-3939): it spawns only while a window reports sessionDemand and is torn
+  // down when none do, without the always-on CPU/ssh load e0f4831 removed.
+  context.subscriptions.push(runMonitorHostOnLeader({ detectors: {}, sessionStream: { enabled: true } }));
 }
 
 // The always-on per-window follower (#67). It connects to the monitor, reports

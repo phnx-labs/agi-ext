@@ -11,51 +11,98 @@
 
 import { isLeader, onLeadershipChange } from './leader';
 
+export interface LeaderDisposable {
+  dispose(): void | Promise<void>;
+  /**
+   * Settles once the work is live (e.g. its socket is bound). A rejection tears
+   * the instance down and starts a fresh one after a bounded backoff, all while
+   * the lease is held, so a failed bind never leaves a leader serving nothing.
+   */
+  ready?: Promise<void>;
+}
+
+const RETRY_BASE_MS = 1_000;
+const RETRY_MAX_MS = 30_000;
+
 /**
  * Start `start()` only while this window is the elected monitor leader; dispose
  * it on leadership loss. The returned Disposable detaches the leadership
  * listener and tears down any running instance.
  */
-export interface LeaderDisposable {
-  dispose(): void | Promise<void>;
-}
-
 export function runOnLeaderOnly(start: () => LeaderDisposable): LeaderDisposable {
   let current: LeaderDisposable | undefined;
   let stopping: Promise<void> | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let failures = 0;
+  let lastFailure = '';
   let wanted = false;
   let disposed = false;
 
+  const fail = (instance: LeaderDisposable | undefined, err: unknown): void => {
+    failures++;
+    const delay = Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS);
+    const message = err instanceof Error ? err.message : String(err);
+    // One line per distinct failure: a persistent conflict must not flood the log.
+    if (message !== lastFailure) console.error(`[MONITOR] leader-only start failed; retrying with backoff up to ${RETRY_MAX_MS / 1000}s:`, err);
+    lastFailure = message;
+    if (instance && current === instance) stop();
+    retry = setTimeout(() => { retry = undefined; apply(wanted); }, delay);
+    (retry as { unref?: () => void }).unref?.();
+  };
+
+  const launch = (): void => {
+    let instance: LeaderDisposable;
+    try {
+      instance = start();
+    } catch (err) {
+      fail(undefined, err);
+      return;
+    }
+    current = instance;
+    instance.ready?.then(() => {
+      if (current !== instance) return;
+      if (failures) console.log(`[MONITOR] leader-only work started after ${failures} failed attempt(s)`);
+      failures = 0;
+      lastFailure = '';
+    }, (err) => {
+      if (current === instance) fail(instance, err);
+    });
+  };
+
+  const stop = (): void => {
+    const previous = current;
+    if (!previous) return;
+    current = undefined;
+    try {
+      const result = previous.dispose();
+      if (result) {
+        stopping = Promise.resolve(result);
+        void stopping.then(() => {
+          stopping = undefined;
+          apply(wanted);
+        }, (err) => {
+          // A failed teardown is not permission to overlap producers.
+          console.error('[MONITOR] leader-only dispose rejected:', err);
+        });
+      }
+    } catch (err) {
+      stopping = Promise.reject(err);
+      void stopping.catch(() => {});
+      console.error('[MONITOR] leader-only dispose threw:', err);
+    }
+  };
+
   const apply = (leader: boolean): void | Promise<void> => {
     wanted = leader && !disposed;
-    if (stopping) return stopping;
-    if (wanted && !current) {
-      try {
-        current = start();
-      } catch (err) {
-        console.error('[MONITOR] leader-only start threw:', err);
-      }
-    } else if (!wanted && current) {
-      const previous = current;
-      current = undefined;
-      try {
-        const result = previous.dispose();
-        if (result) {
-          stopping = Promise.resolve(result);
-          void stopping.then(() => {
-            stopping = undefined;
-            apply(wanted);
-          }, (err) => {
-            // A failed teardown is not permission to overlap producers.
-            console.error('[MONITOR] leader-only dispose rejected:', err);
-          });
-        }
-      } catch (err) {
-        stopping = Promise.reject(err);
-        void stopping.catch(() => {});
-        console.error('[MONITOR] leader-only dispose threw:', err);
-      }
+    if (!wanted) {
+      if (retry) clearTimeout(retry);
+      retry = undefined;
+      failures = 0;
+      lastFailure = '';
     }
+    if (stopping) return stopping;
+    if (wanted && !current && !retry) launch();
+    else if (!wanted && current) stop();
     // This promise also holds the elector's ON-DISK lease, not just this gate.
     return stopping;
   };

@@ -97,6 +97,36 @@ describe('runOnLeaderOnly', () => {
 
     await gate.dispose();
   });
+
+  test('a rejected ready disposes the instance and starts a fresh one after backoff; losing leadership cancels it', async () => {
+    electLeader({ selfId: 'win-retry', pid: process.pid, heartbeatMs: 50, ttlMs: 150, leaseFile: tempLeaseFile() });
+    const instances: { disposed: boolean; fail: (err: Error) => void }[] = [];
+    const gate = runOnLeaderOnly(() => {
+      let fail!: (err: Error) => void;
+      const ready = new Promise<void>((_, reject) => { fail = reject; });
+      const instance = { disposed: false, fail };
+      instances.push(instance);
+      return { ready, dispose: () => { instance.disposed = true; } };
+    });
+    gates.push(gate);
+    expect(instances.length).toBe(1);
+
+    instances[0].fail(new Error('listen EADDRINUSE'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(instances[0].disposed).toBe(true);
+    expect(instances.length).toBe(1); // no hot retry loop
+    const deadline = Date.now() + 3000;
+    while (instances.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(instances.length).toBe(2);
+
+    // The fresh instance fails too; leadership ends during its backoff.
+    instances[1].fail(new Error('listen EADDRINUSE'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await disposeLeader();
+    await new Promise((resolve) => setTimeout(resolve, 2200)); // past the 2s second backoff
+    expect(instances.length).toBe(2);
+    expect(instances.every((instance) => instance.disposed)).toBe(true);
+  }, 10_000);
 });
 
 // Real elector + host + socket + Node subprocess: exercise the production gate,
