@@ -16,6 +16,7 @@
 import type { ChildProcessWithoutNullStreams } from 'child_process';
 import type * as net from 'net';
 import { MonitorBroadcastServer } from './broadcast';
+import { runOnLeaderOnly, type LeaderDisposable } from './gate';
 import { MonitorEvent } from './broadcastTypes';
 import {
   ArmAck,
@@ -123,6 +124,9 @@ export class MonitorHost {
       this.starting = this.server.start().then(() => {
         this.running = true;
         this.startDetectors();
+        // The socket is reachable before start() settles: a follower can
+        // already have reported demand, which the gate ignored until now.
+        this.evaluateSessionStream();
       }).finally(() => { this.starting = undefined; });
     }
     await this.starting;
@@ -313,4 +317,15 @@ export class MonitorHost {
     }
   }
 
+}
+
+/**
+ * Run one MonitorHost while this window leads. A failed bind is retried by the
+ * gate on a fresh host; disposal awaits the old host's reap, holding the lease.
+ */
+export function runMonitorHostOnLeader(options: MonitorHostOptions = {}): LeaderDisposable {
+  return runOnLeaderOnly(() => {
+    const host = new MonitorHost(options);
+    return { ready: host.start(), dispose: () => host.stop() };
+  });
 }

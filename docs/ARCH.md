@@ -107,7 +107,7 @@ The extension host is a single Node process per editor window. It holds the elec
 |---|---|---|
 | Stream leader | Spawns and owns the single `agents feed watch --json` child in its own process group; exponential restart backoff to 30 s; SIGTERM then SIGKILL on stop | `src/monitor/sessionCliStream.ts` `SessionCliStream`, `SessionCliReplay` |
 | Demand gate | Union of every window's demand (dashboard visible, sidebar visible, unresolved agent tab); leases keyed by follower socket so a dropped window releases immediately; 5 s stop debounce | `src/monitor/host.ts` `MonitorHost`, `src/monitor/sessionDemand.ts` |
-| Leader election | One window holds the lease; loss triggers election and replay, not one poller per follower | `src/monitor/leader.ts`, `src/monitor/lease.ts`, `src/monitor/gate.ts` |
+| Leader election | One window holds the lease: each claim creates the next numbered generation exclusively, so windows starting together elect one leader; a crashed holder (expired, dead pid) is taken over; the holder mirrors itself into the legacy lease file so older installed versions stay followers. Loss triggers election and replay, not one poller per follower. A failed start is retried with backoff to 30 s while the lease is held | `src/monitor/leader.ts`, `src/monitor/lease.ts`, `src/monitor/gate.ts` |
 | Broadcast | Unix-socket pub/sub from the leader to follower windows; frames carry monitor facts and session-CLI facts; requests (register tuples, snapshot) flow back | `src/monitor/broadcast.ts`, `src/monitor/protocol.ts`, `src/monitor/follower.ts` |
 | Presentation store | Window-local index of rows, attention, activity, per-scope sequence and reset state; selectors derive local/remote groupings and counts without becoming a source of truth | `src/core/sessionPresentationStore.ts` |
 | Terminal registry | Maps a `vscode.Terminal` to extension-local id, harness, host, version, account, label, and the canonical session id once known; persists per workspace | `src/vscode/terminals.vscode.ts`, `src/core/sessions.persist.ts`, `src/core/terminals.ts` |
@@ -300,6 +300,15 @@ The watchdog bridge and MCP client share the validated NDJSON contract in
 Bridge teardown returns its completion promise to the leader gate, which retains
 ownership until pending startup and socket shutdown finish. The bridge never
 moves a successor's socket to repair ownership after the fact.
+
+Both leader sockets (monitor broadcast and watchdog) bind through `listenOwned`
+in `src/monitor/endpoint.ts`: listen on a private path, then `link()` it to the
+shared path, which fails instead of replacing a live server. A leftover path is
+removed only when nothing accepts on it. Close unlinks the shared path only
+while it is still this server's inode, and destroys every accepted connection
+so teardown never waits on a peer. Because the path is reachable before
+`MonitorHost.start()` settles, the host re-evaluates demand reported in that
+window once it runs.
 
 Monitor frames are structurally validated before delivery. A complete valid
 frame has the same result whether received whole, coalesced, or fragmented.

@@ -1,39 +1,50 @@
-// One actual extension-host process: real elector, gate, host, socket, producer.
+// One actual extension-host process: real elector, gate, host, socket, producer,
+// started through the same `runMonitorHostOnLeader` the extension activates.
+//
+//   argv: <dir> <selfId> [startAtEpochMs]
+//
+// A start time lets several windows begin their first election in the same
+// millisecond. Every spawned producer appends its pid to `<dir>/producers.log`.
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createInterface } from 'readline';
-import { electLeader, disposeLeader } from '../leader';
-import { runOnLeaderOnly } from '../gate';
-import { MonitorHost } from '../host';
+import { electLeader, disposeLeader, isLeader, onLeadershipChange } from '../leader';
+import { runMonitorHostOnLeader } from '../host';
 
-const [dir, selfId] = process.argv.slice(2);
-const emit = (event: object) => process.stdout.write(JSON.stringify({ selfId, ...event }) + '\n');
+const [dir, selfId, startAt] = process.argv.slice(2);
+const emit = (event: object) => process.stdout.write(JSON.stringify({ selfId, at: Date.now(), ...event }) + '\n');
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const producersLog = path.join(dir, 'producers.log');
+const livePeerProducer = () => (fs.existsSync(producersLog) ? fs.readFileSync(producersLog, 'utf8') : '')
+  .split('\n').filter(Boolean).map(Number).some(alive);
+
+if (startAt) while (Date.now() < Number(startAt)) { /* align the first election tick */ }
 electLeader({ selfId, pid: process.pid, leaseFile: path.join(dir, 'lease.json'), heartbeatMs: 10, ttlMs: 60 });
-const gate = runOnLeaderOnly(() => {
-  emit({ type: 'leader' });
-  const host = new MonitorHost({ socketPath: path.join(dir, 'feed.sock'), sessionStream: {
-    enabled: true,
-    spawnWatch: () => {
-      const marker = path.join(dir, 'producer.pid');
-      const previous = fs.existsSync(marker) ? Number(fs.readFileSync(marker, 'utf8')) : 0;
-      const overlap = previous > 0 && alive(previous);
-      const child = spawn('node', [path.join(__dirname, 'fake-watch.mjs')], {
-        detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, FAKE_WATCH_IGNORE_SIGTERM: '1' },
-      });
-      fs.writeFileSync(marker, String(child.pid));
-      child.stderr.on('data', (data) => {
-        if (String(data).includes('READY')) emit({ type: 'producer', pid: child.pid, overlap });
-      });
-      child.once('exit', () => emit({ type: 'reaped', pid: child.pid }));
-      return child;
-    },
-  } });
-  void host.start().then(() => emit({ type: 'bound' }), (error) => emit({ type: 'error', message: String(error) }));
-  return { dispose: () => host.stop() };
-});
+// The first tick runs inside electLeader, before anyone can subscribe.
+const leadership = (leader: boolean) => { emit({ type: leader ? 'leader' : 'follower' }); };
+leadership(isLeader());
+onLeadershipChange(leadership);
+const gate = runMonitorHostOnLeader({ socketPath: path.join(dir, 'feed.sock'), sessionStream: {
+  enabled: true,
+  stopDebounceMs: 50,
+  spawnWatch: () => {
+    const overlap = livePeerProducer();
+    const child = spawn('node', [path.join(__dirname, 'fake-watch.mjs')], {
+      detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, FAKE_WATCH_IGNORE_SIGTERM: '1' },
+    });
+    fs.appendFileSync(producersLog, `${child.pid}\n`);
+    child.stderr.on('data', (data) => {
+      if (String(data).includes('READY')) {
+        emit({ type: 'producer', pid: child.pid, overlap });
+        child.stdin.write(`emit ${JSON.stringify({ v: 1, type: 'reset', streamId: 'w', sequence: 1, capturedAt: 1, scope: 'local', agents: [], attention: [] })}\n`);
+      }
+    });
+    child.once('exit', () => emit({ type: 'reaped', pid: child.pid }));
+    return child;
+  },
+} });
 emit({ type: 'window', pid: process.pid });
 let disposal: Promise<void> | undefined;
 const drain = (gateFirst: boolean) => {

@@ -1,7 +1,7 @@
 import * as net from 'net';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import * as os from 'os';
+import { listenOwned, type OwnedEndpoint } from './endpoint';
 import {
   encodeFrame,
   FrameDecoder,
@@ -55,7 +55,7 @@ export class MonitorBroadcastServer {
   private readonly socketPath: string;
   private readonly onRequest?: MonitorRequestHandler;
   private readonly onDisconnect?: (socket: net.Socket) => void;
-  private server: net.Server | null = null;
+  private endpoint: OwnedEndpoint | null = null;
   private readonly clients = new Set<net.Socket>();
 
   constructor(options: MonitorBroadcastServerOptions = {}) {
@@ -69,23 +69,13 @@ export class MonitorBroadcastServer {
     return this.clients.size;
   }
 
-  /** Bind and start listening. Rejects if the socket address is already taken. */
+  /** Bind and start listening. Rejects while another live server holds the path. */
   async start(): Promise<void> {
-    await fs.mkdir(path.dirname(this.socketPath), { recursive: true });
-    await this.unlinkSocket();
-    await new Promise<void>((resolve, reject) => {
-      const server = net.createServer((socket) => this.handleConnection(socket));
-      const onListenError = (err: Error) => reject(err);
-      server.once('error', onListenError);
-      server.listen(this.socketPath, () => {
-        server.removeListener('error', onListenError);
-        server.on('error', (err) =>
-          console.error('[MONITOR] broadcast server error:', err)
-        );
-        this.server = server;
-        resolve();
-      });
-    });
+    const server = net.createServer((socket) => this.handleConnection(socket));
+    this.endpoint = await listenOwned(server, this.socketPath);
+    server.on('error', (err) =>
+      console.error('[MONITOR] broadcast server error:', err)
+    );
   }
 
   private handleConnection(socket: net.Socket): void {
@@ -173,15 +163,7 @@ export class MonitorBroadcastServer {
     }
   }
 
-  private async unlinkSocket(): Promise<void> {
-    try {
-      await fs.unlink(this.socketPath);
-    } catch {
-      // Nothing to clean up.
-    }
-  }
-
-  /** Stop listening, drop all clients, and remove the socket file. */
+  /** Stop listening, drop all clients, and remove the socket path if it is still ours. */
   async close(): Promise<void> {
     for (const socket of this.clients) {
       try {
@@ -191,12 +173,9 @@ export class MonitorBroadcastServer {
       }
     }
     this.clients.clear();
-    const server = this.server;
-    this.server = null;
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-    await this.unlinkSocket();
+    const endpoint = this.endpoint;
+    this.endpoint = null;
+    await endpoint?.close();
   }
 }
 

@@ -43,8 +43,8 @@ for (const gateFirst of [false, true]) {
     });
     try {
       const a = launch('window-a');
-      await until(() => !!event('window-a', 'bound'));
-      client.connect();
+      await until(() => !!event('window-a', 'leader'));
+      client.connect(); // retries until the leader's socket is published
       await until(() => !!event('window-a', 'producer'));
       const firstPid = event('window-a', 'producer')!.pid!;
       const b = launch('window-b');

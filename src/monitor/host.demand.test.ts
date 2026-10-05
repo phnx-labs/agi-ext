@@ -101,7 +101,7 @@ afterEach(async () => {
     await Promise.all(hosts.splice(0).map((host) => host.stop()));
   } finally {
     await Promise.all(spawnedChildren.splice(0).map(disposeFixture));
-    for (const p of tmpPaths.splice(0)) fs.rmSync(p, { force: true });
+    for (const p of tmpPaths.splice(0)) fs.rmSync(p, { recursive: true, force: true });
   }
 });
 
@@ -449,3 +449,39 @@ test('stop owns an in-flight real socket bind and allows clean replacement', asy
   await waitConnected(client);
   expect(replacement.clientCount).toBe(1);
 });
+
+test('demand a follower reports before start() settles still starts the producer', async () => {
+  // listenOwned publishes the shared path and only then finishes its own
+  // cleanup, so a fast follower can be acknowledged before the host runs.
+  let early = 0;
+  for (let i = 0; i < 10; i++) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monitor-early-'));
+    tmpPaths.push(dir);
+    const socketPath = path.join(dir, 'feed.sock');
+    let spawns = 0;
+    const host = new MonitorHost({ socketPath, sessionStream: { enabled: true,
+      spawnWatch: () => { spawns++; return spawnFixture(); },
+    } });
+    hosts.push(host);
+    let started = false;
+    const acked = new Promise<boolean>((resolve, reject) => {
+      const client = new MonitorBroadcastClient({ socketPath, onStateChange: (state) => {
+        if (state === 'connected') report(client, 'early', true).then(() => resolve(!started), reject);
+      } });
+      clients.push(client);
+      // Connect on the first loop turn the shared path exists (bounded by the test timeout).
+      const connectOnPublish = () => {
+        if (fs.existsSync(socketPath)) client.connect();
+        else setImmediate(connectOnPublish);
+      };
+      setImmediate(connectOnPublish);
+    });
+    await host.start();
+    started = true;
+    if (await acked) early++;
+    expect(host.sessionStreamRunning).toBe(true);
+    expect(spawns).toBe(1);
+    await host.stop();
+  }
+  console.log(`early acknowledgements: ${early}/10`);
+}, 20_000);
