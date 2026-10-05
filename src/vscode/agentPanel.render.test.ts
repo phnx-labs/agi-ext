@@ -46,9 +46,9 @@ const NAMES = [
   'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
-  'renderSpawnedTeamCard', 'filterKey',
+  'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
 ];
-const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'VERB_FILTERS'];
+const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -524,6 +524,10 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 'old-subject' });
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'rm -rf', sessionId: 's-1' });
   expect(calls).toEqual([]);
+  expect(posted).toEqual([
+    expect.objectContaining({ type: 'timelineFilter', role: 'assistant', sessionId: 'old-subject', error: 'Session changed before the filter loaded.' }),
+    expect.objectContaining({ type: 'timelineFilter', role: 'rm -rf', sessionId: 's-1', error: 'That filter is not available.' }),
+  ]);
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 's-1' });
   expect(calls).toEqual(["sessions 's-1' --include assistant --json"]);
   expect(posted.at(-1)).toMatchObject({ type: 'timelineFilter', role: 'assistant', sessionId: 's-1', items: [{ text: 'checking' }] });
@@ -535,6 +539,7 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   host.snapshot.sessionLocal = false;
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'tools', sessionId: 's-1' });
   expect(calls).toHaveLength(2);
+  expect(posted.at(-1)).toMatchObject({ role: 'tools', sessionId: 's-1', error: 'This session is on another machine.' });
 });
 
 test('a loaded heavy filter stays visible as the session moves on, with a click-only refresh', () => {
@@ -550,4 +555,22 @@ test('a loaded heavy filter stays visible as the session moves on, with a click-
   expect(harness.moved).toContain('data-refresh-filter="assistant">Refresh');
   expect(harness.remote).not.toContain('checking s0');
   expect(harness.remote).toContain('data-filter="summary" aria-pressed="true"');
+});
+
+test('a restored heavy filter with no request in this page falls back to Summary', () => {
+  const base = { fullSessionId: 'live', sessionLocal: true, timeline: { steps: [], earlier: { steps: 1, tools: 0, failed: 0 }, tools: 0, failed: 0, spanMs: 0, state: 'ready' } };
+  const harness = eval(`(function(){ const viewState = { timelineFilter: { live: 'tools' } }; const lastSnapshot = {}; ${combined}
+    const cold = renderTimelineCard(base);
+    requestTimelineFilter('live', 'tools');
+    const waiting = renderTimelineCard(base);
+    const current = applyTimelineFilter({ sessionId: 'live', role: 'tools', items: [{ at: new Date().toISOString(), text: 'ran ls' }] }, { fullSessionId: 'other', lastActivityMs: 1 });
+    const kept = renderTimelineCard(base);
+    return { cold, waiting, current, kept };
+  })()`) as { cold: string; waiting: string; current: boolean; kept: string };
+  expect(harness.cold).toContain('data-filter="summary" aria-pressed="true"');
+  expect(harness.cold).not.toContain('Loading');
+  expect(harness.waiting).toContain('Loading…');
+  expect(harness.current).toBe(false);
+  expect(harness.kept).toContain('ran ls');
+  expect(harness.kept).not.toContain('Loading');
 });

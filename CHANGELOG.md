@@ -22,7 +22,9 @@ Active Terminal sidebar, read at a glance:
 - The Timeline gets a seek bar of tool activity across the whole session, with idle
   stretches collapsed and markers for your messages, subagents and the open ask. Filters
   switch to your messages, the failures, or (one `agents sessions --include` call per
-  click) the agent's messages, tool calls or reasoning.
+  click) the agent's messages, tool calls or reasoning. A heavy filter that was open
+  before the panel reloaded, or whose reply arrives after you switch sessions, shows
+  Summary until you click it again, instead of sitting on "Loading…".
 - Subagents list what each one did, its verdict and a link to its transcript.
 
 The model, failure list, seek bar, your-messages filter, subagent list, image thumbnails
