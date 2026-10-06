@@ -34,7 +34,9 @@ function extractConst(name: string): string {
   const sig = `const ${name} = `;
   const start = SRC.indexOf(sig);
   if (start < 0) throw new Error(`const ${name} not found`);
-  const end = SRC.indexOf('\n', start);
+  const lineEnd = SRC.indexOf('\n', start);
+  // A multi-line object literal runs to its closing `};` at column 0.
+  const end = SRC[lineEnd - 1] === '{' ? SRC.indexOf('\n};', start) + 3 : lineEnd;
   return SRC.slice(start, end);
 }
 
@@ -44,11 +46,12 @@ const NAMES = [
   'requestChips', 'renderRequestCard',
   'timelineFromCheckpoints', 'stepChips', 'renderStep', 'renderTimelineCard',
   'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
+  'artifactItems', 'renderArtifactItem', 'renderArtifactTile', 'renderArtifactsSummary',
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
 ];
-const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS'];
+const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -56,7 +59,8 @@ const CONSTS = ['TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE
 const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
   .join('\n')
   .replace(/\\\\/g, '\\');
-const cards = eval(`(function(){ const viewState = {}; const lastSnapshot = {}; ${combined}\n return {
+const viewState: Record<string, unknown> = {};
+const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
@@ -211,7 +215,7 @@ test('renderRequestCard falls back to the topic and never synthesizes a sentence
   expect(cards.renderRequestCard({})).toBe('');
 });
 
-test('renderTimelineCard shows the newest 5 steps, the live now-line, more, and the earlier fold', () => {
+test('renderTimelineCard shows the newest 3 steps, the live now-line, more, and the earlier fold', () => {
   const html = cards.renderTimelineCard(snapshotFor('c9d700d5'));
   expect(html).toContain('Timeline');
   // Header meta: span, tool count, failures.
@@ -221,8 +225,8 @@ test('renderTimelineCard shows the newest 5 steps, the live now-line, more, and 
   expect(html).toContain('step src-narration live');
   expect(html).toContain('▶ Re-render the plan, copy it to zion');
   expect(html).toContain('>now<');
-  // 8 steps ride the row: 5 shown, 3 behind "more".
-  expect(html).toContain('3 more');
+  // 8 steps ride the row: 3 shown, 5 behind "more".
+  expect(html).toContain('5 more');
   // Everything older is one counter, never a wall of rows.
   expect(html).toContain('47 earlier steps');
   expect(html).toContain('156 tools');
@@ -383,18 +387,42 @@ test('header separates identity Details and exposes terminal-only adoption', () 
   expect(cards.renderTerminalCard({})).not.toContain('class="account-row"');
 });
 
-test('Artifacts renders CLI plan and numbered PR with full paths and native buttons', () => {
-  const html = cards.renderArtifactsCard({ plan: { path: '/repo/plan.md', display: 'plan.md' }, artifacts: [{ path: '/repo/doc.md', display: 'doc.md', bucket: 'docs' }], pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }] });
-  expect(html).toContain('<h2>Artifacts</h2>');
-  expect(html).toContain('>PLAN</span>');
-  expect(html).toContain('>DOC</span>');
-  expect(html).toContain('#3716');
-  expect(html).toContain('data-artifact="/repo/doc.md"');
-  expect(html).toContain('<button type="button"');
+test('Artifacts groups files into folders newest first, with PR and ticket tiles, and folds to one line', () => {
+  const snap = {
+    sessionLocal: true,
+    linearIssue: 'PHNX-4248',
+    pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }],
+    artifacts: [
+      { path: '/u/Downloads/Old/a.png', display: '~/Downloads/Old/a.png', basename: 'a.png', bucket: 'docs', editedAtMs: 1_000, uri: 'vscode-resource:/a.png' },
+      { path: '/u/Downloads/New/index.html', display: '~/Downloads/New/index.html', basename: 'index.html', bucket: 'docs', editedAtMs: 3_000 },
+      { path: '/u/Downloads/New/hero.jpg', display: '~/Downloads/New/hero.jpg', basename: 'hero.jpg', bucket: 'docs', editedAtMs: 2_000, uri: 'vscode-resource:/hero.jpg' },
+    ],
+  };
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  const html = cards.renderArtifactsCard(snap);
+  expect(html).toContain('4 items · 3 files');
+  expect(html.indexOf('data-folder="/u/Downloads/New"')).toBeLessThan(html.indexOf('data-folder="/u/Downloads/Old"'));
+  expect(html.indexOf('data-artifact="/u/Downloads/New/index.html"')).toBeLessThan(html.indexOf('data-artifact="/u/Downloads/New/hero.jpg"'));
+  expect(html).toContain('<img src="vscode-resource:/hero.jpg"');
+  expect(html).toContain('<span class="art-ext">HTML</span>');
+  expect(html).toContain('data-url="https://github.com/phnx-labs/agi-cli/pull/3716"');
+  expect(html).toContain('data-url="https://linear.app/issue/PHNX-4248"');
+  for (const app of ['GitHub', 'Finder', 'Linear']) expect(html).toContain(app + '<span class="art-count">');
+
+  viewState.artifactSort = 'oldest';
+  viewState.artifactGroup = false;
+  const flat = cards.renderArtifactsCard(snap);
+  expect(flat.indexOf('data-folder="/u/Downloads/Old"')).toBeLessThan(flat.indexOf('data-folder="/u/Downloads/New"'));
+  expect(flat).not.toContain('class="art-app"');
+
+  viewState.artifactsCollapsed = true;
+  const folded = cards.renderArtifactsCard(snap);
+  expect(folded).toContain('class="art-summary"');
+  expect(folded).not.toContain('data-folder=');
   expect(cards.renderArtifactsCard({})).toBe('');
 });
 
- test('pencil message reaches the host command and reports command failures', async () => {
+test('pencil message reaches the host command and reports command failures', async () => {
   const method = (name: string) => {
     const start = SRC.indexOf('  private async ' + name + '(');
     const end = SRC.indexOf('\n  private ', start + 1);
@@ -495,11 +523,6 @@ test('subagents list what each one did and link its transcript', () => {
   expect(html).toContain('Review PR 3716');
   expect(html).toContain('code-reviewer · 11m · 44 tools');
   expect(html).toContain('data-path="/t/agent-a.jsonl"');
-});
-
-test('Artifacts respects each CLI bucket even when a plan path overlaps', () => {
-  const html = cards.renderArtifactsCard({ plan: { path: '/report', display: 'report' }, artifacts: ['artifacts', 'plans', 'reports', 'docs'].map(bucket => ({ bucket, path: bucket === 'reports' ? '/report' : '/' + bucket, display: bucket })) });
-  for (const label of ['ARTIFACT', 'PLAN', 'REPORT', 'DOC']) expect(html).toContain('>' + label + '</span>');
 });
 
 test('plans open in the Agents Reader and the heavy filters run one CLI call for the current local subject only', async () => {

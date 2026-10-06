@@ -73,6 +73,7 @@ import { shellQuote } from '../core/deviceDispatchShell';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
+const THUMB_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
 
 function isInside(filePath: string, dir: string): boolean {
   const rel = path.relative(dir, path.resolve(filePath));
@@ -205,7 +206,8 @@ interface PanelSnapshot {
   subagents?: RemoteSubagent[];
   // Local image attachments the webview may load (inside the CLI's attachment cache).
   imageThumbs?: { path: string; label: string; uri: string }[];
-  artifacts?: (RemoteSessionArtifact & { display: string })[];
+  // `uri` is set for an image on this machine, so the card can show its thumbnail.
+  artifacts?: (RemoteSessionArtifact & { display: string; uri?: string })[];
   attachments?: RemoteAttachment[];
   // Linked artifacts — multi-PR (the agent may have opened several in one session)
   linearIssue?: string;
@@ -361,6 +363,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   // Until then, postMessage calls race the iframe load and get dropped — so we
   // queue a single "send current snapshot when ready" flag.
   private webviewReady = false;
+  /** The artifact folders the webview may currently read; options change only when this does. */
+  private artifactRootsKey = '';
   // Handshake-fallback timer (PHNX-3517): re-posts the snapshot until the webview
   // acks, so a single dropped 'ready' can never wedge the panel on "Loading…".
   private readyFallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -397,12 +401,14 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     // Each fresh resolve gets a fresh iframe — its listener has not attached
     // yet, so any cached "ready" state from a previous mount is invalid.
     this.webviewReady = false;
+    this.artifactRootsKey = '';
 
     webviewView.webview.options = {
       enableScripts: true,
-      // The CLI materializes pasted images into its attachment cache; only that
-      // directory is readable, never an arbitrary path a transcript names.
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'assets'), vscode.Uri.file(ATTACHMENT_CACHE_DIR)],
+      // The CLI materializes pasted images into its attachment cache. Beyond that
+      // directory the webview reads only the folders of artifacts the stream names
+      // (allowArtifactRoots), never an arbitrary path a transcript mentions.
+      localResourceRoots: this.baseResourceRoots(),
     };
 
     webviewView.webview.html = this.renderShell(webviewView.webview);
@@ -430,6 +436,19 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     void this.refresh();
     // Guarantee a paint even if the webview's 'ready' handshake is lost.
     this.scheduleReadyFallback();
+  }
+
+  private baseResourceRoots(): vscode.Uri[] {
+    return [vscode.Uri.joinPath(this.extensionUri, 'assets'), vscode.Uri.file(ATTACHMENT_CACHE_DIR)];
+  }
+
+  /** Thumbnails of a local session's image artifacts need their folders readable. */
+  private allowArtifactRoots(webview: vscode.Webview, artifacts: readonly RemoteSessionArtifact[]): void {
+    const dirs = [...new Set(artifacts.filter((a) => THUMB_EXT.test(a.path)).map((a) => path.dirname(a.path)))].sort();
+    const key = dirs.join('\n');
+    if (key === this.artifactRootsKey) return;
+    this.artifactRootsKey = key;
+    webview.options = { ...webview.options, localResourceRoots: [...this.baseResourceRoots(), ...dirs.map((d) => vscode.Uri.file(d))] };
   }
 
   private async handleMessage(msg: any): Promise<void> {
@@ -887,6 +906,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           snapshot.imageThumbs = live.attachments
             .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, ATTACHMENT_CACHE_DIR))
             .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }));
+          this.allowArtifactRoots(webview, live.artifacts);
+          for (const artifact of snapshot.artifacts) {
+            if (THUMB_EXT.test(artifact.path)) artifact.uri = webview.asWebviewUri(vscode.Uri.file(artifact.path)).toString();
+          }
         }
       }
 
@@ -1162,30 +1185,53 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     border-radius: 4px;
     padding: 2px 5px;
   }
-  .deliverables { padding: 4px 10px; }
-  .deliverable {
-    display: grid;
-    grid-template-columns: 54px minmax(0, 1fr);
-    align-items: center;
-    gap: 7px;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--vscode-widget-border, transparent);
-    color: var(--vscode-textLink-foreground);
-    cursor: pointer;
-    text-decoration: none;
+  .art-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .art-bar select {
+    margin-left: 4px; font: inherit; border-radius: 3px; padding: 1px 2px;
+    background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border, transparent);
   }
-  .deliverable:last-child { border-bottom: none; }
-  .deliverable-kind {
-    color: var(--vscode-descriptionForeground);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+  button.art-group {
+    font: inherit; font-size: 11px; cursor: pointer; border-radius: 10px; padding: 1px 8px;
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+    background: transparent; color: var(--vscode-descriptionForeground);
   }
-  .deliverable-name {
-    overflow-wrap: anywhere;
-    font-family: var(--vscode-editor-font-family, monospace);
-    font-size: 11px;
+  button.art-group[aria-pressed="true"] { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-color: transparent; }
+  .art-icon { width: 14px; height: 14px; flex: none; }
+  .art-app { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; font-size: 11.5px; font-weight: 600; }
+  .art-count { color: var(--vscode-descriptionForeground); font-weight: 400; }
+  .art-folder { padding: 5px 0 6px; }
+  .art-folder-head { display: flex; align-items: center; gap: 4px; }
+  button.art-folder-toggle { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
+  .art-folder-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .caret { width: 10px; flex: none; color: var(--vscode-descriptionForeground); font-size: 9px; }
+  button.art-reveal { color: var(--vscode-descriptionForeground); padding: 0 4px; }
+  .art-time { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; white-space: nowrap; }
+  .art-meta { margin: 1px 0 5px 15px; color: var(--vscode-descriptionForeground); font-size: 11px; overflow-wrap: anywhere; }
+  .art-files { display: flex; gap: 6px; margin-left: 15px; padding-bottom: 4px; overflow-x: auto; }
+  .art-folder.open .art-files { flex-wrap: wrap; overflow-x: hidden; overflow-y: auto; max-height: 260px; }
+  button.art-tile { flex: none; width: 88px; }
+  .art-folder.open button.art-tile { width: calc(50% - 3px); }
+  .art-thumb {
+    display: flex; align-items: center; justify-content: center; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 3px;
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); background: var(--vscode-editor-background);
   }
+  .art-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  button.art-tile:hover .art-thumb { border-color: var(--vscode-focusBorder); }
+  .art-ext { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 600; letter-spacing: 0.05em; }
+  .art-label {
+    display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family, monospace); font-size: 10.5px;
+  }
+  .art-card button.art-link {
+    display: flex; align-items: center; gap: 6px; width: 100%; margin: 3px 0; padding: 6px 8px; border-radius: 4px;
+    border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); color: var(--vscode-textLink-foreground); box-sizing: border-box;
+  }
+  .art-link-kind { color: var(--vscode-descriptionForeground); font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase; }
+  button.art-summary { display: flex; align-items: center; gap: 6px; width: 100%; }
+  .art-summary img { width: 32px; height: 21px; object-fit: cover; border-radius: 2px; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); }
+  .art-apps { display: flex; gap: 3px; }
+  button.art-toggle { display: inline-flex; align-items: center; gap: 4px; text-transform: inherit; letter-spacing: inherit; color: inherit; font-weight: inherit; }
   .team-summary { display: flex; align-items: center; gap: 8px; }
   .team-summary-name { color: var(--vscode-foreground); font-weight: 600; }
   .team-summary-count { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; }
@@ -1734,13 +1780,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     padding: 0;
   }
   .footer button:hover { text-decoration: underline; }
-  button.path-link, button.deliverable, button.step, button.session-chunk {
+  button.path-link, button.step, button.session-chunk, button.art-toggle, button.art-folder-toggle,
+  button.art-reveal, button.art-tile, button.art-link, button.art-summary {
     background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
   }
   button.path-link { color: var(--vscode-textLink-foreground); padding: 0; }
   button.step { width: 100%; }
-  button.deliverable { width: 100%; color: var(--vscode-textLink-foreground); }
-  button.deliverable.path-link { padding: 6px 0; }
   #session-details { margin-top: 8px; color: var(--vscode-descriptionForeground); }
   #session-details summary { cursor: pointer; }
   .session-details { font-size: 11px; overflow-wrap: anywhere; margin-top: 6px; }
@@ -2246,7 +2291,7 @@ function renderStep(step) {
   );
 }
 
-const TIMELINE_SHOWN = 5;
+const TIMELINE_SHOWN = 3;
 
 // One strip of tool activity across the whole session. A run of 3+ empty buckets
 // collapses into a labeled gap so a 17-hour session with 10 idle hours still
@@ -2500,39 +2545,127 @@ function renderReplyBox(s) {
   );
 }
 
+// ── Artifacts ───────────────────────────────────────────────────────────────
+// Everything the session produced for a person: the CLI's artifacts grouped into
+// their folders, the PR and the ticket. Sort, grouping and the folded state are
+// the viewer's choice and persist; the data is only what the row carries.
+const APP_LABEL = { github: 'GitHub', finder: 'Finder', linear: 'Linear' };
+const APP_ICON = {
+  github: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>',
+  finder: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3.5" fill="#1E6FF0"/><path d="M8.6 0H12.5A3.5 3.5 0 0116 3.5v9A3.5 3.5 0 0112.5 16H7.4C7.9 12 8.9 9.5 7.2 9.2 6.4 9 7.6 3 8.6 0z" fill="#9DD0FF"/><path d="M4.7 5v1.6M11.3 5v1.6M3.8 11c2.6 1.8 5.8 1.8 8.4 0" stroke="#0B2A5C" stroke-width="1.1" fill="none" stroke-linecap="round"/></svg>',
+  linear: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#5E6AD2"/><path d="M2.2 9.6l4.2 4.2M2.9 6.8l6.3 6.3M4.4 4.4l7.2 7.2M6.8 2.9l6.3 6.3" stroke="#fff" stroke-width="1.1"/></svg>',
+};
+const ARTIFACT_SORTS = {
+  latest: (a, b) => (b.editedAtMs || 0) - (a.editedAtMs || 0),
+  oldest: (a, b) => (a.editedAtMs || 0) - (b.editedAtMs || 0),
+  name: (a, b) => a.name.localeCompare(b.name),
+};
+
+function artifactItems(s) {
+  const files = (s.artifacts || []).slice();
+  if (s.plan && !files.some((a) => a.path === s.plan.path)) {
+    files.push({ path: s.plan.path, display: s.plan.display, basename: s.plan.display.split('/').pop(), bucket: 'plans' });
+  }
+  const folders = new Map();
+  for (const f of files) {
+    const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
+    let folder = folders.get(dir);
+    if (!folder) {
+      const shown = f.display.slice(0, f.display.lastIndexOf('/'));
+      folder = { app: 'finder', key: dir, name: dir.split('/').pop() || dir, display: shown, files: [], editedAtMs: 0 };
+      folders.set(dir, folder);
+    }
+    folder.files.push(Object.assign({ name: f.title || f.basename }, f));
+    folder.editedAtMs = Math.max(folder.editedAtMs, f.editedAtMs || 0);
+  }
+  const items = Array.from(folders.values());
+  for (const pr of (s.pullRequests || [])) items.push({ app: 'github', key: pr.url, name: pr.ownerRepo + ' #' + pr.number, pr });
+  if (s.linearIssue) items.push({ app: 'linear', key: s.linearIssue, name: s.linearIssue, ticket: s.linearIssue });
+  return items;
+}
+
 function renderArtifactsCard(s) {
-  const rows = [];
-  for (const artifact of (s.artifacts || [])) {
-    rows.push(
-      '<button type="button" class="deliverable artifact-open" data-artifact="' + esc(artifact.path) + '" title="Open in the editor: ' + esc(artifact.path) + '">' +
-        '<span class="deliverable-kind">' + ({ artifacts: 'ARTIFACT', plans: 'PLAN', reports: 'REPORT', docs: 'DOC' }[artifact.bucket] || 'ARTIFACT') + '</span>' +
-        '<span class="deliverable-name">' + esc(artifact.title || artifact.display) + '</span>' +
-      '</button>'
-    );
+  const items = artifactItems(s);
+  if (!items.length) return '';
+  const sortKey = ARTIFACT_SORTS[viewState.artifactSort] ? viewState.artifactSort : 'latest';
+  const grouped = viewState.artifactGroup !== false;
+  const collapsed = !!viewState.artifactsCollapsed;
+  items.sort(ARTIFACT_SORTS[sortKey]);
+  const fileCount = items.reduce((n, it) => n + (it.files ? it.files.length : 0), 0);
+  const meta = items.length + (items.length === 1 ? ' item' : ' items') + (fileCount ? ' · ' + fileCount + (fileCount === 1 ? ' file' : ' files') : '');
+  const head =
+    '<h2><button type="button" class="art-toggle" data-art-toggle aria-expanded="' + !collapsed + '">' +
+      '<span class="caret">' + (collapsed ? '▸' : '▾') + '</span>Artifacts</button>' +
+      '<span class="head-meta">' + esc(meta) + '</span></h2>';
+  if (collapsed) return head + renderArtifactsSummary(items);
+  const options = [['latest', 'Latest edited'], ['oldest', 'Oldest first'], ['name', 'Name']]
+    .map((o) => '<option value="' + o[0] + '"' + (o[0] === sortKey ? ' selected' : '') + '>' + o[1] + '</option>').join('');
+  const bar =
+    '<div class="art-bar"><label>Sort <select data-art-sort>' + options + '</select></label>' +
+    '<button type="button" class="art-group" data-art-group aria-pressed="' + grouped + '">Group by app</button></div>';
+  let body = '';
+  if (grouped) {
+    const apps = [];
+    for (const it of items) {
+      let group = apps.find((g) => g.app === it.app);
+      if (!group) apps.push(group = { app: it.app, items: [] });
+      group.items.push(it);
+    }
+    body = apps.map((g) =>
+      '<div class="art-app">' + APP_ICON[g.app] + esc(APP_LABEL[g.app]) + '<span class="art-count">' + g.items.length + '</span></div>' +
+      g.items.map((it) => renderArtifactItem(it, s, sortKey, false)).join('')
+    ).join('');
+  } else {
+    body = items.map((it) => renderArtifactItem(it, s, sortKey, true)).join('');
   }
-  if (s.plan && !(s.artifacts || []).some((artifact) => artifact.path === s.plan.path)) {
-    rows.push(
-      '<button type="button" class="deliverable artifact-open" data-artifact="' + esc(s.plan.path) + '" title="Open in the editor: ' + esc(s.plan.path) + '">' +
-        '<span class="deliverable-kind">PLAN</span><span class="deliverable-name">' + esc(s.plan.display) + '</span>' +
-      '</button>'
-    );
+  return head + '<div class="card art-card">' + bar + body + '</div>';
+}
+
+function renderArtifactItem(it, s, sortKey, showApp) {
+  const icon = showApp ? APP_ICON[it.app] : '';
+  if (it.pr) {
+    return '<button type="button" class="art-link" data-url="' + esc(it.pr.url) + '" title="' + esc(it.pr.url) + '">' +
+      icon + '<span class="art-link-kind">PR</span>' + esc(it.pr.ownerRepo) + ' #' + it.pr.number + '</button>';
   }
-  if (s.linearIssue) {
-    rows.push(
-      '<button type="button" class="deliverable" data-url="' + esc('https://linear.app/issue/' + encodeURIComponent(s.linearIssue)) + '">' +
-        '<span class="deliverable-kind">ticket</span><span class="deliverable-name">' + esc(s.linearIssue) + '</span>' +
-      '</button>'
-    );
+  if (it.ticket) {
+    const url = 'https://linear.app/issue/' + encodeURIComponent(it.ticket);
+    return '<button type="button" class="art-link" data-url="' + esc(url) + '" title="' + esc(url) + '">' +
+      icon + '<span class="art-link-kind">Ticket</span>' + esc(it.ticket) + '</button>';
   }
-  for (const pr of (s.pullRequests || [])) {
-    rows.push(
-      '<button type="button" class="deliverable" data-url="' + esc(pr.url) + '">' +
-        '<span class="deliverable-kind">PR</span><span class="deliverable-name">' + esc(pr.ownerRepo) + ' #' + pr.number + '</span>' +
-      '</button>'
-    );
-  }
-  if (!rows.length) return '';
-  return '<h2>Artifacts</h2><div class="card deliverables">' + rows.join('') + '</div>';
+  const open = !!(viewState.openFolders || {})[it.key];
+  const files = it.files.slice().sort(ARTIFACT_SORTS[sortKey]);
+  const count = it.files.length + (it.files.length === 1 ? ' file' : ' files');
+  return (
+    '<div class="art-folder' + (open ? ' open' : '') + '">' +
+      '<div class="art-folder-head">' +
+        '<button type="button" class="art-folder-toggle" data-folder="' + esc(it.key) + '" aria-expanded="' + open + '" title="' + esc(it.key) + '">' +
+          '<span class="caret">' + (open ? '▾' : '▸') + '</span>' + icon + '<span class="art-folder-name">' + esc(it.name) + '</span></button>' +
+        (s.sessionLocal ? '<button type="button" class="art-reveal" data-reveal="' + esc(it.key) + '" title="Reveal in Finder">↗</button>' : '') +
+        (it.editedAtMs ? '<span class="art-time">' + esc(relTime(it.editedAtMs)) + '</span>' : '') +
+      '</div>' +
+      '<div class="art-meta">' + esc([it.display, count].filter(Boolean).join(' · ')) + '</div>' +
+      '<div class="art-files" data-strip="' + esc(it.key) + '">' + files.map(renderArtifactTile).join('') + '</div>' +
+    '</div>'
+  );
+}
+
+function renderArtifactTile(f) {
+  const face = f.uri
+    ? '<img src="' + esc(f.uri) + '" alt="" loading="lazy">'
+    : '<span class="art-ext">' + esc((f.path.split('.').pop() || '').toUpperCase()) + '</span>';
+  return '<button type="button" class="art-tile artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
+    '<span class="art-thumb">' + face + '</span><span class="art-label">' + esc(f.name) + '</span></button>';
+}
+
+// The folded section still says what is there: the first thumbnails, which
+// apps hold artifacts, and when the newest one changed.
+function renderArtifactsSummary(items) {
+  const thumbs = [];
+  for (const it of items) for (const f of (it.files || [])) if (f.uri && thumbs.length < 3) thumbs.push('<img src="' + esc(f.uri) + '" alt="">');
+  const apps = items.map((it) => it.app).filter((app, i, all) => all.indexOf(app) === i).map((app) => APP_ICON[app]).join('');
+  const newest = Math.max(0, ...items.map((it) => it.editedAtMs || 0));
+  return '<button type="button" class="art-summary" data-art-toggle>' + thumbs.join('') + '<span class="art-apps">' + apps + '</span>' +
+    (newest ? '<span class="art-time">newest ' + esc(relTime(newest)) + '</span>' : '') + '</button>';
 }
 
 function renderSpawnedTeamCard(s) {
@@ -2773,6 +2906,9 @@ let lastSnapshot = null;
 
 function render(snap) {
   lastSnapshot = snap;
+  // Stream updates re-render the panel; a strip the viewer scrolled stays put.
+  const stripScroll = {};
+  for (const el of root.querySelectorAll('[data-strip]')) stripScroll[el.getAttribute('data-strip')] = [el.scrollLeft, el.scrollTop];
   // The empty state is about having NO SUBJECT — not about having no terminal.
   // A session picked in the Fleet list renders here with no local tab at all.
   if (!snap || !snap.hasSubject) {
@@ -2792,8 +2928,8 @@ function render(snap) {
     renderFailures(snap) +
     renderGoalCard(snap) +
     renderRequestCard(snap) +
-    renderArtifactsCard(snap) +
     renderTimelineCard(snap) +
+    renderArtifactsCard(snap) +
     renderChecklistCard(snap) +
     renderSpawnedTeamCard(snap) +
     renderActivityCard(snap) +
@@ -2810,6 +2946,30 @@ function render(snap) {
     const r = root.querySelector('#reply-input');
     if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
   });
+  for (const el of root.querySelectorAll('[data-strip]')) {
+    const at = stripScroll[el.getAttribute('data-strip')];
+    if (at) { el.scrollLeft = at[0]; el.scrollTop = at[1]; }
+  }
+  for (const el of root.querySelectorAll('[data-art-toggle]')) {
+    el.addEventListener('click', () => { viewState.artifactsCollapsed = !viewState.artifactsCollapsed; vscode.setState(viewState); render(lastSnapshot); });
+  }
+  const artSort = root.querySelector('[data-art-sort]');
+  if (artSort) artSort.addEventListener('change', () => { viewState.artifactSort = artSort.value; vscode.setState(viewState); render(lastSnapshot); });
+  const artGroup = root.querySelector('[data-art-group]');
+  if (artGroup) artGroup.addEventListener('click', () => { viewState.artifactGroup = viewState.artifactGroup === false; vscode.setState(viewState); render(lastSnapshot); });
+  for (const el of root.querySelectorAll('[data-folder]')) {
+    el.addEventListener('click', () => {
+      const key = el.getAttribute('data-folder');
+      const open = Object.assign({}, viewState.openFolders);
+      if (open[key]) delete open[key]; else open[key] = true;
+      viewState.openFolders = open;
+      vscode.setState(viewState);
+      render(lastSnapshot);
+    });
+  }
+  for (const el of root.querySelectorAll('[data-reveal]')) {
+    el.addEventListener('click', () => vscode.postMessage({ type: 'revealCwd', path: el.getAttribute('data-reveal') }));
+  }
   for (const el of root.querySelectorAll('.artifact-open')) {
     el.addEventListener('click', (e) => {
       e.preventDefault();
