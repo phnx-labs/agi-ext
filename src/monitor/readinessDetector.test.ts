@@ -15,8 +15,11 @@ const spawned: ChildProcess[] = [];
 function spawnShellWithChild(): number {
   // Subshell forks + execs node which blocks forever, so the shell has a child
   // in interruptible sleep — exactly what an idle agent TUI looks like.
+  // Its own process group, so cleanup reaches the node grandchild too; killing
+  // only bash orphans node to launchd for the life of the machine.
   const shell = spawn('bash', ['-c', '(node -e "setInterval(()=>{}, 1e9)") ; true'], {
     stdio: 'ignore',
+    detached: true,
   });
   spawned.push(shell);
   return shell.pid!;
@@ -37,7 +40,7 @@ function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Pr
 afterEach(() => {
   for (const child of spawned.splice(0)) {
     try {
-      child.kill('SIGKILL');
+      process.kill(-child.pid!, 'SIGKILL');
     } catch {
       /* already gone */
     }

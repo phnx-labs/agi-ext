@@ -47,6 +47,8 @@ describe('agentReady probe — real process state', () => {
       '(node -e "setInterval(()=>{}, 100000)") ; true',
     ], {
       stdio: 'ignore',
+      // Own process group: killing only bash would orphan the node grandchild.
+      detached: true,
     });
     const shellPid = shell.pid!;
     expect(shellPid).toBeGreaterThan(0);
@@ -67,7 +69,7 @@ describe('agentReady probe — real process state', () => {
       expect(lastObservation.state).not.toBeNull();
       expect(lastObservation.state!.startsWith('S')).toBe(true);
     } finally {
-      shell.kill('SIGKILL');
+      process.kill(-shellPid, 'SIGKILL');
       // Give the kernel a moment to reap
       await sleep(50);
     }
