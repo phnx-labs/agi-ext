@@ -9,6 +9,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn, ChildProcess } from 'child_process';
 import { ReadinessDetector, selectAgentFromCandidates } from './readinessDetector';
 import { ReadinessFactPayload } from './protocol';
+import { killProcessTree } from '../core/processTree';
 
 const spawned: ChildProcess[] = [];
 
@@ -39,11 +40,7 @@ function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Pr
 
 afterEach(() => {
   for (const child of spawned.splice(0)) {
-    try {
-      process.kill(-child.pid!, 'SIGKILL');
-    } catch {
-      /* already gone */
-    }
+    killProcessTree(child);
   }
 });
 

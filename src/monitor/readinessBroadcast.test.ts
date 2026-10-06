@@ -18,6 +18,7 @@ import {
   TerminalTuple,
 } from './protocol';
 import { MonitorEvent } from './broadcastTypes';
+import { killProcessTree } from '../core/processTree';
 
 const spawned: ChildProcess[] = [];
 const tmpPaths: string[] = [];
@@ -66,11 +67,7 @@ function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Pr
 
 afterEach(() => {
   for (const child of spawned.splice(0)) {
-    try {
-      process.kill(-child.pid!, 'SIGKILL');
-    } catch {
-      /* gone */
-    }
+    killProcessTree(child);
   }
   for (const p of tmpPaths.splice(0)) {
     try {
