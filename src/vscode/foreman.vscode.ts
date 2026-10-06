@@ -37,6 +37,13 @@ import {
 import { readLiveTerminals, LiveTerminal } from './foreman.registry';
 
 
+// The briefing joins tabs to sessions by id. A tab whose harness has not
+// revealed its id yet (and shell or Rush Cloud tabs) cannot be joined without
+// guessing, so the briefing sees only tabs that carry one.
+function liveSessionTerminals(): (LiveTerminal & { sessionId: string })[] {
+  return readLiveTerminals().filter((t): t is LiveTerminal & { sessionId: string } => !!t.sessionId);
+}
+
 // Two canonical sources for "what's on the fleet":
 //   1. Live terminals across EVERY IDE window (from the shared registry) -
 //      authoritative for "actually running right now"
@@ -44,7 +51,7 @@ import { readLiveTerminals, LiveTerminal } from './foreman.registry';
 //      tokenCount) - enrichment only, agents-cli doesn't know pid liveness
 // Plus two auxiliary sources: cloud dispatches and team DAGs.
 async function computeBriefing(_workspacePath?: string): Promise<ForemanDigest> {
-  const live = readLiveTerminals();
+  const live = liveSessionTerminals();
   const liveIds = new Set(live.map((t) => t.sessionId));
 
   const [sessions, cloud, teams] = await Promise.all([
@@ -57,7 +64,7 @@ async function computeBriefing(_workspacePath?: string): Promise<ForemanDigest> 
   // if agents-cli has it (matched by sessionId).
   const sessionsById = new Map(sessions.map((s) => [s.id, s] as const));
   const agents: ForemanTerminal[] = live.map((t) =>
-    liveTerminalToForemanTerminal(t, t.sessionId ? sessionsById.get(t.sessionId) : undefined)
+    liveTerminalToForemanTerminal(t, sessionsById.get(t.sessionId))
   );
   // Also include recently-active sessions that AREN'T currently open as live
   // terminals - they may have been closed in the last 2h and are worth
@@ -238,7 +245,7 @@ async function computeFocus(who: string, _workspacePath?: string): Promise<unkno
 
   const events = await readSessionEvents(match.id, 30);
   const tail = summarizeTail(events);
-  const openIds = new Set(readLiveTerminals().map((t) => t.sessionId));
+  const openIds = new Set(liveSessionTerminals().map((t) => t.sessionId));
   const startedMs = match.timestamp ? Date.parse(match.timestamp) : Date.now();
   const lastActivityMs = tail.lastEventAtMs ?? startedMs;
 
