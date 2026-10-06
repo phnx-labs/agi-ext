@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.381] - 2026-10-05
+
+One Artifacts section in the session sidebar:
+
+- Everything a session produced for you sits in one Artifacts section: its files grouped
+  into their folders, its PR and its ticket. A folder shows thumbnails of its images (and
+  a type tile for HTML, Markdown, PDF or video) in a strip that scrolls sideways; its caret
+  opens it as a grid that scrolls in place, ↗ reveals it in Finder, and a tile opens the file.
+- Sort sits under the heading (latest edited first by default, oldest, name), next to
+  Group by app (Finder, GitHub, Linear). The heading folds the whole section to one line
+  with the newest thumbnails, the apps involved and when the newest changed. All three
+  choices persist.
+- The Timeline moves above Artifacts and shows the newest three steps, with the rest
+  behind "N more".
+- Images, video, PDFs and folders the agent names in its replies appear once the CLI ships
+  the matching reader change (phnx-labs/sessions-cli#28); until then the section shows the
+  plans, documents, PRs and tickets the CLI already reports.
+
 ## [0.9.380] - 2026-10-04
 
 Monitor ownership across editor windows:

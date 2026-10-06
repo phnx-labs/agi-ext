@@ -98,6 +98,7 @@ test('Active Session render is outcome-oriented and drops utility-stack cards (P
   // PHNX-3939 follow-up: what was ASKED leads, then what the agent actually did,
   // then the checklist; Files sit at the bottom and the reply field is last.
   expect(renderOrder.indexOf('renderRequestCard')).toBeLessThan(renderOrder.indexOf('renderTimelineCard'));
+  expect(renderOrder.indexOf('renderTimelineCard')).toBeLessThan(renderOrder.indexOf('renderArtifactsCard'));
   expect(renderOrder.indexOf('renderTimelineCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
   expect(renderOrder.indexOf('renderChecklistCard')).toBeLessThan(renderOrder.indexOf('renderFilesCard'));
   expect(renderOrder.indexOf('renderFilesCard')).toBeLessThan(renderOrder.indexOf('renderReplyBox'));

@@ -310,6 +310,8 @@ export interface RemoteSessionArtifact {
   bucket: 'artifacts' | 'plans' | 'reports' | 'docs';
   /** Human title from the artifact's `.artifact.json` sidecar, when it has one. */
   title?: string;
+  /** When the session last wrote it (or the file's mtime), for newest-first sorting. */
+  editedAtMs?: number;
 }
 
 /** One failed or policy-blocked tool call, newest last (CLI `failures[]`). */
@@ -962,7 +964,8 @@ function normalizeSessionArtifacts(raw: unknown): RemoteSessionArtifact[] {
     if (!path || !basename) return [];
     if (bucket !== 'artifacts' && bucket !== 'plans' && bucket !== 'reports' && bucket !== 'docs') return [];
     const title = asStr(value.title);
-    return [title ? { path, basename, bucket, title } : { path, basename, bucket }];
+    const editedAtMs = finiteNum(value.editedAtMs);
+    return [{ path, basename, bucket, ...(title ? { title } : {}), ...(editedAtMs !== undefined ? { editedAtMs } : {}) }];
   });
 }
 
