@@ -108,6 +108,15 @@ export function getBuiltInDefByTitle(title: string): BuiltInAgentDef | undefined
   return BUILT_IN_AGENTS.find(a => a.title === title);
 }
 
+// The harness a terminal id (`<prefix>-<ts>-<n>`, generateTerminalId) names.
+// Tabs from older versions carry the title (`CC-…`) where the prefix now goes.
+// A custom agent's prefix is its own lowercased name, so it is its own kind.
+export function agentKindFromTerminalId(terminalId: string): string {
+  const head = terminalId.split('-')[0] ?? '';
+  const def = getBuiltInByPrefix(head.toLowerCase()) ?? getBuiltInDefByTitle(head.toUpperCase());
+  return def?.key ?? head.toLowerCase();
+}
+
 // Dispatch "mode" the panel offers: Plan (read-only), Auto (the unattended
 // default — never stops to ask), Edit (accepts edits, still asks about risky
 // shell operations). What Auto means is per-harness: a smart classifier that

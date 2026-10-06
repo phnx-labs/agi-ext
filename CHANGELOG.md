@@ -4,6 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.384] - 2026-10-06
+
+- Codex, Grok and every other non-Claude tab now reach the CLI, so the CLI can bind them to
+  their session instead of leaving the status bar on "(tracking session)" (PHNX-4263). The
+  extension used to publish a tab to `~/.agents/.cache/terminals/live-terminals.json` only
+  when it had minted the session id at launch, which only Claude gets. Each tab is now
+  published by its terminal id with its harness, and the session id when one is known.
+- `live-terminals.json` lists each tab once. Slices left by reloaded windows are dropped after
+  10 minutes even though their terminals are still running; they used to pile up, and a tab
+  could be read two or three times.
+
 ## [0.9.383] - 2026-10-06
 
 - A remote session's artifacts open. Clicking one copies that file from its machine with one

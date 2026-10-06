@@ -6,6 +6,7 @@ import {
   getBuiltInByKey,
   getBuiltInByPrefix,
   getBuiltInDefByTitle,
+  agentKindFromTerminalId,
   pickLatestVersion,
   isAgentRunner,
   usesManagedAgentLaunch,
@@ -183,6 +184,19 @@ describe('getBuiltInByPrefix', () => {
   test('returns undefined for unknown prefix', () => {
     const agent = getBuiltInByPrefix('xx');
     expect(agent).toBeUndefined();
+  });
+});
+
+describe('agentKindFromTerminalId', () => {
+  test('every presented prefix and legacy title resolves to its harness key', () => {
+    for (const a of BUILT_IN_AGENTS) {
+      expect(agentKindFromTerminalId(`${a.prefix}-1759700000000-1`)).toBe(a.key);
+      expect(agentKindFromTerminalId(`${a.title}-1759700000000-1`)).toBe(a.key);
+    }
+  });
+
+  test('a custom agent prefix is its own kind', () => {
+    expect(agentKindFromTerminalId('aider-1759700000000-1')).toBe('aider');
   });
 });
 

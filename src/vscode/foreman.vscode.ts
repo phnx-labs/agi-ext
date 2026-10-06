@@ -57,7 +57,7 @@ async function computeBriefing(_workspacePath?: string): Promise<ForemanDigest> 
   // if agents-cli has it (matched by sessionId).
   const sessionsById = new Map(sessions.map((s) => [s.id, s] as const));
   const agents: ForemanTerminal[] = live.map((t) =>
-    liveTerminalToForemanTerminal(t, sessionsById.get(t.sessionId))
+    liveTerminalToForemanTerminal(t, t.sessionId ? sessionsById.get(t.sessionId) : undefined)
   );
   // Also include recently-active sessions that AREN'T currently open as live
   // terminals - they may have been closed in the last 2h and are worth

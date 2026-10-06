@@ -11,8 +11,9 @@
 //   - Writer owns its windowId slice. Reads are merges of all slices.
 //   - Stale entries (pid dead) are filtered at read time, not pruned. The
 //     owning window prunes on its own terminal close/exit events.
-//   - If a whole window crashed, its slice is dropped when `at` is older
-//     than 10 minutes AND any entry's pid is dead.
+//   - A peer slice whose `at` is older than 10 minutes is dropped whatever
+//     its pids say: terminals outlive a window reload, which mints a fresh
+//     windowId, so pid liveness cannot tell an abandoned slice from a live one.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,18 +24,20 @@ import { computeWindowId } from '../core/foreman.windowId';
 import { isPidAlive } from '../core/liveness';
 import { resolveTabIndex, type TabView } from '../core/tabIndex';
 import { resolveStartedAtMs } from '../core/processStartTime';
+import { agentKindFromTerminalId } from '../core/agents';
 
 const REGISTRY_DIR = path.join(os.homedir(), '.agents', '.cache', 'terminals');
 const REGISTRY_FILE = path.join(REGISTRY_DIR, 'live-terminals.json');
 const LEGACY_REGISTRY_FILE = path.join(os.homedir(), '.agents', 'swarmify', 'live-terminals.json');
 const STALE_WINDOW_MS = 10 * 60_000;
 // Force a write at least this often even when our slice is unchanged, so
-// peers don't prune us as crashed (peer prune trigger: `at` older than
-// STALE_WINDOW_MS AND every pid in our slice is dead).
+// peers don't prune us (peer prune trigger: `at` older than STALE_WINDOW_MS).
 const KEEPALIVE_FORCE_MS = 4 * 60_000;
 
 export interface LiveTerminal {
-  sessionId: string;
+  // Only Claude's id is minted at launch; other harnesses pick theirs after
+  // they start, and the CLI joins those tabs by terminalId.
+  sessionId?: string;
   terminalId?: string;
   pid: number;
   kind: string;              // 'claude' | 'codex' | ...
@@ -107,11 +110,10 @@ let lastPublishedHash: string | undefined;
 let lastPublishedAtMs = 0;
 
 function hashEntries(entries: LiveTerminal[]): string {
-  // Stable hash of the slice content (sessionId+pid+kind+label+cwd). The
-  // `at` timestamp is excluded — it changes every call and would make every
-  // hash unique.
+  // Stable hash of the slice content. The `at` timestamp is excluded — it
+  // changes every call and would make every hash unique.
   const stable = entries
-    .map((e) => `${e.sessionId}|${e.pid}|${e.kind}|${e.label ?? ''}|${e.cwd ?? ''}|${e.tabIndex ?? ''}`)
+    .map((e) => `${e.terminalId ?? ''}|${e.sessionId ?? ''}|${e.pid}|${e.kind}|${e.label ?? ''}|${e.cwd ?? ''}|${e.tabIndex ?? ''}`)
     .sort()
     .join('\n');
   return createHash('sha1').update(stable).digest('hex');
@@ -134,14 +136,12 @@ export async function publishLiveTerminals(terminals: LiveTerminal[]): Promise<v
     at: new Date().toISOString(),
     entries: terminals,
   };
-  // Garbage-collect peer slices that look crashed (old timestamp + all pids dead).
+  // Drop peer slices that stopped their keepalive.
   const cutoff = now - STALE_WINDOW_MS;
   for (const [winId, slice] of Object.entries(reg)) {
     if (winId === getOwnWindowId()) continue;
     const at = Date.parse(slice?.at ?? '');
-    if (!Number.isFinite(at) || at > cutoff) continue;
-    const anyAlive = (slice.entries ?? []).some((e) => isPidAlive(e.pid));
-    if (!anyAlive) delete reg[winId];
+    if (!(at > cutoff)) delete reg[winId];
   }
   await writeRegistryAsync(reg);
   lastPublishedHash = hash;
@@ -149,7 +149,8 @@ export async function publishLiveTerminals(terminals: LiveTerminal[]): Promise<v
 }
 
 // Read all live terminals across every IDE window, filtered to pid-alive only.
-// Deduped by sessionId - the self-window entries take precedence over peer ones.
+// Deduped by terminalId (sessionId for entries written before terminalId was
+// published) - the self-window entries take precedence over peer ones.
 export function readLiveTerminals(): LiveTerminal[] {
   const reg = readRegistry();
   const selfId = getOwnWindowId();
@@ -160,13 +161,10 @@ export function readLiveTerminals(): LiveTerminal[] {
 
   const merged = new Map<string, LiveTerminal>();
   // Peers first, self overwrites.
-  for (const t of peerSlices) {
-    if (!t?.sessionId || !isPidAlive(t.pid)) continue;
-    merged.set(t.sessionId, t);
-  }
-  for (const t of selfSlice) {
-    if (!t?.sessionId || !isPidAlive(t.pid)) continue;
-    merged.set(t.sessionId, t);
+  for (const t of [...peerSlices, ...selfSlice]) {
+    const key = t?.terminalId ?? t?.sessionId;
+    if (!key || !isPidAlive(t.pid)) continue;
+    merged.set(key, t);
   }
   return Array.from(merged.values());
 }
@@ -188,19 +186,17 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     if (t.exitStatus !== undefined) continue;
     const opts = t.creationOptions as vscode.TerminalOptions;
     const env = opts?.env as Record<string, string | undefined> | undefined;
-    const sid = env?.AGENT_SESSION_ID;
     const tid = env?.AGENT_TERMINAL_ID;
-    if (!sid) continue;
+    if (!tid) continue;
     const pid = await t.processId;
     if (!pid) continue;
-    const kind = tid ? kindFromTerminalId(tid) : kindFromName(t.name);
     // Editor-tab position, matched by the terminal's name against its tab label.
     const tabIndex = resolveTabIndex(tabGroups, t.name);
     out.push({
-      sessionId: sid,
+      sessionId: env?.AGENT_SESSION_ID,
       terminalId: tid,
       pid,
-      kind,
+      kind: agentKindFromTerminalId(tid),
       label: deriveLabel(t.name),
       cwd: env?.AGENT_WORKSPACE_DIR ?? null,
       startedAtMs: await resolveStartedAtMs(pid),
@@ -208,29 +204,6 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     });
   }
   return out;
-}
-
-function kindFromTerminalId(terminalId: string): string {
-  const prefix = terminalId.split('-')[0]?.toUpperCase() ?? '';
-  switch (prefix) {
-    case 'CC': case 'CL': return 'claude';
-    case 'CX': return 'codex';
-    case 'OC': return 'opencode';
-    case 'CR': return 'cursor';
-    case 'CP': return 'copilot';
-    case 'SH': return 'shell';
-    default: return prefix.toLowerCase() || 'unknown';
-  }
-}
-
-function kindFromName(name: string): string {
-  const head = name.trim().split(/\s+|-/)[0]?.toLowerCase() ?? '';
-  if (['claude', 'cc'].includes(head)) return 'claude';
-  if (['codex', 'cx'].includes(head)) return 'codex';
-  if (['opencode', 'oc'].includes(head)) return 'opencode';
-  if (['cursor', 'cr'].includes(head)) return 'cursor';
-  if (['copilot', 'cp'].includes(head)) return 'copilot';
-  return head || 'unknown';
 }
 
 function deriveLabel(name: string): string | null {

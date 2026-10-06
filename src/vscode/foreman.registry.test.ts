@@ -1,0 +1,74 @@
+import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// The registry resolves ~/.agents/.cache/terminals at import, so each case runs
+// in its own process with a temp HOME and reads back the real file.
+function run(body: string, seed?: Record<string, unknown>) {
+  const home = mkdtempSync(join(tmpdir(), 'foreman-registry-'));
+  const file = join(home, '.agents', '.cache', 'terminals', 'live-terminals.json');
+  try {
+    if (seed) {
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, JSON.stringify(seed));
+    }
+    const script = `
+      import { mock } from 'bun:test';
+      import assert from 'node:assert/strict';
+      import { vscodeDouble } from ${JSON.stringify(join(import.meta.dir, '../testing/vscodeDouble.ts'))};
+      const surface = vscodeDouble({ env: { sessionId: 'win' }, window: { terminals: [], tabGroups: { all: [] } } });
+      mock.module('vscode', () => vscodeDouble(surface));
+      const registry = await import(${JSON.stringify(join(import.meta.dir, 'foreman.registry.ts'))});
+      const tab = (name, env) => ({ name, processId: Promise.resolve(process.pid), creationOptions: { env } });
+      ${body}
+    `;
+    const result = spawnSync('bun', ['-e', script], { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
+    expect(result.status, result.stderr + result.stdout).toBe(0);
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } finally { rmSync(home, { recursive: true }); }
+}
+
+const live = (terminalId: string | undefined, sessionId?: string) =>
+  ({ terminalId, sessionId, pid: process.pid, kind: 'codex', startedAtMs: 1 });
+
+describe('foreman registry', () => {
+  test('Codex and Grok tabs without a minted session id are published by terminalId', () => {
+    const reg = run(`
+      surface.window.terminals = [
+        tab('CX', { AGENT_TERMINAL_ID: 'cx-1759700000000-1' }),
+        tab('GK', { AGENT_TERMINAL_ID: 'gk-1759700000000-2' }),
+        tab('zsh', {}),
+      ];
+      await registry.publishLiveTerminals(await registry.snapshotOwnTerminals());
+    `);
+    const entries = Object.values(reg).flatMap((s: any) => s.entries);
+    expect(entries.map((e: any) => [e.terminalId, e.kind, e.sessionId])).toEqual([
+      ['cx-1759700000000-1', 'codex', undefined],
+      ['gk-1759700000000-2', 'grok', undefined],
+    ]);
+  });
+
+  test('a stale peer slice is pruned even while its pids are alive', () => {
+    const now = Date.now();
+    const reg = run(`await registry.publishLiveTerminals([]);`, {
+      reloaded: { at: new Date(now - 11 * 60_000).toISOString(), entries: [live('cx-1-1')] },
+      current: { at: new Date(now).toISOString(), entries: [live('gk-1-1')] },
+    });
+    expect(Object.keys(reg)).not.toContain('reloaded');
+    expect(Object.keys(reg)).toContain('current');
+  });
+
+  test('a tab repeated across window slices is read once, keyed by terminalId', () => {
+    const at = new Date().toISOString();
+    run(`
+      const ids = registry.readLiveTerminals().map((t) => t.terminalId ?? t.sessionId).sort();
+      assert.deepEqual(ids, ['cx-1-1', 'legacy-session']);
+    `, {
+      a: { at, entries: [live('cx-1-1', 'before-restart')] },
+      b: { at, entries: [live('cx-1-1', 'later-bound')] },
+      c: { at, entries: [live(undefined, 'legacy-session'), live(undefined, 'legacy-session')] },
+    });
+  });
+});
