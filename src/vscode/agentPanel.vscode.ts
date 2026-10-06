@@ -2204,7 +2204,8 @@ function requestChips(s) {
   const images = atts.filter((a) => a.kind === 'image');
   const dirs = atts.filter((a) => a.kind === 'dir');
   const others = atts.filter((a) => a.kind !== 'image' && a.kind !== 'dir');
-  if (images.length) {
+  // A count only for images without a thumbnail above it.
+  if (images.length > (s.imageThumbs || []).length) {
     chips.push('<span class="chip">' + images.length + ' image' + (images.length === 1 ? '' : 's') + '</span>');
   }
   if (others.length) {
