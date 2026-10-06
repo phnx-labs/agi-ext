@@ -476,6 +476,8 @@ export interface RemoteSession {
   title: string;
   /** Model id of the latest assistant reply (e.g. `claude-opus-5-5`). Absent when unknown. */
   model?: string;
+  /** Who the session runs for (the CLI's `owner`, an email); the sidebar shows their avatar on the request. */
+  owner?: string;
   /** Failed and policy-blocked tool calls, newest last. Absent on an older CLI. */
   failures?: RemoteFailure[];
   /** Whole-session activity histogram for the seek bar. Absent on an older CLI. */
@@ -597,6 +599,7 @@ export interface RawActiveSession {
   topic?: string;
   title?: string;
   model?: string;
+  owner?: string;
   failures?: unknown;
   activityHistogram?: unknown;
   userTurns?: unknown;
@@ -1285,6 +1288,7 @@ export function normalizeActiveSession(
     topic: asStr(raw.topic) || asStr(raw.prompt) || asStr(raw.firstUserMessage) || asStr(raw.label),
     title: asStr(raw.title),
     model: asStr(raw.model) || undefined,
+    owner: asStr(raw.owner) || undefined,
     failures: normalizeFailures(raw.failures),
     activityHistogram: normalizeActivityHistogram(raw.activityHistogram),
     userTurns: normalizeUserTurns(raw.userTurns),
