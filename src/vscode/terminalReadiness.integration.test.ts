@@ -18,6 +18,7 @@ import { spawn } from 'child_process';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { detectAgentKeyFromArgs, extractSessionIdFromArgs } from '../core/terminalReadiness';
+import { killProcessTree } from '../core/processTree';
 
 const execAsync = promisify(exec);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -69,7 +70,7 @@ describe('agentReady probe — real process state', () => {
       expect(lastObservation.state).not.toBeNull();
       expect(lastObservation.state!.startsWith('S')).toBe(true);
     } finally {
-      process.kill(-shellPid, 'SIGKILL');
+      killProcessTree(shell);
       // Give the kernel a moment to reap
       await sleep(50);
     }
