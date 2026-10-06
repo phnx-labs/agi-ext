@@ -545,9 +545,11 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   });
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-artifacts-'));
   const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('localArtifactUri') + method('handleMessage') + method('loadTimelineFilter') + '}');
-  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', 'remoteDeviceArg', 'path', 'fs', 'REMOTE_ARTIFACT_CACHE_DIR', code + '; return new Host();')(
-    vscode, (p: string) => 'file://' + p, async (args: string) => { calls.push(args); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted,
-    (host?: string) => (host && host !== 'this-mac' ? host : undefined), path, fs, cacheDir);
+  const pastedDir = path.join(cacheDir, 'pasted');
+  const isInside = (p: string, dir: string) => { const rel = path.relative(dir, path.resolve(p)); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', 'remoteDeviceArg', 'path', 'fs', 'REMOTE_ARTIFACT_CACHE_DIR', 'PASTED_ATTACHMENT_DIR', 'isInside', code + '; return new Host();')(
+    vscode, (p: string) => 'vscode-remote://' + p, async (args: string) => { calls.push(args); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted,
+    (host?: string) => (host && host !== 'this-mac' ? host : undefined), path, fs, cacheDir, pastedDir, isInside);
 
   await host.handleMessage({ type: 'openArtifact', path: '/a/plan.html' });
   await host.handleMessage({ type: 'openArtifact', path: '/a/notes.md' });
@@ -555,6 +557,11 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
 
   // A remote session's artifact is copied here with one agents ssh call, then opened locally.
   host.snapshot.sessionHost = 'yosemite-m5';
+  host.snapshot.artifacts = [{ path: '/home/u/report.html' }, { path: '/home/u/../../../../etc/x.html' }];
+  // A path the row doesn't name, or one that climbs out of the cache, is never fetched or written.
+  await host.handleMessage({ type: 'openArtifact', path: '/home/u/other.html' });
+  await host.handleMessage({ type: 'openArtifact', path: '/home/u/../../../../etc/x.html' });
+  expect(calls).toEqual([]);
   const timelineCli = cli;
   cli = () => ({ stdout: Buffer.from('<h1>report</h1>').toString('base64') });
   await host.handleMessage({ type: 'openArtifact', path: '/home/u/report.html' });
@@ -562,6 +569,9 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   expect(calls.pop()).toBe(`ssh 'yosemite-m5' --argv '["base64","/home/u/report.html"]'`);
   expect(fs.readFileSync(local, 'utf8')).toBe('<h1>report</h1>');
   expect(opened.at(-1)).toEqual(['vscode.openWith', 'file://' + local, 'agents.htmlReader']);
+  // A pasted image lives on this machine even for a remote session.
+  await host.handleMessage({ type: 'openPath', path: path.join(pastedDir, 'shot.png') });
+  expect(opened.at(-1)).toEqual(['vscode.open', 'file://' + path.join(pastedDir, 'shot.png')]);
   host.snapshot.sessionHost = undefined;
   cli = timelineCli;
 
