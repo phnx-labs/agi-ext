@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test';
 import { vscodeDouble } from '../testing/vscodeDouble';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 // The sidebar cards (PHNX-3939) are pure string-builders that live inside the
 // webview's inline <script>, so they can't be imported. Extract their source by
@@ -536,14 +537,33 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   const posted: Record<string, unknown>[] = [];
   const calls: string[] = [];
   let cli: () => { stdout: string } = () => ({ stdout: JSON.stringify({ events: [{ timestamp: '2026-10-03T00:00:00Z', content: 'checking' }] }) });
-  const vscode = vscodeDouble({ commands: { executeCommand: async (...args: unknown[]) => { opened.push(args); } } });
-  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('handleMessage') + method('loadTimelineFilter') + '}');
-  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', code + '; return new Host();')(
-    vscode, (p: string) => 'file://' + p, async (args: string) => { calls.push(args); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted);
+  const vscode = vscodeDouble({
+    commands: { executeCommand: async (...args: unknown[]) => { opened.push(args); } },
+    Uri: { file: (p: string) => 'file://' + p },
+    window: { withProgress: (_o: unknown, task: () => Promise<void>) => task(), showErrorMessage: async () => undefined },
+    ProgressLocation: { Window: 10 },
+  });
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-artifacts-'));
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('localArtifactUri') + method('handleMessage') + method('loadTimelineFilter') + '}');
+  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', 'remoteDeviceArg', 'path', 'fs', 'REMOTE_ARTIFACT_CACHE_DIR', code + '; return new Host();')(
+    vscode, (p: string) => 'file://' + p, async (args: string) => { calls.push(args); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted,
+    (host?: string) => (host && host !== 'this-mac' ? host : undefined), path, fs, cacheDir);
 
   await host.handleMessage({ type: 'openArtifact', path: '/a/plan.html' });
   await host.handleMessage({ type: 'openArtifact', path: '/a/notes.md' });
   expect(opened).toEqual([['vscode.openWith', 'file:///a/plan.html', 'agents.htmlReader'], ['vscode.openWith', 'file:///a/notes.md', 'agents.markdownEditor']]);
+
+  // A remote session's artifact is copied here with one agents ssh call, then opened locally.
+  host.snapshot.sessionHost = 'yosemite-m5';
+  const timelineCli = cli;
+  cli = () => ({ stdout: Buffer.from('<h1>report</h1>').toString('base64') });
+  await host.handleMessage({ type: 'openArtifact', path: '/home/u/report.html' });
+  const local = path.join(cacheDir, 'yosemite-m5', '/home/u/report.html');
+  expect(calls.pop()).toBe(`ssh 'yosemite-m5' --argv '["base64","/home/u/report.html"]'`);
+  expect(fs.readFileSync(local, 'utf8')).toBe('<h1>report</h1>');
+  expect(opened.at(-1)).toEqual(['vscode.openWith', 'file://' + local, 'agents.htmlReader']);
+  host.snapshot.sessionHost = undefined;
+  cli = timelineCli;
 
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 'old-subject' });
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'rm -rf', sessionId: 's-1' });
