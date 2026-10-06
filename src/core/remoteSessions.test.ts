@@ -630,7 +630,8 @@ describe('live signals from the CLI payload (issue #741)', () => {
       subAgentCount: 34,
       artifacts: [
         { path: '/repo/.agents/plans/plan-sidebar.html', basename: 'plan-sidebar.html', bucket: 'plans' },
-        { path: '/repo/.agents/artifacts/sidebar.png', basename: 'sidebar.png', bucket: 'artifacts' },
+        { path: '/repo/.agents/artifacts/sidebar.png', basename: 'sidebar.png', bucket: 'artifacts', editedAtMs: 1_700, junk: 1 },
+        { path: '/u/Downloads/Set/a.jpg', basename: 'a.jpg', bucket: 'docs', editedAtMs: 'soon' },
         { path: '', basename: 'bad', bucket: 'docs' },
       ],
     }, 'this-mac', 1_000_000);
@@ -641,7 +642,8 @@ describe('live signals from the CLI payload (issue #741)', () => {
     expect(s.subAgentCount).toBe(34);
     expect(s.artifacts).toEqual([
       { path: '/repo/.agents/plans/plan-sidebar.html', basename: 'plan-sidebar.html', bucket: 'plans' },
-      { path: '/repo/.agents/artifacts/sidebar.png', basename: 'sidebar.png', bucket: 'artifacts' },
+      { path: '/repo/.agents/artifacts/sidebar.png', basename: 'sidebar.png', bucket: 'artifacts', editedAtMs: 1_700 },
+      { path: '/u/Downloads/Set/a.jpg', basename: 'a.jpg', bucket: 'docs' },
     ]);
   });
 });

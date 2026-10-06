@@ -363,8 +363,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   // Until then, postMessage calls race the iframe load and get dropped — so we
   // queue a single "send current snapshot when ready" flag.
   private webviewReady = false;
-  /** The artifact folders the webview may currently read; options change only when this does. */
-  private artifactRootsKey = '';
   // Handshake-fallback timer (PHNX-3517): re-posts the snapshot until the webview
   // acks, so a single dropped 'ready' can never wedge the panel on "Loading…".
   private readyFallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -401,14 +399,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     // Each fresh resolve gets a fresh iframe — its listener has not attached
     // yet, so any cached "ready" state from a previous mount is invalid.
     this.webviewReady = false;
-    this.artifactRootsKey = '';
 
     webviewView.webview.options = {
       enableScripts: true,
-      // The CLI materializes pasted images into its attachment cache. Beyond that
-      // directory the webview reads only the folders of artifacts the stream names
-      // (allowArtifactRoots), never an arbitrary path a transcript mentions.
-      localResourceRoots: this.baseResourceRoots(),
+      // Pasted images live in the CLI's attachment cache; artifact thumbnails are
+      // images under home that the stream row names. Roots are fixed here because
+      // changing them later reloads the webview.
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'assets'), vscode.Uri.file(ATTACHMENT_CACHE_DIR), vscode.Uri.file(os.homedir())],
     };
 
     webviewView.webview.html = this.renderShell(webviewView.webview);
@@ -436,19 +433,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     void this.refresh();
     // Guarantee a paint even if the webview's 'ready' handshake is lost.
     this.scheduleReadyFallback();
-  }
-
-  private baseResourceRoots(): vscode.Uri[] {
-    return [vscode.Uri.joinPath(this.extensionUri, 'assets'), vscode.Uri.file(ATTACHMENT_CACHE_DIR)];
-  }
-
-  /** Thumbnails of a local session's image artifacts need their folders readable. */
-  private allowArtifactRoots(webview: vscode.Webview, artifacts: readonly RemoteSessionArtifact[]): void {
-    const dirs = [...new Set(artifacts.filter((a) => THUMB_EXT.test(a.path)).map((a) => path.dirname(a.path)))].sort();
-    const key = dirs.join('\n');
-    if (key === this.artifactRootsKey) return;
-    this.artifactRootsKey = key;
-    webview.options = { ...webview.options, localResourceRoots: [...this.baseResourceRoots(), ...dirs.map((d) => vscode.Uri.file(d))] };
   }
 
   private async handleMessage(msg: any): Promise<void> {
@@ -906,9 +890,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           snapshot.imageThumbs = live.attachments
             .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, ATTACHMENT_CACHE_DIR))
             .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }));
-          this.allowArtifactRoots(webview, live.artifacts);
           for (const artifact of snapshot.artifacts) {
-            if (THUMB_EXT.test(artifact.path)) artifact.uri = webview.asWebviewUri(vscode.Uri.file(artifact.path)).toString();
+            if (THUMB_EXT.test(artifact.path) && isInside(artifact.path, os.homedir())) artifact.uri = webview.asWebviewUri(vscode.Uri.file(artifact.path)).toString();
           }
         }
       }
@@ -1205,7 +1188,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   button.art-folder-toggle { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
   .art-folder-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .caret { width: 10px; flex: none; color: var(--vscode-descriptionForeground); font-size: 9px; }
-  button.art-reveal { color: var(--vscode-descriptionForeground); padding: 0 4px; }
+  .art-folder-head button.art-reveal { color: var(--vscode-descriptionForeground); padding: 0 4px; }
   .art-time { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 11px; white-space: nowrap; }
   .art-meta { margin: 1px 0 5px 15px; color: var(--vscode-descriptionForeground); font-size: 11px; overflow-wrap: anywhere; }
   .art-files { display: flex; gap: 6px; margin-left: 15px; padding-bottom: 4px; overflow-x: auto; }
@@ -2571,7 +2554,8 @@ function artifactItems(s) {
     const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
     let folder = folders.get(dir);
     if (!folder) {
-      const shown = f.display.slice(0, f.display.lastIndexOf('/'));
+      const cut = f.display.lastIndexOf('/');
+      const shown = cut < 0 ? '' : f.display.slice(0, cut);
       folder = { app: 'finder', key: dir, name: dir.split('/').pop() || dir, display: shown, files: [], editedAtMs: 0 };
       folders.set(dir, folder);
     }
