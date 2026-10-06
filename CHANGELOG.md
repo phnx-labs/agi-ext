@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.382] - 2026-10-05
+
+- Artifact thumbnails no longer hold full-size images in memory. Each image is fetched
+  once when it scrolls near view, downscaled to a 176 px JPEG and cached; decodes run one
+  at a time. With 18 real 3–6K renders open in the sidebar, the webview's extra memory
+  dropped from about 503 MB to 77 MB. A pending tile stays blank instead of showing a
+  broken-image icon.
+
 ## [0.9.381] - 2026-10-05
 
 One Artifacts section in the session sidebar:
