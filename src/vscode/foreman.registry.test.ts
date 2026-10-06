@@ -37,17 +37,22 @@ describe('foreman registry', () => {
   test('Codex and Grok tabs without a minted session id are published by terminalId', () => {
     const reg = run(`
       surface.window.terminals = [
-        tab('CX', { AGENT_TERMINAL_ID: 'cx-1759700000000-1' }),
-        tab('GK', { AGENT_TERMINAL_ID: 'gk-1759700000000-2' }),
+        // buildAgentTerminalEnv's shape when no session id was minted.
+        tab('CX', { AGENT_TERMINAL_ID: 'cx-1759700000000-1', AGENT_SESSION_ID: '' }),
+        tab('GK', { AGENT_TERMINAL_ID: 'gk-1759700000000-2', AGENT_SESSION_ID: '' }),
         tab('zsh', {}),
       ];
       await registry.publishLiveTerminals(await registry.snapshotOwnTerminals());
+      await registry.publishLiveTerminals(await registry.snapshotOwnTerminals());
+      assert.deepEqual(registry.readLiveTerminals().map((t) => t.terminalId),
+        ['cx-1759700000000-1', 'gk-1759700000000-2']);
     `);
     const entries = Object.values(reg).flatMap((s: any) => s.entries);
-    expect(entries.map((e: any) => [e.terminalId, e.kind, e.sessionId])).toEqual([
-      ['cx-1759700000000-1', 'codex', undefined],
-      ['gk-1759700000000-2', 'grok', undefined],
+    expect(entries.map((e: any) => [e.terminalId, e.kind])).toEqual([
+      ['cx-1759700000000-1', 'codex'],
+      ['gk-1759700000000-2', 'grok'],
     ]);
+    for (const e of entries) expect(Object.keys(e)).not.toContain('sessionId');
   });
 
   test('a stale peer slice is pruned even while its pids are alive', () => {
