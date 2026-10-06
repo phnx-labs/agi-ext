@@ -451,7 +451,14 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   private async localArtifactUri(filePath: string): Promise<vscode.Uri | undefined> {
     const device = remoteDeviceArg(this.snapshot.sessionHost);
     if (!device) return vscode.Uri.file(filePath);
+    // Copy only an artifact the row names, by its absolute path, into this
+    // device's cache folder: a stream value must never choose where we write.
+    const named = (this.snapshot.artifacts ?? []).some((a) => a.path === filePath) || this.snapshot.plan?.path === filePath;
     const local = path.join(REMOTE_ARTIFACT_CACHE_DIR, device, filePath);
+    if (!named || !path.posix.isAbsolute(filePath) || !/^[\w.-]+$/.test(device) || !isInside(local, path.join(REMOTE_ARTIFACT_CACHE_DIR, device))) {
+      void vscode.window.showErrorMessage(`Not opening ${filePath}: it is not an artifact of this session.`);
+      return undefined;
+    }
     try {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Window, title: `Fetching ${path.basename(filePath)} from ${device}` },
@@ -480,7 +487,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         return;
       case 'openPath':
         if (typeof msg.path === 'string') {
-          vscode.commands.executeCommand('vscode.open', sessionPathUri(msg.path, this.snapshot.sessionHost));
+          // A pasted image is on this machine even when the agent runs elsewhere.
+          const uri = isInside(msg.path, PASTED_ATTACHMENT_DIR) ? vscode.Uri.file(msg.path) : sessionPathUri(msg.path, this.snapshot.sessionHost);
+          vscode.commands.executeCommand('vscode.open', uri);
         }
         return;
       case 'openArtifact':
@@ -921,7 +930,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.subagents = live.subagents;
         if (live.subagents) snapshot.subAgentCount = live.subagents.length;
         const webview = this.view?.webview;
-        if (live.owner) {
+        if (live.owner && live.owner.includes('@')) {
           const email = live.owner.trim().toLowerCase();
           snapshot.requester = {
             name: email.split('@')[0],
@@ -938,10 +947,14 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
             .map((p) => ({ path: p, label: path.basename(p), uri: webview.asWebviewUri(vscode.Uri.file(p)).toString() }));
           snapshot.imageThumbs = pasted;
         }
-        if (webview && !remoteDevice) {
-          snapshot.imageThumbs = [...(snapshot.imageThumbs ?? []), ...live.attachments
+        // The CLI's cached copies (hash-named) are the same pastes; use them only
+        // when the request named none this machine has.
+        if (webview && !remoteDevice && !snapshot.imageThumbs?.length) {
+          snapshot.imageThumbs = live.attachments
             .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, ATTACHMENT_CACHE_DIR))
-            .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }))];
+            .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }));
+        }
+        if (webview && !remoteDevice) {
           for (const artifact of snapshot.artifacts) {
             if (THUMB_EXT.test(artifact.path) && isInside(artifact.path, os.homedir())) artifact.uri = webview.asWebviewUri(vscode.Uri.file(artifact.path)).toString();
           }

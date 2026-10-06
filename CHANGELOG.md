@@ -10,12 +10,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   `agents ssh` call (about half a second for a 380 KB report) into
   `~/.agents/.cache/remote-artifacts/`, then opens it in the Reader as a rendered page. It
   used to fail with "Unable to resolve resource vscode-remote://ssh-remote+<host>/…" when no
-  Remote-SSH connection was open.
+  Remote-SSH connection was open. Only the clicked file is copied, so a report's relative
+  images or stylesheets beside it do not come along; self-contained reports render fully.
 - Images you pasted into a request show as thumbnails even when the agent runs on another
   machine: they are found by name in this machine's `~/.agents/.history/attachments/`.
   Request thumbnails use the same downscaled path as artifact tiles.
-- The Request card shows who asked: their avatar (Gravatar, as artifacts-cli shows it) over
-  their initial, and their name.
+- The Request card shows who asked: their avatar (Gravatar, as artifacts-cli shows it, which
+  sends gravatar.com a hash of the owner's email) over their initial, and their name.
 
 ## [0.9.382] - 2026-10-05
 

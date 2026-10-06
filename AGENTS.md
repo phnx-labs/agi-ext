@@ -59,9 +59,12 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
   too large for every row (agent messages, tool calls, reasoning) is one
   `agents sessions <id> --include <role> --json` call on an explicit click (the chip, or
   Refresh once newer activity arrives), never on selection or a timer, and only for a
-  session on this machine (`loadTimelineFilter`). A second: opening a remote session's
-  artifact copies that one file into `~/.agents/.cache/remote-artifacts/` with one
-  `agents ssh <device> --argv '["base64",<path>]'` call on the click (`localArtifactUri`).
+  session on this machine (`loadTimelineFilter`). A second: clicking an artifact the row
+  names for a remote session copies that one file into
+  `~/.agents/.cache/remote-artifacts/<device>/` with one `agents ssh <device> --argv`
+  call (`localArtifactUri`); any other path, or one that leaves that folder, is refused.
+  A request's pasted images are looked up by file name in this machine's
+  `~/.agents/.history/attachments/`, where the CLI saved them.
 - Fleet is a list, the sidebar is the one preview: a row click posts `session.select` and
   spawns nothing. No detail rail, no `rightOpen` pref, no per-selection fetch.
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`) and
