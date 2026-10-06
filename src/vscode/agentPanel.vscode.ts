@@ -979,7 +979,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src ${cspSource} https: data:; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  content="default-src 'none'; img-src ${cspSource} https: data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 <style>
   :root {
     color-scheme: light dark;
@@ -2633,9 +2633,51 @@ function renderArtifactItem(it, s, sortKey, showApp) {
   );
 }
 
+// An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
+// alive for a 90 px tile. Each image is instead fetched once when it scrolls
+// near view, downscaled to a small JPEG, and cached for the webview's life.
+// Decodes run one at a time so a folder of renders never spikes the machine.
+const THUMB_WIDTH = 176;
+const thumbCache = new Map();
+let thumbQueue = Promise.resolve();
+const thumbObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    thumbObserver.unobserve(entry.target);
+    queueThumb(entry.target.getAttribute('data-thumb'));
+  }
+}, { rootMargin: '200px' });
+
+function thumbImg(f) {
+  if (f.path.toLowerCase().endsWith('.svg')) return '<img src="' + esc(f.uri) + '" alt="">';
+  // No src until the small copy exists: src="" would draw a broken-image icon.
+  const ready = thumbCache.get(f.uri);
+  return '<img data-thumb="' + esc(f.uri) + '"' + (ready ? ' src="' + esc(ready) + '"' : '') + ' alt="">';
+}
+
+function queueThumb(uri) {
+  thumbQueue = thumbQueue.then(async () => {
+    if (!thumbCache.has(uri)) {
+      try {
+        const bitmap = await createImageBitmap(await (await fetch(uri)).blob(), { resizeWidth: THUMB_WIDTH, resizeQuality: 'medium' });
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        bitmap.close();
+        thumbCache.set(uri, canvas.toDataURL('image/jpeg', 0.8));
+      } catch {
+        thumbCache.set(uri, '');
+      }
+    }
+    const url = thumbCache.get(uri);
+    if (url) for (const img of root.querySelectorAll('img[data-thumb]')) if (img.getAttribute('data-thumb') === uri) img.src = url;
+  });
+}
+
 function renderArtifactTile(f) {
   const face = f.uri
-    ? '<img src="' + esc(f.uri) + '" alt="" loading="lazy">'
+    ? thumbImg(f)
     : '<span class="art-ext">' + esc((f.path.split('.').pop() || '').toUpperCase()) + '</span>';
   return '<button type="button" class="art-tile artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
     '<span class="art-thumb">' + face + '</span><span class="art-label">' + esc(f.name) + '</span></button>';
@@ -2645,7 +2687,7 @@ function renderArtifactTile(f) {
 // apps hold artifacts, and when the newest one changed.
 function renderArtifactsSummary(items) {
   const thumbs = [];
-  for (const it of items) for (const f of (it.files || [])) if (f.uri && thumbs.length < 3) thumbs.push('<img src="' + esc(f.uri) + '" alt="">');
+  for (const it of items) for (const f of (it.files || [])) if (f.uri && thumbs.length < 3) thumbs.push(thumbImg(f));
   const apps = items.map((it) => it.app).filter((app, i, all) => all.indexOf(app) === i).map((app) => APP_ICON[app]).join('');
   const newest = Math.max(0, ...items.map((it) => it.editedAtMs || 0));
   return '<button type="button" class="art-summary" data-art-toggle>' + thumbs.join('') + '<span class="art-apps">' + apps + '</span>' +
@@ -2934,6 +2976,8 @@ function render(snap) {
     const at = stripScroll[el.getAttribute('data-strip')];
     if (at) { el.scrollLeft = at[0]; el.scrollTop = at[1]; }
   }
+  thumbObserver.disconnect();
+  for (const img of root.querySelectorAll('img[data-thumb]')) if (!img.hasAttribute('src')) thumbObserver.observe(img);
   for (const el of root.querySelectorAll('[data-art-toggle]')) {
     el.addEventListener('click', () => { viewState.artifactsCollapsed = !viewState.artifactsCollapsed; vscode.setState(viewState); render(lastSnapshot); });
   }

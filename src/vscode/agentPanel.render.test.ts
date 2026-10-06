@@ -46,12 +46,12 @@ const NAMES = [
   'requestChips', 'renderRequestCard',
   'timelineFromCheckpoints', 'stepChips', 'renderStep', 'renderTimelineCard',
   'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
-  'artifactItems', 'renderArtifactItem', 'renderArtifactTile', 'renderArtifactsSummary',
+  'artifactItems', 'renderArtifactItem', 'renderArtifactTile', 'renderArtifactsSummary', 'thumbImg',
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
 ];
-const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS'];
+const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -403,7 +403,8 @@ test('Artifacts groups files into folders newest first, with PR and ticket tiles
   expect(html).toContain('4 items · 3 files');
   expect(html.indexOf('data-folder="/u/Downloads/New"')).toBeLessThan(html.indexOf('data-folder="/u/Downloads/Old"'));
   expect(html.indexOf('data-artifact="/u/Downloads/New/index.html"')).toBeLessThan(html.indexOf('data-artifact="/u/Downloads/New/hero.jpg"'));
-  expect(html).toContain('<img src="vscode-resource:/hero.jpg"');
+  // Raster thumbnails wait for the downscaler instead of decoding the full image.
+  expect(html).toContain('<img data-thumb="vscode-resource:/hero.jpg" alt="">');
   expect(html).toContain('<span class="art-ext">HTML</span>');
   expect(html).toContain('data-url="https://github.com/phnx-labs/agi-cli/pull/3716"');
   expect(html).toContain('data-url="https://linear.app/issue/PHNX-4248"');
