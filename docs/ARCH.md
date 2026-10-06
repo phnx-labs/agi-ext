@@ -215,9 +215,14 @@ An editor terminal has an extension-local id (`CL-<ts>-<n>`) before the harness 
 Correlation is not launch-only. A user may stop session A and start session B in the same terminal, so the stable observer terminal id can appear on both rows while the feed settles. On each pushed reset or agent-row change the extension reconciles tracked tabs before the status bar or sidebar refreshes: it ignores Previous rows, treats two distinct live claims as ambiguous within the same observer-device and execution-host scope, and keeps the existing binding during the overlap. When A is removed, B becomes the sole claim and the tab rebinds; a later historical A upsert marked Previous cannot revert it. A terminal-selected sidebar subject stores the terminal's stable id and follows it across the rebind; a Fleet-selected subject stays tied to its session.
 
 The shell's `AGENT_TERMINAL_ID` remains stable across `agents.clear` and harness
-restarts. Each `live-terminals.json` entry publishes that `terminalId` alongside
-the launch `sessionId` and shell pid, allowing the CLI to associate the current
-child session with the same tab. Shell start time never proves session ownership.
+restarts. Every open tab with that id gets a `live-terminals.json` entry
+(`src/vscode/foreman.registry.ts`) carrying the `terminalId`, the harness `kind`
+from the prefix in `PRESENTED_AGENTS`, and the shell pid. The launch `sessionId` is
+present only when the extension minted one (Claude); Codex, Grok and the rest pick
+their id after start, and the CLI joins those tabs by `terminalId`. Readers dedupe by
+`terminalId`. A window's slice is pruned once its `at` is older than 10 minutes
+even when its pids are alive: live windows rewrite it every 4 minutes, and a reload
+writes under a new window id. Shell start time never proves session ownership.
 Reload restores a session id from the exact persisted terminal-id record before
 using the shell's frozen `AGENT_SESSION_ID`; it does not scan processes, read
 transcripts, or pick a recent same-prefix session. Focus hydration identifies
