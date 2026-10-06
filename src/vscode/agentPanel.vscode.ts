@@ -2635,10 +2635,12 @@ function renderArtifactItem(it, s, sortKey, showApp) {
 
 // An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
 // alive for a 90 px tile. Each image is instead fetched once when it scrolls
-// near view, downscaled to a small JPEG, and cached for the webview's life.
+// near view, downscaled to a small WebP, and cached for the webview's life.
 // Decodes run one at a time so a folder of renders never spikes the machine.
 const THUMB_WIDTH = 176;
+const THUMB_RETRY_MS = 30000;
 const thumbCache = new Map();
+const thumbFailedAt = new Map();
 let thumbQueue = Promise.resolve();
 const thumbObserver = new IntersectionObserver((entries) => {
   for (const entry of entries) {
@@ -2657,6 +2659,8 @@ function thumbImg(f) {
 
 function queueThumb(uri) {
   thumbQueue = thumbQueue.then(async () => {
+    // A render still being written fails to decode; try again later, not every render.
+    if (Date.now() - (thumbFailedAt.get(uri) || 0) < THUMB_RETRY_MS) return;
     if (!thumbCache.has(uri)) {
       try {
         const bitmap = await createImageBitmap(await (await fetch(uri)).blob(), { resizeWidth: THUMB_WIDTH, resizeQuality: 'medium' });
@@ -2665,13 +2669,15 @@ function queueThumb(uri) {
         canvas.height = bitmap.height;
         canvas.getContext('2d').drawImage(bitmap, 0, 0);
         bitmap.close();
-        thumbCache.set(uri, canvas.toDataURL('image/jpeg', 0.8));
+        // WebP keeps transparency; JPEG would turn a cutout or logo black.
+        thumbCache.set(uri, canvas.toDataURL('image/webp', 0.8));
       } catch {
-        thumbCache.set(uri, '');
+        thumbFailedAt.set(uri, Date.now());
+        return;
       }
     }
     const url = thumbCache.get(uri);
-    if (url) for (const img of root.querySelectorAll('img[data-thumb]')) if (img.getAttribute('data-thumb') === uri) img.src = url;
+    for (const img of root.querySelectorAll('img[data-thumb]')) if (img.getAttribute('data-thumb') === uri) img.src = url;
   });
 }
 
