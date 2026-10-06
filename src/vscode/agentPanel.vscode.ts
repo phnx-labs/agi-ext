@@ -33,6 +33,8 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
+import { createHash } from 'crypto';
 import * as os from 'os';
 import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
@@ -73,6 +75,10 @@ import { shellQuote } from '../core/deviceDispatchShell';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
+// Where the CLI saves images pasted on this machine; a request names them by file name.
+const PASTED_ATTACHMENT_DIR = path.join(os.homedir(), '.agents', '.history', 'attachments');
+// Local copies of a remote session's artifacts, fetched on an explicit click.
+const REMOTE_ARTIFACT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'remote-artifacts');
 const THUMB_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
 
 function isInside(filePath: string, dir: string): boolean {
@@ -206,6 +212,8 @@ interface PanelSnapshot {
   subagents?: RemoteSubagent[];
   // Local image attachments the webview may load (inside the CLI's attachment cache).
   imageThumbs?: { path: string; label: string; uri: string }[];
+  // Who asked: the owner's name and the Gravatar artifacts-cli also uses.
+  requester?: { name: string; avatar: string };
   // `uri` is set for an image on this machine, so the card can show its thumbnail.
   artifacts?: (RemoteSessionArtifact & { display: string; uri?: string })[];
   attachments?: RemoteAttachment[];
@@ -435,6 +443,32 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     this.scheduleReadyFallback();
   }
 
+  /**
+   * A local artifact opens in place. A remote session's artifact is copied once
+   * into the local cache with one `agents ssh` call on this click, so it opens
+   * in the Reader without a Remote-SSH connection.
+   */
+  private async localArtifactUri(filePath: string): Promise<vscode.Uri | undefined> {
+    const device = remoteDeviceArg(this.snapshot.sessionHost);
+    if (!device) return vscode.Uri.file(filePath);
+    const local = path.join(REMOTE_ARTIFACT_CACHE_DIR, device, filePath);
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: `Fetching ${path.basename(filePath)} from ${device}` },
+        async () => {
+          const argv = shellQuote(JSON.stringify(['base64', filePath]));
+          const { stdout } = await runAgents(`ssh ${shellQuote(device)} --argv ${argv}`, { timeout: 60_000, maxBuffer: 128 * 1024 * 1024 });
+          await fs.promises.mkdir(path.dirname(local), { recursive: true });
+          await fs.promises.writeFile(local, Buffer.from(stdout, 'base64'));
+        },
+      );
+      return vscode.Uri.file(local);
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Could not fetch ${filePath} from ${device}: ${(err as Error).message.split('\n')[0]}`);
+      return undefined;
+    }
+  }
+
   private async handleMessage(msg: any): Promise<void> {
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
@@ -453,7 +487,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         // A plan or report opens as an editor tab in the Agents Reader, beside the
         // agent that wrote it; anything else opens normally.
         if (typeof msg.path === 'string') {
-          const uri = sessionPathUri(msg.path, this.snapshot.sessionHost);
+          const uri = await this.localArtifactUri(msg.path);
+          if (!uri) return;
           const viewType = /\.html?$/i.test(msg.path) ? 'agents.htmlReader' : /\.md$/i.test(msg.path) ? 'agents.markdownEditor' : undefined;
           if (viewType) await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
           else await vscode.commands.executeCommand('vscode.open', uri);
@@ -886,10 +921,27 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.subagents = live.subagents;
         if (live.subagents) snapshot.subAgentCount = live.subagents.length;
         const webview = this.view?.webview;
+        if (live.owner) {
+          const email = live.owner.trim().toLowerCase();
+          snapshot.requester = {
+            name: email.split('@')[0],
+            avatar: 'https://www.gravatar.com/avatar/' + createHash('sha256').update(email).digest('hex') + '?d=404&s=40',
+          };
+        }
+        if (webview) {
+          // An image the user pasted on this machine is in its attachment store
+          // under the name the request carries, wherever the agent runs.
+          const pasted = (live.request?.attachments ?? [])
+            .filter((a) => a.kind === 'image' && a.name && path.basename(a.name) === a.name)
+            .map((a) => path.join(PASTED_ATTACHMENT_DIR, a.name))
+            .filter((p) => fs.existsSync(p))
+            .map((p) => ({ path: p, label: path.basename(p), uri: webview.asWebviewUri(vscode.Uri.file(p)).toString() }));
+          snapshot.imageThumbs = pasted;
+        }
         if (webview && !remoteDevice) {
-          snapshot.imageThumbs = live.attachments
+          snapshot.imageThumbs = [...(snapshot.imageThumbs ?? []), ...live.attachments
             .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, ATTACHMENT_CACHE_DIR))
-            .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }));
+            .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }))];
           for (const artifact of snapshot.artifacts) {
             if (THUMB_EXT.test(artifact.path) && isInside(artifact.path, os.homedir())) artifact.uri = webview.asWebviewUri(vscode.Uri.file(artifact.path)).toString();
           }
@@ -1181,6 +1233,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
   button.art-group[aria-pressed="true"] { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-color: transparent; }
   .art-icon { width: 14px; height: 14px; flex: none; }
+  .requester { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+  .avatar {
+    position: relative; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: none;
+    border-radius: 50%; overflow: hidden; font-size: 10px; font-weight: 600;
+    background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+  }
+  .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .art-app { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; font-size: 11.5px; font-weight: 600; }
   .art-count { color: var(--vscode-descriptionForeground); font-weight: 400; }
   .art-folder { padding: 5px 0 6px; }
@@ -2171,7 +2230,7 @@ function renderImageThumbs(s) {
   if (!thumbs.length) return '';
   return '<div class="thumbs">' + thumbs.map((t, i) => (
     '<button type="button" class="thumb path-link" data-path="' + esc(t.path) + '" title="' + esc(t.label) + '">' +
-      '<img src="' + esc(t.uri) + '" alt="' + esc(t.label) + '" /><span class="thumb-n">' + (i + 1) + '</span>' +
+      thumbImg(t) + '<span class="thumb-n">' + (i + 1) + '</span>' +
     '</button>'
   )).join('') + '</div>';
 }
@@ -2211,9 +2270,16 @@ function renderRequestCard(s) {
       '</details>'
     : '';
 
+  // The asker's avatar (Gravatar, as artifacts-cli shows it) over their initial,
+  // which stays visible when the address has no Gravatar.
+  const who = s.requester
+    ? '<div class="requester"><span class="avatar" aria-hidden="true">' + esc(s.requester.name.charAt(0).toUpperCase()) +
+        '<img data-avatar src="' + esc(s.requester.avatar) + '" alt=""></span>' + esc(s.requester.name) + '</div>'
+    : '';
   return (
     '<h2>Request</h2>' +
     '<div class="card">' +
+      who +
       '<div class="' + headlineCls + '">' + esc(truncate(headline, 240)) + continues + '</div>' +
       renderImageThumbs(s) +
       requestChips(s) +
@@ -2982,6 +3048,7 @@ function render(snap) {
     const at = stripScroll[el.getAttribute('data-strip')];
     if (at) { el.scrollLeft = at[0]; el.scrollTop = at[1]; }
   }
+  for (const img of root.querySelectorAll('img[data-avatar]')) img.addEventListener('error', () => img.remove());
   thumbObserver.disconnect();
   for (const img of root.querySelectorAll('img[data-thumb]')) if (!img.hasAttribute('src')) thumbObserver.observe(img);
   for (const el of root.querySelectorAll('[data-art-toggle]')) {
