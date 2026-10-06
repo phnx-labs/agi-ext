@@ -193,7 +193,8 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     // Editor-tab position, matched by the terminal's name against its tab label.
     const tabIndex = resolveTabIndex(tabGroups, t.name);
     out.push({
-      sessionId: env?.AGENT_SESSION_ID,
+      // buildAgentTerminalEnv writes '' when no id was minted; omit it.
+      sessionId: env?.AGENT_SESSION_ID || undefined,
       terminalId: tid,
       pid,
       kind: agentKindFromTerminalId(tid),
