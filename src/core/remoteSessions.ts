@@ -14,6 +14,7 @@ import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project
 import type { ProjectRule } from '../shared/project';
 import { shellQuote } from './deviceDispatchShell';
 import { isHarnessEnvelope } from './harnessEnvelope';
+import { normalizePrStatus, type RemotePrStatus } from './prStatus';
 
 // Re-exported so existing host importers keep their `from '../core/remoteSessions'`
 // path. The impls now live in src/shared/project so the webview (@shared) imports
@@ -350,6 +351,10 @@ export interface RemoteSubagent {
   toolCount: number;
   resultExcerpt?: string;
   transcriptPath: string;
+  /** The model the subagent ran on, when the CLI row reports it. */
+  model?: string;
+  /** What the subagent was asked (its first turn, clamped by the CLI). */
+  prompt?: string;
 }
 
 /**
@@ -412,6 +417,8 @@ export interface RemoteSession {
   question: RemoteQuestion | null;
   attention?: RemoteAttention;
   pullRequest?: RemotePullRequest;
+  /** The session's PR as the feed reports it (state, review, mergeable, checks), absent without one. */
+  prStatus?: RemotePrStatus;
   /** Last few assistant turns (most-recent last), one line each — panel context. [] when none. */
   tail: string[];
   /** Live plan checklist from the CLI's most recent `TodoWrite` (RUSH-1380). Lets the
@@ -684,7 +691,7 @@ export interface RawActiveSession {
   files?: unknown;
   output?: string;
   attachments?: unknown[];
-  pr?: { url?: string; number?: number } | null;
+  pr?: ({ url?: string; number?: number } & Record<string, unknown>) | null;
   worktree?: { slug?: string; path?: string; branch?: string } | null;
   ticket?: string | { id?: string; url?: string } | null;
   /** Tracker refs the session CREATED + team it SPAWNED, from the CLI session scan. */
@@ -1032,6 +1039,8 @@ function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {
   });
 }
 
+const SUBAGENT_PROMPT_MAX = 400;
+
 function normalizeSubagents(raw: unknown): RemoteSubagent[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.flatMap((entry) => {
@@ -1050,6 +1059,8 @@ function normalizeSubagents(raw: unknown): RemoteSubagent[] | undefined {
       toolCount: finiteNum(v.toolCount) ?? 0,
       resultExcerpt: asStr(v.resultExcerpt) || undefined,
       transcriptPath: asStr(v.transcriptPath),
+      ...(asStr(v.model) ? { model: asStr(v.model) } : {}),
+      ...(asStr(v.prompt).trim() ? { prompt: clamp(asStr(v.prompt).trim(), SUBAGENT_PROMPT_MAX) } : {}),
     }];
   });
 }
@@ -1268,6 +1279,7 @@ export function normalizeActiveSession(
     question: normalizeQuestion(raw.question),
     attention: raw.attention,
     pullRequest: raw.pullRequest,
+    prStatus: normalizePrStatus(raw.pr),
     tail: Array.isArray(raw.tail) ? raw.tail.map((t) => asStr(t)).filter(Boolean) : [],
     todos: todos.length ? todos : undefined,
     // Summarizer signals (PHNX-3939) — pure field copies, no fetch. goal falls back
