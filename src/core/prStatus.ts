@@ -35,9 +35,12 @@ function oneOf<T extends string>(value: string, allowed: readonly T[]): T | unde
 export function normalizePrStatus(raw: unknown): RemotePrStatus | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const v = raw as Record<string, unknown>;
+  // The number is the one in the URL, so the PR the card links is the PR a merge
+  // targets; a row whose number disagrees with its URL is not trusted at all.
   const url = str(v.url);
-  const number = typeof v.number === 'number' && Number.isFinite(v.number) ? v.number : Number(url.match(/\/pull\/(\d+)/)?.[1]);
-  if (!url || !Number.isFinite(number)) return undefined;
+  const number = Number(url.match(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/(\d+)\/?$/)?.[1]);
+  if (!Number.isSafeInteger(number) || number <= 0) return undefined;
+  if (v.number !== undefined && v.number !== number) return undefined;
   const items = Array.isArray(v.checkItems) ? v.checkItems : [];
   const checkItems = items.flatMap((item): RemoteCheckItem[] => {
     if (!item || typeof item !== 'object') return [];
@@ -82,7 +85,7 @@ export function prAction(pr: RemotePrStatus | undefined): PrAction {
   if (pr.checks === 'failing') return { kind: 'none', reason: 'a check failed' };
   if (!pr.headSha) return { kind: 'none', reason: 'merging from here needs a newer agents CLI (head commit not on the row)' };
   if (pr.checks === 'pending') return { kind: 'automerge', reason: 'checks running' };
-  if (pr.mergeable === 'mergeable') return { kind: 'merge', reason: 'ready to merge' };
+  if (pr.mergeable === 'mergeable') return { kind: 'merge', reason: pr.review === 'approved' ? 'ready to merge' : 'not approved; your branch rules decide' };
   return { kind: 'none', reason: 'GitHub is still computing mergeability' };
 }
 

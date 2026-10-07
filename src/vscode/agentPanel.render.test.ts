@@ -54,7 +54,7 @@ const NAMES = [
   'sessionState', 'seekSegments', 'timelinePhases', 'currentRange', 'inRange', 'renderPhaseChips',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
 ];
-const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK'];
+const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -807,7 +807,7 @@ test('a merge runs one pinned CLI verb, only after the modal confirms and only i
       showErrorMessage: async () => undefined,
     },
   });
-  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = {}; ' + method('runPrAction') + '}');
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = {}; prActionBusy = false; ' + method('runPrAction') + method('decideAndRunPrAction') + '}');
   const host = new Function('vscode', 'runAgents', 'shellQuote', 'prAction', 'prRepo', code + '; return new Host();')(
     vscode, async (args: string) => { calls.push(args); return { stdout: '', stderr: '' }; }, (v: string) => "'" + v + "'", prAction, prRepo);
 
@@ -836,6 +836,39 @@ test('a merge runs one pinned CLI verb, only after the modal confirms and only i
   await host.runPrAction('automerge');
   expect(calls.at(-1)).toBe("projects prs automerge 'agi-ui' --repo 'phnx-labs/agi-ext' --number 103 --sha '358a1fbc2e'");
   expect(calls.join(' ')).not.toContain('--admin');
+
+  // The row moves while the dialog is open (a check goes red): confirming does nothing.
+  const before = calls.length;
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e' }) };
+  vscode.window.showWarningMessage = async (...args: unknown[]) => {
+    asked.push(args);
+    if (args.length > 2) host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e', checks: 'failing' }) };
+    return args.length > 2 ? 'Merge' : undefined;
+  };
+  await host.runPrAction('merge');
+  expect(calls).toHaveLength(before);
+  expect(String(asked.at(-1)?.[0])).toContain('changed while the dialog was open (a check failed)');
+  // A new commit lands while the dialog is open: same, nothing runs.
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e' }) };
+  vscode.window.showWarningMessage = async (...args: unknown[]) => {
+    asked.push(args);
+    if (args.length > 2) host.snapshot = { project: 'agi-ui', ...prRow({ headSha: 'aaaaaaaaaa' }) };
+    return args.length > 2 ? 'Merge' : undefined;
+  };
+  await host.runPrAction('merge');
+  expect(calls).toHaveLength(before);
+
+  // A second click while the first dialog is open is ignored: one dialog, one merge.
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e' }) };
+  let release: (v: string) => void = () => {};
+  let dialogs = 0;
+  vscode.window.showWarningMessage = (...args: unknown[]) => { if (args.length > 2) dialogs++; return new Promise((r) => { release = r as (v: string) => void; }); };
+  const first = host.runPrAction('merge');
+  await host.runPrAction('merge');
+  release('Merge');
+  await first;
+  expect(dialogs).toBe(1);
+  expect(calls).toHaveLength(before + 1);
 });
 
 test('an opened subagent shows its model, what it was asked, and its result', () => {
@@ -878,6 +911,17 @@ test('with a range set, the loaded tool calls draw as a zoomed lane over that st
   expect((html.match(/class="lane-tick/g) || []).length).toBe(2);
   expect(html).toContain('class="lane-tick bad"');
   expect(html).toContain('2 calls');
+  // Thousands of calls in one stretch collapse to at most one tick per lane bin.
+  const many = Array.from({ length: 5000 }, (_, i) => ({ at: new Date(range[0] + i * 300).toISOString(), text: 'Read: f' + i, bad: i === 4321 }));
+  const dense = eval(`(function(){ const viewState = { timelineFilter: { lane: 'tools' }, timelineRange: { lane: ${JSON.stringify(range)} } }; const lastSnapshot = {}; ${combined}
+    requestTimelineFilter('lane', 'tools');
+    applyTimelineFilter({ sessionId: 'lane', role: 'tools', items: ${JSON.stringify(many)} }, ${JSON.stringify(s)});
+    return renderTimelineCard(${JSON.stringify(s)});
+  })()`) as string;
+  const lane = dense.slice(dense.indexOf('class="range-lane"'), dense.indexOf('class="tl-item'));
+  expect((lane.match(/class="lane-tick/g) || []).length).toBeLessThanOrEqual(200);
+  expect(lane).toContain('class="lane-tick bad"');
+  expect(lane).toContain('5000 calls');
   expect(html).toContain('title="turn 1 · late ask">1</span>');
   expect(html).not.toContain('early.ts');
   for (const key of Object.keys(viewState)) delete viewState[key];

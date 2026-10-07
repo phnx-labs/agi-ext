@@ -13,9 +13,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   auto-merge). Either one asks for confirmation in a dialog, then runs a single
   `agents projects prs merge|automerge <project> --repo … --number … --sha <head>`, pinned
   to the head commit you saw, so GitHub refuses if the branch moved. It never uses
-  `--admin`. With an agents CLI that does not yet put the head commit on the session row
-  (1.22.122 and earlier), the card shows the status and Open on GitHub, and says that
-  merging from the sidebar needs a newer CLI.
+  `--admin`. If the PR changes while the dialog is open (a check fails, changes are
+  requested, a new commit lands), confirming does nothing and says why, and a second click
+  while one is in progress is ignored. The head commit, title and per-check list come from
+  the agents CLI's session row (phnx-labs/agi-cli#3833, not yet released); until an agents
+  CLI with it is installed (1.22.122 and earlier lack it), the card shows the status and
+  Open on GitHub, and says that merging from the sidebar needs a newer CLI.
 - An opened subagent shows the model it ran on and what it was asked, above its result,
   when the agents CLI reports them.
 - With a timeline range chosen, "Show tool calls" (local sessions) loads that session's tool

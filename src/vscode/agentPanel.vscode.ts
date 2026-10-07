@@ -622,6 +622,17 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
    * Never --admin: branch protection stays in force.
    */
   private async runPrAction(requested: unknown): Promise<void> {
+    // One action at a time: a second click while a dialog or a merge is open is ignored.
+    if (this.prActionBusy) return;
+    this.prActionBusy = true;
+    try {
+      await this.decideAndRunPrAction(requested);
+    } finally {
+      this.prActionBusy = false;
+    }
+  }
+
+  private async decideAndRunPrAction(requested: unknown): Promise<void> {
     const pr = this.snapshot.prStatus;
     const plan = prAction(pr);
     if (!pr || !pr.headSha || (requested !== 'merge' && requested !== 'automerge') || plan.kind !== requested) {
@@ -640,6 +651,15 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       ? `Merge ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}?`
       : `Merge ${repo}#${pr.number} by itself once its required checks pass? Pinned to ${head}; GitHub refuses if the branch moves.`;
     if (await vscode.window.showWarningMessage(ask, { modal: true }, label) !== label) return;
+    // The row may have moved while the dialog was open (a check went red, changes
+    // were requested, a new commit landed): run only if it is still the same PR at
+    // the same head and the same action is still the right one.
+    const now = this.snapshot.prStatus;
+    const still = prAction(now);
+    if (!now || now.url !== pr.url || now.headSha !== pr.headSha || still.kind !== requested) {
+      void vscode.window.showWarningMessage(`Did not ${requested === 'merge' ? 'merge' : 'turn on auto-merge for'} ${repo}#${pr.number}: it changed while the dialog was open${still.reason ? ' (' + still.reason + ')' : ''}.`);
+      return;
+    }
     try {
       await runAgents(`projects prs ${requested} ${shellQuote(project)} --repo ${shellQuote(repo)} --number ${pr.number} --sha ${shellQuote(pr.headSha)}`, { timeout: 60_000 });
       void vscode.window.showInformationMessage(requested === 'merge' ? `Merged ${repo}#${pr.number}.` : `Auto-merge is on for ${repo}#${pr.number}.`);
@@ -648,6 +668,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage(`${label} failed: ${message}`);
     }
   }
+
+  private prActionBusy = false;
 
   private async runQuickAction(
     action: string,
@@ -2803,12 +2825,26 @@ function filteredRows(items) {
 // The zoomed lane: every loaded tool call in the chosen stretch at its own
 // moment (failed ones in red), with your messages above it, so one phase reads
 // at the resolution the whole-session strip cannot show.
+const LANE_BINS = 200;
+
 function renderRangeLane(s, rows, range) {
   const span = range.endMs - range.startMs;
   if (!(span > 0)) return '';
-  const left = (ms) => Math.max(0, Math.min(100, (ms - range.startMs) / span * 100)).toFixed(2);
-  const ticks = rows.filter((r) => r.atMs).map((r) =>
-    '<i class="lane-tick' + (r.bad ? ' bad' : '') + '" style="left:' + left(r.atMs) + '%" title="' + esc(clockTime(r.atMs) + ' · ' + truncate(r.text, 80)) + '"></i>').join('');
+  const pct = (ms) => Math.max(0, Math.min(100, (ms - range.startMs) / span * 100));
+  const left = (ms) => pct(ms).toFixed(2);
+  // Calls closer than half a percent of the lane share one tick (red if any
+  // failed), so a stretch with thousands of calls stays a few hundred nodes.
+  const bins = new Map();
+  for (const r of rows) {
+    if (!r.atMs) continue;
+    const key = Math.min(LANE_BINS - 1, Math.floor(pct(r.atMs) / 100 * LANE_BINS));
+    const bin = bins.get(key) || { atMs: r.atMs, n: 0, bad: false, text: r.text };
+    bin.n++;
+    bin.bad = bin.bad || !!r.bad;
+    bins.set(key, bin);
+  }
+  const ticks = Array.from(bins.values()).map((b) =>
+    '<i class="lane-tick' + (b.bad ? ' bad' : '') + '" style="left:' + left(b.atMs) + '%" title="' + esc(clockTime(b.atMs) + ' · ' + (b.n > 1 ? b.n + ' calls' : truncate(b.text, 80))) + '"></i>').join('');
   const turns = (s.userTurns || []).map((t, i) => ({ t: t, n: i + 1 })).filter((x) => inRange(range, x.t.atMs)).map((x) =>
     '<span class="seek-mk you" style="left:' + left(x.t.atMs) + '%" title="' + esc('turn ' + x.n + ' · ' + truncate(x.t.text, 80)) + '">' + x.n + '</span>').join('');
   const count = rows.filter((r) => r.atMs).length;

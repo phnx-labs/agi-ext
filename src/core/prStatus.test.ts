@@ -21,13 +21,18 @@ test('normalizes the feed row’s pr in gh’s vocabulary and drops what it cann
   expect(newer?.checkItems).toEqual([{ name: 'test', state: 'passed', url: 'https://github.com/x' }, { name: 'e2e', state: 'running' }]);
   expect(normalizePrStatus({ url: 'https://github.com/a/b/pull/9' })?.number).toBe(9);
   expect(normalizePrStatus({ number: 3 })).toBeUndefined();
+  // The number is the URL's; a row that disagrees is not trusted, so one PR is never linked while another merges.
+  expect(normalizePrStatus({ ...row, number: 104 })).toBeUndefined();
+  expect(normalizePrStatus({ ...row, number: 1.5 })).toBeUndefined();
+  expect(normalizePrStatus({ ...row, url: 'https://github.com/phnx-labs/agi-ext/pull/103/../../x/pull/9' })).toBeUndefined();
   expect(normalizePrStatus({ ...row, headSha: 'not-a-sha' })?.headSha).toBeUndefined();
 });
 
 test('the card offers merge only when GitHub would take it, pinned to a known head', () => {
   const sha = { headSha: '358a1fb' };
   const pr = (extra: object) => normalizePrStatus({ ...row, ...sha, ...extra });
-  expect(prAction(pr({})).kind).toBe('merge');
+  expect(prAction(pr({}))).toEqual({ kind: 'merge', reason: 'not approved; your branch rules decide' });
+  expect(prAction(pr({ reviewDecision: 'APPROVED' }))).toEqual({ kind: 'merge', reason: 'ready to merge' });
   expect(prAction(pr({ checks: 'pending' }))).toEqual({ kind: 'automerge', reason: 'checks running' });
   expect(prAction(pr({ checks: 'failing' }))).toEqual({ kind: 'none', reason: 'a check failed' });
   expect(prAction(pr({ mergeable: 'CONFLICTING' }))).toEqual({ kind: 'none', reason: 'has conflicts' });
