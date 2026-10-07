@@ -52,9 +52,9 @@ const NAMES = [
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
   'sessionState', 'seekSegments', 'timelinePhases', 'currentRange', 'inRange', 'renderPhaseChips',
-  'fileRow', 'fileTree', 'renderSubagentRow',
+  'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
 ];
-const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN'];
+const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -67,7 +67,9 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
+  renderPullRequestCard,
 }; })()`) as {
+  renderPullRequestCard: (s: unknown) => string;
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
   renderRequestCard: (s: unknown) => string;
@@ -751,5 +753,132 @@ test('a phase chip narrows the strip, the steps and the You list to that stretch
 
   // One stretch of work has nothing to choose between, so no chips.
   expect(cards.renderTimelineCard({ ...s, activityHistogram: { ...s.activityHistogram, buckets: buckets.map(() => ({ tools: 1, failed: 0, blocked: 0 })) } })).not.toContain('tl-phase');
+  for (const key of Object.keys(viewState)) delete viewState[key];
+});
+
+import { normalizePrStatus, prAction, prRepo } from '../core/prStatus';
+
+const PR_URL = 'https://github.com/phnx-labs/agi-ext/pull/103';
+const prRow = (extra: object = {}) => {
+  const prStatus = normalizePrStatus({ url: PR_URL, number: 103, state: 'OPEN', isDraft: false, reviewDecision: 'REVIEW_REQUIRED', mergeable: 'MERGEABLE', checks: 'passing', ...extra });
+  return { prStatus, prAction: prAction(prStatus), prRepo: prRepo(PR_URL) };
+};
+
+test('the PR card states checks, review and conflicts, and offers only the action the host decided', () => {
+  // Today's row (agents-cli 1.22.122): status, but no head commit, so no merge button and the reason why.
+  const today = cards.renderPullRequestCard(prRow());
+  expect(today).toContain('>Pull request<span class="head-meta">phnx-labs/agi-ext</span>');
+  expect(today).toContain('#103');
+  expect(today).toContain('checks passing · review required · no conflicts');
+  expect(today).not.toContain('data-pr-action');
+  expect(today).toContain('needs a newer agents CLI');
+  expect(today).toContain('data-url="' + PR_URL + '">Open on GitHub ↗');
+
+  const ready = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', title: 'Compact header', checkItems: [{ name: 'test', state: 'passed' }, { name: 'lint', state: 'passed' }, { name: 'docs', state: 'skipped' }] }));
+  expect(ready).toContain('#103 Compact header');
+  expect(ready).toContain('2/2 checks passing');
+  expect(ready).toContain('class="action-btn primary" data-pr-action="merge">Merge<');
+  expect(ready).toContain('3 checks</summary>');
+
+  const green = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'pending', checkItems: [{ name: 'test', state: 'passed' }, { name: 'e2e', state: 'running' }] }));
+  expect(green).toContain('data-pr-action="automerge"');
+  expect(green).toContain('1/2 checks passing · 1 running');
+  expect(green).not.toContain('action-btn primary');
+
+  const failing = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'failing' }));
+  expect(failing).not.toContain('data-pr-action');
+  expect(failing).toContain('a check failed');
+  expect(cards.renderPullRequestCard({})).toBe('');
+});
+
+test('a merge runs one pinned CLI verb, only after the modal confirms and only if the host still agrees', async () => {
+  const method = (name: string) => {
+    const start = SRC.indexOf('  private async ' + name + '(');
+    const end = SRC.indexOf('\n  private ', start + 1);
+    return SRC.slice(start, end).replace('private async ', 'async ');
+  };
+  const calls: string[] = [];
+  const asked: unknown[][] = [];
+  let answer: string | undefined = 'Merge';
+  const vscode = vscodeDouble({
+    window: {
+      showWarningMessage: async (...args: unknown[]) => { asked.push(args); return args.length > 2 ? answer : undefined; },
+      showInformationMessage: async () => undefined,
+      showErrorMessage: async () => undefined,
+    },
+  });
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = {}; ' + method('runPrAction') + '}');
+  const host = new Function('vscode', 'runAgents', 'shellQuote', 'prAction', 'prRepo', code + '; return new Host();')(
+    vscode, async (args: string) => { calls.push(args); return { stdout: '', stderr: '' }; }, (v: string) => "'" + v + "'", prAction, prRepo);
+
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e', title: 'Compact header' }) };
+  answer = undefined;               // dismissed modal: nothing runs
+  await host.runPrAction('merge');
+  expect(calls).toEqual([]);
+  answer = 'Merge';
+  await host.runPrAction('merge');
+  expect(calls).toEqual(["projects prs merge 'agi-ui' --repo 'phnx-labs/agi-ext' --number 103 --sha '358a1fbc2e'"]);
+  expect(asked.at(-1)?.[1]).toEqual({ modal: true });
+  expect(String(asked.at(-1)?.[0])).toContain('at 358a1fb?');
+
+  // The webview asked for a merge the host no longer allows (checks now failing): refused, nothing runs.
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e', checks: 'failing' }) };
+  await host.runPrAction('merge');
+  expect(calls).toHaveLength(1);
+  expect(String(asked.at(-1)?.[0])).toContain('a check failed');
+  // Asking for auto-merge on a ready PR is not the decided action either.
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e' }) };
+  await host.runPrAction('automerge');
+  expect(calls).toHaveLength(1);
+  // Auto-merge when checks are running, confirmed: one pinned verb, never --admin.
+  host.snapshot = { project: 'agi-ui', ...prRow({ headSha: '358a1fbc2e', checks: 'pending' }) };
+  answer = 'Turn on auto-merge';
+  await host.runPrAction('automerge');
+  expect(calls.at(-1)).toBe("projects prs automerge 'agi-ui' --repo 'phnx-labs/agi-ext' --number 103 --sha '358a1fbc2e'");
+  expect(calls.join(' ')).not.toContain('--admin');
+});
+
+test('an opened subagent shows its model, what it was asked, and its result', () => {
+  const html = cards.renderSpawnedTeamCard({ subagents: [{ id: 'a', agentType: 'code-reviewer', model: 'claude-sonnet-5-5', prompt: 'Review PR #103 for stubs', description: 'Review PR 103', status: 'done', startedAtMs: 1, endedAtMs: 60_001, toolCount: 13, resultExcerpt: 'NO BLOCKING FINDINGS', transcriptPath: '/t/a.jsonl' }] });
+  expect(html).toContain('code-reviewer · Sonnet 5.5 · 1m · 13 tools');
+  expect(html).toContain('<div class="sub-label">Asked</div><div class="sub-asked">Review PR #103 for stubs</div>');
+  expect(html).toContain('<div class="sub-label">Result</div><div class="sub-result">NO BLOCKING FINDINGS</div>');
+  // An older row without model or prompt shows exactly what it has.
+  const older = cards.renderSpawnedTeamCard({ subagents: [{ id: 'b', agentType: 'Explore', description: 'Find it', status: 'done', toolCount: 2, transcriptPath: '/t/b.jsonl' }] });
+  expect(older).not.toContain('Asked');
+});
+
+test('with a range set, the loaded tool calls draw as a zoomed lane over that stretch', () => {
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  const startMs = Date.parse('2026-10-06T22:00:00Z');
+  const bucketMs = 10 * 60_000;
+  const buckets = Array.from({ length: 12 }, (_, i) => ({ tools: i < 3 || i > 8 ? 4 : 0, failed: 0, blocked: 0 }));
+  const s = {
+    fullSessionId: 'lane', sessionLocal: true,
+    activityHistogram: { startMs, endMs: startMs + 12 * bucketMs, buckets, userAtMs: [] },
+    userTurns: [{ atMs: startMs + 9 * bucketMs + 30_000, text: 'late ask', images: 0 }],
+    timeline: { steps: [{ text: 'late work', at: new Date(startMs + 10 * bucketMs).toISOString(), source: 'narration', tools: 3, failed: 0, blocked: 0 }], earlier: { steps: 0, tools: 0, failed: 0 }, tools: 3, failed: 0, spanMs: 0, state: 'ready' },
+  };
+  viewState.timelineRange = { lane: [startMs + 9 * bucketMs, startMs + 12 * bucketMs] };
+  // Summary with a range: one explicit click away from the calls, for a local session.
+  expect(cards.renderTimelineCard(s)).toContain('data-filter="tools">Show tool calls</button>');
+  expect(cards.renderTimelineCard({ ...s, sessionLocal: false })).not.toContain('Show tool calls');
+  // The calls loaded: ticks inside the range only, failed in red, your turn marked.
+  const range = [startMs + 9 * bucketMs, startMs + 12 * bucketMs];
+  const items = [
+    { at: new Date(startMs + 9 * bucketMs + 60_000).toISOString(), text: 'Bash: bun test', bad: false },
+    { at: new Date(startMs + 10 * bucketMs).toISOString(), text: 'Bash: bun test', bad: true },
+    { at: new Date(startMs + 60_000).toISOString(), text: 'Read: early.ts', bad: false },
+  ];
+  const html = eval(`(function(){ const viewState = { timelineFilter: { lane: 'tools' }, timelineRange: { lane: ${JSON.stringify(range)} } }; const lastSnapshot = {}; ${combined}
+    requestTimelineFilter('lane', 'tools');
+    applyTimelineFilter({ sessionId: 'lane', role: 'tools', items: ${JSON.stringify(items)} }, ${JSON.stringify(s)});
+    return renderTimelineCard(${JSON.stringify(s)});
+  })()`) as string;
+  expect((html.match(/class="lane-tick/g) || []).length).toBe(2);
+  expect(html).toContain('class="lane-tick bad"');
+  expect(html).toContain('2 calls');
+  expect(html).toContain('title="turn 1 · late ask">1</span>');
+  expect(html).not.toContain('early.ts');
   for (const key of Object.keys(viewState)) delete viewState[key];
 });

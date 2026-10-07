@@ -6,6 +6,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.385] - 2026-10-07
 
+- The sidebar has a Pull request card for the session's PR. One line gives its checks,
+  review and conflicts ("3/4 checks passing · 1 running · review required · no conflicts"),
+  and the checks are listed by name when the agents CLI reports them. When the PR is ready
+  the card offers **Merge**, and while checks run it offers **Merge when green** (GitHub
+  auto-merge). Either one asks for confirmation in a dialog, then runs a single
+  `agents projects prs merge|automerge <project> --repo … --number … --sha <head>`, pinned
+  to the head commit you saw, so GitHub refuses if the branch moved. It never uses
+  `--admin`. With an agents CLI that does not yet put the head commit on the session row
+  (1.22.122 and earlier), the card shows the status and Open on GitHub, and says that
+  merging from the sidebar needs a newer CLI.
+- An opened subagent shows the model it ran on and what it was asked, above its result,
+  when the agents CLI reports them.
+- With a timeline range chosen, "Show tool calls" (local sessions) loads that session's tool
+  calls with one `agents sessions <id> --include tools` call and draws them as a zoomed lane
+  over the range, failed calls in red and your messages marked above, followed by the list.
 - The Active Terminal header is compact. The face of the card is the harness icon, the
   session title, and the model, account and host. Everything else (the session id with
   copy and the Set Session ID pencil, project, branch, worktree, start time, tokens and the

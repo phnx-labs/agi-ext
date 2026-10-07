@@ -72,6 +72,7 @@ import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight
 import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 import { runAgents } from '../core/agentsBin';
+import { prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
 import { shellQuote } from '../core/deviceDispatchShell';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
@@ -223,6 +224,10 @@ interface PanelSnapshot {
   // Linked artifacts — multi-PR (the agent may have opened several in one session)
   linearIssue?: string;
   pullRequests?: PullRequestRef[];
+  /** The session's PR as the feed reports it, and the one action the card may offer. */
+  prStatus?: RemotePrStatus;
+  prAction?: PrAction;
+  prRepo?: string;
   // All worktrees attached to the workspace, including the main checkout
   worktrees?: WorktreeRef[];
   // Account usage state — surfaces "out of credits" / "rate limited"
@@ -513,6 +518,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       case 'loadTimelineFilter':
         await this.loadTimelineFilter(msg.role, msg.sessionId);
         return;
+      case 'prAction':
+        await this.runPrAction(msg.action);
+        return;
       case 'openWorktree':
         // Worktree paths are DIRECTORIES — `vscode.open` shows an error toast
         // for directories. Open as a folder in a new window instead so the
@@ -604,6 +612,40 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       const message = err instanceof Error ? err.message.split('\n')[0] : String(err);
       reply({ error: message });
+    }
+  }
+
+  /**
+   * One verb per click, pinned to the head commit the panel showed. The host
+   * re-decides the action from its own snapshot (the webview only asks), confirms
+   * in a modal, then runs `agents projects prs merge|automerge … --sha <head>`.
+   * Never --admin: branch protection stays in force.
+   */
+  private async runPrAction(requested: unknown): Promise<void> {
+    const pr = this.snapshot.prStatus;
+    const plan = prAction(pr);
+    if (!pr || !pr.headSha || (requested !== 'merge' && requested !== 'automerge') || plan.kind !== requested) {
+      void vscode.window.showWarningMessage('That pull request action is no longer available' + (plan.reason ? ': ' + plan.reason : '') + '.');
+      return;
+    }
+    const repo = prRepo(pr.url);
+    const project = this.snapshot.project;
+    if (!repo || !project) {
+      void vscode.window.showWarningMessage(`Cannot ${requested === 'merge' ? 'merge' : 'turn on auto-merge for'} #${pr.number}: ${!repo ? 'its URL is not a GitHub pull request' : 'this session has no project'}.`);
+      return;
+    }
+    const head = pr.headSha.slice(0, 7);
+    const label = requested === 'merge' ? 'Merge' : 'Turn on auto-merge';
+    const ask = requested === 'merge'
+      ? `Merge ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}?`
+      : `Merge ${repo}#${pr.number} by itself once its required checks pass? Pinned to ${head}; GitHub refuses if the branch moves.`;
+    if (await vscode.window.showWarningMessage(ask, { modal: true }, label) !== label) return;
+    try {
+      await runAgents(`projects prs ${requested} ${shellQuote(project)} --repo ${shellQuote(repo)} --number ${pr.number} --sha ${shellQuote(pr.headSha)}`, { timeout: 60_000 });
+      void vscode.window.showInformationMessage(requested === 'merge' ? `Merged ${repo}#${pr.number}.` : `Auto-merge is on for ${repo}#${pr.number}.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err);
+      void vscode.window.showErrorMessage(`${label} failed: ${message}`);
     }
   }
 
@@ -885,6 +927,11 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
         // PR: the CLI already extracted the url — structure it, don't re-scan.
         if (live.prUrl) snapshot.pullRequests = extractPrUrls([live.prUrl]);
+        if (live.prStatus) {
+          snapshot.prStatus = live.prStatus;
+          snapshot.prAction = prAction(live.prStatus);
+          snapshot.prRepo = prRepo(live.prStatus.url);
+        }
 
         // A Fleet subject has no local tab, so the agent identity, cwd and host
         // come off the same row instead of the terminal's creation options.
@@ -1991,6 +2038,31 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .seek-bar.out i { opacity: 0.22; }
   .tl-phases { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
   .tl-range { margin: -2px 0 8px; }
+  .sub-label { margin: 7px 0 2px 13px; font-family: var(--r-display); font-size: 9.5px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }
+  .sub-asked { margin: 0 0 0 13px; padding: 6px 8px; border-radius: 8px; background: var(--r-well); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Zoomed lane for one phase: a tick per tool call. */
+  .range-lane { margin: 2px 0 10px; }
+  .lane-marks { position: relative; height: 15px; }
+  .lane-track { position: relative; height: 26px; border-bottom: 1px solid var(--r-edge); }
+  .lane-tick { position: absolute; bottom: 0; width: 2px; height: 18px; margin-left: -1px; border-radius: 1px; background: var(--r-bar-hi); }
+  .lane-tick.bad { background: var(--r-bad); height: 24px; }
+  /* Pull request card: one status line, checks by name, one action. */
+  .pr-head { display: flex; gap: 8px; align-items: flex-start; }
+  .pr-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--r-caption); }
+  .pr-tone-ok { background: var(--r-ok); box-shadow: 0 0 0 3px var(--r-ok-tint); }
+  .pr-tone-warn { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
+  .pr-tone-bad { background: var(--r-bad); box-shadow: 0 0 0 3px var(--r-bad-tint); }
+  .pr-text { min-width: 0; }
+  .pr-title { font-weight: 600; color: var(--r-text); line-height: 1.35; overflow-wrap: anywhere; }
+  .pr-meta { margin-top: 2px; font-size: 11px; color: var(--r-caption); }
+  .pr-checks { margin-top: 6px; }
+  .pr-check { display: flex; gap: 7px; align-items: baseline; padding: 2px 0 2px 16px; font-size: 11.5px; }
+  .pr-mark { width: 10px; flex: none; font-family: var(--r-mono); color: var(--r-caption); }
+  .pr-passed .pr-mark { color: var(--r-ok); }
+  .pr-failed .pr-mark { color: var(--r-bad); }
+  .pr-running .pr-mark { color: var(--r-warn); }
+  .pr-actions { margin-top: 9px; }
+  .pr-note { margin-top: 6px; }
   /* Files as a tree. */
   .files-card { position: relative; }
   .ft-toggle { display: flex; justify-content: flex-end; gap: 2px; margin: -2px 0 4px; }
@@ -2728,6 +2800,27 @@ function filteredRows(items) {
   )).join('');
 }
 
+// The zoomed lane: every loaded tool call in the chosen stretch at its own
+// moment (failed ones in red), with your messages above it, so one phase reads
+// at the resolution the whole-session strip cannot show.
+function renderRangeLane(s, rows, range) {
+  const span = range.endMs - range.startMs;
+  if (!(span > 0)) return '';
+  const left = (ms) => Math.max(0, Math.min(100, (ms - range.startMs) / span * 100)).toFixed(2);
+  const ticks = rows.filter((r) => r.atMs).map((r) =>
+    '<i class="lane-tick' + (r.bad ? ' bad' : '') + '" style="left:' + left(r.atMs) + '%" title="' + esc(clockTime(r.atMs) + ' · ' + truncate(r.text, 80)) + '"></i>').join('');
+  const turns = (s.userTurns || []).map((t, i) => ({ t: t, n: i + 1 })).filter((x) => inRange(range, x.t.atMs)).map((x) =>
+    '<span class="seek-mk you" style="left:' + left(x.t.atMs) + '%" title="' + esc('turn ' + x.n + ' · ' + truncate(x.t.text, 80)) + '">' + x.n + '</span>').join('');
+  const count = rows.filter((r) => r.atMs).length;
+  return (
+    '<div class="range-lane" role="img" aria-label="' + esc(count + ' tool calls in this range') + '">' +
+      '<div class="lane-marks">' + turns + '</div>' +
+      '<div class="lane-track">' + ticks + '</div>' +
+      '<div class="seek-axis"><span>' + esc(clockTime(range.startMs)) + '</span><span>' + esc(count + ' calls') + '</span><span>' + esc(clockTime(range.endMs)) + '</span></div>' +
+    '</div>'
+  );
+}
+
 function renderFilteredBody(s, active) {
   const range = currentRange(s);
   if (active === 'user') {
@@ -2748,7 +2841,9 @@ function renderFilteredBody(s, active) {
   const stale = (s.lastActivityMs || 0) > (cached.atStamp || 0)
     ? '<div class="card-note">Newer activity since this loaded. <button type="button" class="tl-refresh" data-refresh-filter="' + active + '">Refresh</button></div>'
     : '';
-  return stale + filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).filter((it) => !it.atMs || inRange(range, it.atMs)).reverse());
+  const rows = cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).filter((it) => !it.atMs || inRange(range, it.atMs));
+  const lane = active === 'tools' && range ? renderRangeLane(s, rows, range) : '';
+  return stale + lane + filteredRows(rows.reverse());
 }
 
 function renderTimelineCard(s) {
@@ -2785,7 +2880,9 @@ function renderTimelineCard(s) {
   const active = currentFilter(s);
   const range = currentRange(s);
   const rangeNote = range
-    ? '<div class="tl-range card-note">' + esc(clockTime(range.startMs) + ' to ' + clockTime(range.endMs)) + ' · <button type="button" class="tl-refresh" data-phase="">Clear range</button></div>'
+    ? '<div class="tl-range card-note">' + esc(clockTime(range.startMs) + ' to ' + clockTime(range.endMs)) + ' · ' +
+        (s.sessionLocal && active !== 'tools' ? '<button type="button" class="tl-refresh" data-filter="tools">Show tool calls</button> · ' : '') +
+        '<button type="button" class="tl-refresh" data-phase="">Clear range</button></div>'
     : '';
   const seekAndFilters = renderSeekBar(s) + renderPhaseChips(s) + renderFilterChips(s, active) + rangeNote;
   if (active !== 'summary') {
@@ -2817,6 +2914,54 @@ function renderTimelineCard(s) {
   return (
     '<h2>Timeline' + meta + '</h2>' +
     '<div class="card">' + seekAndFilters + shown + more + earlier + partial + '</div>'
+  );
+}
+
+// ── Pull request ────────────────────────────────────────────────────────────
+// The session's PR as the feed reports it: checks, review and conflicts in one
+// line, each check by name when the row lists them, and at most one action the
+// host decided (Merge, or Merge when green), which it confirms before running.
+const PR_CHECK_MARK = { passed: '✓', failed: '✕', running: '◌', skipped: '–' };
+
+function renderPullRequestCard(s) {
+  const pr = s.prStatus;
+  if (!pr) return '';
+  const act = s.prAction || { kind: 'none', reason: '' };
+  const items = pr.checkItems || [];
+  const passed = items.filter((c) => c.state === 'passed').length;
+  const running = items.filter((c) => c.state === 'running').length;
+  const counted = items.filter((c) => c.state !== 'skipped').length;
+  const tone = pr.state === 'merged' ? 'ok' : pr.checks === 'failing' || pr.mergeable === 'conflicting' ? 'bad' : pr.checks === 'pending' ? 'warn' : pr.checks === 'passing' ? 'ok' : 'idle';
+  const bits = [];
+  if (pr.state === 'merged' || pr.state === 'closed') bits.push(pr.state);
+  else if (pr.isDraft) bits.push('draft');
+  if (counted) bits.push(passed + '/' + counted + ' checks passing' + (running ? ' · ' + running + ' running' : ''));
+  else if (pr.checks) bits.push(pr.checks === 'passing' ? 'checks passing' : pr.checks === 'failing' ? 'a check failed' : 'checks running');
+  if (pr.review) bits.push(pr.review === 'approved' ? 'approved' : pr.review === 'changes_requested' ? 'changes requested' : 'review required');
+  if (pr.mergeable === 'conflicting') bits.push('conflicts');
+  else if (pr.mergeable === 'mergeable' && pr.state === 'open') bits.push('no conflicts');
+  const checks = items.length
+    ? '<details class="pr-checks"><summary class="timeline-more">' + items.length + ' check' + (items.length === 1 ? '' : 's') + '</summary>' +
+      items.map((c) => '<div class="pr-check pr-' + esc(c.state) + '"><span class="pr-mark">' + esc(PR_CHECK_MARK[c.state] || '·') + '</span>' +
+        (c.url ? '<button type="button" class="path-link" data-url="' + esc(c.url) + '">' + esc(c.name) + '</button>' : '<span>' + esc(c.name) + '</span>') + '</div>').join('') +
+      '</details>'
+    : '';
+  const primary = act.kind === 'merge'
+    ? '<button type="button" class="action-btn primary" data-pr-action="merge">Merge</button>'
+    : act.kind === 'automerge'
+      ? '<button type="button" class="action-btn" data-pr-action="automerge" title="Turn on GitHub auto-merge">Merge when green</button>'
+      : '';
+  const note = act.kind === 'none' && act.reason && pr.state === 'open' ? '<div class="card-note pr-note">' + esc(act.reason) + '</div>' : '';
+  return (
+    '<h2>Pull request' + (s.prRepo ? '<span class="head-meta">' + esc(s.prRepo) + '</span>' : '') + '</h2>' +
+    '<div class="card pr-card">' +
+      '<div class="pr-head"><span class="pr-dot pr-tone-' + tone + '"></span>' +
+        '<div class="pr-text"><div class="pr-title">#' + esc(pr.number) + (pr.title ? ' ' + esc(pr.title) : '') + '</div>' +
+        (bits.length ? '<div class="pr-meta">' + esc(bits.join(' · ')) + '</div>' : '') + '</div></div>' +
+      checks +
+      '<div class="actions-row pr-actions">' + primary + '<button type="button" class="action-btn" data-url="' + esc(pr.url) + '">Open on GitHub ↗</button></div>' +
+      note +
+    '</div>'
   );
 }
 
@@ -3080,14 +3225,15 @@ function renderSubagentRow(x, now) {
   const dur = running
     ? (typeof x.startedAtMs === 'number' ? 'running ' + compactDuration(now - x.startedAtMs) : 'running')
     : (typeof x.startedAtMs === 'number' && typeof x.endedAtMs === 'number' ? compactDuration(x.endedAtMs - x.startedAtMs) : '');
-  const meta = [x.agentType, dur, x.toolCount ? x.toolCount + ' tools' : ''].filter(Boolean).join(' · ');
+  const meta = [x.agentType, x.model ? prettyModel(x.model) : '', dur, x.toolCount ? x.toolCount + ' tools' : ''].filter(Boolean).join(' · ');
   return (
     '<details class="subagent status-' + esc(x.status) + '">' +
       '<summary><span class="sub-dot"></span>' +
         '<span class="sub-body"><span class="sub-name">' + esc(x.description || x.id) + '</span>' +
         (meta ? '<span class="sub-meta">' + esc(meta) + '</span>' : '') + '</span>' +
         '<span class="sub-status">' + esc(x.status) + '</span></summary>' +
-      (x.resultExcerpt ? '<div class="sub-result">' + esc(x.resultExcerpt) + '</div>' : '') +
+      (x.prompt ? '<div class="sub-label">Asked</div><div class="sub-asked">' + esc(x.prompt) + '</div>' : '') +
+      (x.resultExcerpt ? '<div class="sub-label">Result</div><div class="sub-result">' + esc(x.resultExcerpt) + '</div>' : '') +
       (x.transcriptPath ? '<button type="button" class="sub-open path-link" data-path="' + esc(x.transcriptPath) + '">Open transcript ▸</button>' : '') +
     '</details>'
   );
@@ -3350,6 +3496,7 @@ function render(snap) {
     renderFailures(snap) +
     renderGoalCard(snap) +
     renderRequestCard(snap) +
+    renderPullRequestCard(snap) +
     renderTimelineCard(snap) +
     renderArtifactsCard(snap) +
     renderChecklistCard(snap) +
@@ -3500,6 +3647,9 @@ function render(snap) {
       e.preventDefault();
       vscode.postMessage({ type: 'openWorktree', path: el.getAttribute('data-worktree-path') });
     });
+  }
+  for (const el of root.querySelectorAll('[data-pr-action]')) {
+    el.addEventListener('click', () => vscode.postMessage({ type: 'prAction', action: el.getAttribute('data-pr-action') }));
   }
   for (const el of root.querySelectorAll('[data-url]:not([data-action])')) {
     el.addEventListener('click', (e) => {
