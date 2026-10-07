@@ -4,6 +4,32 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.385] - 2026-10-07
+
+- The Active Terminal header is compact. The face of the card is the harness icon, the
+  session title, and the model, account and host. Everything else (the session id with
+  copy and the Set Session ID pencil, project, branch, worktree, start time, tokens and the
+  raw identity lines) sits in a `⋯` menu that opens a drawer inside the card and remembers
+  whether it is open. The pencil now appears for a Codex or Grok tab that has not reported
+  a session id yet, so you can set one from the sidebar instead of the command palette.
+- Under the header, one line says where the session is, using the CLI's own phase:
+  "Running 1d 2h · active 2 min ago", or "Waiting on you", "Idle · ran 26h", "Done",
+  "Failed". It replaces "Started … · tokens · tok/s". Durations past a day read in days.
+- Subagent rows show each one's type, how long it ran (or has been running) and its tool
+  count without opening it. Running subagents come first; finished ones past the newest
+  three fold behind "N more finished".
+- Files is a tree. A folder with a single child folder folds into one row
+  (`rush/api/scripts`), so a long worktree prefix appears once. Tree / List switches back to
+  the flat list, and the choice persists. Files are marked with Source Control's A, M, D.
+- The timeline can be narrowed to one stretch of work. When the session has more than one
+  (they are split at the idle gaps), a chip per stretch, named by when it began, dims the
+  bars outside it and narrows the steps and the You and Failed lists to it. Clear range
+  returns to the whole session.
+- A turn the harness wrote for itself, such as a background task's
+  `<task-notification>` or a `<system-reminder>`, no longer shows as the "working" line,
+  as one of your messages, or as a timeline step. Its marker leaves the timeline too, so
+  marker N and turn N stay the same message. Fleet reads the same cleaned rows.
+
 ## [0.9.384] - 2026-10-07
 
 - The Active Terminal sidebar has a new look, the same visual language as getrush.ai and

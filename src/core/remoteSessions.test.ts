@@ -198,6 +198,30 @@ describe('resolveProject', () => {
     expect(s.artifacts[0].title).toBe('Direct tools');
   });
 
+  test('a turn the harness wrote for itself never reads as yours or as the agent’s work', () => {
+    const notice = '<task-notification><task-id>bw39xxns6</task-id><status>completed</status></task-notification>';
+    const s = normalizeActiveSession(
+      {
+        kind: 'claude', status: 'running', cwd: '/x', sessionFile: '/x/c.jsonl',
+        activity: 'working', preview: notice,
+        userTurns: [{ atMs: 100, text: 'Check the build', images: 0 }, { atMs: 200, text: notice }, { atMs: 300, text: 'All done??' }],
+        activityHistogram: { startMs: 0, endMs: 400, buckets: [{ tools: 1 }], userAtMs: [100, 200, 300] },
+        timeline: { steps: [
+          { text: notice, at: 200, source: 'user' },
+          { text: 'Ran the suite', at: 250, source: 'narration', live: true, now: '<system-reminder>todo list</system-reminder>' },
+        ] },
+      } as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+    );
+    expect(s.activity).toBe('');
+    expect(s.userTurns?.map((t) => t.text)).toEqual(['Check the build', 'All done??']);
+    // Marker 2 and "turn 2" stay the same turn: the notice's marker leaves with its row.
+    expect(s.activityHistogram?.userAtMs).toEqual([100, 300]);
+    expect(s.timeline?.steps.map((x) => x.text)).toEqual(['Ran the suite']);
+    expect(s.timeline?.steps[0].now).toBeUndefined();
+  });
+
   test('an older CLI row leaves every glance field absent rather than empty', () => {
     const s = normalizeActiveSession({ kind: 'claude', status: 'running', cwd: '/x', sessionFile: '/x/b.jsonl' } as RawActiveSession, 'zion', FETCHED_AT);
     expect([s.model, s.failures, s.activityHistogram, s.userTurns, s.subagents]).toEqual([undefined, undefined, undefined, undefined, undefined]);

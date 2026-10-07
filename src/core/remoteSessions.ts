@@ -13,6 +13,7 @@
 import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project';
 import type { ProjectRule } from '../shared/project';
 import { shellQuote } from './deviceDispatchShell';
+import { isHarnessEnvelope } from './harnessEnvelope';
 
 // Re-exported so existing host importers keep their `from '../core/remoteSessions'`
 // path. The impls now live in src/shared/project so the webview (@shared) imports
@@ -869,7 +870,7 @@ function normalizeStep(raw: unknown): RemoteTimelineStep | null {
     marks?: unknown; live?: unknown; now?: unknown;
   };
   const text = clamp(asStr(value.text).trim(), STEP_TEXT_MAX);
-  if (!text) return null;
+  if (!text || isHarnessEnvelope(text)) return null;
   const source: RemoteTimelineStep['source'] =
     value.source === 'thinking' || value.source === 'derived' || value.source === 'user'
       ? value.source
@@ -879,7 +880,8 @@ function normalizeStep(raw: unknown): RemoteTimelineStep | null {
     ? value.marks.map((m) => asStr(m).trim()).filter(Boolean).slice(0, STEP_MARKS_MAX)
     : [];
   const endedAt = asTimestamp(value.endedAt);
-  const now = clamp(asStr(value.now).trim(), STEP_NOW_MAX);
+  const nowText = clamp(asStr(value.now).trim(), STEP_NOW_MAX);
+  const now = isHarnessEnvelope(nowText) ? '' : nowText;
   return {
     text,
     at: asTimestamp(value.at),
@@ -1001,9 +1003,17 @@ function normalizeActivityHistogram(raw: unknown): RemoteActivity | undefined {
   return { startMs, endMs, buckets, userAtMs };
 }
 
+// A turn the harness wrote for itself is not one of your messages: its marker
+// leaves the strip along with its row, so marker N and "turn N" stay the same turn.
+function withoutEnvelopeTurns(h: RemoteActivity | undefined, turns: RemoteUserTurn[] | undefined): RemoteActivity | undefined {
+  if (!h || !turns) return h;
+  const envelopeAt = new Set(turns.filter((t) => isHarnessEnvelope(t.text)).map((t) => t.atMs));
+  return envelopeAt.size ? { ...h, userAtMs: h.userAtMs.filter((t) => !envelopeAt.has(t)) } : h;
+}
+
 function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {
   if (!Array.isArray(raw)) return undefined;
-  return raw.flatMap((entry) => {
+  return raw.flatMap((entry): RemoteUserTurn[] => {
     if (!entry || typeof entry !== 'object') return [];
     const v = entry as Record<string, unknown>;
     const atMs = finiteNum(v.atMs);
@@ -1209,6 +1219,7 @@ export function normalizeActiveSession(
   // The live preview (latest agent turn/tool action) is the human "what is it doing"
   // line; it was previously never read, leaving remote cards blank.
   const preview = asStr(raw.preview);
+  const allUserTurns = normalizeUserTurns(raw.userTurns);
   const worktreeSlug = asStr(raw.worktree?.slug) || worktreeSlugOf(cwd);
   const todos = normalizeTodos(raw.todos);
   const summaryChecklist = normalizeTodos(raw.summaryChecklist);
@@ -1234,7 +1245,7 @@ export function normalizeActiveSession(
     pidAlive: raw.pidAlive !== false,
     // The now-line is live only while the CLI says the agent is working; an idle
     // or waiting session must not keep showing its last tool action as current.
-    activity: raw.activity === 'working' ? preview : '',
+    activity: raw.activity === 'working' && !isHarnessEnvelope(preview) ? preview : '',
     tokPerSec: Math.round(asNum(raw.tokPerSec)),
     tokenCount: raw.tokenCount === undefined ? undefined : asNum(raw.tokenCount),
     durationMs: raw.durationMs === undefined ? undefined : asNum(raw.durationMs),
@@ -1290,8 +1301,8 @@ export function normalizeActiveSession(
     model: asStr(raw.model) || undefined,
     owner: asStr(raw.owner) || undefined,
     failures: normalizeFailures(raw.failures),
-    activityHistogram: normalizeActivityHistogram(raw.activityHistogram),
-    userTurns: normalizeUserTurns(raw.userTurns),
+    activityHistogram: withoutEnvelopeTurns(normalizeActivityHistogram(raw.activityHistogram), allUserTurns),
+    userTurns: allUserTurns?.filter((t) => !isHarnessEnvelope(t.text)),
     subagents: normalizeSubagents(raw.subagents),
     firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
