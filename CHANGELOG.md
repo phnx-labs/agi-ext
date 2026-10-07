@@ -4,7 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.384] - 2026-10-06
+## [0.9.384] - 2026-10-07
+
+- The Active Terminal sidebar has a new look, the same visual language as getrush.ai and
+  artifacts-cli. Section labels are set in Jost capitals, the interface in Inter, and every
+  card is glass with a fine edge over a faint sky instead of a flat box. In a dark editor
+  theme the panel reads white glass and zinc type; in a light theme, ivory glass and ink.
+  Gold now marks only the primary action, filter chips and Group by app select with an
+  outline rather than a blue fill, links are underlined text instead of blue, and the
+  timeline draws gray bars with failed calls in red and outlined turn markers. The harness
+  icon in the header is smaller. High-contrast themes keep VS Code's own colors. Jost and
+  Inter ship inside the extension (OFL), so nothing is fetched to draw the panel.
 
 - Codex, Grok and every other non-Claude tab are now published to
   `~/.agents/.cache/terminals/live-terminals.json`, the file the CLI builds this machine's

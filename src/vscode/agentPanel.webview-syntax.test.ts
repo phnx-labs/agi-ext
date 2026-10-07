@@ -27,12 +27,14 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
     body += ch;
   }
 
-  // Reproduce the exact runtime HTML string. The only interpolations are `nonce`
-  // and `cspSource`; evaluating the extracted body as a template literal applies
-  // the same escape processing the real code does, so a mis-escaped sequence
-  // surfaces here identically.
+  // Reproduce the exact runtime HTML string. The interpolations are `nonce`,
+  // `cspSource` and the two bundled font URIs; evaluating the extracted body as a
+  // template literal applies the same escape processing the real code does, so a
+  // mis-escaped sequence surfaces here identically.
   const nonce = 'TESTNONCE';
   const cspSource = 'vscode-webview:';
+  const fontJost = 'vscode-webview://fonts/jost-var.woff2';
+  const fontInter = 'vscode-webview://fonts/InterVariable.woff2';
   const html: string = eval('`' + body + '`');
 
   const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
@@ -46,12 +48,14 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
   }
 });
 
-// The panel's cards already use var(--vscode-*) tokens, but under a light or
-// custom theme the webview canvas itself must be pinned to a theme background or
-// short content leaves a dark void beneath cream cards (PHNX-3809). Guard both
-// halves: the canvas is pinned to a theme token, and NO hardcoded color literal
-// (hex / rgb / hsl) is ever reintroduced anywhere in the webview <style>.
-test('webview chrome is theme-adaptive: canvas pinned + zero color literals (PHNX-3809)', () => {
+// Under a light or custom theme the webview canvas must be pinned to the theme's
+// sidebar background or short content leaves a dark void beneath cream cards
+// (PHNX-3809). The Rush register then paints its sky and glass over that ground
+// from ONE token block, keyed on the body class VS Code sets per theme kind.
+// Guard: the canvas stays pinned, every color literal lives inside the token
+// block, light and high-contrast each have their own block, and high contrast
+// redefines every color token so a contrast theme never shows Rush colors.
+test('webview chrome is theme-adaptive: canvas pinned, colors only from the token block (PHNX-3809)', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
   const styleMatch = src.match(/<style>([\s\S]*?)<\/style>/);
   expect(styleMatch).not.toBeNull();
@@ -64,9 +68,42 @@ test('webview chrome is theme-adaptive: canvas pinned + zero color literals (PHN
   // Body must stretch to the full viewport so short content can't expose a gap.
   expect(style).toMatch(/body\s*\{[^}]*min-height:\s*100vh/);
 
-  // No hardcoded color literals: hex (#abc / #aabbcc / #aabbccdd), rgb(a), hsl(a).
-  const literals = style.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g);
-  expect(literals).toBeNull();
+  const tokenStart = style.indexOf('Rush register tokens');
+  const tokenEnd = style.indexOf(':root {', tokenStart);
+  expect(tokenStart).toBeGreaterThan(-1);
+  expect(tokenEnd).toBeGreaterThan(tokenStart);
+  const tokens = style.slice(tokenStart, tokenEnd);
+
+  const block = (selector: string) => {
+    const at = tokens.indexOf(selector + ' {');
+    expect(at).toBeGreaterThan(-1);
+    return tokens.slice(at, tokens.indexOf('}', at) + 1);
+  };
+  const names = (b: string) => new Set([...b.matchAll(/(--r-[a-z0-9-]+):/g)].map((m) => m[1]));
+  const dark = block('body');
+  const light = block('body.vscode-light');
+  const contrast = block('body.vscode-high-contrast, body.vscode-high-contrast-light');
+
+  // A color literal may appear ONLY inside those three theme blocks: hex,
+  // rgb(a), hsl(a). Anything else in the stylesheet, including a rule slipped
+  // in beside the blocks, reads tokens.
+  const rules = [dark, light, contrast].reduce((s, b) => s.replace(b, ''), style);
+  expect(rules.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g)).toBeNull();
+  // Every token a rule reads is defined by the default block.
+  for (const [, used] of rules.matchAll(/var\((--r-[a-z0-9-]+)\)/g)) expect(names(dark).has(used)).toBe(true);
+  // Every color token the default (dark) block defines is redefined for high
+  // contrast; the font stacks are the only tokens it may inherit.
+  const colorTokens = [...names(dark)].filter((n) => !['--r-display', '--r-sans', '--r-mono'].includes(n));
+  expect(colorTokens.length).toBeGreaterThan(20);
+  for (const n of colorTokens) expect(names(contrast).has(n)).toBe(true);
+  // High contrast reads VS Code's own colors only, never a literal.
+  expect(contrast.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(/g)).toBeNull();
+  // Day redefines the type and glass, so a light theme never inherits zinc-on-glass.
+  for (const n of ['--r-text', '--r-caption', '--r-glass', '--r-edge', '--r-ok', '--r-warn', '--r-bad']) {
+    expect(names(light).has(n)).toBe(true);
+  }
+  // The bundled faces load under the webview CSP.
+  expect(src).toMatch(/font-src \$\{cspSource\}/);
 });
 
 test('remote deliverables open on the session host (PHNX-3574)', () => {
