@@ -312,11 +312,15 @@ export function setAgentPanelSubjectFromFleet(sessionId: string, host?: string):
   void activeProvider?.refresh();
 }
 
-/** Point the sidebar at the focused agent terminal (the other subject trigger). */
+/**
+ * Point the sidebar at the focused agent terminal (the other subject trigger).
+ * A tab without a session id yet (Codex, Grok) still takes the subject: the
+ * subject is the tab, and resolveSubject reads its id when it lands.
+ */
 function setSubjectFromActiveTerminal(): void {
   const entry = activeAgentEntry();
-  if (!entry || !entry.sessionId) return;
-  panelSubject = { sessionId: entry.sessionId, terminalId: entry.id, source: 'terminal' };
+  if (!entry) return;
+  panelSubject = { sessionId: entry.sessionId ?? '', terminalId: entry.id, source: 'terminal' };
 }
 
 /** Forget the subject entirely (dispose, and the reset point for tests). */

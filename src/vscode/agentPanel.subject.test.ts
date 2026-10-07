@@ -203,6 +203,31 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     });
   });
 
+  test('a Codex tab with no session id yet takes the subject, and a manual id shows through it', () => {
+    const claude = agentTab('CC-subject-before-codex', 'session-claude');
+    const codex = agentTab('CX-subject-codex', '');
+    terminals.getById('CX-subject-codex')!.sessionId = undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    panel.registerAgentPanel(context as any);
+    win.activeTerminal = claude;
+    onActiveTerminal!();
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-claude');
+
+    // Codex mints its id after launch, so the focused tab has none yet. The
+    // sidebar must follow focus to it instead of keeping the Claude session.
+    win.activeTerminal = codex;
+    onActiveTerminal!();
+    expect(panel.currentAgentPanelSubject()).toEqual({
+      sessionId: '', source: 'terminal', hasTerminal: true,
+    });
+
+    // agents.setSessionId stamps the id on that tab; the next refresh renders it.
+    terminals.setSessionId(codex, 'session-codex', true);
+    expect(panel.currentAgentPanelSubject()).toEqual({
+      sessionId: 'session-codex', source: 'terminal', hasTerminal: true,
+    });
+  });
+
   test('a Fleet row click wins over the focused terminal', () => {
     const a = agentTab('CC-subject-b', 'session-b');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -13,6 +13,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   id with its harness, and the session id when one is known. The tabs bind to their session,
   instead of staying on "(tracking session)", once the agents-cli release that reads entries
   without a session id is installed.
+- The Active Terminal sidebar follows focus to a Codex or Grok tab that has no session id yet
+  (PHNX-4263). It used to keep showing the previously focused tab's session, so setting the
+  id with "Agents: Set Session ID for Terminal" changed nothing on screen. The sidebar now
+  shows the focused tab, and renders that session's row as soon as its id is known.
 - `live-terminals.json` lists each tab once. Slices left by reloaded windows are dropped after
   10 minutes even though their terminals are still running; they used to pile up, and a tab
   could be read two or three times.
