@@ -73,20 +73,24 @@ test('webview chrome is theme-adaptive: canvas pinned, colors only from the toke
   expect(tokenStart).toBeGreaterThan(-1);
   expect(tokenEnd).toBeGreaterThan(tokenStart);
   const tokens = style.slice(tokenStart, tokenEnd);
-  const rules = style.slice(0, tokenStart) + style.slice(tokenEnd);
-
-  // No hardcoded color literal outside the token block: hex, rgb(a), hsl(a).
-  expect(rules.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g)).toBeNull();
 
   const block = (selector: string) => {
     const at = tokens.indexOf(selector + ' {');
     expect(at).toBeGreaterThan(-1);
-    return tokens.slice(at, tokens.indexOf('}', at));
+    return tokens.slice(at, tokens.indexOf('}', at) + 1);
   };
   const names = (b: string) => new Set([...b.matchAll(/(--r-[a-z0-9-]+):/g)].map((m) => m[1]));
   const dark = block('body');
   const light = block('body.vscode-light');
   const contrast = block('body.vscode-high-contrast, body.vscode-high-contrast-light');
+
+  // A color literal may appear ONLY inside those three theme blocks: hex,
+  // rgb(a), hsl(a). Anything else in the stylesheet, including a rule slipped
+  // in beside the blocks, reads tokens.
+  const rules = [dark, light, contrast].reduce((s, b) => s.replace(b, ''), style);
+  expect(rules.match(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g)).toBeNull();
+  // Every token a rule reads is defined by the default block.
+  for (const [, used] of rules.matchAll(/var\((--r-[a-z0-9-]+)\)/g)) expect(names(dark).has(used)).toBe(true);
   // Every color token the default (dark) block defines is redefined for high
   // contrast; the font stacks are the only tokens it may inherit.
   const colorTokens = [...names(dark)].filter((n) => !['--r-display', '--r-sans', '--r-mono'].includes(n));
