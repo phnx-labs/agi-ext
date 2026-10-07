@@ -222,6 +222,20 @@ describe('resolveProject', () => {
     expect(s.timeline?.steps[0].now).toBeUndefined();
   });
 
+  test('an envelope stamped the same millisecond as your message takes only its own marker', () => {
+    const s = normalizeActiveSession(
+      {
+        kind: 'claude', status: 'running', cwd: '/x', sessionFile: '/x/d.jsonl',
+        userTurns: [{ atMs: 200, text: 'Ship it' }, { atMs: 200, text: '<task-notification><task-id>x</task-id></task-notification>' }],
+        activityHistogram: { startMs: 0, endMs: 400, buckets: [{ tools: 1 }], userAtMs: [200, 200] },
+      } as RawActiveSession,
+      'zion',
+      FETCHED_AT,
+    );
+    expect(s.userTurns?.map((t) => t.text)).toEqual(['Ship it']);
+    expect(s.activityHistogram?.userAtMs).toEqual([200]);
+  });
+
   test('an older CLI row leaves every glance field absent rather than empty', () => {
     const s = normalizeActiveSession({ kind: 'claude', status: 'running', cwd: '/x', sessionFile: '/x/b.jsonl' } as RawActiveSession, 'zion', FETCHED_AT);
     expect([s.model, s.failures, s.activityHistogram, s.userTurns, s.subagents]).toEqual([undefined, undefined, undefined, undefined, undefined]);

@@ -1007,8 +1007,17 @@ function normalizeActivityHistogram(raw: unknown): RemoteActivity | undefined {
 // leaves the strip along with its row, so marker N and "turn N" stay the same turn.
 function withoutEnvelopeTurns(h: RemoteActivity | undefined, turns: RemoteUserTurn[] | undefined): RemoteActivity | undefined {
   if (!h || !turns) return h;
-  const envelopeAt = new Set(turns.filter((t) => isHarnessEnvelope(t.text)).map((t) => t.atMs));
-  return envelopeAt.size ? { ...h, userAtMs: h.userAtMs.filter((t) => !envelopeAt.has(t)) } : h;
+  // One marker per envelope turn: a real message stamped the same millisecond keeps its own.
+  const pending = new Map<number, number>();
+  for (const t of turns) if (isHarnessEnvelope(t.text)) pending.set(t.atMs, (pending.get(t.atMs) ?? 0) + 1);
+  if (!pending.size) return h;
+  const userAtMs = h.userAtMs.filter((t) => {
+    const left = pending.get(t) ?? 0;
+    if (!left) return true;
+    pending.set(t, left - 1);
+    return false;
+  });
+  return { ...h, userAtMs };
 }
 
 function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {

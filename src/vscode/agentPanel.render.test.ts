@@ -737,6 +737,18 @@ test('a phase chip narrows the strip, the steps and the You list to that stretch
   expect(you).toContain('second burst ask');
   expect(you).not.toContain('first burst ask');
 
+  // A remembered range that is no longer one of the phases lapses: nothing stays dimmed.
+  viewState.timelineFilter = {};
+  viewState.timelineRange = { sess: [startMs + 1, startMs + 2] };
+  const lapsed = cards.renderTimelineCard(s);
+  expect(lapsed).not.toContain('seek-bar out');
+  expect(lapsed).not.toContain('Clear range');
+  expect(lapsed).toContain('early work');
+  // A step with no usable time cannot be placed, so a range never hides it.
+  viewState.timelineRange = { sess: [startMs + 9 * bucketMs, startMs + 12 * bucketMs] };
+  const undated = cards.renderTimelineCard({ ...s, timeline: { ...s.timeline, steps: [...s.timeline.steps, { text: 'undated step', at: '', source: 'narration', tools: 1, failed: 0, blocked: 0 }] } });
+  expect(undated).toContain('undated step');
+
   // One stretch of work has nothing to choose between, so no chips.
   expect(cards.renderTimelineCard({ ...s, activityHistogram: { ...s.activityHistogram, buckets: buckets.map(() => ({ tools: 1, failed: 0, blocked: 0 })) } })).not.toContain('tl-phase');
   for (const key of Object.keys(viewState)) delete viewState[key];

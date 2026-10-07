@@ -2582,9 +2582,13 @@ function timelinePhases(s) {
   return phases.length > 1 ? phases : [];
 }
 
+// A remembered range applies only while it is still one of this session's phases:
+// once the strip is rebucketed or a stretch merges, it lapses instead of leaving
+// the strip dimmed with no chip showing why.
 function currentRange(s) {
   const r = (viewState.timelineRange || {})[(s && s.fullSessionId) || ''];
-  return Array.isArray(r) && r.length === 2 ? { startMs: r[0], endMs: r[1] } : null;
+  if (!Array.isArray(r) || r.length !== 2) return null;
+  return timelinePhases(s).some((p) => p.startMs === r[0] && p.endMs === r[1]) ? { startMs: r[0], endMs: r[1] } : null;
 }
 
 function inRange(range, ms) {
@@ -2601,7 +2605,7 @@ function renderPhaseChips(s) {
     const tip = clockTime(p.startMs) + ' to ' + clockTime(p.endMs);
     const full = clockTime(p.startMs);
     const time = new Date(p.startMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const day = full.slice(0, full.length - time.length).replace(/,?\s+$/, '');
+    const day = full.slice(0, full.length - time.length).replace(/,?\\s+$/, '');
     const label = day && day !== lastDay ? day + ' ' + time : time;
     lastDay = day;
     return '<button type="button" class="tl-filter tl-phase' + (on ? ' on' : '') + '" data-phase="' + p.startMs + '-' + p.endMs + '" aria-pressed="' + on + '" title="' + esc(tip) + '">' + esc(label) + '</button>';
@@ -2744,7 +2748,7 @@ function renderFilteredBody(s, active) {
   const stale = (s.lastActivityMs || 0) > (cached.atStamp || 0)
     ? '<div class="card-note">Newer activity since this loaded. <button type="button" class="tl-refresh" data-refresh-filter="' + active + '">Refresh</button></div>'
     : '';
-  return stale + filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).filter((it) => inRange(range, it.atMs)).reverse());
+  return stale + filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).filter((it) => !it.atMs || inRange(range, it.atMs)).reverse());
 }
 
 function renderTimelineCard(s) {
@@ -2788,7 +2792,7 @@ function renderTimelineCard(s) {
     return '<h2>Timeline' + meta + '</h2><div class="card">' + seekAndFilters + '<div class="tl-filtered">' + renderFilteredBody(s, active) + '</div></div>';
   }
 
-  const visible = steps.filter((step) => inRange(range, Date.parse(step.at)));
+  const visible = steps.filter((step) => !Number.isFinite(Date.parse(step.at)) || inRange(range, Date.parse(step.at)));
   const none = range && !visible.length
     ? '<div class="card-note">No loaded step falls in this range; older steps are folded into the count below.</div>'
     : '';
