@@ -40,6 +40,11 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
   const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   expect(scripts.length).toBeGreaterThan(0);
 
+  // Phase chip labels trim the day word with a whitespace class. Written with one
+  // backslash in source, the template literal emits /,?s+$/ and every label keeps
+  // its comma and double space; the emitted script must carry the real class.
+  expect(html).toContain('.replace(/,?\\s+$/, \'\')');
+
   for (const script of scripts) {
     // `new Function` compiles (parses) the source without executing it; a
     // SyntaxError in the generated webview JS throws here. This exact check fails

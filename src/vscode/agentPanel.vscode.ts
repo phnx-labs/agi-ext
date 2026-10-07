@@ -32,6 +32,7 @@
 //     (PHNX-2833: no local poll timer — the daemon is the only scheduler)
 
 import * as vscode from 'vscode';
+import { isHarnessEnvelope } from '../core/harnessEnvelope';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createHash } from 'crypto';
@@ -202,6 +203,8 @@ interface PanelSnapshot {
   inWorktree?: boolean;
   startedAtMs?: number;
   lastActivityMs?: number;
+  /** The CLI row's lifecycle phase (running, waiting, idle, failed, done). */
+  phase?: string;
   // The open attention item in the harness's own words; absent when nothing waits on the user.
   needsYou?: { kind: string; text: string; openedAtMs?: number };
   failures?: RemoteFailure[];
@@ -918,6 +921,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.inWorktree = !!live.worktreeSlug;
         snapshot.startedAtMs = live.startedAtMs || undefined;
         snapshot.lastActivityMs = live.lastActivityMs || undefined;
+        snapshot.phase = live.phase;
         if (live.attention && live.attention.state === 'open') {
           const openedAtMs = Date.parse(live.attention.openedAt);
           snapshot.needsYou = {
@@ -1210,8 +1214,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     gap: 10px;
   }
   .agent-logo {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border-radius: 4px;
     flex-shrink: 0;
     object-fit: contain;
@@ -1962,9 +1966,47 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
   button.path-link { color: var(--r-link); padding: 0; }
   button.step { width: 100%; }
-  #session-details { margin-top: 8px; color: var(--r-caption); }
-  #session-details summary { cursor: pointer; }
-  .session-details { font-size: 11px; overflow-wrap: anywhere; margin-top: 6px; }
+  /* Header: title line, then model · account · host; the ⋯ menu opens a drawer
+     inside the card (no overlay, so nothing floats over the session). */
+  .head-card { position: relative; }
+  .title-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .title-line .session-title { flex: 1; min-width: 0; }
+  .head-menu > summary { list-style: none; position: absolute; top: 8px; right: 10px; }
+  .head-menu > summary::-webkit-details-marker { display: none; }
+  .head-menu[open] > summary { background: var(--r-selected); border-color: var(--r-selected-edge); }
+  .head-card .head-actions { margin-right: 26px; }
+  .menu-panel { display: none; }
+  .head-menu[open] .menu-panel { display: block; margin: 9px 0 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--r-glass-strong); }
+  .menu-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; padding: 3px 0; font-size: 11.5px; }
+  .menu-k { color: var(--r-caption); }
+  .menu-v { color: var(--r-text); min-width: 0; overflow-wrap: anywhere; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .menu-v .where-row { margin: 0; }
+  .session-details { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); overflow-wrap: anywhere; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--r-edge); }
+  .session-stats b { color: var(--r-text); font-weight: 600; }
+  .state-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--r-caption); }
+  .state-running .state-dot { background: var(--r-ok); box-shadow: 0 0 0 3px var(--r-ok-tint); }
+  .state-waiting .state-dot { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
+  .state-failed .state-dot { background: var(--r-bad); }
+  /* Timeline phases: the strip dims outside the chosen stretch. */
+  .seek-bar.out i { opacity: 0.22; }
+  .tl-phases { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+  .tl-range { margin: -2px 0 8px; }
+  /* Files as a tree. */
+  .files-card { position: relative; }
+  .ft-toggle { display: flex; justify-content: flex-end; gap: 2px; margin: -2px 0 4px; }
+  .ft-toggle button { font: inherit; font-size: 10.5px; padding: 0 8px; line-height: 17px; border-radius: 999px; cursor: pointer; border: 1px solid transparent; background: transparent; color: var(--r-caption); }
+  .ft-toggle button[aria-pressed="true"] { color: var(--r-text); background: var(--r-selected); border-color: var(--r-selected-edge); }
+  .ft-dir > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 4px; padding-top: 3px; padding-bottom: 3px; font-size: 11.5px; }
+  .ft-dir > summary::-webkit-details-marker { display: none; }
+  .ft-dir > summary .caret::before { content: '▸'; }
+  .ft-dir[open] > summary .caret::before { content: '▾'; }
+  .ft-name { font-weight: 600; color: var(--r-text-2); overflow-wrap: anywhere; }
+  .ft-count { margin-left: auto; color: var(--r-caption); font-family: var(--r-mono); font-size: 10px; }
+  /* Subagent rows: what, how long, how much, before you open one. */
+  .subagent > summary { align-items: flex-start; }
+  .sub-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .sub-body .sub-meta { margin: 0; }
+  .subagent .sub-dot { margin-top: 4px; }
   button:focus-visible, summary:focus-visible { outline: 1px solid var(--r-focus); }
   /* Links are the text color, underlined (no blue): the underline is what marks them. */
   .path-link, button.path-link, .link-row a, .wt-name, .footer button, .tl-refresh, .timeline-more, .failures-show {
@@ -1990,7 +2032,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .needs-you-btns { display: flex; gap: 6px; margin-top: 7px; }
   .ny-btn { font-size: 11px; padding: 3px 11px; border-radius: 999px; cursor: pointer; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); }
   .ny-btn.primary { background: var(--r-gold); color: var(--r-on-gold); border-color: transparent; font-weight: 600; }
-  .session-stats { display: block; margin: 7px 0 0; font-size: 11.5px; color: var(--r-caption); }
+  .session-stats { display: flex; align-items: center; gap: 6px; margin: 8px 2px 0; font-size: 11.5px; color: var(--r-caption); }
   .failures { margin-top: 4px; font-size: 11.5px; }
   .failures > summary { cursor: pointer; list-style: none; color: var(--r-warn); }
   .failures > summary::-webkit-details-marker { display: none; }
@@ -2031,14 +2073,14 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .tl-item-text { font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
   .step.flash { outline: 2px solid var(--r-focus); border-radius: 4px; }
   .subagent { border-radius: 10px; padding: 7px 10px; margin-bottom: 6px; border: 1px solid var(--r-edge); background: var(--r-glass); box-shadow: inset 0 1px 0 var(--r-sheen); }
-  .subagent > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .subagent > summary { cursor: pointer; list-style: none; display: flex; gap: 6px; font-size: 12px; }
   .subagent > summary::-webkit-details-marker { display: none; }
   .sub-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--r-ok); }
   .subagent.status-running .sub-dot { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
   .subagent.status-failed .sub-dot { background: var(--r-bad); }
   .sub-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub-status { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--r-caption); }
-  .sub-meta { font-family: var(--r-mono); font-size: 10px; color: var(--r-caption); margin: 3px 0 0 13px; }
+  .sub-meta { font-size: 10.5px; color: var(--r-caption); margin: 3px 0 0 13px; }
   .sub-result { font-size: 11.5px; margin: 4px 0 0 13px; padding-left: 7px; border-left: 2px solid var(--r-edge); }
   .sub-open { font-size: 11px; margin: 4px 0 0 13px; background: none; border: 0; padding: 0; color: var(--r-link); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 </style>
@@ -2087,6 +2129,7 @@ function compactDuration(ms) {
   const totalMinutes = Math.max(1, Math.floor(ms / 60000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
+  if (hours >= 24) return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
   return hours ? hours + 'h ' + minutes + 'm' : minutes + 'm';
 }
 
@@ -2127,48 +2170,61 @@ function renderTerminalCard(s) {
   const who = [];
   if (s.model) who.push('<b class="model-name" title="' + esc(s.model) + '">' + esc(prettyModel(s.model)) + '</b>');
   if (s.accountLabel || s.account) who.push('<span title="' + esc(s.account || '') + '">' + esc(s.accountLabel ?? s.account) + '</span>');
-  const whoRow = who.length || usageBadge ? '<div class="account-row">' + who.join(' · ') + usageBadge + '</div>' : '';
-  const idRow = s.sessionChunk
-    ? '<div class="id-row">' +
-        '<button type="button" class="session-chunk" id="copy-session" title="Copy full session ID" aria-label="Copy full session ID">' + esc(s.sessionChunk) + '</button>' +
-        (s.hasTerminal && s.terminalId ? '<button type="button" class="head-btn small" data-action="setSessionId" title="Set session ID for terminal" aria-label="Set session ID for terminal">✎</button>' : '') +
-      '</div>'
+  // The host stays on the face of the card: where it runs is what you act on.
+  const host = s.hostLabel ? '<span class="where-chip mono">' + esc(s.hostLabel) + '</span>' : '';
+  const whoRow = who.length || usageBadge || host ? '<div class="account-row">' + who.join(' · ') + host + usageBadge + '</div>' : '';
+  const following = s.subjectSource === 'fleet' && !s.hasTerminal
+    ? '<div class="account-row">following the Fleet selection</div>'
     : '';
-  // Where it runs: project, branch, a worktree badge only for a linked worktree
-  // (never the worktree's folder name), and the host.
+
+  // ⋯ menu: the session id (copy, and the pencil that rebinds a tab, offered even
+  // before the harness reports an id), project, branch, worktree, start time,
+  // tokens, and the raw identity lines. Its open state is remembered.
+  const menu = [];
+  const pencil = s.hasTerminal && s.terminalId
+    ? '<button type="button" class="head-btn small" data-action="setSessionId" title="Set session ID for terminal" aria-label="Set session ID for terminal">✎</button>'
+    : '';
+  if (s.sessionChunk || pencil) {
+    menu.push(['Session', (s.sessionChunk ? '<button type="button" class="session-chunk" id="copy-session" title="Copy full session ID" aria-label="Copy full session ID">' + esc(s.sessionChunk) + '</button>' : '<span class="menu-v">not reported yet</span>') + pencil]);
+  }
   const branch = s.git && s.git.branch;
   const chips = [];
   if (s.project) chips.push('<span class="where-chip proj">' + esc(s.project) + '</span>');
   if (branch) chips.push('<button type="button" class="where-chip mono" data-scm title="Open Source Control">⎇ ' + esc(branch) + '</button>');
   if (s.inWorktree) chips.push('<span class="where-chip wt" title="' + esc(s.cwd || '') + '">worktree</span>');
-  if (s.hostLabel) chips.push('<span class="where-chip">' + esc(s.hostLabel) + '</span>');
-  const where = chips.length ? '<div class="where-row">' + chips.join('') + '</div>' : '';
-  const actions = s.fullSessionId
-    ? '<div class="head-actions">' +
-        '<button type="button" class="head-btn" data-action="focusSubject" aria-label="Focus session" title="Focus session">◎</button>' +
-        '<button type="button" class="head-btn" data-action="resumeSubject" aria-label="Resume session" title="Resume session">↻</button>' +
-      '</div>'
+  if (s.git && s.git.dirtyCount > 0) chips.push('<button type="button" class="dirty-pill" data-scm>' + s.git.dirtyCount + ' changed</button>');
+  if (chips.length) menu.push(['Where', '<span class="where-row">' + chips.join('') + '</span>']);
+  if (s.startedAtMs) menu.push(['Started', esc(clockTime(s.startedAtMs))]);
+  const tokens = [compactTokens(s.tokenCount), s.tokPerSec > 0 ? Math.round(s.tokPerSec) + ' tok/s' : ''].filter(Boolean).join(' · ');
+  if (tokens) menu.push(['Tokens', esc(tokens)]);
+  const identity = [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.model, s.fullSessionId, s.cwd, s.sessionHost].filter(Boolean);
+  const menuBody =
+    menu.map((row) => '<div class="menu-row"><span class="menu-k">' + esc(row[0]) + '</span><span class="menu-v">' + row[1] + '</span></div>').join('') +
+    (identity.length ? '<div class="session-details">' + identity.map((value) => '<div>' + esc(value) + '</div>').join('') + '</div>' : '');
+  const menuBtn = menuBody
+    ? '<summary class="head-btn menu-btn" aria-label="Session details" title="Session details">⋯</summary>'
     : '';
-  const following = s.subjectSource === 'fleet' && !s.hasTerminal
-    ? '<div class="account-row">following the Fleet selection</div>'
-    : '';
+  const actions =
+    '<div class="head-actions">' +
+      (s.fullSessionId
+        ? '<button type="button" class="head-btn" data-action="focusSubject" aria-label="Focus session" title="Focus session">◎</button>' +
+          '<button type="button" class="head-btn" data-action="resumeSubject" aria-label="Resume session" title="Resume session">↻</button>'
+        : '') +
+    '</div>';
   return (
-    '<div class="card">' +
+    '<div class="card head-card">' +
       '<div class="agent-head">' +
-        logo +
         '<div class="agent-head-text">' +
-          '<div class="title-row session-title" title="' + esc(title) + '">' + esc(title) + '</div>' +
+          '<div class="title-line">' + logo + '<div class="title-row session-title" title="' + esc(title) + '">' + esc(title) + '</div></div>' +
           whoRow +
-          idRow +
-          where +
           following +
         '</div>' +
         actions +
       '</div>' +
-      '<details id="session-details"' + (viewState.detailsOpen ? ' open' : '') + '><summary>Details</summary><div class="session-details">' +
-        [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.model, s.fullSessionId, s.cwd, s.sessionHost].filter(Boolean).map((value) => '<div>' + esc(value) + '</div>').join('') +
-        (s.git && s.git.dirtyCount > 0 ? '<div class="branch-row"><button type="button" class="dirty-pill" data-scm>' + s.git.dirtyCount + ' changed</button></div>' : '') +
-      '</div></details>' +
+      '<details id="session-details" class="head-menu"' + (viewState.detailsOpen ? ' open' : '') + '>' +
+        menuBtn +
+        '<div class="menu-panel">' + menuBody + '</div>' +
+      '</details>' +
     '</div>'
   );
 }
@@ -2192,16 +2248,22 @@ function renderNeedsYou(s) {
     '</div>'
   );
 }
+function sessionState(s) {
+  if (s.needsYou || s.phase === 'waiting') return { cls: 'waiting', word: 'Waiting on you' };
+  if (s.phase === 'running') return { cls: 'running', word: 'Running' };
+  if (s.phase === 'failed') return { cls: 'failed', word: 'Failed' };
+  if (s.phase === 'done') return { cls: 'idle', word: 'Done' };
+  return { cls: 'idle', word: 'Idle' };
+}
+
 function renderSessionStats(s) {
-  const stats = [];
-  if (s.startedAtMs) stats.push('Started ' + clockTime(s.startedAtMs));
-  const duration = compactDuration(s.durationMs);
-  const tokens = compactTokens(s.tokenCount);
-  if (duration) stats.push(duration);
-  if (tokens) stats.push(tokens);
-  if (s.tokPerSec > 0) stats.push(Math.round(s.tokPerSec) + ' tok/s');
-  if (!stats.length) return '';
-  return '<div class="session-stats">' + esc(stats.join(' · ')) + '</div>';
+  const span = s.durationMs > 0 ? s.durationMs : (s.startedAtMs ? Date.now() - s.startedAtMs : 0);
+  const age = compactDuration(span);
+  if (!age && !s.lastActivityMs) return '';
+  const st = sessionState(s);
+  const ran = age ? (st.cls === 'running' ? ' <b>' + esc(age) + '</b>' : ' · ran <b>' + esc(age) + '</b>') : '';
+  const active = s.lastActivityMs ? ' · active <b>' + esc(relTime(s.lastActivityMs)) + '</b>' : '';
+  return '<div class="session-stats state-' + st.cls + '"><span class="state-dot"></span>' + esc(st.word) + ran + active + '</div>';
 }
 
 // Failures stay out of the way: one quiet line only when something failed, and
@@ -2487,12 +2549,8 @@ const TIMELINE_SHOWN = 3;
 // collapses into a labeled gap so a 17-hour session with 10 idle hours still
 // shows its bursts. Markers: your messages (numbered), subagent starts, and the
 // open ask at the end. Clicking a bar jumps the step list to that moment.
-function renderSeekBar(s) {
-  const h = s.activityHistogram;
-  if (!h || !h.buckets || !h.buckets.length || !(h.endMs > h.startMs)) return '';
+function seekSegments(h) {
   const n = h.buckets.length;
-  const bucketMs = (h.endMs - h.startMs) / n;
-  const max = Math.max(1, ...h.buckets.map((b) => b.tools));
   const empty = (b) => b.tools === 0 && b.failed === 0 && b.blocked === 0;
   const segs = [];
   for (let i = 0; i < n;) {
@@ -2504,6 +2562,64 @@ function renderSeekBar(s) {
     segs.push({ gap: false, i: i });
     i++;
   }
+  return segs;
+}
+
+// A phase is one stretch of work between idle gaps. Choosing one narrows the
+// strip, the steps and the You / Failed lists to that stretch.
+function timelinePhases(s) {
+  const h = s.activityHistogram;
+  if (!h || !h.buckets || !h.buckets.length || !(h.endMs > h.startMs)) return [];
+  const bucketMs = (h.endMs - h.startMs) / h.buckets.length;
+  const phases = [];
+  let cur = null;
+  for (const seg of seekSegments(h)) {
+    if (seg.gap) { cur = null; continue; }
+    const from = h.startMs + seg.i * bucketMs;
+    const to = h.startMs + (seg.i + 1) * bucketMs;
+    if (cur) cur.endMs = to; else phases.push(cur = { startMs: Math.round(from), endMs: Math.round(to) });
+  }
+  return phases.length > 1 ? phases : [];
+}
+
+// A remembered range applies only while it is still one of this session's phases:
+// once the strip is rebucketed or a stretch merges, it lapses instead of leaving
+// the strip dimmed with no chip showing why.
+function currentRange(s) {
+  const r = (viewState.timelineRange || {})[(s && s.fullSessionId) || ''];
+  if (!Array.isArray(r) || r.length !== 2) return null;
+  return timelinePhases(s).some((p) => p.startMs === r[0] && p.endMs === r[1]) ? { startMs: r[0], endMs: r[1] } : null;
+}
+
+function inRange(range, ms) {
+  return !range || (Number.isFinite(ms) && ms >= range.startMs && ms < range.endMs);
+}
+
+function renderPhaseChips(s) {
+  const phases = timelinePhases(s);
+  if (!phases.length) return '';
+  const range = currentRange(s);
+  let lastDay = '';
+  return '<div class="tl-phases" role="group" aria-label="Phases">' + phases.map((p) => {
+    const on = !!range && range.startMs === p.startMs && range.endMs === p.endMs;
+    const tip = clockTime(p.startMs) + ' to ' + clockTime(p.endMs);
+    const full = clockTime(p.startMs);
+    const time = new Date(p.startMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const day = full.slice(0, full.length - time.length).replace(/,?\\s+$/, '');
+    const label = day && day !== lastDay ? day + ' ' + time : time;
+    lastDay = day;
+    return '<button type="button" class="tl-filter tl-phase' + (on ? ' on' : '') + '" data-phase="' + p.startMs + '-' + p.endMs + '" aria-pressed="' + on + '" title="' + esc(tip) + '">' + esc(label) + '</button>';
+  }).join('') + '</div>';
+}
+
+function renderSeekBar(s) {
+  const h = s.activityHistogram;
+  if (!h || !h.buckets || !h.buckets.length || !(h.endMs > h.startMs)) return '';
+  const n = h.buckets.length;
+  const bucketMs = (h.endMs - h.startMs) / n;
+  const max = Math.max(1, ...h.buckets.map((b) => b.tools));
+  const segs = seekSegments(h);
+  const range = currentRange(s);
   const units = segs.reduce((acc, seg) => acc + (seg.gap ? 3 : 1), 0);
   const leftOf = {};
   let u = 0;
@@ -2521,7 +2637,8 @@ function renderSeekBar(s) {
     const at = Math.round(h.startMs + (seg.i + 0.5) * bucketMs);
     const bad = b.failed + b.blocked;
     const tip = clockTime(at) + ' · ' + b.tools + ' tools' + (b.failed ? ' · ' + b.failed + ' failed' : '') + (b.blocked ? ' · ' + b.blocked + ' blocked' : '');
-    return '<button type="button" class="seek-bar' + (bad ? ' bad' : '') + '" style="flex:1" data-seek="' + at + '" title="' + esc(tip) + '" aria-label="' + esc('Jump to ' + tip) + '"><i style="height:' + height + '%"></i></button>';
+    const out = range && !inRange(range, at) ? ' out' : '';
+    return '<button type="button" class="seek-bar' + (bad ? ' bad' : '') + out + '" style="flex:1" data-seek="' + at + '" title="' + esc(tip) + '" aria-label="' + esc('Jump to ' + tip) + '"><i style="height:' + height + '%"></i></button>';
   }).join('');
   const marks = [];
   // Messages that land in one bucket share one marker (its tooltip lists them all);
@@ -2612,17 +2729,18 @@ function filteredRows(items) {
 }
 
 function renderFilteredBody(s, active) {
+  const range = currentRange(s);
   if (active === 'user') {
     return filteredRows((s.userTurns || []).map((t, i) => ({
       atMs: t.atMs,
       label: 'turn ' + (i + 1) + (t.images ? ' · ' + t.images + ' image' + (t.images === 1 ? '' : 's') : ''),
       text: t.text,
-    })));
+    })).filter((it) => inRange(range, it.atMs)));
   }
   if (active === 'failed') {
     return filteredRows((s.failures || []).slice().reverse().map((f) => ({
       atMs: f.atMs, label: f.blocked ? 'blocked' : 'failed', text: f.tool + ': ' + f.summary + ' → ' + f.error, bad: true,
-    })));
+    })).filter((it) => inRange(range, it.atMs)));
   }
   const cached = filterCache[filterKey(s, active)];
   if (!cached) return '<div class="card-note">Loading…</div>';
@@ -2630,7 +2748,7 @@ function renderFilteredBody(s, active) {
   const stale = (s.lastActivityMs || 0) > (cached.atStamp || 0)
     ? '<div class="card-note">Newer activity since this loaded. <button type="button" class="tl-refresh" data-refresh-filter="' + active + '">Refresh</button></div>'
     : '';
-  return stale + filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).reverse());
+  return stale + filteredRows(cached.items.map((it) => ({ atMs: Date.parse(it.at) || 0, text: it.text, bad: it.bad })).filter((it) => !it.atMs || inRange(range, it.atMs)).reverse());
 }
 
 function renderTimelineCard(s) {
@@ -2665,13 +2783,21 @@ function renderTimelineCard(s) {
   if (t.tools > 0) head.push(t.tools + ' tools');
   const meta = head.length ? '<span class="head-meta">' + esc(head.join(' · ')) + '</span>' : '';
   const active = currentFilter(s);
-  const seekAndFilters = renderSeekBar(s) + renderFilterChips(s, active);
+  const range = currentRange(s);
+  const rangeNote = range
+    ? '<div class="tl-range card-note">' + esc(clockTime(range.startMs) + ' to ' + clockTime(range.endMs)) + ' · <button type="button" class="tl-refresh" data-phase="">Clear range</button></div>'
+    : '';
+  const seekAndFilters = renderSeekBar(s) + renderPhaseChips(s) + renderFilterChips(s, active) + rangeNote;
   if (active !== 'summary') {
     return '<h2>Timeline' + meta + '</h2><div class="card">' + seekAndFilters + '<div class="tl-filtered">' + renderFilteredBody(s, active) + '</div></div>';
   }
 
-  const shown = steps.slice(0, TIMELINE_SHOWN).map(renderStep).join('');
-  const rest = steps.slice(TIMELINE_SHOWN);
+  const visible = steps.filter((step) => !Number.isFinite(Date.parse(step.at)) || inRange(range, Date.parse(step.at)));
+  const none = range && !visible.length
+    ? '<div class="card-note">No loaded step falls in this range; older steps are folded into the count below.</div>'
+    : '';
+  const shown = none + visible.slice(0, TIMELINE_SHOWN).map(renderStep).join('');
+  const rest = visible.slice(TIMELINE_SHOWN);
   const more = rest.length
     ? '<details><summary class="timeline-more">' + rest.length + ' more</summary>' +
       rest.map(renderStep).join('') + '</details>'
@@ -2697,7 +2823,48 @@ function renderTimelineCard(s) {
 // ── Files ───────────────────────────────────────────────────────────────────
 // The paths the HARNESS recorded as created / modified / deleted. Nothing is
 // inferred from the filesystem: no 'files' on the row means no card.
-const FILE_OP_SYMBOL = { created: '+', modified: '~', deleted: '−' };
+const FILE_OP_SYMBOL = { created: 'A', modified: 'M', deleted: 'D' };
+
+function fileRow(change, label, depth) {
+  return (
+    '<div class="file-row" style="padding-left:' + (depth * 12) + 'px">' +
+      '<span class="file-op ' + esc(change.op) + '">' + esc(FILE_OP_SYMBOL[change.op] || 'M') + '</span>' +
+      '<button type="button" class="path-link" data-path="' + esc(change.path) + '" title="' + esc(change.path) + '">' + esc(label) + '</button>' +
+    '</div>'
+  );
+}
+
+// Folders the way the explorer shows them: a folder with a single child folder
+// and no files folds into one row ("rush/api/scripts"), so a long worktree
+// prefix appears once instead of on every file.
+function fileTree(changes) {
+  const root = { dirs: {}, files: [] };
+  for (const change of changes) {
+    const shown = change.display || change.path;
+    const parts = shown.split('/').filter(Boolean);
+    if (shown.charAt(0) === '/' && parts.length) parts[0] = '/' + parts[0];
+    let node = root;
+    for (const part of parts.slice(0, -1)) node = node.dirs[part] = node.dirs[part] || { dirs: {}, files: [] };
+    node.files.push({ change: change, name: parts[parts.length - 1] || shown });
+  }
+  const count = (node) => node.files.length + Object.keys(node.dirs).reduce((n, k) => n + count(node.dirs[k]), 0);
+  const draw = (node, depth) => Object.keys(node.dirs).sort().map((name) => {
+    let label = name;
+    let dir = node.dirs[name];
+    while (!dir.files.length && Object.keys(dir.dirs).length === 1) {
+      const only = Object.keys(dir.dirs)[0];
+      label += '/' + only;
+      dir = dir.dirs[only];
+    }
+    return (
+      '<details class="ft-dir" open>' +
+        '<summary style="padding-left:' + (depth * 12) + 'px"><span class="caret"></span><span class="ft-name">' + esc(label) + '</span><span class="ft-count">' + count(dir) + '</span></summary>' +
+        draw(dir, depth + 1) +
+      '</details>'
+    );
+  }).join('') + node.files.map((f) => fileRow(f.change, f.name, depth)).join('');
+  return draw(root, 0);
+}
 
 function renderFilesCard(s) {
   const files = s.files;
@@ -2709,17 +2876,16 @@ function renderFilesCard(s) {
   if (counts.modified) head.push(counts.modified + ' modified');
   if (counts.deleted) head.push(counts.deleted + ' deleted');
   if (files.total > files.changes.length) head.push('of ' + files.total);
-  const rows = files.changes.map((change) => {
-    return (
-      '<div class="file-row">' +
-        '<span class="file-op ' + esc(change.op) + '">' + esc(FILE_OP_SYMBOL[change.op] || '~') + '</span>' +
-        '<button type="button" class="path-link" data-path="' + esc(change.path) + '" title="' + esc(change.path) + '">' + esc(change.display) + '</button>' +
-      '</div>'
-    );
-  }).join('');
+  const asList = viewState.filesView === 'list';
+  const toggle =
+    '<span class="ft-toggle" role="group" aria-label="Files view">' +
+      '<button type="button" data-files-view="tree" aria-pressed="' + !asList + '">Tree</button>' +
+      '<button type="button" data-files-view="list" aria-pressed="' + asList + '">List</button>' +
+    '</span>';
+  const body = asList ? files.changes.map((change) => fileRow(change, change.display, 0)).join('') : fileTree(files.changes);
   return (
     '<h2>Files' + (head.length ? '<span class="head-meta">' + esc(head.join(' · ')) + '</span>' : '') + '</h2>' +
-    '<div class="card">' + rows + '</div>'
+    '<div class="card files-card">' + toggle + body + '</div>'
   );
 }
 
@@ -2907,25 +3073,42 @@ function renderArtifactsSummary(items) {
     (newest ? '<span class="art-time">newest ' + esc(relTime(newest)) + '</span>' : '') + '</button>';
 }
 
+const SUBAGENTS_FINISHED_SHOWN = 3;
+
+function renderSubagentRow(x, now) {
+  const running = x.status === 'running';
+  const dur = running
+    ? (typeof x.startedAtMs === 'number' ? 'running ' + compactDuration(now - x.startedAtMs) : 'running')
+    : (typeof x.startedAtMs === 'number' && typeof x.endedAtMs === 'number' ? compactDuration(x.endedAtMs - x.startedAtMs) : '');
+  const meta = [x.agentType, dur, x.toolCount ? x.toolCount + ' tools' : ''].filter(Boolean).join(' · ');
+  return (
+    '<details class="subagent status-' + esc(x.status) + '">' +
+      '<summary><span class="sub-dot"></span>' +
+        '<span class="sub-body"><span class="sub-name">' + esc(x.description || x.id) + '</span>' +
+        (meta ? '<span class="sub-meta">' + esc(meta) + '</span>' : '') + '</span>' +
+        '<span class="sub-status">' + esc(x.status) + '</span></summary>' +
+      (x.resultExcerpt ? '<div class="sub-result">' + esc(x.resultExcerpt) + '</div>' : '') +
+      (x.transcriptPath ? '<button type="button" class="sub-open path-link" data-path="' + esc(x.transcriptPath) + '">Open transcript ▸</button>' : '') +
+    '</details>'
+  );
+}
+
 function renderSpawnedTeamCard(s) {
   const subs = s.subagents || [];
   if (subs.length) {
-    const running = subs.filter((x) => x.status === 'running').length;
-    const rows = subs.map((x) => {
-      const dur = typeof x.startedAtMs === 'number' && typeof x.endedAtMs === 'number' ? compactDuration(x.endedAtMs - x.startedAtMs) : '';
-      const meta = [x.agentType, dur, x.toolCount ? x.toolCount + ' tools' : ''].filter(Boolean).join(' · ');
-      return (
-        '<details class="subagent status-' + esc(x.status) + '">' +
-          '<summary><span class="sub-dot"></span><span class="sub-name">' + esc(x.description || x.id) + '</span>' +
-          '<span class="sub-status">' + esc(x.status) + '</span></summary>' +
-          '<div class="sub-meta">' + esc(meta) + '</div>' +
-          (x.resultExcerpt ? '<div class="sub-result">' + esc(x.resultExcerpt) + '</div>' : '') +
-          (x.transcriptPath ? '<button type="button" class="sub-open path-link" data-path="' + esc(x.transcriptPath) + '">Open transcript ▸</button>' : '') +
-        '</details>'
-      );
-    }).join('');
-    const head = subs.length + (running ? ' · ' + running + ' running' : ' · all finished');
-    return '<h2>Subagents<span class="head-meta">' + esc(head) + '</span></h2><div class="card subagents">' + rows + '</div>';
+    const now = Date.now();
+    // Running first, then the newest finished; older finished ones fold away.
+    const ordered = subs.slice().sort((a, b) =>
+      ((a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1)) || ((b.startedAtMs || 0) - (a.startedAtMs || 0)));
+    const running = ordered.filter((x) => x.status === 'running');
+    const finished = ordered.filter((x) => x.status !== 'running');
+    const shown = running.concat(finished.slice(0, SUBAGENTS_FINISHED_SHOWN)).map((x) => renderSubagentRow(x, now)).join('');
+    const older = finished.slice(SUBAGENTS_FINISHED_SHOWN);
+    const more = older.length
+      ? '<details class="sub-more"><summary class="timeline-more">' + older.length + ' more finished</summary>' + older.map((x) => renderSubagentRow(x, now)).join('') + '</details>'
+      : '';
+    const head = subs.length + (running.length ? ' · ' + running.length + ' running' : ' · all finished');
+    return '<h2>Subagents<span class="head-meta">' + esc(head) + '</span></h2><div class="card subagents">' + shown + more + '</div>';
   }
   if (!s.spawnedTeam && !s.subAgentCount) return '';
   const count = s.subAgentCount > 0
@@ -3234,6 +3417,27 @@ function render(snap) {
       render(lastSnapshot);
     });
   }
+  for (const el of root.querySelectorAll('[data-phase]')) {
+    el.addEventListener('click', () => {
+      const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
+      const value = el.getAttribute('data-phase');
+      const next = Object.assign({}, viewState.timelineRange);
+      const cur = currentRange(lastSnapshot);
+      const parts = value ? value.split('-').map(Number) : null;
+      if (!parts || (cur && cur.startMs === parts[0] && cur.endMs === parts[1])) delete next[key];
+      else next[key] = parts;
+      viewState.timelineRange = next;
+      vscode.setState(viewState);
+      render(lastSnapshot);
+    });
+  }
+  for (const el of root.querySelectorAll('[data-files-view]')) {
+    el.addEventListener('click', () => {
+      viewState.filesView = el.getAttribute('data-files-view');
+      vscode.setState(viewState);
+      render(lastSnapshot);
+    });
+  }
   for (const el of root.querySelectorAll('[data-refresh-filter]')) {
     el.addEventListener('click', () => {
       const id = el.getAttribute('data-refresh-filter');
@@ -3442,7 +3646,7 @@ function collectRecentActivity(tailLines: string[], agentType: string, max: numb
   const seen = new Set<string>();
   for (let i = tailLines.length - 1; i >= 0 && out.length < max; i--) {
     const activity = parseLineForActivity(tailLines[i], agentType as 'claude' | 'codex');
-    if (!activity) continue;
+    if (!activity || isHarnessEnvelope(activity.summary || '')) continue;
     const formatted = formatActivity(activity);
     const dedupeKey = `${activity.type}|${activity.summary}`;
     if (seen.has(dedupeKey)) continue;

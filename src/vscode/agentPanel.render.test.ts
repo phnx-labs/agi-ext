@@ -51,8 +51,10 @@ const NAMES = [
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
+  'sessionState', 'seekSegments', 'timelinePhases', 'currentRange', 'inRange', 'renderPhaseChips',
+  'fileRow', 'fileTree', 'renderSubagentRow',
 ];
-const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS'];
+const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -324,7 +326,9 @@ test('renderFilesCard lists what the harness recorded, relative to cwd, with a c
   });
   expect(html).toContain('Files');
   expect(html).toContain('2 created');
-  expect(html).toContain('>musl-smoke/Cargo.toml</button>');
+  // Tree by default: the folder once, its files by name under it.
+  expect(html).toContain('<span class="ft-name">musl-smoke</span>');
+  expect(html).toContain('>Cargo.toml</button>');
   // Paths render relative to the session cwd, with the absolute path clickable.
   expect(html).not.toContain('>/home/muqsit/src/agents-cli/musl-smoke/Cargo.toml<');
   expect(html).toContain('data-path="/home/muqsit/src/agents-cli/musl-smoke/Cargo.toml"');
@@ -627,4 +631,125 @@ test('a restored heavy filter with no request in this page falls back to Summary
   expect(harness.current).toBe(false);
   expect(harness.kept).toContain('ran ls');
   expect(harness.kept).not.toContain('Loading');
+});
+
+test('Files folds single-child folders into one row and keeps a flat List view', () => {
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  const change = (display: string, op: string) => ({ path: '/w/' + display, display, op, edits: 1, at: '' });
+  const s = { files: { source: 'harness', total: 3, changes: [
+    change('worktrees/db-proof/rush/api/scripts/dump-schema.sh', 'modified'),
+    change('worktrees/db-proof/security-job/scripts/scan.sh', 'modified'),
+    change('scratchpad/brief.md', 'created'),
+  ] } };
+  const tree = cards.renderFilesCard(s);
+  // worktrees → db-proof has one child folder and no files, so they fold together;
+  // db-proof itself has two children, so the fold stops there.
+  expect(tree).toContain('<span class="ft-name">worktrees/db-proof</span><span class="ft-count">2</span>');
+  expect(tree).toContain('<span class="ft-name">rush/api/scripts</span>');
+  expect(tree).toContain('<span class="file-op created">A</span>');
+  expect(tree).toContain('>brief.md</button>');
+  expect(tree).toContain('data-files-view="tree" aria-pressed="true"');
+  viewState.filesView = 'list';
+  const list = cards.renderFilesCard(s);
+  expect(list).not.toContain('class="ft-dir"');
+  expect(list).toContain('>scratchpad/brief.md</button>');
+  delete viewState.filesView;
+});
+
+test('the header keeps the face to title, model, account and host; the rest is in the ⋯ menu', () => {
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  const html = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CL-1', fullSessionId: 'abc-full', sessionChunk: 'abc', sessionTitle: 'Codebase health', model: 'claude-opus-5-5', accountLabel: 'work', hostLabel: 'yosemite-m1', project: 'agents', git: { branch: 'main' }, startedAtMs: Date.parse('2026-10-04T06:21:00'), tokenCount: 121_000_000, tokPerSec: 124 });
+  const face = html.slice(0, html.indexOf('class="head-menu"'));
+  const menu = html.slice(html.indexOf('class="menu-panel"'));
+  expect(face).toContain('>Codebase health</div>');
+  expect(face).toContain('>Opus 5.5</b>');
+  expect(face).toContain('>yosemite-m1</span>');
+  expect(face).not.toContain('copy-session');
+  expect(face).not.toContain('where-chip proj');
+  for (const inMenu of ['id="copy-session"', 'where-chip proj">agents<', '⎇ main', '121m tok · 124 tok/s', 'menu-k">Started']) expect(menu).toContain(inMenu);
+  expect(html).toContain('aria-label="Session details"');
+  // A tab whose harness has not reported an id yet still gets the pencil to set one.
+  const idless = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CX-1', agentName: 'Codex' });
+  expect(idless).toContain('data-action="setSessionId"');
+  expect(idless).toContain('not reported yet');
+});
+
+test('the state line uses the CLI phase: running time, or how long it ran, and last activity', () => {
+  const day = 26 * 3600_000;
+  const running = cards.renderSessionStats({ phase: 'running', durationMs: day, lastActivityMs: Date.now() - 2 * 60_000 });
+  expect(running).toContain('state-running');
+  expect(running).toContain('Running <b>1d 2h</b> · active <b>2 min ago</b>');
+  const idle = cards.renderSessionStats({ phase: 'idle', durationMs: day, lastActivityMs: Date.now() - 3 * 3600_000 });
+  expect(idle).toContain('Idle · ran <b>1d 2h</b> · active <b>3 hours ago</b>');
+  const asks = cards.renderSessionStats({ phase: 'running', needsYou: { kind: 'question', text: 'ok?' }, durationMs: 60_000 });
+  expect(asks).toContain('state-waiting');
+  expect(asks).toContain('Waiting on you');
+  expect(cards.renderSessionStats({})).toBe('');
+});
+
+test('subagent rows show type, duration and tools up front; running first, older finished fold away', () => {
+  const now = Date.now();
+  const sub = (id: string, status: string, startedAtMs: number, endedAtMs?: number) => ({ id, agentType: 'general-purpose', description: 'Task ' + id, status, startedAtMs, endedAtMs, toolCount: 9, transcriptPath: '/t/' + id + '.jsonl' });
+  const html = cards.renderSpawnedTeamCard({ subagents: [
+    sub('a', 'done', now - 9e6, now - 8e6), sub('b', 'done', now - 7e6, now - 6e6), sub('c', 'done', now - 5e6, now - 4e6),
+    sub('d', 'done', now - 3e6, now - 2e6), sub('r', 'running', now - 3 * 60_000),
+  ] });
+  expect(html.indexOf('Task r')).toBeLessThan(html.indexOf('Task d'));
+  expect(html).toContain('<span class="sub-meta">general-purpose · running 3m · 9 tools</span>');
+  expect(html).toContain('<span class="sub-meta">general-purpose · 16m · 9 tools</span>');
+  // Three newest finished are shown; the oldest folds behind one line.
+  expect(html).toContain('1 more finished</summary>');
+  expect(html.indexOf('1 more finished')).toBeLessThan(html.indexOf('Task a'));
+  expect(html).toContain('5 · 1 running');
+});
+
+test('a phase chip narrows the strip, the steps and the You list to that stretch of work', () => {
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  const startMs = Date.parse('2026-10-06T22:00:00Z');
+  const bucketMs = 10 * 60_000;
+  // Two bursts with an idle hour between them: buckets 0-2 and 9-11.
+  const buckets = Array.from({ length: 12 }, (_, i) => ({ tools: i < 3 || i > 8 ? 4 : 0, failed: 0, blocked: 0 }));
+  const at = (bucket: number) => startMs + bucket * bucketMs + 60_000;
+  const s = {
+    fullSessionId: 'sess', sessionLocal: false,
+    activityHistogram: { startMs, endMs: startMs + 12 * bucketMs, buckets, userAtMs: [at(0), at(10)] },
+    userTurns: [{ atMs: at(0), text: 'first burst ask', images: 0 }, { atMs: at(10), text: 'second burst ask', images: 0 }],
+    timeline: { steps: [
+      { text: 'early work', at: new Date(at(1)).toISOString(), source: 'narration', tools: 3, failed: 0, blocked: 0 },
+      { text: 'late work', at: new Date(at(11)).toISOString(), source: 'narration', tools: 3, failed: 0, blocked: 0 },
+    ], earlier: { steps: 0, tools: 0, failed: 0 }, tools: 6, failed: 0, spanMs: 0, state: 'ready' },
+  };
+  const all = cards.renderTimelineCard(s);
+  expect((all.match(/class="tl-filter tl-phase/g) || []).length).toBe(2);
+  expect(all).toContain('early work');
+  expect(all).toContain('late work');
+  expect(all).not.toContain('seek-bar out');
+
+  viewState.timelineRange = { sess: [startMs + 9 * bucketMs, startMs + 12 * bucketMs] };
+  const late = cards.renderTimelineCard(s);
+  expect(late).toContain('late work');
+  expect(late).not.toContain('early work');
+  expect(late).toContain('seek-bar out');
+  expect(late).toContain('data-phase="">Clear range</button>');
+  expect(late).toContain('aria-pressed="true"');
+  viewState.timelineFilter = { sess: 'user' };
+  const you = cards.renderTimelineCard(s);
+  expect(you).toContain('second burst ask');
+  expect(you).not.toContain('first burst ask');
+
+  // A remembered range that is no longer one of the phases lapses: nothing stays dimmed.
+  viewState.timelineFilter = {};
+  viewState.timelineRange = { sess: [startMs + 1, startMs + 2] };
+  const lapsed = cards.renderTimelineCard(s);
+  expect(lapsed).not.toContain('seek-bar out');
+  expect(lapsed).not.toContain('Clear range');
+  expect(lapsed).toContain('early work');
+  // A step with no usable time cannot be placed, so a range never hides it.
+  viewState.timelineRange = { sess: [startMs + 9 * bucketMs, startMs + 12 * bucketMs] };
+  const undated = cards.renderTimelineCard({ ...s, timeline: { ...s.timeline, steps: [...s.timeline.steps, { text: 'undated step', at: '', source: 'narration', tools: 1, failed: 0, blocked: 0 }] } });
+  expect(undated).toContain('undated step');
+
+  // One stretch of work has nothing to choose between, so no chips.
+  expect(cards.renderTimelineCard({ ...s, activityHistogram: { ...s.activityHistogram, buckets: buckets.map(() => ({ tools: 1, failed: 0, blocked: 0 })) } })).not.toContain('tl-phase');
+  for (const key of Object.keys(viewState)) delete viewState[key];
 });
