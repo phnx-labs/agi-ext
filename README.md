@@ -19,11 +19,17 @@ The publisher and name are frozen: changing either orphans the listing and break
   how each user journey should feel.
 - [docs/ARCH.md](docs/ARCH.md) ([rendered](docs/ARCH.html)): how it works, the measured
   module graph, known debt, and the direction.
+- [docs/reference.html](docs/reference.html) ([JSON](docs/reference.json)): every command,
+  setting, keybinding, menu item and view in `package.json`, and every exported UI component
+  under `ui/` with its props and the pane that shows it. Generated; never edit by hand.
 - [AGENTS.md](AGENTS.md): the contract for coding agents working in this repo.
 - [CHANGELOG.md](CHANGELOG.md): every released version; `scripts/release.sh` requires a
   section for the version it publishes.
 
 Re-render the docs after editing with `docs/render.sh` (needs `artifacts` on PATH).
+Regenerate the reference with `bun scripts/gen-docs.ts` after changing `package.json`
+`contributes` or a component under `ui/`; `scripts/build.sh` and `bun run test` fail while
+it is stale.
 
 ## Layout
 
