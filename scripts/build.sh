@@ -48,6 +48,11 @@ fi
 echo "Checking for unused exports and dead modules..."
 bun run lint:dead
 
+# docs/reference.{html,json} are generated from package.json and ui/; refuse to package
+# when they no longer match (regenerate with `bun scripts/gen-docs.ts`).
+echo "Checking the generated extension reference..."
+bun scripts/gen-docs.ts --check
+
 # Compile TypeScript
 echo "Compiling TypeScript..."
 bun run compile

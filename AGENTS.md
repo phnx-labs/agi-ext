@@ -40,7 +40,9 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
 ## Entry points
 
 `bun test --timeout 30000` (suite; ui/ from `ui/`) · `bun run lint:dead` (knip, wired into
-`scripts/build.sh`) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (local) ·
+`scripts/build.sh`) · `bun scripts/gen-docs.ts` (regenerates `docs/reference.{html,json}`
+from `package.json` and `ui/`; `--check`, run by `scripts/build.sh` and the suite, fails while
+they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (local) ·
 `scripts/release.sh <ver> --confirm` (Marketplace + Open VSX; routes to the box holding the
 `vs-marketplace` secrets; needs a CHANGELOG section). Never hand-roll `vsce`/`ovsx publish`.
 
