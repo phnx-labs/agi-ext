@@ -137,13 +137,15 @@ test('Active Session render is outcome-oriented and drops utility-stack cards (P
   expect(renderOrder).toContain('renderActivityCard(snap)');
   expect(renderOrder).toContain('renderFilesCard(snap)');
   expect(renderOrder).toContain('renderReplyBox(snap)');
-  // PHNX-3939 follow-up: what was ASKED leads, then what the agent actually did,
-  // then the checklist; Files sit at the bottom and the reply field is last.
-  expect(renderOrder.indexOf('renderRequestCard')).toBeLessThan(renderOrder.indexOf('renderTimelineCard'));
-  expect(renderOrder.indexOf('renderTimelineCard')).toBeLessThan(renderOrder.indexOf('renderArtifactsCard'));
-  expect(renderOrder.indexOf('renderTimelineCard')).toBeLessThan(renderOrder.indexOf('renderChecklistCard'));
-  expect(renderOrder.indexOf('renderChecklistCard')).toBeLessThan(renderOrder.indexOf('renderFilesCard'));
-  expect(renderOrder.indexOf('renderFilesCard')).toBeLessThan(renderOrder.indexOf('renderReplyBox'));
+  // PHNX-4289: what the session PRODUCED leads (artifacts, then its PR), right
+  // under Needs you; then the goal and what was asked, what the agent did, the
+  // checklist and files, its helpers, and the reply field last.
+  const order = ['renderTerminalCard', 'renderNeedsYou', 'renderArtifactsCard', 'renderPullRequestCard', 'renderGoalCard',
+    'renderRequestCard', 'renderTimelineCard', 'renderChecklistCard', 'renderFilesCard', 'renderSpawnedTeamCard',
+    'renderActivityCard', 'renderReplyBox'];
+  for (let i = 1; i < order.length; i++) {
+    expect(renderOrder.indexOf(order[i - 1])).toBeLessThan(renderOrder.indexOf(order[i]));
+  }
   // The Progress card folded INTO the Timeline card, which owns the checkpoints
   // fallback for an older CLI — two producers for one strip is what it replaced.
   expect(src).not.toContain('function renderCheckpointsCard');

@@ -1478,6 +1478,25 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .art-summary img { width: 32px; height: 21px; object-fit: cover; border-radius: 2px; border: 1px solid var(--r-edge); }
   .art-apps { display: flex; gap: 3px; }
   button.art-toggle { display: inline-flex; align-items: center; gap: 4px; text-transform: inherit; letter-spacing: inherit; color: inherit; font-weight: inherit; }
+  /* Gallery: the newest preview full width, the rest as 2-up tiles, then
+     files with no preview as compact tiles marked by their type. */
+  .art-card button.art-hero { display: block; width: 100%; padding: 0; margin: 2px 0 6px; overflow: hidden; border-radius: 10px; border: 1px solid var(--r-edge); background: var(--r-well); cursor: zoom-in; }
+  .art-hero-img { display: block; aspect-ratio: 16 / 10; overflow: hidden; }
+  .art-hero-img img, .art-shot-img img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .art-cap { display: grid; gap: 1px; padding: 6px 9px 7px; background: var(--r-glass); border-top: 1px solid var(--r-edge); }
+  .art-cap b { font-size: 12.5px; font-weight: 600; color: var(--r-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .art-cap-meta { display: flex; gap: 6px; align-items: baseline; font-family: var(--r-mono); font-size: 10px; color: var(--r-caption); white-space: nowrap; }
+  .art-kind { text-transform: uppercase; letter-spacing: 0.06em; color: var(--r-faint); }
+  .art-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; }
+  .art-card button.art-shot { display: block; min-width: 0; padding: 0; overflow: hidden; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--r-well); cursor: zoom-in; }
+  .art-shot-img { display: block; aspect-ratio: 4 / 3; overflow: hidden; }
+  .art-shot-cap { display: block; padding: 3px 6px 4px; font-size: 11px; color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-top: 1px solid var(--r-edge); background: var(--r-glass); }
+  .art-card button.art-doc { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 6px 7px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--r-glass); }
+  .art-glyph { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; background: var(--r-well); color: var(--r-caption); font-family: var(--r-mono); font-size: 10px; font-weight: 600; }
+  .art-doc-text { display: grid; min-width: 0; }
+  .art-doc-name { font-size: 11.5px; color: var(--r-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .art-card button.art-hero:hover, .art-card button.art-shot:hover, .art-card button.art-doc:hover { border-color: var(--r-focus); }
+  button.art-hero:focus-visible, button.art-shot:focus-visible, button.art-doc:focus-visible, button.pr-bar-btn:focus-visible { outline: 1px solid var(--r-focus); outline-offset: 1px; }
   .team-summary { display: flex; align-items: center; gap: 8px; }
   .team-summary-name { color: var(--r-text); font-weight: 600; }
   .team-summary-count { margin-left: auto; color: var(--r-caption); font-size: 11px; }
@@ -2030,7 +2049,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
   .footer button:hover { text-decoration: underline; }
   button.path-link, button.step, button.session-chunk, button.art-toggle, button.art-folder-toggle,
-  button.art-reveal, button.art-tile, button.art-link, button.art-summary {
+  button.art-reveal, button.art-tile, button.art-link, button.art-summary,
+  button.art-hero, button.art-shot, button.art-doc, button.pr-bar-btn, button.pr-run {
     background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
   }
   button.path-link { color: var(--r-link); padding: 0; }
@@ -2068,23 +2088,61 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   .lane-track { position: relative; height: 26px; border-bottom: 1px solid var(--r-edge); }
   .lane-tick { position: absolute; bottom: 0; width: 2px; height: 18px; margin-left: -1px; border-radius: 1px; background: var(--r-bar-hi); }
   .lane-tick.bad { background: var(--r-bad); height: 24px; }
-  /* Pull request card: one status line, checks by name, one action. */
-  .pr-head { display: flex; gap: 8px; align-items: flex-start; }
-  .pr-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--r-caption); }
-  .pr-tone-ok { background: var(--r-ok); box-shadow: 0 0 0 3px var(--r-ok-tint); }
-  .pr-tone-warn { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
-  .pr-tone-bad { background: var(--r-bad); box-shadow: 0 0 0 3px var(--r-bad-tint); }
+  /* Pull request card: a state ring and one word, then one icon strip
+     (segmented checks, review, merge); the checks fold under the bar. */
+  .pr-head { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; }
   .pr-text { min-width: 0; }
   .pr-title { font-weight: 600; color: var(--r-text); line-height: 1.35; overflow-wrap: anywhere; }
-  .pr-meta { margin-top: 2px; font-size: 11px; color: var(--r-caption); }
-  .pr-checks { margin-top: 6px; }
-  .pr-check { display: flex; gap: 7px; align-items: baseline; padding: 2px 0 2px 16px; font-size: 11.5px; }
+  .pr-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; font-size: 11px; }
+  .pr-word { font-weight: 600; color: var(--r-caption); }
+  .pr-tone-ok { color: var(--r-ok); }
+  .pr-tone-warn { color: var(--r-warn); }
+  .pr-tone-bad { color: var(--r-bad); }
+  .pr-branch { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .pr-ring { width: 18px; height: 18px; display: block; margin-top: 1px; }
+  .pr-ring svg { width: 18px; height: 18px; display: block; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .pr-ring .trk { stroke: var(--r-edge-hi); }
+  .pr-ring .arc { stroke: var(--r-warn); stroke-dasharray: 14 40; transform-origin: 9px 9px; animation: pr-spin 1s linear infinite; }
+  .pr-ring.ok .arc { stroke: var(--r-ok); stroke-dasharray: 44 0; animation: none; }
+  .pr-ring.bad .arc { stroke: var(--r-bad); stroke-dasharray: 44 0; animation: none; }
+  .pr-ring.draft .arc { stroke: var(--r-faint); stroke-dasharray: 3 3; animation: none; }
+  .pr-ring.none .arc { stroke: transparent; animation: none; }
+  .pr-ring .chk { stroke: var(--r-ok); stroke-width: 1.8; stroke-dasharray: 12; stroke-dashoffset: 0; }
+  .pr-ring .x { stroke: var(--r-bad); stroke-width: 1.6; }
+  .just-ready .pr-ring.ok .arc { animation: pr-close .45s ease both; }
+  .just-ready .pr-ring.ok .chk { animation: pr-draw .35s .3s ease both; }
+  @keyframes pr-spin { to { transform: rotate(360deg); } }
+  @keyframes pr-close { from { stroke-dasharray: 14 40; } to { stroke-dasharray: 44 0; } }
+  @keyframes pr-draw { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
+  .pr-strip { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+  .pr-bar-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 3px 0; border-radius: 4px; }
+  button.pr-bar-btn:hover .pr-bar { box-shadow: 0 0 0 1px var(--r-focus); }
+  .pr-bar { flex: 1; min-width: 0; display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; }
+  .pr-bar .seg { flex: 1; min-width: 2px; background: var(--r-edge-hi); }
+  .pr-bar .seg.passed { background: var(--r-ok); }
+  .pr-bar .seg.running { background: var(--r-warn); }
+  .pr-bar .seg.failed { background: var(--r-bad); }
+  .pr-bar .seg.skipped { background: var(--r-edge); }
+  .pr-frac { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-caption); }
+  .pr-glyph { flex: none; width: 16px; height: 16px; color: var(--r-faint); }
+  .pr-glyph svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .pr-glyph.ok { color: var(--r-ok); }
+  .pr-glyph.bad { color: var(--r-bad); }
+  .pr-glyph .badge { stroke-width: 1.8; }
+  .pr-checks { margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--r-edge); }
+  .pr-check { display: flex; gap: 7px; align-items: baseline; padding: 2px 0; font-size: 11.5px; }
+  .pr-check-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pr-mark { width: 10px; flex: none; font-family: var(--r-mono); color: var(--r-caption); }
   .pr-passed .pr-mark { color: var(--r-ok); }
   .pr-failed .pr-mark { color: var(--r-bad); }
   .pr-running .pr-mark { color: var(--r-warn); }
+  button.pr-run { flex: none; font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); padding: 0; }
+  button.pr-run:hover { color: var(--r-link); text-decoration: underline; }
   .pr-actions { margin-top: 9px; }
   .pr-note { margin-top: 6px; }
+  @media (prefers-reduced-motion: reduce) {
+    .pr-ring .arc, .pr-ring .chk { animation: none !important; }
+  }
   /* Files as a tree. */
   .files-card { position: relative; }
   .ft-toggle { display: flex; justify-content: flex-end; gap: 2px; margin: -2px 0 4px; }
@@ -2954,34 +3012,105 @@ function renderTimelineCard(s) {
 }
 
 // ── Pull request ────────────────────────────────────────────────────────────
-// The session's PR as the feed reports it: checks, review and conflicts in one
-// line, each check by name when the row lists them, and at most one action the
-// host decided (Merge, or Merge when green), which it confirms before running.
+// The session's PR as the feed reports it, read at a glance: a state ring and
+// one status word, then one icon strip (a segmented check bar, a review glyph,
+// a merge glyph) whose words live in each icon's title and aria-label. The
+// per-check list folds under the bar. At most one action the host decided
+// (Merge, or Merge when green), which it confirms before running.
 const PR_CHECK_MARK = { passed: '✓', failed: '✕', running: '◌', skipped: '–' };
+const PR_SEGMENT_ORDER = { passed: 0, running: 1, failed: 2, skipped: 3 };
+const prSeenChecks = new Map();
 
-function renderPullRequestCard(s) {
+// One word for where the PR stands, and the ring that draws it.
+function prVerdict(pr) {
+  if (pr.state === 'merged') return { ring: 'ok', word: 'Merged', tone: 'ok' };
+  if (pr.state === 'closed') return { ring: 'none', word: 'Closed', tone: 'idle' };
+  if (pr.checks === 'failing') return { ring: 'bad', word: 'Failing', tone: 'bad' };
+  if (pr.isDraft) return { ring: 'draft', word: 'Draft', tone: 'idle' };
+  if (pr.mergeable === 'conflicting') return { ring: 'bad', word: 'Conflicts', tone: 'bad' };
+  if (pr.review === 'changes_requested') return { ring: 'bad', word: 'Changes requested', tone: 'bad' };
+  if (pr.checks === 'pending') return { ring: 'running', word: 'Checks running', tone: 'warn' };
+  if (pr.checks === 'passing') {
+    // Green checks alone are not "Ready": a required review or an unknown merge
+    // state still stands between the PR and a merge.
+    if (pr.review === 'review_required') return { ring: 'ok', word: 'Needs review', tone: 'warn' };
+    if (pr.mergeable !== 'mergeable') return { ring: 'ok', word: 'Checks passed', tone: 'ok' };
+    return { ring: 'ok', word: 'Ready', tone: 'ok' };
+  }
+  return { ring: 'none', word: 'Open', tone: 'idle' };
+}
+
+// One bar segment per check the row lists, greens first so the bar fills like
+// progress; a row with only the rolled-up verdict draws one segment for it.
+// passed/counted leave skipped checks out of the fraction.
+function prCheckSegments(pr) {
+  const items = pr.checkItems || [];
+  if (!items.length) {
+    const state = pr.checks === 'passing' ? 'passed' : pr.checks === 'failing' ? 'failed' : pr.checks === 'pending' ? 'running' : '';
+    return { segments: state ? [{ state: state, name: 'checks ' + pr.checks }] : [], passed: 0, running: 0, failed: 0, counted: 0 };
+  }
+  const segments = items.map((c, i) => ({ state: c.state, name: c.name, i: i }))
+    .sort((a, b) => (PR_SEGMENT_ORDER[a.state] - PR_SEGMENT_ORDER[b.state]) || (a.i - b.i))
+    .map((c) => ({ state: c.state, name: c.name }));
+  const count = (state) => items.filter((c) => c.state === state).length;
+  return { segments: segments, passed: count('passed'), running: count('running'), failed: count('failed'), counted: items.filter((c) => c.state !== 'skipped').length };
+}
+
+// The ring closes into a check once, when this PR's checks turn green between
+// two renders the viewer saw; the first sight of a green PR does not animate.
+function prJustReady(prev, pr) {
+  return !!pr && pr.checks === 'passing' && pr.state !== 'merged' && prev !== undefined && prev !== 'passing';
+}
+
+function prRing(v) {
+  return '<span class="pr-ring ' + v.ring + '" role="img" aria-label="' + esc(v.word) + '">' +
+    '<svg viewBox="0 0 18 18" aria-hidden="true"><circle class="trk" cx="9" cy="9" r="7"/><circle class="arc" cx="9" cy="9" r="7"/>' +
+    (v.ring === 'ok' ? '<path class="chk" d="M5.8 9.2l2.2 2.2 4.2-4.6"/>' : '') +
+    (v.ring === 'bad' ? '<path class="x" d="M6.5 6.5l5 5M11.5 6.5l-5 5"/>' : '') + '</svg></span>';
+}
+
+function prReviewGlyph(pr) {
+  const review = pr.review;
+  const tone = review === 'approved' ? 'ok' : review === 'changes_requested' ? 'bad' : 'idle';
+  const words = review === 'approved' ? 'Approved' : review === 'changes_requested' ? 'Changes requested' : review === 'review_required' ? 'Review required' : 'No review yet';
+  const badge = review === 'approved' ? '<path class="badge" d="M9.6 12.2l1.6 1.6 3-3.3"/>' : review === 'changes_requested' ? '<path class="badge" d="M10.3 10.3l3.6 3.6M13.9 10.3l-3.6 3.6"/>' : '';
+  return '<span class="pr-glyph ' + tone + '" role="img" title="' + esc(words) + '" aria-label="' + esc(words) + '">' +
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="5" r="2.6"/><path d="M1.6 14c.5-2.8 2.4-4.4 4.9-4.4 1 0 1.9.2 2.6.7"/>' + badge + '</svg></span>';
+}
+
+function prMergeGlyph(pr) {
+  const tone = pr.state === 'merged' || pr.mergeable === 'mergeable' ? 'ok' : pr.mergeable === 'conflicting' ? 'bad' : 'idle';
+  const words = pr.state === 'merged' ? 'Merged' : pr.mergeable === 'mergeable' ? 'No conflicts' : pr.mergeable === 'conflicting' ? 'Has conflicts' : 'Mergeability not known yet';
+  return '<span class="pr-glyph ' + tone + '" role="img" title="' + esc(words) + '" aria-label="' + esc(words) + '">' +
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.7"/><circle cx="4.5" cy="12.5" r="1.7"/><circle cx="11.5" cy="8" r="1.7"/>' +
+    '<path d="M4.5 5.2v5.6M4.5 5.6c.2 1.8 2 2.4 5.3 2.4"/></svg></span>';
+}
+
+function renderPullRequestCard(s, justReady) {
   const pr = s.prStatus;
   if (!pr) return '';
   const act = s.prAction || { kind: 'none', reason: '' };
+  const v = prVerdict(pr);
+  const bar = prCheckSegments(pr);
+  const open = viewState.prChecksOpen === pr.url;
   const items = pr.checkItems || [];
-  const passed = items.filter((c) => c.state === 'passed').length;
-  const running = items.filter((c) => c.state === 'running').length;
-  const counted = items.filter((c) => c.state !== 'skipped').length;
-  const tone = pr.state === 'merged' ? 'ok' : pr.checks === 'failing' || pr.mergeable === 'conflicting' ? 'bad' : pr.checks === 'pending' ? 'warn' : pr.checks === 'passing' ? 'ok' : 'idle';
-  const bits = [];
-  if (pr.state === 'merged' || pr.state === 'closed') bits.push(pr.state);
-  else if (pr.isDraft) bits.push('draft');
-  if (counted) bits.push(passed + '/' + counted + ' checks passing' + (running ? ' · ' + running + ' running' : ''));
-  else if (pr.checks) bits.push(pr.checks === 'passing' ? 'checks passing' : pr.checks === 'failing' ? 'a check failed' : 'checks running');
-  if (pr.review) bits.push(pr.review === 'approved' ? 'approved' : pr.review === 'changes_requested' ? 'changes requested' : 'review required');
-  if (pr.mergeable === 'conflicting') bits.push('conflicts');
-  else if (pr.mergeable === 'mergeable' && pr.state === 'open') bits.push('no conflicts');
-  const checks = items.length
-    ? '<details class="pr-checks"><summary class="timeline-more">' + items.length + ' check' + (items.length === 1 ? '' : 's') + '</summary>' +
-      items.map((c) => '<div class="pr-check pr-' + esc(c.state) + '"><span class="pr-mark">' + esc(PR_CHECK_MARK[c.state] || '·') + '</span>' +
-        (c.url ? '<button type="button" class="path-link" data-url="' + esc(c.url) + '">' + esc(c.name) + '</button>' : '<span>' + esc(c.name) + '</span>') + '</div>').join('') +
-      '</details>'
+  const checkWords = bar.counted
+    ? bar.passed + ' of ' + bar.counted + ' checks passed' + (bar.running ? ', ' + bar.running + ' running' : '') + (bar.failed ? ', ' + bar.failed + ' failed' : '')
+    : pr.checks ? (pr.checks === 'passing' ? 'Checks passed' : pr.checks === 'failing' ? 'A check failed' : 'Checks running') : 'No checks reported';
+  const segs = bar.segments.map((c) => '<i class="seg ' + esc(c.state) + '" title="' + esc(c.name + ': ' + c.state) + '"></i>').join('');
+  const barBody = '<span class="pr-bar" aria-hidden="true">' + (segs || '<i class="seg none"></i>') + '</span>' +
+    (bar.counted ? '<span class="pr-frac">' + bar.passed + '/' + bar.counted + '</span>' : '');
+  const barEl = items.length
+    ? '<button type="button" class="pr-bar-btn" data-pr-checks="' + esc(pr.url) + '" aria-expanded="' + open + '" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords + (open ? ', hide checks' : ', show checks')) + '">' + barBody + '</button>'
+    : '<span class="pr-bar-btn" role="img" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords) + '">' + barBody + '</span>';
+  const checks = items.length && open
+    ? '<div class="pr-checks">' + items.map((c) =>
+        '<div class="pr-check pr-' + esc(c.state) + '"><span class="pr-mark">' + esc(PR_CHECK_MARK[c.state] || '·') + '</span>' +
+        '<span class="pr-check-name">' + esc(c.name) + '</span>' +
+        (c.url ? '<button type="button" class="pr-run" data-url="' + esc(c.url) + '" title="' + esc(c.url) + '">run ↗</button>' : '') + '</div>').join('') +
+      '</div>'
     : '';
+  const branch = s.git && s.git.branch ? '<span class="pr-branch" title="Branch">⎇ ' + esc(s.git.branch) + '</span>' : '';
   const primary = act.kind === 'merge'
     ? '<button type="button" class="action-btn primary" data-pr-action="merge">Merge</button>'
     : act.kind === 'automerge'
@@ -2990,10 +3119,11 @@ function renderPullRequestCard(s) {
   const note = act.kind === 'none' && act.reason && pr.state === 'open' ? '<div class="card-note pr-note">' + esc(act.reason) + '</div>' : '';
   return (
     '<h2>Pull request' + (s.prRepo ? '<span class="head-meta">' + esc(s.prRepo) + '</span>' : '') + '</h2>' +
-    '<div class="card pr-card">' +
-      '<div class="pr-head"><span class="pr-dot pr-tone-' + tone + '"></span>' +
+    '<div class="card pr-card' + (justReady ? ' just-ready' : '') + '">' +
+      '<div class="pr-head">' + prRing(v) +
         '<div class="pr-text"><div class="pr-title">#' + esc(pr.number) + (pr.title ? ' ' + esc(pr.title) : '') + '</div>' +
-        (bits.length ? '<div class="pr-meta">' + esc(bits.join(' · ')) + '</div>' : '') + '</div></div>' +
+        '<div class="pr-sub"><span class="pr-word pr-tone-' + v.tone + '">' + esc(v.word) + '</span>' + branch + '</div></div></div>' +
+      '<div class="pr-strip">' + barEl + prReviewGlyph(pr) + prMergeGlyph(pr) + '</div>' +
       checks +
       '<div class="actions-row pr-actions">' + primary + '<button type="button" class="action-btn" data-url="' + esc(pr.url) + '">Open on GitHub ↗</button></div>' +
       note +
@@ -3083,9 +3213,10 @@ function renderReplyBox(s) {
 }
 
 // ── Artifacts ───────────────────────────────────────────────────────────────
-// Everything the session produced for a person: the CLI's artifacts grouped into
-// their folders, the PR and the ticket. Sort, grouping and the folded state are
-// the viewer's choice and persist; the data is only what the row carries.
+// Everything the session produced for a person: the CLI's artifacts as a
+// gallery (or grouped into their folders by app), the PRs and the ticket. Sort,
+// grouping and the folded state are the viewer's choice and persist; the data is
+// only what the row carries.
 const APP_LABEL = { github: 'GitHub', finder: 'Finder', linear: 'Linear' };
 const APP_ICON = {
   github: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>',
@@ -3122,11 +3253,16 @@ function artifactItems(s) {
   return items;
 }
 
+// The gallery is the default; Group by app is on only after the viewer turns it on.
+// A viewer who never toggled has no stored value, so one click must turn it on.
+function artifactGroupOn(stored) { return stored === true; }
+
 function renderArtifactsCard(s) {
   const items = artifactItems(s);
   if (!items.length) return '';
   const sortKey = ARTIFACT_SORTS[viewState.artifactSort] ? viewState.artifactSort : 'latest';
-  const grouped = viewState.artifactGroup !== false;
+  // Visual first: the gallery is the default; grouping by app is the toggle.
+  const grouped = artifactGroupOn(viewState.artifactGroup);
   const collapsed = !!viewState.artifactsCollapsed;
   items.sort(ARTIFACT_SORTS[sortKey]);
   const fileCount = items.reduce((n, it) => n + (it.files ? it.files.length : 0), 0);
@@ -3154,9 +3290,56 @@ function renderArtifactsCard(s) {
       g.items.map((it) => renderArtifactItem(it, s, sortKey, false)).join('')
     ).join('');
   } else {
-    body = items.map((it) => renderArtifactItem(it, s, sortKey, true)).join('');
+    const files = [];
+    for (const it of items) if (it.files) for (const f of it.files) files.push(f);
+    body = renderArtifactGallery(artifactGallery(files, sortKey)) +
+      items.filter((it) => !it.files).map((it) => renderArtifactItem(it, s, sortKey, true)).join('');
   }
   return head + '<div class="card art-card">' + bar + body + '</div>';
+}
+
+// The gallery: the newest file with a preview leads large, the other previews
+// follow as tiles in the viewer's order, and files with no preview (pages,
+// documents) close the card as compact tiles marked by their type.
+function artifactGallery(files, sortKey) {
+  let hero = null;
+  for (const f of files) if (f.uri && (!hero || (f.editedAtMs || 0) > (hero.editedAtMs || 0))) hero = f;
+  const rest = files.filter((f) => f !== hero).sort(ARTIFACT_SORTS[sortKey] || ARTIFACT_SORTS.latest);
+  return { hero: hero, images: rest.filter((f) => f.uri), files: rest.filter((f) => !f.uri) };
+}
+
+const FILE_GLYPH = { md: '¶', markdown: '¶', txt: '¶', html: '‹/›', htm: '‹/›', json: '{ }', csv: '▦', pdf: '▤' };
+
+function artifactKind(f) {
+  const base = f.path.split('/').pop() || '';
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : 'file';
+}
+
+function renderArtifactGallery(g) {
+  const caption = (f) => {
+    const age = f.editedAtMs ? relTime(f.editedAtMs) : '';
+    return '<span class="art-kind">' + esc(artifactKind(f)) + '</span>' + (age ? '<span class="art-age">' + esc(age) + '</span>' : '');
+  };
+  const hero = g.hero
+    ? '<button type="button" class="art-hero artifact-open" data-artifact="' + esc(g.hero.path) + '" title="' + esc(g.hero.path) + '">' +
+        '<span class="art-hero-img">' + thumbImg(g.hero) + '</span>' +
+        '<span class="art-cap"><b>' + esc(g.hero.name) + '</b><span class="art-cap-meta">' + caption(g.hero) + '</span></span></button>'
+    : '';
+  const images = g.images.length
+    ? '<div class="art-grid">' + g.images.map((f) =>
+        '<button type="button" class="art-shot artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
+          '<span class="art-shot-img">' + thumbImg(f) + '</span><span class="art-shot-cap">' + esc(f.name) + '</span></button>').join('') + '</div>'
+    : '';
+  const docs = g.files.length
+    ? '<div class="art-grid art-docs">' + g.files.map((f) => {
+        const kind = artifactKind(f);
+        return '<button type="button" class="art-doc artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
+          '<span class="art-glyph" aria-hidden="true">' + esc(FILE_GLYPH[kind] || kind.slice(0, 4).toUpperCase()) + '</span>' +
+          '<span class="art-doc-text"><span class="art-doc-name">' + esc(f.name) + '</span><span class="art-cap-meta">' + caption(f) + '</span></span></button>';
+      }).join('') + '</div>'
+    : '';
+  return hero + images + docs;
 }
 
 function renderArtifactItem(it, s, sortKey, showApp) {
@@ -3188,11 +3371,12 @@ function renderArtifactItem(it, s, sortKey, showApp) {
 }
 
 // An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
-// alive for a 90 px tile. Each image is instead fetched once when it scrolls
-// near view, downscaled to a small WebP, and cached for the webview's life.
+// alive for a sidebar preview. Each image is instead fetched once when it scrolls
+// near view, downscaled to a WebP wide enough for the full-width hero, and cached for the webview's life.
 // Decodes run one at a time so a folder of renders never spikes the machine.
-const THUMB_WIDTH = 176;
+const THUMB_WIDTH = 480;
 const THUMB_RETRY_MS = 30000;
+const THUMB_CACHE_MAX = 120;
 const thumbCache = new Map();
 const thumbFailedAt = new Map();
 let thumbQueue = Promise.resolve();
@@ -3225,6 +3409,8 @@ function queueThumb(uri) {
         bitmap.close();
         // WebP keeps transparency; JPEG would turn a cutout or logo black.
         thumbCache.set(uri, canvas.toDataURL('image/webp', 0.8));
+        // A long session can name hundreds of images; keep the newest copies only.
+        while (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
       } catch {
         thumbFailedAt.set(uri, Date.now());
         return;
@@ -3523,22 +3709,27 @@ function render(snap) {
     );
     return;
   }
-  // What was asked, what the agent has actually done, the checklist, what it
-  // produced, and the files it touched — then a reply field (PHNX-3939).
+  // What the session produced leads: its artifacts as previews, then its PR.
+  // Then what was asked, what the agent has done, the checklist and the files it
+  // touched, its helpers — and a reply field last (PHNX-4289).
+  const pr = snap.prStatus;
+  const prKey = pr ? (snap.fullSessionId || '') + '#' + pr.number : '';
+  const justReady = pr ? prJustReady(prSeenChecks.get(prKey), pr) : false;
+  if (pr) prSeenChecks.set(prKey, pr.checks || '');
   root.innerHTML = (
     renderTerminalCard(snap) +
     renderNeedsYou(snap) +
     renderSessionStats(snap) +
     renderFailures(snap) +
+    renderArtifactsCard(snap) +
+    renderPullRequestCard(snap, justReady) +
     renderGoalCard(snap) +
     renderRequestCard(snap) +
-    renderPullRequestCard(snap) +
     renderTimelineCard(snap) +
-    renderArtifactsCard(snap) +
     renderChecklistCard(snap) +
+    renderFilesCard(snap) +
     renderSpawnedTeamCard(snap) +
     renderActivityCard(snap) +
-    renderFilesCard(snap) +
     renderReplyBox(snap) +
     '<div class="footer"><button id="refresh-btn">Refresh</button></div>'
   );
@@ -3564,7 +3755,7 @@ function render(snap) {
   const artSort = root.querySelector('[data-art-sort]');
   if (artSort) artSort.addEventListener('change', () => { viewState.artifactSort = artSort.value; vscode.setState(viewState); render(lastSnapshot); });
   const artGroup = root.querySelector('[data-art-group]');
-  if (artGroup) artGroup.addEventListener('click', () => { viewState.artifactGroup = viewState.artifactGroup === false; vscode.setState(viewState); render(lastSnapshot); });
+  if (artGroup) artGroup.addEventListener('click', () => { viewState.artifactGroup = !artifactGroupOn(viewState.artifactGroup); vscode.setState(viewState); render(lastSnapshot); });
   for (const el of root.querySelectorAll('[data-folder]')) {
     el.addEventListener('click', () => {
       const key = el.getAttribute('data-folder');
@@ -3684,6 +3875,16 @@ function render(snap) {
       vscode.postMessage({ type: 'openWorktree', path: el.getAttribute('data-worktree-path') });
     });
   }
+  const prChecks = root.querySelector('[data-pr-checks]');
+  if (prChecks) prChecks.addEventListener('click', () => {
+    const url = prChecks.getAttribute('data-pr-checks');
+    viewState.prChecksOpen = viewState.prChecksOpen === url ? '' : url;
+    vscode.setState(viewState);
+    render(lastSnapshot);
+    // The card re-renders; keep the keyboard on the bar that was just toggled.
+    const again = root.querySelector('[data-pr-checks]');
+    if (again) again.focus();
+  });
   for (const el of root.querySelectorAll('[data-pr-action]')) {
     el.addEventListener('click', () => vscode.postMessage({ type: 'prAction', action: el.getAttribute('data-pr-action') }));
   }

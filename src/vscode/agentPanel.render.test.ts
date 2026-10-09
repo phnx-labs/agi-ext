@@ -53,8 +53,10 @@ const NAMES = [
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
   'sessionState', 'seekSegments', 'timelinePhases', 'currentRange', 'inRange', 'renderPhaseChips',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
+  'prVerdict', 'prCheckSegments', 'prJustReady', 'prRing', 'prReviewGlyph', 'prMergeGlyph',
+  'artifactGallery', 'artifactKind', 'renderArtifactGallery', 'artifactGroupOn',
 ];
-const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS'];
+const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -67,9 +69,14 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
-  renderPullRequestCard,
+  renderPullRequestCard, prVerdict, prCheckSegments, prJustReady, artifactGallery, artifactGroupOn,
 }; })()`) as {
-  renderPullRequestCard: (s: unknown) => string;
+  artifactGroupOn: (stored: unknown) => boolean;
+  renderPullRequestCard: (s: unknown, justReady?: boolean) => string;
+  prVerdict: (pr: unknown) => { ring: string; word: string; tone: string };
+  prCheckSegments: (pr: unknown) => { segments: { state: string; name: string }[]; passed: number; running: number; failed: number; counted: number };
+  prJustReady: (prev: string | undefined, pr: unknown) => boolean;
+  artifactGallery: (files: unknown[], sortKey: string) => { hero: { path: string } | null; images: { path: string }[]; files: { path: string }[] };
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
   renderRequestCard: (s: unknown) => string;
@@ -394,7 +401,7 @@ test('header separates identity Details and exposes terminal-only adoption', () 
   expect(cards.renderTerminalCard({})).not.toContain('class="account-row"');
 });
 
-test('Artifacts groups files into folders newest first, with PR and ticket tiles, and folds to one line', () => {
+test('Artifacts lead with the newest preview large, then 2-up tiles, then typed file tiles; grouping by app is a toggle (PHNX-4289)', () => {
   const snap = {
     sessionLocal: true,
     linearIssue: 'PHNX-4248',
@@ -402,32 +409,68 @@ test('Artifacts groups files into folders newest first, with PR and ticket tiles
     artifacts: [
       { path: '/u/Downloads/Old/a.png', display: '~/Downloads/Old/a.png', basename: 'a.png', bucket: 'docs', editedAtMs: 1_000, uri: 'vscode-resource:/a.png' },
       { path: '/u/Downloads/New/index.html', display: '~/Downloads/New/index.html', basename: 'index.html', bucket: 'docs', editedAtMs: 3_000 },
-      { path: '/u/Downloads/New/hero.jpg', display: '~/Downloads/New/hero.jpg', basename: 'hero.jpg', bucket: 'docs', editedAtMs: 2_000, uri: 'vscode-resource:/hero.jpg' },
+      { path: '/u/Downloads/New/hero.jpg', display: '~/Downloads/New/hero.jpg', basename: 'hero.jpg', title: 'Launch hero', bucket: 'docs', editedAtMs: 2_000, uri: 'vscode-resource:/hero.jpg' },
     ],
   };
   for (const key of Object.keys(viewState)) delete viewState[key];
   const html = cards.renderArtifactsCard(snap);
   expect(html).toContain('4 items · 3 files');
-  expect(html.indexOf('data-folder="/u/Downloads/New"')).toBeLessThan(html.indexOf('data-folder="/u/Downloads/Old"'));
-  expect(html.indexOf('data-artifact="/u/Downloads/New/index.html"')).toBeLessThan(html.indexOf('data-artifact="/u/Downloads/New/hero.jpg"'));
-  // Raster thumbnails wait for the downscaler instead of decoding the full image.
+  // The newest file WITH a preview is the hero, captioned by its sidecar title and kind,
+  // even though a page was edited later.
+  expect(html).toContain('class="art-hero artifact-open" data-artifact="/u/Downloads/New/hero.jpg"');
+  expect(html).toContain('<b>Launch hero</b>');
+  expect(html).toContain('<span class="art-kind">jpg</span>');
+  // Raster previews wait for the downscaler instead of decoding the full image.
   expect(html).toContain('<img data-thumb="vscode-resource:/hero.jpg" alt="">');
-  expect(html).toContain('<span class="art-ext">HTML</span>');
+  expect(html).toContain('class="art-shot artifact-open" data-artifact="/u/Downloads/Old/a.png"');
+  // A page with no preview is a compact tile marked by its type, after the previews.
+  expect(html).toContain('class="art-doc artifact-open" data-artifact="/u/Downloads/New/index.html"');
+  expect(html).toContain('<span class="art-glyph" aria-hidden="true">‹/›</span>');
+  expect(html.indexOf('art-hero')).toBeLessThan(html.indexOf('art-shot'));
+  expect(html.indexOf('art-shot')).toBeLessThan(html.indexOf('art-doc'));
   expect(html).toContain('data-url="https://github.com/phnx-labs/agi-cli/pull/3716"');
   expect(html).toContain('data-url="https://linear.app/issue/PHNX-4248"');
-  for (const app of ['GitHub', 'Finder', 'Linear']) expect(html).toContain(app + '<span class="art-count">');
+  expect(html).toContain('data-art-group aria-pressed="false"');
+  expect(html).not.toContain('data-folder=');
+
+  viewState.artifactGroup = true;
+  const grouped = cards.renderArtifactsCard(snap);
+  expect(grouped).toContain('data-art-group aria-pressed="true"');
+  expect(grouped.indexOf('data-folder="/u/Downloads/New"')).toBeLessThan(grouped.indexOf('data-folder="/u/Downloads/Old"'));
+  expect(grouped.indexOf('data-artifact="/u/Downloads/New/index.html"')).toBeLessThan(grouped.indexOf('data-artifact="/u/Downloads/New/hero.jpg"'));
+  expect(grouped).toContain('<span class="art-ext">HTML</span>');
+  for (const app of ['GitHub', 'Finder', 'Linear']) expect(grouped).toContain(app + '<span class="art-count">');
+  expect(grouped).not.toContain('art-hero');
 
   viewState.artifactSort = 'oldest';
-  viewState.artifactGroup = false;
-  const flat = cards.renderArtifactsCard(snap);
-  expect(flat.indexOf('data-folder="/u/Downloads/Old"')).toBeLessThan(flat.indexOf('data-folder="/u/Downloads/New"'));
-  expect(flat).not.toContain('class="art-app"');
+  const oldest = cards.renderArtifactsCard(snap);
+  expect(oldest.indexOf('data-folder="/u/Downloads/Old"')).toBeLessThan(oldest.indexOf('data-folder="/u/Downloads/New"'));
 
   viewState.artifactsCollapsed = true;
   const folded = cards.renderArtifactsCard(snap);
   expect(folded).toContain('class="art-summary"');
   expect(folded).not.toContain('data-folder=');
+  expect(folded).not.toContain('art-hero');
   expect(cards.renderArtifactsCard({})).toBe('');
+  for (const key of Object.keys(viewState)) delete viewState[key];
+});
+
+test('artifactGallery: the hero is the newest preview whatever the sort; the rest keep the viewer order (PHNX-4289)', () => {
+  const f = (name: string, editedAtMs: number, uri?: string) => ({ path: '/a/' + name, name, editedAtMs, ...(uri ? { uri } : {}) });
+  const files = [f('b.png', 2, 'u:b'), f('c.png', 5, 'u:c'), f('a.png', 3, 'u:a'), f('notes.md', 9), f('page.html', 1)];
+  const latest = cards.artifactGallery(files, 'latest');
+  expect(latest.hero!.path).toBe('/a/c.png');
+  expect(latest.images.map((x) => x.path)).toEqual(['/a/a.png', '/a/b.png']);
+  expect(latest.files.map((x) => x.path)).toEqual(['/a/notes.md', '/a/page.html']);
+  const byName = cards.artifactGallery(files, 'name');
+  expect(byName.hero!.path).toBe('/a/c.png');
+  expect(byName.images.map((x) => x.path)).toEqual(['/a/a.png', '/a/b.png']);
+  expect(cards.artifactGallery(files, 'oldest').files.map((x) => x.path)).toEqual(['/a/page.html', '/a/notes.md']);
+  // Nothing with a preview: no hero, every file is a typed tile.
+  const docs = cards.artifactGallery([f('notes.md', 1), f('page.html', 2)], 'latest');
+  expect(docs.hero).toBeNull();
+  expect(docs.images).toEqual([]);
+  expect(docs.files.map((x) => x.path)).toEqual(['/a/page.html', '/a/notes.md']);
 });
 
 test('pencil message reaches the host command and reports command failures', async () => {
@@ -764,31 +807,90 @@ const prRow = (extra: object = {}) => {
   return { prStatus, prAction: prAction(prStatus), prRepo: prRepo(PR_URL) };
 };
 
-test('the PR card states checks, review and conflicts, and offers only the action the host decided', () => {
+test('the PR card reads as a ring, one word and an icon strip, and offers only the action the host decided (PHNX-4289)', () => {
+  for (const key of Object.keys(viewState)) delete viewState[key];
   // Today's row (agents-cli 1.22.122): status, but no head commit, so no merge button and the reason why.
-  const today = cards.renderPullRequestCard(prRow());
+  const today = cards.renderPullRequestCard({ ...prRow(), git: { branch: 'agents/phnx-4289' } });
   expect(today).toContain('>Pull request<span class="head-meta">phnx-labs/agi-ext</span>');
   expect(today).toContain('#103');
-  expect(today).toContain('checks passing · review required · no conflicts');
+  // Checks pass but a review is required: green ring, and the word says what is left.
+  expect(today).toContain('class="pr-ring ok" role="img" aria-label="Needs review"');
+  expect(today).toContain('<span class="pr-word pr-tone-warn">Needs review</span>');
+  expect(today).toContain('⎇ agents/phnx-4289');
+  // The words live on the icons, not in text chips.
+  expect(today).toContain('title="Review required" aria-label="Review required"');
+  expect(today).toContain('title="No conflicts" aria-label="No conflicts"');
+  expect(today).not.toContain('checks passing · review required');
   expect(today).not.toContain('data-pr-action');
   expect(today).toContain('needs a newer agents CLI');
   expect(today).toContain('data-url="' + PR_URL + '">Open on GitHub ↗');
+  expect(today).not.toContain('just-ready');
 
-  const ready = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', title: 'Compact header', checkItems: [{ name: 'test', state: 'passed' }, { name: 'lint', state: 'passed' }, { name: 'docs', state: 'skipped' }] }));
+  const ready = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', title: 'Compact header', reviewDecision: 'APPROVED', checkItems: [{ name: 'test', state: 'passed', url: 'https://github.com/x/runs/1' }, { name: 'lint', state: 'passed' }, { name: 'docs', state: 'skipped' }] }), true);
   expect(ready).toContain('#103 Compact header');
-  expect(ready).toContain('2/2 checks passing');
+  expect(ready).toContain('<span class="pr-frac">2/2</span>');
+  expect(ready).toContain('title="2 of 2 checks passed"');
+  expect(ready).toContain('title="Approved"');
   expect(ready).toContain('class="action-btn primary" data-pr-action="merge">Merge<');
-  expect(ready).toContain('3 checks</summary>');
+  expect(ready).toContain('class="card pr-card just-ready"');
+  // The check list folds under the bar until the bar is clicked.
+  expect(ready).toContain(`data-pr-checks="${PR_URL}" aria-expanded="false"`);
+  expect(ready).not.toContain('class="pr-checks"');
+  // The fold belongs to one PR: opening it here does not open the next session's PR.
+  viewState.prChecksOpen = 'https://github.com/other/repo/pull/1';
+  expect(cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checkItems: [{ name: 'test', state: 'passed' }] }))).not.toContain('class="pr-checks"');
+  viewState.prChecksOpen = PR_URL;
+  const open = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checkItems: [{ name: 'test', state: 'passed', url: 'https://github.com/x/runs/1' }, { name: 'docs', state: 'skipped' }] }));
+  expect(open).toContain(`data-pr-checks="${PR_URL}" aria-expanded="true"`);
+  expect(open).toContain('<span class="pr-check-name">test</span><button type="button" class="pr-run" data-url="https://github.com/x/runs/1"');
+  delete viewState.prChecksOpen;
 
   const green = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'pending', checkItems: [{ name: 'test', state: 'passed' }, { name: 'e2e', state: 'running' }] }));
   expect(green).toContain('data-pr-action="automerge"');
-  expect(green).toContain('1/2 checks passing · 1 running');
+  expect(green).toContain('class="pr-ring running"');
+  expect(green).toContain('>Checks running<');
+  expect(green).toContain('title="1 of 2 checks passed, 1 running"');
   expect(green).not.toContain('action-btn primary');
 
-  const failing = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'failing' }));
+  const failing = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'failing', mergeable: 'CONFLICTING', reviewDecision: 'CHANGES_REQUESTED' }));
   expect(failing).not.toContain('data-pr-action');
-  expect(failing).toContain('a check failed');
+  expect(failing).toContain('class="pr-ring bad"');
+  expect(failing).toContain('>Failing<');
+  expect(failing).toContain('class="pr-glyph bad" role="img" title="Changes requested"');
+  expect(failing).toContain('class="pr-glyph bad" role="img" title="Has conflicts"');
   expect(cards.renderPullRequestCard({})).toBe('');
+});
+
+test('prVerdict, prCheckSegments and prJustReady (PHNX-4289)', () => {
+  const pr = (extra: object = {}) => normalizePrStatus({ url: PR_URL, number: 103, state: 'OPEN', isDraft: false, ...extra });
+  expect(cards.prVerdict(pr({ state: 'MERGED' })).word).toBe('Merged');
+  expect(cards.prVerdict(pr({ isDraft: true, checks: 'pending' }))).toEqual({ ring: 'draft', word: 'Draft', tone: 'idle' });
+  expect(cards.prVerdict(pr({ isDraft: true, checks: 'failing' })).word).toBe('Failing');
+  expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'CONFLICTING' })).ring).toBe('bad');
+  expect(cards.prVerdict(pr({ checks: 'pending' })).ring).toBe('running');
+  expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE' })).word).toBe('Ready');
+  expect(cards.prVerdict(pr()).ring).toBe('none');
+
+  // One segment per check, greens first, skipped out of the fraction.
+  const bar = cards.prCheckSegments(pr({ checkItems: [
+    { name: 'e2e', state: 'failed' }, { name: 'docs', state: 'skipped' }, { name: 'test', state: 'passed' },
+    { name: 'lint', state: 'running' }, { name: 'types', state: 'passed' },
+  ] }));
+  expect(bar.segments.map((x) => x.name)).toEqual(['test', 'types', 'lint', 'e2e', 'docs']);
+  expect([bar.passed, bar.running, bar.failed, bar.counted]).toEqual([2, 1, 1, 4]);
+  // Only the rolled-up verdict on the row: one segment for it, no fraction.
+  const rolled = cards.prCheckSegments(pr({ checks: 'pending' }));
+  expect(rolled.segments).toEqual([{ state: 'running', name: 'checks pending' }]);
+  expect(rolled.counted).toBe(0);
+  expect(cards.prCheckSegments(pr()).segments).toEqual([]);
+
+  const passing = pr({ checks: 'passing' });
+  expect(cards.prJustReady('pending', passing)).toBe(true);
+  expect(cards.prJustReady('', passing)).toBe(true);
+  expect(cards.prJustReady(undefined, passing)).toBe(false);
+  expect(cards.prJustReady('passing', passing)).toBe(false);
+  expect(cards.prJustReady('pending', pr({ checks: 'failing' }))).toBe(false);
+  expect(cards.prJustReady('pending', pr({ checks: 'passing', state: 'MERGED' }))).toBe(false);
 });
 
 test('a merge runs one pinned CLI verb, only after the modal confirms and only if the host still agrees', async () => {
@@ -926,3 +1028,18 @@ test('with a range set, the loaded tool calls draw as a zoomed lane over that st
   expect(html).not.toContain('early.ts');
   for (const key of Object.keys(viewState)) delete viewState[key];
 });
+
+test('Group by app turns on with one click from a viewer who never toggled it (PHNX-4289)', () => {
+  // The click handler stores !artifactGroupOn(current); the card reads artifactGroupOn(stored).
+  const afterOneClick = !cards.artifactGroupOn(undefined);
+  expect(afterOneClick).toBe(true);
+  expect(cards.artifactGroupOn(afterOneClick)).toBe(true);
+  expect(cards.artifactGroupOn(!cards.artifactGroupOn(afterOneClick))).toBe(false);
+})
+
+test('green checks read "Ready" only when nothing else blocks the merge (PHNX-4289)', () => {
+  const base = { url: 'u', number: 1, isDraft: false, checkItems: [], checks: 'passing' }
+  expect(cards.prVerdict({ ...base, mergeable: 'mergeable' }).word).toBe('Ready')
+  expect(cards.prVerdict({ ...base, mergeable: 'mergeable', review: 'review_required' })).toEqual({ ring: 'ok', word: 'Needs review', tone: 'warn' })
+  expect(cards.prVerdict({ ...base, mergeable: 'unknown' }).word).toBe('Checks passed')
+})
