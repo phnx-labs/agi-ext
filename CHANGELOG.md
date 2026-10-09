@@ -4,6 +4,23 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The session sidebar shows what the agent produced first. Artifacts and the Pull request
+  card now sit right under the header (and Needs you), ahead of the goal, request and
+  timeline; the checklist and changed files follow, then subagents and activity, and the
+  reply field stays last (PHNX-4289).
+- Artifacts is a gallery by default: the newest image the session made is a large preview
+  with its title, type and age, the other images follow as a two-up grid of bigger tiles,
+  and pages or documents without a preview are compact tiles marked by their type. Clicking
+  any of them opens the file as before. Group by app is still one click away.
+- The Pull request card reads at a glance instead of as a line of words: a ring that spins
+  while checks run, closes into a check when the PR is ready (once, as it turns green; not
+  under reduced motion) and turns red when it fails, one status word, the branch, and an
+  icon strip with a segmented check bar (`passed/total`), a review glyph and a merge glyph.
+  Hover any icon for its words; click the bar to list the checks with links to their runs.
+  Merge and Merge when green work exactly as before.
+
 ## [0.9.386] - 2026-10-09
 
 - The live-terminals registry (`~/.agents/.cache/terminals/live-terminals.json`) carries the
