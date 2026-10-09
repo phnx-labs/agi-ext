@@ -2,17 +2,11 @@ import { describe, expect, mock, test } from 'bun:test';
 import * as path from 'path';
 import { vscodeDouble } from '../testing/vscodeDouble';
 
-const opened: string[] = [];
-
 mock.module('vscode', () => vscodeDouble({
   Uri: {
     file: (fsPath: string) => ({ fsPath, scheme: 'file', toString: () => `file://${fsPath}` }),
-    parse: (value: string) => ({ toString: () => value }),
-    joinPath: (base: { fsPath: string }, ...parts: string[]) => ({ fsPath: [base.fsPath, ...parts].join('/') }),
   },
-  env: {
-    openExternal: async (uri: { toString(): string }) => { opened.push(uri.toString()); return true; },
-  },
+
   window: {
     registerCustomEditorProvider: () => ({ dispose: () => {} }),
   },
@@ -21,7 +15,7 @@ mock.module('vscode', () => vscodeDouble({
   },
 }));
 
-const { rewriteRelativeResources, escapeForTemplateLiteral, isExternalLink, AgentsHtmlReaderProvider } = await import('./htmlReader');
+const { rewriteRelativeResources, escapeForTemplateLiteral, isExternalLink, routeReaderMessage } = await import('./htmlReader');
 
 describe('escapeForTemplateLiteral', () => {
   test('escapes </script> so host script block is not broken', () => {
@@ -85,25 +79,9 @@ describe('isExternalLink', () => {
   });
 });
 
-describe('reader link messages', () => {
-  test('a clicked agents:// or web link opens outside the editor; other schemes and stray messages do not', async () => {
-    opened.length = 0;
-    let onMessage: ((m: unknown) => void) | undefined;
-    let html = '';
-    const webview = {
-      options: {},
-      cspSource: 'vscode-resource:',
-      asWebviewUri: (uri: { fsPath: string }) => ({ toString: () => `webview-uri://${uri.fsPath}` }),
-      onDidReceiveMessage: (listener: (m: unknown) => void) => { onMessage = listener; return { dispose: () => {} }; },
-      set html(value: string) { html = value; },
-      get html() { return html; },
-    };
-    const panel = { webview, onDidDispose: () => ({ dispose: () => {} }) };
-    const document = { uri: { fsPath: '/tmp/a/demo.html', toString: () => 'file:///tmp/a/demo.html' }, getText: () => '<a href="agents://session/abc">Open session</a>' };
-    const provider = new AgentsHtmlReaderProvider({ extensionUri: { fsPath: '/ext' } } as any);
-    await provider.resolveCustomTextEditor(document as any, panel as any, {} as any);
-
-    expect(html).toContain("postMessage({ type: 'open-external', href })");
+describe('routeReaderMessage', () => {
+  test('a clicked agents:// or web link opens outside the editor; other schemes and stray messages do not', () => {
+    const opened: string[] = [];
     for (const message of [
       { type: 'open-external', href: 'agents://session/abc?host=mac-mini' },
       { type: 'open-external', href: 'https://github.com/phnx-labs/agi-ext/pull/107' },
@@ -111,8 +89,8 @@ describe('reader link messages', () => {
       { type: 'open-external', href: 'file:///etc/passwd' },
       { type: 'navigate', href: 'https://example.com' },
       { type: 'open-external' },
-    ]) onMessage?.(message);
-    await Promise.resolve();
+      null,
+    ]) routeReaderMessage(message, (href) => opened.push(href));
     expect(opened).toEqual(['agents://session/abc?host=mac-mini', 'https://github.com/phnx-labs/agi-ext/pull/107']);
   });
 });
