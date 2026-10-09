@@ -379,7 +379,7 @@ An agent produced a plan or a report as Markdown or HTML and you want to read it
 
 You enable the Reader once with `Agents: Reader (Enable)`. From then on `.md` files can open in the Notion-style editor (TipTap, with a frontmatter panel, outline, slash commands, callouts, toggles, file attachments) and `.html` files open in a sandboxed viewer. Both are registered as optional custom editors, so the default text editor stays available. `.html` and `ref-*.md` plans detected in session output, worktree files, or attachments also appear as one-click preview chips on Fleet cards, and screenshots as thumbnails that click through to the host preview.
 
-What should happen: the HTML viewer never runs the page's scripts against the editor; it renders inside the webview sandbox. Images and attachments dropped into the Markdown editor land in the `agents.editor.assetFolder` folder next to the document. `Agents: Reader (Disable)` restores the default association.
+What should happen: the HTML viewer never runs the page's scripts against the editor; it renders inside the webview sandbox. A link in the page with an `agents:`, `http(s):` or `mailto:` address opens outside the editor, the same as a browser click: an artifact's "Open session" chip focuses the tab running that session. Other addresses never leave the viewer. Images and attachments dropped into the Markdown editor land in the `agents.editor.assetFolder` folder next to the document. `Agents: Reader (Disable)` restores the default association.
 
 <figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Journey: read an artifact in the Reader. User lane on top, extension lane below.">
