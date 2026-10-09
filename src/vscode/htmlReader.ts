@@ -44,11 +44,8 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
       }
     });
 
-    const messageSub = webviewPanel.webview.onDidReceiveMessage((message: { type?: string; href?: string }) => {
-      if (message?.type === 'open-external' && typeof message.href === 'string' && isExternalLink(message.href)) {
-        void vscode.env.openExternal(vscode.Uri.parse(message.href, true));
-      }
-    });
+    const messageSub = webviewPanel.webview.onDidReceiveMessage((message: unknown) =>
+      routeReaderMessage(message, (href) => void vscode.env.openExternal(vscode.Uri.parse(href, true))));
 
     webviewPanel.onDidDispose(() => {
       changeSub.dispose();
@@ -121,6 +118,12 @@ const EXTERNAL_LINK = /^(agents|https?|mailto):/i;
 /** Links the reader hands to the OS instead of navigating its frame. */
 export function isExternalLink(href: string): boolean {
   return EXTERNAL_LINK.test(href.trim());
+}
+
+/** Handles a message from the reader page: only an allowed external link is opened. */
+export function routeReaderMessage(message: unknown, open: (href: string) => void): void {
+  const m = message as { type?: unknown; href?: unknown } | null;
+  if (m?.type === 'open-external' && typeof m.href === 'string' && isExternalLink(m.href)) open(m.href);
 }
 
 /**
