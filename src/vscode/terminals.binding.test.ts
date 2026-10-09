@@ -184,12 +184,20 @@ describe('terminal session identity', () => {
   test('foreman snapshot publishes the session the tab is bound to now, not its launch id', () => run(`
     surface.window.terminals = [term];
     const registry = await import(${JSON.stringify(join(import.meta.dir, 'foreman.registry.ts'))});
+    t.register(term, 'CC-shell', config, process.pid);
+    t.setSessionId(term, 'old');
     let entries = await registry.snapshotOwnTerminals();
     assert.equal(entries.length, 1);
     assert.equal(entries[0].terminalId, 'CC-shell');
     assert.equal(entries[0].sessionId, 'old');
     assert.equal(entries[0].pid, process.pid);
-    t.register(term, 'CC-shell', config, process.pid);
+    let changes = 0;
+    const sub = t.onSessionBindingChanged(() => { changes += 1; });
+    t.setSessionId(term, 'rebound', true);
+    t.setSessionId(term, 'rebound', true);
+    sub.dispose();
+    t.setSessionId(term, 'later');
+    assert.equal(changes, 1, 'a rebind schedules one registry publish; repeating the same id or a disposed listener does not');
     t.setSessionId(term, 'rebound', true);
     entries = await registry.snapshotOwnTerminals();
     assert.equal(entries[0].sessionId, 'rebound');

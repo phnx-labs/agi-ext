@@ -5414,6 +5414,7 @@ function initForemanRegistry(context: vscode.ExtensionContext): void {
     vscode.window.onDidOpenTerminal(() => schedulePublish()),
     vscode.window.onDidCloseTerminal(() => schedulePublish()),
     vscode.window.onDidChangeTerminalState(() => schedulePublish()),
+    terminals.onSessionBindingChanged(() => schedulePublish()),
     { dispose: () => { if (debounceTimer) clearTimeout(debounceTimer); } },
   );
   // Long keepalive: publish() itself skips the disk write when nothing

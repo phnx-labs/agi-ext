@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.386] - 2026-10-09
+
+- The live-terminals registry (`~/.agents/.cache/terminals/live-terminals.json`) carries the
+  session each tab is bound to now, and republishes within 300 ms of a rebind. It used to
+  carry the id a tab launched with, so a Codex or Grok tab (which get their id after launch)
+  or a rebound tab published none or a stale one, and `agents ps focus <id>` or an
+  artifact's "Open session" link could not find it (PHNX-4312).
+
 ## [0.9.385] - 2026-10-07
 
 - The sidebar has a Pull request card for the session's PR. One line gives its checks,
