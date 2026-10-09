@@ -54,7 +54,7 @@ const NAMES = [
   'sessionState', 'seekSegments', 'timelinePhases', 'currentRange', 'inRange', 'renderPhaseChips',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
   'prVerdict', 'prCheckSegments', 'prJustReady', 'prRing', 'prReviewGlyph', 'prMergeGlyph',
-  'artifactGallery', 'artifactKind', 'renderArtifactGallery',
+  'artifactGallery', 'artifactKind', 'renderArtifactGallery', 'artifactGroupOn',
 ];
 const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
@@ -69,8 +69,9 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
-  renderPullRequestCard, prVerdict, prCheckSegments, prJustReady, artifactGallery,
+  renderPullRequestCard, prVerdict, prCheckSegments, prJustReady, artifactGallery, artifactGroupOn,
 }; })()`) as {
+  artifactGroupOn: (stored: unknown) => boolean;
   renderPullRequestCard: (s: unknown, justReady?: boolean) => string;
   prVerdict: (pr: unknown) => { ring: string; word: string; tone: string };
   prCheckSegments: (pr: unknown) => { segments: { state: string; name: string }[]; passed: number; running: number; failed: number; counted: number };
@@ -812,8 +813,9 @@ test('the PR card reads as a ring, one word and an icon strip, and offers only t
   const today = cards.renderPullRequestCard({ ...prRow(), git: { branch: 'agents/phnx-4289' } });
   expect(today).toContain('>Pull request<span class="head-meta">phnx-labs/agi-ext</span>');
   expect(today).toContain('#103');
-  expect(today).toContain('class="pr-ring ok" role="img" aria-label="Ready"');
-  expect(today).toContain('<span class="pr-word pr-tone-ok">Ready</span>');
+  // Checks pass but a review is required: green ring, and the word says what is left.
+  expect(today).toContain('class="pr-ring ok" role="img" aria-label="Needs review"');
+  expect(today).toContain('<span class="pr-word pr-tone-warn">Needs review</span>');
   expect(today).toContain('⎇ agents/phnx-4289');
   // The words live on the icons, not in text chips.
   expect(today).toContain('title="Review required" aria-label="Review required"');
@@ -832,11 +834,14 @@ test('the PR card reads as a ring, one word and an icon strip, and offers only t
   expect(ready).toContain('class="action-btn primary" data-pr-action="merge">Merge<');
   expect(ready).toContain('class="card pr-card just-ready"');
   // The check list folds under the bar until the bar is clicked.
-  expect(ready).toContain('data-pr-checks aria-expanded="false"');
+  expect(ready).toContain(`data-pr-checks="${PR_URL}" aria-expanded="false"`);
   expect(ready).not.toContain('class="pr-checks"');
-  viewState.prChecksOpen = true;
+  // The fold belongs to one PR: opening it here does not open the next session's PR.
+  viewState.prChecksOpen = 'https://github.com/other/repo/pull/1';
+  expect(cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checkItems: [{ name: 'test', state: 'passed' }] }))).not.toContain('class="pr-checks"');
+  viewState.prChecksOpen = PR_URL;
   const open = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checkItems: [{ name: 'test', state: 'passed', url: 'https://github.com/x/runs/1' }, { name: 'docs', state: 'skipped' }] }));
-  expect(open).toContain('data-pr-checks aria-expanded="true"');
+  expect(open).toContain(`data-pr-checks="${PR_URL}" aria-expanded="true"`);
   expect(open).toContain('<span class="pr-check-name">test</span><button type="button" class="pr-run" data-url="https://github.com/x/runs/1"');
   delete viewState.prChecksOpen;
 
@@ -863,7 +868,7 @@ test('prVerdict, prCheckSegments and prJustReady (PHNX-4289)', () => {
   expect(cards.prVerdict(pr({ isDraft: true, checks: 'failing' })).word).toBe('Failing');
   expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'CONFLICTING' })).ring).toBe('bad');
   expect(cards.prVerdict(pr({ checks: 'pending' })).ring).toBe('running');
-  expect(cards.prVerdict(pr({ checks: 'passing' })).word).toBe('Ready');
+  expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE' })).word).toBe('Ready');
   expect(cards.prVerdict(pr()).ring).toBe('none');
 
   // One segment per check, greens first, skipped out of the fraction.
@@ -1023,3 +1028,18 @@ test('with a range set, the loaded tool calls draw as a zoomed lane over that st
   expect(html).not.toContain('early.ts');
   for (const key of Object.keys(viewState)) delete viewState[key];
 });
+
+test('Group by app turns on with one click from a viewer who never toggled it (PHNX-4289)', () => {
+  // The click handler stores !artifactGroupOn(current); the card reads artifactGroupOn(stored).
+  const afterOneClick = !cards.artifactGroupOn(undefined);
+  expect(afterOneClick).toBe(true);
+  expect(cards.artifactGroupOn(afterOneClick)).toBe(true);
+  expect(cards.artifactGroupOn(!cards.artifactGroupOn(afterOneClick))).toBe(false);
+})
+
+test('green checks read "Ready" only when nothing else blocks the merge (PHNX-4289)', () => {
+  const base = { url: 'u', number: 1, isDraft: false, checkItems: [], checks: 'passing' }
+  expect(cards.prVerdict({ ...base, mergeable: 'mergeable' }).word).toBe('Ready')
+  expect(cards.prVerdict({ ...base, mergeable: 'mergeable', review: 'review_required' })).toEqual({ ring: 'ok', word: 'Needs review', tone: 'warn' })
+  expect(cards.prVerdict({ ...base, mergeable: 'unknown' }).word).toBe('Checks passed')
+})

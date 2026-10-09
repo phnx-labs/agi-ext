@@ -3030,7 +3030,13 @@ function prVerdict(pr) {
   if (pr.mergeable === 'conflicting') return { ring: 'bad', word: 'Conflicts', tone: 'bad' };
   if (pr.review === 'changes_requested') return { ring: 'bad', word: 'Changes requested', tone: 'bad' };
   if (pr.checks === 'pending') return { ring: 'running', word: 'Checks running', tone: 'warn' };
-  if (pr.checks === 'passing') return { ring: 'ok', word: 'Ready', tone: 'ok' };
+  if (pr.checks === 'passing') {
+    // Green checks alone are not "Ready": a required review or an unknown merge
+    // state still stands between the PR and a merge.
+    if (pr.review === 'review_required') return { ring: 'ok', word: 'Needs review', tone: 'warn' };
+    if (pr.mergeable !== 'mergeable') return { ring: 'ok', word: 'Checks passed', tone: 'ok' };
+    return { ring: 'ok', word: 'Ready', tone: 'ok' };
+  }
   return { ring: 'none', word: 'Open', tone: 'idle' };
 }
 
@@ -3086,7 +3092,7 @@ function renderPullRequestCard(s, justReady) {
   const act = s.prAction || { kind: 'none', reason: '' };
   const v = prVerdict(pr);
   const bar = prCheckSegments(pr);
-  const open = !!viewState.prChecksOpen;
+  const open = viewState.prChecksOpen === pr.url;
   const items = pr.checkItems || [];
   const checkWords = bar.counted
     ? bar.passed + ' of ' + bar.counted + ' checks passed' + (bar.running ? ', ' + bar.running + ' running' : '') + (bar.failed ? ', ' + bar.failed + ' failed' : '')
@@ -3095,7 +3101,7 @@ function renderPullRequestCard(s, justReady) {
   const barBody = '<span class="pr-bar" aria-hidden="true">' + (segs || '<i class="seg none"></i>') + '</span>' +
     (bar.counted ? '<span class="pr-frac">' + bar.passed + '/' + bar.counted + '</span>' : '');
   const barEl = items.length
-    ? '<button type="button" class="pr-bar-btn" data-pr-checks aria-expanded="' + open + '" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords + (open ? ', hide checks' : ', show checks')) + '">' + barBody + '</button>'
+    ? '<button type="button" class="pr-bar-btn" data-pr-checks="' + esc(pr.url) + '" aria-expanded="' + open + '" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords + (open ? ', hide checks' : ', show checks')) + '">' + barBody + '</button>'
     : '<span class="pr-bar-btn" role="img" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords) + '">' + barBody + '</span>';
   const checks = items.length && open
     ? '<div class="pr-checks">' + items.map((c) =>
@@ -3247,12 +3253,16 @@ function artifactItems(s) {
   return items;
 }
 
+// The gallery is the default; Group by app is on only after the viewer turns it on.
+// A viewer who never toggled has no stored value, so one click must turn it on.
+function artifactGroupOn(stored) { return stored === true; }
+
 function renderArtifactsCard(s) {
   const items = artifactItems(s);
   if (!items.length) return '';
   const sortKey = ARTIFACT_SORTS[viewState.artifactSort] ? viewState.artifactSort : 'latest';
   // Visual first: the gallery is the default; grouping by app is the toggle.
-  const grouped = viewState.artifactGroup === true;
+  const grouped = artifactGroupOn(viewState.artifactGroup);
   const collapsed = !!viewState.artifactsCollapsed;
   items.sort(ARTIFACT_SORTS[sortKey]);
   const fileCount = items.reduce((n, it) => n + (it.files ? it.files.length : 0), 0);
@@ -3366,6 +3376,7 @@ function renderArtifactItem(it, s, sortKey, showApp) {
 // Decodes run one at a time so a folder of renders never spikes the machine.
 const THUMB_WIDTH = 480;
 const THUMB_RETRY_MS = 30000;
+const THUMB_CACHE_MAX = 120;
 const thumbCache = new Map();
 const thumbFailedAt = new Map();
 let thumbQueue = Promise.resolve();
@@ -3398,6 +3409,8 @@ function queueThumb(uri) {
         bitmap.close();
         // WebP keeps transparency; JPEG would turn a cutout or logo black.
         thumbCache.set(uri, canvas.toDataURL('image/webp', 0.8));
+        // A long session can name hundreds of images; keep the newest copies only.
+        while (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
       } catch {
         thumbFailedAt.set(uri, Date.now());
         return;
@@ -3742,7 +3755,7 @@ function render(snap) {
   const artSort = root.querySelector('[data-art-sort]');
   if (artSort) artSort.addEventListener('change', () => { viewState.artifactSort = artSort.value; vscode.setState(viewState); render(lastSnapshot); });
   const artGroup = root.querySelector('[data-art-group]');
-  if (artGroup) artGroup.addEventListener('click', () => { viewState.artifactGroup = viewState.artifactGroup === false; vscode.setState(viewState); render(lastSnapshot); });
+  if (artGroup) artGroup.addEventListener('click', () => { viewState.artifactGroup = !artifactGroupOn(viewState.artifactGroup); vscode.setState(viewState); render(lastSnapshot); });
   for (const el of root.querySelectorAll('[data-folder]')) {
     el.addEventListener('click', () => {
       const key = el.getAttribute('data-folder');
@@ -3863,7 +3876,15 @@ function render(snap) {
     });
   }
   const prChecks = root.querySelector('[data-pr-checks]');
-  if (prChecks) prChecks.addEventListener('click', () => { viewState.prChecksOpen = !viewState.prChecksOpen; vscode.setState(viewState); render(lastSnapshot); });
+  if (prChecks) prChecks.addEventListener('click', () => {
+    const url = prChecks.getAttribute('data-pr-checks');
+    viewState.prChecksOpen = viewState.prChecksOpen === url ? '' : url;
+    vscode.setState(viewState);
+    render(lastSnapshot);
+    // The card re-renders; keep the keyboard on the bar that was just toggled.
+    const again = root.querySelector('[data-pr-checks]');
+    if (again) again.focus();
+  });
   for (const el of root.querySelectorAll('[data-pr-action]')) {
     el.addEventListener('click', () => vscode.postMessage({ type: 'prAction', action: el.getAttribute('data-pr-action') }));
   }
