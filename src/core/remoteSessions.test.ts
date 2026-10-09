@@ -176,6 +176,13 @@ describe('resolveProject', () => {
     expect(s.project).toBe('Prix API');
   });
 
+  test('carries the CLI confirmedProject, null when the cwd is in no defined project (PHNX-4289)', () => {
+    const base = { kind: 'claude', status: 'running', cwd: '/x/y/agents-cli', sessionFile: '/x/aaaaaaaa.jsonl' };
+    expect(normalizeActiveSession({ ...base, confirmedProject: 'agi' } as RawActiveSession, 'zion', FETCHED_AT).confirmedProject).toBe('agi');
+    expect(normalizeActiveSession({ ...base, confirmedProject: null } as RawActiveSession, 'zion', FETCHED_AT).confirmedProject).toBeNull();
+    expect(normalizeRecentSession({ id: 'r1', agent: 'claude', cwd: '/x', confirmedProject: 'rush' } as never, 'zion', FETCHED_AT).confirmedProject).toBe('rush');
+  });
+
   test('copies the glance fields verbatim and drops malformed entries', () => {
     const s = normalizeActiveSession(
       {

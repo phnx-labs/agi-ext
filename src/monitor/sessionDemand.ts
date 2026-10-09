@@ -1,8 +1,8 @@
 // Per-window session-stream demand (PHNX-3939).
 //
 // One window "demands" the canonical `agents feed watch` producer while it is
-// actually showing live session state — its Fleet dashboard OR its active-session
-// sidebar is visible — or while it holds a tracked agent terminal whose identity
+// actually showing live session state — its Fleet dashboard, its active-session
+// sidebar or its Project Sessions view is visible — or while it holds a tracked agent terminal whose identity
 // isn't resolved yet (the stream is what attributes it). The elected leader gates
 // the single producer on the UNION of every window's demand (host.ts), so an
 // idle, hidden window contributes nothing and the watcher stays torn down.
@@ -14,13 +14,14 @@
 export class SessionStreamDemand {
   private dashboardVisible = false;
   private sidebarVisible = false;
+  private projectSessionsVisible = false;
   private unresolvedTuples = false;
   private readonly listeners = new Set<(demand: boolean) => void>();
   private last = false;
 
   /** True when this window currently needs the producer. */
   get demand(): boolean {
-    return this.dashboardVisible || this.sidebarVisible || this.unresolvedTuples;
+    return this.dashboardVisible || this.sidebarVisible || this.projectSessionsVisible || this.unresolvedTuples;
   }
 
   setDashboardVisible(visible: boolean): void {
@@ -32,6 +33,13 @@ export class SessionStreamDemand {
   setSidebarVisible(visible: boolean): void {
     if (this.sidebarVisible === visible) return;
     this.sidebarVisible = visible;
+    this.notify();
+  }
+
+  /** The Project container's Sessions view draws stream rows (PHNX-4289). */
+  setProjectSessionsVisible(visible: boolean): void {
+    if (this.projectSessionsVisible === visible) return;
+    this.projectSessionsVisible = visible;
     this.notify();
   }
 

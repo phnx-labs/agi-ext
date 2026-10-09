@@ -61,4 +61,17 @@ describe('SessionStreamDemand', () => {
     d.setUnresolvedTuples(false); // already false
     expect(seen).toEqual([]);
   });
+  test('the Project Sessions view is a demand source of its own (PHNX-4289)', () => {
+    const d = new SessionStreamDemand();
+    const seen: boolean[] = [];
+    d.onChange((v) => seen.push(v));
+    d.setProjectSessionsVisible(true);
+    expect(d.demand).toBe(true);
+    d.setSidebarVisible(true);
+    d.setProjectSessionsVisible(false);
+    expect(d.demand).toBe(true);
+    d.setSidebarVisible(false);
+    expect(d.demand).toBe(false);
+    expect(seen).toEqual([true, false]);
+  });
 });

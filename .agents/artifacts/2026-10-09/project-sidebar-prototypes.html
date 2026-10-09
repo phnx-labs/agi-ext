@@ -1,0 +1,639 @@
+<title>Project Sidebar Prototypes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a document column (intents → prototypes → verdict → plan); the prototypes live
+   in a VS Code window mock whose right sidebar swaps between options A–F.
+   Tokens are the Rush register already used by AGI EXT's Active Terminal panel
+   (agentPanel.vscode.ts): Day (ivory glass, ink) for light, Altitude (zinc on void) for dark.
+   Gold is the one accent and marks only the primary action. */
+:root {
+  --bg: #F4EFE6; --surface: #FBF8F2; --well: rgba(20,24,41,.05); --edge: #DCD2C3; --edge-hi: #C9BEAD;
+  --text: #141829; --text-2: #4B4A55; --caption: #665E52; --faint: #8A8174;
+  --gold: #A8884A; --gold-fill: linear-gradient(135deg,#E8CE8C,#D4B872 35%,#C9A962 55%,#A8884A); --on-gold: #141829;
+  --ok: #15803d; --ok-tint: rgba(22,163,74,.12); --warn: #b45309; --warn-tint: rgba(217,119,6,.12);
+  --bad: #b91c1c; --bad-tint: rgba(220,38,38,.08); --info: #4f46e5; --info-tint: rgba(79,70,229,.10);
+  --s-doing: #15803d; --s-review: #65a30d; --s-todo: #a8a29e; --s-backlog: #d6d3d1;
+  --chrome: #E9E3D8; --chrome-2: #E1DACD; --editor: #FBF8F2; --sel: rgba(20,24,41,.07);
+  --display: 'Jost', Futura, 'Century Gothic', system-ui, sans-serif;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #09090B; --surface: #111114; --well: rgba(255,255,255,.04); --edge: rgba(255,255,255,.12); --edge-hi: rgba(255,255,255,.24);
+  --text: #FAFAFA; --text-2: #D4D4D8; --caption: #A1A1AA; --faint: #8b8b94;
+  --gold: #D4B872; --on-gold: #09090B;
+  --ok: #86efac; --ok-tint: rgba(34,197,94,.16); --warn: #fcd34d; --warn-tint: rgba(245,158,11,.14);
+  --bad: #fca5a5; --bad-tint: rgba(239,68,68,.12); --info: #a5b4fc; --info-tint: rgba(129,140,248,.14);
+  --s-doing: #4ade80; --s-review: #bef264; --s-todo: #71717a; --s-backlog: #3f3f46;
+  --chrome: #141417; --chrome-2: #1b1b1f; --editor: #0d0d10; --sel: rgba(250,250,250,.08);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #09090B; --surface: #111114; --well: rgba(255,255,255,.04); --edge: rgba(255,255,255,.12); --edge-hi: rgba(255,255,255,.24);
+  --text: #FAFAFA; --text-2: #D4D4D8; --caption: #A1A1AA; --faint: #8b8b94;
+  --gold: #D4B872; --on-gold: #09090B;
+  --ok: #86efac; --ok-tint: rgba(34,197,94,.16); --warn: #fcd34d; --warn-tint: rgba(245,158,11,.14);
+  --bad: #fca5a5; --bad-tint: rgba(239,68,68,.12); --info: #a5b4fc; --info-tint: rgba(129,140,248,.14);
+  --s-doing: #4ade80; --s-review: #bef264; --s-todo: #71717a; --s-backlog: #3f3f46;
+  --chrome: #141417; --chrome-2: #1b1b1f; --editor: #0d0d10; --sel: rgba(250,250,250,.08);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); padding-inline: 16px; padding-block: 0 64px; }
+.doc { max-width: 1180px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--display); font-weight: 500; text-wrap: balance; margin: 0; letter-spacing: .005em; }
+h1 { font-size: clamp(30px, 4vw, 44px); line-height: 1.1; }
+h2 { font-size: 26px; line-height: 1.2; }
+h3 { font-size: 18px; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--caption); }
+.lede { color: var(--text-2); font-size: 17px; }
+.mono { font-family: var(--mono); }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
+
+header.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 16px; padding-block: 40px 28px; border-bottom: 1px solid var(--edge); }
+header.top .meta { display: grid; gap: 4px; font: 12px/1.4 var(--mono); color: var(--caption); text-align: right; }
+.theme-btn { border: 1px solid var(--edge); background: var(--surface); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: 12px var(--mono); }
+section.block { padding-block: 44px 8px; display: grid; gap: 18px; }
+
+/* intents */
+.intents { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.intent { background: var(--surface); border: 1px solid var(--edge); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; }
+.intent b { font-weight: 600; }
+.intent q { color: var(--caption); font-size: 13px; font-style: italic; quotes: "“" "”"; }
+.intent .k { font: 500 11px var(--mono); color: var(--gold); letter-spacing: .08em; }
+.findings { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.findings li { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--edge); }
+.findings li:first-child { border-top: none; }
+.findings .src { font: 11px/1.5 var(--mono); color: var(--caption); text-transform: uppercase; letter-spacing: .06em; padding-top: 2px; }
+
+/* option picker */
+.picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.picker button { display: grid; gap: 2px; text-align: left; border: 1px solid var(--edge); background: var(--surface); border-radius: 10px; padding: 10px 14px; cursor: pointer; min-width: 150px; flex: 1 1 150px; }
+.picker button .l { font: 500 11px var(--mono); color: var(--caption); letter-spacing: .08em; }
+.picker button .n { font-family: var(--display); font-size: 16px; }
+.picker button[aria-selected="true"] { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.picker button.rec .l { color: var(--gold); }
+.optdesc { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; }
+.optdesc .pc { display: grid; gap: 4px; font-size: 14px; }
+.optdesc .pc ul { margin: 0; padding-left: 18px; color: var(--text-2); }
+@media (max-width: 760px) { .optdesc { grid-template-columns: 1fr; } }
+
+/* VS Code window mock */
+.win { border: 1px solid var(--edge-hi); border-radius: 12px; overflow: hidden; background: var(--chrome); box-shadow: 0 24px 60px -30px rgba(0,0,0,.45); }
+.win .titlebar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--chrome-2); border-bottom: 1px solid var(--edge); font: 12px var(--sans); color: var(--caption); }
+.win .dots { display: flex; gap: 6px; } .win .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--edge-hi); display: block; }
+.win .titlebar .ttl { flex: 1; text-align: center; }
+.win .body { display: grid; grid-template-columns: 44px 248px minmax(0,1fr) 340px; height: 880px; }
+.actbar { background: var(--chrome-2); border-right: 1px solid var(--edge); display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 12px; }
+.actbar span { width: 22px; height: 22px; border-radius: 5px; border: 1.5px solid var(--faint); opacity: .7; }
+.actbar span.on { border-color: var(--text); opacity: 1; }
+.leftbar, .rightbar { background: var(--chrome); overflow: auto; font-size: 13px; }
+.leftbar { border-right: 1px solid var(--edge); }
+.rightbar { border-left: 1px solid var(--edge); position: relative; }
+.paneHead { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--caption); position: sticky; top: 0; background: var(--chrome); z-index: 2; border-bottom: 1px solid var(--edge); }
+.paneHead .sp { flex: 1; }
+.paneHead .proj { text-transform: none; letter-spacing: 0; color: var(--text); font-weight: 600; font-size: 12px; display: inline-flex; gap: 4px; align-items: center; cursor: pointer; border: none; background: none; padding: 2px 4px; border-radius: 4px; }
+.paneHead .proj:hover { background: var(--sel); }
+.ico { width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 4px; border: none; background: none; cursor: pointer; color: var(--caption); }
+.ico:hover { background: var(--sel); color: var(--text); }
+.ico svg { width: 14px; height: 14px; }
+.editor { background: var(--editor); display: grid; grid-template-rows: 36px minmax(0,1fr); min-width: 0; }
+.tabs { display: flex; background: var(--chrome-2); border-bottom: 1px solid var(--edge); overflow-x: auto; }
+.tabs button { border: none; border-right: 1px solid var(--edge); background: transparent; padding: 0 14px; font: 12px var(--sans); color: var(--caption); cursor: pointer; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.tabs button[aria-selected="true"] { background: var(--editor); color: var(--text); box-shadow: inset 0 2px 0 var(--gold); }
+.term { padding: 16px 18px; font: 12.5px/1.7 var(--mono); color: var(--text-2); overflow: auto; }
+.term .u { color: var(--text); }
+.term .dim { color: var(--faint); }
+.left-sec { padding: 10px 12px; display: grid; gap: 8px; border-bottom: 1px solid var(--edge); }
+.left-sec .h { font: 600 14px var(--display); color: var(--text); }
+.kv { display: grid; grid-template-columns: 64px 1fr; gap: 2px 8px; font-size: 12px; color: var(--text-2); }
+.kv span:nth-child(odd) { color: var(--faint); }
+.hint { position: absolute; }
+
+/* sidebar atoms (shared by every option) */
+.sec { border-bottom: 1px solid var(--edge); }
+.secHead { display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 8px 0 4px; border: none; background: none; cursor: pointer; font: 600 11px var(--sans); letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.secHead .chev { width: 16px; display: inline-grid; place-items: center; transition: transform .15s; color: var(--faint); }
+.sec[data-open="false"] .chev { transform: rotate(-90deg); }
+.secHead .c { margin-left: auto; font: 500 11px var(--mono); letter-spacing: 0; color: var(--faint); text-transform: none; }
+.sec[data-open="false"] .secBody { display: none; }
+.secBody { padding: 2px 12px 10px; display: grid; gap: 2px; }
+.lbl { font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding-top: 8px; }
+.row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; align-items: start; padding: 6px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; border: none; background: none; text-align: left; width: calc(100% + 12px); }
+.row:hover { background: var(--sel); }
+a.row { text-decoration: none; color: inherit; }
+a.row:hover .t { text-decoration: underline; }
+.row .t { font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .s { font: 11px/1.5 var(--mono); color: var(--caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .mid { min-width: 0; display: grid; gap: 1px; }
+.id { font: 500 11px var(--mono); color: var(--caption); }
+.pill { font: 500 10px/1.6 var(--mono); padding: 0 6px; border-radius: 999px; border: 1px solid var(--edge-hi); color: var(--text-2); white-space: nowrap; }
+.pill.ok { color: var(--ok); border-color: currentColor; background: var(--ok-tint); }
+.pill.bad { color: var(--bad); border-color: currentColor; background: var(--bad-tint); }
+.pill.warn { color: var(--warn); border-color: currentColor; background: var(--warn-tint); }
+.pill.info { color: var(--info); border-color: currentColor; background: var(--info-tint); }
+.pri { width: 14px; height: 12px; display: inline-flex; align-items: flex-end; gap: 1.5px; margin-top: 3px; }
+.pri i { display: block; width: 3px; border-radius: 1px; background: var(--faint); }
+.pri.p1 i { background: var(--bad); } .pri.p2 i { background: var(--warn); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-top: 5px; flex: none; }
+.dot.run { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-tint); }
+.dot.idle { background: var(--warn); }
+.dot.need { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-tint); }
+.dot.done { background: var(--faint); }
+
+/* cycle bar */
+.cbar { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; margin: 6px 0 6px; }
+.cbar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px var(--mono); color: var(--caption); }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.phead { display: flex; align-items: baseline; gap: 8px; padding-top: 10px; }
+.phead h4 { margin: 0; font: 600 18px var(--display); }
+.phead .r { margin-left: auto; font: 11px var(--mono); color: var(--caption); }
+.mbar { height: 3px; background: var(--well); border-radius: 2px; overflow: hidden; width: 64px; margin-top: 7px; }
+.mbar span { display: block; height: 100%; background: var(--ok); }
+.note { font-size: 12px; color: var(--caption); padding: 6px 8px; border-radius: 6px; background: var(--well); margin-top: 4px; }
+.note b { color: var(--text); font-weight: 600; }
+
+/* PR status ring */
+.ring { width: 18px; height: 18px; position: relative; flex: none; margin-top: 1px; }
+.ring svg { width: 18px; height: 18px; display: block; }
+.ring .trk { stroke: var(--edge-hi); }
+.ring .arc { stroke: var(--warn); stroke-dasharray: 14 40; transform-origin: 9px 9px; animation: spin 1s linear infinite; }
+.ring.ok .arc { stroke: var(--ok); stroke-dasharray: 50 0; animation: none; transition: stroke-dasharray .45s ease; }
+.ring .chk { stroke: var(--ok); stroke-dasharray: 12; stroke-dashoffset: 0; }
+.justReady .ring.ok .chk { animation: draw .35s .25s ease both; }
+.justReady .ring.ok .arc { animation: close .45s ease both; }
+@keyframes close { from { stroke-dasharray: 14 40; } to { stroke-dasharray: 50 0; } }
+.ring.bad .arc { stroke: var(--bad); stroke-dasharray: 50 0; animation: none; }
+.ring.draft .arc { stroke: var(--faint); stroke-dasharray: 3 3; animation: none; }
+.ring.none .arc { stroke: transparent; animation: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes draw { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
+.pr.justReady { animation: glow 1.4s ease; }
+@keyframes glow { 0% { background: var(--ok-tint); } 100% { background: transparent; } }
+.prx > * { min-width: 0; }
+.prx { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; padding: 6px 0 10px 26px; font-size: 12px; color: var(--text-2); }
+.prx .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.prx .prbody { color: var(--text-2); line-height: 1.5; max-height: 7.5em; overflow: hidden; overflow-wrap: anywhere; }
+.prx .acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.btn { border: 1px solid var(--edge-hi); background: var(--surface); border-radius: 6px; padding: 3px 9px; font: 500 12px var(--sans); cursor: pointer; }
+.btn:hover { border-color: var(--text); }
+.btn.gold { background: var(--gold-fill); border-color: transparent; color: var(--on-gold); }
+.btn.gold:hover { filter: brightness(1.05); }
+.btn:disabled { opacity: .5; cursor: default; }
+.confirm { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--edge-hi); border-radius: 8px; background: var(--surface); }
+.sim { font: 10px var(--mono); color: var(--faint); letter-spacing: .04em; }
+.ctx { margin: 8px 0 4px; padding: 10px; border-radius: 8px; border: 1px solid var(--edge); background: var(--surface); display: grid; gap: 6px; }
+.ctx .h { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--caption); }
+.ctx .h b { color: var(--text); font-weight: 600; }
+.swap { animation: fadein .25s ease; }
+@keyframes fadein { from { opacity: .35; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+.lane { display: grid; gap: 2px; }
+.lane .lh { display: flex; align-items: center; gap: 6px; padding-top: 10px; font: 600 11px var(--sans); letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.lane .lh .c { font: 11px var(--mono); color: var(--faint); letter-spacing: 0; }
+.wi-links { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.menu { position: absolute; right: 8px; top: 36px; z-index: 5; background: var(--surface); border: 1px solid var(--edge-hi); border-radius: 8px; padding: 6px; display: grid; gap: 2px; min-width: 190px; box-shadow: 0 12px 30px -12px rgba(0,0,0,.4); font-size: 12.5px; }
+.menu label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.menu label:hover { background: var(--sel); }
+.empty { color: var(--caption); font-size: 12px; padding: 8px 0; }
+
+/* matrix + plan */
+.tblwrap { overflow-x: auto; border: 1px solid var(--edge); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--edge); vertical-align: top; }
+th { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--caption); }
+td.m { font: 12px var(--mono); white-space: nowrap; }
+td.m.y { color: var(--ok); } td.m.p { color: var(--warn); } td.m.n { color: var(--faint); }
+tr:last-child td { border-bottom: none; }
+th.rec, td.rec { background: var(--well); }
+.pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 12px; }
+.pick .card { border: 1px solid var(--edge); border-radius: 10px; padding: 14px 16px; background: var(--surface); display: grid; gap: 6px; align-content: start; font-size: 14px; }
+.pick .card .from { font: 500 11px var(--mono); color: var(--gold); letter-spacing: .08em; }
+pre.code { margin: 0; padding: 14px 16px; background: var(--surface); border: 1px solid var(--edge); border-radius: 10px; overflow-x: auto; font: 12.5px/1.6 var(--mono); color: var(--text-2); }
+pre.code .c { color: var(--faint); }
+.steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 14px 0; border-top: 1px solid var(--edge); counter-increment: s; }
+.steps li::before { content: counter(s); font: 500 20px var(--display); color: var(--gold); }
+.steps li div { display: grid; gap: 4px; min-width: 0; }
+.steps .chk { font-size: 13px; color: var(--caption); }
+.two { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+
+/* narrow: drop the window chrome, keep only the sidebar being compared */
+@media (max-width: 980px) {
+  .win .body { grid-template-columns: minmax(0,1fr); height: auto; }
+  .actbar, .leftbar { display: none; }
+  .editor { grid-template-rows: 36px; }
+  .term { display: none; }
+  .rightbar { border-left: none; max-height: 720px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+
+<div class="doc">
+<header class="top">
+  <div style="display:grid;gap:10px">
+    <span class="eyebrow">AGI EXT · PHNX-4289 · design prototype</span>
+    <h1>The project sidebar</h1>
+    <p class="lede">Left side stays the session you are in. Right side becomes the project: what's next, what's ready to merge, what's stuck. Five directions, then the one to build, then how AGI Menu and AGI EXT stop drifting.</p>
+  </div>
+  <div class="meta">
+    <span>data: AGI project, captured 2026-10-08</span>
+    <span>interactions: simulated</span>
+    <button class="theme-btn" id="themeBtn" type="button">Theme: system</button>
+  </div>
+</header>
+
+<section class="block" aria-labelledby="h-int">
+  <span class="eyebrow">What you asked for</span>
+  <h2 id="h-int">Eight intents, in your words</h2>
+  <div class="intents">
+    <div class="intent"><span class="k">I1 · TWO SIDES</span><b>Left is the session, right is the project.</b><q>I can have panels on both sides… sessions on the left… on the right a GitHub or tickets panel.</q></div>
+    <div class="intent"><span class="k">I2 · THE GOAL</span><b>Make managing a project easier.</b><q>The overall goal is to make management of various things in a project easier.</q></div>
+    <div class="intent"><span class="k">I3 · REPLACE FACTORY</span><b>A tickets view you'd actually open.</b><q>I don't end up going to the factory very often… the view is kind of bad. It shows older sessions.</q></div>
+    <div class="intent"><span class="k">I4 · PROJECT DETAIL</span><b>Remaining tasks and milestones.</b><q>Which tasks are remaining and stuff and milestones.</q></div>
+    <div class="intent"><span class="k">I5 · UP NEXT</span><b>Up next that follows the tab you're on.</b><q>Up next is pretty nice. And it can change based on which tab you're on… similarity.</q></div>
+    <div class="intent"><span class="k">I6 · PRS LIKE THE MENU</span><b>Compact by default, expand inline, merge in place.</b><q>Very nice animations for when PRs are ready. So you can merge them… it expands, but by default it's compacted.</q></div>
+    <div class="intent"><span class="k">I7 · MODULAR</span><b>Panels you can turn on and off.</b><q>Each extension can create side panels that can be activated and shown or not.</q></div>
+    <div class="intent"><span class="k">I8 · ONE ENGINE</span><b>One robust, fast implementation under Menu and EXT.</b><q>We don't have to re-implement them over and over again… they would drift a lot.</q></div>
+  </div>
+</section>
+
+<section class="block" aria-labelledby="h-find">
+  <span class="eyebrow">What the evidence says</span>
+  <h2 id="h-find">Six findings that shape the design</h2>
+  <ul class="findings">
+    <li><span class="src">Your shot</span><p>The Explorer occupies the right side today and you barely use it. That is free space for the project.</p></li>
+    <li><span class="src">Menu rec.</span><p>AGI Menu's cycle bar is mostly <b>23 Duplicate</b>. Duplicates are closed work counted as open; the bar should show only Doing / In review / Todo.</p></li>
+    <li><span class="src">Menu rec.</span><p>In the 3:10 PM recording an expanded PR group repeats the same <span class="mono">docs/reference-pages → main</span> chip row about 20 times. Expanded detail needs one row per PR.</p></li>
+    <li><span class="src">Ranker</span><p><span class="mono">linear tasks --similar</span> answers in about 1 s, but returns Done and Canceled tickets, and its top hit is the tab's own ticket. Up next must filter to open work and show the tab's ticket separately.</p></li>
+    <li><span class="src">Linear</span><p>AGI's six milestones were all due in August, and none of the 33 open tickets has a milestone. A milestone-first panel would be empty for this project; it must say so plainly.</p></li>
+    <li><span class="src">Latency</span><p><span class="mono">projects status</span> takes 14 s (fleet fan-out), <span class="mono">projects prs list</span> 7 s. Three clients each doing this, and each joining tickets to PRs to sessions their own way, is the drift you want gone.</p></li>
+  </ul>
+</section>
+
+<section class="block" aria-labelledby="h-proto">
+  <span class="eyebrow">Prototypes</span>
+  <h2 id="h-proto">Five directions and the mix</h2>
+  <p>Pick an option. Click the editor tabs to change which session you're focused on; options that rank Up next re-rank. Click a PR to expand it. The <span class="mono">#3835</span> row has a "Finish CI" button so you can see the ready animation. Merge asks to confirm the exact commit.</p>
+  <div class="picker" role="tablist" id="picker"></div>
+  <div class="optdesc" id="optdesc"></div>
+  <div class="win" aria-label="VS Code window mock">
+    <div class="titlebar"><span class="dots"><i></i><i></i><i></i></span><span class="ttl">agents-cli — AGI</span><span class="mono" style="font-size:11px">PHNX-4289</span></div>
+    <div class="body">
+      <nav class="actbar" aria-hidden="true"><span class="on"></span><span></span><span></span><span></span></nav>
+      <aside class="leftbar" aria-label="Left sidebar, Active Terminal (unchanged)">
+        <div class="paneHead">Active terminal</div>
+        <div id="leftPane"></div>
+      </aside>
+      <main class="editor">
+        <div class="tabs" role="tablist" id="tabs"></div>
+        <div class="term" id="term"></div>
+      </main>
+      <aside class="rightbar" aria-label="Right sidebar, Project" id="right"></aside>
+    </div>
+  </div>
+</section>
+
+<section class="block" aria-labelledby="h-cmp">
+  <span class="eyebrow">Comparison</span>
+  <h2 id="h-cmp">How each direction covers the intents</h2>
+  <div class="tblwrap"><table>
+    <thead><tr><th>Intent</th><th>A · Menu port</th><th>B · Native sections</th><th>C · Focus card</th><th>D · Work items</th><th>E · Milestones</th><th class="rec">F · The mix</th></tr></thead>
+    <tbody id="matrix"></tbody>
+  </table></div>
+</section>
+
+<section class="block" aria-labelledby="h-pick">
+  <span class="eyebrow">The pick</span>
+  <h2 id="h-pick">Build F: native sections, with the best part of each</h2>
+  <div class="pick">
+    <div class="card"><span class="from">FROM B</span><b>Real VS Code view sections.</b><p>Each panel is its own collapsible, reorderable view in the right container, toggled from the container's menu. You get I7 from the editor itself, with no settings page to build.</p></div>
+    <div class="card"><span class="from">FROM C</span><b>Up next follows the focused tab.</b><p>The tab's own ticket is pinned on top, then open tickets ranked by similarity to it. With no agent tab focused it falls back to the cycle's priority order.</p></div>
+    <div class="card"><span class="from">FROM D</span><b>One row per piece of work.</b><p>A ticket row carries its PR's state and its session's dot. You see "ready to merge" or "agent idle" without opening a second panel.</p></div>
+    <div class="card"><span class="from">FROM A</span><b>The Menu's visual language.</b><p>Cycle bar with legend (duplicates removed), PR status ring that turns into a check, compact rows that expand inline, merge pinned to the head commit.</p></div>
+    <div class="card"><span class="from">FROM E</span><b>Milestones, but honest.</b><p>The Overview shows the current milestone if one exists, and says "no current milestone, 33 open tickets unplanned" when it doesn't.</p></div>
+    <div class="card"><span class="from">LEFT OUT</span><b>A Kanban board and a Needs-you band.</b><p>Lanes don't fit 340 px. Needs-you already lives on the left (Active Terminal) and in the Fleet list; the right side shows a session's state only next to its ticket.</p></div>
+  </div>
+</section>
+
+<section class="block" aria-labelledby="h-plan">
+  <span class="eyebrow">Plan</span>
+  <h2 id="h-plan">One engine in the CLI, two renderers</h2>
+  <div class="two">
+    <div style="display:grid;gap:12px;min-width:0">
+      <p>Every join and ranking you see above moves into one CLI verb. AGI Menu (Swift) and AGI EXT (webview) only draw it. The daemon keeps it warm and pushes changes on the stream both apps already read, so opening the panel is instant instead of 14 s.</p>
+      <pre class="code"><span class="c"># one read, both apps</span>
+agents projects home agi --json [--focus &lt;session-id&gt;]
+
+<span class="c"># pushed on change (EXT already reads this stream)</span>
+agents feed watch --json   <span class="c"># scope: project.home</span></pre>
+    </div>
+    <pre class="code">{
+  "project": { "name": "agi", "linear": "AGI" },
+  "cycle":   { "number": 32, "endsAt": "2026-10-13",
+               "byState": { "Doing": 12, "In Review": 0,
+                            "Todo": 15, "Backlog": 6 } },
+               <span class="c">// closed states (Duplicate, Canceled) excluded</span>
+  "milestone": null,  "unplanned": 33,
+  "upNext": { "focus": "PHNX-4227",
+              "items": [ <span class="c">/* open only, ranked */</span> ] },
+  "work": [ { "ticket": "PHNX-4227", "state": "Doing",
+              "pr": { "repo": "phnx-labs/agi-cli", "number": 3835,
+                      "ci": "SUCCESS", "ready": true,
+                      "headSha": "…" },
+              "sessions": [ { "id": "…", "phase": "idle" } ] } ],
+  "unticketedPrs": [ … ],
+  "generatedAt": "…", "partial": false
+}</pre>
+  </div>
+  <ol class="steps">
+    <li><div><b>CLI: <span class="mono">agents projects home</span></b><p>Join tickets, PRs and sessions; rank Up next with the Linear ranker, filtered to open work; drop closed states from the cycle counts. The daemon caches it per project and emits on change.</p><span class="chk">Done when: Swift's <span class="mono">HomeModel</span> join and EXT's <span class="mono">tasks.ts</span> join have one test suite that pins this output; warm read under 200 ms.</span></div></li>
+    <li><div><b>AGI Menu Home renders the verb</b><p>Delete the Swift join and ranking; keep the views. Fix the repeated chip row while there.</p><span class="chk">Done when: Menu Home shows identical counts to the verb for the same project, and the duplicate-row bug is gone in a recording.</span></div></li>
+    <li><div><b>AGI EXT right container, option F</b><p>Rewrite the current branch (three plain list views) into F's sections on top of the verb: Overview, Up next, Work, Pull requests, Sessions. Each is a separate view you can hide.</p><span class="chk">Done when: on zion, switching editor tabs re-ranks Up next within a second, and a PR going green animates in place.</span></div></li>
+    <li><div><b>Retire what F replaces</b><p>Fold the Fleet dashboard's backlog into the Work view, then remove it once you've used F for a week.</p><span class="chk">Done when: you agree nothing in Factory/Fleet backlog is missed.</span></div></li>
+  </ol>
+</section>
+</div>
+
+<script>
+const DATA = {"tickets":{"tickets":[{"id":"PHNX-3681","t":"accounts attach reports success but leaves the worker home logged out — interactive runs drop into Claude Code first-run onboarding","s":"Todo","st":"unstarted","p":1,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3681/accounts-attach-reports-success-but-leaves-the-worker-home-logged-out"},{"id":"PHNX-4225","t":"daemon crash-loops: synchronous self-heal blocks the event loop past service deadlines","s":"Doing","st":"started","p":1,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4225/daemon-crash-loops-synchronous-self-heal-blocks-the-event-loop-past"},{"id":"PHNX-3494","t":"System security guards have no PR CI and their macOS test helper erases commands, so regressions merge without a trustworthy gate","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3494/system-security-guards-have-no-pr-ci-and-their-macos-test-helper"},{"id":"PHNX-3660","t":"Worker version homes without oauthAccount.emailAddress can't resolve a setup-token — seed identity on sync/attach","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3660/worker-version-homes-without-oauthaccountemailaddress-cant-resolve-a"},{"id":"PHNX-3671","t":"mac-mini daemon never publishes fleet-shared state — reserved-sync skips it, auth bundle undeliverable","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3671/mac-mini-daemon-never-publishes-fleet-shared-state-reserved-sync-skips"},{"id":"PHNX-3728","t":"Auto-save + propagate the minted Claude setup-token from the personal device (no manual 1Password round-trip)","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3728/auto-save-propagate-the-minted-claude-setup-token-from-the-personal"},{"id":"PHNX-3729","t":"sessions Worker: deploy agents-sessions to Cloudflare + wire release-redeploy hook (PHNX-3403 pattern)","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3729/sessions-worker-deploy-agents-sessions-to-cloudflare-wire-release"},{"id":"PHNX-3899","t":"agents run codex is undispatchable fleet-wide: Linux userns sandbox blocked, macOS exits 0 with zero output","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-3899/agents-run-codex-is-undispatchable-fleet-wide-linux-userns-sandbox"},{"id":"PHNX-4007","t":"Release: build, notarize, install, end-to-end validation, soak","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4007/release-build-notarize-install-end-to-end-validation-soak"},{"id":"PHNX-4043","t":"browser: Firefox backend over WebDriver BiDi with native profile discovery (yosemite-s0, yosemite-s1)","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4043/browser-firefox-backend-over-webdriver-bidi-with-native-profile"},{"id":"PHNX-4118","t":"sessions: extract shared @phnx-labs/sessions-core reader; both CLIs import it (kill ~13k-LOC parser duplication)","s":"Todo","st":"unstarted","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4118/sessions-extract-shared-phnx-labssessions-core-reader-both-clis-import"},{"id":"PHNX-4154","t":"sessions.db: session_text lookups by session_id full-scan the FTS index; key rows by sessions.rowid","s":"Doing","st":"started","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4154/sessionsdb-session-text-lookups-by-session-id-full-scan-the-fts-index"},{"id":"PHNX-4215","t":"AGI Menu: project pull-request board (switch, filters, excerpt, monorepo scoping, merge)","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4215/agi-menu-project-pull-request-board-switch-filters-excerpt-monorepo"},{"id":"PHNX-4227","t":"Remove agents browser/computer/secrets/sessions command groups (standalone CLIs only)","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4227/remove-agents-browsercomputersecretssessions-command-groups-standalone"},{"id":"PHNX-4248","t":"AGI EXT sidebar: one Artifacts section with agent outputs (folders, PRs, tickets), sort, group by app","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4248/agi-ext-sidebar-one-artifacts-section-with-agent-outputs-folders-prs"},{"id":"PHNX-4249","t":"secrets: state root moves to ~/.agents/.secrets and adopts the ~/.agents and ~/.secrets stores","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4249/secrets-state-root-moves-to-agentssecrets-and-adopts-the-agents-and"},{"id":"PHNX-4263","t":"AGI EXT: Codex/Grok tabs stuck on '(tracking session)', never bind to the session panel","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4263/agi-ext-codexgrok-tabs-stuck-on-tracking-session-never-bind-to-the"},{"id":"PHNX-4269","t":"AGI Menu Home: focus the default project (cycle progress by state, sessions, up next)","s":"Doing","st":"started","p":2,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4269/agi-menu-home-focus-the-default-project-cycle-progress-by-state"},{"id":"PHNX-4283","t":"browser-cli ships the one browser skill (standard skills/ layout, --help, help --json)","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4283/browser-cli-ships-the-one-browser-skill-standard-skills-layout-help"},{"id":"PHNX-4287","t":"Team video library: recordings auto-publish to org artifacts with transcript and summary","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4287/team-video-library-recordings-auto-publish-to-org-artifacts-with"},{"id":"PHNX-4289","t":"AGI EXT: right sidebar Project panel — overview/milestones, tickets, pull requests","s":"Doing","st":"started","p":2,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4289/agi-ext-right-sidebar-project-panel-overviewmilestones-tickets-pull"},{"id":"PHNX-3894","t":"rabbit-hole workflow: add loop:signal block for multi-turn remote execution","s":"Todo","st":"unstarted","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3894/rabbit-hole-workflow-add-loopsignal-block-for-multi-turn-remote"},{"id":"PHNX-3968","t":"agents repo pull trips on the CLI's own regenerated-but-unpublished config (agents.yaml churn dirties ~/.agents)","s":"Todo","st":"unstarted","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3968/agents-repo-pull-trips-on-the-clis-own-regenerated-but-unpublished"},{"id":"PHNX-4000","t":"Fleet session transport: push NDJSON over the tailnet, field-diff upserts, demote daemon-state.json git mirror","s":"Backlog","st":"backlog","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4000/fleet-session-transport-push-ndjson-over-the-tailnet-field-diff"},{"id":"PHNX-4106","t":"SessionStart shim inject-device-topology.sh points at a deleted grok hook path; sessions served from stale cache","s":"Backlog","st":"backlog","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4106/sessionstart-shim-inject-device-topologysh-points-at-a-deleted-grok"},{"id":"PHNX-4126","t":"secrets-cli release: repo NPM_TOKEN secret empty — CI publish cannot authenticate","s":"Todo","st":"unstarted","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4126/secrets-cli-release-repo-npm-token-secret-empty-ci-publish-cannot"},{"id":"PHNX-4131","t":"CI: flaky real-service/concurrency tests fail under full-suite selection (secrets CLI boot timeout, feed 6-proc)","s":"Todo","st":"unstarted","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4131/ci-flaky-real-serviceconcurrency-tests-fail-under-full-suite-selection"},{"id":"PHNX-4226","t":"linear CLI: gql() urlopen has no timeout, so an IPv6 connect stall hangs overview ~150 s","s":"Todo","st":"unstarted","p":3,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4226/linear-cli-gql-urlopen-has-no-timeout-so-an-ipv6-connect-stall-hangs"},{"id":"PHNX-4247","t":"Trim .agents-system and user layer to what the fleet uses","s":"Doing","st":"started","p":3,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-4247/trim-agents-system-and-user-layer-to-what-the-fleet-uses"},{"id":"PHNX-3708","t":"feed: surface attached PR/plan links as Slack labeled links (PHNX-3698 follow-up)","s":"Backlog","st":"backlog","p":4,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3708/feed-surface-attached-prplan-links-as-slack-labeled-links-phnx-3698"},{"id":"PHNX-3711","t":"browser: gate 'gc'/prune (reapAbandoned) with the remote-control consent check","s":"Backlog","st":"backlog","p":4,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-3711/browser-gate-gcprune-reapabandoned-with-the-remote-control-consent"},{"id":"PHNX-3974","t":"Agents CLI: one config — default model/effort/mode, global + per-account, local+cloud","s":"Backlog","st":"backlog","p":4,"m":null,"o":"Claude","u":"https://linear.app/getrush/issue/PHNX-3974/agents-cli-one-config-default-modeleffortmode-global-per-account"},{"id":"PHNX-4117","t":"sessions: delete in-repo read fan-out once sessions-cli 0.2.1 is fleet-wide (PHNX-4012 follow-up)","s":"Backlog","st":"backlog","p":4,"m":null,"o":"Muqsit","u":"https://linear.app/getrush/issue/PHNX-4117/sessions-delete-in-repo-read-fan-out-once-sessions-cli-021-is-fleet"}]},"prs":{"repos":[{"slug":"phnx-labs/.agents","branch":{"name":"main","sha":"a91842240431ffad7efa6dab825d63f1093003cc","ciState":"SUCCESS","failingChecks":[]},"rel":{"tag":"v0.2.6","npm":null,"since":30},"open":[],"merged":[{"n":507,"t":"feat(browser): one skill from browser-cli; the session hook reads no browser config (PHNX-4283)","at":"2026-10-08T21:54:02Z","ci":"SUCCESS"},{"n":506,"t":"docs(skills): respell removed agents sessions surfaces to the standalone CLIs (PHNX-4227)","at":"2026-10-08T14:02:11Z","ci":"SUCCESS"},{"n":505,"t":"fix(hooks): treat Linear milestone progress as percent when hiding finished milestones","at":"2026-10-08T09:01:24Z","ci":"SUCCESS"},{"n":504,"t":"feat(design): vocabulary, composition and research references","at":"2026-10-08T06:55:00Z","ci":"SUCCESS"}]},{"slug":"phnx-labs/agi-cli","branch":{"name":"main","sha":"b1ef817eb5cc4adc361f78044559acdf3ac008d8","ciState":"FAILURE","failingChecks":["windows"]},"rel":{"tag":"v1.22.123","npm":"1.22.122","since":3},"open":[{"n":3840,"t":"chore(release): 1.22.123","d":false,"ci":"SUCCESS","a":"muqsitnawaz","at":"2026-10-08T23:31:48Z","h":"release/1.22.123","sha":"568657b","fail":[],"body":"## 1.22.123\n\nRetry the immutable tagged release from its exact branch commit."},{"n":3835,"t":"refactor(sessions): delete agents-cli's copies of sessions/browser/computer CLI code (PHNX-4227)","d":false,"ci":"SUCCESS","a":"muqsitnawaz","at":"2026-10-08T14:00:40Z","h":"agents/phnx-4227-delete-copies","sha":"98580ce","fail":[],"body":"Step 1 of [PHNX-4227](https://linear.app/getrush/issue/PHNX-4227): delete the agents-cli copies of code the standalone `sessions`, `browser` and `computer` CLIs own, and consume those tools instead. Only copies whose replacement is **published today** are deleted. The rest are listed under **Blocked**, each with the exact missing export.\n\nNet (`git diff --numstat origin/main -- cli/src cli/scripts`, head `98580cefa`,"},{"n":3828,"t":"chore(release): 1.22.123","d":false,"ci":"SUCCESS","a":"muqsitnawaz","at":"2026-10-06T19:37:22Z","h":"release/v1.22.123","sha":"568657b","fail":[],"body":"## 1.22.123\n\n- **Browser rows on the feed read the engine's native task history (PHNX-4227).**\n  `agents feed watch --json`, `agents browser sessions` and the browser picker now\n  include tasks recorded in `~/.agents/.history/browser/history.db`, which\n  browser-cli 0.1.16+ writes. Values from native history take precedence over\n  agents' own `browser_sessions` row, which fills in whatever native history does\n  not r"},{"n":3827,"t":"feat(ps): receive the rich session card as agents ps preview (PHNX-4227)","d":true,"ci":"FAILURE","a":"muqsitnawaz","at":"2026-10-06T18:11:48Z","h":"agents/phnx-4227-rich-preview-1006","sha":"8d0d3b8","fail":["test"],"body":"**refactor + new verb home, draft dependency PR.** Only `e790f6606` is new here. The three commits below it are #3824 (`2e727808`) and #3826 (`70b6c471`, `14e2a834`), applied unchanged onto `0fc7def50`. Review only the top commit. The parent rebases it once #3824 and #3826 land.\n\nR1 receiver for the sessions-group retirement: `agents ps preview \u003cid>` returns the same rich card as `agents sessions preview`. The Menu c"},{"n":3826,"t":"refactor(sessions): move table, picker and resume helpers out of sessions.ts (PHNX-4227)","d":true,"ci":null,"a":"muqsitnawaz","at":"2026-10-06T17:47:30Z","h":"agents/phnx-4227-session-picker-1006","sha":"14e2a83","fail":[],"body":"**Refactor, no intended behavior change. Draft, stacked on #3824 and dependency-blocked the same way: do not merge** until #3824 merges (which itself waits for a `@phnx-labs/sessions-cli` release whose `./reader` exports `resolveRoutineName`, pinned there).\n\nUnit 2 of the PHNX-4227 selector/table brief: the table, picker and resume-invocation closures leave `commands/sessions.ts` (3442 → 2808 lines). Every surviving "},{"n":3824,"t":"refactor(sessions): move selector resolution into lib/session/selection (PHNX-4227)","d":true,"ci":"FAILURE","a":"muqsitnawaz","at":"2026-10-06T17:03:39Z","h":"agents/phnx-4227-session-selection-1006","sha":"2e72780","fail":["test"],"body":"**Refactor, no intended behavior change. Draft, dependency-blocked: do not merge** until a `@phnx-labs/sessions-cli` release exporting `resolveRoutineName` from `./reader` is published and pinned here.\n\nUnit 1 of the PHNX-4227 selector closure. Session selectors move out of the retiring `commands/sessions.ts` into a library module, so run/resume, focus/go, logs and the export/render/share/trace commands stop importin"},{"n":3823,"t":"refactor(sessions): drive peers with the canonical ps and daemon index argv (PHNX-4227)","d":true,"ci":"FAILURE","a":"muqsitnawaz","at":"2026-10-06T16:53:44Z","h":"agents/phnx-4227-peer-argv-1006","sha":"07f8ba8","fail":["test"],"body":"**refactor** · fleet hops call peers by the canonical `ps` / `daemon index` spellings (PHNX-4227). Draft: the fleet rollout below has to land before this merges.\n\n## What changed\n\n- **`cli/src/commands/sessions-stop.ts`**: a session on another device is stopped with `agents ps stop \u003cid> --local` (was `sessions stop`).\n- **`cli/src/commands/detach.ts`**: a remote detach runs `agents ps detach \u003cid> --local` (was `sessi"},{"n":3820,"t":"refactor(secrets): use the published @phnx-labs/secrets-cli/client and stop forcing a state root (PHNX-4227)","d":false,"ci":"FAILURE","a":"muqsitnawaz","at":"2026-10-06T16:12:11Z","h":"agents/phnx-4227-secrets-client-consumer","sha":"93ae394","fail":["test"],"body":"**What:** agents-cli imports its secrets process transport from the published `@phnx-labs/secrets-cli/client` (0.3.0, exact pin) instead of a private copy. It also stops choosing a secrets state root: locally, for agents it launches, and for bundle pushes. Refactor with a behavior change. PHNX-4227; the narrow PHNX-4249 root-pin follow-up (no active owner found, see below).\n\n## Behavior\n\n- **Transport:** `cli/src/lib"},{"n":3711,"t":"fix(devices): resolve the operator platform before choosing a probe's shell family","d":false,"ci":"SUCCESS","a":"taylorg009","at":"2026-09-25T01:50:01Z","h":"fix/fleet-probe-resolved-profile","sha":"c567d16","fail":[],"body":"## Problem\n\nSeveral fleet paths chose the PowerShell vs POSIX remote shell from the registry's **discovered** platform/shell, while `buildSshInvocation` / `sshTargetFor` dial with the **resolved** profile (per-device `config: platform` overlay from `resolve-profile.ts`).\n\nA Windows-discovered box whose sshd lands in WSL, configured with `agents devices config \u003cname> platform linux`, was dialed as a bash login shell b"},{"n":3695,"t":"fix(accounting): expire a Claude out-of-credits mark so rotation re-probes the account","d":false,"ci":"SUCCESS","a":"taylorg009","at":"2026-09-18T02:52:46Z","h":"claude-credit-marks-ttl","sha":"19ab51b","fail":[],"body":"Bug fix: a Claude account marked `out_of_credits` stayed out of rotation for good.\n\n## What was wrong\n\nA refused run (\"You've hit your monthly spend limit\" / \"out of usage credits\") writes `unavailable: { reason: 'out_of_credits' }` for the account in `~/.agents/.cache/claude-usage.json`. Rotation (`balanced`, `available`) excludes a marked account, and the only clear was `clearClaudeAccountRefusal` after a successfu"},{"n":3690,"t":"fix(upgrade): clear bun's exact-version pin so a tarball install resolves","d":false,"ci":"SUCCESS","a":"taylorg009","at":"2026-09-15T18:02:12Z","h":"fix-bun-tarball-dependency-loop","sha":"28e8fe2","fail":[],"body":"`agents upgrade` on a bun-installed copy always failed at the install step and left the CLI on the version it already had. Bug fix.\n\n## The failure\n\n```\n✔ Install @phnx-labs/agents-cli@1.22.117? Yes\n✖ Upgrade failed: Command failed: bun add -g /tmp/agents-cli-upgrade-B3pbjI/agents-cli-1.22.117.tgz --ignore-scripts\nerror: Package \"@phnx-labs/agents-cli@1.22.115\" has a dependency loop\n  Resolution: \"@phnx-labs/agents-c"},{"n":3674,"t":"fix(run): a bare interactive run stays on this machine; placement is opt-in","d":false,"ci":"SUCCESS","a":"taylorg009","at":"2026-09-14T16:46:39Z","h":"run-local-by-default","sha":"9cf796e","fail":[],"body":"A bare interactive `agents run \u003charness>` starts on the machine it was typed on; fleet placement becomes opt-in. Type: behavior change, owner-directed (reverses PHNX-4083).\n\n## Why\n\nSince PHNX-4083 a bare human-facing run (no prompt, real TTY, nothing pinned) placed itself like `--device auto`. In practice `agents run claude --strategy balanced` typed on the owner's laptop landed on whichever worker had the most head"}],"merged":[{"n":3838,"t":"feat(release): publish version branches through npm OIDC","at":"2026-10-08T22:25:00Z","ci":"FAILURE"},{"n":3839,"t":"feat(recordings): publish settled CleanShot videos","at":"2026-10-08T22:03:36Z","ci":"FAILURE"},{"n":3837,"t":"docs(readme): link the command reference at the top","at":"2026-10-08T21:20:15Z","ci":"FAILURE"},{"n":3836,"t":"fix(help): forwarding commands pass --help to the standalone CLI; pin browser-cli 0.1.16 (PHNX-4283)","at":"2026-10-08T15:39:59Z","ci":"FAILURE"}]},{"slug":"phnx-labs/artifacts-cli","branch":{"name":"main","sha":"04b9614112d541a8d61894e9a5fa113c18fc19d5","ciState":"FAILURE","failingChecks":["publish"]},"rel":{"tag":"v0.9.0","npm":"0.9.0","since":1},"open":[{"n":126,"t":"fix(open,share): call the standalone browser and secrets CLIs (PHNX-4227)","d":true,"ci":"SUCCESS","a":"muqsitnawaz","at":"2026-10-06T17:38:10Z","h":"agents/phnx-4227-artifacts-callers-1006","sha":"cd877db","fail":[],"body":"`artifacts render --open` and named-bundle share credentials now call the owning standalone `browser` and `secrets` executables, removing their dependency on the retiring Agents command groups.\n\n`openPath` keeps `show`, its five-second deadline and OS fallback on missing executable, nonzero exit or timeout. `readBundleValue` keeps `secrets exec \u003cbundle> -- printenv \u003cKEY>`, its twenty-second deadline, trimmed stdout a"},{"n":108,"t":"feat(design): find the nearest DESIGN.md up the directory tree","d":false,"ci":"SUCCESS","a":"muqsitnawaz","at":"2026-09-10T16:54:41Z","h":"design-ancestor-lookup","sha":"0174bc5","fail":[],"body":"## What\n\n`artifacts render \u003cfile.md>` loaded brand tokens only from a `DESIGN.md` in the Markdown file's own directory (`loadDesign(cwd)` did `join(cwd, 'DESIGN.md')`). It now uses the nearest ancestor: `findDesignFile(start)` in `src/lib/design.ts` checks the source directory, then each parent up to the filesystem root, and `loadDesign` uses the first `DESIGN.md` found. A file in the same directory still wins becaus"},{"n":92,"t":"docs: complete CLI reference and verify development 0.5.0","d":true,"ci":"SUCCESS","a":"muqsitnawaz","at":"2026-09-10T09:43:54Z","h":"docs/dev-cli-verification-20260910","sha":"588c9ef","fail":[],"body":"The 0.5.0 version bump merged without an npm publication, and the command surface was spread across help and implementation. This adds a complete CLI reference, rendered HTML, a development verification report, sanitized results, and a repeatable package-level acceptance probe.\n\nVerification against source 6f96d94:\n- Canonical build: 50 test files, 868 passed, one opt-in managed test skipped. [GitHub CI also passed]("},{"n":72,"t":"feat(provenance): real project names, title-derived share slugs (PHNX-3311)","d":false,"ci":null,"a":"muqsitnawaz","at":"2026-08-27T11:45:07Z","h":"agents/provenance2","sha":"17d9a13","fail":[],"body":"Honest `project` provenance in `artifacts new`, plus a deterministic default slug for `artifacts share`. **Type: behavior change + tests + docs.**\n\nBuilds on `5e7bb1b`, the WIP preserved from a teammate that was reaped before it could open a PR. That WIP did not compile: `sanitizePart` had been deleted while `githubUser` and `publishArtifact` still called it, and its new `artifactTitle` was never wired into a call si"}],"merged":[{"n":144,"t":"test: real temp paths on macOS; isolate the publish-failure render from the developer session","at":"2026-10-08T23:38:52Z","ci":"FAILURE"},{"n":143,"t":"chore(release): 0.9.0","at":"2026-10-08T23:31:06Z","ci":"FAILURE"},{"n":142,"t":"feat(share): transcripts, captions, summaries and a transcript-rail video page (PHNX-4287)","at":"2026-10-08T23:25:12Z","ci":"SUCCESS"},{"n":139,"t":"docs: generate the command reference from the CLI, fail tests when stale","at":"2026-10-08T22:39:35Z","ci":"SUCCESS"}]},{"slug":"phnx-labs/linear-cli","branch":{"name":"main","sha":"df68a4f56093797f991b628c7bfd00636976ff9c","ciState":"SUCCESS","failingChecks":[]},"rel":{"tag":"v0.25.0","npm":null,"since":1},"open":[],"merged":[{"n":61,"t":"feat: --remind-at sets Linear's issue reminder on create and update","at":"2026-10-07T08:54:39Z","ci":"SUCCESS"},{"n":60,"t":"chore(release): v0.25.0 — projects overview lists each project's people","at":"2026-10-04T15:37:23Z","ci":"SUCCESS"},{"n":59,"t":"feat(projects): overview lists each project's members for avatars","at":"2026-10-04T15:15:55Z","ci":"SUCCESS"}]}]},"status":{"name":"agi","description":"Agents CLI and Factory","linear":{"done":1116,"total":1490,"inProgress":14,"milestones":[{"name":"Fleet reliability — green CI + notify","done":12,"total":15,"targetDate":"2026-08-12"},{"name":"Distribution → first converts","done":2,"total":17,"targetDate":"2026-08-18"},{"name":"Factory converts strategy to shipped outcomes","done":13,"total":14,"targetDate":"2026-08-28"},{"name":"Project-update + Initiative support","done":1,"total":1,"targetDate":"2026-08-14"},{"name":"Factory onboarding — one command","done":1,"total":1,"targetDate":"2026-08-14"},{"name":"Factory reliability — self-heals","done":4,"total":4,"targetDate":"2026-08-14"}]},"schedule":{"kind":"overdue","milestone":"Fleet reliability — green CI + notify","days":57},"byStatus":{"idle":9,"running":1},"latestRelease":{"tag":"menubar/v1.15.6","publishedAt":"2026-10-08T22:32:31Z"}},"sim1":[{"id":"PHNX-4263","s":"Doing","t":"AGI EXT: Codex/Grok tabs stuck on '(tracking session)', never bind to the session panel","score":0.032787},{"id":"PHNX-2026","s":"Done","t":"Auto-close VS Code terminal tab when agent exits in native terminal mode","score":0.030798},{"id":"PHNX-3592","s":"Canceled","t":"AGI EXT Fleet: detail-panel + navigation revamp — empty right panel, session-click nav bug, cramped detail, broken Needs-you approve","score":0.030536},{"id":"PHNX-3809","s":"Canceled","t":"AGI EXT chrome: move host off the tab title + theme-adaptive session chrome","score":0.029287},{"id":"PHNX-2034","s":"Done","t":"Unify session ID tracking across all agents using the SessionStart hook and AGENT_LAUNCH_ID","score":0.02885},{"id":"PHNX-3011","s":"Canceled","t":"AGI EXT: editor tab never replaces provisional topic with session name","score":0.02879}],"sim2":[{"id":"PHNX-4227","s":"Doing","t":"Remove agents browser/computer/secrets/sessions command groups (standalone CLIs only)","score":0.032787},{"id":"PHNX-4101","s":"Done","t":"agents-cli: reduce browser to a thin browser-client consumer of @phnx-labs/browser-cli; delete the in-repo engine","score":0.032258},{"id":"PHNX-4091","s":"Done","t":"Extract agents pty into phnx-labs/term-cli; remove pty from agents-cli","score":0.031498},{"id":"PHNX-4117","s":"Backlog","t":"sessions: delete in-repo read fan-out once sessions-cli 0.2.1 is fleet-wide (PHNX-4012 follow-up)","score":0.030798},{"id":"PHNX-4075","s":"Done","t":"Extract and publish standalone computer CLI","score":0.029274},{"id":"PHNX-4118","s":"Todo","t":"sessions: extract shared @phnx-labs/sessions-core reader; both CLIs import it (kill ~13k-LOC parser duplication)","score":0.028139}],"sim3":[{"id":"PHNX-4289","s":"Doing","t":"AGI EXT: right sidebar Project panel — overview/milestones, tickets, pull requests","score":0.032787},{"id":"PHNX-4215","s":"Doing","t":"AGI Menu: project pull-request board (switch, filters, excerpt, monorepo scoping, merge)","score":0.031514},{"id":"PHNX-4269","s":"Doing","t":"AGI Menu Home: focus the default project (cycle progress by state, sessions, up next)","score":0.031054},{"id":"PHNX-3592","s":"Canceled","t":"AGI EXT Fleet: detail-panel + navigation revamp — empty right panel, session-click nav bug, cramped detail, broken Needs-you approve","score":0.028986},{"id":"PHNX-3938","s":"Todo","t":"AGI extension — Fleet view: fix empty panels, attribution & chrome","score":0.028958},{"id":"PHNX-3939","s":"Doing","t":"AGI extension — Sessions panel: real prompts & working session view","score":0.028373}]};
+const OPTIONS = [
+  { k: 'A', name: 'Menu port', one: 'AGI Menu Home, moved into the sidebar as one scrolling page.',
+    pro: ['Familiar: identical to what you use on the Mac.', 'Best visual polish already designed.'],
+    con: ['One webview, so nothing can be hidden or reordered (misses I7).', 'Up next ignores the focused tab.', 'Repeats the duplicate-heavy cycle bar unless fixed.'] },
+  { k: 'B', name: 'Native sections', one: 'Five VS Code view sections in one container; toggle each from the "…" menu.',
+    pro: ['Show/hide and drag-reorder come from VS Code for free (I7).', 'Each section loads on its own, so a slow one never blocks the rest.'],
+    con: ['Rows are plain; ticket, PR and session are three separate lists.', 'Looks like any extension unless styled.'] },
+  { k: 'C', name: 'Focus card', one: 'Starts from the tab you are in: its ticket, its PR, then what to do next.',
+    pro: ['Strongest Up next (I5): re-ranks per tab.', 'Answers "what should this agent or I do next" in one glance.'],
+    con: ['Project-wide picture is pushed to a single collapsed line.', 'Empty when no agent tab is focused.'] },
+  { k: 'D', name: 'Work items', one: 'Tickets joined to their PR and session, grouped by what they need from you.',
+    pro: ['Fewest clicks to merge or unblock: the PR lives on the ticket row.', 'Shows unticketed PRs explicitly.'],
+    con: ['Needs the join in one place (exactly the I8 engine).', 'Dense; the milestone picture is absent.'] },
+  { k: 'E', name: 'Milestones', one: 'Milestones first, each expanding to its tickets and their PRs.',
+    pro: ['Best for planning conversations (I4).', 'Makes schedule slip obvious.'],
+    con: ['AGI has no current milestone, so the panel is mostly an empty state today.', 'Weak for day-to-day merging.'] },
+  { k: 'F', name: 'The mix', rec: true, one: 'B\'s sections, C\'s focused Up next, D\'s joined rows, A\'s look, E\'s honest milestone line.',
+    pro: ['Covers all eight intents.', 'Every section is a view of one CLI verb.'],
+    con: ['Depends on the CLI verb landing first (step 1 of the plan).'] },
+];
+const TABS = [
+  { id: 's1', label: 'codex · tabs stuck tracking', agent: 'codex', ticket: 'PHNX-4263', sim: 'sim1', host: 'yosemite-m6', phase: 'run',
+    lines: ['<span class="u">› Codex and Grok tabs never bind to their session. Find why.</span>', 'reading src/vscode/terminals.vscode.ts', 'the focused tab has no session id yet; subject stays on the previous row', '<span class="dim">editing src/vscode/agentPanel.vscode.ts …</span>'] },
+  { id: 's2', label: 'claude · delete CLI copies', agent: 'claude', ticket: 'PHNX-4227', sim: 'sim2', host: 'yosemite-s0', phase: 'idle',
+    lines: ['<span class="u">› Delete agents-cli\'s copies of sessions/browser/computer code.</span>', 'opened PR #3835, CI green', 'I\'ll wait for review before the follow-up PRs (#3823, #3824, #3826).', '<span class="dim">idle 22m · unfinished</span>'] },
+  { id: 's3', label: 'claude · right sidebar', agent: 'claude', ticket: 'PHNX-4289', sim: 'sim3', host: 'yosemite-m6', phase: 'run',
+    lines: ['<span class="u">› Panels on both sides: sessions left, project right.</span>', 'drafted Overview, Tickets, Pull requests views', 'building prototypes A–F', '<span class="dim">running …</span>'] },
+];
+// Illustrative sessions (not captured): the three tabs plus one waiting on permission.
+const SESSIONS = [
+  { ticket: 'PHNX-4225', label: 'daemon crash-loop self-heal', phase: 'need', agent: 'claude', host: 'yosemite-m2', ago: '4m', why: 'needs permission' },
+  { ticket: 'PHNX-4227', label: 'delete CLI copies', phase: 'idle', agent: 'claude', host: 'yosemite-s0', ago: '22m', why: 'idle, unfinished' },
+  { ticket: 'PHNX-4263', label: 'tabs stuck tracking', phase: 'run', agent: 'codex', host: 'yosemite-m6', ago: 'now', why: 'running' },
+  { ticket: 'PHNX-4289', label: 'right sidebar', phase: 'run', agent: 'claude', host: 'yosemite-m6', ago: 'now', why: 'running' },
+];
+const MATRIX = [
+  ['I1 Two sides', 'y','y','y','y','y','y'],
+  ['I2 Easier management', 'p','p','p','y','p','y'],
+  ['I3 Tickets you\'d open', 'p','y','n','y','p','y'],
+  ['I4 Tasks + milestones', 'y','y','n','p','y','y'],
+  ['I5 Up next per tab', 'n','p','y','n','n','y'],
+  ['I6 PRs like the Menu', 'y','p','p','y','n','y'],
+  ['I7 Toggle panels', 'n','y','n','n','n','y'],
+  ['I8 One engine', 'p','p','p','y','p','y'],
+];
+const MARK = { y: '● covers', p: '◐ partly', n: '○ misses' };
+
+const state = { opt: 'F', tab: 's2', open: {}, expanded: new Set(['3835']), ci: {}, merge: {}, hidden: new Set(), menu: false };
+try { const s = localStorage.getItem('psp-opt'); if (s && OPTIONS.some(o => o.k === s)) state.opt = s; } catch (e) {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const ago = (iso) => { const d = (Date.parse('2026-10-09T00:00:00Z') - Date.parse(iso)) / 36e5; return d < 1 ? Math.max(1, Math.round(d * 60)) + 'm' : d < 48 ? Math.round(d) + 'h' : Math.round(d / 24) + 'd'; };
+const OPEN = new Set(['Doing', 'In Review', 'Todo', 'Backlog', 'Triage']);
+const tickets = DATA.tickets.tickets;
+const byId = Object.fromEntries(tickets.map(t => [t.id, t]));
+const prs = DATA.prs.repos.flatMap(r => r.open.map(p => ({ ...p, repo: r.slug })));
+// The join the CLI verb would own: a PR belongs to a ticket named in its branch or title.
+const ticketOf = (p) => { const m = (p.h + ' ' + p.t).match(/phnx-(\d+)/i); return m ? 'PHNX-' + m[1] : null; };
+prs.forEach(p => { p.ticket = ticketOf(p); });
+// #3835 starts "checks running" so the ready transition can be shown (simulated).
+state.ci['3835'] = 'running';
+const prCi = (p) => state.ci[p.n] ?? (p.ci === 'SUCCESS' ? 'ok' : p.ci === 'FAILURE' ? 'bad' : 'none');
+const prsFor = (id) => prs.filter(p => p.ticket === id);
+const sessFor = (id) => SESSIONS.filter(s => s.ticket === id);
+
+const icon = {
+  chev: '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  refresh: '<svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  more: '<svg viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.5" cy="8" r="1.2" fill="currentColor"/></svg>',
+};
+function ring(ci, draft) {
+  const cls = draft && ci !== 'bad' ? 'draft' : ci === 'ok' ? 'ok' : ci === 'bad' ? 'bad' : ci === 'running' ? '' : 'none';
+  const title = draft ? 'draft' : ci === 'ok' ? 'checks passed' : ci === 'bad' ? 'checks failed' : ci === 'running' ? 'checks running' : 'no checks';
+  return `<span class="ring ${cls}" role="img" aria-label="${title}"><svg viewBox="0 0 18 18"><circle class="trk" cx="9" cy="9" r="7" fill="none" stroke-width="2"/><circle class="arc" cx="9" cy="9" r="7" fill="none" stroke-width="2" stroke-linecap="round"/>${ci === 'ok' && !draft ? '<path class="chk" d="M5.8 9.2l2.2 2.2 4.2-4.6" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' : ''}</svg></span>`;
+}
+function pri(p) { const n = p === 1 ? 3 : p === 2 ? 3 : p === 3 ? 2 : p === 4 ? 1 : 0; return `<span class="pri p${p}" title="${['none','urgent','high','medium','low'][p] || 'none'}">${[1,2,3].map(i => `<i style="height:${3 + i * 3}px;opacity:${i <= n ? 1 : .25}"></i>`).join('')}</span>`; }
+function statusText(p) {
+  const ci = prCi(p);
+  if (state.merge[p.n] === 'merged') return '<span style="color:var(--ok)">merged</span>';
+  if (p.d) return 'draft';
+  return ci === 'ok' ? '<span style="color:var(--ok)">Ready to merge</span>' : ci === 'bad' ? '<span style="color:var(--bad)">Checks failing</span>' : ci === 'running' ? 'Checks running' : 'No checks';
+}
+function prRow(p, opts = {}) {
+  const open = state.expanded.has(String(p.n));
+  const ci = prCi(p);
+  const merged = state.merge[p.n] === 'merged';
+  const kind = (p.t.match(/^(\w+)(\(|:)/) || [])[1];
+  let x = '';
+  if (open && !merged) {
+    const chips = [ci === 'ok' ? '<span class="pill ok">✓ checks passed</span>' : ci === 'bad' ? `<span class="pill bad">✕ ${esc((p.fail || []).join(', ') || 'checks')} failing</span>` : ci === 'running' ? '<span class="pill warn">◌ checks running</span>' : '<span class="pill">no checks</span>',
+      '<span class="pill">no reviews</span>', p.d ? '<span class="pill">draft</span>' : '<span class="pill ok">no conflicts</span>'].join('');
+    const m = state.merge[p.n];
+    const acts = m === 'confirm'
+      ? `<div class="confirm"><span>Merge <b>#${p.n}</b> at <span class="mono">${esc(p.sha)}</span> into main? GitHub refuses if the branch moved.</span><div class="acts"><button class="btn gold" data-act="merge-go" data-n="${p.n}">Merge ${esc(p.sha)}</button><button class="btn" data-act="merge-cancel" data-n="${p.n}">Cancel</button></div></div>`
+      : m === 'merging' ? '<span class="sim">merging…</span>'
+      : `<div class="acts">${ci === 'ok' && !p.d ? `<button class="btn gold" data-act="merge" data-n="${p.n}">Merge…</button>` : ''}${ci === 'running' ? `<button class="btn" data-act="finish" data-n="${p.n}">Finish CI</button><span class="sim">simulated</span>` : ''}${ci === 'bad' ? `<button class="btn" data-act="noop">Read failure</button><button class="btn" data-act="noop">Re-run</button>` : ''}<button class="btn" data-act="noop">Comment…</button><a class="btn" href="https://github.com/${esc(p.repo)}/pull/${p.n}" target="_blank" rel="noopener">GitHub ↗</a></div>`;
+    x = `<div class="prx"><span class="mono" style="font-size:11px;color:var(--caption)">${esc(p.h)} → main</span><div class="chips">${chips}</div>${p.body ? `<div class="prbody">${esc(p.body.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim())}</div>` : ''}${acts}</div>`;
+  }
+  return `<div class="pr" data-pr="${p.n}"><button class="row" data-act="toggle-pr" data-n="${p.n}" aria-expanded="${open}">
+    ${merged ? ring('ok') : ring(ci, p.d)}
+    <span class="mid"><span class="t">${kind ? `<span class="pill" style="margin-right:4px">${esc(kind)}</span>` : ''}${esc(p.t.replace(/^\w+(\([^)]*\))?:\s*/, ''))}</span>
+    <span class="s">#${p.n} · ${ago(p.at)} · ${statusText(p)}${opts.repo ? ' · ' + esc(p.repo.split('/')[1]) : ''}</span></span>
+    <span></span></button>${x}</div>`;
+}
+function ticketRow(t, opts = {}) {
+  const linked = prsFor(t.id), ss = sessFor(t.id);
+  const rank = (p) => state.merge[p.n] === 'merged' ? 4 : p.d ? 3 : ({ running: 0, ok: 1, bad: 2 })[prCi(p)] ?? 3;
+  const shown = [...linked].sort((a, b) => rank(a) - rank(b)).slice(0, 2);
+  const more = linked.length - shown.length;
+  const extra = opts.join ? `<span class="wi-links">${shown.map(p => `<span class="pill ${p.d ? '' : prCi(p) === 'ok' ? 'ok' : prCi(p) === 'bad' ? 'bad' : 'warn'}">#${p.n} ${state.merge[p.n] === 'merged' ? 'merged' : p.d ? 'draft' : prCi(p) === 'ok' ? 'ready' : prCi(p) === 'bad' ? 'failing' : 'running'}</span>`).join('')}${more > 0 ? `<span class="pill">+${more} PRs</span>` : ''}${ss.map(s => `<span class="pill ${s.phase === 'need' ? 'bad' : s.phase === 'idle' ? 'warn' : 'info'}">${esc(s.agent)} ${esc(s.why)}</span>`).join('')}</span>` : '';
+  return `<a class="row" href="${esc(t.u)}" target="_blank" rel="noopener">${pri(t.p)}<span class="mid"><span class="t">${esc(t.t)}</span><span class="s">${esc(t.id)} · ${esc(t.s)}${t.o ? ' · @' + esc(t.o) : ''}</span>${extra}</span><span></span></a>`;
+}
+function sessRow(s) {
+  return `<button class="row" data-act="noop"><span class="dot ${s.phase}"></span><span class="mid"><span class="t">${esc(s.label)}</span><span class="s">${esc(s.why)} · ${esc(s.ago)} · ${esc(s.agent)} · ${esc(s.host)}</span></span><span class="id">${esc(s.ticket)}</span></button>`;
+}
+function cycle() {
+  const c = {}; tickets.forEach(t => { if (OPEN.has(t.s)) c[t.s] = (c[t.s] || 0) + 1; });
+  const order = [['Doing', '--s-doing'], ['In Review', '--s-review'], ['Todo', '--s-todo'], ['Backlog', '--s-backlog']].filter(([k]) => c[k]);
+  const total = order.reduce((a, [k]) => a + c[k], 0);
+  return `<div class="cbar" role="img" aria-label="${order.map(([k]) => c[k] + ' ' + k).join(', ')}">${order.map(([k, v]) => `<span style="flex:${c[k]};background:var(${v})"></span>`).join('')}</div>
+  <div class="legend">${order.map(([k, v]) => `<span><i style="background:var(${v})"></i>${c[k]} ${k}</span>`).join('')}</div>`;
+}
+function projectHead() {
+  const s = DATA.status; return `<div class="phead"><h4>AGI</h4><span class="r">cycle 32 · 4 days left</span></div>
+  <div class="s mono" style="font-size:11px;color:var(--caption)">${tickets.length} open · ${s.linear.inProgress} in progress · ${SESSIONS.length} sessions</div>${cycle()}`;
+}
+function milestoneNote() {
+  const ms = DATA.status.linear.milestones; const unplanned = tickets.filter(t => !t.m).length;
+  return `<div class="note"><b>No current milestone.</b> All ${ms.length} milestones were due in August; ${unplanned} of ${tickets.length} open tickets are unplanned. <button class="btn" data-act="noop" style="margin-left:4px">Plan next milestone…</button></div>`;
+}
+function milestonesFull() {
+  const ms = [...DATA.status.linear.milestones].sort((a, b) => a.targetDate.localeCompare(b.targetDate));
+  return ms.map(m => `<div class="row" style="cursor:default"><span class="dot ${m.done >= m.total ? 'done' : 'idle'}"></span><span class="mid"><span class="t">${esc(m.name)}</span><span class="s">due ${m.targetDate}${m.done < m.total ? ' · overdue' : ' · complete'}</span></span><span style="display:grid;justify-items:end"><span class="id">${m.done}/${m.total}</span><span class="mbar"><span style="width:${Math.round(m.done / m.total * 100)}%"></span></span></span></div>`).join('');
+}
+function upNext(limit = 4) {
+  const tab = TABS.find(t => t.id === state.tab);
+  const rows = DATA[tab.sim].filter(r => OPEN.has(r.s) && r.id !== tab.ticket).slice(0, limit);
+  const own = byId[tab.ticket];
+  const fill = rows.length < limit ? tickets.filter(t => OPEN.has(t.s) && t.id !== tab.ticket && !rows.some(r => r.id === t.id)).sort((a, b) => (a.p || 5) - (b.p || 5)).slice(0, limit - rows.length) : [];
+  return `<div class="ctx swap"><div class="h">Focused <b>${esc(tab.label.split(' · ')[1])}</b><span class="pill">${esc(tab.agent)}</span></div>${own ? ticketRow(own, { join: true }) : ''}</div>
+  <div class="lbl">Related, open</div>${rows.map(r => ticketRow(byId[r.id] || { id: r.id, t: r.t, s: r.s, p: 0, u: '#' })).join('') || '<div class="empty">Nothing similar is open.</div>'}
+  ${fill.length ? `<div class="lbl">Then by priority</div>${fill.map(t => ticketRow(t)).join('')}` : ''}`;
+}
+function sec(id, title, count, body) {
+  const open = state.open[id] ?? true;
+  if (state.hidden.has(id)) return '';
+  return `<div class="sec" data-open="${open}"><button class="secHead" data-act="toggle-sec" data-id="${id}" aria-expanded="${open}"><span class="chev">${icon.chev}</span>${esc(title)}<span class="c">${count ?? ''}</span></button><div class="secBody">${body}</div></div>`;
+}
+function head(title, menu) {
+  return `<div class="paneHead">${esc(title)}<span class="sp"></span><button class="proj" data-act="noop" title="Switch project">AGI ${icon.chev}</button><button class="ico" data-act="noop" aria-label="Refresh">${icon.refresh}</button>${menu ? `<button class="ico" data-act="menu" aria-label="Show or hide sections" aria-expanded="${state.menu}">${icon.more}</button>` : ''}</div>`;
+}
+const SECTIONS_F = [['ov', 'Overview'], ['next', 'Up next'], ['work', 'Work'], ['prs', 'Pull requests'], ['sess', 'Sessions']];
+function menu() {
+  if (!state.menu) return '';
+  return `<div class="menu" role="menu">${SECTIONS_F.map(([id, n]) => `<label><input type="checkbox" id="vis-${id}" data-act="vis" data-id="${id}" ${state.hidden.has(id) ? '' : 'checked'}> ${n}</label>`).join('')}<span class="sim" style="padding:4px 6px">VS Code's own view toggles</span></div>`;
+}
+// Same order as AGI Menu: checks running, ready to merge, failing, drafts, merged.
+const readyFirst = (a, b) => { const r = (p) => state.merge[p.n] === 'merged' ? 4 : p.d ? 3 : ({ running: 0, ok: 1, bad: 2 })[prCi(p)] ?? 3; return r(a) - r(b) || b.n - a.n; };
+
+const RENDER = {
+  A() {
+    const need = SESSIONS.filter(s => s.phase === 'need' || s.phase === 'idle');
+    return head('Project', false) + `<div style="padding:0 12px 16px">
+      <div class="lbl">Needs you · ${need.length}</div>${need.map(sessRow).join('')}
+      ${projectHead()}
+      <div class="lbl">Milestones</div>${milestonesFull()}
+      <div class="lbl">Pull requests · ${prs.length} open</div>${[...prs].sort(readyFirst).slice(0, 8).map(p => prRow(p)).join('')}
+      <div class="lbl">Sessions on AGI · ${SESSIONS.length}</div>${SESSIONS.map(sessRow).join('')}</div>`;
+  },
+  B() {
+    const groups = ['Doing', 'Todo', 'Backlog'].map(s => [s, tickets.filter(t => t.s === s).sort((a, b) => (a.p || 5) - (b.p || 5))]);
+    return head('Project', true) + menu() +
+      sec('ov', 'Overview', '', projectHead() + milestoneNote()) +
+      sec('next', 'Up next', '', tickets.filter(t => t.s === 'Todo').sort((a, b) => (a.p || 5) - (b.p || 5)).slice(0, 4).map(t => ticketRow(t)).join('')) +
+      sec('work', 'Tickets', tickets.length, groups.map(([s, ts]) => `<div class="lbl">${s} · ${ts.length}</div>${ts.slice(0, 5).map(t => ticketRow(t)).join('')}${ts.length > 5 ? `<div class="empty">+${ts.length - 5} more</div>` : ''}`).join('')) +
+      sec('prs', 'Pull requests', prs.length, [...prs].sort(readyFirst).slice(0, 8).map(p => prRow(p, { repo: true })).join('')) +
+      sec('sess', 'Sessions', SESSIONS.length, SESSIONS.map(sessRow).join(''));
+  },
+  C() {
+    const tab = TABS.find(t => t.id === state.tab);
+    const own = prsFor(tab.ticket);
+    return head('Focus', false) + `<div style="padding:0 12px 16px">${upNext(5)}
+      <div class="lbl">This ticket's PRs</div>${own.length ? own.map(p => prRow(p)).join('') : '<div class="empty">No PR yet for ' + esc(tab.ticket) + '.</div>'}
+      <div class="lbl">Project</div><div class="row" style="cursor:default"><span></span><span class="mid">${cycle()}</span><span></span></div></div>`;
+  },
+  D() {
+    const ready = prs.filter(p => prCi(p) === 'ok' && !p.d && state.merge[p.n] !== 'merged');
+    const needT = new Set(SESSIONS.filter(s => s.phase !== 'run').map(s => s.ticket));
+    const lanes = [
+      ['Needs you', tickets.filter(t => needT.has(t.id))],
+      ['Ready to merge', tickets.filter(t => prsFor(t.id).some(p => ready.includes(p)) && !needT.has(t.id))],
+      ['In flight', tickets.filter(t => t.s === 'Doing' && !needT.has(t.id) && !prsFor(t.id).some(p => ready.includes(p)))],
+      ['Next', tickets.filter(t => t.s === 'Todo').sort((a, b) => (a.p || 5) - (b.p || 5)).slice(0, 5)],
+    ];
+    const unt = prs.filter(p => !p.ticket);
+    return head('Work', false) + `<div style="padding:0 12px 16px">${projectHead()}
+      ${lanes.map(([n, ts]) => `<div class="lane"><div class="lh">${n}<span class="c">${ts.length}</span></div>${ts.map(t => ticketRow(t, { join: true })).join('') || '<div class="empty">Nothing here.</div>'}</div>`).join('')}
+      <div class="lane"><div class="lh">PRs without a ticket<span class="c">${unt.length}</span></div>${unt.sort(readyFirst).map(p => prRow(p, { repo: true })).join('')}</div></div>`;
+  },
+  E() {
+    const unplanned = tickets.filter(t => !t.m);
+    return head('Milestones', false) + `<div style="padding:0 12px 16px">${projectHead()}${milestoneNote()}
+      <div class="lbl">Milestones</div>${milestonesFull()}
+      <div class="lbl">Unplanned · ${unplanned.length}</div>${unplanned.filter(t => t.s === 'Doing').slice(0, 6).map(t => ticketRow(t, { join: true })).join('')}<div class="empty">+${unplanned.length - 6} more unplanned</div></div>`;
+  },
+  F() {
+    const needT = new Set(SESSIONS.map(s => s.ticket));
+    const work = tickets.filter(t => t.s === 'Doing').sort((a, b) => {
+      const r = (t) => { const ss = sessFor(t.id); if (ss.some(s => s.phase === 'need')) return 0; if (ss.some(s => s.phase === 'idle')) return 1; if (prsFor(t.id).some(p => prCi(p) === 'ok' && !p.d)) return 2; return 3; };
+      return r(a) - r(b) || (a.p || 5) - (b.p || 5);
+    });
+    const unt = prs.filter(p => !p.ticket || !byId[p.ticket]);
+    return head('Project', true) + menu() +
+      sec('ov', 'Overview', '', projectHead() + milestoneNote()) +
+      sec('next', 'Up next', 'follows tab', upNext(4)) +
+      sec('work', 'Work', work.length + ' doing', work.slice(0, 7).map(t => ticketRow(t, { join: true })).join('') + (work.length > 7 ? `<div class="empty">+${work.length - 7} more · Todo ${tickets.filter(t => t.s === 'Todo').length} · Backlog ${tickets.filter(t => t.s === 'Backlog').length}</div>` : '')) +
+      sec('prs', 'Pull requests', prs.length + ' open', [...prs].sort(readyFirst).slice(0, 7).map(p => prRow(p, { repo: true })).join('') + `<div class="empty">${unt.length} without a ticket · ${DATA.prs.repos.length} repos</div>`) +
+      sec('sess', 'Sessions', SESSIONS.length, [...SESSIONS].sort((a, b) => ['need', 'idle', 'run'].indexOf(a.phase) - ['need', 'idle', 'run'].indexOf(b.phase)).map(sessRow).join(''));
+  },
+};
+
+const $ = (id) => document.getElementById(id);
+function renderPicker() {
+  $('picker').innerHTML = OPTIONS.map(o => `<button role="tab" id="opt-${o.k}" class="${o.rec ? 'rec' : ''}" aria-selected="${o.k === state.opt}" data-opt="${o.k}"><span class="l">${o.k}${o.rec ? ' · RECOMMENDED' : ''}</span><span class="n">${esc(o.name)}</span></button>`).join('');
+  const o = OPTIONS.find(x => x.k === state.opt);
+  $('optdesc').innerHTML = `<div class="pc"><b>${o.k} · ${esc(o.name)}</b><p>${esc(o.one)}</p></div><div class="two" style="gap:16px"><div class="pc"><span class="eyebrow" style="color:var(--ok)">Good</span><ul>${o.pro.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div><div class="pc"><span class="eyebrow" style="color:var(--bad)">Costs</span><ul>${o.con.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>`;
+}
+function renderTabs() {
+  $('tabs').innerHTML = TABS.map(t => `<button role="tab" aria-selected="${t.id === state.tab}" data-tab="${t.id}"><span class="dot ${t.phase}" style="margin:0"></span>${esc(t.label)}</button>`).join('');
+  const t = TABS.find(x => x.id === state.tab);
+  $('term').innerHTML = t.lines.map(l => `<div>${l}</div>`).join('');
+  $('leftPane').innerHTML = `<div class="left-sec"><span class="h">${esc(t.label.split(' · ')[1])}</span><div class="kv"><span>agent</span><span>${esc(t.agent)}</span><span>host</span><span>${esc(t.host)}</span><span>ticket</span><span>${esc(t.ticket)}</span><span>state</span><span>${t.phase === 'run' ? 'running' : 'idle · unfinished'}</span></div></div><div class="left-sec"><span class="eyebrow">Unchanged</span><span style="font-size:12px;color:var(--caption)">The Active Terminal panel stays as it is: request, timeline, files, PR card.</span></div>`;
+}
+function renderRight() { const r = $('right'); const top = r.scrollTop; r.innerHTML = RENDER[state.opt](); r.scrollTop = top; }
+function renderMatrix() {
+  $('matrix').innerHTML = MATRIX.map(([n, ...v]) => `<tr><td>${esc(n)}</td>${v.map((m, i) => `<td class="m ${m}${i === 5 ? ' rec' : ''}">${MARK[m]}</td>`).join('')}</tr>`).join('');
+}
+function all() { renderPicker(); renderTabs(); renderRight(); }
+
+document.addEventListener('click', (e) => {
+  const opt = e.target.closest('[data-opt]');
+  if (opt) { state.opt = opt.dataset.opt; state.menu = false; try { localStorage.setItem('psp-opt', state.opt); } catch (_) {} all(); return; }
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; renderTabs(); renderRight(); return; }
+  const a = e.target.closest('[data-act]');
+  if (!a) { if (state.menu && !e.target.closest('.menu')) { state.menu = false; renderRight(); } return; }
+  const act = a.dataset.act, n = a.dataset.n;
+  if (act === 'vis') return;
+  if (act === 'toggle-pr') { state.expanded.has(n) ? state.expanded.delete(n) : state.expanded.add(n); renderRight(); }
+  else if (act === 'toggle-sec') { state.open[a.dataset.id] = !(state.open[a.dataset.id] ?? true); renderRight(); }
+  else if (act === 'menu') { state.menu = !state.menu; renderRight(); }
+  else if (act === 'finish') { state.ci[n] = 'ok'; renderRight(); document.querySelectorAll(`[data-pr="${n}"]`).forEach(el => el.classList.add('justReady')); }
+  else if (act === 'merge') { state.merge[n] = 'confirm'; renderRight(); }
+  else if (act === 'merge-cancel') { delete state.merge[n]; renderRight(); }
+  else if (act === 'merge-go') { state.merge[n] = 'merging'; renderRight(); setTimeout(() => { state.merge[n] = 'merged'; state.expanded.delete(n); renderRight(); }, 900); }
+  if (act !== 'menu' && state.menu && !e.target.closest('.menu')) { state.menu = false; renderRight(); }
+});
+document.addEventListener('change', (e) => {
+  const v = e.target.closest('[data-act="vis"]');
+  if (v) { v.checked ? state.hidden.delete(v.dataset.id) : state.hidden.add(v.dataset.id); renderRight(); }
+});
+$('picker').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const i = OPTIONS.findIndex(o => o.k === state.opt); const j = (i + (e.key === 'ArrowRight' ? 1 : -1) + OPTIONS.length) % OPTIONS.length;
+  state.opt = OPTIONS[j].k; all(); $('opt-' + state.opt).focus();
+});
+const themes = ['system', 'light', 'dark'];
+$('themeBtn').addEventListener('click', () => {
+  const cur = document.documentElement.dataset.theme || 'system'; const next = themes[(themes.indexOf(cur) + 1) % 3];
+  if (next === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = next;
+  $('themeBtn').textContent = 'Theme: ' + next;
+});
+renderMatrix(); all();
+</script>

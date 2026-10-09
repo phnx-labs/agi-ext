@@ -224,6 +224,14 @@ What should happen: switching tabs paints instantly with no await, fetch, or laz
 <figcaption>The sidebar is the one session preview. Fleet has no detail rail.</figcaption>
 </figure>
 
+## Manage a project from the left sidebar
+
+You run several agents on one project and want the project's state in view while the right sidebar shows the session you are in: what is open, which sessions stopped, which PRs are ready, what is next.
+
+The Project container sits in the left activity bar with four views you can collapse, reorder or hide like any VS Code view. Its project is the one containing the open workspace folder (`agents projects status --path <folder> --json`), or the one you choose with Switch Project, remembered per workspace. Overview shows the project's progress, a bar of its open tickets by state (Doing, In Review, Todo, Backlog) with counts, and the current milestone with its due date; when no milestone is current it says so and how many open tickets have none. Sessions lists the project's sessions from the session stream already in memory, filtered on the CLI's `confirmedProject`, so it starts no process and redraws when the stream changes. Each session is three lines: its title; what it last said or is asking you (a tool call reads as the command it runs, `$ cmd`, not as a label); and its facts as small icons with their words in tooltips: host, time since it last moved, ticket, PR with its check state, artifacts and files changed. Its state is the icon on the right only: ? asking you, ! stopped with work left, ✕ failed, a turning ring while working. Sessions that need you sort first; idle and done sessions fold behind one line. Clicking a session points the right sidebar at it, exactly as a Fleet row click does. Pull requests lists every open PR across the project's repos (`agents projects prs list <name> --json`) with a ring for its checks (turning, a check, red, dashed for a draft) and the default branch's state, recently merged ones folded. Tickets lists the project's open Linear tickets (`linear tasks --project <linear> --json`) grouped by state, Doing first, each with priority bars. Overview, Pull requests and Tickets read their verb when the view becomes visible, at most once a minute, or on Refresh; nothing polls.
+
+What should happen: a slow read paints "Loading…" in its own view and never blocks the others; a failed read shows the CLI's error in that view; a project with no Linear project says how to link one.
+
 ## Answer a request from Fleet
 
 Some agent, on some machine, is waiting on you. You want to see exactly what it asked and answer it from the editor.

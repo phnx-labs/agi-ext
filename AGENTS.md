@@ -82,6 +82,8 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
   a stall is a CLI signal, `FloorPhase` has no `stalled` member.
 - Project attribution uses only row hints through `matchLinearProject`
   (`src/shared/linearProjects.ts`); no hint means the labeled Unassigned bucket, never a guess.
+  The Project sidebar is the one exception, and it is not a guess: it filters on the CLI's
+  own `confirmedProject` (`projectSessions`, `src/core/projectPanel.ts`).
 - One shell quoter (`shellQuote`, `src/core/deviceDispatchShell.ts`) and one binary resolver
   and exec path (`resolveAgentsBin`, `runAgents`, `src/core/agentsBin.ts`).
 - Harness ids, labels, prefixes derive from `src/core/agents.cli.ts` and `PRESENTED_AGENTS`
