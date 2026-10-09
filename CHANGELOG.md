@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.387] - 2026-10-09
 
 - The session sidebar shows what the agent produced first. Artifacts and the Pull request
   card now sit right under the header (and Needs you), ahead of the goal, request and
