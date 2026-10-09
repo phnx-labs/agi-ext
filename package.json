@@ -93,6 +93,13 @@
           "title": "Agents",
           "icon": "assets/agents-activity.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "agentsProject",
+          "title": "Project",
+          "icon": "assets/project-activity.svg"
+        }
       ]
     },
     "views": {
@@ -101,6 +108,23 @@
           "type": "webview",
           "id": "agentsPanel.terminal",
           "name": "Active Terminal"
+        }
+      ],
+      "agentsProject": [
+        {
+          "type": "webview",
+          "id": "agentsProject.overview",
+          "name": "Overview"
+        },
+        {
+          "type": "webview",
+          "id": "agentsProject.tickets",
+          "name": "Tickets"
+        },
+        {
+          "type": "webview",
+          "id": "agentsProject.prs",
+          "name": "Pull Requests"
         }
       ]
     },
@@ -660,6 +684,18 @@
       {
         "command": "agents.quickLaunch9PickHost",
         "title": "Agents: Quick Launch 9 (Pick Host)"
+      },
+      {
+        "command": "agents.project.refresh",
+        "title": "Refresh",
+        "category": "Agents: Project",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agents.project.pick",
+        "title": "Switch Project",
+        "category": "Agents: Project",
+        "icon": "$(arrow-swap)"
       }
     ],
     "configuration": {
@@ -790,6 +826,38 @@
           "command": "agents.disableReader",
           "when": "agents.readerEnabled",
           "group": "navigation@6"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.overview",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "view == agentsProject.overview",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.tickets",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "view == agentsProject.tickets",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.prs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "view == agentsProject.prs",
+          "group": "navigation@2"
         }
       ]
     },

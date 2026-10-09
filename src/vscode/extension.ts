@@ -992,6 +992,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const { registerAgentPanel } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
   registerAgentPanel(context);
 
+  // Secondary-sidebar Project container: Overview, Tickets, Pull requests for
+  // the workspace's project (PHNX-4289). Each view reads its CLI verb on reveal.
+  const { registerProjectPanel } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
+  registerProjectPanel(context);
+
   // Create status bar item for showing active terminal status bar label
   agentStatusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
