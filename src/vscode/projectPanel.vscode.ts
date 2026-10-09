@@ -4,6 +4,8 @@ import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
+import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
   escapeHtml,
   parseOverview,
@@ -61,24 +63,30 @@ class SectionView implements vscode.WebviewViewProvider {
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') {
         setAgentPanelSubjectFromFleet(msg.sessionId, typeof msg.host === 'string' ? msg.host : undefined);
-        this.controller.redrawSessions();
+        void this.controller.redrawSessions();
       }
     });
-    view.onDidChangeVisibility(() => { if (view.visible) void this.load(false); });
-    view.onDidDispose(() => { this.view = undefined; this.loadedFor = undefined; });
+    const demand = (visible: boolean) => { if (this.id === 'sessions') sessionStreamDemand.setProjectSessionsVisible(visible); };
+    view.onDidChangeVisibility(() => { demand(view.visible); if (view.visible) void this.load(false); });
+    view.onDidDispose(() => { this.view = undefined; this.loadedFor = undefined; this.generation++; demand(false); });
+    demand(view.visible);
     void this.load(false);
   }
 
   async load(force: boolean): Promise<void> {
     const view = this.view;
+    // A forced refresh on a hidden view still has to reread on its next reveal.
+    if (force) this.loadedAt = 0;
     if (!view || !view.visible) return;
+    const gen = ++this.generation;
     let project: ProjectRef | null;
     try {
       project = await this.controller.project();
     } catch (e) {
-      this.post(`<div class="err">${escapeHtml(errorText(e))}</div>`);
+      if (gen === this.generation) this.post(`<div class="err">${escapeHtml(errorText(e))}</div>`);
       return;
     }
+    if (gen !== this.generation) return;
     view.description = project?.name;
     if (!project) {
       this.post('<div class="empty">No agents project contains this workspace. <a href="#" data-pick>Pick a project</a></div>');
@@ -87,18 +95,20 @@ class SectionView implements vscode.WebviewViewProvider {
     if (this.id === 'sessions') { this.post(this.controller.sessionsHtml(project)); return; }
     const fresh = this.loadedFor === project.name && Date.now() - this.loadedAt < FRESH_MS;
     if (fresh && !force) return;
-    const gen = ++this.generation;
     if (this.loadedFor !== project.name) this.post('<div class="empty">Loading…</div>');
     else void view.webview.postMessage({ type: 'loading' });
     let html: string;
+    let ok = true;
     try {
       html = await this.controller.render(this.id, project, force);
     } catch (e) {
+      ok = false;
       html = `<div class="err">${escapeHtml(errorText(e))}</div>`;
     }
     if (gen !== this.generation) return; // a newer load (refresh / project switch) owns the view
     this.loadedFor = project.name;
-    this.loadedAt = Date.now();
+    // An error is not a fresh result: the next reveal reads again.
+    this.loadedAt = ok ? Date.now() : 0;
     this.post(html);
   }
 
@@ -130,7 +140,13 @@ class ProjectPanelController {
   project(): Promise<ProjectRef | null> {
     const picked = this.context.workspaceState.get<ProjectRef>(PICKED_PROJECT_KEY);
     if (picked) return Promise.resolve(picked);
-    this.detected ??= this.detect();
+    if (!this.detected) {
+      const detected = this.detect();
+      this.detected = detected;
+      // Keep only a found project; a failure or "no project" is asked again next time.
+      detected.then((p) => { if (!p && this.detected === detected) this.detected = undefined; },
+        () => { if (this.detected === detected) this.detected = undefined; });
+    }
     return this.detected;
   }
 
@@ -160,11 +176,12 @@ class ProjectPanelController {
     if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force));
     if (id === 'overview') {
       // Fans out to the fleet for live-session counts, so it is the slow read (~15s).
-      const [status, groups] = await Promise.all([
+      const [status, tickets] = await Promise.all([
         runAgentsArgs(['projects', 'status', p.name, '--json'], { timeout: 90_000 }),
-        this.ticketGroups(p, force).catch(() => [] as TicketGroup[]),
+        // A failed ticket read is shown in place, never drawn as "no tickets".
+        this.ticketGroups(p, force).then((groups) => ({ groups, error: null as string | null }), (e) => ({ groups: [] as TicketGroup[], error: errorText(e) })),
       ]);
-      return renderOverview(parseOverview(status.stdout), new Date().toISOString().slice(0, 10), groups);
+      return renderOverview(parseOverview(status.stdout), new Date().toISOString().slice(0, 10), tickets.groups, tickets.error);
     }
     // `prs list` exits 1 when a repo could not be read but still prints the envelope
     // with `partial: true`; render it rather than discarding it.
@@ -186,8 +203,8 @@ class ProjectPanelController {
     return renderSessions(projectSessions(rows, p.name), Date.now(), subject?.sessionId ?? null);
   }
 
-  redrawSessions(): void {
-    void this.views.sessions.load(false);
+  redrawSessions(): Promise<void> {
+    return this.views.sessions.load(false);
   }
 
   async pick(): Promise<void> {
@@ -205,17 +222,22 @@ class ProjectPanelController {
 
   refresh(): void {
     this.tickets = undefined;
+    this.detected = undefined;
     for (const v of Object.values(this.views)) void v.load(true);
   }
 }
 
 let activeController: ProjectPanelController | undefined;
+const sessionsCoalesce = createTrailingCoalesce();
 
 /** Called by extension.ts when a session-stream fact changed the store; the
  *  Sessions view redraws from memory (no subprocess).
  *  @public loaded with require('./projectPanel.vscode') in extension.ts, which knip cannot see */
 export function notifyProjectPanelSessionUpdate(): void {
-  activeController?.redrawSessions();
+  const controller = activeController;
+  if (!controller) return;
+  // A burst of facts collapses into one redraw plus one catch-up, as in the right sidebar.
+  void coalesceTrailing(sessionsCoalesce, 'projectSessions', () => controller.redrawSessions());
 }
 
 /** @public loaded with require('./projectPanel.vscode') in extension.ts, which knip cannot see */
@@ -349,7 +371,17 @@ function shell(cspSource: string): string {
   const main = document.querySelector('main');
   window.addEventListener('message', (e) => {
     const m = e.data;
-    if (m.type === 'html') { main.innerHTML = m.html; document.body.classList.remove('loading'); }
+    if (m.type === 'html') {
+      // Redraws keep what the viewer opened and where they scrolled.
+      const open = new Set([...main.querySelectorAll('details')].map((d, i) => d.open ? (d.querySelector('summary')?.textContent || i) : null).filter((k) => k !== null));
+      const y = window.scrollY;
+      const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
+      main.innerHTML = m.html;
+      main.querySelectorAll('details').forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
+      window.scrollTo(0, y);
+      if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
+      document.body.classList.remove('loading');
+    }
     else if (m.type === 'loading') document.body.classList.add('loading');
   });
   document.addEventListener('click', (e) => {

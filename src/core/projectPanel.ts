@@ -342,7 +342,7 @@ const STATE_TONE: Record<string, string> = { Doing: 'doing', 'In Progress': 'doi
 
 /** Overview: progress, a bar of open tickets by state, and the milestone that is
  *  current, or a plain statement that there is none. */
-export function renderOverview(m: OverviewModel, today: string, groups: TicketGroup[] = []): string {
+export function renderOverview(m: OverviewModel, today: string, groups: TicketGroup[] = [], ticketsError: string | null = null): string {
   const open = m.milestones.filter((x) => x.total === 0 || x.done < x.total)
     .sort((a, b) => (a.targetDate ?? '9999').localeCompare(b.targetDate ?? '9999'));
   const current = open.find((x) => x.targetDate === null || x.targetDate >= today) ?? null;
@@ -360,7 +360,7 @@ export function renderOverview(m: OverviewModel, today: string, groups: TicketGr
   return `<section>
     <div class="head"><span class="title">${escapeHtml(m.name)}</span><span class="n">${pct(m.done, m.total)}%</span></div>
     ${m.description ? `<div class="sub">${escapeHtml(m.description)}</div>` : ''}
-    ${stateBar}
+    ${ticketsError ? `<div class="err">Tickets could not be read: ${escapeHtml(ticketsError)}</div>` : stateBar}
     ${milestone}
     ${m.latestRelease ? `<div class="sub">${escapeHtml(m.latestRelease.tag)} · ${escapeHtml(shortDate(m.latestRelease.publishedAt))}</div>` : ''}
   </section>`;

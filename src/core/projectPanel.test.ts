@@ -147,3 +147,9 @@ test('a tool-call preview in lastResponse also reads as a command; prose stays p
   expect(renderSessionRow(row({ lastResponse: 'Bash: cd /tmp && ls' }), 0, false)).toContain('<span class="cmd">$ cd /tmp &amp;&amp; ls</span>')
   expect(renderSessionRow(row({ lastResponse: "No, it didn't come from a Rush number" }), 0, false)).toContain('class="l2">No, it didn&#39;t come')
 })
+
+test('overview shows a failed ticket read in place instead of an empty bar', () => {
+  const html = renderOverview(parseOverview(STATUS), '2026-10-08', [], 'linear: HTTP 401')
+  expect(html).toContain('Tickets could not be read: linear: HTTP 401')
+  expect(html).not.toContain('class="sbar"')
+})
