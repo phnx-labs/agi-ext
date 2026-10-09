@@ -25,6 +25,7 @@ import { isPidAlive } from '../core/liveness';
 import { resolveTabIndex, type TabView } from '../core/tabIndex';
 import { resolveStartedAtMs } from '../core/processStartTime';
 import { agentKindFromTerminalId } from '../core/agents';
+import { getById } from './terminals.vscode';
 
 const REGISTRY_DIR = path.join(os.homedir(), '.agents', '.cache', 'terminals');
 const REGISTRY_FILE = path.join(REGISTRY_DIR, 'live-terminals.json');
@@ -193,8 +194,8 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     // Editor-tab position, matched by the terminal's name against its tab label.
     const tabIndex = resolveTabIndex(tabGroups, t.name);
     out.push({
-      // buildAgentTerminalEnv writes '' when no id was minted; omit it.
-      sessionId: env?.AGENT_SESSION_ID || undefined,
+      // The bound id, not the launch env: Codex/Grok mint theirs after launch and a tab can be rebound.
+      sessionId: getById(tid)?.sessionId || env?.AGENT_SESSION_ID || undefined,
       terminalId: tid,
       pid,
       kind: agentKindFromTerminalId(tid),
