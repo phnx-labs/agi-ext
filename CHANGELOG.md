@@ -20,6 +20,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   icon strip with a segmented check bar (`passed/total`), a review glyph and a merge glyph.
   Hover any icon for its words; click the bar to list the checks with links to their runs.
   Merge and Merge when green work exactly as before.
+- A Project container in the left activity bar shows the open workspace's project while
+  the right sidebar keeps the session you are in (PHNX-4289). Overview: progress, open
+  tickets by state, the current milestone (or that there is none). Sessions: the project's
+  sessions from the stream already in memory, three lines each (title, what it last said or
+  asks, and its facts as icons), with its state as the icon on the right; clicking one
+  points the right sidebar at it. Pull requests: every open PR across the project's repos
+  with its check ring. Tickets: open Linear tickets by state with priority bars. Switch
+  Project and Refresh sit in each view's title bar; nothing polls.
 
 ## [0.9.386] - 2026-10-09
 
