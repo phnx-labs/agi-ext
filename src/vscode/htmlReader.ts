@@ -44,8 +44,15 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
       }
     });
 
+    const messageSub = webviewPanel.webview.onDidReceiveMessage((message: { type?: string; href?: string }) => {
+      if (message?.type === 'open-external' && typeof message.href === 'string' && isExternalLink(message.href)) {
+        void vscode.env.openExternal(vscode.Uri.parse(message.href, true));
+      }
+    });
+
     webviewPanel.onDidDispose(() => {
       changeSub.dispose();
+      messageSub.dispose();
     });
   }
 
@@ -89,7 +96,19 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
 <body>
   <iframe id="artifact" title="HTML preview" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
   <script nonce="${nonce}">
+    const vscodeApi = acquireVsCodeApi();
     const frame = document.getElementById('artifact');
+    // A link with a scheme (an artifact's agents:// session link, a PR on GitHub)
+    // leaves the editor; navigating the sandboxed frame to it only blanks the page.
+    frame.addEventListener('load', () => {
+      frame.contentDocument?.addEventListener('click', (event) => {
+        const link = typeof event.target?.closest === 'function' ? event.target.closest('a[href]') : null;
+        const href = link?.getAttribute('href') ?? '';
+        if (!${EXTERNAL_LINK.toString()}.test(href)) return;
+        event.preventDefault();
+        vscodeApi.postMessage({ type: 'open-external', href });
+      }, true);
+    });
     frame.srcdoc = \`${escaped}\`;
   </script>
 </body>
@@ -97,9 +116,16 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
   }
 }
 
+const EXTERNAL_LINK = /^(agents|https?|mailto):/i;
+
+/** Links the reader hands to the OS instead of navigating its frame. */
+export function isExternalLink(href: string): boolean {
+  return EXTERNAL_LINK.test(href.trim());
+}
+
 /**
- * Rewrite relative src/href (not http(s), data, #, mailto, vscode) to webview
- * URIs rooted at the document directory so sibling assets load in the preview.
+ * Rewrite relative src/href to webview URIs rooted at the document directory so
+ * sibling assets load in the preview. A URL with any scheme is left alone.
  */
 export function rewriteRelativeResources(
   html: string,
@@ -108,7 +134,7 @@ export function rewriteRelativeResources(
   fileUri: (fsPath: string) => vscode.Uri = (fsPath) => vscode.Uri.file(fsPath)
 ): string {
   return html.replace(
-    /\b(src|href)=(["'])(?!https?:|data:|blob:|#|mailto:|vscode-webview:|vscode-file:|file:)([^"']+)\2/gi,
+    /\b(src|href)=(["'])(?![a-z][a-z0-9+.-]*:|#)([^"']+)\2/gi,
     (_match, attr: string, quote: string, rel: string) => {
       // Skip pure anchors / empty
       if (!rel || rel.startsWith('//')) return `${attr}=${quote}${rel}${quote}`;

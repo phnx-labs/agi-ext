@@ -11,6 +11,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   carry the id a tab launched with, so a Codex or Grok tab (which get their id after launch)
   or a rebound tab published none or a stale one, and `agents ps focus <id>` or an
   artifact's "Open session" link could not find it (PHNX-4312).
+- The Agents Reader opens an artifact's links outside the editor. Clicking "Open session"
+  (`agents://`), a PR or any web link in a rendered artifact used to blank the preview:
+  the reader rewrote `agents://` links into missing files and let other links navigate
+  its own frame. They now go to the OS, the same place a browser sends them (PHNX-4312).
 
 ## [0.9.385] - 2026-10-07
 
