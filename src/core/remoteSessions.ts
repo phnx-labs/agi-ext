@@ -381,6 +381,9 @@ export interface RemoteSession {
   agentType: string;
   cwd: string;
   project: string;
+  /** The registered agents project this row belongs to (CLI `confirmedProject`), or
+   *  null when its cwd is in no defined project. The Project sidebar filters on it. */
+  confirmedProject: string | null;
   phase: RemotePhase;
   /** The RAW CLI lifecycle status word, lowercased ('running' | 'idle' |
    *  'orphaned' | 'crashed' | 'abandoned' | 'waiting' | 'closed' | ...), carried
@@ -598,6 +601,7 @@ export interface RawActiveSession {
   /** The CLI's own project/repo word for the row. Only read when the row has no
    *  cwd to resolve (PHNX-3796) — for a cwd-bearing row the resolved cwd wins. */
   project?: string;
+  confirmedProject?: string | null;
   pid?: number;
   /** Whether the CLI's process probe found the pid alive. */
   pidAlive?: boolean;
@@ -1258,6 +1262,7 @@ export function normalizeActiveSession(
     // hint the CLI had (PHNX-3796). The webview filters run-CONTEXT words like
     // "cloud" out of it, so this never invents a project named after a context.
     project: resolveProject(cwd, projectRules) || asStr(raw.project),
+    confirmedProject: asStr(raw.confirmedProject) || null,
     phase,
     // Raw lifecycle word kept verbatim (phase loses orphaned/crashed). Absent -> ''.
     liveStatus: (status || '').toLowerCase(),
@@ -1365,6 +1370,7 @@ export interface RawRecentSession {
   timestamp?: string;
   lastActivity?: string;
   project?: string;
+  confirmedProject?: string | null;
   cwd?: string;
   gitBranch?: string;
   worktreeSlug?: string;
@@ -1471,6 +1477,7 @@ export function normalizeRecentSession(
     // for a row with no cwd. This used to be reversed here, which silently ignored
     // rules for historical rows.
     project: resolveProject(cwd, projectRules) || asStr(raw.project),
+    confirmedProject: asStr(raw.confirmedProject) || null,
     phase: 'idle',
     // A recent (historical, not-live) session is a resumable transcript, not a
     // running process — surface it as such rather than inventing an orphan state.
