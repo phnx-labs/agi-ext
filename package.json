@@ -92,9 +92,7 @@
           "id": "agentsPanel",
           "title": "Agents",
           "icon": "assets/agents-activity.svg"
-        }
-      ],
-      "secondarySidebar": [
+        },
         {
           "id": "agentsProject",
           "title": "Project",
@@ -118,13 +116,18 @@
         },
         {
           "type": "webview",
-          "id": "agentsProject.tickets",
-          "name": "Tickets"
+          "id": "agentsProject.sessions",
+          "name": "Sessions"
         },
         {
           "type": "webview",
           "id": "agentsProject.prs",
           "name": "Pull Requests"
+        },
+        {
+          "type": "webview",
+          "id": "agentsProject.tickets",
+          "name": "Tickets"
         }
       ]
     },
@@ -841,12 +844,12 @@
         },
         {
           "command": "agents.project.pick",
-          "when": "view == agentsProject.tickets",
+          "when": "view == agentsProject.sessions",
           "group": "navigation@1"
         },
         {
           "command": "agents.project.refresh",
-          "when": "view == agentsProject.tickets",
+          "when": "view == agentsProject.sessions",
           "group": "navigation@2"
         },
         {
@@ -857,6 +860,16 @@
         {
           "command": "agents.project.refresh",
           "when": "view == agentsProject.prs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.tickets",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "view == agentsProject.tickets",
           "group": "navigation@2"
         }
       ]

@@ -992,8 +992,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const { registerAgentPanel } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
   registerAgentPanel(context);
 
-  // Secondary-sidebar Project container: Overview, Tickets, Pull requests for
-  // the workspace's project (PHNX-4289). Each view reads its CLI verb on reveal.
+  // Left-sidebar Project container: Overview, Sessions, Pull requests, Tickets for
+  // the workspace's project (PHNX-4289). Reads run on reveal; Sessions redraws from
+  // the store on stream facts.
   const { registerProjectPanel } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
   registerProjectPanel(context);
 
@@ -5563,6 +5564,8 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
         void syncCanonicalSessionTabLabels(context);
         const { notifyAgentPanelSessionUpdate } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
         notifyAgentPanelSessionUpdate();
+        const { notifyProjectPanelSessionUpdate } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
+        notifyProjectPanelSessionUpdate();
       }
     }
   });
