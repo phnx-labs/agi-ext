@@ -181,14 +181,18 @@ describe('terminal session identity', () => {
     assert.equal(await t.promptSessionId({ terminalId: 'missing' }), undefined);
   `));
 
-  test('foreman snapshot publishes the shell terminalId with its launch sessionId', () => run(`
+  test('foreman snapshot publishes the session the tab is bound to now, not its launch id', () => run(`
     surface.window.terminals = [term];
     const registry = await import(${JSON.stringify(join(import.meta.dir, 'foreman.registry.ts'))});
-    const entries = await registry.snapshotOwnTerminals();
+    let entries = await registry.snapshotOwnTerminals();
     assert.equal(entries.length, 1);
     assert.equal(entries[0].terminalId, 'CC-shell');
     assert.equal(entries[0].sessionId, 'old');
     assert.equal(entries[0].pid, process.pid);
+    t.register(term, 'CC-shell', config, process.pid);
+    t.setSessionId(term, 'rebound', true);
+    entries = await registry.snapshotOwnTerminals();
+    assert.equal(entries[0].sessionId, 'rebound');
   `));
 
 });
