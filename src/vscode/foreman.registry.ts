@@ -195,7 +195,7 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     const tabIndex = resolveTabIndex(tabGroups, t.name);
     out.push({
       // The bound id, not the launch env: Codex/Grok mint theirs after launch and a tab can be rebound.
-      sessionId: getById(tid)?.sessionId || env?.AGENT_SESSION_ID || undefined,
+      sessionId: getById(tid)?.sessionId || undefined,
       terminalId: tid,
       pid,
       kind: agentKindFromTerminalId(tid),

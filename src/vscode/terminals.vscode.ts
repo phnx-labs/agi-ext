@@ -424,6 +424,13 @@ export async function promptSessionId(args: { terminalId?: string } = {}): Promi
   return entry;
 }
 
+const sessionBindingListeners = new Set<() => void>();
+
+export function onSessionBindingChanged(listener: () => void): { dispose(): void } {
+  sessionBindingListeners.add(listener);
+  return { dispose: () => { sessionBindingListeners.delete(listener); } };
+}
+
 export function setSessionId(terminal: vscode.Terminal, sessionId: string, manual = false): void {
   const entry = getByTerminal(terminal);
   if (entry) {
@@ -447,6 +454,7 @@ export function setSessionId(terminal: vscode.Terminal, sessionId: string, manua
       }
     }
     console.log(`[TERMINALS] Set sessionId for terminal "${terminal.name}": ${sessionId}`);
+    if (prevSessionId !== sessionId) for (const listener of sessionBindingListeners) listener();
 
     // Persist to disk
     if (manual) persistNow();
