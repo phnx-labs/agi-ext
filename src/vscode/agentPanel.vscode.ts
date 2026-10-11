@@ -651,31 +651,15 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           }
         }
         return;
-      case 'focusSubject': {
-        if (terminal) { terminal.show(true); return; }
-        const sessionId = this.snapshot.fullSessionId;
-        if (!sessionId || !this.context) return;
-        const { openAgentSessionById } = require('./extension') as typeof import('./extension');
-        // `sessionHost` is the PROJECTED host, so a local session carries the
-        // 'this-mac' sentinel (resolveSessionHost folds LOCAL_MACHINE_ID to it).
-        // Handing that through as a device pins the fresh tab to a device that
-        // does not exist: the auto-label poller then takes its offloaded branch
-        // and runs `agents sessions <id> --json --device this-mac` on a timer,
-        // failing into its silent catch every tick. remoteDeviceArg folds every
-        // local identity to undefined so the local case stays local.
-        await openAgentSessionById(this.context, sessionId, remoteDeviceArg(this.snapshot.sessionHost));
-        return;
-      }
+      // Focus and ↻ Resume are the one resume action the picker and Fleet use
+      // (resumeSession.vscode.ts): a tab already showing the session comes to the
+      // front, else the live agent opens in the window that owns its project.
+      case 'focusSubject':
       case 'resumeSubject': {
         const sessionId = this.snapshot.fullSessionId;
-        if (!sessionId || !this.context) return;
-        const { openAgentSessionByRecovery } = require('./extension') as typeof import('./extension');
-        const device = remoteDeviceArg(this.snapshot.sessionHost);
-        await openAgentSessionByRecovery(this.context, {
-          sessionId,
-          agentType: this.snapshot.agentType ?? '',
-          ...(device ? { device } : {}),
-        });
+        if (!sessionId) return;
+        const { resumeAndNotify } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');
+        await resumeAndNotify({ sessionId, host: this.snapshot.sessionHost ?? '', title: this.snapshot.sessionTitle ?? '' });
         return;
       }
       case 'openPr':

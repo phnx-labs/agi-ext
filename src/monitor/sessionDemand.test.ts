@@ -18,6 +18,11 @@ describe('SessionStreamDemand', () => {
     expect(d.demand).toBe(false);
     d.setUnresolvedTuples(true);
     expect(d.demand).toBe(true);
+    d.setUnresolvedTuples(false);
+    d.setResumePickerOpen(true);
+    expect(d.demand).toBe(true);
+    d.setResumePickerOpen(false);
+    expect(d.demand).toBe(false);
   });
 
   test('onChange fires only when the union value flips', () => {

@@ -28,7 +28,7 @@ import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 const execFileAsync = promisify(execFile);
 
 /** This machine's name — its local sessions are queried directly (no SSH). */
-export const LOCAL_HOST = os.hostname();
+const LOCAL_HOST = os.hostname();
 /** Canonical label the webview uses for this machine. The real os.hostname() is
  *  kept only for SSH/isLocal detection; every host string that crosses to the UI
  *  is normalized to this so the 'this-mac' checks there actually match. */

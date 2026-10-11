@@ -52,7 +52,7 @@ import {
   linearIssueLabel,
   linearIssueUrl,
 } from './floorModel'
-import { postTerminalOpenForAgent, previousResumeMessage } from './sessions/sessionActions'
+import { migrateMessageForAgent, resumeMessageForAgent } from './sessions/sessionActions'
 import { SavedViews } from './SavedViewsBar'
 import { loadSavedViews, persistSavedViews, upsertView, removeView, viewMatches, type SavedView } from './savedViews'
 import { composeFloorAgents, adaptRemote, sinceFromMs, type RemoteSessionLike } from './floorAdapter'
@@ -1801,21 +1801,18 @@ export function UnifiedAgentsPane({ terminals, tasks, tasksLoading, unifiedTasks
    * Open/resume the session in a real terminal (RUSH-1520). Prefers an already-
    * open local tab, then a remote tmux rail, then `agents sessions focus <id>`.
    */
+  // Resume and Open run the one resume action (agents.resumeSession, as the
+  // "Agents: Resume Session…" picker and the side panel's ↻ do). Only a tab the
+  // stream has not attributed yet has no session to resume; its own tab is focused.
   const openTerminalForAgent = useCallback((a: FloorAgent) => {
-    // A PREVIOUS (crashed/ended) session resumes from the CLI's OWN recovery command,
-    // device-targeted — never the local-only focusSession candidate lookup, which
-    // can't see a session recovered from a remote fleet device (PHNX-3593). The host
-    // rebuilds the command from the id + device, so this only picks the session.
-    if (postTerminalOpenForAgent(a, postMessage)) return
+    const message = resumeMessageForAgent(a)
+    if (message) { postMessage(message); return }
     const u = unifiedById.get(a.id)
-    if (u?.terminal) {
-      postMessage({ type: 'focusTerminal', terminalId: u.terminal.id })
-    }
+    if (u?.terminal) postMessage({ type: 'focusTerminal', terminalId: u.terminal.id })
   }, [unifiedById])
 
   const resumeAgentOnDevice = useCallback((a: FloorAgent, device: string) => {
-    if (!device) return
-    const message = previousResumeMessage(a, device)
+    const message = migrateMessageForAgent(a, device)
     if (message) postMessage(message)
   }, [])
 

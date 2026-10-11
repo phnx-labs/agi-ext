@@ -30,6 +30,16 @@ const win: {
   createOutputChannel: () => ({ appendLine() { /* noop */ }, dispose() { /* noop */ } }),
 };
 
+/** Commands the panel ran, and the notifications it showed. */
+const commandCalls: unknown[][] = [];
+const notices: string[] = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(win as any).showInformationMessage = (m: string) => { notices.push(m); return Promise.resolve(undefined); };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(win as any).showWarningMessage = (m: string) => { notices.push(m); return Promise.resolve(undefined); };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(win as any).showErrorMessage = (m: string) => { notices.push(m); return Promise.resolve(undefined); };
+
 /** The one terminal-focus listener registerAgentPanel subscribes. */
 let onActiveTerminal: (() => void) | undefined;
 win.onDidChangeActiveTerminal = (cb) => { onActiveTerminal = cb; return { dispose() { /* noop */ } }; };
@@ -39,36 +49,17 @@ mock.module('vscode', () => vscodeDouble({
   workspace: { workspaceFolders: undefined, createFileSystemWatcher: () => ({
     onDidChange() { /* noop */ }, onDidCreate() { /* noop */ }, onDidDelete() { /* noop */ }, dispose() { /* noop */ },
   }) },
-  commands: { executeCommand: () => Promise.resolve(undefined) },
+  commands: {
+    executeCommand: (...args: unknown[]) => {
+      commandCalls.push(args);
+      return Promise.resolve(args[0] === 'agents.resumeSession'
+        ? { status: 'opened', terminalId: null, reason: '→ VSCodium window "svatlas", new tab "CC - Merge guard"' }
+        : undefined);
+    },
+  },
   Uri: { joinPath: () => ({ toString: () => '' }), file: (p: string) => ({ fsPath: p }), parse: (p: string) => ({ toString: () => p }) },
   RelativePattern: class { constructor(public base: unknown, public pattern: string) {} },
   EventEmitter: class { fire() { /* noop */ } event = () => ({ dispose() { /* noop */ } }); },
-}));
-
-// The two Focus/Resume entry points the panel `require`s out of './extension'.
-// They are the boundary this file asserts on: WHICH DEVICE the panel hands them.
-//
-// mock.module is process-global, so the usual convention is to snapshot the real
-// module and re-install it in afterAll (agentlinks.vscode.test.ts). That is not
-// possible here — './extension' cannot be loaded inside the suite at all, because
-// terminals.vscode.test.ts registers a partial './agents.vscode' double and
-// extension.ts imports a name that double drops. It is also not needed: this stub
-// leaks to nobody. Only agentPanel.vscode.ts and settings.vscode.ts import
-// './extension', the panel does it lazily inside these two handlers, and no test
-// in the tree loads settings.vscode.ts as a module (the two that mention it read
-// it as TEXT). If that ever changes, snapshot-and-restore instead of widening
-// this stub.
-let openedSessions: { sessionId: string; host: string | undefined }[] = [];
-let recoveredSessions: unknown[] = [];
-mock.module('./extension', () => ({
-  openAgentSessionById: async (_ctx: unknown, sessionId: string, host?: string) => {
-    openedSessions.push({ sessionId, host });
-    return true;
-  },
-  openAgentSessionByRecovery: async (_ctx: unknown, req: unknown) => {
-    recoveredSessions.push(req);
-    return true;
-  },
 }));
 
 const terminals = await import('./terminals.vscode');
@@ -322,88 +313,26 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
 });
 
 // ---------------------------------------------------------------------------
-// Focus / Resume never hand a LOCAL identity to a --device argument.
-//
-// `snapshot.sessionHost` is the PROJECTED host, and resolveSessionHost folds
-// this machine's id to the LOCAL_LABEL sentinel — so a perfectly ordinary local
-// session arrives here as 'this-mac'. focusSubject used to pass that straight
-// into openAgentSessionById, which pins it onto the new tab
-// (terminals.setHost). The auto-label poller then reads `entry.host`, takes its
-// offloaded branch and runs `agents sessions <id> --json --device this-mac`
-// forever — no such device, so every tick lands in a silent catch.
+// Focus and ↻ Resume are the one resume action: `agents.resumeSession` with the
+// session id (the CLI resolves its device), answered by one notification.
 // ---------------------------------------------------------------------------
 
-const remote = await import('./remoteSessions.vscode');
-
-describe('Focus / Resume device argument — a local host is never a --device', () => {
-  test('every local identity a projected row can carry folds to undefined', () => {
-    for (const local of [
-      remote.LOCAL_LABEL,      // 'this-mac' — the sentinel the webview and the projection use
-      remote.LOCAL_MACHINE_ID, // the CLI's normalized machine id for this box
-      remote.LOCAL_HOST,       // os.hostname()
-      remote.LOCAL_HOST.split('.')[0]!, // the bare name of an FQDN host
-      'localhost',
-      '',
-      '   ',
-      undefined,
-    ]) {
-      expect(`${JSON.stringify(local)} -> ${remote.remoteDeviceArg(local)}`)
-        .toBe(`${JSON.stringify(local)} -> undefined`);
-    }
-  });
-
-  test('a real fleet device is still passed through', () => {
-    expect(remote.remoteDeviceArg('yosemite-m2')).toBe('yosemite-m2');
-    expect(remote.remoteDeviceArg(' mac-mini ')).toBe('mac-mini');
-  });
-
-  test('focusSubject on a local session opens it with NO device', async () => {
+describe('Focus / ↻ Resume run agents.resumeSession', () => {
+  test('both buttons resume the panel\'s session by id and say where it went', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provider = panel.registerAgentPanel(context as any) as any;
-    const opened: { sessionId: string; host: string | undefined }[] = [];
-    openedSessions = opened;
-
-    for (const sessionHost of [remote.LOCAL_LABEL, remote.LOCAL_MACHINE_ID, remote.LOCAL_HOST]) {
-      provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-local', sessionHost };
-      await provider.runQuickAction('focusSubject', undefined, undefined);
-    }
-
-    expect(opened).toEqual([
-      { sessionId: 'session-local', host: undefined },
-      { sessionId: 'session-local', host: undefined },
-      { sessionId: 'session-local', host: undefined },
-    ]);
-    // The tab is never tagged with a bogus device, so the auto-label poller
-    // cannot take its offloaded `--device this-mac` branch.
-    expect(opened.some((o) => o.host === remote.LOCAL_LABEL || o.host === remote.LOCAL_MACHINE_ID)).toBe(false);
-  });
-
-  test('focusSubject on a REMOTE session still carries its device', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const provider = panel.registerAgentPanel(context as any) as any;
-    const opened: { sessionId: string; host: string | undefined }[] = [];
-    openedSessions = opened;
-
-    provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-remote', sessionHost: 'yosemite-m2' };
+    commandCalls.length = 0;
+    notices.length = 0;
+    provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-remote', sessionHost: 'yosemite-m2', sessionTitle: 'Merge guard' };
+    await provider.runQuickAction('resumeSubject', undefined, undefined);
     await provider.runQuickAction('focusSubject', undefined, undefined);
-
-    expect(opened).toEqual([{ sessionId: 'session-remote', host: 'yosemite-m2' }]);
-  });
-
-  test('resumeSubject keeps the same fold — local resumes carry no device', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const provider = panel.registerAgentPanel(context as any) as any;
-    const recovered: unknown[] = [];
-    recoveredSessions = recovered;
-
-    provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-local', sessionHost: remote.LOCAL_HOST, agentType: 'claude' };
-    await provider.runQuickAction('resumeSubject', undefined, undefined);
-    provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-remote', sessionHost: 'mac-mini', agentType: 'claude' };
-    await provider.runQuickAction('resumeSubject', undefined, undefined);
-
-    expect(recovered).toEqual([
-      { sessionId: 'session-local', agentType: 'claude' },
-      { sessionId: 'session-remote', agentType: 'claude', device: 'mac-mini' },
+    expect(commandCalls).toEqual([
+      ['agents.resumeSession', 'session-remote', 'yosemite-m2'],
+      ['agents.resumeSession', 'session-remote', 'yosemite-m2'],
+    ]);
+    expect(notices).toEqual([
+      'Opened "Merge guard" (yosemite-m2) in svatlas.',
+      'Opened "Merge guard" (yosemite-m2) in svatlas.',
     ]);
   });
 });

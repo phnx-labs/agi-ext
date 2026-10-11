@@ -98,15 +98,6 @@ import {
   registerForkPickSessionCommand,
   runSessionBrowserPicker,
 } from './sessionBrowser.vscode';
-import {
-  abandonedCandidates,
-  distinctiveTopic,
-  nextPreselection,
-  sharedTopicPrefixes,
-  STATE_HEADINGS,
-  type ResumeCandidate,
-  type ResumeState,
-} from '../core/resumePicker';
 import { buildHarnessOptions } from '../core/resumeTarget';
 import { fetchAgentInventories } from '../core/agentInventory';
 // readAgentRunStrategy no longer needed: agents-cli reads strategy from
@@ -114,9 +105,6 @@ import { fetchAgentInventories } from '../core/agentInventory';
 import { resolveAgentsBin, AgentsBinNotFoundError } from '../core/agentsBin';
 
 const AGENTS_CLI_INSTALL_CMD = 'npm install -g @phnx-labs/agents-cli';
-/** How many recent transcripts `Agents: Resume` loads. Live sessions are always
- *  included regardless of this cap — a detached one is often days old. */
-const RESUME_PICKER_LIMIT = 100;
 let agentsCliPromptShown = false;
 
 async function ensureAgentsCliInstalled(): Promise<void> {
@@ -1513,7 +1501,10 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.sessionResume', () => resumeSession(context))
+    vscode.commands.registerCommand('agents.resumeSessionPick', () => {
+      const { showResumePicker } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');
+      return showResumePicker();
+    })
   );
 
   // One entry point for "show me this session" (side panel, Fleet): focus this
@@ -1527,19 +1518,6 @@ export async function activate(context: vscode.ExtensionContext) {
       },
       runResume: resumeInProjectWindow,
     }))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.resume', () => resumeSessionsBatch(context))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.resumePickSession', () =>
-      resumeSessionsBatch(context, {
-        title: 'Agents: Resume (Pick Session)',
-        abandonedOnly: true,
-      })
-    )
   );
 
   context.subscriptions.push(
@@ -2878,25 +2856,9 @@ export async function openAgentSessionTerminal(
   }
 }
 
-export async function openAgentSessionById(
-  context: vscode.ExtensionContext,
-  sessionId: string,
-  host?: string,
-): Promise<boolean> {
-  const candidates = await fetchResumeCandidates();
-  const session = candidates.find((candidate) => candidate.id === sessionId);
-  if (!session) {
-    void vscode.window.showInformationMessage(`Session ${sessionId.slice(0, 8)} is no longer resumable.`);
-    return false;
-  }
-  return openAgentSessionTerminal(context, { ...session, host: host || session.host });
-}
-
 /**
- * Resume a PREVIOUS (crashed/ended) session WITHOUT the local-only candidate
- * lookup `openAgentSessionById` does: a session from a remote fleet device is not
- * in this machine's local history. The CLI's strict resume finds its origin
- * device itself. The command is built here from the id, so a webview payload can
+ * Resume a PREVIOUS (crashed/ended) session on its origin device: the CLI's
+ * strict resume finds that device itself. The command is built here from the id, so a webview payload can
  * only pick the session, never inject.
  */
 export async function openAgentSessionByRecovery(
@@ -2924,186 +2886,6 @@ export async function openAgentSessionByMigration(
     context,
     { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, host: opts.targetDevice },
     buildRecoveryMigrationCommand(opts.sessionId, opts.sourceDevice, opts.targetDevice, opts.sourceIsLocal),
-  );
-}
-
-async function resumeSession(context: vscode.ExtensionContext) {
-  const activeTerminal = vscode.window.activeTerminal;
-  const terminalEntry = activeTerminal ? terminals.getByTerminal(activeTerminal) : null;
-  const currentSessionId = terminalEntry?.sessionId ?? null;
-  const currentShortId = currentSessionId ? currentSessionId.slice(0, 8) : null;
-
-  const session = await pickSession({
-    title: 'Agents: Session Resume',
-    placeholder: 'Pick a session to resume in a new terminal',
-    pinShortId: currentShortId,
-    pinLabel: 'Current',
-  });
-  if (!session) return;
-
-  const opened = await openAgentSessionTerminal(context, session);
-  if (opened) {
-    vscode.window.setStatusBarMessage(
-      `Resuming ${session.agent}${session.version ? `@${session.version}` : ''} · ${session.shortId}`,
-      3000,
-    );
-  }
-}
-
-interface ResumeCandidateItem extends vscode.QuickPickItem {
-  candidate?: ResumeCandidate;
-}
-
-function resumeCandidateItems(candidates: ResumeCandidate[], checked: ReadonlySet<string>): ResumeCandidateItem[] {
-  const items: ResumeCandidateItem[] = [];
-  // Computed over the whole set, so "shared" means shared by the rows the user
-  // is actually looking at rather than by a fixed list of known phrases.
-  const prefixes = sharedTopicPrefixes(candidates.map((c) => c.topic ?? '').filter(Boolean));
-  let group: ResumeState | undefined;
-  for (const c of candidates) {
-    if (c.state !== group) {
-      group = c.state;
-      items.push({ label: STATE_HEADINGS[c.state], kind: vscode.QuickPickItemKind.Separator });
-    }
-    const agentLabel = c.version ? `${c.agent}@${c.version}` : c.agent;
-    const viewing = c.viewingIn ? ` · ${c.viewingIn}` : '';
-    const marker = c.state === 'detached' ? '$(debug-disconnect) ' : '';
-    // Device leads the row: it is present on every session and, across a
-    // multi-machine fleet, it is the field that most often decides whether a
-    // row is the one you want. The topic follows with shared boilerplate
-    // removed, so what remains is what differs between rows.
-    items.push({
-      label: `${marker}[${c.host || 'local'}] ${c.shortId}  ${distinctiveTopic(c, prefixes) || '—'}`,
-      description: `${agentLabel} · ${formatSessionWhen(new Date(c.lastActivityMs).toISOString())}${viewing}`,
-      detail: c.cwd ?? '',
-      picked: checked.has(c.id),
-      candidate: c,
-    });
-  }
-  return items;
-}
-
-async function fetchResumeCandidates(): Promise<ResumeCandidate[]> {
-  // The CLI owns lifecycle classification, cross-device aggregation, ranking,
-  // and deduplication. Opening (or manually refreshing) the picker performs one
-  // bounded read; the extension only adapts those rows for QuickPick.
-  const rows = await listSessionsViaCli(RESUME_PICKER_LIMIT) as Array<CliSessionItem & Partial<ResumeCandidate>>;
-  return rows.map((row) => ({
-    id: row.id,
-    shortId: row.shortId || row.id.slice(0, 8),
-    agent: row.agent || '',
-    version: row.version,
-    account: row.account,
-    project: row.project,
-    cwd: row.cwd,
-    topic: row.topic,
-    state: row.state || 'idle',
-    viewingIn: row.viewingIn || '',
-    host: row.host || '',
-    lastActivityMs: row.lastActivityMs || Date.parse(row.timestamp || '') || 0,
-    pid: row.pid || 0,
-  }));
-}
-
-/**
- * `Agents: Resume` — pick any number of sessions, each reopens as its own tab.
- *
- * The list leads with sessions that are still RUNNING with nobody attached.
- * Those are pre-ticked, because they are the ones a user opens this command to
- * rescue; everything else is available but unchecked.
- *
- * Stale-while-revalidate: the picker renders the persisted snapshot instantly
- * (the live fleet read takes seconds over SSH) and swaps items in place when
- * the background refresh lands, carrying the user's checks across the swap.
- *
- * `abandonedOnly` is the `Agents: Resume (Pick Session)` variant: it lists only
- * sessions nobody is watching right now (detached / background / parked /
- * idle). The cache stays unfiltered so both pickers share one snapshot — the
- * filter applies at render.
- */
-async function resumeSessionsBatch(
-  context: vscode.ExtensionContext,
-  opts: { title?: string; abandonedOnly?: boolean } = {},
-) {
-  const select = (cs: ResumeCandidate[]) => (opts.abandonedOnly ? abandonedCandidates(cs) : cs);
-  let initial: ResumeCandidate[];
-  try {
-    initial = select(await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: 'Agents: finding resumable sessions…' },
-      fetchResumeCandidates,
-    ));
-  } catch (err: any) {
-      const msg = err?.stderr || err?.message || String(err);
-      if (msg.includes('ENOENT') || msg.includes('not found')) {
-        vscode.window.showInformationMessage('agents CLI not found. Install with: npm i -g @phnx-labs/agents-cli');
-      } else {
-        vscode.window.showInformationMessage(`Failed to list sessions: ${msg.slice(0, 160)}`);
-      }
-    return;
-  }
-
-  if (initial.length === 0) {
-    vscode.window.showInformationMessage(opts.abandonedOnly ? 'No abandoned sessions found' : 'No sessions found');
-    return;
-  }
-
-  const quickPick = vscode.window.createQuickPick<ResumeCandidateItem>();
-  quickPick.title = opts.title ?? 'Agents: Resume';
-  quickPick.canSelectMany = true;
-  quickPick.matchOnDescription = true;
-  quickPick.matchOnDetail = true;
-
-  // The picker's memory of what the user turned off, carried across list swaps
-  // by nextPreselection (which owns the rules and is unit-tested).
-  const unticked = new Set<string>();
-  let rendered: ResumeCandidate[] = [];
-  const applyItems = (candidates: ResumeCandidate[]) => {
-    // Assigning items resets the checks, so carry the user's current selection
-    // across the swap; newly-seen detached sessions still get pre-ticked.
-    const checked = new Set(
-      quickPick.selectedItems.map((i) => i.candidate?.id).filter((id): id is string => !!id),
-    );
-    const preselected = nextPreselection({ previous: rendered, checked, next: candidates, unticked });
-    const items = resumeCandidateItems(candidates, preselected);
-    quickPick.items = items;
-    // `picked` alone does not populate `selectedItems`, which is what onDidAccept
-    // reads and what the "N Selected" counter shows — assign it explicitly or the
-    // pre-ticked rows resolve to an empty selection.
-    quickPick.selectedItems = items.filter((i) => i.candidate && preselected.has(i.candidate.id));
-    rendered = candidates;
-    quickPick.placeholder = 'Select sessions to reopen, each in its own tab';
-  };
-  applyItems(initial);
-
-  let chosen: ResumeCandidate[];
-  try {
-    chosen = await new Promise<ResumeCandidate[]>((resolve) => {
-      // VS Code fires onDidHide for the hide() on accept too — only the hide
-      // WITHOUT an accept is a cancel.
-      let accepted = false;
-      quickPick.onDidAccept(() => {
-        accepted = true;
-        resolve(quickPick.selectedItems.map((i) => i.candidate).filter((c): c is ResumeCandidate => !!c));
-        quickPick.hide();
-      });
-      quickPick.onDidHide(() => { if (!accepted) resolve([]); });
-      quickPick.show();
-    });
-  } finally {
-    quickPick.dispose();
-  }
-
-  if (chosen.length === 0) return;
-
-  let opened = 0;
-  for (const c of chosen) {
-    // Sequential, not Promise.all: each open awaits its terminal's promptReady
-    // before typing the resume command, and racing them interleaves the sends.
-    if (await openAgentSessionTerminal(context, c)) opened++;
-  }
-  vscode.window.setStatusBarMessage(
-    `Resumed ${opened} session${opened === 1 ? '' : 's'}`,
-    4000,
   );
 }
 
@@ -5602,6 +5384,8 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
         notifyAgentPanelSessionUpdate();
         const { notifyProjectPanelSessionUpdate } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
         notifyProjectPanelSessionUpdate();
+        const { notifyResumePickerUpdate } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');
+        notifyResumePickerUpdate();
       }
     }
   });
