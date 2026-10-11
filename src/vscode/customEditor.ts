@@ -140,7 +140,7 @@ The user selected the above text from a markdown file. Help them with whatever t
       const terminals = await import('./terminals.vscode');
       const { buildAgentTerminalEnv } = await import('../core/terminals');
       const { generateClaudeSessionId, buildClaudeOpenCommand } = await import('../core/prewarm.simple');
-      const settingsModule = await import('./settings.vscode');
+      const settingsModule = await import('./agentSettings.vscode');
 
       const agentConfig = getBuiltInByTitle(this.context.extensionPath, CLAUDE_TITLE);
       if (!agentConfig) {

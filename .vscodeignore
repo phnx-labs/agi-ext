@@ -12,6 +12,7 @@ node_modules/**
 ui/**
 scripts/**
 docs/reference.*
+docs/evidence/**
 *.vsix
 bun.lockb
 .DS_Store

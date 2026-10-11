@@ -18,7 +18,9 @@
       "ignoreBinaries": [
         "tsc",
         "vsce",
-        "agents"
+        "agents",
+        "osascript",
+        "notify-send"
       ]
     },
     "ui": {

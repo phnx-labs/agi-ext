@@ -23,6 +23,7 @@ import { listRegisteredDevices, getRegisteredDevicesCache } from './deviceHealth
 import { deviceBadge } from '../core/deviceName';
 import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand } from '../core/remoteSessions';
 import * as settings from './settings.vscode';
+import * as settingsStore from './agentSettings.vscode';
 import * as swarm from './swarm.vscode';
 import {
   registerWatchdogPaletteCommands,
@@ -151,7 +152,7 @@ import { decodeInjectQuery, selectInjectTarget } from '../core/inject';
 import { runMonitorHostOnLeader } from '../monitor/host';
 
 // Settings types are now imported from ./settings
-// Settings functions are in ./settings.vscode
+// Settings functions are in ./agentSettings.vscode
 
 let agentStatusBarItem: vscode.StatusBarItem | undefined;
 let defaultAgentTitle: string = CLAUDE_TITLE;
@@ -161,11 +162,11 @@ let secondaryAgentTitle: string = CODEX_TITLE;
 
 // Prompts helpers (file-based storage at ~/.swarmify/agents/prompts.yaml)
 function getPrompts(): PromptEntry[] {
-  return settings.readPrompts();
+  return settingsStore.readPrompts();
 }
 
 function savePrompts(prompts: PromptEntry[]): void {
-  settings.writePrompts(prompts);
+  settingsStore.writePrompts(prompts);
 }
 
 function generateId(): string {
@@ -173,7 +174,7 @@ function generateId(): string {
 }
 
 function getDisplayPrefs(context: vscode.ExtensionContext) {
-  return settings.getSettings(context).display || DEFAULT_DISPLAY_PREFERENCES;
+  return settingsStore.getSettings(context).display || DEFAULT_DISPLAY_PREFERENCES;
 }
 
 function buildTerminalTitle(
@@ -491,7 +492,7 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   );
 
   const defaultModel = builtIn
-    ? settings.getDefaultModel(context, builtIn.key as Parameters<typeof settings.getDefaultModel>[1])
+    ? settingsStore.getDefaultModel(context, builtIn.key as Parameters<typeof settingsStore.getDefaultModel>[1])
     : undefined;
   // `--project` owns the working directory end-to-end, so only an explicit
   // (Pick Project) choice may supply it. `projects view <cwd>` is a containment
@@ -784,7 +785,7 @@ async function showPrompts(): Promise<void> {
 }
 
 function getAgentsToOpen(context: vscode.ExtensionContext): AgentConfig[] {
-  const agentSettings = settings.getSettings(context);
+  const agentSettings = settingsStore.getSettings(context);
   const extensionPath = context.extensionPath;
   const agents: AgentConfig[] = [];
 
@@ -884,7 +885,7 @@ function getAgentConfigFromTerminal(
   if (!info.isAgent || !info.prefix) {
     // Check custom agents by name
     const terminalName = terminal.name.trim();
-    const agentSettings = settings.getSettings(context);
+    const agentSettings = settingsStore.getSettings(context);
     for (const custom of agentSettings.custom) {
       if (terminalName === custom.name || terminalName.startsWith(`${custom.name} - `)) {
         return createAgentConfig(context.extensionPath, custom.name, custom.command, 'agents.png', custom.name.toLowerCase());
@@ -900,7 +901,7 @@ function getAgentConfigFromTerminal(
   }
 
   // Check custom agents
-  const agentSettings = settings.getSettings(context);
+  const agentSettings = settingsStore.getSettings(context);
   for (const custom of agentSettings.custom) {
     if (info.prefix === custom.name) {
       return createAgentConfig(context.extensionPath, custom.name, custom.command, 'agents.png', custom.name.toLowerCase());
@@ -910,7 +911,7 @@ function getAgentConfigFromTerminal(
   return null;
 }
 
-// Settings functions are now in ./settings.vscode
+// Settings functions are now in ./agentSettings.vscode
 
 // scanExistingEditorTerminals is now terminals.scanExisting()
 
@@ -1212,7 +1213,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   try {
-    const currentSettings = settings.getSettings(context);
+    const currentSettings = settingsStore.getSettings(context);
     await workbench.setMarkdownEditorAssociation(
       currentSettings.editor?.markdownViewerEnabled ?? true
     );
@@ -1399,12 +1400,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.enableReader', async () => {
-      const current = settings.getSettings(context);
+      const current = settingsStore.getSettings(context);
       const next: AgentSettings = {
         ...current,
         editor: { ...(current.editor ?? { markdownViewerEnabled: true }), markdownViewerEnabled: true }
       };
-      await settings.saveSettings(context, next);
+      await settingsStore.saveSettings(context, next);
       vscode.window.showInformationMessage(
         'Agents Reader enabled. .md opens in the Notion-style editor; .html opens as a rendered preview.'
       );
@@ -1414,12 +1415,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.disableReader', async () => {
-      const current = settings.getSettings(context);
+      const current = settingsStore.getSettings(context);
       const next: AgentSettings = {
         ...current,
         editor: { ...(current.editor ?? { markdownViewerEnabled: true }), markdownViewerEnabled: false }
       };
-      await settings.saveSettings(context, next);
+      await settingsStore.saveSettings(context, next);
       vscode.window.showInformationMessage(
         'Agents Reader disabled. .md and .html open in the default text editor.'
       );
@@ -1617,7 +1618,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Dynamically register custom agent commands
-  const customAgentSettings = settings.getSettings(context);
+  const customAgentSettings = settingsStore.getSettings(context);
   for (const custom of customAgentSettings.custom) {
     const commandId = `agents.new${custom.name.replace(/[^a-zA-Z0-9]/g, '')}`;
     const agentConfig = createAgentConfig(context.extensionPath, custom.name, custom.command, 'agents.png', custom.name.toLowerCase());
@@ -1634,7 +1635,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register the "New (Alias)" command - shows a QuickPick of all configured aliases
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.newAlias', async () => {
-      const currentSettings = settings.getSettings(context);
+      const currentSettings = settingsStore.getSettings(context);
       const aliases = currentSettings.aliases || [];
 
       if (aliases.length === 0) {
@@ -1709,7 +1710,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const launchQuickSlot = async (digit: QuickLaunchSlotKey, forceHostPick: boolean) => {
     // Re-read settings on every press so newly saved slots take effect
     // without reloading the window.
-    const fresh = settings.getSettings(context);
+    const fresh = settingsStore.getSettings(context);
     const slot: QuickLaunchSlot | undefined = getQuickLaunchSlot(fresh.quickLaunch, digit);
     if (!slot) return;
 
@@ -1922,7 +1923,7 @@ export async function activate(context: vscode.ExtensionContext) {
   settings.registerPanelSerializer(context);
 
   // Open Dashboard on startup if enabled (welcome screen).
-  const agentSettings = settings.getSettings(context);
+  const agentSettings = settingsStore.getSettings(context);
   if (agentSettings.showWelcomeScreen) {
     // Delay slightly to allow VS Code to fully initialize.
     setTimeout(() => {
@@ -1931,7 +1932,7 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   // Auto-open terminals on startup if any agents have login enabled
-  const startupSettings = settings.getSettings(context);
+  const startupSettings = settingsStore.getSettings(context);
   if (hasLoginEnabled(startupSettings)) {
     setTimeout(() => openAgentTerminals(context), 1000);
   }
@@ -1971,7 +1972,7 @@ async function openSingleAgent(
   const builtInDef = getBuiltInDefByTitle(agentConfig.title);
   const agentKey = builtInDef?.key as keyof AgentSettings['builtIn'] | undefined;
   const defaultModel = agentKey && (!additionalFlags || !additionalFlags.includes('--model'))
-    ? settings.getDefaultModel(context, agentKey)
+    ? settingsStore.getDefaultModel(context, agentKey)
     : undefined;
   let command = agentConfig.command || '';
   if (command) {
@@ -2251,7 +2252,7 @@ async function resumeInProjectWindow(id: string, device: string | undefined): Pr
 }
 
 async function newTaskWithContext(context: vscode.ExtensionContext) {
-  const agentSettings = settings.getSettings(context);
+  const agentSettings = settingsStore.getSettings(context);
   const { tasks } = await tasksImport.fetchAllTasks(context, agentSettings.taskSources);
 
   let message: string;
@@ -2427,7 +2428,7 @@ async function handoffToAgent(context: vscode.ExtensionContext) {
     });
   }
 
-  const customAgentSettings = settings.getSettings(context);
+  const customAgentSettings = settingsStore.getSettings(context);
   for (const custom of customAgentSettings.custom) {
     if (custom.name === terminalEntry.agentConfig.title) continue;
 
@@ -3311,7 +3312,7 @@ export async function openSingleAgentWithQueue(
   // Determine agent key and handle session ID
   const builtInDef = getBuiltInByPrefix(agentConfig.prefix);
   const agentKey = builtInDef?.key as keyof AgentSettings['builtIn'] | undefined;
-  const defaultModel = agentKey ? settings.getDefaultModel(context, agentKey) : undefined;
+  const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
 
   let command = agentConfig.command;
   let sessionId: string | null = null;
@@ -3459,7 +3460,7 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
       // Determine agent key and handle session ID
       const builtInDef = getBuiltInByPrefix(agent.prefix);
       const agentKey = builtInDef?.key as keyof AgentSettings['builtIn'] | undefined;
-      const defaultModel = agentKey ? settings.getDefaultModel(context, agentKey) : undefined;
+      const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
 
       let command = agent.command;
       let sessionId: string | null = null;
@@ -4364,7 +4365,7 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
       let newSessionId: string | null = null;
       let command = agentConfig.command || '';
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-      const defaultModel = agentKey ? settings.getDefaultModel(context, agentKey) : undefined;
+      const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
 
       if (agentKey === 'claude') {
         // Claude: generate UUID on-demand
@@ -4476,7 +4477,7 @@ async function reloadActiveTerminal(context: vscode.ExtensionContext) {
 }
 
 async function updateContextKeys(context: vscode.ExtensionContext): Promise<void> {
-  const readerEnabled = settings.getSettings(context).editor?.markdownViewerEnabled ?? true;
+  const readerEnabled = settingsStore.getSettings(context).editor?.markdownViewerEnabled ?? true;
   await vscode.commands.executeCommand('setContext', 'agents.readerEnabled', readerEnabled);
 }
 
@@ -5367,6 +5368,8 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
         notifyAgentPanelSessionUpdate();
         const { notifyProjectPanelSessionUpdate } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
         notifyProjectPanelSessionUpdate();
+        const { notifyNewlyWaiting } = require('./waitingNotifier.vscode') as typeof import('./waitingNotifier.vscode');
+        notifyNewlyWaiting(() => settingsStore.getSettings(context).notifications);
         const { notifyResumePickerUpdate } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');
         notifyResumePickerUpdate();
       }

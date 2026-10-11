@@ -41,23 +41,32 @@ import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions
 import * as terminals from './terminals.vscode';
 import { runSessionCardAction } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
+import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
+import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
+import { BUILT_IN_AGENTS } from '../core/agents';
+import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
+import { buildIconPathFromUri } from './theme.vscode';
 
 const execFileAsync = promisify(execFile);
 
-// The Project sidebar panel (PHNX-4289): one view with four icon tabs (Overview,
-// Sessions, Pull requests, Tickets) for one project, while the other sidebar keeps
-// the focused session. Only the active tab loads. Overview, Pull requests and
-// Tickets each read their one CLI verb when shown (at most once per FRESH_MS) or on
-// Refresh; Sessions draws the stream rows already in the presentation store and
-// demands the stream only while it is the visible tab. No timer anywhere.
+// The Project sidebar panel (PHNX-4289): one view with icon tabs (Overview,
+// Sessions, Pull requests, Tickets, Settings) for one project, while the other
+// sidebar keeps the focused session. Only the active tab loads. Overview, Pull
+// requests and Tickets each read their one CLI verb when shown (at most once per
+// FRESH_MS) or on Refresh; a ticket's detail is one `linear tasks <ID>` read on the
+// click that opens it. Sessions draws the stream rows already in the presentation
+// store and demands the stream only while it is the visible tab. Settings reads
+// agentSettings and nothing else. No timer anywhere.
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
 const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const FRESH_MS = 60_000;
 
-type TabId = 'overview' | 'sessions' | 'prs' | 'tickets';
-const TABS: readonly TabId[] = ['overview', 'sessions', 'prs', 'tickets'];
+type TabId = 'overview' | 'sessions' | 'prs' | 'tickets' | 'settings';
+const TABS: readonly TabId[] = ['overview', 'sessions', 'prs', 'tickets', 'settings'];
+const DEFAULT_AGENT_KEY = 'agents.defaultAgentTitle';
+const SECONDARY_AGENT_KEY = 'agents.secondaryAgentTitle';
 const VIEW_ID = 'agentsProject.panel';
 /** Where pasted images live on this machine: the only files the panel shows or opens. */
 const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attachments'), path.join(os.homedir(), '.agents', '.cache', 'attachments')];
@@ -65,7 +74,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown;
 }
 
 interface TabState {
@@ -78,6 +87,8 @@ interface TabState {
 class ProjectView implements vscode.WebviewViewProvider {
   view: vscode.WebviewView | undefined;
   private active: TabId;
+  /** The ticket whose detail the Tickets tab shows, or null for the list. */
+  private ticket: string | null = null;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
   constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
@@ -90,7 +101,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     // The editor's app icons ship in assets/; artifact images the agent made live
     // under home, as in the session sidebar.
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'assets'), vscode.Uri.file(os.homedir()), ...IMAGE_DIRS().map((d) => vscode.Uri.file(d))] };
-    view.webview.html = shell(view.webview.cspSource);
+    view.webview.html = shell(view.webview.cspSource, harnessLogoCss(view.webview, this.context.extensionUri));
     view.webview.onDidReceiveMessage((msg: PanelMessage) => {
       const host = typeof msg.host === 'string' ? msg.host : undefined;
       const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
@@ -109,6 +120,11 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'closeAll') void this.controller.closeLeftoverTabs();
       else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
+      else if (msg.type === 'ticket' && typeof msg.id === 'string') void this.openTicket(msg.id);
+      else if (msg.type === 'ticketList') void this.openTicket(null);
+      else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
+      else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'setting' && typeof msg.key === 'string') void this.controller.setSetting(msg.key, msg.value).then(() => this.load('settings', true));
     });
     view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) void this.load(this.active, false); });
     view.onDidDispose(() => {
@@ -149,6 +165,9 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (force) { state.loadedAt = 0; state.generation++; }
     const view = this.view;
     if (!view || !view.visible || tab !== this.active) return;
+    if (tab === 'settings') { this.post(tab, this.controller.settings()); return; }
+    // An open ticket rereads only on Refresh; showing the tab again keeps what is drawn.
+    if (tab === 'tickets' && this.ticket && !force) return;
     const gen = ++state.generation;
     let project: ProjectRef | null;
     try {
@@ -176,7 +195,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     let html: string;
     let ok = true;
     try {
-      html = await this.controller.render(tab, project, force);
+      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket) : await this.controller.render(tab, project, force);
     } catch (e) {
       ok = false;
       html = `<div class="err">${escapeHtml(errorText(e))}</div>`;
@@ -192,11 +211,35 @@ class ProjectView implements vscode.WebviewViewProvider {
     return this.load('sessions', false);
   }
 
+  /** A ticket row click opens its detail (one read); the back control returns to the list. */
+  async openTicket(id: string | null): Promise<void> {
+    this.ticket = id;
+    const state = this.tabs.get('tickets')!;
+    if (id) this.post('tickets', '<div class="empty">Loading…</div>');
+    else state.loadedAt = 0;
+    await this.load('tickets', !!id);
+  }
+
+  private async comment(id: string, text: string): Promise<void> {
+    if (!text.trim() || this.ticket !== id) return;
+    void this.view?.webview.postMessage({ type: 'loading' });
+    try {
+      await this.controller.comment(id, text);
+    } catch (e) {
+      void this.view?.webview.postMessage({ type: 'idle' });
+      void vscode.window.showErrorMessage(`Could not comment on ${id}: ${errorText(e)}`);
+      return;
+    }
+    await this.load('tickets', true);
+  }
+
   notice(text: string): Thenable<boolean> | undefined {
     return this.view?.webview.postMessage({ type: 'notice', text });
   }
 
-  refresh(): void {
+  /** Refresh rereads what is shown; a new project starts on the ticket list. */
+  refresh(projectChanged = false): void {
+    if (projectChanged) this.ticket = null;
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
   }
 
@@ -214,6 +257,8 @@ class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
   /** One `linear tasks` read feeds both Tickets and Overview's state bar. */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
+  /** The detail last drawn, so Start names the ticket the user is looking at. */
+  private shownTicket: TicketDetail | undefined;
   readonly view: ProjectView;
 
   constructor(private readonly context: vscode.ExtensionContext) {
@@ -256,7 +301,7 @@ class ProjectPanelController {
     return groups;
   }
 
-  async render(id: Exclude<TabId, 'sessions'>, p: ProjectRef, force: boolean): Promise<string> {
+  async render(id: Exclude<TabId, 'sessions' | 'settings'>, p: ProjectRef, force: boolean): Promise<string> {
     if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force));
     if (id === 'overview') {
       // Fans out to the fleet for live-session counts, so it is the slow read (~15s).
@@ -278,6 +323,70 @@ class ProjectPanelController {
       stdout = out;
     }
     return renderPrs(parsePrs(stdout), Date.now());
+  }
+
+  private linear(): string {
+    const bin = resolveLinearBin();
+    if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
+    return bin;
+  }
+
+  async ticketDetail(id: string): Promise<string> {
+    const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+    const t = parseTicketDetail(stdout);
+    this.shownTicket = t;
+    return renderTicketDetail(t, this.defaultAgent().name);
+  }
+
+  async comment(id: string, text: string): Promise<void> {
+    await execFileAsync(this.linear(), commentArgv(id, text), { timeout: 60_000 });
+  }
+
+  private defaultAgent(): (typeof PICKABLE_AGENTS)[number] {
+    const title = this.context.globalState.get<string>(DEFAULT_AGENT_KEY, PICKABLE_AGENTS[0].title);
+    const agent = PICKABLE_AGENTS.find((a) => a.title === title);
+    if (!agent) throw new Error(`The default agent "${title}" is not one this version can launch. Pick one in Settings.`);
+    return agent;
+  }
+
+  /** Start on a ticket: the default agent in a new tab here, through the same
+   *  launch path as Agents: Spawn With Prompt. */
+  async startOnTicket(id: string): Promise<void> {
+    const t = this.shownTicket;
+    if (!t || t.identifier !== id) return;
+    try {
+      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.defaultAgent().key, prompt: ticketPrompt(t) });
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not start an agent on ${id}: ${errorText(e)}`);
+    }
+  }
+
+  settings(): string {
+    return renderPanelSettings({
+      settings: getSettings(this.context),
+      defaultAgentTitle: this.context.globalState.get<string>(DEFAULT_AGENT_KEY, PICKABLE_AGENTS[0].title),
+      secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
+      modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
+    });
+  }
+
+  /** One Settings-tab change, written where that setting already lives. */
+  async setSetting(key: string, value: unknown): Promise<void> {
+    if (key === 'defaultAgent' || key === 'secondaryAgent') {
+      if (!PICKABLE_AGENTS.some((a) => a.title === value)) return;
+      await vscode.commands.executeCommand(key === 'defaultAgent' ? 'agents.setDefaultAgentTitle' : 'agents.setSecondaryAgentTitle', value);
+      return;
+    }
+    // The Reader commands also sync the editor association and its context keys.
+    if (key === 'editor.markdownViewerEnabled' && typeof value === 'boolean') {
+      await vscode.commands.executeCommand(value ? 'agents.enableReader' : 'agents.disableReader');
+      return;
+    }
+    const previous = getSettings(this.context);
+    const next = applyPanelSetting(previous, key, value);
+    if (!next) return;
+    await saveSettings(this.context, next);
+    if (key.startsWith('display.')) await maybeUpdateTerminalTitles(previous, next);
   }
 
   private presented(): RemoteSession[] {
@@ -428,13 +537,13 @@ class ProjectPanelController {
     );
     if (!choice) return;
     await this.context.workspaceState.update(PICKED_PROJECT_KEY, choice.project);
-    this.refresh();
+    this.refresh(true);
   }
 
-  refresh(): void {
+  refresh(projectChanged = false): void {
     this.tickets = undefined;
     this.detected = undefined;
-    this.view.refresh();
+    this.view.refresh(projectChanged);
   }
 }
 
@@ -474,8 +583,17 @@ function nonce(): string {
   return s;
 }
 
+/** One class per harness (`.hx-claude`), each drawing that harness's logo from
+ *  assets/, with the light variant on a light editor theme. */
+function harnessLogoCss(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+  return BUILT_IN_AGENTS.filter((a) => a.key !== 'shell').map((a) => {
+    const { dark, light } = buildIconPathFromUri(extensionUri, a.icon);
+    return `.hx-${a.key} { background-image: url("${webview.asWebviewUri(dark)}"); } body.vscode-light .hx-${a.key} { background-image: url("${webview.asWebviewUri(light)}"); }`;
+  }).join('\n  ');
+}
+
 /** The panel's webview document; exported for the script syntax test. */
-export function shell(cspSource: string): string {
+export function shell(cspSource: string, logoCss = ''): string {
   const n = nonce();
   return /* html */ `<!doctype html>
 <html lang="en">
@@ -667,6 +785,41 @@ export function shell(cspSource: string): string {
   .bulk[hidden], .toast[hidden], .menu[hidden] { display: none; }
   .reveal { position: fixed; z-index: 20; pointer-events: none; border-radius: 8px; border: 1px solid var(--r-faint); background: var(--vscode-sideBar-background); padding: 3px; display: none; }
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
+  .card .top .hx { display: inline-block; width: 14px; height: 14px; border-radius: 3px; flex: none; background-position: center; background-size: contain; background-repeat: no-repeat; }
+  ${logoCss}
+  .meta .mdl { margin-left: auto; flex: none; font-family: var(--vscode-editor-font-family); font-size: 10px; color: var(--r-faint); border: 1px solid var(--r-edge); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
+  .tab[data-tab="settings"] { margin-left: auto; }
+  /* Ticket detail and Settings (PHNX-4329). */
+  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; font: inherit; font-weight: 600; align-self: flex-start; }
+  button.primary:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+  .tdetail { padding: 6px 2px 14px; }
+  .tdetail .back { background: none; border: 0; color: var(--vscode-textLink-foreground); cursor: pointer; padding: 2px 0; font: inherit; }
+  .tdetail .th1 { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--r-caption); }
+  .tdetail .tstate { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; }
+  .tdetail .tstate i { width: 6px; height: 6px; border-radius: 50%; background: var(--r-faint); display: block; }
+  .tdetail h3 { margin: 6px 0 4px; font-size: 13px; line-height: 1.35; }
+  .tdetail .tmeta { color: var(--r-caption); font-size: 11px; margin-bottom: 8px; }
+  .tdetail .tmeta a, .tdetail .tbody a, .tdetail .cbody a { color: var(--vscode-textLink-foreground); }
+  .tdetail .dispatch { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--r-edge); border-radius: 8px; margin: 8px 0; }
+  .tdetail .hint, .tdetail .older, .tdetail .none { color: var(--r-caption); font-size: 11px; }
+  .tdetail .tbody, .tdetail .cbody { font-size: 12px; line-height: 1.45; color: var(--r-text-2); overflow-wrap: anywhere; }
+  .tdetail .tbody p, .tdetail .cbody p { margin: 4px 0; } .tdetail h4 { margin: 8px 0 2px; font-size: 12px; }
+  .tdetail ul { list-style: disc; padding-left: 18px; margin: 4px 0; }
+  .tdetail code, .tdetail pre { font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .tdetail pre { white-space: pre-wrap; background: var(--r-well); border-radius: 6px; padding: 6px; }
+  .tdetail .cmt { border: 1px solid var(--r-edge); border-radius: 8px; padding: 6px 8px; margin: 6px 0; }
+  .tdetail .cby { font-size: 11px; color: var(--r-caption); margin-bottom: 2px; }
+  .tdetail .cnew { width: 100%; box-sizing: border-box; border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; padding: 6px; font: inherit; color: var(--vscode-input-foreground, var(--r-text)); background: var(--vscode-input-background); margin: 6px 0; resize: vertical; }
+  .settings { padding: 4px 2px 16px; }
+  .settings .sh { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); margin: 14px 0 4px; }
+  .settings .srow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); cursor: pointer; }
+  .settings .srow b { display: block; font-weight: 500; } .settings small { display: block; color: var(--r-caption); font-size: 11px; }
+  .settings .krow { display: grid; grid-template-columns: 64px minmax(0, 1fr) 96px; align-items: center; gap: 6px; padding: 4px 0; }
+  .settings .krow small { display: inline; margin-left: 4px; }
+  .settings kbd { font-family: var(--vscode-editor-font-family); font-size: 10.5px; border: 1px solid var(--r-edge); border-radius: 4px; padding: 1px 4px; text-align: center; }
+  .settings select { font: inherit; font-size: 11px; color: var(--vscode-dropdown-foreground, var(--r-text)); border: 1px solid var(--vscode-dropdown-border, var(--r-edge)); border-radius: 4px; background: var(--vscode-dropdown-background, var(--r-glass)); padding: 2px; }
+  .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
+  .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
   @media (prefers-reduced-motion: reduce) { .m-working, .st-working.pill i, .ring .arc { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
@@ -676,6 +829,7 @@ export function shell(cspSource: string): string {
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Pull requests</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Tickets"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Tickets</span></button>
+  <button class="tab" role="tab" data-tab="settings" aria-selected="false" title="Settings"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg><span class="lbl">Settings</span></button>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
 <script nonce="${n}">
@@ -723,6 +877,7 @@ export function shell(cspSource: string): string {
       document.body.classList.remove('loading');
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
+    else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'notice') toast(m.text);
   });
   // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab
@@ -805,6 +960,17 @@ export function shell(cspSource: string): string {
     }
     const th = e.target.closest('.th[data-path]');
     if (th) { e.preventDefault(); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
+    // Tickets: a row opens its detail here; the detail's controls each post one message.
+    const trow = e.target.closest('[data-ticket]');
+    const detail = main.querySelector('.tdetail');
+    if (trow && trow.classList.contains('trow')) { e.preventDefault(); vscode.postMessage({ type: 'ticket', id: trow.dataset.ticket }); return; }
+    if (e.target.closest('[data-back]')) { vscode.postMessage({ type: 'ticketList' }); return; }
+    if (detail && e.target.closest('[data-start]')) { vscode.postMessage({ type: 'startTicket', id: detail.dataset.ticket }); return; }
+    if (detail && e.target.closest('[data-comment]')) {
+      const box = detail.querySelector('.cnew');
+      if (box && box.value.trim()) vscode.postMessage({ type: 'comment', id: detail.dataset.ticket, text: box.value });
+      return;
+    }
     const art = e.target.closest('[data-artifact]');
     if (art && card) { e.preventDefault(); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
@@ -817,6 +983,11 @@ export function shell(cspSource: string): string {
     if (!a) return;
     e.preventDefault();
     if (a.hasAttribute('data-pick')) vscode.postMessage({ type: 'pick' });
+  });
+  // Settings: each control writes its one key as it changes.
+  document.addEventListener('change', (e) => {
+    const el = e.target.closest && e.target.closest('[data-setting]');
+    if (el) vscode.postMessage({ type: 'setting', key: el.dataset.setting, value: el.type === 'checkbox' ? el.checked : el.value });
   });
   // Hovering a small image floats a larger one, saying whose it is.
   const reveal = document.createElement('div');

@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The Project sidebar's session cards lead with the harness's logo and end their meta line with
+  the model the CLI reported (`opus-5-5`). No chip when the CLI did not report one.
+- Ended sessions now show in a folded Ended group by default, so a session to resume (▶) is one
+  unfold away. Saved preferences that never turned Ended on get the same default.
+- Needs you in the Project sidebar is ordered by why the agent stopped: a question, then a
+  permission, a plan review, a failure, a stall, a review.
+- Clicking a ticket in the Tickets tab opens it in the panel instead of the browser: state,
+  title, assignee, milestone, the description, the last three comments, and a box to comment.
+  Start an agent on this ticket opens your default agent in a new tab with the ticket as its
+  task. Open in Linear ↗ is still one click away.
+- A Settings tab (the gear, last) holds the session-title toggles, the default and second agent,
+  the ⌘⇧1 to ⌘⇧9 quick-launch agents, the Reader for .md and .html, and approval alerts.
+- Approval alerts now fire whenever a session with a tab in this window starts needing you,
+  not only while the Fleet panel is open. They respect the on/off switch, which they used to
+  ignore, and the alert style: a native OS notification or an editor toast.
+
 ## [0.9.393] - 2026-10-11
 
 - The Project sidebar's Sessions tab groups a session open in another VSCodium window under

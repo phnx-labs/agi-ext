@@ -25,12 +25,12 @@ import {
   linearIssueLabel,
   linearIssueUrl,
   PHASE_PROGRESS_RANK,
-  ATTENTION_KIND_RANK,
   type FloorAgent,
   type StructuredQuestion,
   type ManagedProject,
   type TodoItem,
 } from './floorModel'
+import { ATTENTION_KIND_RANK } from '@shared/sessionState'
 
 describe('resolveProject', () => {
   const RULES: ProjectRule[] = [
