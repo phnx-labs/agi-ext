@@ -5251,6 +5251,8 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
       isTransient: true,
       ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
     });
+    // A terminal whose process is the command gets no editor tab until shown.
+    terminal.show(true);
 
     const pid = await terminal.processId;
     // Carry the tab's original creation time across the reload — the agent it is
