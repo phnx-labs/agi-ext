@@ -7,6 +7,7 @@
 // the provider turns that into the section's error state, never an empty list.
 
 import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import type { SessionCardFields } from './sessionCardFields';
 
 export interface ProjectRef {
   name: string;
@@ -224,7 +225,7 @@ export interface SessionLike {
   liveStatus: string;
   attention?: { kind: string; state: string; question?: { text?: string } };
   question?: { text?: string } | null;
-  request?: { headline?: string };
+  request?: { headline?: string; attachments?: { kind: string; name: string }[] };
   timeline?: { steps: { text: string }[] };
   lastResponse: string;
   activity: string;
@@ -242,6 +243,13 @@ export interface SessionLike {
   state?: string;
   /** A tab in this window is bound to the session (it may be a shell the agent left). */
   tabHere?: boolean;
+  /** That tab's 1-based position in its editor group, when this window holds one. */
+  tabIndex?: number;
+  /** The terminal app the process runs under ("ghostty"); never the machine. */
+  terminalApp?: string;
+  /** Tabs on any machine showing the session, with the workspace their window has open. */
+  observers?: { device: string; viewingIn: string; workspaceDir: string }[];
+  startedAtMs?: number;
   resumable?: boolean;
   lastActivityMs: number;
   confirmedProject: string | null;
@@ -252,12 +260,6 @@ export interface CardThumb {
   uri: string;
   path: string;
   label: string;
-}
-
-/** Whether a tab holds the session somewhere: the CLI names it ("Codium tab 3"),
- *  or says "detached" when only a background process is left. */
-function heldInTab(s: Pick<SessionLike, 'viewingIn'>): boolean {
-  return !!s.viewingIn && s.viewingIn !== 'detached';
 }
 
 /** Where a live session runs: in an editor tab you attached to, or in the background
@@ -280,8 +282,6 @@ export function preferLive<T extends { sessionId: string; phase?: string; liveSt
   }
   return rows.filter((r) => best.get(r.sessionId) === r);
 }
-
-const LIVE: ReadonlySet<SessionStateKey> = new Set(['working', 'yours', 'unknown']);
 
 /** The project's sessions, newest first. */
 export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'>>(rows: T[], project: string): T[] {
@@ -320,8 +320,6 @@ function icon(name: string, title: string): string {
   return `<svg class="ic" viewBox="0 0 16 16" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title>${ICON[name]}</svg>`;
 }
 
-const STATE_GLYPH: Record<SessionStateKey, string> = { asks: '?', stopped: '!', working: '', yours: '', ended: '', unknown: '' };
-
 function prMini(pr: NonNullable<SessionLike['prStatus']>): string {
   const tone = pr.state === 'merged' ? 'ok' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ok' : pr.checks === 'failing' ? 'bad' : 'run';
   const words = pr.state === 'merged' ? 'merged' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ready to merge' : pr.checks === 'failing' ? 'checks failing' : 'checks running';
@@ -353,69 +351,289 @@ function agentLine(s: SessionLike): string {
   return plain(steps.length ? steps[steps.length - 1].text : s.lastResponse || '');
 }
 
-/** A card says what is going on: the title and when it last moved, your last ask
- *  (with the images you pasted), where the agent is now in its own words, and the
- *  facts you act on. Its state is the icon; the device is in the tooltip. */
-export function renderSessionCard(s: SessionLike, now: number, selected: boolean, thumbs: CardThumb[] = []): string {
+// ── Session list: place, outputs, grouping ────────────────────────────────
+
+type SessionGroupBy = 'app' | 'machine' | 'state' | 'none';
+type SessionSort = 'last' | 'newest' | 'name';
+
+/** What the viewer chose in the ⇅ menu, plus folded groups and sessions they hid
+ *  (each hidden until it moves past the activity it had when hidden). */
+export interface SessionListPrefs {
+  group: SessionGroupBy;
+  sort: SessionSort;
+  showLeftover: boolean;
+  showEnded: boolean;
+  folded: string[];
+  hidden: Record<string, number>;
+}
+
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: false, folded: [], hidden: {} };
+
+const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
+const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
+
+/** A stored preference object, keeping only values this version knows. */
+export function readSessionPrefs(v: unknown): SessionListPrefs {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  const hidden: Record<string, number> = {};
+  if (o.hidden && typeof o.hidden === 'object') {
+    for (const [id, ms] of Object.entries(o.hidden as Record<string, unknown>)) if (typeof ms === 'number') hidden[id] = ms;
+  }
+  return {
+    group: GROUPS.includes(o.group as SessionGroupBy) ? (o.group as SessionGroupBy) : DEFAULT_SESSION_PREFS.group,
+    sort: SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort,
+    showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
+    showEnded: typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
+    folded: Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [],
+    hidden,
+  };
+}
+
+/** This window, as the list needs it: the machine it runs on, the workspace it has
+ *  open, which editor it is, and the app icons it can draw. */
+export interface SessionHere {
+  device: string;
+  /** The `host` the presentation store gives sessions on this machine. */
+  localHost: string;
+  workspace: string;
+  editor: 'vscodium' | 'vscode' | 'cursor';
+  editorName: string;
+  icons: Partial<Record<'vscodium' | 'vscode' | 'cursor' | 'ghostty', string>>;
+}
+
+type PlaceKind = 'here' | 'window' | 'ghostty' | 'terminal' | 'background' | 'leftover' | 'ended';
+
+/** Where a session lives, said the way the list groups it. */
+export interface SessionPlace {
+  kind: PlaceKind;
+  /** Group key under Group by App ("here", "window:agents-cli", "ghostty", …). */
+  key: string;
+  /** Group heading: a workspace or app name. */
+  name: string;
+  /** Second word on the heading ("VSCodium", "zion"). */
+  sub: string;
+  /** "m5 · tab 32" on the card. */
+  where: string;
+  device: string;
+}
+
+const EDITOR_WORD = /\b(vs ?codium|codium|code|cursor)\b/i;
+const shortDevice = (d: string) => d.replace(/^yosemite-/, '');
+const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
+
+export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
+  const state = sessionStateOf(s);
+  const device = s.host === here.localHost ? here.device : s.host;
+  const mine = (o: { device: string }) => o.device.toLowerCase() === here.device.toLowerCase();
+  const observerHere = (s.observers ?? []).filter(mine);
+  const editorTab = observerHere.find((o) => EDITOR_WORD.test(o.viewingIn) && o.workspaceDir && baseName(o.workspaceDir) !== here.workspace);
+  const ghosttyTab = observerHere.find((o) => /ghostty/i.test(o.viewingIn));
+  const tabOf = (words: string) => Number(words.match(/tab (\d+)/i)?.[1]) || null;
+  const tab = s.tabIndex ?? (editorTab ? tabOf(editorTab.viewingIn) : null);
+  const where = [shortDevice(device), tab ? `tab ${tab}` : ''].filter(Boolean).join(' · ');
+  const place = (kind: PlaceKind, key: string, name: string, sub: string, w = where): SessionPlace => ({ kind, key, name, sub, where: w, device });
+  if (state === 'ended') return s.tabHere ? place('leftover', 'leftover', 'Tabs with no agent', here.workspace) : place('ended', 'ended', 'Ended', '');
+  if (s.tabHere) return place('here', 'here', here.workspace, `${here.editorName} · this window`);
+  if (editorTab) { const ws = baseName(editorTab.workspaceDir); return place('window', `window:${ws}`, ws, here.editorName); }
+  if (ghosttyTab || /ghostty/i.test(s.terminalApp ?? '')) return place('ghostty', 'ghostty', 'Ghostty', shortDevice(device));
+  const bg = backgroundKind(s);
+  if (bg) return place('background', 'background', 'Background', '', [shortDevice(device), bg].join(' · '));
+  return place('terminal', 'terminal', 'Other terminals', '');
+}
+
+/** What the agent made, grouped the way a person looks for it: PRs, the ticket,
+ *  then one entry per folder of artifacts with its images. Built from the same
+ *  fields the session sidebar draws (`sessionCardFields`). */
+export interface SessionMade {
+  prs: { label: string; url: string }[];
+  ticket: string | null;
+  folders: { name: string; display: string; files: { name: string; path: string }[]; images: { name: string; path: string; uri: string }[] }[];
+}
+
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
+
+export function sessionMade(card: Pick<SessionCardFields, 'artifacts' | 'plan' | 'pullRequests' | 'linearIssue'>): SessionMade {
+  const byDir = new Map<string, SessionMade['folders'][number]>();
+  const files = [...card.artifacts.map((a) => ({ path: a.path, name: a.basename, display: a.display, uri: a.uri })),
+    ...(card.plan && !card.artifacts.some((a) => a.path === card.plan!.path) ? [{ path: card.plan.path, name: baseName(card.plan.path), display: card.plan.display, uri: undefined }] : [])];
+  for (const f of files) {
+    const dir = f.path.replace(/[\\/][^\\/]*$/, '');
+    const folder = byDir.get(dir) ?? { name: baseName(dir), display: f.display.replace(/[\\/][^\\/]*$/, ''), files: [], images: [] };
+    if (IMAGE_FILE.test(f.name) && f.uri) folder.images.push({ name: f.name, path: f.path, uri: f.uri });
+    else folder.files.push({ name: f.name, path: f.path });
+    byDir.set(dir, folder);
+  }
+  return {
+    prs: (card.pullRequests ?? []).map((p) => ({ label: `${p.ownerRepo.split('/').pop()} #${p.number}`, url: p.url })),
+    ticket: card.linearIssue ?? null,
+    folders: [...byDir.values()],
+  };
+}
+
+export interface SessionListOptions {
+  selectedId: string | null;
+  here: SessionHere;
+  prefs: SessionListPrefs;
+  thumbsFor?: (s: SessionLike) => CardThumb[];
+  madeFor?: (s: SessionLike) => SessionMade | null;
+}
+
+const ACT_ICON = {
+  focus: '<path d="M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7.5 8.5"/>',
+  resume: '<path d="M5 3.5v9l7-4.5z" fill="currentColor" stroke="none"/>',
+  close: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
+  hide: '<path d="M2.5 8S4.5 4.5 8 4.5 13.5 8 13.5 8 11.5 11.5 8 11.5 2.5 8 2.5 8z"/><path d="M3.5 12.5l9-9"/>',
+  sort: '<path d="M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2"/>',
+  folder: '<path d="M2 4.5h4l1.2 1.3H14v6.7H2z"/>',
+  terminal: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/>',
+  cloud: '<path d="M4.5 12h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.5 2.75 2.75 0 0 0 4.5 12z"/>',
+  machine: '<rect x="2.5" y="3" width="11" height="7.5" rx="1"/><path d="M6 13.5h4M8 10.5v3"/>',
+  state: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/>',
+};
+function glyph(name: keyof typeof ACT_ICON, cls = 'ic'): string {
+  return `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true">${ACT_ICON[name]}</svg>`;
+}
+
+function placeIcon(p: SessionPlace, here: SessionHere): string {
+  const img = (key: keyof SessionHere['icons'], alt: string) => here.icons[key] ? `<img class="appic" src="${escapeHtml(here.icons[key]!)}" alt="${escapeHtml(alt)}">` : '';
+  if (p.kind === 'here' || p.kind === 'window') return img(here.editor, here.editorName) || glyph('terminal', 'gi');
+  if (p.kind === 'ghostty') return img('ghostty', 'Ghostty') || glyph('terminal', 'gi');
+  if (p.kind === 'background') return glyph('cloud', 'gi');
+  return glyph('terminal', 'gi');
+}
+
+/** The one line a compact card shows: what it asks you, else the agent's latest words. */
+function cardLine(s: SessionLike, state: SessionStateKey): string {
+  if (state === 'asks') return plain(s.question?.text || s.attention?.question?.text || '') || agentLine(s);
+  return agentLine(s) || (s.request?.headline ? plain(s.request.headline) : '');
+}
+
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere }): string {
   const state = sessionStateOf(s);
   const title = plain(s.title || s.topic || s.label || s.request?.headline || 'Untitled');
   const asked = s.request?.headline ? plain(s.request.headline) : '';
   const question = state === 'asks' ? plain(s.question?.text || s.attention?.question?.text || '') : '';
   const said = agentLine(s);
   const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
-  const isLive = LIVE.has(state) || state === 'asks';
-  const bg = isLive ? backgroundKind(s) : null;
-  const leftover = state === 'ended' && !!s.tabHere;
-  const where = s.worktreeSlug || (s.branch && s.branch !== 'main' && s.branch !== 'master' ? s.branch : '');
-  const chips = [
-    leftover ? `<span class="chip warn" title="A tab in this window still shows this session, but its agent is not running">tab open · agent not running</span>` : '',
-    bg ? `<span class="chip" title="Running in the background: no tab is attached">${escapeHtml(bg)}</span>` : '',
-    s.prStatus ? prMini(s.prStatus) : '',
-    s.ticket ? `<span class="chip">${icon('ticket', s.ticket)}${escapeHtml(s.ticket)}</span>` : '',
-    where ? `<span class="chip" title="${escapeHtml(where)}">${icon('branch', where)}<span class="trunc">${escapeHtml(where)}</span></span>` : '',
-    s.files?.total ? `<span class="chip" title="${s.files.total} files changed">${icon('file', `${s.files.total} files changed`)}${s.files.total}</span>` : '',
-  ].filter(Boolean).join('');
-  const shown = thumbs.slice(0, 3);
-  const more = thumbs.length - shown.length;
-  const go = s.resumable === false && !isLive ? '' : leftover ? 'Resume' : isLive && heldInTab(s) ? 'Focus' : 'Open';
-  return `<div class="card st-${state}${selected ? ' sel' : ''}" role="button" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" title="${escapeHtml(`${SESSION_STATE_WORD[state]} · ${s.host}${heldInTab(s) ? ` · ${s.viewingIn}` : ''}`)}">
-    <span class="top"><span class="mk mk-${state}" role="img" aria-label="${SESSION_STATE_WORD[state]}">${STATE_GLYPH[state]}</span><span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span>${go ? `<span class="go">${go}</span>` : ''}</span>
-    ${question ? `<span class="ask">${escapeHtml(question)}</span>` : ''}
-    ${asked && asked !== title ? `<span class="line you">${icon('you', 'You asked')}<span>${escapeHtml(asked)}</span></span>` : ''}
-    ${shown.length ? `<span class="thumbs">${shown.map((t, i) => `<a class="th" href="#" data-path="${escapeHtml(t.path)}" title="${escapeHtml(t.label)}: open the full image"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}">${i === shown.length - 1 && more > 0 ? `<b>+${more}</b>` : ''}</a>`).join('')}</span>` : ''}
-    ${said ? `<span class="line said">${icon('agent', 'The agent')}<span>${escapeHtml(said)}</span></span>` : ''}
-    ${live ? `<span class="line live">${icon('run', 'Running now')}<span>${activityLine(live)}</span></span>` : ''}
-    ${chips ? `<span class="chips">${chips}</span>` : ''}
+  const line = cardLine(s, state);
+  const made = opts.made;
+  const where = opts.pinned && (place.kind === 'here' || place.kind === 'window') ? `${place.name} · ${place.where}` : opts.pinned && place.kind === 'ghostty' ? 'Ghostty' : place.where;
+  const busy = state === 'working' || state === 'asks';
+  const hasTab = place.kind === 'here' || place.kind === 'leftover';
+  const go = state === 'ended'
+    ? (s.resumable === false ? '' : `<button class="act" data-act="resume" title="Resume the agent${hasTab ? ' in its tab' : ''}">${glyph('resume')}</button>`)
+    : `<button class="act" data-act="focus" title="Focus ${escapeHtml(place.kind === 'here' ? (s.tabIndex ? `tab ${s.tabIndex} in this window` : 'its tab in this window') : place.kind === 'window' ? `its tab in ${place.name}` : place.kind === 'ghostty' ? 'its Ghostty window' : 'it')}">${glyph('focus')}</button>`;
+  const x = hasTab
+    ? `<button class="act x" data-act="close" title="Close the tab">${glyph('close')}</button>`
+    : `<button class="act x" data-act="hide" title="Hide until it does something new">${glyph('hide')}</button>`;
+  const prChip = s.prStatus ? prMini(s.prStatus) : '';
+  const ticketChip = (made?.ticket ?? s.ticket) ? `<span class="chip">${icon('ticket', made?.ticket ?? s.ticket ?? '')}${escapeHtml(made?.ticket ?? s.ticket ?? '')}</span>` : '';
+  const folders = made?.folders ?? [];
+  const outImages = folders.flatMap((f) => f.images);
+  const tiny = [
+    ...opts.thumbs.slice(0, 1).map((t) => `<img class="tiny in" src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}" title="Attached by you">`),
+    ...outImages.slice(0, 2).map((i) => `<img class="tiny" src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}" title="Made by the agent: ${escapeHtml(i.name)}">`),
+  ].join('');
+  const strip = [prChip, ticketChip, folders.length ? `<span class="chip" title="${folders.length} artifact folder${folders.length > 1 ? 's' : ''}">${glyph('folder')}${folders.length}</span>` : '', tiny].join('');
+  const shown = opts.thumbs.slice(0, 3);
+  const more = opts.thumbs.length - shown.length;
+  const prs = made?.prs.length ? made.prs.map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}">${icon('pr', p.label)}${escapeHtml(p.label)}</a>`).join('') : prChip;
+  const madeBlock = (prs || ticketChip || folders.length) ? `<div class="lab">Made</div><div class="made">${prs || ticketChip ? `<div class="chips">${prs}${ticketChip}</div>` : ''}${folders.slice(0, 4).map((f) => `
+      <a class="folder" href="#" data-artifact="${escapeHtml((f.files[0] ?? f.images[0]).path)}" title="${escapeHtml(f.display)}">${glyph('folder')}<span class="fx"><span><b>${escapeHtml(f.name)}/</b> · ${escapeHtml([...f.files, ...f.images].slice(0, 3).map((x) => x.name).join(', '))}${f.files.length + f.images.length > 3 ? ' …' : ''}</span><span class="fp">${escapeHtml(f.display)}</span></span></a>${f.images.length ? `<span class="thumbs">${f.images.slice(0, 3).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`).join('')}${f.images.length > 3 ? `<span class="more">+${f.images.length - 3}</span>` : ''}</span>` : ''}`).join('')}</div>` : '';
+  return `<div class="card st-${state}${opts.selected ? ' sel' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-title="${escapeHtml(title)}">
+    <div class="top"><span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
+    <div class="meta"><span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span><span class="where">${escapeHtml(where)}</span></div>
+    <div class="compact">${line ? `<div class="cline">${escapeHtml(line)}</div>` : ''}${strip ? `<div class="cstrip">${strip}</div>` : ''}</div>
+    <div class="full">
+      ${asked && asked !== title ? `<div class="lab">You</div><div class="line">${escapeHtml(asked)}</div>` : ''}
+      ${shown.length ? `${asked && asked !== title ? '' : '<div class="lab">You</div>'}<span class="thumbs">${shown.map((t, i) => `<a class="th in" href="#" data-path="${escapeHtml(t.path)}" title="Attached by you: ${escapeHtml(t.label)}"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}"><i>attached</i>${i === shown.length - 1 && more > 0 ? `<b>+${more}</b>` : ''}</a>`).join('')}</span>` : ''}
+      ${question ? `<div class="lab">Agent · waiting on you</div><div class="ask">${escapeHtml(question)}</div>` : said ? `<div class="lab">Agent</div><div class="line said">${escapeHtml(said)}</div>` : ''}
+      ${live ? `<div class="line live">${activityLine(live)}</div>` : ''}
+      ${madeBlock}
+    </div>
   </div>`;
 }
 
-/** Every session, grouped by state in attention order. Sessions that never said
- *  anything (a reviewer that finished silently, a one-line run) fold into one line
- *  at the end so they do not bury the ones with something to read. */
-export function renderSessions(rows: SessionLike[], now: number, selectedId: string | null, thumbsFor: (s: SessionLike) => CardThumb[] = () => []): string {
-  if (rows.length === 0) return '<div class="empty">No sessions on this project right now.</div>';
-  const hasContent = (s: SessionLike) => !!(s.request?.headline || s.timeline?.steps.length || s.lastResponse || sessionStateOf(s) === 'asks');
-  const card = (s: SessionLike) => renderSessionCard(s, now, s.sessionId === selectedId, thumbsFor(s));
-  const shown = rows.filter(hasContent);
-  const bare = rows.filter((s) => !hasContent(s));
-  const groups: [string, (s: SessionLike) => boolean][] = [
-    [SESSION_STATE_WORD.asks, (s) => sessionStateOf(s) === 'asks'],
-    [SESSION_STATE_WORD.stopped, (s) => sessionStateOf(s) === 'stopped'],
-    ['In your tabs', (s) => LIVE.has(sessionStateOf(s)) && backgroundKind(s) === null],
-    ['Background', (s) => LIVE.has(sessionStateOf(s)) && backgroundKind(s) !== null],
-    [SESSION_STATE_WORD.ended, (s) => sessionStateOf(s) === 'ended'],
-  ];
-  return groups.map(([label, pick]) => {
-    const group = shown.filter(pick);
-    return group.length ? `<div class="divider">${label} <span class="n">${group.length}</span></div>${group.map(card).join('')}` : '';
-  }).join('') + (bare.length ? `<details class="bare"><summary>${bare.length} more with nothing to show</summary>${bare.map(card).join('')}</details>` : '');
+const STATE_ORDER_KEYS: SessionStateKey[] = ['working', 'yours', 'stopped', 'unknown', 'ended'];
+const PLACE_ORDER: Record<PlaceKind, number> = { here: 0, window: 1, ghostty: 2, terminal: 3, background: 4, leftover: 5, ended: 6 };
+const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', yours: 'yours', stopped: 'stopped', unknown: 'unknown', ended: 'ended' };
+
+/** What the list keeps after the viewer's Show choices and hidden sessions. */
+function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionListPrefs): { row: SessionLike; place: SessionPlace }[] {
+  return rows
+    .filter((s) => !(s.sessionId in prefs.hidden) || s.lastActivityMs > prefs.hidden[s.sessionId])
+    .map((row) => ({ row, place: sessionPlace(row, here) }))
+    .filter(({ place }) => (place.kind !== 'leftover' || prefs.showLeftover) && (place.kind !== 'ended' || prefs.showEnded));
 }
 
-/** What the Sessions tab counts: the sessions with something to read. */
-export function sessionCount(rows: SessionLike[]): { shown: number; asks: number } {
+function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: SessionSort): { row: SessionLike; place: SessionPlace }[] {
+  const by = sort === 'name'
+    ? (a: SessionLike, b: SessionLike) => plain(a.title || a.label || a.topic).localeCompare(plain(b.title || b.label || b.topic))
+    : sort === 'newest' ? (a: SessionLike, b: SessionLike) => (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0)
+      : (a: SessionLike, b: SessionLike) => b.lastActivityMs - a.lastActivityMs;
+  return [...items].sort((a, b) => (sort === 'name' ? 0 : Number(sessionStateOf(b.row) === 'working') - Number(sessionStateOf(a.row) === 'working')) || by(a.row, b.row));
+}
+
+function menuHtml(p: SessionListPrefs): string {
+  const item = (on: boolean, label: string, key: string, value: string, ic = '') => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${ic}${label}</button>`;
+  return `<div class="menu" role="menu" hidden>
+    <div class="sec">Sort</div>${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}<hr>
+    <div class="sec">Show</div>${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
+    <div class="sec">Group</div>${item(p.group === 'app', 'App', 'group', 'app', glyph('terminal', 'mi'))}${item(p.group === 'machine', 'Machine', 'group', 'machine', glyph('machine', 'mi'))}${item(p.group === 'state', 'State', 'group', 'state', glyph('state', 'mi'))}${item(p.group === 'none', 'None', 'group', 'none')}
+  </div>`;
+}
+
+/** The Sessions tab: a header with counts and the ⇅ menu, Needs you pinned, then
+ *  the viewer's grouping. Each card is compact until hovered or selected. */
+export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
+  const { here, prefs } = opts;
+  const all = visibleSessions(rows, here, prefs);
+  const asks = sortRows(all.filter(({ row }) => sessionStateOf(row) === 'asks'), prefs.sort);
+  const rest = all.filter(({ row }) => sessionStateOf(row) !== 'asks');
+  const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
+    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null,
+  });
+  const c = sessionCount(rows, here, prefs);
+  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} need${c.asks === 1 ? 's' : ''} you</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>`;
+  const pinned = asks.length ? `<div class="pinned"><div class="ph">${SESSION_STATE_WORD.asks} <span class="n">${asks.length}</span></div>${asks.map((x) => card(x, true)).join('')}</div>` : '';
+  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string };
+  let groups: Group[];
+  if (prefs.group === 'app') {
+    const byKey = new Map<string, Group>();
+    for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
+      const g = byKey.get(x.place.key) ?? { key: x.place.key, name: x.place.name, sub: x.place.sub, icon: placeIcon(x.place, here), items: [], action: x.place.kind === 'leftover' ? 'close-all' : undefined };
+      g.items.push(x); byKey.set(x.place.key, g);
+    }
+    groups = [...byKey.values()];
+  } else if (prefs.group === 'machine') {
+    const devices = [...new Set(rest.map((x) => x.place.device))].sort((a, b) => Number(b === here.device) - Number(a === here.device) || a.localeCompare(b));
+    groups = devices.map((d) => ({ key: `machine:${d}`, name: d, sub: d === here.device ? 'this machine' : '', icon: glyph('machine', 'gi'), items: rest.filter((x) => x.place.device === d) }));
+  } else if (prefs.group === 'state') {
+    groups = STATE_ORDER_KEYS.map((k) => ({ key: `state:${k}`, name: SESSION_STATE_WORD[k], sub: '', icon: `<span class="pill st-${k} solo"><i></i></span>`, items: rest.filter((x) => sessionStateOf(x.row) === k) }));
+  } else {
+    return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>`;
+  }
+  const folded = new Set(prefs.folded);
+  return head + pinned + groups.filter((g) => g.items.length).map((g) => {
+    const counts = new Map<SessionStateKey, number>();
+    for (const { row } of g.items) { const k = sessionStateOf(row); counts.set(k, (counts.get(k) ?? 0) + 1); }
+    const dots = [...counts].map(([k, n]) => `<i class="d-${DOT_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
+    const closed = folded.has(g.key);
+    return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b> <span class="n">${g.items.length}</span>${g.sub ? ` <span class="gs">· ${escapeHtml(g.sub)}</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span></div>
+      <div class="items">${closed ? '' : sortRows(g.items, prefs.sort).map((x) => card(x)).join('')}</div>
+    </section>`;
+  }).join('') + '<div class="bulk" hidden></div><div class="toast" hidden></div>';
+}
+
+/** The tab's numbers: live sessions, the ones that need you, tabs held here. */
+export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS): { shown: number; asks: number; tabs: number } {
+  const items = here ? visibleSessions(rows, here, prefs) : rows.map((row) => ({ row, place: null as SessionPlace | null }));
   return {
-    shown: rows.filter((s) => s.request?.headline || s.timeline?.steps.length || s.lastResponse).length,
-    asks: rows.filter((s) => sessionStateOf(s) === 'asks').length,
+    shown: items.filter(({ row }) => sessionStateOf(row) !== 'ended').length,
+    asks: items.filter(({ row }) => sessionStateOf(row) === 'asks').length,
+    tabs: rows.filter((s) => s.tabHere).length,
   };
 }
 

@@ -369,6 +369,13 @@ interface RemoteRecovery {
   cwd?: string;
 }
 
+/** One tab showing a session, as the CLI's projection names it. */
+interface RemoteObserver {
+  device: string;
+  viewingIn: string;
+  workspaceDir: string;
+}
+
 export interface RemoteSession {
   host: string;
   sessionId: string;
@@ -539,6 +546,12 @@ export interface RemoteSession {
   /** Where the session is currently being viewed, pre-formatted by the CLI (e.g.
    *  "Codium tab 3", "Ghostty tab 2", "detached"). '' when the CLI supplies none. */
   viewingIn: string;
+  /** The terminal app the process runs under (the CLI payload's raw `host`, e.g.
+   *  "ghostty", "vscodium"), '' when unknown. Never the machine: that is `host`. */
+  terminalApp: string;
+  /** Tabs on any machine showing this session (`observerTerminals`): the device,
+   *  the CLI's "Codium tab 3" words, and the workspace folder that tab's window has open. */
+  observers: RemoteObserver[];
   /** Lifecycle state from the CLI picker join (`SessionPickerJsonRow.state` —
    *  the live ActiveSession status, or 'inactive' for a genuinely ended session).
    *  'inactive' is the load-bearing signal that a session is a resumable PREVIOUS
@@ -634,6 +647,9 @@ export interface RawActiveSession {
   /** Where the session is being viewed right now, pre-formatted by the CLI's
    *  client resolver (e.g. "Codium tab 3", "Ghostty tab 2", "detached"). */
   viewingIn?: string;
+  /** The terminal-emulator name the process runs under ("ghostty"). */
+  host?: string;
+  observerTerminals?: unknown;
   /** The CLI emits these NESTED objects on `sessions watch --json` (agents-cli
    *  ActiveSession: preview / pr / worktree / ticket). Earlier this shape declared
    *  none of them, so normalizeActiveSession silently dropped the worktree slug, the
@@ -1353,7 +1369,20 @@ export function normalizeActiveSession(
     // reply-rail pane, which today already carries a %pane for tmux sessions.
     tmuxPane: raw.provenance?.mux?.pane || raw.provenance?.reply?.target || '',
     viewingIn: asStr(raw.viewingIn),
+    terminalApp: asStr(raw.host),
+    observers: normalizeObservers(raw.observerTerminals),
   };
+}
+
+function normalizeObservers(value: unknown): RemoteObserver[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const e = entry as Record<string, unknown>;
+    const device = asStr(e.device);
+    if (!device) return [];
+    return [{ device, viewingIn: asStr(e.viewingIn), workspaceDir: asStr(e.workspaceDir) }];
+  });
 }
 
 /**
@@ -1510,6 +1539,8 @@ export function normalizeRecentSession(
     // client to resolve, so both are empty (the required-string default).
     tmuxPane: '',
     viewingIn: '',
+    terminalApp: '',
+    observers: [],
     // Lifecycle + recovery from the CLI picker join. `state` defaults to 'inactive'
     // (an ended session) so the Sessions surface can classify it as Previous; the
     // recovery command is the CLI's own `sessions resume … --device <device>`.
