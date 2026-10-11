@@ -45,7 +45,7 @@ describe('renameTerminal never steals focus (#3019)', () => {
 
     expect(execCalls.length).toBe(0); // never showed/renamed a non-focused tab
     expect(terminals.getByTerminal(background)?.pendingTitle).toBe('Bee Task');
-    expect(terminals.getByTerminal(background)?.appliedTitle).toBeUndefined();
+    expect(terminals.getByTerminal(background)?.appliedTitle).toBe('CC'); // its creation name, unchanged
   });
 
   test('the focused tab is renamed, then an identical rename is a no-op', async () => {
