@@ -22,7 +22,7 @@ CLI verb. Product requirements: `docs/PRD.md`. Architecture, module graph, debt:
   per-scope reset state). Selectors derive views; it holds no lifecycle logic.
 - **Terminal identity**: the registry binds a `vscode.Terminal` to its session from stream
   facts; two live claims on one terminal are ambiguous until the stream removes one.
-- **One-shot verbs**: launch, resume, fork, stop, migrate, dispatch, answer are each one
+- **One-shot verbs**: launch, resume, fork, stop, answer are each one
   `agents …` command, run once per gesture. The CLI daemon is the only scheduler.
 
 ## Layout
