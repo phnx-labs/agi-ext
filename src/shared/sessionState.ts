@@ -28,9 +28,6 @@ export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
   unknown: 'Unknown',
 };
 
-/** Top to bottom: what needs you first, what ended last. */
-export const SESSION_STATE_ORDER: readonly SessionStateKey[] = ['asks', 'stopped', 'working', 'yours', 'unknown', 'ended'];
-
 const ASK_KINDS = new Set(['question', 'permission', 'plan_review', 'declared']);
 const STOPPED_STATUS = new Set(['orphaned', 'crashed', 'abandoned']);
 

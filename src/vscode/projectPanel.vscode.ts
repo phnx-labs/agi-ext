@@ -32,6 +32,7 @@ import {
 import { currentAgentPanelSubject, setAgentPanelSubjectFromFleet } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
+import { sessionStateOf } from '../shared/sessionState';
 import { openExternalUrl } from './webviewSecurity';
 
 const execFileAsync = promisify(execFile);
@@ -256,7 +257,8 @@ class ProjectPanelController {
 
   sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
-    const rows = projectSessions(this.presented() as unknown as SessionLike[], p.name);
+    const rows = projectSessions(this.presented() as unknown as SessionLike[], p.name)
+      .map((r) => ({ ...r, tabHere: !!terminals.getBySessionId(r.sessionId) }));
     const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
     const thumbsFor = (s: SessionLike) => {
       const live = byId.get(s.sessionId);
@@ -277,9 +279,11 @@ class ProjectPanelController {
   async goToSession(sessionId: string, host: string | undefined): Promise<void> {
     setAgentPanelSubjectFromFleet(sessionId, host);
     void this.view.redrawSessions();
-    const local = terminals.getBySessionId(sessionId);
-    if (local) { local.terminal.show(false); return; }
     const row = this.presented().find((r) => r.sessionId === sessionId);
+    // A tab bound to an ended session is a shell the agent left; resuming opens a live one.
+    const ended = row ? sessionStateOf(row) === 'ended' : false;
+    const local = terminals.getBySessionId(sessionId);
+    if (local && !ended) { local.terminal.show(false); return; }
     if (row && heldInTab(row)) {
       try {
         await runAgentsArgs(['ps', 'focus', sessionId, '--attach-only'], { timeout: 30_000 });
@@ -501,6 +505,7 @@ function shell(cspSource: string): string {
   .card .ask { margin-left: 21px; padding: 5px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; }
   .card .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 21px; margin-top: 1px; }
   .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 150px; padding: 1px 6px 1px 4px; border-radius: 9px; background: var(--r-well); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; }
+  .chip.warn { color: var(--r-warn); background: var(--r-warn-tint); max-width: none; white-space: nowrap; }
   .chip .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip.pr-ok { color: var(--r-ok); background: var(--r-ok-tint); } .chip.pr-bad { color: var(--r-bad); background: var(--r-bad-tint); } .chip.pr-run { color: var(--r-warn); background: var(--r-warn-tint); }
   .card .thumbs { display: flex; gap: 4px; margin-left: 21px; }
