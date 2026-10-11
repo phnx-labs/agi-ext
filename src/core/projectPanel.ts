@@ -256,7 +256,7 @@ export interface CardThumb {
 
 /** Whether a tab holds the session somewhere: the CLI names it ("Codium tab 3"),
  *  or says "detached" when only a background process is left. */
-export function heldInTab(s: Pick<SessionLike, 'viewingIn'>): boolean {
+function heldInTab(s: Pick<SessionLike, 'viewingIn'>): boolean {
   return !!s.viewingIn && s.viewingIn !== 'detached';
 }
 
@@ -284,7 +284,7 @@ export function preferLive<T extends { sessionId: string; phase?: string; liveSt
 const LIVE: ReadonlySet<SessionStateKey> = new Set(['working', 'yours', 'unknown']);
 
 /** The project's sessions, newest first. */
-export function projectSessions(rows: SessionLike[], project: string): SessionLike[] {
+export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'>>(rows: T[], project: string): T[] {
   const want = project.toLowerCase();
   return rows
     .filter((r) => (r.confirmedProject || '').toLowerCase() === want)

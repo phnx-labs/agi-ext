@@ -64,13 +64,14 @@ import { draftDispatchPrompt, type DraftTicket } from '../core/draftPrompt';
 import {
   fetchRegisteredDevices,
   getRegisteredDevicesCache,
+  streamReadiness,
   getDeviceSyncStatus,
   listRegisteredDevices,
   setRegisteredDevicesCache,
   type Device,
 } from './deviceHealth.vscode';
 import { inferProjectCandidates } from '../core/projectIndex';
-import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '../core/remoteSessions';
+import { normalizeHost, groupByHost, type HostInfo } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, isLocalHost, remoteDeviceArg } from './remoteSessions.vscode';
@@ -1105,18 +1106,12 @@ async function pushFloorUpdate(workspacePath?: string): Promise<void> {
     // RUSH-2039: page the user when a session (Codex included) enters the
     // approval-waiting state. Edge-triggered so it fires once per wait.
     notifyNewlyWaiting(floorTerminals);
-    // Degraded = the merged floor is still establishing. True until the stream
-    // has reset at all AND every peer the CLI fan-out will actually dial has
-    // reported (delivered its reset or been marked unavailable). `dialablePeerScopes`
-    // mirrors the CLI's own peer selection (online + POSIX/Windows), so we never
-    // wait on a device the stream will never report for — an approved iPad reads
-    // `online` but is never dialed, and waiting on it would hang "connecting"
-    // forever. This keeps the floor from flipping to a confident "0 sessions" the
-    // instant the near-instant local scope resets while a real remote box is
-    // still en route (PHNX-2735).
-    const expectedPeerScopes = dialablePeerScopes(getRegisteredDevicesCache() ?? [], LOCAL_MACHINE_ID);
-    const degraded = !sessionPresentationStore.hasSeenReset()
-      || sessionPresentationStore.pendingScopes(expectedPeerScopes).length > 0;
+    // Degraded = the merged floor is still establishing: the stream has not reset
+    // yet, or a peer the CLI fan-out dials has not reported (streamReadiness). The
+    // floor never flips to a confident "0 sessions" while a remote box is en route
+    // (PHNX-2735).
+    const readiness = streamReadiness(LOCAL_MACHINE_ID);
+    const degraded = !readiness.established || readiness.pending.length > 0;
     settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals, degraded });
     settingsPanel.webview.postMessage({ type: 'feedActivity', activity: sessionPresentationStore.activityEvents() });
 

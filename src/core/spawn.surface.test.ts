@@ -102,6 +102,14 @@ describe('agents.resumeSession', () => {
     expect((await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "no ack" >&2; exit 1') })).status).toBe('failed');
     expect((await resumeSessionTab('', { liveTab, runResume: runCli('exit 0') })).reason).toBe('no session id');
   });
+
+  test("the session's machine reaches the CLI; this machine's sessions name none", async () => {
+    const devices: Array<string | undefined> = [];
+    const runResume = async (_id: string, device: string | undefined) => { devices.push(device); return { ok: true, output: 'ok' }; };
+    await resumeSessionTab('s3', { liveTab: async () => undefined, runResume }, 'yosemite-m2');
+    await resumeSessionTab('s4', { liveTab: async () => undefined, runResume });
+    expect(devices).toEqual(['yosemite-m2', undefined]);
+  });
 });
 
 describe('agents.resumeSession outcome from the CLI', () => {
@@ -114,6 +122,15 @@ describe('agents.resumeSession outcome from the CLI', () => {
     expect(cliResumeOutcome(false, "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s.\n  Resume it in this terminal instead: agents sessions resume 0db3f95b\n"))
       .toEqual({ status: 'failed', reason: "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s." });
     expect(cliResumeOutcome(false, '').reason).toBe('agents sessions resume failed with no output');
+  });
+  test('a failure with only the type-this-id hint still reports it, and exit 0 never reads as failed', () => {
+    expect(cliResumeOutcome(false, 'Resume it in this terminal instead: agents sessions resume 0db3f95b\n'))
+      .toEqual({ status: 'failed', reason: 'Resume it in this terminal instead: agents sessions resume 0db3f95b' });
+    expect(cliResumeOutcome(true, '').status).toBe('opened');
+  });
+  test("a /spawn that reached the wrong window is wrong-window, with the CLI's words", () => {
+    const out = 'Can\'t open 9bef2ef9 "Grafana" (yosemite-m6): the request reached window "agents", which does not hold svatlas; nothing was opened.';
+    expect(cliResumeOutcome(false, out)).toEqual({ status: 'wrong-window', reason: out });
   });
 });
 

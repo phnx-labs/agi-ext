@@ -3,6 +3,8 @@ import { promisify } from 'util';
 import { isDeviceOnline } from '../core/deviceHealth';
 import { RepoSyncStatus } from '../core/repoSync';
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
+import { dialablePeerScopes } from '../core/remoteSessions';
+import { sessionPresentationStore } from '../core/sessionPresentationStore';
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +57,20 @@ export function setRegisteredDevicesCache(devices: readonly Device[] | null): vo
 
 export function getRegisteredDevicesCache(): Device[] | null {
   return registeredDevicesCache?.map((device) => ({ ...device })) ?? null;
+}
+
+/**
+ * The machines the merged session stream is still waiting on: every peer the CLI
+ * fan-out actually dials (`dialablePeerScopes` mirrors its selection) that has not
+ * delivered its reset or been marked unavailable. Until the stream has reset at
+ * all, `established` is false. A view shows "loading machines" while either holds,
+ * never a confident local-only or empty list (PHNX-2735).
+ */
+export function streamReadiness(localMachineId: string): { established: boolean; pending: string[] } {
+  return {
+    established: sessionPresentationStore.hasSeenReset(),
+    pending: sessionPresentationStore.pendingScopes(dialablePeerScopes(getRegisteredDevicesCache() ?? [], localMachineId)),
+  };
 }
 
 /** Strict registry read used by the one activation seed. */

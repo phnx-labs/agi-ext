@@ -20,7 +20,7 @@ export interface PickerRow {
   label?: string;
   topic?: string;
   lastActivityMs: number;
-  confirmedProject?: string | null;
+  confirmedProject: string | null;
   state?: string;
   phase?: SessionLike['phase'];
   liveStatus?: string;
@@ -47,13 +47,15 @@ export interface ResumeItem {
   open: boolean;
 }
 
-/** The project's sessions, newest first, as picker items. */
+/** The sessions of these projects (every project a window folder belongs to),
+ *  newest first, as picker items. */
 export function resumeItems(
   rows: PickerRow[],
-  project: string,
+  projects: readonly string[],
   opts: { localHost: string; localName: string; isOpen(sessionId: string): boolean },
 ): ResumeItem[] {
-  const scoped = projectSessions(preferLive(rows) as unknown as SessionLike[], project) as unknown as PickerRow[];
+  const live = preferLive(rows);
+  const scoped = projects.flatMap((project) => projectSessions(live, project)).sort((a, b) => b.lastActivityMs - a.lastActivityMs);
   return scoped.map((r) => ({
     sessionId: r.sessionId,
     host: r.host,
@@ -91,24 +93,21 @@ export interface ResumeAnswer {
   reason: string | null;
 }
 
-/** The one notification for a resume, whichever surface asked. `here` is this
- *  window's name: a focused tab is in this window; an opened one is wherever the
- *  CLI's last line says (`→ VSCodium window "agents", new tab …`). */
+/** The one notification for a resume, whichever surface asked. A window is named
+ *  only when something proves it: a tab in this window (`terminalId`, named `here`
+ *  when this window has a name) or the window the CLI's last line names
+ *  (`→ VSCodium window "agents", new tab …`). */
 export function resumeNotice(
   answer: ResumeAnswer,
   session: { title: string; machine: string },
-  here: string,
-): { level: 'info' | 'warning' | 'error'; text: string } {
+  here: string | undefined,
+): { level: 'info' | 'error'; text: string } {
   const name = `"${session.title}"${session.machine ? ` (${session.machine})` : ''}`;
-  if (answer.status === 'focused-existing') {
-    return { level: 'info', text: `Focused ${name} in ${answer.terminalId ? here : windowIn(answer.reason) ?? here}.` };
-  }
-  if (answer.status === 'opened') {
-    const where = windowIn(answer.reason);
-    return { level: 'info', text: where ? `Opened ${name} in ${where}.` : `Opened ${name}.${answer.reason ? ` ${answer.reason}` : ''}` };
-  }
+  const where = answer.terminalId ? here : windowIn(answer.reason);
+  if (answer.status === 'focused-existing') return { level: 'info', text: `Focused ${name}${where ? ` in ${where}` : ''}.` };
+  if (answer.status === 'opened') return { level: 'info', text: `Opened ${name}${where ? ` in ${where}` : ''}.` };
   if (answer.status === 'wrong-window') {
-    return { level: 'warning', text: `${name} opened in a different window than its project's.${answer.reason ? ` ${answer.reason}` : ''}` };
+    return { level: 'error', text: `Could not resume ${name}: ${answer.reason || 'the request reached a window that does not hold its project'}` };
   }
   return { level: 'error', text: `Could not resume ${name}: ${answer.reason || 'no reason given'}` };
 }

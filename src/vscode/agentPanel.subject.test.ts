@@ -318,6 +318,19 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
 // ---------------------------------------------------------------------------
 
 describe('Focus / ↻ Resume run agents.resumeSession', () => {
+  test("Focus shows the panel's own tab, even before its session id resolves, and resumes nothing", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = panel.registerAgentPanel(context as any) as any;
+    commandCalls.length = 0;
+    let shown = 0;
+    const tab = agentTab('CL-focus-1', '');
+    tab.show = () => { shown++; };
+    provider.snapshot = { hasTerminal: true, teams: [], terminalId: 'CL-focus-1' };
+    await provider.runQuickAction('focusSubject', 'CL-focus-1', undefined);
+    expect(shown).toBe(1);
+    expect(commandCalls.filter((c) => c[0] === 'agents.resumeSession')).toEqual([]);
+  });
+
   test('both buttons resume the panel\'s session by id and say where it went', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provider = panel.registerAgentPanel(context as any) as any;
