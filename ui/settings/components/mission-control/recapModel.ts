@@ -1,6 +1,6 @@
 import { abbrFor, type RemoteSessionLike } from './floorAdapter'
 import { attributeSessionProject } from './sessionProjects'
-import type { AgentAbbr, CiStatus, FloorAgent } from './floorModel'
+import type { AgentAbbr, CiStatus, FloorAgent, FloorTimeline } from './floorModel'
 import type { TerminalDetail } from '../../types'
 
 // Pure model for the Recap ledger — "what happened while I was away". Turns the
@@ -229,11 +229,20 @@ export interface SessionRowView {
   title: string
   recapSource: RecapSource
   recapSourceClass: RecapSourceClass
+  /** Your LATEST message: the newest user turn, else the CLI's latest request,
+   *  else the first turn. */
   you: ProcessedUserPrompt
+  /** True only when `you` came from a genuine user turn the CLI carried, never a
+   *  synthesized label (topic, worktree slug, tab name). */
+  youIsReal: boolean
   harnessTag: string
+  /** The agent's own latest words, never the task label. '' when the row has none. */
   lastLine: string
   lastFull: string
   repo: string
+  /** Short working folder (`~/…/owner/repo`) and the full path for its tooltip. */
+  folder: string
+  folderFull: string
   pr: { label: string; ci: CiStatus } | null
   branch: string
   host: string
@@ -281,6 +290,26 @@ function firstNonEmpty(...values: Array<string | null | undefined>): string {
 
 function firstLine(text: string): string {
   return text.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? ''
+}
+
+/** The newest step the agent itself said (narration/thinking), or ''. */
+function latestAgentStep(timeline: FloorTimeline | undefined): string {
+  const steps = timeline?.steps ?? []
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]!
+    if ((step.source === 'narration' || step.source === 'thinking') && step.text.trim()) return step.text.trim()
+  }
+  return ''
+}
+
+/** `/Users/me/src/github.com/me/repo` -> `~/…/me/repo`; short paths stay whole. */
+export function shortFolder(cwd: string | null | undefined): string {
+  const raw = (cwd ?? '').trim().replace(/[/\\]+$/, '')
+  if (!raw) return ''
+  const home = raw.replace(/^(\/Users\/[^/]+|\/home\/[^/]+|\[HOME\])(?=\/|$)/, '~')
+  const segs = home.split('/').filter(Boolean)
+  if (segs.length <= 3) return home
+  return `${home.startsWith('~') ? '~/' : '/'}…/${segs.slice(-2).join('/')}`
 }
 
 function basenameOf(path: string): string {
@@ -479,8 +508,13 @@ export function sessionRowView(
     ...(terminal ?? {}),
   } as SessionRecapFields & FloorAgent
 
-  const rawPrompt = firstNonEmpty(
+  const realUserText = firstNonEmpty(
+    agent.userTurns?.[agent.userTurns.length - 1]?.text,
+    agent.latestRequest,
     overlay.firstUserMessage,
+  )
+  const rawPrompt = firstNonEmpty(
+    realUserText,
     overlay.userPromptClean,
     agent.prompt,
     agent.topic,
@@ -492,13 +526,14 @@ export function sessionRowView(
     overlay.narrative,
     agent.resp,
     agent.messages[agent.messages.length - 1],
-    agent.summary,
     overlay.lastAgentLine,
+    latestAgentStep(agent.timeline),
   )
   const lastLine = quoteAgentLine(firstNonEmpty(overlay.lastAgentLine, firstLine(lastFull)))
   const title = firstNonEmpty(overlay.title, agent.topic, agent.name, 'Session')
   const recapSource = inferRecapSource(overlay, title, you.text || rawPrompt)
-  const repo = firstNonEmpty(agent.project, overlay.cwd ? basenameOf(overlay.cwd) : '')
+  const cwd = firstNonEmpty(overlay.cwd, agent.cwd)
+  const repo = firstNonEmpty(agent.project, cwd ? basenameOf(cwd) : '')
   const pr = prLabel(agent.pr)
 
   return {
@@ -506,10 +541,13 @@ export function sessionRowView(
     recapSource,
     recapSourceClass: recapSourceClass(recapSource),
     you,
+    youIsReal: Boolean(realUserText),
     harnessTag: harnessLabel(agent.abbr),
     lastLine,
     lastFull,
     repo,
+    folder: shortFolder(cwd),
+    folderFull: cwd,
     pr: pr ? { label: pr, ci: agent.ci ?? null } : null,
     branch: firstNonEmpty(overlay.branch, agent.branch),
     host: firstNonEmpty(agent.hostLabel, agent.host === 'this-mac' ? '' : agent.host),

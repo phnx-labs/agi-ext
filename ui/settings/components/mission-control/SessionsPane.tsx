@@ -21,7 +21,9 @@ import {
 import { sessionRowView } from './recapModel'
 import { useVirtualList } from './useVirtualList'
 import { useNow } from './useNow'
-import { SessionRow } from './sessions/SessionRow'
+import { SessionRow, collapsedLines } from './sessions/SessionRow'
+import { isLongText } from './sessions/ExpandedCard'
+import { timelineHeight } from './sessions/SessionTimeline'
 import {
   ResumeDeviceMenu,
   type ResumeDevice,
@@ -52,8 +54,13 @@ export { SessionRow } from './sessions/SessionRow'
 // sort / group runs client-side, and the list is virtualized (fixed-offset
 // windowing below), so hundreds of rows render like twenty.
 
-export const ROW_H = 146
-const ROW_EXPANDED_EXTRA = 56
+// A collapsed row is sized from the lines it actually renders: padding, title line,
+// optional now-line / You / Agent lines, and the chip row. A fixed height left a
+// blank block under every row that had fewer lines than the tallest one.
+const ROW_PAD_H = 25
+const TITLE_H = 23
+const LINE_H = 22
+const META_H = 32
 const HEADER_H = 32
 const OVERSCAN = 4
 
@@ -85,18 +92,30 @@ type VItem =
   | { kind: 'header'; section: SessionSection; height: number; key: string }
   | { kind: 'row'; agent: FloorAgent; section: SessionSection; height: number; key: string }
 
-function rowHeight(agent: FloorAgent, expanded: boolean, ask: string): number {
-  if (!expanded) return ROW_H
-  // The detail card: the ask (quoted prompt, capped), the activity bar + legend,
-  // the checklist (one line per todo), and the catch-up link row. Estimate each so
-  // the virtual list reserves enough space without clipping.
-  const askLines = Math.min(8, Math.max(1, ask.split(/\n/).length + Math.ceil(ask.length / 88)))
-  const askH = 34 + askLines * 18            // caption + goal + quoted block
-  const activityH = 58                        // caption + bar + legend + span
+export function rowHeight(agent: FloorAgent, expanded: boolean): number {
+  const row = sessionRowView(agent)
+  const lines = collapsedLines(agent, row)
+  const collapsed = ROW_PAD_H + TITLE_H + META_H + LINE_H * [lines.now, lines.you, lines.agent].filter(Boolean).length
+  if (!expanded) return collapsed
+  // The detail card: request, latest reply, timeline, activity or ended-session meta,
+  // checklist, and the catch-up links. Estimate each so the virtual list reserves
+  // enough space without clipping.
+  const ask = agent.firstUserMessage?.trim() ? agent.firstUserMessage : (row.you.text || agent.prompt || '')
+  const textH = (text: string) => {
+    if (!text) return 0
+    const wrapped = text.split(/\n/).reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 88)), 0)
+    const textLines = Math.min(isLongText(text) ? 5 : 8, wrapped)
+    return 30 + textLines * 18 + (isLongText(text) ? 20 : 0)
+  }
+  const askH = textH(ask) + (row.title && row.title.trim() !== ask.trim() ? 20 : 0)
+  const replyH = textH(row.lastFull)
+  const tlH = timelineHeight(agent.timeline)
+  const statusH = isPrevious(agent) ? 50 : (agent.recent?.length ?? 0) > 0 ? 70 : 0
   const todos = agent.todos ?? []
   const todoH = todos.length > 0 ? 22 + todos.length * 20 : 0
-  const catchH = 40                           // caption + link row
-  return ROW_H + ROW_EXPANDED_EXTRA + askH + activityH + todoH + catchH
+  const catchH = 44
+  const gaps = 12 * [askH, replyH, tlH, statusH, todoH, catchH].filter(Boolean).length
+  return collapsed + 10 + askH + replyH + tlH + statusH + todoH + catchH + gaps
 }
 
 const SORT_OPTS: { value: SessionSort; label: string }[] = [
@@ -185,9 +204,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
     for (const s of sections) {
       out.push({ kind: 'header', section: s, height: HEADER_H, key: `h:${s.key}` })
       for (const a of s.agents) {
-        const open = expanded.has(a.id)
-        const ask = open ? sessionRowView(a).you.text : ''
-        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, open, ask), key: a.id })
+        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, expanded.has(a.id)), key: a.id })
       }
     }
     return out

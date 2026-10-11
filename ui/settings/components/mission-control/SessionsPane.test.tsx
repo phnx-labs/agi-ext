@@ -28,10 +28,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { FloorAgent } from './floorModel'
 
 const SESSION_ROW_CSS = await Bun.file(new URL('./floor.css', import.meta.url)).text()
-const { SessionRow, SessionsPane, ROW_H } = await import('./SessionsPane')
+const { SessionRow, SessionsPane, rowHeight } = await import('./SessionsPane')
 const { ResumeDeviceMenu } = await import('./sessions/ResumeDeviceMenu')
 
 const noop = () => {}
+const READ_CALL = { name: 'Read', input: { file_path: '/repo/src/a.ts' }, timestamp: '2026-08-23T11:59:00Z' }
 
 function agent(over: Partial<FloorAgent> = {}): FloorAgent {
   return {
@@ -114,7 +115,10 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('PR #418')
     expect(html).toContain('▪ svatlas')
     expect(html).not.toContain('sx-chip device')
-    expect(html).not.toContain('yosemite-s1')
+    // The device is shown exactly once, in the row header.
+    const where = '<span class="sx-where" title="yosemite-s1"><b>yosemite-s1</b></span>'
+    expect(html).toContain(where)
+    expect(html.replace(where, '')).not.toContain('yosemite-s1')
     // a live session is always resumable
     expect(html).toContain('class="sx-resumelabel">Resume</span>')
     expect(html).not.toContain('sx-viewbtn')
@@ -177,10 +181,11 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('phnx-3939-worker-preview')
   })
 
-  test('clicking a row expands into the full detail card (request / activity / catch up)', () => {
-    const html = renderToStaticMarkup(<SessionRow agent={agent({ firstUserMessage: 'The real first user turn, in full.' })} {...rowProps} expanded />)
+  test('clicking a row expands into the full detail card (request / reply / activity / catch up)', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent({ firstUserMessage: 'The real first user turn, in full.', recent: [READ_CALL] })} {...rowProps} expanded />)
     expect(html).toContain('sx-detail')
     expect(html).toContain('Your request')
+    expect(html).toContain('Latest reply')
     expect(html).toContain('Activity')
     expect(html).toContain('Catch up')
     expect(html).toContain('The real first user turn, in full.')
@@ -431,7 +436,7 @@ describe('SessionsPane', () => {
   })
 
   test('virtual row CSS keeps the declared height and clips long content to the viewport', () => {
-    expect(ROW_H).toBe(146)
+    expect(rowHeight(agent(), false)).toBeGreaterThan(0)
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-row {')
     expect(SESSION_ROW_CSS).toContain('box-sizing: border-box; width: 100%;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-rolebody { min-width: 0; flex: 1;')
@@ -504,15 +509,21 @@ describe('SessionsPane', () => {
     const html = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'ended1' })} {...rowProps} expanded />)
     expect(html).toContain('Ended session')
     expect(html).toContain('sx-endedmeta')
-    expect(html).toContain('Ran &lt;1m · ended 2d ago · Runs on <b>yosemite-s0</b>')
+    expect(html).toContain('Ran &lt;1m · ended 2d ago</div>')
     expect(html).toContain('title="Aug 23, 12:00 PM"')
     expect(html).not.toContain('sx-actbar')
   })
 
-  test('a LIVE row keeps the activity bar and never shows the ended meta line', () => {
-    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
+  test('a LIVE row with tool calls keeps the activity bar and never shows the ended meta line', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent({ recent: [READ_CALL] })} {...rowProps} expanded />)
     expect(html).toContain('sx-actbar')
     expect(html).toContain('Activity')
+    expect(html).not.toContain('sx-endedmeta')
+  })
+
+  test('a LIVE row without tool calls shows no activity bar instead of a fake all-idle one', () => {
+    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
+    expect(html).not.toContain('sx-actbar')
     expect(html).not.toContain('sx-endedmeta')
   })
 
