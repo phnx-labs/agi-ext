@@ -1,3 +1,5 @@
+import * as path from 'path';
+
 interface DisplayPathOptions {
   cwd?: string;
   home?: string;
@@ -32,4 +34,10 @@ export function displayPath(file: string, { cwd, home, isRemote = false, hostHom
   const left = Math.ceil((budget - 1) / 2);
   const right = Math.floor((budget - 1) / 2);
   return directory.slice(0, left) + '…' + (right ? directory.slice(-right) : '') + '/' + basename;
+}
+
+/** True when `filePath` resolves strictly inside `dir` (not `dir` itself). */
+export function isInside(filePath: string, dir: string): boolean {
+  const rel = path.relative(dir, path.resolve(filePath));
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
 }

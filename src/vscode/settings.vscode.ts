@@ -74,9 +74,8 @@ import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '.
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, isLocalHost, remoteDeviceArg } from './remoteSessions.vscode';
-import { sessionCardFields } from '../core/sessionCardFields';
-import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
-import type { RemoteSession } from '../core/remoteSessions';
+import { runSessionCardAction, withSessionCards } from './sessionCardActions';
+import { getWebviewContent, webviewLocalResourceRoots } from './settingsWebview';
 import { rankRepos } from '../core/repoIndex';
 import { detectProjects } from '../core/projectDetect';
 import { getSyncStatus } from '../core/repoSync';
@@ -860,15 +859,6 @@ function resolveEditorPath(pathValue: string): string | null {
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspacePath) return null;
   return path.join(workspacePath, pathValue);
-}
-
-function webviewLocalResourceRoots(context: vscode.ExtensionContext): vscode.Uri[] {
-  return [
-    vscode.Uri.joinPath(context.extensionUri, 'out', 'ui'),
-    vscode.Uri.joinPath(context.extensionUri, 'assets'),
-    vscode.Uri.file(path.join(homedir(), '.agents', '.history', 'attachments')),
-    vscode.Uri.file(path.join(homedir(), '.agents', '.cache')),
-  ];
 }
 
 function withAttachmentThumbnailUris(rows: terminals.TerminalDetail[]): terminals.TerminalDetail[] {
@@ -2128,7 +2118,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         settingsPanel?.webview.postMessage({ type: 'sessionsData', sessions });
         break;
       case 'sessionCardAction':
-        await runSessionCardAction(message);
+        await runSessionCardAction(message, sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), (m) => settingsPanel?.webview.postMessage(m));
         break;
       case 'fetchHostSessions': {
         try {
@@ -2155,7 +2145,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           settingsPanel?.webview.postMessage({
             type: 'hostSessions',
             hosts,
-            sessions: withSessionCards(hostSessions),
+            sessions: withSessionCards(hostSessions, settingsPanel?.webview),
             groups,
             fetchedAt,
             hostFreshness,
@@ -2187,7 +2177,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           ).filter((session) => session.host === LOCAL_LABEL);
           settingsPanel?.webview.postMessage({
             type: 'localSessions',
-            sessions: withSessionCards(localSessions),
+            sessions: withSessionCards(localSessions, settingsPanel?.webview),
             fetchedAt,
             fromCache: false,
             activity: sessionPresentationStore.activityEvents(),
@@ -3529,106 +3519,3 @@ async function maybeUpdateTerminalTitles(oldSettings: AgentSettings, newSettings
   }
 }
 
-// Generate webview HTML content
-/** The fields the Fleet card's shared session cards read beside the row's own
- *  (src/core/sessionCardFields.ts), the same ones the sidebar builds. */
-function withSessionCards(sessions: RemoteSession[]): Array<RemoteSession & { card: ReturnType<typeof sessionCardFields> }> {
-  const webview = settingsPanel?.webview;
-  return sessions.map((session) => ({
-    ...session,
-    card: sessionCardFields(session, {
-      sessionId: session.sessionId, home: homedir(), remoteDevice: remoteDeviceArg(session.host),
-      previewUri: webview ? (p) => webview.asWebviewUri(vscode.Uri.file(p)).toString() : undefined,
-    }),
-  }));
-}
-
-/** A click inside a Fleet card's shared session cards, for the session it names. */
-async function runSessionCardAction(message: { sessionId?: unknown; host?: unknown; action?: { type?: unknown; path?: unknown; url?: unknown; role?: unknown } }): Promise<void> {
-  const action = message.action;
-  if (!action || typeof message.sessionId !== 'string') return;
-  const sessionId = message.sessionId;
-  const live = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
-    .find((session) => session.sessionId === sessionId && session.host === message.host);
-  const reply = (role: string, body: { items?: unknown[]; error?: string }) =>
-    settingsPanel?.webview.postMessage({ type: 'timelineFilter', role, sessionId, ...body });
-  switch (action.type) {
-    case 'openArtifact': {
-      if (!live || typeof action.path !== 'string') return;
-      const card = sessionCardFields(live, { sessionId, home: homedir(), remoteDevice: remoteDeviceArg(live.host) });
-      const named = card.artifacts.some((a) => a.path === action.path) || card.plan?.path === action.path;
-      await openSessionArtifact(action.path, live.host, named);
-      return;
-    }
-    case 'loadTimelineFilter': {
-      const role = typeof action.role === 'string' ? action.role : '';
-      if (!VERB_FILTER_ROLES.has(role)) { reply(role, { error: 'That filter is not available.' }); return; }
-      if (!live) { reply(role, { error: 'The session left the stream before the filter loaded.' }); return; }
-      if (remoteDeviceArg(live.host)) { reply(role, { error: 'This session is on another machine.' }); return; }
-      reply(role, await fetchTimelineFilter(role, sessionId));
-      return;
-    }
-    case 'revealCwd':
-      if (live && !remoteDeviceArg(live.host) && typeof action.path === 'string') {
-        void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(action.path));
-      }
-      return;
-    case 'openUrl':
-      if (typeof action.url === 'string') openExternalUrl(action.url);
-      return;
-  }
-}
-
-function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'out', 'ui', 'settings', 'main.js'));
-  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'out', 'ui', 'settings', 'main.css'));
-
-  // Get asset URIs for icons
-  const claudeIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'claude.png'));
-  const codexIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'chatgpt.png'));
-  const codexIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'chatgpt-light.png'));
-  const opencodeIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'opencode.png'));
-  const cursorIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'cursor.png'));
-  const cursorIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'cursor-light.png'));
-  const agentsIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'agents.png'));
-  const githubIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'github.png'));
-  const antigravityIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'antigravity.png'));
-  const grokIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'grok.png'));
-  const grokIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'grok-light.png'));
-  const kimiIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'kimi.png'));
-  const droidIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'droid.png'));
-  const droidIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'droid-light.png'));
-  const fontJost = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'fonts', 'jost-var.woff2'));
-  const fontInter = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'fonts', 'InterVariable.woff2'));
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="${styleUri}">
-  <script>
-    // Inject icon paths for the React app
-    window.__ICONS__ = {
-      claude: "${claudeIcon}",
-      codex: { dark: "${codexIcon}", light: "${codexIconLight}" },
-      opencode: "${opencodeIcon}",
-      cursor: { dark: "${cursorIcon}", light: "${cursorIconLight}" },
-      shell: "${agentsIcon}",
-      agents: "${agentsIcon}",
-      github: "${githubIcon}",
-      antigravity: "${antigravityIcon}",
-      grok: { dark: "${grokIcon}", light: "${grokIconLight}" },
-      kimi: "${kimiIcon}",
-      droid: { dark: "${droidIcon}", light: "${droidIconLight}" }
-    };
-    // The session panel faces, for the shared session cards in an expanded row.
-    window.__SESSION_FONTS__ = { jost: "${fontJost}", inter: "${fontInter}" };
-  </script>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="${scriptUri}"></script>
-</body>
-</html>`;
-}

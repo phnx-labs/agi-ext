@@ -23,12 +23,18 @@ export interface SessionRowProps {
   onResumeContext?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
   /** Open the assign-project menu for this row. Absent -> no assign affordance. */
   onAssignProject?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
-  /** Reports an expanded row's rendered height, so the list reserves exactly that. */
-  onMeasure?: (id: string, height: number) => void
+  /** Reports the row's rendered height (collapsed or expanded), so the list
+   *  reserves exactly that: wrapped chips or a long detail card never clip. */
+  onMeasure?: (key: string, height: number) => void
 }
 
 // The row's vertical padding plus its bottom border (floor.css .sx-row).
 const ROW_CHROME_H = 25
+
+/** One measurement per row and state: collapsing must not reuse the open height. */
+export function measureKey(id: string, expanded: boolean): string {
+  return expanded ? `${id}:open` : id
+}
 
 function PromptChips({ you }: { you: SessionRowView['you'] }) {
   if (you.kind === 'image') return <><span className="sx-imgchip">{'🖼'} screenshot</span>{you.text}</>
@@ -59,8 +65,9 @@ function SessionRowImpl({
   const growRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     const grow = growRef.current
-    if (!expanded || !onMeasure || !grow || typeof ResizeObserver === 'undefined') return
-    const report = () => onMeasure(a.id, Math.ceil(grow.getBoundingClientRect().height) + ROW_CHROME_H)
+    if (!onMeasure || !grow || typeof ResizeObserver === 'undefined') return
+    const key = measureKey(a.id, expanded)
+    const report = () => onMeasure(key, Math.ceil(grow.getBoundingClientRect().height) + ROW_CHROME_H)
     const watch = new ResizeObserver(report)
     watch.observe(grow)
     return () => watch.disconnect()

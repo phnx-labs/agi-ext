@@ -655,6 +655,21 @@ function renderArtifactsSummary(items) {
     (newest ? '<span class="art-time">newest ' + esc(relTime(newest)) + '</span>' : '') + '</button>';
 }
 
+// Stream updates re-render the cards; a strip the viewer scrolled stays put.
+// A surface calls saveStripScroll before replacing root's HTML, then restores.
+function saveStripScroll() {
+  const at = {};
+  for (const el of root.querySelectorAll('[data-strip]')) at[el.getAttribute('data-strip')] = [el.scrollLeft, el.scrollTop];
+  return at;
+}
+
+function restoreStripScroll(saved) {
+  for (const el of root.querySelectorAll('[data-strip]')) {
+    const at = saved[el.getAttribute('data-strip')];
+    if (at) { el.scrollLeft = at[0]; el.scrollTop = at[1]; }
+  }
+}
+
 // Wires the timeline and artifact cards rendered into root: their thumbnails,
 // filters, phases, seek bar, step folds and links. Reads the surface's own
 // root, viewState, vscode, lastSnapshot and render.
@@ -772,18 +787,24 @@ function bindSessionCards() {
 }
 `;
 
+/** The panel faces. A shadow root ignores @font-face, so a surface hosting the
+ *  cards in one declares these on its document instead. */
+export function sessionPanelFontFaces(fontJost: string, fontInter: string): string {
+  return `  @font-face { font-family: 'Jost'; src: url('${fontJost}') format('woff2'); font-weight: 100 900; font-display: swap; }
+  @font-face { font-family: 'Inter'; src: url('${fontInter}') format('woff2'); font-weight: 100 900; font-display: swap; }
+`;
+}
+
 /** The session panel stylesheet: Rush register tokens, cards, timeline, gallery.
  *  Tokens hang off `body` and its VS Code theme class, so a surface that hosts the
  *  cards in a shadow root gives them a `body` element carrying that class. */
-export function sessionPanelCss(fontJost: string, fontInter: string): string {
+export function sessionPanelCss(fontFaces: string): string {
   return `  /* ── Rush register tokens (rush/DESIGN.md, Day and Altitude) ─────────────
      The ONLY block allowed to hold a color literal; every rule below reads these.
      Dark editor = Altitude (white glass, zinc type), light editor = Day (ivory
      glass, ink type). High-contrast themes keep VS Code's own colors. Gold is the
      one accent: the primary action only. Status stays small: dots, badges, text. */
-  @font-face { font-family: 'Jost'; src: url('${fontJost}') format('woff2'); font-weight: 100 900; font-display: swap; }
-  @font-face { font-family: 'Inter'; src: url('${fontInter}') format('woff2'); font-weight: 100 900; font-display: swap; }
-  body {
+${fontFaces}  body {
     --r-display: 'Jost', Futura, 'Century Gothic', var(--vscode-font-family), sans-serif;
     --r-sans: 'Inter', var(--vscode-font-family), system-ui, sans-serif;
     --r-mono: var(--vscode-editor-font-family, ui-monospace), ui-monospace, monospace;

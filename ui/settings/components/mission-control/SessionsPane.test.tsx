@@ -436,7 +436,11 @@ describe('SessionsPane', () => {
   })
 
   test('virtual row CSS keeps the declared height and clips long content to the viewport', () => {
-    expect(rowHeight(agent(), false)).toBeGreaterThan(0)
+    // Padding 25 + title 23 + chips 32, plus 22 per optional line (now, You, Agent).
+    expect(rowHeight(agent({ firstUserMessage: 'ask', summary: 'Editing the hero' }), false)).toBe(146)
+    expect(rowHeight(agent({ resp: '', firstUserMessage: undefined, prompt: undefined, topic: undefined }), false)).toBe(80)
+    // A rendered row's reported height wins over the estimate, collapsed or open.
+    expect(rowHeight(agent(), false, 171)).toBe(171)
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-row {')
     expect(SESSION_ROW_CSS).toContain('box-sizing: border-box; width: 100%;')
     expect(SESSION_ROW_CSS).toContain('.sw-sessions .sx-rolebody { min-width: 0; flex: 1;')

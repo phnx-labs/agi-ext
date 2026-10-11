@@ -364,3 +364,36 @@ describe('sessionRowView adapter seam', () => {
     expect(harnessLabel('CX')).toBe('Codex ›')
   })
 })
+
+describe('sessionRowView latest turns, agent words, folder', () => {
+  const step = (text: string, source: 'narration' | 'thinking' | 'derived' | 'user') => ({ text, at: '2026-10-10T00:00:00Z', source, tools: 0, failed: 0, blocked: 0 })
+
+  test('You is the latest user turn, then the latest request, then the first turn', () => {
+    const turns = [{ atMs: 1, text: 'first ask' }, { atMs: 2, text: 'latest ask' }]
+    expect(sessionRowView(floor({ userTurns: turns, latestRequest: 'request text', firstUserMessage: 'first ask' })).you.text).toBe('latest ask')
+    expect(sessionRowView(floor({ latestRequest: 'request text', firstUserMessage: 'first ask' })).you.text).toBe('request text')
+    const firstOnly = sessionRowView(floor({ prompt: undefined, firstUserMessage: 'first ask' }))
+    expect(firstOnly.you.text).toBe('first ask')
+    expect(firstOnly.youIsReal).toBe(true)
+  })
+
+  test('a synthesized label is never presented as your words', () => {
+    const row = sessionRowView(floor({ prompt: undefined, firstUserMessage: undefined, topic: 'Worktree slug label' }))
+    expect(row.youIsReal).toBe(false)
+  })
+
+  test('the agent line is the agent\'s own words, never the task label', () => {
+    const noReply = floor({ resp: '', messages: [], summary: 'Task anchor that must not appear' })
+    expect(sessionRowView(noReply).lastFull).toBe('')
+    const fromTimeline = floor({ resp: '', timeline: { steps: [step('Ran 2 commands', 'derived'), step('I fixed the guard.', 'narration'), step('why?', 'user')], earlier: { steps: 0, tools: 0, failed: 0 }, state: 'ready' } })
+    expect(sessionRowView(fromTimeline).lastFull).toBe('I fixed the guard.')
+    expect(sessionRowView(floor({ resp: 'The reply.\nSecond line.' })).lastLine).toBe(quoteAgentLine('The reply.'))
+  })
+
+  test('folder is the short cwd, with the full path kept for the tooltip', () => {
+    const row = sessionRowView(floor({ cwd: '/home/muqsit/src/github.com/acme/atlas' }))
+    expect(row.folder).toBe('~/…/acme/atlas')
+    expect(row.folderFull).toBe('/home/muqsit/src/github.com/acme/atlas')
+    expect(sessionRowView(floor()).folder).toBe('')
+  })
+})

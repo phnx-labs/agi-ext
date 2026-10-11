@@ -32,7 +32,7 @@ src/core     pure presentation logic, no vscode import
 src/monitor  stream leader, demand gate, broadcast, readiness (debt)
 src/vscode   commands, terminals, sidebar, webview/watchdog bridges, URI handler
 src/mcp      watchdog wire protocol + MCP server loaded by path
-src/shared   re-exports ui/ imports through the @shared alias
+src/shared   code both the host and ui/ import (@shared alias), e.g. sessionCards.ts
 ui/settings  Fleet dashboard (React); ui/editor  Reader custom editors
 scripts/     build.sh / install.sh / release.sh: the only entry points
 ```
@@ -63,6 +63,11 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
   names for a remote session copies that one file into
   `~/.agents/.cache/remote-artifacts/<device>/` with one `agents ssh <device> --argv`
   call (`localArtifactUri`); any other path, or one that leaves that folder, is refused.
+  Both exceptions are the same in an expanded Fleet row, which draws the sidebar's own
+  Timeline and Artifacts cards (`src/shared/sessionCards.ts`): a click posts
+  `sessionCardAction` naming its session id and host, and `runSessionCardAction`
+  (`src/vscode/sessionCardActions.ts`) loads a filter only for a local session and copies
+  only an artifact that row lists. Nothing loads on expand.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
 - Fleet is a list, the sidebar is the one preview: a row click posts `session.select` and
