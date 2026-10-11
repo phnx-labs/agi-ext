@@ -1181,7 +1181,7 @@ function renderNeedsYou(s) {
 // The word comes from the host (sessionStateOf, src/shared/sessionState.ts) so the
 // sidebar, the Project panel and Fleet say the same thing for the same row.
 function sessionState(s) {
-  const st = s.state || { key: 'yours', word: 'Your turn' };
+  const st = s.state || { key: 'unknown', word: 'Unknown' };
   const cls = st.key === 'asks' ? 'waiting' : st.key === 'working' ? 'running' : st.key === 'stopped' ? 'failed' : 'idle';
   return { cls, word: st.word };
 }
