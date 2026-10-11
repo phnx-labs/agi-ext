@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.393] - 2026-10-11
 
 - The Project sidebar's Sessions tab groups a session open in another VSCodium window under
   that window's workspace (`svatlas`, `agents-cli`) even when agents-cli does not name the tab.
