@@ -1,48 +1,52 @@
 /**
- * VS Code surface for waiting/approval notifications (RUSH-2039).
- *
- * Bridges the Floor's `waitingForInput` signal (which now fires for Codex
- * approval prompts via the PermissionRequest feed hook) to a native VS Code
- * notification with a "Focus terminal" action. Edge-triggered via
- * detectNewlyWaiting so a session pages once per wait, not every 10s poll.
+ * Approval alerts (RUSH-2039): a session with a tab in this window that starts
+ * needing you pages once per wait. Driven by the session stream (extension.ts
+ * calls this on every applied fact), gated on `notifications.enabled`, and drawn
+ * in the style the user picked: an OS notification or an editor toast with a
+ * "Focus terminal" action.
  */
 import * as vscode from 'vscode';
+import { execFile } from 'child_process';
 import * as terminals from './terminals.vscode';
-import {
-  detectNewlyWaiting,
-  formatWaitingMessage,
-  type WaitingSessionInput,
-} from '../core/waitingNotifier';
+import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { sessionStateOf } from '../shared/sessionState';
+import type { NotificationSettings } from '../core/settings';
+import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
+import { detectNewlyWaiting, formatWaitingMessage, type NewlyWaiting } from '../core/waitingNotifier';
 
-// Session ids that were waiting at the previous poll — the edge-detection state.
+// Session ids that needed you at the previous fact: the edge-detection state.
 let waitingSessions = new Set<string>();
 
 const FOCUS_ACTION = 'Focus terminal';
 
-/**
- * Called once per floor poll with the current terminal details. Fires a
- * notification for each session that just entered the waiting state.
- */
-export function notifyNewlyWaiting(current: readonly terminals.TerminalDetail[]): void {
-  const inputs: WaitingSessionInput[] = current.map((t) => ({
-    sessionId: t.sessionId,
-    agentType: t.agentType,
-    label: t.label ?? t.autoLabel ?? null,
-    waitingForInput: t.waitingForInput,
-  }));
-
-  const { newlyWaiting, nextWaiting } = detectNewlyWaiting(waitingSessions, inputs);
+/** Called on each applied stream fact. Edges are tracked while alerts are off too,
+ *  so turning them on does not page for sessions already waiting. The settings are
+ *  read only when a session starts waiting, not on every fact.
+ *  @public loaded with require('./waitingNotifier.vscode') in extension.ts, which knip cannot see */
+export function notifyNewlyWaiting(readPrefs: () => NotificationSettings | undefined): void {
+  const rows = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
+    .filter((r) => terminals.getBySessionId(r.sessionId))
+    .map((r) => ({ sessionId: r.sessionId, agentType: r.agentType, label: r.title || r.label || null, waitingForInput: sessionStateOf(r) === 'asks' }));
+  const { newlyWaiting, nextWaiting } = detectNewlyWaiting(waitingSessions, rows);
   waitingSessions = nextWaiting;
+  if (newlyWaiting.length === 0) return;
+  const prefs = readPrefs();
+  if (!prefs?.enabled) return;
+  for (const s of newlyWaiting) alert(s, prefs.style);
+}
 
-  for (const s of newlyWaiting) {
-    const message = formatWaitingMessage(s);
-    // Non-blocking: the reveal fires from the button, the poll loop never waits.
-    void vscode.window.showInformationMessage(message, FOCUS_ACTION).then((choice) => {
-      if (choice !== FOCUS_ACTION) return;
-      const entry = terminals.getBySessionId(s.sessionId);
-      if (entry) {
-        entry.terminal.show(true);
-      }
-    });
+function alert(s: NewlyWaiting, style: NotificationSettings['style']): void {
+  const message = formatWaitingMessage(s);
+  if (style === 'native' && process.platform === 'darwin') {
+    execFile('osascript', ['-e', 'on run argv', '-e', 'display notification (item 1 of argv) with title "AGI EXT"', '-e', 'end run', message], () => undefined);
+    return;
   }
+  if (style === 'native' && process.platform === 'linux') {
+    execFile('notify-send', ['AGI EXT', message], () => undefined);
+    return;
+  }
+  void vscode.window.showInformationMessage(message, FOCUS_ACTION).then((choice) => {
+    if (choice !== FOCUS_ACTION) return;
+    terminals.getBySessionId(s.sessionId)?.terminal.show(true);
+  });
 }

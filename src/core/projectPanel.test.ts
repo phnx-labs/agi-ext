@@ -68,7 +68,7 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(groups.map((g) => g.state)).toEqual(['Doing', 'Todo', 'Backlog'])
   expect(groups[1].tickets.map((t) => t.identifier)).toEqual(['A-4', 'A-2'])
   expect(groups[0].tickets[0]).toMatchObject({ owner: 'Claude', milestone: 'Ship B' })
-  expect(renderTickets(groups)).toContain('data-url="https://linear.app/x/A-3"')
+  expect(renderTickets(groups)).toContain('data-ticket="A-3"')
 })
 
 test('tickets render escapes titles from the tracker', () => {
@@ -214,7 +214,7 @@ test('show, hide and fold: leftover tabs and ended sessions follow Show, a hidde
   expect(draw({})).toContain('data-session="left"')
   expect(draw({})).not.toContain('data-session="ended"')
   expect(draw({ showLeftover: false, showEnded: true })).not.toContain('data-session="left"')
-  expect(draw({ showEnded: true })).toContain('data-session="ended"')
+  expect(draw({ folded: [] })).toContain('data-session="ended"')
   expect(draw({ hidden: { live: 50 } })).not.toContain('data-session="live"')
   expect(draw({ hidden: { live: 40 } })).toContain('data-session="live"')
   const folded = draw({ folded: ['here'] })
@@ -248,10 +248,29 @@ test('what the agent made groups by folder; only images this machine can show ge
   expect(made.ticket).toBe('PHNX-1')
 })
 
-test('stored preferences keep only values this version knows', () => {
+test('stored preferences keep only values this version knows; older ones get Ended shown and folded', () => {
   expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' } }))
     .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', showEnded: true, folded: ['here'], hidden: { a: 5 } })
   expect(readSessionPrefs(undefined)).toEqual(DEFAULT_SESSION_PREFS)
+  // Before v2, Ended off was the old default, not a choice.
+  expect(readSessionPrefs({ group: 'app', showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended'], v: 2 })
+  expect(readSessionPrefs({ showEnded: false, folded: [], v: 2 })).toMatchObject({ showEnded: false, folded: [] })
+})
+
+test('a card leads with its harness logo and ends its meta line with the model the CLI reported', () => {
+  const html = card(row({ agentType: 'claude', model: 'claude-opus-5-5' }))
+  expect(html).toContain('<div class="top"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i><span class="ttl">')
+  expect(html).toMatch(/<span class="where">[^<]*<\/span><span class="mdl" title="claude-opus-5-5">opus-5-5<\/span><\/div>/)
+  const bare = card(row({ agentType: 'amp' }))
+  expect(bare).not.toContain('class="hx')
+  expect(bare).not.toContain('class="mdl"')
+})
+
+test('needs you orders by the CLI attention kind: a question before a permission before a stall', () => {
+  const ask = (id: string, kind: string, ms: number) => row({ sessionId: id, phase: 'waiting', liveStatus: 'input_required', lastActivityMs: ms, attention: { kind, state: 'open' } })
+  const html = renderSessions([ask('stall', 'stall', 3), ask('perm', 'permission', 2), ask('q', 'question', 1)], NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  const at = (id: string) => html.indexOf(`data-session="${id}"`)
+  expect([at('q'), at('perm'), at('stall')]).toEqual([at('q'), at('perm'), at('stall')].sort((x, y) => x - y))
 })
 
 test('one row per session: a live row wins over its ended or previous twin', () => {

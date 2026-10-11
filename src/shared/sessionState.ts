@@ -41,3 +41,25 @@ export function sessionStateOf(s: SessionStateFacts): SessionStateKey {
   if (status === 'unknown') return 'unknown';
   return 'yours';
 }
+
+/** Why the CLI raised an attention row, carried verbatim from the stream
+ *  (`RemoteAttention.kind`). The extension classifies nothing. */
+export type AttentionKind = 'question' | 'permission' | 'plan_review' | 'declared' | 'failure' | 'stall' | 'review';
+
+/** Needs-you order on every surface: an interactive hand-back (question, permission,
+ *  plan_review, declared) leads, then a hard failure, a stall the CLI detected, and a
+ *  review request. */
+export const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
+  question: 0,
+  permission: 1,
+  plan_review: 2,
+  declared: 3,
+  failure: 4,
+  stall: 5,
+  review: 6,
+};
+
+/** A kind's rank; a kind this version does not know, or none, sorts last. */
+export function attentionRank(kind: string | undefined | null): number {
+  return kind && kind in ATTENTION_KIND_RANK ? ATTENTION_KIND_RANK[kind as AttentionKind] : Number.MAX_SAFE_INTEGER;
+}

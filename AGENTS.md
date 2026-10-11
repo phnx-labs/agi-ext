@@ -70,6 +70,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   `sessionCardAction` naming its session id and host, and `runSessionCardAction`
   (`src/vscode/sessionCardActions.ts`) loads a filter only for a local session and copies
   only an artifact that row lists. Nothing loads on expand.
+  A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
+  `linear tasks <ID> --json` (`ProjectPanelController.ticketDetail`), on the click only, never
+  on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
 - Fleet is a list, the sidebar is the one preview: a row click posts `session.select` and
@@ -85,7 +88,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
 - Closing a tab sends `agents sessions stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.
-- Needs-you order is `ATTENTION_KIND_RANK` in `ui/settings/components/mission-control/floorModel.ts`;
+- Needs-you order is `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts`;
   a stall is a CLI signal, `FloorPhase` has no `stalled` member.
 - Project attribution uses only row hints through `matchLinearProject`
   (`src/shared/linearProjects.ts`); no hint means the labeled Unassigned bucket, never a guess.

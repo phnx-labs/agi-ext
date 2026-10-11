@@ -25,6 +25,7 @@ export type { RecentEvent, RecentToolCall }
 // longer resolve differently on each side of the postMessage boundary. Re-exported
 // so existing importers (e.g. floorAdapter) keep their `from './floorModel'` path.
 import { resolveProject, worktreeSlugOf } from '@shared/project'
+import { attentionRank, type AttentionKind } from '@shared/sessionState'
 import { UNASSIGNED_LABEL } from './sessionProjects'
 export { resolveProject, worktreeSlugOf }
 
@@ -39,22 +40,6 @@ export { resolveProject, worktreeSlugOf }
  * one-to-one so a session cannot present a phase the CLI never reported.
  */
 export type FloorPhase = 'running' | 'idle' | 'waiting' | 'failed' | 'done'
-
-/**
- * Why the CLI raised an attention row for a session, carried verbatim from the stream
- * (`RemoteAttention.kind`). The needs-you surface's membership, per-row reason, and
- * ORDER all key off this — the extension classifies nothing. Ordering priority is
- * `ATTENTION_KIND_RANK`: question → permission → plan_review → declared → failure →
- * stall → review.
- */
-export type AttentionKind =
-  | 'question'
-  | 'permission'
-  | 'plan_review'
-  | 'declared'
-  | 'failure'
-  | 'stall'
-  | 'review'
 
 /** Terminal-tab prefix per agent CLI (ui utils is the reference map). */
 export type AgentAbbr = 'CC' | 'CX' | 'CR' | 'AG' | 'GK' | 'KM' | 'DR' | 'OC' | 'SH'
@@ -623,21 +608,6 @@ export const PHASE_PROGRESS_RANK: Record<FloorPhase, number> = {
   done: 4,
 }
 
-/** Needs-you ordering, sourced entirely from the CLI attention row's `kind`. The
- *  extension classifies nothing: an explicit interactive hand-back (question →
- *  permission → plan_review → declared) leads, then a hard failure, then a genuine
- *  stall the CLI detected, then a review request. This is the ONLY ranker the
- *  needs-you surface sorts on. */
-export const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
-  question: 0,
-  permission: 1,
-  plan_review: 2,
-  declared: 3,
-  failure: 4,
-  stall: 5,
-  review: 6,
-}
-
 /** Prototype: factory-floor.html:396. */
 const PRI_RANK: Record<TicketPriority, number> = {
   urgent: 0,
@@ -926,12 +896,6 @@ export function groupAgents(agents: FloorAgent[], by: FloorGroupBy): Map<string,
   return groups
 }
 
-/** Attention priority of one agent: its CLI attention kind's rank, or last when the
- *  CLI raised no attention. The needs-you surface sorts on this alone. */
-function attentionRank(a: Pick<FloorAgent, 'attentionKind'>): number {
-  return a.attentionKind ? ATTENTION_KIND_RANK[a.attentionKind] : Number.MAX_SAFE_INTEGER
-}
-
 /**
  * Order needs-you rows by the CLI attention kind (question → permission → plan_review →
  * declared → failure → stall → review), tie-broken most-stuck-first (oldest activity)
@@ -940,7 +904,7 @@ function attentionRank(a: Pick<FloorAgent, 'attentionKind'>): number {
  */
 export function sortByAttention(agents: FloorAgent[]): FloorAgent[] {
   return [...agents].sort((a, b) => {
-    const rank = attentionRank(a) - attentionRank(b)
+    const rank = attentionRank(a.attentionKind) - attentionRank(b.attentionKind)
     if (rank !== 0) return rank
     const stuck = (a.lastActivityMs || 0) - (b.lastActivityMs || 0)
     if (stuck !== 0) return stuck

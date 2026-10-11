@@ -6,7 +6,9 @@
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
 // the provider turns that into the section's error state, never an empty list.
 
-import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { SESSION_STATE_WORD, attentionRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { BUILT_IN_AGENTS } from './agents';
+import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
 
 export interface ProjectRef {
@@ -39,7 +41,6 @@ export interface OverviewModel {
 interface Ticket {
   identifier: string;
   title: string;
-  url: string;
   priority: number;
   milestone: string | null;
   owner: string | null;
@@ -158,7 +159,6 @@ export function parseTickets(raw: string): TicketGroup[] {
     const ticket: Ticket = {
       identifier: str(d.identifier) ?? '?',
       title: str(d.title) ?? '',
-      url: str(d.url) ?? '',
       priority: num(d.priority),
       milestone: str(ms?.name),
       owner: str(delegate?.name) ?? str(assignee?.name),
@@ -221,6 +221,10 @@ export interface SessionLike {
   title: string;
   label: string;
   topic: string;
+  /** The harness the CLI reported (`claude`, `codex`, …). */
+  agentType?: string;
+  /** Model id of the latest assistant reply; absent when the CLI does not know it. */
+  model?: string;
   phase: 'running' | 'idle' | 'waiting' | 'failed' | 'done';
   liveStatus: string;
   attention?: { kind: string; state: string; question?: { text?: string } };
@@ -365,27 +369,34 @@ export interface SessionListPrefs {
   showEnded: boolean;
   folded: string[];
   hidden: Record<string, number>;
+  /** 2 once the Ended group defaults to shown and folded; older stored prefs lack it. */
+  v: 2;
 }
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: false, folded: [], hidden: {} };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: ['ended'], hidden: {}, v: 2 };
 
 const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
 const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
 
-/** A stored preference object, keeping only values this version knows. */
+/** A stored preference object, keeping only values this version knows. Prefs stored
+ *  before v2 saved Ended off as the old default, not as a choice, so they get the
+ *  new default: Ended shown and folded. Turning it on was a choice and is kept. */
 export function readSessionPrefs(v: unknown): SessionListPrefs {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const hidden: Record<string, number> = {};
   if (o.hidden && typeof o.hidden === 'object') {
     for (const [id, ms] of Object.entries(o.hidden as Record<string, unknown>)) if (typeof ms === 'number') hidden[id] = ms;
   }
+  const folded = Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [];
+  const before = o.v !== 2 && o.showEnded !== true;
   return {
     group: GROUPS.includes(o.group as SessionGroupBy) ? (o.group as SessionGroupBy) : DEFAULT_SESSION_PREFS.group,
     sort: SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort,
     showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
-    showEnded: typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
-    folded: Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [],
+    showEnded: before || (typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded),
+    folded: before && !folded.includes('ended') ? [...folded, 'ended'] : folded,
     hidden,
+    v: 2,
   };
 }
 
@@ -504,6 +515,16 @@ function placeIcon(p: SessionPlace, here: SessionHere): string {
   return glyph('terminal', 'gi');
 }
 
+const HARNESS_LOGOS = new Set(BUILT_IN_AGENTS.filter((a) => a.key !== 'shell').map((a) => a.key));
+
+/** The harness's logo, drawn by its `hx-<key>` class; nothing for a harness without one. */
+function harnessLogo(agentType: string | undefined): string {
+  const key = (agentType ?? '').toLowerCase();
+  if (!HARNESS_LOGOS.has(key)) return '';
+  const name = CLI_AGENT_META[key as CliAgentId]?.name ?? key;
+  return `<i class="hx hx-${key}" role="img" aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}"></i>`;
+}
+
 /** The one line a compact card shows: what it asks you, else the agent's latest words. */
 function cardLine(s: SessionLike, state: SessionStateKey): string {
   if (state === 'asks') return plain(s.question?.text || s.attention?.question?.text || '') || agentLine(s);
@@ -543,8 +564,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const madeBlock = (prs || ticketChip || folders.length) ? `<div class="lab">Made</div><div class="made">${prs || ticketChip ? `<div class="chips">${prs}${ticketChip}</div>` : ''}${folders.slice(0, 4).map((f) => `
       <a class="folder" href="#" data-artifact="${escapeHtml((f.files[0] ?? f.images[0]).path)}" title="${escapeHtml(f.display)}">${glyph('folder')}<span class="fx"><span><b>${escapeHtml(f.name)}/</b> · ${escapeHtml([...f.files, ...f.images].slice(0, 3).map((x) => x.name).join(', '))}${f.files.length + f.images.length > 3 ? ' …' : ''}</span><span class="fp">${escapeHtml(f.display)}</span></span></a>${f.images.length ? `<span class="thumbs">${f.images.slice(0, 3).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`).join('')}${f.images.length > 3 ? `<span class="more">+${f.images.length - 3}</span>` : ''}</span>` : ''}`).join('')}</div>` : '';
   return `<div class="card st-${state}${opts.selected ? ' sel' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-title="${escapeHtml(title)}">
-    <div class="top"><span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
-    <div class="meta"><span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span><span class="where">${escapeHtml(where)}</span></div>
+    <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
+    <div class="meta"><span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span><span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
     <div class="compact">${line ? `<div class="cline">${escapeHtml(line)}</div>` : ''}${strip ? `<div class="cstrip">${strip}</div>` : ''}</div>
     <div class="full">
       ${asked && asked !== title ? `<div class="lab">You</div><div class="line">${escapeHtml(asked)}</div>` : ''}
@@ -590,7 +611,9 @@ function menuHtml(p: SessionListPrefs): string {
 export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { here, prefs } = opts;
   const all = visibleSessions(rows, here, prefs);
-  const asks = sortRows(all.filter(({ row }) => sessionStateOf(row) === 'asks'), prefs.sort);
+  const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
+  const asks = sortRows(all.filter(({ row }) => sessionStateOf(row) === 'asks'), prefs.sort)
+    .sort((a, b) => attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
   const rest = all.filter(({ row }) => sessionStateOf(row) !== 'asks');
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null,
@@ -686,7 +709,7 @@ export function renderTickets(groups: TicketGroup[]): string {
   if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
-    <ul>${g.tickets.map((t) => `<li><a class="trow" href="#" data-url="${escapeHtml(t.url)}">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${escapeHtml(t.identifier)}${t.owner ? ` · ${escapeHtml(t.owner)}` : ''}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span></a></li>`).join('')}</ul>
+    <ul>${g.tickets.map((t) => `<li><a class="trow" href="#" data-ticket="${escapeHtml(t.identifier)}">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${escapeHtml(t.identifier)}${t.owner ? ` · ${escapeHtml(t.owner)}` : ''}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span></a></li>`).join('')}</ul>
   </details>`).join('');
 }
 
