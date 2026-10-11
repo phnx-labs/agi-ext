@@ -10,8 +10,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   an editor tab sit under In your tabs; headless runs, team members, cloud tasks and sessions
   sent to the background sit under Background with a chip naming which (from the CLI's
   `context` and `presence`). An ended session whose tab is still open in this window says
-  "tab open · agent not running", and clicking it resumes the session instead of showing the
-  leftover shell.
+  "tab open · agent not running"; clicking it closes the leftover shell and resumes the
+  session. A click always prefers a tab that is actually running the agent, even when the
+  stream still says the session ended.
 
 ## [0.9.389] - 2026-10-11
 
