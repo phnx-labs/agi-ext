@@ -9,7 +9,7 @@ commit: 1d37830cd5b430e1644daf1fe10a34d802ad0fcc
 
 ## Summary
 
-The extension has **32,616 lines of production code and 14,876 lines of tests** at `1d37830`, down from 73,157 and 31,253 at `c65ff03`, the commit before the Fleet dashboard was deleted (PHNX-4329, #126 and #127, released as 0.9.394). That is 40,541 production lines (55%) and 16,377 test lines gone in one change. No size budget has been agreed, so this report remains a baseline rather than a measurement against one.
+The extension has **32,616 lines of production code and 14,876 lines of tests** at `1d37830`, down from 73,157 and 31,247 at `c65ff03`, the commit before the Fleet dashboard was deleted (PHNX-4329, #126 and #127, released as 0.9.394). That is 40,541 production lines (55%) and 16,371 test lines gone in one change. No size budget has been agreed, so this report remains a baseline rather than a measurement against one.
 
 The extension is now one back end and two small front ends:
 
@@ -81,7 +81,6 @@ Not re-checked at `1d37830` (carried from the 2026-10-01 audit as candidates): h
 
 ### Doc drift
 
-- `AGENTS.md` still names `matchLinearProject` (`src/shared/linearProjects.ts`) as the source of project attribution; that function and file no longer exist. The Project panel uses `confirmedProject`.
 - `docs/PRD.md` and `docs/ARCH.md` were updated for the Fleet removal in the same PR as this report.
 
 ## Evidence
