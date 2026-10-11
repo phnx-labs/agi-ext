@@ -178,7 +178,10 @@ export function cliResumeOutcome(exitOk: boolean, output: string): { status: Spa
   // A failure's reason is what went wrong, not the CLI's "run this in a terminal"
   // hint: the editor surfaces it and never asks anyone to type a session id.
   const told = lines.filter((line) => !/^Resume it in this terminal\b/i.test(line));
-  if (!exitOk) return { status: 'failed', reason: told[told.length - 1] ?? last ?? 'agents sessions resume failed with no output' };
+  const reason = told[told.length - 1] ?? last ?? 'agents sessions resume failed with no output';
+  // The CLI reports a /spawn that reached a window not holding the project as a
+  // failure naming that window ("… which does not hold <project>; nothing was opened").
+  if (!exitOk) return { status: /\bwhich does not hold\b/.test(reason) ? 'wrong-window' : 'failed', reason };
   return { status: lines.some((line) => line.startsWith('Already open')) ? 'focused-existing' : 'opened', reason: last };
 }
 
@@ -191,8 +194,10 @@ export async function resumeSessionTab(
   sessionId: string,
   deps: {
     liveTab(sessionId: string): Promise<{ terminalId: string; focus(): void } | undefined>;
-    runResume(sessionId: string): Promise<{ ok: boolean; output: string }>;
+    /** `device` is the machine that owns the session, absent for this machine. */
+    runResume(sessionId: string, device: string | undefined): Promise<{ ok: boolean; output: string }>;
   },
+  device?: string,
 ): Promise<{ status: SpawnAckStatus; terminalId: string | null; reason: string | null }> {
   if (!sessionId) return { status: 'failed', terminalId: null, reason: 'no session id' };
   const live = await deps.liveTab(sessionId);
@@ -200,7 +205,7 @@ export async function resumeSessionTab(
     live.focus();
     return { status: 'focused-existing', terminalId: live.terminalId, reason: null };
   }
-  const { ok, output } = await deps.runResume(sessionId);
+  const { ok, output } = await deps.runResume(sessionId, device);
   return { ...cliResumeOutcome(ok, output), terminalId: null };
 }
 

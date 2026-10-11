@@ -638,10 +638,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       return true;
     };
     switch (action) {
-      // Focus and Resume — the two verbs the removed Fleet detail rail owned,
-      // reusing the SAME host entry points it called. Focus prefers the live tab;
-      // with no local tab it attaches a fresh terminal to the session on its
-      // owning device. Resume runs the CLI's own recovery command for the row.
       case 'setSessionId':
         if (this.snapshot.hasTerminal && terminalId) {
           try {
@@ -651,11 +647,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           }
         }
         return;
-      // Focus and ↻ Resume are the one resume action the picker and Fleet use
-      // (resumeSession.vscode.ts): a tab already showing the session comes to the
+      // Focus shows the panel's own tab, even one whose session id has not resolved.
+      // Otherwise Focus and ↻ Resume are the one resume action the picker and Fleet
+      // use (resumeSession.vscode.ts): a tab already showing the session comes to the
       // front, else the live agent opens in the window that owns its project.
       case 'focusSubject':
       case 'resumeSubject': {
+        if (action === 'focusSubject' && terminal) { terminal.show(true); return; }
         const sessionId = this.snapshot.fullSessionId;
         if (!sessionId) return;
         const { resumeAndNotify } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');

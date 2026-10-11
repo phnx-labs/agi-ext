@@ -13,7 +13,6 @@ import type { RemoteSession } from '../core/remoteSessions';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
   escapeHtml,
-  heldInTab,
   preferLive,
   parseOverview,
   parsePrs,
@@ -273,34 +272,16 @@ class ProjectPanelController {
     return { html: renderSessions(rows, Date.now(), subject?.sessionId ?? null, thumbsFor), count: sessionCount(rows) };
   }
 
-  /** A card click goes to the session: its tab in this window, else the tab the CLI
-   *  says holds it in another window, else a new tab resuming it on its device. The
-   *  other sidebar points at it in every case, as a Fleet row click does. */
+  /** A card click goes to the session, the same way every resume surface does
+   *  (resumeAndNotify): its tab comes to the front, else the live agent opens in the
+   *  window that owns its project. The other sidebar points at it, as a Fleet row
+   *  click does. */
   async goToSession(sessionId: string, host: string | undefined): Promise<void> {
     setAgentPanelSubjectFromFleet(sessionId, host);
     void this.view.redrawSessions();
-    // A tab running the agent wins over whatever the stream says; tabs the agent
-    // left are closed before anything new opens, as every other resume path does.
-    const { live, dead } = await terminals.sessionTabs(sessionId);
-    if (live) { live.terminal.show(false); return; }
     const row = preferLive(this.presented().filter((r) => r.sessionId === sessionId))[0];
-    if (row && heldInTab(row)) {
-      try {
-        await runAgentsArgs(['ps', 'focus', sessionId, '--attach-only'], { timeout: 30_000 });
-        return;
-      } catch (e) {
-        void vscode.window.showWarningMessage(`Could not focus the tab holding ${sessionId.slice(0, 8)}: ${errorText(e)}`);
-        return;
-      }
-    }
-    if (row?.resumable === false) {
-      void vscode.window.showInformationMessage(`${row.agentType || 'This harness'} sessions cannot be resumed, so ${sessionId.slice(0, 8)} has no tab to open.`);
-      return;
-    }
-    terminals.closeTabs(dead);
-    const { openAgentSessionByRecovery } = require('./extension') as typeof import('./extension');
-    const device = remoteDeviceArg(row?.host ?? host);
-    await openAgentSessionByRecovery(this.context, { sessionId, agentType: row?.agentType ?? '', ...(device ? { device } : {}) });
+    const { resumeAndNotify } = await import('./resumeSession.vscode');
+    await resumeAndNotify({ sessionId, host: row?.host ?? host ?? '', title: row?.title || row?.label || row?.topic || '' });
   }
 
   async openImage(filePath: string): Promise<void> {
@@ -346,12 +327,6 @@ export function notifyProjectPanelSessionUpdate(): void {
   if (!controller) return;
   // A burst of facts collapses into one redraw plus one catch-up, as in the other sidebar.
   void coalesceTrailing(sessionsCoalesce, 'projectSessions', () => controller.redrawSessions());
-}
-
-/** This window's project, as the Project sidebar resolves it (picked, else the one
- *  containing the first workspace folder). Null with no folder or no project. */
-export function windowProject(): Promise<ProjectRef | null> {
-  return activeController ? activeController.project() : Promise.resolve(null);
 }
 
 /** @public loaded with require('./projectPanel.vscode') in extension.ts, which knip cannot see */

@@ -31,7 +31,7 @@ import {
 import { startWatchdogBridge } from './watchdogBridge.vscode';
 import { ensureWatchdogMcpInstalled } from '../mcp/watchdogInstall';
 import * as terminals from './terminals.vscode';
-import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
+import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   isScaffoldingSessionTopic,
@@ -1511,13 +1511,15 @@ export async function activate(context: vscode.ExtensionContext) {
   // window's live tab, else let the CLI open it in the window that owns its
   // project, which applies the same /spawn decision. Returns the ack result.
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.resumeSession', (sessionId: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
+    vscode.commands.registerCommand('agents.resumeSession', (sessionId: string, host?: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
       liveTab: async (id) => {
-        const entry = (await terminals.sessionTabs(id)).live;
-        return entry && { terminalId: entry.id, focus: () => entry.terminal.show() };
+        const { live, dead } = await terminals.sessionTabs(id);
+        // Tabs the agent left (dead shells) close before anything new opens.
+        if (!live) terminals.closeTabs(dead);
+        return live && { terminalId: live.id, focus: () => live.terminal.show() };
       },
       runResume: resumeInProjectWindow,
-    }))
+    }, remoteDeviceArg(host)))
   );
 
   context.subscriptions.push(
@@ -2235,12 +2237,12 @@ async function placeSpawnRequest(
   return result('opened', { terminalId, title, pid });
 }
 
-// `agents sessions resume <id> --vscodium`: the CLI raises the window that owns
+// `agents sessions resume <id> --vscodium [--device <machine>]`: the CLI raises the window that owns
 // the session's project and sends it a /spawn, which that window decides.
-async function resumeInProjectWindow(id: string): Promise<{ ok: boolean; output: string }> {
+async function resumeInProjectWindow(id: string, device: string | undefined): Promise<{ ok: boolean; output: string }> {
   const { runAgentsArgs } = await import('../core/agentsBin');
   try {
-    const { stdout, stderr } = await runAgentsArgs(['sessions', 'resume', id, '--vscodium'], { timeout: 60_000 });
+    const { stdout, stderr } = await runAgentsArgs(['sessions', 'resume', id, '--vscodium', ...(device ? ['--device', device] : [])], { timeout: 60_000 });
     return { ok: true, output: `${stdout}\n${stderr}` };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string };
@@ -2780,7 +2782,7 @@ export async function openAgentSessionTerminal(
       windowFolders: terminals.windowFolders(),
       otherWindows: liveWindows(process.pid).map((w) => w.folders),
     }) === 'wrong-window') {
-      const { ok, output } = await resumeInProjectWindow(session.id);
+      const { ok, output } = await resumeInProjectWindow(session.id, remoteDeviceArg(session.host));
       const { reason } = cliResumeOutcome(ok, output);
       if (!ok) void vscode.window.showWarningMessage(`Session ${session.shortId}: ${reason}`);
       return ok;
@@ -2854,25 +2856,6 @@ export async function openAgentSessionTerminal(
     vscode.window.showInformationMessage(`Session ${session.shortId} did not become ready; its terminal remains open with the CLI result.`);
     return false;
   }
-}
-
-/**
- * Resume a PREVIOUS (crashed/ended) session on its origin device: the CLI's
- * strict resume finds that device itself. The command is built here from the id, so a webview payload can
- * only pick the session, never inject.
- */
-export async function openAgentSessionByRecovery(
-  context: vscode.ExtensionContext,
-  opts: { sessionId: string; agentType: string; device?: string },
-): Promise<boolean> {
-  const device = (opts.device || '').trim();
-  return openAgentSessionTerminal(
-    context,
-    // The transcript's cwd belongs to its origin device. Leave the local editor
-    // terminal in this workspace; the CLI recovery record restores cwd remotely.
-    { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, host: device || undefined },
-    inTabResumeCommand(opts.sessionId),
-  );
 }
 
 /** Move a PREVIOUS session to a user-selected device, then attach its target

@@ -10,7 +10,7 @@ describe('agent session editor-tab routing', () => {
   test('the shared resume helper creates an editor tab and registers its identity', () => {
     const helper = extensionSource.slice(
       extensionSource.indexOf('export async function openAgentSessionTerminal'),
-      extensionSource.indexOf('export async function openAgentSessionByRecovery'),
+      extensionSource.indexOf('export async function openAgentSessionByMigration'),
     );
 
     expect(helper).toContain('location: { viewColumn: vscode.ViewColumn.Active }');
@@ -24,7 +24,7 @@ describe('agent session editor-tab routing', () => {
   test('CLI-owned recovery preserves an unpresented harness across editor reload', () => {
     const helper = extensionSource.slice(
       extensionSource.indexOf('export async function openAgentSessionTerminal'),
-      extensionSource.indexOf('export async function openAgentSessionByRecovery'),
+      extensionSource.indexOf('export async function openAgentSessionByMigration'),
     );
     const restore = extensionSource.slice(
       extensionSource.indexOf('async function restoreAgentTerminals'),
@@ -63,15 +63,6 @@ describe('agent session editor-tab routing', () => {
   test('Previous rows stay on the canonical stream with no history side channel', () => {
     expect(unifiedPaneSource).not.toContain('fetchPreviousSessions');
     expect(settingsSource).not.toContain("case 'fetchPreviousSessions':");
-  });
-
-  test('recovery never creates a local terminal in the transcript origin cwd', () => {
-    const recovery = extensionSource.slice(
-      extensionSource.indexOf('export async function openAgentSessionByRecovery'),
-      extensionSource.indexOf('export async function openAgentSessionByMigration'),
-    );
-    expect(recovery).not.toContain('cwd: opts.cwd');
-    expect(recovery).toContain('inTabResumeCommand(opts.sessionId)');
   });
 });
 

@@ -10,8 +10,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
     how long ago, and OPEN when a tab already shows it. Typing filters by title or message.
   - Enter brings an open tab to the front, or opens the live agent in the window that owns
     the project. A notification says where it went, or why it could not.
-- Fleet's Resume button and the side panel's Focus and ↻ do exactly the same thing, with
-  the same notification.
+- Fleet's Resume button, the side panel's Focus and ↻, and a Project sidebar card click do
+  exactly the same thing, with the same notification. None of them types a resume command
+  into a terminal any more. A multi-root window lists every folder's project, and the list
+  says "loading machines" until every machine has reported.
 - Removed the commands this replaces: `Agents: Resume`, `Agents: Resume (Pick Session)` and
   `Agents: Session Resume`. Pick Host, Pick Harness and Best Profile are unchanged.
 
