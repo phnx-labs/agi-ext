@@ -73,9 +73,10 @@ import { sendReplyToTerminal } from './sessionReply';
 import { runAgents } from '../core/agentsBin';
 import { prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
 import { shellQuote } from '../core/deviceDispatchShell';
-import { SESSION_CARDS_SCRIPT, sessionPanelCss } from '../shared/sessionCards';
+import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { sessionCardFields } from '../core/sessionCardFields';
-import { VERB_FILTER_ROLES, fetchTimelineFilter, isInside, openSessionArtifact } from './sessionCardActions';
+import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
+import { isInside } from '../core/displayPath';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
@@ -1060,7 +1061,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 <meta http-equiv="Content-Security-Policy"
   content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 <style>
-${sessionPanelCss(fontJost, fontInter)}
+${sessionPanelCss(sessionPanelFontFaces(fontJost, fontInter))}
 </style>
 </head>
 <body>
@@ -1881,9 +1882,7 @@ let lastSnapshot = null;
 
 function render(snap) {
   lastSnapshot = snap;
-  // Stream updates re-render the panel; a strip the viewer scrolled stays put.
-  const stripScroll = {};
-  for (const el of root.querySelectorAll('[data-strip]')) stripScroll[el.getAttribute('data-strip')] = [el.scrollLeft, el.scrollTop];
+  const stripScroll = saveStripScroll();
   // The empty state is about having NO SUBJECT — not about having no terminal.
   // A session picked in the Fleet list renders here with no local tab at all.
   if (!snap || !snap.hasSubject) {
@@ -1927,10 +1926,7 @@ function render(snap) {
     const r = root.querySelector('#reply-input');
     if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
   });
-  for (const el of root.querySelectorAll('[data-strip]')) {
-    const at = stripScroll[el.getAttribute('data-strip')];
-    if (at) { el.scrollLeft = at[0]; el.scrollTop = at[1]; }
-  }
+  restoreStripScroll(stripScroll);
   for (const img of root.querySelectorAll('img[data-avatar]')) img.addEventListener('error', () => img.remove());
   bindSessionCards();
   for (const el of root.querySelectorAll('[data-files-view]')) {

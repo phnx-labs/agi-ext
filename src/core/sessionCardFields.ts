@@ -1,16 +1,10 @@
-import * as path from 'path';
-import { displayPath } from './displayPath';
+import { displayPath, isInside } from './displayPath';
 import { extractLinearTicketId } from './utils';
 import { extractPrUrls, type PullRequestRef } from './panel.helpers';
 import type { RemoteSession, RemoteSessionArtifact } from './remoteSessions';
 
 /** Image files the session cards preview inline. */
 const THUMB_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
-
-function isInside(filePath: string, dir: string): boolean {
-  const rel = path.relative(dir, path.resolve(filePath));
-  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
 
 export interface SessionCardFields {
   /** The options `displayPath` formats this session's paths with. */

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { SESSION_CARDS_SCRIPT, sessionPanelCss } from '@shared/sessionCards'
+import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '@shared/sessionCards'
 import { postMessage } from '../../../hooks'
 import type { SessionCardSnapshot } from '../floorModel'
 
@@ -12,6 +12,7 @@ import type { SessionCardSnapshot } from '../floorModel'
 interface CardsEnv {
   render(snapshot: SessionCardSnapshot): void
   onMessage(message: unknown): void
+  dispose(): void
 }
 
 // One view state for every Fleet card, like the sidebar's one per webview:
@@ -21,6 +22,18 @@ const viewState: Record<string, unknown> = {}
 // The sidebar adds a page around its cards (padding, a sky, full height); a Fleet
 // row is not a page.
 const ROW_HOST_CSS = 'body { padding: 0; margin: 0; min-height: 0; background: transparent; background-image: none; } body > h2:first-child { margin-top: 0; }'
+
+// A shadow root ignores @font-face, so the panel faces are declared on the
+// document once, for every card.
+function ensureFontFaces(): void {
+  if (document.getElementById('session-panel-fonts')) return
+  const fonts = window.__SESSION_FONTS__
+  if (!fonts) return
+  const style = document.createElement('style')
+  style.id = 'session-panel-fonts'
+  style.textContent = sessionPanelFontFaces(fonts.jost, fonts.inter)
+  document.head.appendChild(style)
+}
 
 declare global {
   interface Window { __SESSION_FONTS__?: { jost: string; inter: string } }
@@ -33,11 +46,14 @@ function createEnv(root: HTMLElement, post: (message: Record<string, unknown>) =
 ${SESSION_CARDS_SCRIPT}
 function render(s) {
   lastSnapshot = s;
+  const stripScroll = saveStripScroll();
   root.innerHTML = renderArtifactsCard(s) + renderTimelineCard(s);
+  restoreStripScroll(stripScroll);
   bindSessionCards();
 }
 return {
   render,
+  dispose() { thumbObserver.disconnect(); },
   onMessage(msg) {
     if (msg && msg.type === 'timelineFilter' && lastSnapshot && msg.sessionId === lastSnapshot.fullSessionId && applyTimelineFilter(msg, lastSnapshot)) render(lastSnapshot);
   },
@@ -56,9 +72,9 @@ export function SessionCards({ snapshot }: { snapshot: SessionCardSnapshot }) {
     const host = hostRef.current
     if (!host) return
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
-    const fonts = window.__SESSION_FONTS__ ?? { jost: '', inter: '' }
+    ensureFontFaces()
     const style = document.createElement('style')
-    style.textContent = sessionPanelCss(fonts.jost, fonts.inter) + ROW_HOST_CSS
+    style.textContent = sessionPanelCss('') + ROW_HOST_CSS
     const body = document.createElement('body')
     const syncTheme = () => { body.className = document.body.className }
     syncTheme()
@@ -77,6 +93,7 @@ export function SessionCards({ snapshot }: { snapshot: SessionCardSnapshot }) {
     return () => {
       window.removeEventListener('message', onMessage)
       themeWatch.disconnect()
+      env.dispose()
       envRef.current = null
     }
   }, [])

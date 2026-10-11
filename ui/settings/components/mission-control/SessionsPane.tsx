@@ -21,7 +21,7 @@ import {
 import { sessionRowView } from './recapModel'
 import { useVirtualList } from './useVirtualList'
 import { useNow } from './useNow'
-import { SessionRow, collapsedLines } from './sessions/SessionRow'
+import { SessionRow, collapsedLines, measureKey } from './sessions/SessionRow'
 import { isLongText } from './sessions/ExpandedCard'
 import {
   ResumeDeviceMenu,
@@ -95,11 +95,12 @@ export function rowHeight(agent: FloorAgent, expanded: boolean, measured?: numbe
   const row = sessionRowView(agent)
   const lines = collapsedLines(agent, row)
   const collapsed = ROW_PAD_H + TITLE_H + META_H + LINE_H * [lines.now, lines.you, lines.agent].filter(Boolean).length
+  // A rendered row reports its height (SessionRow onMeasure); until it has, the
+  // estimate below stands in.
+  if (measured && measured > 0) return measured
   if (!expanded) return collapsed
-  // An expanded row reports its rendered height (SessionRow onMeasure); until it
-  // has, estimate the detail card: request, latest reply, the shared Artifacts and
-  // Timeline cards, activity or ended-session meta, checklist, catch-up links.
-  if (measured && measured > collapsed) return measured
+  // The detail card: request, latest reply, the shared Artifacts and Timeline
+  // cards, activity or ended-session meta, checklist, catch-up links.
   const ask = agent.firstUserMessage?.trim() ? agent.firstUserMessage : (row.you.text || agent.prompt || '')
   const textH = (text: string) => {
     if (!text) return 0
@@ -149,8 +150,8 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // Rendered heights of expanded rows, reported by the rows themselves.
   const [measured, setMeasured] = useState<Record<string, number>>({})
-  const onMeasure = useCallback((id: string, height: number) => {
-    setMeasured((prev) => (prev[id] === height ? prev : { ...prev, [id]: height }))
+  const onMeasure = useCallback((key: string, height: number) => {
+    setMeasured((prev) => (prev[key] === height ? prev : { ...prev, [key]: height }))
   }, [])
   // How many Previous rows are shown; null = the default 7-day/50 bound. "Show 10
   // more" bumps it, paging further back through the resumable history.
@@ -209,7 +210,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
     for (const s of sections) {
       out.push({ kind: 'header', section: s, height: HEADER_H, key: `h:${s.key}` })
       for (const a of s.agents) {
-        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, expanded.has(a.id), measured[a.id]), key: a.id })
+        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, expanded.has(a.id), measured[measureKey(a.id, expanded.has(a.id))]), key: a.id })
       }
     }
     return out

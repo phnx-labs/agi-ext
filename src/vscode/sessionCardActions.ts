@@ -8,17 +8,16 @@ import * as os from 'os';
 import * as path from 'path';
 import { runAgents } from '../core/agentsBin';
 import { shellQuote } from '../core/deviceDispatchShell';
+import { isInside } from '../core/displayPath';
+import { sessionCardFields, type SessionCardFields } from '../core/sessionCardFields';
+import type { RemoteSession } from '../core/remoteSessions';
 import { remoteDeviceArg } from './remoteSessions.vscode';
+import { openExternalUrl } from './webviewSecurity';
 
 const REMOTE_ARTIFACT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'remote-artifacts');
 
 /** Timeline filters that need the full transcript stream, one `agents sessions` call per click. */
 export const VERB_FILTER_ROLES = new Set(['assistant', 'thinking', 'tools']);
-
-export function isInside(filePath: string, dir: string): boolean {
-  const rel = path.relative(dir, path.resolve(filePath));
-  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
 
 /**
  * A local artifact opens in place. A remote session's artifact is copied once
@@ -78,5 +77,83 @@ export async function fetchTimelineFilter(role: string, sessionId: string): Prom
     return { items };
   } catch (err) {
     return { error: err instanceof Error ? err.message.split('\n')[0] : String(err) };
+  }
+}
+
+// ── Fleet ───────────────────────────────────────────────────────────────────
+// The Fleet webview draws the same cards for every session row, so each row
+// carries its card fields and every click names the session it belongs to.
+
+/** Rows as the Fleet webview receives them: the stream row plus its card fields. */
+export function withSessionCards(sessions: RemoteSession[], webview?: vscode.Webview): Array<RemoteSession & { card: SessionCardFields }> {
+  const previewUri = webview ? (filePath: string) => webview.asWebviewUri(vscode.Uri.file(filePath)).toString() : undefined;
+  return sessions.map((session) => ({
+    ...session,
+    card: sessionCardFields(session, { sessionId: session.sessionId, home: os.homedir(), remoteDevice: remoteDeviceArg(session.host), previewUri }),
+  }));
+}
+
+export interface SessionCardActionMessage {
+  sessionId?: unknown;
+  host?: unknown;
+  action?: { type?: unknown; path?: unknown; url?: unknown; role?: unknown };
+}
+
+/** What a Fleet card click may do on the host; tests substitute these. */
+export interface SessionCardEffects {
+  openArtifact(filePath: string, sessionHost: string, named: boolean): Promise<void>;
+  fetchTimelineFilter(role: string, sessionId: string): Promise<{ items?: unknown[]; error?: string }>;
+  reveal(dirPath: string): void;
+  openUrl(url: string): void;
+  notify(message: string): void;
+}
+
+const hostEffects: SessionCardEffects = {
+  openArtifact: openSessionArtifact,
+  fetchTimelineFilter,
+  reveal: (dirPath) => { void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(dirPath)); },
+  openUrl: openExternalUrl,
+  notify: (message) => { void vscode.window.showErrorMessage(message); },
+};
+
+/**
+ * A click inside a Fleet card, for the session it names (id AND host: a copied or
+ * resumed id can exist on two machines). An artifact opens only when that row
+ * lists it; a heavy filter loads only for a session on this machine.
+ */
+export async function runSessionCardAction(
+  message: SessionCardActionMessage,
+  sessions: readonly RemoteSession[],
+  post: (message: Record<string, unknown>) => void,
+  effects: SessionCardEffects = hostEffects,
+): Promise<void> {
+  const action = message.action;
+  if (!action || typeof message.sessionId !== 'string') return;
+  const sessionId = message.sessionId;
+  const live = sessions.find((session) => session.sessionId === sessionId && session.host === message.host);
+  const reply = (role: string, body: { items?: unknown[]; error?: string }) => post({ type: 'timelineFilter', role, sessionId, ...body });
+  switch (action.type) {
+    case 'openArtifact': {
+      if (typeof action.path !== 'string') return;
+      if (!live) { effects.notify(`Not opening ${action.path}: the session left the stream.`); return; }
+      const card = sessionCardFields(live, { sessionId, home: os.homedir(), remoteDevice: remoteDeviceArg(live.host) });
+      const named = card.artifacts.some((a) => a.path === action.path) || card.plan?.path === action.path;
+      await effects.openArtifact(action.path, live.host, named);
+      return;
+    }
+    case 'loadTimelineFilter': {
+      const role = typeof action.role === 'string' ? action.role : '';
+      if (!VERB_FILTER_ROLES.has(role)) { reply(role, { error: 'That filter is not available.' }); return; }
+      if (!live) { reply(role, { error: 'The session left the stream before the filter loaded.' }); return; }
+      if (remoteDeviceArg(live.host)) { reply(role, { error: 'This session is on another machine.' }); return; }
+      reply(role, await effects.fetchTimelineFilter(role, sessionId));
+      return;
+    }
+    case 'revealCwd':
+      if (live && !remoteDeviceArg(live.host) && typeof action.path === 'string') effects.reveal(action.path);
+      return;
+    case 'openUrl':
+      if (typeof action.url === 'string') effects.openUrl(action.url);
+      return;
   }
 }
