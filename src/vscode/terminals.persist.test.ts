@@ -104,6 +104,25 @@ describe('restore store per window', () => {
     } finally { rmSync(home, { recursive: true }); }
   });
 
+  test('on restore, revived "could not be opened" terminal tabs close; live and non-agent tabs stay', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const closed = [];
+        const tab = (label, input) => ({ label, input });
+        const dead = tab('03c9c75324d09eecbef0224f5d8b155e', new vscode.TabInputTerminal());
+        const orphan = tab('5e0f59dc738aac894eab53bd08d18fd7', undefined);
+        const liveAgent = tab('Claude 8d05c00f - real a1', new vscode.TabInputTerminal());
+        const shell = tab('zsh', new vscode.TabInputTerminal());
+        vscode.window.terminals = [{ name: 'Claude 8d05c00f - real a1' }, { name: 'zsh' }];
+        vscode.window.tabGroups = { all: [{ tabs: [tab('README.md', {}), dead, liveAgent] }, { tabs: [orphan, shell] }],
+          close: async (tabs) => { closed.push(...tabs); return true; } };
+        assert.equal(await t.closeRevivedDeadTerminalTabs(), 2);
+        assert.deepEqual(closed.map((x) => x.label), [dead.label, orphan.label]);
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
   test('a multi-root window and a folder window on its first folder keep separate tabs', () => {
     const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
     try {

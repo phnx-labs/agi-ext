@@ -9,6 +9,7 @@ import { AgentConfig } from './agents.vscode';
 import { generateTerminalId, resolveRestoredVersion, RunningCounts } from '../core/terminals';
 import * as sessionsPersist from '../core/sessions.persist';
 import { canonicalSessionId } from '../core/canonicalSessionId';
+import { revivedDeadTerminalTabs } from '../core/tabIndex';
 import type { ManualSessionOverride } from '../core/remoteAutoLabel';
 import { needsSessionIdHydrate } from '../core/sessionIdHydrate';
 import { restoredSessionTabLabels } from '../core/sessionTabLabelSync';
@@ -735,10 +736,12 @@ export async function scanExisting(
     // "Unable to resolve resource vscode-terminal:..."). Registering it makes
     // restoreAgentTerminals believe the persisted session already has a live
     // tab, so it skips the real recreation and the user gets no terminal at all.
-    // Only a terminal with a backing process is an existing terminal; leave a
-    // stale editor input untracked so the persisted-session path recreates it.
+    // Only a terminal with a backing process is an existing terminal. Close the
+    // stale agent tab, so the persisted-session path reopens that session as the
+    // one live tab in its place.
     if (pid === undefined) {
-      console.log(`[TERMINALS] No backing process for "${terminal.name}", leaving it for persisted-session restore`);
+      console.log(`[TERMINALS] No backing process for "${terminal.name}", closing it for persisted-session restore`);
+      terminal.dispose();
       continue;
     }
 
@@ -1272,4 +1275,22 @@ export function pendingRestore(): sessionsPersist.PersistedSession[] {
 export function loadPersistedSessions(): sessionsPersist.PersistedSession[] {
   const keys = restoreStoreKeys();
   return keys ? sessionsPersist.getWorkspaceSessions(keys.key, keys.legacyKey) : [];
+}
+
+/**
+ * Close the terminal tabs a crash revived without a pty ("The editor could not be
+ * opened"). The sessions they showed reopen through the persisted-session restore,
+ * one live tab each. Non-agent and live terminals are never touched.
+ */
+export async function closeRevivedDeadTerminalTabs(): Promise<number> {
+  const groups = vscode.window.tabGroups.all;
+  const live = new Set(vscode.window.terminals.map((t) => t.name));
+  const views = groups.map((g) => g.tabs.map((tab) => ({
+    label: tab.label,
+    isTerminal: tab.input instanceof vscode.TabInputTerminal,
+    hasInput: tab.input !== undefined && tab.input !== null,
+  })));
+  const dead = revivedDeadTerminalTabs(views, live).map(([g, t]) => groups[g].tabs[t]);
+  if (dead.length > 0) await vscode.window.tabGroups.close(dead, true);
+  return dead.length;
 }

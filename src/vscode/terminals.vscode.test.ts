@@ -32,6 +32,8 @@ function scannedTerm(name: string, processId: Promise<number | undefined>): vsco
   return {
     name,
     processId,
+    disposed: 0,
+    dispose() { (this as { disposed: number }).disposed++; },
     exitStatus: undefined,
     creationOptions: { env: { AGENT_TERMINAL_ID: 'CC-restored-1' } },
   } as unknown as vscode.Terminal;
@@ -117,7 +119,7 @@ describe('automatic-label persistence', () => {
 });
 
 describe('reload scan ignores terminal editor ghosts', () => {
-  test('an agent terminal without a backing process remains available for persisted restore', async () => {
+  test('an agent terminal without a backing process is closed and left for persisted restore', async () => {
     const vscode = await import('vscode');
     const ghost = scannedTerm('CC — stale restored editor', Promise.resolve(undefined));
     (vscode.window.terminals as vscode.Terminal[]) = [ghost];
@@ -126,6 +128,7 @@ describe('reload scan ignores terminal editor ghosts', () => {
 
     expect(count).toBe(0);
     expect(t.getByTerminal(ghost)).toBeUndefined();
+    expect((ghost as unknown as { disposed: number }).disposed).toBe(1);
   });
 
   test('a crash-restored tab whose processId never settles does not hold the restore', async () => {
