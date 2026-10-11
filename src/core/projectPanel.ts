@@ -598,7 +598,8 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   });
   const c = sessionCount(rows, here, prefs);
   const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} need${c.asks === 1 ? 's' : ''} you</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
-  if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>`;
+  const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
+  if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   const pinned = asks.length ? `<div class="pinned"><div class="ph">${SESSION_STATE_WORD.asks} <span class="n">${asks.length}</span></div>${asks.map((x) => card(x, true)).join('')}</div>` : '';
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string };
   let groups: Group[];
@@ -615,7 +616,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   } else if (prefs.group === 'state') {
     groups = STATE_ORDER_KEYS.map((k) => ({ key: `state:${k}`, name: SESSION_STATE_WORD[k], sub: '', icon: `<span class="pill st-${k} solo"><i></i></span>`, items: rest.filter((x) => sessionStateOf(x.row) === k) }));
   } else {
-    return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>`;
+    return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>` + tail;
   }
   const folded = new Set(prefs.folded);
   return head + pinned + groups.filter((g) => g.items.length).map((g) => {
@@ -627,7 +628,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
       <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b> <span class="n">${g.items.length}</span>${g.sub ? ` <span class="gs">· ${escapeHtml(g.sub)}</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span></div>
       <div class="items">${closed ? '' : sortRows(g.items, prefs.sort).map((x) => card(x)).join('')}</div>
     </section>`;
-  }).join('') + '<div class="bulk" hidden></div><div class="toast" hidden></div>';
+  }).join('') + tail;
 }
 
 /** The tab's numbers: live sessions, the ones that need you, tabs held here. */

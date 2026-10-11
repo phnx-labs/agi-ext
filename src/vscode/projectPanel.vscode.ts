@@ -728,6 +728,7 @@ export function shell(cspSource: string): string {
   // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab
   // whose agent is working or waiting asks first; everything else offers Undo.
   const multi = new Set();
+  let bulkSure = false;
   let toastTimer = 0;
   let undo = null;
   const target = (card) => ({ sessionId: card.dataset.session, host: card.dataset.host });
@@ -740,12 +741,13 @@ export function shell(cspSource: string): string {
   function syncBulk() {
     main.querySelectorAll('.card').forEach((c) => c.classList.toggle('multi', multi.has(c.dataset.session)));
     const bar = main.querySelector('.bulk'); if (!bar) return;
-    if (multi.size < 2) { bar.hidden = true; return; }
+    if (multi.size < 2) { bar.hidden = true; bulkSure = false; return; }
     const cards = [...multi].map((id) => main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')).filter(Boolean);
     const tabs = cards.filter((c) => c.dataset.tab === '1').length;
     const hide = cards.length - tabs;
     const words = [tabs ? 'Close ' + tabs + ' tab' + (tabs === 1 ? '' : 's') : '', hide ? (tabs ? 'hide ' : 'Hide ') + hide : ''].filter(Boolean).join(', ');
-    bar.innerHTML = '<span>' + multi.size + ' selected</span><button data-bulk="close">' + words + '</button><button data-bulk="clear">Clear</button>';
+    const busy = cards.filter((c) => c.dataset.tab === '1' && c.dataset.busy === '1').length;
+    bar.innerHTML = '<span>' + multi.size + ' selected</span><button data-bulk="close">' + (bulkSure && busy ? busy + ' still running · close anyway' : words) + '</button><button data-bulk="clear">Clear</button>';
     bar.hidden = false;
   }
   function closeCards(cards) {
@@ -783,7 +785,8 @@ export function shell(cspSource: string): string {
       if (bulk.dataset.bulk === 'clear') { multi.clear(); syncBulk(); return; }
       const cards = [...multi].map((id) => main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')).filter(Boolean);
       const busy = cards.filter((c) => c.dataset.tab === '1' && c.dataset.busy === '1').length;
-      if (busy && !bulk.dataset.sure) { bulk.dataset.sure = '1'; bulk.textContent = busy + ' still running · close anyway'; return; }
+      if (busy && !bulkSure) { bulkSure = true; syncBulk(); return; }
+      bulkSure = false;
       closeCards(cards); return;
     }
     if (e.target.closest('[data-act="close-all"]')) { e.stopPropagation(); vscode.postMessage({ type: 'closeAll' }); return; }
