@@ -74,7 +74,8 @@ import { runAgents } from '../core/agentsBin';
 import { prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
 import { shellQuote } from '../core/deviceDispatchShell';
 import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
-import { sessionCardFields } from '../core/sessionCardFields';
+import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
+import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
 
@@ -198,6 +199,8 @@ interface PanelSnapshot {
   lastActivityMs?: number;
   /** The CLI row's lifecycle phase (running, waiting, idle, failed, done). */
   phase?: string;
+  /** The session's state and its word, from the shared mapping (`sessionStateOf`). */
+  state?: { key: SessionStateKey; word: string };
   // The open attention item in the harness's own words; absent when nothing waits on the user.
   needsYou?: { kind: string; text: string; openedAtMs?: number };
   failures?: RemoteFailure[];
@@ -938,6 +941,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.startedAtMs = live.startedAtMs || undefined;
         snapshot.lastActivityMs = live.lastActivityMs || undefined;
         snapshot.phase = live.phase;
+        const stateKey = sessionStateOf(live);
+        snapshot.state = { key: stateKey, word: SESSION_STATE_WORD[stateKey] };
         if (card.needsYou) snapshot.needsYou = card.needsYou as PanelSnapshot['needsYou'];
         snapshot.failures = live.failures;
         snapshot.failedCount = live.failures ? live.failures.filter((f) => !f.blocked).length : live.timeline?.failed;
@@ -955,21 +960,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           };
         }
         if (webview) {
-          // An image the user pasted on this machine is in its attachment store
-          // under the name the request carries, wherever the agent runs.
-          const pasted = (live.request?.attachments ?? [])
-            .filter((a) => a.kind === 'image' && a.name && path.basename(a.name) === a.name)
-            .map((a) => path.join(PASTED_ATTACHMENT_DIR, a.name))
-            .filter((p) => fs.existsSync(p))
-            .map((p) => ({ path: p, label: path.basename(p), uri: webview.asWebviewUri(vscode.Uri.file(p)).toString() }));
-          snapshot.imageThumbs = pasted;
-        }
-        // The CLI's cached copies (hash-named) are the same pastes; use them only
-        // when the request named none this machine has.
-        if (webview && !remoteDevice && !snapshot.imageThumbs?.length) {
-          snapshot.imageThumbs = live.attachments
-            .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, ATTACHMENT_CACHE_DIR))
-            .map((a) => ({ path: a.path, label: a.label, uri: webview.asWebviewUri(vscode.Uri.file(a.path)).toString() }));
+          snapshot.imageThumbs = requestImageThumbs(live, {
+            home: os.homedir(),
+            remoteDevice,
+            exists: (p) => fs.existsSync(p),
+            previewUri: (p) => webview.asWebviewUri(vscode.Uri.file(p)).toString(),
+          });
         }
       }
 
@@ -1182,12 +1178,12 @@ function renderNeedsYou(s) {
     '</div>'
   );
 }
+// The word comes from the host (sessionStateOf, src/shared/sessionState.ts) so the
+// sidebar, the Project panel and Fleet say the same thing for the same row.
 function sessionState(s) {
-  if (s.needsYou || s.phase === 'waiting') return { cls: 'waiting', word: 'Waiting on you' };
-  if (s.phase === 'running') return { cls: 'running', word: 'Running' };
-  if (s.phase === 'failed') return { cls: 'failed', word: 'Failed' };
-  if (s.phase === 'done') return { cls: 'idle', word: 'Done' };
-  return { cls: 'idle', word: 'Idle' };
+  const st = s.state || { key: 'yours', word: 'Your turn' };
+  const cls = st.key === 'asks' ? 'waiting' : st.key === 'working' ? 'running' : st.key === 'stopped' ? 'failed' : 'idle';
+  return { cls, word: st.word };
 }
 
 function renderSessionStats(s) {

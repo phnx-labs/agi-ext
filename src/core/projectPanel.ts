@@ -1,10 +1,12 @@
-// Pure model + HTML for the Project container in the left sidebar (PHNX-4289).
+// Pure model + HTML for the Project sidebar panel (PHNX-4289).
 // Each section is one CLI read: `agents projects status <name> --json` (Overview),
 // `linear tasks --project <linear> --json` (Tickets, and Overview's state bar),
 // `agents projects prs list <name> --json` (Pull requests). Sessions come from the
 // session stream rows already in the presentation store, filtered on the CLI's
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
 // the provider turns that into the section's error state, never an empty list.
+
+import { SESSION_STATE_ORDER, SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 
 export interface ProjectRef {
   name: string;
@@ -211,7 +213,7 @@ export function parsePrs(raw: string): PrsModel {
 
 // ── Sessions (from stream rows) ───────────────────────────────────────────
 
-/** The stream-row fields a session row draws; a subset of RemoteSession. */
+/** The stream-row fields a session card draws; a subset of RemoteSession. */
 export interface SessionLike {
   sessionId: string;
   host: string;
@@ -221,37 +223,41 @@ export interface SessionLike {
   phase: 'running' | 'idle' | 'waiting' | 'failed' | 'done';
   liveStatus: string;
   attention?: { kind: string; state: string; question?: { text?: string } };
+  question?: { text?: string } | null;
+  request?: { headline?: string };
+  timeline?: { steps: { text: string }[] };
   lastResponse: string;
   activity: string;
   ticket: string | null;
   prStatus?: { number: number; checks?: 'passing' | 'failing' | 'pending'; isDraft: boolean; state?: string };
-  artifacts: unknown[];
+  branch?: string;
+  worktreeSlug?: string;
   files?: { total: number };
+  viewingIn?: string;
+  resumable?: boolean;
   lastActivityMs: number;
   confirmedProject: string | null;
 }
 
-/** What the row's right-hand icon says. Order is the attention order: a session
- *  that stopped making progress ranks above one that is working (AGENTS.md). */
-export type SessionMark = 'asks' | 'stopped' | 'failed' | 'working' | 'idle' | 'done';
-const MARK_RANK: Record<SessionMark, number> = { asks: 0, stopped: 1, failed: 2, working: 3, idle: 4, done: 5 };
-
-export function sessionMark(s: SessionLike): SessionMark {
-  const open = s.attention?.state === 'open' ? s.attention.kind : '';
-  if (open === 'question' || open === 'permission' || open === 'plan_review' || open === 'declared') return 'asks';
-  if (open === 'stall' || s.liveStatus === 'orphaned' || s.liveStatus === 'crashed' || s.liveStatus === 'abandoned') return 'stopped';
-  if (open === 'failure' || s.phase === 'failed') return 'failed';
-  if (s.phase === 'running' || s.phase === 'waiting') return 'working';
-  if (s.phase === 'done') return 'done';
-  return 'idle';
+/** An image the user pasted into the session's request, resolved on this machine. */
+export interface CardThumb {
+  uri: string;
+  path: string;
+  label: string;
 }
 
-/** The project's sessions, attention first, newest first within a mark. */
+/** Whether a tab holds the session somewhere: the CLI names it ("Codium tab 3"),
+ *  or says "detached" when only a background process is left. */
+export function heldInTab(s: Pick<SessionLike, 'viewingIn'>): boolean {
+  return !!s.viewingIn && s.viewingIn !== 'detached';
+}
+
+/** The project's sessions, newest first. */
 export function projectSessions(rows: SessionLike[], project: string): SessionLike[] {
   const want = project.toLowerCase();
   return rows
     .filter((r) => (r.confirmedProject || '').toLowerCase() === want)
-    .sort((a, b) => MARK_RANK[sessionMark(a)] - MARK_RANK[sessionMark(b)] || b.lastActivityMs - a.lastActivityMs);
+    .sort((a, b) => b.lastActivityMs - a.lastActivityMs);
 }
 
 function relAge(ms: number, now: number): string {
@@ -274,18 +280,21 @@ const ICON: Record<string, string> = {
   host: '<rect x="2.5" y="3" width="11" height="7.5" rx="1"/><path d="M6 13.5h4M8 10.5v3"/>',
   ticket: '<path d="M2.5 5.5V4h11v1.5a1.5 1.5 0 0 0 0 3V10h-11V8.5a1.5 1.5 0 0 0 0-3Z"/>',
   clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>',
+  you: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.8-2.4 2.7-3.5 5-3.5s4.2 1.1 5 3.5"/>',
+  agent: '<rect x="3" y="4" width="10" height="8" rx="2"/><path d="M6 8h.01M10 8h.01M8 2v2"/>',
+  run: '<path d="M4 6l2.5 2L4 10M8 10.5h4"/>',
+  branch: '<circle cx="5" cy="3.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5v6M11 7.5c0 2-2 2.5-6 3.5"/>',
 };
 function icon(name: string, title: string): string {
   return `<svg class="ic" viewBox="0 0 16 16" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title>${ICON[name]}</svg>`;
 }
 
-const MARK_TITLE: Record<SessionMark, string> = { asks: 'Asking you', stopped: 'Stopped with work left', failed: 'Failed', working: 'Working', idle: 'Idle', done: 'Done' };
-const MARK_GLYPH: Record<SessionMark, string> = { asks: '?', stopped: '!', failed: '✕', working: '', idle: '', done: '✓' };
+const STATE_GLYPH: Record<SessionStateKey, string> = { asks: '?', stopped: '!', working: '', yours: '', ended: '', unknown: '' };
 
 function prMini(pr: NonNullable<SessionLike['prStatus']>): string {
   const tone = pr.state === 'merged' ? 'ok' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ok' : pr.checks === 'failing' ? 'bad' : 'run';
   const words = pr.state === 'merged' ? 'merged' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ready to merge' : pr.checks === 'failing' ? 'checks failing' : 'checks running';
-  return `<span class="fact pr-${tone}" title="PR #${pr.number}: ${words}">${icon('pr', `PR #${pr.number}: ${words}`)}#${pr.number}</span>`;
+  return `<span class="chip pr-${tone}" title="PR #${pr.number}: ${words}">${icon('pr', `PR #${pr.number}: ${words}`)}#${pr.number}</span>`;
 }
 
 /** A live tool call reads as what it runs, not as a "Tool: args" label: a shell
@@ -302,34 +311,69 @@ export function activityLine(activity: string): string {
     : `<span class="tool">${escapeHtml(tool)}</span> <span class="cmd">${escapeHtml(arg)}</span>`;
 }
 
-/** Three lines: what it is, what it last said or asks, the facts you act on. The
- *  state is the icon on the right, never a word in the text. */
-export function renderSessionRow(s: SessionLike, now: number, selected: boolean): string {
-  const mark = sessionMark(s);
-  const name = s.title || s.label || s.topic || 'Untitled';
-  const said = (mark === 'asks' && s.attention?.question?.text) || s.lastResponse || '';
-  // The CLI's preview line is a tool call while the agent works ("Bash: cmd").
-  const saidIsTool = !!said && TOOL_LINE.test(said.trim());
-  const facts = [
-    `<span class="fact" title="${escapeHtml(s.host)}">${icon('host', s.host)}${escapeHtml(s.host.replace(/^yosemite-/, ''))}</span>`,
-    s.lastActivityMs ? `<span class="fact">${icon('clock', 'Last activity')}${relAge(s.lastActivityMs, now)}</span>` : '',
-    s.ticket ? `<span class="fact">${icon('ticket', s.ticket)}${escapeHtml(s.ticket)}</span>` : '',
-    s.prStatus ? prMini(s.prStatus) : '',
-    s.artifacts.length ? `<span class="fact" title="${s.artifacts.length} artifacts">${icon('image', `${s.artifacts.length} artifacts`)}${s.artifacts.length}</span>` : '',
-    s.files && s.files.total ? `<span class="fact" title="${s.files.total} files changed">${icon('file', `${s.files.total} files changed`)}${s.files.total}</span>` : '',
-  ].filter(Boolean).join('');
-  return `<button type="button" class="srow${selected ? ' sel' : ''}" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}">
-    <span class="l1">${escapeHtml(name)}</span><span class="mark m-${mark}" role="img" aria-label="${MARK_TITLE[mark]}" title="${MARK_TITLE[mark]}">${MARK_GLYPH[mark]}</span>
-    ${said && !saidIsTool ? `<span class="l2">${escapeHtml(said.replace(/\s+/g, ' ').trim())}</span>` : (said || s.activity) ? `<span class="l2 act">${activityLine(said || s.activity)}</span>` : ''}
-    <span class="l3">${facts}</span></button>`;
+/** Markdown links read as their words; the rest is flattened to one line. */
+function plain(text: string): string {
+  return text.replace(/\[([^\]]+)\]\([^)]*(?:\)|$)/g, '$1').replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').trim();
 }
 
-export function renderSessions(rows: SessionLike[], now: number, selectedId: string | null): string {
+/** What the agent last said in its own words: the newest timeline step, else its reply. */
+function agentLine(s: SessionLike): string {
+  const steps = s.timeline?.steps ?? [];
+  return plain(steps.length ? steps[steps.length - 1].text : s.lastResponse || '');
+}
+
+/** A card says what is going on: the title and when it last moved, your last ask
+ *  (with the images you pasted), where the agent is now in its own words, and the
+ *  facts you act on. Its state is the icon; the device is in the tooltip. */
+export function renderSessionCard(s: SessionLike, now: number, selected: boolean, thumbs: CardThumb[] = []): string {
+  const state = sessionStateOf(s);
+  const title = plain(s.title || s.topic || s.label || s.request?.headline || 'Untitled');
+  const asked = s.request?.headline ? plain(s.request.headline) : '';
+  const question = state === 'asks' ? plain(s.question?.text || s.attention?.question?.text || '') : '';
+  const said = agentLine(s);
+  const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
+  const where = s.worktreeSlug || (s.branch && s.branch !== 'main' && s.branch !== 'master' ? s.branch : '');
+  const chips = [
+    s.prStatus ? prMini(s.prStatus) : '',
+    s.ticket ? `<span class="chip">${icon('ticket', s.ticket)}${escapeHtml(s.ticket)}</span>` : '',
+    where ? `<span class="chip" title="${escapeHtml(where)}">${icon('branch', where)}<span class="trunc">${escapeHtml(where)}</span></span>` : '',
+    s.files?.total ? `<span class="chip" title="${s.files.total} files changed">${icon('file', `${s.files.total} files changed`)}${s.files.total}</span>` : '',
+  ].filter(Boolean).join('');
+  const shown = thumbs.slice(0, 3);
+  const more = thumbs.length - shown.length;
+  const go = heldInTab(s) ? 'Focus' : s.resumable === false ? '' : 'Open';
+  return `<div class="card st-${state}${selected ? ' sel' : ''}" role="button" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" title="${escapeHtml(`${SESSION_STATE_WORD[state]} · ${s.host}${heldInTab(s) ? ` · ${s.viewingIn}` : ''}`)}">
+    <span class="top"><span class="mk mk-${state}" role="img" aria-label="${SESSION_STATE_WORD[state]}">${STATE_GLYPH[state]}</span><span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span>${go ? `<span class="go">${go}</span>` : ''}</span>
+    ${question ? `<span class="ask">${escapeHtml(question)}</span>` : ''}
+    ${asked && asked !== title ? `<span class="line you">${icon('you', 'You asked')}<span>${escapeHtml(asked)}</span></span>` : ''}
+    ${shown.length ? `<span class="thumbs">${shown.map((t, i) => `<a class="th" href="#" data-path="${escapeHtml(t.path)}" title="${escapeHtml(t.label)}: open the full image"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}">${i === shown.length - 1 && more > 0 ? `<b>+${more}</b>` : ''}</a>`).join('')}</span>` : ''}
+    ${said ? `<span class="line said">${icon('agent', 'The agent')}<span>${escapeHtml(said)}</span></span>` : ''}
+    ${live ? `<span class="line live">${icon('run', 'Running now')}<span>${activityLine(live)}</span></span>` : ''}
+    ${chips ? `<span class="chips">${chips}</span>` : ''}
+  </div>`;
+}
+
+/** Every session, grouped by state in attention order. Sessions that never said
+ *  anything (a reviewer that finished silently, a one-line run) fold into one line
+ *  at the end so they do not bury the ones with something to read. */
+export function renderSessions(rows: SessionLike[], now: number, selectedId: string | null, thumbsFor: (s: SessionLike) => CardThumb[] = () => []): string {
   if (rows.length === 0) return '<div class="empty">No sessions on this project right now.</div>';
-  const active = rows.filter((r) => { const m = sessionMark(r); return m !== 'idle' && m !== 'done'; });
-  const quiet = rows.filter((r) => { const m = sessionMark(r); return m === 'idle' || m === 'done'; });
-  return active.map((r) => renderSessionRow(r, now, r.sessionId === selectedId)).join('') +
-    (quiet.length ? `<details class="quiet"><summary>${quiet.length} idle or done</summary>${quiet.map((r) => renderSessionRow(r, now, r.sessionId === selectedId)).join('')}</details>` : '');
+  const hasContent = (s: SessionLike) => !!(s.request?.headline || s.timeline?.steps.length || s.lastResponse || sessionStateOf(s) === 'asks');
+  const card = (s: SessionLike) => renderSessionCard(s, now, s.sessionId === selectedId, thumbsFor(s));
+  const shown = rows.filter(hasContent);
+  const bare = rows.filter((s) => !hasContent(s));
+  return SESSION_STATE_ORDER.map((key) => {
+    const group = shown.filter((s) => sessionStateOf(s) === key);
+    return group.length ? `<div class="divider">${SESSION_STATE_WORD[key]} <span class="n">${group.length}</span></div>${group.map(card).join('')}` : '';
+  }).join('') + (bare.length ? `<details class="bare"><summary>${bare.length} more with nothing to show</summary>${bare.map(card).join('')}</details>` : '');
+}
+
+/** What the Sessions tab counts: the sessions with something to read. */
+export function sessionCount(rows: SessionLike[]): { shown: number; asks: number } {
+  return {
+    shown: rows.filter((s) => s.request?.headline || s.timeline?.steps.length || s.lastResponse).length,
+    asks: rows.filter((s) => sessionStateOf(s) === 'asks').length,
+  };
 }
 
 const pct = (done: number, total: number) => (total > 0 ? Math.round((done / total) * 100) : 0);
@@ -399,7 +443,7 @@ export function renderPrs(m: PrsModel, now: number): string {
     return `<section>
       <div class="head"><span class="label">${escapeHtml(r.slug.split('/')[1] ?? r.slug)}</span>${branch}<span class="n">${r.open.length}</span></div>
       <ul>${r.open.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, p.isDraft)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)} · ${escapeHtml(p.author)}</span></span></a></li>`).join('')}</ul>
-      ${r.merged.length ? `<details><summary>merged <span class="n">${r.merged.length}</span></summary><ul>${r.merged.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, false)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span></a></li>`).join('')}</ul></details>` : ''}
+      ${r.merged.length ? `<details open><summary>merged <span class="n">${r.merged.length}</span></summary><ul>${r.merged.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, false)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span></a></li>`).join('')}</ul></details>` : ''}
     </section>`;
   }).join('');
 }

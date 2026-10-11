@@ -111,23 +111,8 @@
       "agentsProject": [
         {
           "type": "webview",
-          "id": "agentsProject.overview",
-          "name": "Overview"
-        },
-        {
-          "type": "webview",
-          "id": "agentsProject.sessions",
-          "name": "Sessions"
-        },
-        {
-          "type": "webview",
-          "id": "agentsProject.prs",
-          "name": "Pull Requests"
-        },
-        {
-          "type": "webview",
-          "id": "agentsProject.tickets",
-          "name": "Tickets"
+          "id": "agentsProject.panel",
+          "name": "Project"
         }
       ]
     },
@@ -834,42 +819,12 @@
       "view/title": [
         {
           "command": "agents.project.pick",
-          "when": "view == agentsProject.overview",
+          "when": "view == agentsProject.panel",
           "group": "navigation@1"
         },
         {
           "command": "agents.project.refresh",
-          "when": "view == agentsProject.overview",
-          "group": "navigation@2"
-        },
-        {
-          "command": "agents.project.pick",
-          "when": "view == agentsProject.sessions",
-          "group": "navigation@1"
-        },
-        {
-          "command": "agents.project.refresh",
-          "when": "view == agentsProject.sessions",
-          "group": "navigation@2"
-        },
-        {
-          "command": "agents.project.pick",
-          "when": "view == agentsProject.prs",
-          "group": "navigation@1"
-        },
-        {
-          "command": "agents.project.refresh",
-          "when": "view == agentsProject.prs",
-          "group": "navigation@2"
-        },
-        {
-          "command": "agents.project.pick",
-          "when": "view == agentsProject.tickets",
-          "group": "navigation@1"
-        },
-        {
-          "command": "agents.project.refresh",
-          "when": "view == agentsProject.tickets",
+          "when": "view == agentsProject.panel",
           "group": "navigation@2"
         }
       ]

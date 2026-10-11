@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
   parseOverview, parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, projectSessions, renderOverview, renderPrs, renderSessionRow, renderTickets, sessionMark,
+  activityLine, projectSessions, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets, sessionCount,
   type SessionLike,
 } from './projectPanel'
 
@@ -93,59 +93,86 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   expect(html).toContain('aria-label="Draft"')
   expect(html).toContain('#7 · 24h · m')
   expect(html).not.toContain('o/quiet')
+  expect(html).toContain('<details open><summary>merged <span class="n">5</span>')
 })
 
 const row = (o: Partial<SessionLike>): SessionLike => ({
   sessionId: 's', host: 'yosemite-m6', title: 'T', label: '', topic: '', phase: 'running', liveStatus: 'running',
-  lastResponse: '', activity: '', ticket: null, artifacts: [], lastActivityMs: 0, confirmedProject: 'agi', ...o,
+  lastResponse: '', activity: '', ticket: null, lastActivityMs: 0, confirmedProject: 'agi', ...o,
 })
+const NOW = Date.parse('2026-10-09T00:00:00Z')
 
-test('session mark: an open ask beats a stall beats a failure beats working; idle and done sit last', () => {
-  expect(sessionMark(row({ attention: { kind: 'permission', state: 'open' } }))).toBe('asks')
-  expect(sessionMark(row({ attention: { kind: 'stall', state: 'open' }, phase: 'idle' }))).toBe('stopped')
-  expect(sessionMark(row({ liveStatus: 'crashed', phase: 'idle' }))).toBe('stopped')
-  expect(sessionMark(row({ phase: 'failed' }))).toBe('failed')
-  expect(sessionMark(row({ attention: { kind: 'question', state: 'answered' } }))).toBe('working')
-  expect(sessionMark(row({ phase: 'idle', liveStatus: 'idle' }))).toBe('idle')
+test('projectSessions keeps only the CLI-confirmed project, newest first', () => {
   const ordered = projectSessions([
-    row({ sessionId: 'run', lastActivityMs: 9 }),
-    row({ sessionId: 'other', confirmedProject: 'rush' }),
-    row({ sessionId: 'stall', attention: { kind: 'stall', state: 'open' }, phase: 'idle' }),
-    row({ sessionId: 'ask', attention: { kind: 'question', state: 'open' } }),
+    row({ sessionId: 'old', lastActivityMs: 1 }),
+    row({ sessionId: 'other', confirmedProject: 'rush', lastActivityMs: 9 }),
+    row({ sessionId: 'new', lastActivityMs: 5 }),
   ], 'AGI')
-  expect(ordered.map((r) => r.sessionId)).toEqual(['ask', 'stall', 'run'])
+  expect(ordered.map((r) => r.sessionId)).toEqual(['new', 'old'])
 })
 
-test('session row: three lines, the state is the icon, facts carry their words in titles', () => {
-  const html = renderSessionRow(row({
-    title: 'delete CLI copies', attention: { kind: 'question', state: 'open', question: { text: 'Run the restart on m2?' } },
-    lastResponse: 'older text', ticket: 'PHNX-4227', lastActivityMs: Date.parse('2026-10-09T00:00:00Z') - 22 * 60000,
-    prStatus: { number: 3835, checks: 'passing', isDraft: false }, artifacts: [1, 2, 3], files: { total: 41 },
-  }), Date.parse('2026-10-09T00:00:00Z'), true)
-  expect(html).toContain('class="l1">delete CLI copies')
-  expect(html).toContain('class="l2">Run the restart on m2?')
-  expect(html).toContain('aria-label="Asking you"')
-  expect(html).toContain('m6')
-  expect(html).toContain('22m')
-  expect(html).toContain('PR #3835: ready to merge')
-  expect(html).toContain('3 artifacts')
-  expect(html).toContain('41 files changed')
-  expect(html).not.toMatch(/>\s*asks\s*</)
-  expect(html).toContain('srow sel')
+test('a card says what is going on: your ask, the agent in its own words, chips; the device only in the tooltip', () => {
+  const html = renderSessionCard(row({
+    title: 'Health', phase: 'idle', liveStatus: 'idle', request: { headline: 'Dude, no, no, dude.' },
+    timeline: { steps: [{ text: 'older' }, { text: 'Your trusted publisher is set up correctly.' }] }, lastResponse: 'stale reply',
+    ticket: 'PHNX-4227', worktreeSlug: 'cli-health-1009', files: { total: 16 }, lastActivityMs: NOW - 22 * 60000,
+    prStatus: { number: 3855, checks: 'passing', isDraft: false }, viewingIn: 'Codium tab 3',
+  }), NOW, true)
+  expect(html).toContain('class="ttl">Health<')
+  expect(html).toContain('Dude, no, no, dude.')
+  expect(html).toContain('Your trusted publisher is set up correctly.')
+  expect(html).not.toContain('stale reply')
+  expect(html).toContain('PR #3855: ready to merge')
+  expect(html).toContain('cli-health-1009')
+  expect(html).toContain('16 files changed')
+  expect(html).toContain('>22m<')
+  expect(html).toContain('aria-label="Your turn"')
+  expect(html).toContain('class="go">Focus<')
+  expect(html).toContain('title="Your turn · yosemite-m6 · Codium tab 3"')
+  expect(html).not.toMatch(/>m6</)
+  expect(html).toContain('card st-yours sel')
+  expect(renderSessionCard(row({ lastResponse: 'I filed [PHNX-4324](https://linear.app/x/issue/PHNX-43' }), NOW, false)).toContain('I filed PHNX-4324<')
+})
+
+test('a pending question shows in an amber box; a detached session offers Open, a non-resumable one nothing', () => {
+  const ask = renderSessionCard(row({ phase: 'waiting', liveStatus: 'input_required', question: { text: 'Run the restart on m2?' }, viewingIn: 'detached' }), NOW, false)
+  expect(ask).toContain('class="ask">Run the restart on m2?<')
+  expect(ask).toContain('aria-label="Needs you"')
+  expect(ask).toContain('class="go">Open<')
+  expect(renderSessionCard(row({ phase: 'done', liveStatus: 'closed', resumable: false }), NOW, false)).not.toContain('class="go"')
+})
+
+test('pasted images show as thumbnails that open the full image; more than three fold into +N', () => {
+  const thumbs = [1, 2, 3, 4, 5].map((i) => ({ uri: `vscode-resource:/a${i}.png`, path: `/h/.agents/.history/attachments/a${i}.png`, label: `a${i}.png` }))
+  const html = renderSessionCard(row({ request: { headline: 'Turn this into an animation' } }), NOW, false, thumbs)
+  expect(html.match(/class="th"/g)?.length).toBe(3)
+  expect(html).toContain('data-path="/h/.agents/.history/attachments/a1.png"')
+  expect(html).toContain('<b>+2</b>')
+})
+
+test('every session is listed, grouped by state in attention order; empty ones fold into one line at the end', () => {
+  const html = renderSessions([
+    row({ sessionId: 'ended', phase: 'done', liveStatus: 'closed', lastResponse: 'Shipped.' }),
+    row({ sessionId: 'yours', phase: 'idle', liveStatus: 'idle', lastResponse: 'Done on my side.' }),
+    row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required' }),
+    row({ sessionId: 'work', lastResponse: 'Running the suite.' }),
+    row({ sessionId: 'quiet', phase: 'done', liveStatus: 'closed' }),
+  ], NOW, null)
+  const order = ['Needs you', 'Working', 'Your turn', 'Ended'].map((w) => html.indexOf(`class="divider">${w}`))
+  expect(order.every((i) => i >= 0)).toBe(true)
+  expect([...order].sort((x, y) => x - y)).toEqual(order)
+  expect(html).not.toContain('idle or done')
+  expect(html).toContain('<details class="bare"><summary>1 more with nothing to show</summary>')
+  expect(sessionCount([row({ lastResponse: 'x' }), row({}), row({ phase: 'waiting', lastResponse: 'y' })])).toEqual({ shown: 2, asks: 1 })
 })
 
 test('a live tool call reads as the command it runs, never as a "Tool: args" label', () => {
   expect(activityLine('Bash: agents ssh zion ls')).toBe('<span class="cmd">$ agents ssh zion ls</span>')
   expect(activityLine('Read: src/a.ts')).toBe('<span class="tool">Read</span> <span class="cmd">src/a.ts</span>')
   expect(activityLine('thinking about it')).toBe('thinking about it')
-  const html = renderSessionRow(row({ activity: 'Bash: cd /tmp && ls' }), 0, false)
-  expect(html).toContain('class="l2 act"')
+  const html = renderSessionCard(row({ activity: 'Bash: cd /tmp && ls', lastResponse: 'Checking the tree.' }), 0, false)
+  expect(html).toContain('<span class="cmd">$ cd /tmp &amp;&amp; ls</span>')
   expect(html).not.toContain('Bash:')
-})
-
-test('a tool-call preview in lastResponse also reads as a command; prose stays prose', () => {
-  expect(renderSessionRow(row({ lastResponse: 'Bash: cd /tmp && ls' }), 0, false)).toContain('<span class="cmd">$ cd /tmp &amp;&amp; ls</span>')
-  expect(renderSessionRow(row({ lastResponse: "No, it didn't come from a Rush number" }), 0, false)).toContain('class="l2">No, it didn&#39;t come')
 })
 
 test('overview shows a failed ticket read in place instead of an empty bar', () => {

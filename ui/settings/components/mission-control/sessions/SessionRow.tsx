@@ -7,6 +7,7 @@ import { RowLinks } from './RowLinks'
 import { formatRelativeTime } from './sessionTime'
 import { previousResumeMessage, resumeSourceDevice } from './sessionActions'
 import { isUnassigned } from '../sessionProjects'
+import { SESSION_STATE_WORD, sessionStateOf } from '@shared/sessionState'
 
 export interface SessionRowProps {
   agent: FloorAgent
@@ -48,10 +49,6 @@ export function collapsedLines(row: SessionRowView): { you: boolean; agent: bool
   return { you: row.youIsReal, agent: Boolean(row.lastLine) }
 }
 
-const PHASE_LABEL: Record<string, string> = {
-  running: 'working', idle: 'idle', waiting: 'waiting', failed: 'failed', done: 'done',
-}
-
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
   onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext, onAssignProject, onMeasure,
@@ -78,7 +75,7 @@ function SessionRowImpl({
   // distinct logos.
   const agentId = (a.agentType || agentIdFromPrefix(a.abbr) || row.harnessTag || 'agent').toLowerCase()
   const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
-  const phaseLabel = previous ? '' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
+  const phaseLabel = previous ? '' : SESSION_STATE_WORD[sessionStateOf({ phase: a.phase, liveStatus: a.liveStatus, needsYou: a.needs })].toLowerCase()
   // "You ›" asserts the user actually typed something: it shows only when the CLI
   // carried a genuine user turn. A synthesized task label (topic, worktree slug, tab
   // name) never masquerades as the user's own words (PHNX-3939). "Agent ›" is the
