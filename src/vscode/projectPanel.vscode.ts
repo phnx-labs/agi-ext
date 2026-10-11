@@ -72,7 +72,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.file(os.homedir())] };
     view.webview.html = shell(view.webview.cspSource);
     view.webview.onDidReceiveMessage((msg: { type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown }) => {
-      if (msg.type === 'ready') this.postTab();
+      if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
       else if (msg.type === 'open') openExternalUrl(msg.url);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
@@ -95,8 +95,13 @@ class ProjectView implements vscode.WebviewViewProvider {
     sessionStreamDemand.setProjectSessionsVisible(!!this.view?.visible && this.active === 'sessions');
   }
 
-  private postTab(): void {
+  /** A message posted before the webview's script listens is dropped, so the first
+   *  draw can be lost; the script says when it is ready and gets the tab again. */
+  private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
+    const cached = this.tabs.get(this.active)!.html;
+    if (cached) this.post(this.active, cached);
+    else void this.load(this.active, false);
   }
 
   private async show(tab: TabId): Promise<void> {

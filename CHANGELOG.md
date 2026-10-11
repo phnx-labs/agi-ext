@@ -43,6 +43,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Clicking a session card goes to it: the tab holding it comes forward (in this window, or
   in another window through `agents ps focus --attach-only`), or it opens in a new tab with
   the CLI's resume command for its device. Hover shows Focus or Open.
+- The Project panel no longer sticks on "Loading…". Its first draw could be posted before the
+  panel's script was listening and was then lost, and a view whose data was already cached
+  never drew again. The panel now asks for its content once it is ready.
 - One set of state words on every surface (Project panel, session sidebar, Fleet rows):
   Needs you, Stopped, Working, Your turn, Unknown, Ended. A session waiting on a question or
   permission used to show as working in the Project panel and as idle in Fleet, and an
