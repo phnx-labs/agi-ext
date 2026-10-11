@@ -131,13 +131,14 @@ describe('reload scan ignores terminal editor ghosts', () => {
     expect((ghost as unknown as { disposed: number }).disposed).toBe(1);
   });
 
-  test('a crash-restored tab whose processId never settles does not hold the restore', async () => {
+  test('a terminal still starting (processId never settles) neither holds the restore nor is closed', async () => {
     const vscode = await import('vscode');
-    const ghost = scannedTerm('CC — tab with no pty', new Promise<number | undefined>(() => {}));
-    (vscode.window.terminals as vscode.Terminal[]) = [ghost];
+    const slow = scannedTerm('CC — slow to start', new Promise<number | undefined>(() => {}));
+    (vscode.window.terminals as vscode.Terminal[]) = [slow];
 
     expect(await t.scanExisting(() => fakeAgentConfig())).toBe(0);
-    expect(t.getByTerminal(ghost)).toBeUndefined();
+    expect(t.getByTerminal(slow)).toBeUndefined();
+    expect((slow as unknown as { disposed: number }).disposed).toBe(0);
   }, 20_000);
 });
 

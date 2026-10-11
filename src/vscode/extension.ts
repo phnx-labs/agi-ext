@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
 import { readManagedProjects } from '../core/managedProjects';
-import { decideSpawn, resumeSessionTab, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
+import { cliResumeOutcome, decideSpawn, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
   harnessLaunchRegistrations,
@@ -139,7 +139,7 @@ async function ensureAgentsCliInstalled(): Promise<void> {
   }
 }
 import { agentTabShell, supportsPrewarming, inTabResumeCommand, exitSequenceFor } from '../core/prewarm';
-import { liveWindowFolders, restorePlan } from '../core/sessions.persist';
+import { liveWindows, restorePlan } from '../core/sessions.persist';
 import { generateClaudeSessionId, listOpencodeSessions } from '../core/prewarm.simple';
 import { canonicalSessionId } from '../core/canonicalSessionId';
 import {
@@ -1189,6 +1189,19 @@ export async function activate(context: vscode.ExtensionContext) {
           const req = parseSpawnRequest(uri.query);
           if (req) {
             await spawnCommandTerminal(context, req);
+          } else {
+            const nonce = spawnNonce(uri.query);
+            if (nonce) {
+              try {
+                writeSpawnAck({
+                  nonce, status: 'failed', windowFolders: terminals.windowFolders(),
+                  workspaceName: vscode.workspace.name ?? null, terminalId: null, title: null,
+                  sessionId: null, pid: null, reason: 'the request has no command to run', at: Date.now(),
+                });
+              } catch (err) {
+                console.error('[SPAWN] Failed to write ack', err);
+              }
+            }
           }
         }
       }
@@ -1508,20 +1521,11 @@ export async function activate(context: vscode.ExtensionContext) {
   // project, which applies the same /spawn decision. Returns the ack result.
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.resumeSession', (sessionId: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
-      liveTab: (id) => {
-        const entry = terminals.getBySessionId(id);
+      liveTab: async (id) => {
+        const entry = await terminals.liveAgentTab(id);
         return entry && { terminalId: entry.id, focus: () => entry.terminal.show() };
       },
-      runResume: async (id) => {
-        const { runAgentsArgs } = await import('../core/agentsBin');
-        try {
-          const { stdout, stderr } = await runAgentsArgs(['sessions', 'resume', id, '--vscodium'], { timeout: 60_000 });
-          return { ok: true, output: `${stdout}\n${stderr}` };
-        } catch (err) {
-          const e = err as { stdout?: string; stderr?: string; message?: string };
-          return { ok: false, output: `${e.stdout ?? ''}\n${e.stderr ?? e.message ?? ''}` };
-        }
-      },
+      runResume: resumeInProjectWindow,
     }))
   );
 
@@ -2174,11 +2178,11 @@ async function placeSpawnRequest(
     at: Date.now(),
   });
   if (!def) return result('failed', {}, 'no harness matches this request');
-  const live = sessionId ? terminals.getBySessionId(sessionId) : undefined;
+  const live = sessionId ? await terminals.liveAgentTab(sessionId) : undefined;
   const decision = decideSpawn({
     project: req.project,
     windowFolders,
-    otherWindows: req.project ? liveWindowFolders(process.pid) : [],
+    otherWindows: req.project ? liveWindows(process.pid).map((w) => w.folders) : [],
     liveTerminalId: live?.id,
   });
   if (decision === 'no-project') return result('failed', {}, 'the request names no project, so no window can claim it');
@@ -2230,7 +2234,7 @@ async function placeSpawnRequest(
     ...agentTabShell(req.command, process.env.SHELL),
   });
 
-  const pid = await terminals.processIdWithin(terminal);
+  const { pid } = await terminals.processIdWithin(terminal);
   terminals.register(terminal, terminalId, agentConfig, pid, context);
   readiness.registerTerminal(terminal);
   if (pid === undefined) return result('failed', { terminalId, title }, "the tab's shell did not start within 10s");
@@ -2250,6 +2254,19 @@ async function placeSpawnRequest(
   terminal.show();
   lastSpawnedTerminal = terminal;
   return result('opened', { terminalId, title, pid });
+}
+
+// `agents sessions resume <id> --vscodium`: the CLI raises the window that owns
+// the session's project and sends it a /spawn, which that window decides.
+async function resumeInProjectWindow(id: string): Promise<{ ok: boolean; output: string }> {
+  const { runAgentsArgs } = await import('../core/agentsBin');
+  try {
+    const { stdout, stderr } = await runAgentsArgs(['sessions', 'resume', id, '--vscodium'], { timeout: 60_000 });
+    return { ok: true, output: `${stdout}\n${stderr}` };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    return { ok: false, output: `${e.stdout ?? ''}\n${e.stderr ?? e.message ?? ''}` };
+  }
 }
 
 async function newTaskWithContext(context: vscode.ExtensionContext) {
@@ -2766,12 +2783,29 @@ function recoveryAgentTitle(agent: string): string {
 export async function openAgentSessionTerminal(
   context: vscode.ExtensionContext,
   session: { id: string; shortId: string; agent: string; version?: string; account?: string; cwd?: string; host?: string; terminalId?: string },
-  // When set, run THIS exact command in the resumed tab instead of the default
-  // `inTabResumeCommand`. Used by the Sessions surface's PREVIOUS band to
-  // run the CLI's own device-targeted recovery command (PHNX-3593) — the default
-  // builder drops `--device`, which strands a cross-device crashed session.
+  // When set, the tab runs THIS command instead of `inTabResumeCommand`, here,
+  // without the placement check: the PREVIOUS band's recovery and migration.
   resumeCommandOverride?: string,
 ): Promise<boolean> {
+  // Same placement as /spawn: a session this window shows is focused, and one
+  // whose project belongs to another window opens there through the CLI.
+  if (!resumeCommandOverride) {
+    const live = await terminals.liveAgentTab(session.id);
+    if (live) {
+      live.terminal.show();
+      return true;
+    }
+    if (session.cwd && decideSpawn({
+      project: session.cwd,
+      windowFolders: terminals.windowFolders(),
+      otherWindows: liveWindows(process.pid).map((w) => w.folders),
+    }) === 'wrong-window') {
+      const { ok, output } = await resumeInProjectWindow(session.id);
+      const { reason } = cliResumeOutcome(ok, output);
+      if (!ok) void vscode.window.showWarningMessage(`Session ${session.shortId}: ${reason}`);
+      return ok;
+    }
+  }
   const agentKey = agentKeyFromSession(session.agent);
   // Ordinary picker/reload paths still require a presented built-in. A canonical
   // recovery command is different: the CLI owns the recorded harness and may
@@ -2794,8 +2828,7 @@ export async function openAgentSessionTerminal(
     ? createAgentConfig(context.extensionPath, builtIn.title, builtIn.command, builtIn.icon, builtIn.prefix)
     : createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', RECOVERY_AGENT_PREFIX);
 
-  // A resumed session belongs in ITS OWN directory, not whatever workspace this
-  // window happens to have open — batch resume routinely spans several repos.
+  // The tab starts in the session's own directory when it has one here.
   const workspacePath = session.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   const resumeCmd = resumeCommandOverride ?? inTabResumeCommand(session.id);
 
@@ -4645,33 +4678,24 @@ async function reloadActiveTerminal(context: vscode.ExtensionContext) {
       return;
     }
 
-    // Prewarm agents use their tuned exit keys; the rest fall back to Ctrl+C twice.
-    const exitSequence = exitSequenceFor(agentType);
-    const resumeCommand = inTabResumeCommand(sessionId);
-
+    // Let the agent exit cleanly (prewarm agents have tuned exit keys, the rest
+    // Ctrl+C twice), then replace the tab: a new tab whose own process is the
+    // resume, so no command is typed above the agent.
     terminal.show();
-    for (const seq of exitSequence) {
-      await vscode.commands.executeCommand('workbench.action.terminal.sendSequence', {
-        text: seq
-      });
+    for (const seq of exitSequenceFor(agentType)) {
+      await vscode.commands.executeCommand('workbench.action.terminal.sendSequence', { text: seq });
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-
-    readiness.resetAfterAgentExit(terminal);
-    try {
-      await readiness.waitFor(terminal, 'promptReady');
-    } catch (err) {
-      console.warn(`[READINESS] promptReady wait after agent exit failed: ${err}`);
-    }
-
-    terminal.sendText(`clear && ${resumeCommand}`);
-    readiness.armAgentReady(terminal, {
-      agentKey: agentType,
-      sessionId,
-      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    terminals.unregister(terminal);
+    terminal.dispose();
+    await openAgentSessionTerminal(context, {
+      id: sessionId,
+      shortId: sessionId.slice(0, 8),
+      agent: agentType,
+      version: entry.version,
+      account: entry.account,
+      host: entry.host,
     });
-
-    updateStatusBarForTerminal(terminal, context.extensionPath);
   } catch (error) {
     console.error('Error reloading terminal:', error);
     vscode.window.showErrorMessage(`Failed to reload terminal: ${error}`);
@@ -5187,10 +5211,15 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
   if (persisted.length === 0) return;
 
   // One tab per session, and none for a tab scanExisting already adopted.
+  // One tab per session across windows too: a session another live window
+  // already shows is not reopened here.
   const tracked = terminals.getAllTerminals();
   const toRestore = restorePlan(persisted, {
     terminalIds: new Set(tracked.map((e) => e.id)),
-    sessionIds: new Set(tracked.map((e) => e.sessionId).filter((id): id is string => Boolean(id))),
+    sessionIds: new Set([
+      ...tracked.map((e) => e.sessionId).filter((id): id is string => Boolean(id)),
+      ...liveWindows(process.pid).flatMap((w) => w.sessionIds),
+    ]),
   });
   terminals.setRestoring(toRestore);
   if (toRestore.length === 0) {
@@ -5255,7 +5284,7 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     // A terminal whose process is the command gets no editor tab until shown.
     terminal.show(true);
 
-    const pid = await terminal.processId;
+    const { pid } = await terminals.processIdWithin(terminal);
     // Carry the tab's original creation time across the reload — the agent it is
     // being restored onto is older than this widget (see register's createdAt).
     terminals.register(terminal, session.terminalId, agentConfig, pid, context, session.label, session.createdAt);
@@ -5360,7 +5389,7 @@ async function reopenLastClosedSession(context: vscode.ExtensionContext): Promis
     ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
   });
 
-  const pid = await terminal.processId;
+  const { pid } = await terminals.processIdWithin(terminal);
   terminals.register(terminal, terminalId, closed.agentConfig, pid, context, closed.label);
   readiness.registerTerminal(terminal);
 

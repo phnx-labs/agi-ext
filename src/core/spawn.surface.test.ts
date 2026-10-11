@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { cliResumeOutcome, decideSpawn, resumeSessionTab, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
+import { cliResumeOutcome, decideSpawn, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
 
 // The `…/spawn` URI verb reopens a session as an editor tab. AGI EXT no longer
 // spawns tmux-backed terminals at the extension level, so every request lands on
@@ -89,14 +89,14 @@ describe('agents.resumeSession', () => {
     let focused = 0;
     let ran = 0;
     const result = await resumeSessionTab('s1', {
-      liveTab: (id) => (id === 's1' ? { terminalId: 'cl-1', focus: () => { focused++; } } : undefined),
+      liveTab: async (id) => (id === 's1' ? { terminalId: 'cl-1', focus: () => { focused++; } } : undefined),
       runResume: async () => { ran++; return { ok: true, output: '' }; },
     });
     expect({ result, focused, ran }).toEqual({ result: { status: 'focused-existing', terminalId: 'cl-1', reason: null }, focused: 1, ran: 0 });
   });
 
   test('otherwise the CLI decides the window, and its exit code is the answer', async () => {
-    const liveTab = () => undefined;
+    const liveTab = async () => undefined;
     expect(await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "Already open → focused tab \\"CC - x\\" in window \\"projB\\""') }))
       .toEqual({ status: 'focused-existing', terminalId: null, reason: 'Already open → focused tab "CC - x" in window "projB"' });
     expect((await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "no ack" >&2; exit 1') })).status).toBe('failed');
@@ -138,6 +138,13 @@ describe('spawn ack contract', () => {
     expect(decideSpawn({ project: '/Users/dev/src/svatlas', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('wrong-window');
     expect(decideSpawn({ windowFolders: folders })).toBe('no-project');
     expect(decideSpawn({ windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('no-project');
+  });
+
+  test('the nonce survives a request with no command, so the window can still ack failed', () => {
+    expect(parseSpawnRequest(encode({ nonce: 'n-1', project: '/p' }))).toBeNull();
+    expect(spawnNonce(encode({ nonce: 'n-1', project: '/p' }))).toBe('n-1');
+    expect(spawnNonce(encode({ nonce: '../x' }))).toBeUndefined();
+    expect(spawnNonce('p=not-json')).toBeUndefined();
   });
 
   test('a window on a parent folder leaves a nested project to the live window that holds it', () => {

@@ -3,6 +3,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { probeChildPids } from '../monitor/probes';
 import * as fs from 'fs/promises';
 import { AgentConfig } from './agents.vscode';
 
@@ -215,19 +216,21 @@ export function windowFolders(): string[] {
 const STALE_TERMINAL_MS = 10_000;
 
 /**
- * A terminal's shell pid, or undefined when it has not started within 10s. A
- * terminal tab the editor brought back after a crash can have no pty at all, and
- * its processId then never settles.
+ * A terminal's shell pid within 10s. `timedOut` tells a terminal still starting
+ * (processId never settled in time) from one with no pty at all (processId
+ * settled to undefined, as for a terminal tab the editor revived after a crash).
  */
-export async function processIdWithin(terminal: vscode.Terminal): Promise<number | undefined> {
+export async function processIdWithin(terminal: vscode.Terminal): Promise<{ pid: number | undefined; timedOut: boolean }> {
   let timer: NodeJS.Timeout | undefined;
+  const timeout = Symbol('timeout');
   try {
-    return await Promise.race([
+    const result = await Promise.race([
       terminal.processId,
-      new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), STALE_TERMINAL_MS); }),
+      new Promise<typeof timeout>((resolve) => { timer = setTimeout(() => resolve(timeout), STALE_TERMINAL_MS); }),
     ]);
+    return result === timeout ? { pid: undefined, timedOut: true } : { pid: result, timedOut: false };
   } catch {
-    return undefined;
+    return { pid: undefined, timedOut: false };
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -259,6 +262,36 @@ export function getBySessionId(sessionId: string): EditorTerminal | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * The tab showing this session only while its agent is running: the tab's
+ * process is alive and either is the agent (a tab opened with agentTabShell) or
+ * has a child process (the agent started from the tab's shell). A tab whose
+ * agent exited is closed here, so the caller opens the session again and there
+ * is still one tab per session.
+ */
+export async function liveAgentTab(sessionId: string): Promise<EditorTerminal | undefined> {
+  if (!sessionId) return undefined;
+  for (const entry of [...editorTerminals.values()]) {
+    if (entry.sessionId !== sessionId) continue;
+    if (await runsAgent(entry)) return entry;
+    unregister(entry.terminal);
+    entry.terminal.dispose();
+  }
+  return undefined;
+}
+
+async function runsAgent(entry: EditorTerminal): Promise<boolean> {
+  if (entry.terminal.exitStatus !== undefined || entry.pid === undefined) return false;
+  try {
+    process.kill(entry.pid, 0);
+  } catch {
+    return false;
+  }
+  const args = (entry.terminal.creationOptions as vscode.TerminalOptions | undefined)?.shellArgs;
+  if (Array.isArray(args) && args.includes('-c')) return true;
+  return (await probeChildPids(entry.pid)).length > 0;
 }
 
 export function getAllTerminals(): EditorTerminal[] {
@@ -728,7 +761,7 @@ export async function scanExisting(
 
     const id = identOpts.terminalId || nextId(info.prefix);
 
-    const pid = await processIdWithin(terminal);
+    const { pid, timedOut } = await processIdWithin(terminal);
 
     // A terminal-editor input can survive a window reload after its backing
     // pseudo-terminal has gone away. VS Code still exposes that stale input in
@@ -736,12 +769,13 @@ export async function scanExisting(
     // "Unable to resolve resource vscode-terminal:..."). Registering it makes
     // restoreAgentTerminals believe the persisted session already has a live
     // tab, so it skips the real recreation and the user gets no terminal at all.
-    // Only a terminal with a backing process is an existing terminal. Close the
-    // stale agent tab, so the persisted-session path reopens that session as the
-    // one live tab in its place.
+    // Only a terminal with a backing process is an existing terminal. A revived
+    // agent tab with no pty is closed, so the persisted-session path reopens that
+    // session as the one live tab in its place. One still starting (timed out)
+    // may yet come up, so it is left alone.
     if (pid === undefined) {
-      console.log(`[TERMINALS] No backing process for "${terminal.name}", closing it for persisted-session restore`);
-      terminal.dispose();
+      if (!timedOut) terminal.dispose();
+      console.log(`[TERMINALS] No backing process for "${terminal.name}" (${timedOut ? 'still starting, left open' : 'no pty, closed'})`);
       continue;
     }
 
