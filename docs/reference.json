@@ -5,13 +5,13 @@
   "counts": {
     "commands": 120,
     "settings": 8,
-    "keybindings": 47,
-    "menuItems": 11,
-    "views": 1,
-    "viewContainers": 1,
+    "keybindings": 48,
+    "menuItems": 13,
+    "views": 2,
+    "viewContainers": 2,
     "customEditors": 2,
-    "components": 89,
-    "props": 443
+    "components": 90,
+    "props": 444
   },
   "contributes": {
     "commands": [
@@ -288,12 +288,8 @@
         "title": "Agents: Session ID"
       },
       {
-        "command": "agents.resume",
-        "title": "Agents: Resume"
-      },
-      {
-        "command": "agents.resumePickSession",
-        "title": "Agents: Resume (Pick Session)"
+        "command": "agents.resumeSessionPick",
+        "title": "Agents: Resume Session…"
       },
       {
         "command": "agents.resumePickHost",
@@ -302,10 +298,6 @@
       {
         "command": "agents.resumePickHarness",
         "title": "Agents: Resume (Pick Harness)"
-      },
-      {
-        "command": "agents.sessionResume",
-        "title": "Agents: Session Resume"
       },
       {
         "command": "agents.resumeCurrentInBestProfile",
@@ -570,6 +562,18 @@
       {
         "command": "agents.quickLaunch9PickHost",
         "title": "Agents: Quick Launch 9 (Pick Host)"
+      },
+      {
+        "command": "agents.project.refresh",
+        "title": "Refresh",
+        "category": "Agents: Project",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agents.project.pick",
+        "title": "Switch Project",
+        "category": "Agents: Project",
+        "icon": "$(arrow-swap)"
       }
     ],
     "configuration": {
@@ -846,6 +850,11 @@
         "mac": "cmd+shift+y"
       },
       {
+        "command": "agents.resumeSessionPick",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r"
+      },
+      {
         "command": "agents.resumeCurrentInBestProfile",
         "key": "ctrl+shift+alt+j",
         "mac": "cmd+shift+alt+j"
@@ -977,6 +986,18 @@
           "when": "agents.readerEnabled",
           "group": "navigation@6"
         }
+      ],
+      "view/title": [
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.panel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "view == agentsProject.panel",
+          "group": "navigation@2"
+        }
       ]
     },
     "views": {
@@ -986,6 +1007,13 @@
           "id": "agentsPanel.terminal",
           "name": "Active Terminal"
         }
+      ],
+      "agentsProject": [
+        {
+          "type": "webview",
+          "id": "agentsProject.panel",
+          "name": "Project"
+        }
       ]
     },
     "viewsContainers": {
@@ -994,6 +1022,11 @@
           "id": "agentsPanel",
           "title": "Agents",
           "icon": "assets/agents-activity.svg"
+        },
+        {
+          "id": "agentsProject",
+          "title": "Project",
+          "icon": "assets/project-activity.svg"
         }
       ]
     }
@@ -4260,9 +4293,32 @@
       ]
     },
     {
+      "name": "SessionCards",
+      "file": "ui/settings/components/mission-control/sessions/SessionCards.tsx",
+      "description": "Timeline and Artifacts for one session, exactly as the sidebar draws them.",
+      "props": [
+        {
+          "name": "snapshot",
+          "type": "SessionCardSnapshot",
+          "optional": false,
+          "description": ""
+        }
+      ],
+      "inherited": {
+        "count": 0,
+        "from": []
+      },
+      "usedBy": [
+        "ExpandedCard (ui/settings/components/mission-control/sessions/ExpandedCard.tsx)"
+      ],
+      "usedIn": [
+        "webview panel \"AGI EXT\" (agentsSettings) › MissionControlTab"
+      ]
+    },
+    {
       "name": "SessionMeta",
       "file": "ui/settings/components/mission-control/sessions/SessionMeta.tsx",
-      "description": "Presentation-only metadata for an ended session.",
+      "description": "Presentation-only metadata for an ended session. The device is in the row header.",
       "props": [
         {
           "name": "agent",
@@ -4273,12 +4329,6 @@
         {
           "name": "nowMs",
           "type": "number",
-          "optional": false,
-          "description": ""
-        },
-        {
-          "name": "row",
-          "type": "SessionRowView",
           "optional": false,
           "description": ""
         }
@@ -4334,6 +4384,12 @@
           "type": "(agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void",
           "optional": true,
           "description": "Open the assign-project menu for this row. Absent -> no assign affordance."
+        },
+        {
+          "name": "onMeasure",
+          "type": "(key: string, height: number) => void",
+          "optional": true,
+          "description": "Reports the row's rendered height (collapsed or expanded), so the list reserves exactly that: wrapped chips or a long detail card never clip."
         },
         {
           "name": "onResume",

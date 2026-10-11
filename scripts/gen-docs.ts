@@ -225,7 +225,11 @@ function propsOf(symbol: ts.Symbol, decl: ts.Declaration, checker: ts.TypeChecke
   return { props: sortBy(props, (p) => p.name), inherited: { count, from: [...from].sort(byCodepoint) } };
 }
 
-/** Each ui/<root>/ bundle mapped to the webview that loads it, read from the extension host source. */
+/**
+ * Each ui/<root>/ bundle mapped to the webview that loads it, read from the extension host source.
+ * A registration claims the bundles its own file loads and those loaded by the src modules it
+ * imports directly (settings.vscode.ts registers the Fleet panel; settingsWebview.ts builds its HTML).
+ */
 function webviewHosts(manifest: Manifest): Map<string, string> {
   const hosts = new Map<string, string>();
   const labels = new Map<string, string>([
@@ -234,10 +238,14 @@ function webviewHosts(manifest: Manifest): Map<string, string> {
   ]);
   const walkDir = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walkDir(join(dir, e.name)) : e.name.endsWith('.ts') && !e.name.endsWith('.test.ts') ? [join(dir, e.name)] : []);
+  const files = new Map<string, { bundles: Set<string>; registrations: { viewType: string; title?: string }[]; imports: string[] }>();
   for (const file of walkDir(join(ROOT, 'src')).sort(byCodepoint)) {
     const sf = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
     const consts = new Map<string, string>();
     const bundles = new Set<string>();
+    const imports = sf.statements
+      .filter((st): st is ts.ImportDeclaration => ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier) && st.moduleSpecifier.text.startsWith('.'))
+      .map((st) => resolve(dirname(file), (st.moduleSpecifier as ts.StringLiteral).text) + '.ts');
     const registrations: { viewType: string; title?: string }[] = [];
     const value = (e: ts.Expression | undefined) => !e ? undefined : ts.isStringLiteralLike(e) ? e.text : ts.isIdentifier(e) ? consts.get(e.text) ?? e.text : undefined;
     const collect = (n: ts.Node): void => {
@@ -258,10 +266,12 @@ function webviewHosts(manifest: Manifest): Map<string, string> {
       ts.forEachChild(n, visit);
     };
     visit(sf);
-    for (const bundle of bundles) {
-      const label = registrations.map((r) => labels.get(r.viewType) ?? `webview panel "${r.title ?? r.viewType}" (${r.viewType})`).join(', ');
-      if (label) hosts.set(bundle, label);
-    }
+    files.set(file, { bundles, registrations, imports });
+  }
+  for (const { bundles, registrations, imports } of files.values()) {
+    const label = registrations.map((r) => labels.get(r.viewType) ?? `webview panel "${r.title ?? r.viewType}" (${r.viewType})`).join(', ');
+    if (!label) continue;
+    for (const bundle of [bundles, ...imports.map((i) => files.get(i)?.bundles ?? [])].flatMap((b) => [...b])) hosts.set(bundle, label);
   }
   return hosts;
 }
