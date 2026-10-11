@@ -31,6 +31,23 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   command above it; if the agent does not exit, it says so and opens no second copy.
 - A `/spawn` request the window cannot read still gets a `failed` answer when it names a nonce.
 - A corrupt or empty tab file restores nothing; it never brings back tabs from the old shared file.
+- The Project panel is one view with four icon tabs (Overview, Sessions, Pull requests,
+  Tickets) instead of four stacked views, so each list runs the full height of the
+  sidebar. The active tab shows its label; a badge on Sessions counts sessions that need
+  you; the tab and each tab's scroll are remembered. Only the active tab loads (PHNX-4289).
+- Sessions shows every session as a card that says what is going on: your last ask (with
+  thumbnails of images you pasted, which open the full image), where the agent is now in its
+  own words, its question when it asks you, the command it is running, and chips for its PR,
+  ticket, worktree and files changed. The device moved to the tooltip. Sessions that never
+  said anything fold into one line at the end; merged PRs are listed instead of folded.
+- Clicking a session card goes to it: the tab holding it comes forward (in this window, or
+  in another window through `agents ps focus --attach-only`), or it opens in a new tab with
+  the CLI's resume command for its device. Hover shows Focus or Open.
+- One set of state words on every surface (Project panel, session sidebar, Fleet rows):
+  Needs you, Stopped, Working, Your turn, Unknown, Ended. A session waiting on a question or
+  permission used to show as working in the Project panel and as idle in Fleet, and an
+  exited process read "Done" (✓), which said the work was finished when only the process
+  had exited.
 
 ## [0.9.388] - 2026-10-11
 

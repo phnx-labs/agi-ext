@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { displayPath, isInside } from './displayPath';
 import { extractLinearTicketId } from './utils';
 import { extractPrUrls, type PullRequestRef } from './panel.helpers';
@@ -49,4 +50,33 @@ export function sessionCardFields(
     };
   }
   return fields;
+}
+
+export interface RequestImageThumb {
+  path: string;
+  label: string;
+  uri: string;
+}
+
+/**
+ * The images pasted into the session's request that this machine can show. A
+ * pasted image is in this machine's attachment store under the name the request
+ * carries, wherever the agent runs; the CLI's hash-named cache copies of the same
+ * pastes count only for a local session whose request named none found here.
+ */
+export function requestImageThumbs(
+  live: Pick<RemoteSession, 'request' | 'attachments'>,
+  opts: { home: string; remoteDevice?: string; exists: (filePath: string) => boolean; previewUri: (filePath: string) => string },
+): RequestImageThumb[] {
+  const store = path.join(opts.home, '.agents', '.history', 'attachments');
+  const pasted = (live.request?.attachments ?? [])
+    .filter((a) => a.kind === 'image' && a.name && path.basename(a.name) === a.name)
+    .map((a) => path.join(store, a.name))
+    .filter(opts.exists)
+    .map((p) => ({ path: p, label: path.basename(p), uri: opts.previewUri(p) }));
+  if (pasted.length || opts.remoteDevice) return pasted;
+  const cache = path.join(opts.home, '.agents', '.cache', 'attachments');
+  return live.attachments
+    .filter((a) => a.mediaType.startsWith('image/') && isInside(a.path, cache))
+    .map((a) => ({ path: a.path, label: a.label, uri: opts.previewUri(a.path) }));
 }

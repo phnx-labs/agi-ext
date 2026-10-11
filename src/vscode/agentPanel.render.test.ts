@@ -730,16 +730,19 @@ test('the header keeps the face to title, model, account and host; the rest is i
   expect(idless).toContain('not reported yet');
 });
 
-test('the state line uses the CLI phase: running time, or how long it ran, and last activity', () => {
+test('the state line says the shared state word: running time, or how long it ran, and last activity', () => {
   const day = 26 * 3600_000;
-  const running = cards.renderSessionStats({ phase: 'running', durationMs: day, lastActivityMs: Date.now() - 2 * 60_000 });
+  const running = cards.renderSessionStats({ state: { key: 'working', word: 'Working' }, durationMs: day, lastActivityMs: Date.now() - 2 * 60_000 });
   expect(running).toContain('state-running');
-  expect(running).toContain('Running <b>1d 2h</b> · active <b>2 min ago</b>');
-  const idle = cards.renderSessionStats({ phase: 'idle', durationMs: day, lastActivityMs: Date.now() - 3 * 3600_000 });
-  expect(idle).toContain('Idle · ran <b>1d 2h</b> · active <b>3 hours ago</b>');
-  const asks = cards.renderSessionStats({ phase: 'running', needsYou: { kind: 'question', text: 'ok?' }, durationMs: 60_000 });
+  expect(running).toContain('Working <b>1d 2h</b> · active <b>2 min ago</b>');
+  const idle = cards.renderSessionStats({ state: { key: 'yours', word: 'Your turn' }, durationMs: day, lastActivityMs: Date.now() - 3 * 3600_000 });
+  expect(idle).toContain('Your turn · ran <b>1d 2h</b> · active <b>3 hours ago</b>');
+  const asks = cards.renderSessionStats({ state: { key: 'asks', word: 'Needs you' }, durationMs: 60_000 });
   expect(asks).toContain('state-waiting');
-  expect(asks).toContain('Waiting on you');
+  expect(asks).toContain('Needs you');
+  const ended = cards.renderSessionStats({ state: { key: 'ended', word: 'Ended' }, durationMs: 60_000 });
+  expect(ended).toContain('Ended · ran');
+  expect(ended).not.toContain('Done');
   expect(cards.renderSessionStats({})).toBe('');
 });
 

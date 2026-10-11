@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -5,9 +7,12 @@ import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
+import { requestImageThumbs } from '../core/sessionCardFields';
+import type { RemoteSession } from '../core/remoteSessions';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
   escapeHtml,
+  heldInTab,
   parseOverview,
   parsePrs,
   parseProjectDetection,
@@ -18,102 +23,148 @@ import {
   renderPrs,
   renderSessions,
   renderTickets,
+  sessionCount,
   type ProjectRef,
   type SessionLike,
   type TicketGroup,
 } from '../core/projectPanel';
 import { currentAgentPanelSubject, setAgentPanelSubjectFromFleet } from './agentPanel.vscode';
-import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
+import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
+import * as terminals from './terminals.vscode';
 import { openExternalUrl } from './webviewSecurity';
 
 const execFileAsync = promisify(execFile);
 
-// The Project container in the left sidebar (PHNX-4289): Overview, Sessions, Pull
-// requests and Tickets for one project, while the right sidebar keeps the focused
-// session. Overview, Pull requests and Tickets each read their one CLI verb when the
-// view becomes visible (at most once per FRESH_MS) or on Refresh. Sessions draws the
-// stream rows already in the presentation store and redraws on stream facts, so it
-// spawns nothing. No timer anywhere: a hidden view costs nothing.
+// The Project sidebar panel (PHNX-4289): one view with four icon tabs (Overview,
+// Sessions, Pull requests, Tickets) for one project, while the other sidebar keeps
+// the focused session. Only the active tab loads. Overview, Pull requests and
+// Tickets each read their one CLI verb when shown (at most once per FRESH_MS) or on
+// Refresh; Sessions draws the stream rows already in the presentation store and
+// demands the stream only while it is the visible tab. No timer anywhere.
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
+const TAB_KEY = 'agents.projectPanel.tab';
 const FRESH_MS = 60_000;
 
-type SectionId = 'overview' | 'sessions' | 'prs' | 'tickets';
-const VIEW_IDS: Record<SectionId, string> = {
-  overview: 'agentsProject.overview',
-  sessions: 'agentsProject.sessions',
-  prs: 'agentsProject.prs',
-  tickets: 'agentsProject.tickets',
-};
+type TabId = 'overview' | 'sessions' | 'prs' | 'tickets';
+const TABS: readonly TabId[] = ['overview', 'sessions', 'prs', 'tickets'];
+const VIEW_ID = 'agentsProject.panel';
 
-class SectionView implements vscode.WebviewViewProvider {
+interface TabState {
+  html: string | undefined;
+  loadedFor: string | undefined;
+  loadedAt: number;
+  generation: number;
+}
+
+class ProjectView implements vscode.WebviewViewProvider {
   view: vscode.WebviewView | undefined;
-  private loadedFor: string | undefined;
-  private loadedAt = 0;
-  private generation = 0;
+  private active: TabId;
+  private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
-  constructor(private readonly id: SectionId, private readonly controller: ProjectPanelController) {}
+  constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
+    const saved = context.workspaceState.get<string>(TAB_KEY);
+    this.active = (TABS as readonly string[]).includes(saved ?? '') ? saved as TabId : 'sessions';
+  }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
-    view.webview.options = { enableScripts: true };
+    view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.file(os.homedir())] };
     view.webview.html = shell(view.webview.cspSource);
-    view.webview.onDidReceiveMessage((msg: { type?: string; url?: unknown; sessionId?: unknown; host?: unknown }) => {
-      if (msg.type === 'open') openExternalUrl(msg.url);
+    view.webview.onDidReceiveMessage((msg: { type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown }) => {
+      if (msg.type === 'ready') this.postTab();
+      else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
+      else if (msg.type === 'open') openExternalUrl(msg.url);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') {
-        setAgentPanelSubjectFromFleet(msg.sessionId, typeof msg.host === 'string' ? msg.host : undefined);
-        void this.controller.redrawSessions();
+      else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
+      else if (msg.type === 'session' && typeof msg.sessionId === 'string') {
+        void this.controller.goToSession(msg.sessionId, typeof msg.host === 'string' ? msg.host : undefined);
       }
     });
-    const demand = (visible: boolean) => { if (this.id === 'sessions') sessionStreamDemand.setProjectSessionsVisible(visible); };
-    view.onDidChangeVisibility(() => { demand(view.visible); if (view.visible) void this.load(false); });
-    view.onDidDispose(() => { this.view = undefined; this.loadedFor = undefined; this.generation++; demand(false); });
-    demand(view.visible);
-    void this.load(false);
+    view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) void this.load(this.active, false); });
+    view.onDidDispose(() => {
+      this.view = undefined;
+      for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
+      sessionStreamDemand.setProjectSessionsVisible(false);
+    });
+    this.syncDemand();
+    void this.load(this.active, false);
   }
 
-  async load(force: boolean): Promise<void> {
+  private syncDemand(): void {
+    sessionStreamDemand.setProjectSessionsVisible(!!this.view?.visible && this.active === 'sessions');
+  }
+
+  private postTab(): void {
+    void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
+  }
+
+  private async show(tab: TabId): Promise<void> {
+    if (tab === this.active) return;
+    this.active = tab;
+    void this.context.workspaceState.update(TAB_KEY, tab);
+    this.syncDemand();
+    const cached = this.tabs.get(tab)!.html;
+    if (cached) this.post(tab, cached);
+    await this.load(tab, false);
+  }
+
+  async load(tab: TabId, force: boolean): Promise<void> {
+    const state = this.tabs.get(tab)!;
+    // A forced refresh on a hidden tab still has to reread when it is shown.
+    if (force) state.loadedAt = 0;
     const view = this.view;
-    // A forced refresh on a hidden view still has to reread on its next reveal.
-    if (force) this.loadedAt = 0;
-    if (!view || !view.visible) return;
-    const gen = ++this.generation;
+    if (!view || !view.visible || tab !== this.active) return;
+    const gen = ++state.generation;
     let project: ProjectRef | null;
     try {
       project = await this.controller.project();
     } catch (e) {
-      if (gen === this.generation) this.post(`<div class="err">${escapeHtml(errorText(e))}</div>`);
+      if (gen === state.generation) this.post(tab, `<div class="err">${escapeHtml(errorText(e))}</div>`);
       return;
     }
-    if (gen !== this.generation) return;
+    if (gen !== state.generation) return;
     view.description = project?.name;
     if (!project) {
-      this.post('<div class="empty">No agents project contains this workspace. <a href="#" data-pick>Pick a project</a></div>');
+      this.post(tab, '<div class="empty">No agents project contains this workspace. <a href="#" data-pick>Pick a project</a></div>');
       return;
     }
-    if (this.id === 'sessions') { this.post(this.controller.sessionsHtml(project)); return; }
-    const fresh = this.loadedFor === project.name && Date.now() - this.loadedAt < FRESH_MS;
+    if (tab === 'sessions') {
+      const { html, count } = this.controller.sessions(project, view.webview);
+      void view.webview.postMessage({ type: 'count', tab: 'sessions', n: count.shown, asks: count.asks });
+      this.post(tab, html);
+      return;
+    }
+    const fresh = state.loadedFor === project.name && Date.now() - state.loadedAt < FRESH_MS;
     if (fresh && !force) return;
-    if (this.loadedFor !== project.name) this.post('<div class="empty">Loading…</div>');
+    if (state.loadedFor !== project.name) this.post(tab, '<div class="empty">Loading…</div>');
     else void view.webview.postMessage({ type: 'loading' });
     let html: string;
     let ok = true;
     try {
-      html = await this.controller.render(this.id, project, force);
+      html = await this.controller.render(tab, project, force);
     } catch (e) {
       ok = false;
       html = `<div class="err">${escapeHtml(errorText(e))}</div>`;
     }
-    if (gen !== this.generation) return; // a newer load (refresh / project switch) owns the view
-    this.loadedFor = project.name;
-    // An error is not a fresh result: the next reveal reads again.
-    this.loadedAt = ok ? Date.now() : 0;
-    this.post(html);
+    if (gen !== state.generation) return; // a newer load (refresh / project switch) owns the tab
+    state.loadedFor = project.name;
+    // An error is not a fresh result: the next show reads again.
+    state.loadedAt = ok ? Date.now() : 0;
+    this.post(tab, html);
   }
 
-  post(html: string): void {
-    void this.view?.webview.postMessage({ type: 'html', html });
+  redrawSessions(): Promise<void> {
+    return this.load('sessions', false);
+  }
+
+  refresh(): void {
+    for (const t of TABS) void this.load(t, true);
+  }
+
+  private post(tab: TabId, html: string): void {
+    this.tabs.get(tab)!.html = html;
+    if (tab === this.active) void this.view?.webview.postMessage({ type: 'html', tab, html });
   }
 }
 
@@ -125,15 +176,10 @@ class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
   /** One `linear tasks` read feeds both Tickets and Overview's state bar. */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
-  readonly views: Record<SectionId, SectionView>;
+  readonly view: ProjectView;
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.views = {
-      overview: new SectionView('overview', this),
-      sessions: new SectionView('sessions', this),
-      prs: new SectionView('prs', this),
-      tickets: new SectionView('tickets', this),
-    };
+    this.view = new ProjectView(this, context);
   }
 
   /** The picked project for this workspace, else the one containing its first folder. */
@@ -172,7 +218,7 @@ class ProjectPanelController {
     return groups;
   }
 
-  async render(id: Exclude<SectionId, 'sessions'>, p: ProjectRef, force: boolean): Promise<string> {
+  async render(id: Exclude<TabId, 'sessions'>, p: ProjectRef, force: boolean): Promise<string> {
     if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force));
     if (id === 'overview') {
       // Fans out to the fleet for live-session counts, so it is the slow read (~15s).
@@ -196,15 +242,64 @@ class ProjectPanelController {
     return renderPrs(parsePrs(stdout), Date.now());
   }
 
-  sessionsHtml(p: ProjectRef): string {
-    if (!sessionPresentationStore.hasSeenReset()) return '<div class="empty">Waiting for the session stream…</div>';
-    const rows = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL) as unknown as SessionLike[];
+  private presented(): RemoteSession[] {
+    return sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL);
+  }
+
+  sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
+    if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
+    const rows = projectSessions(this.presented() as unknown as SessionLike[], p.name);
+    const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
+    const thumbsFor = (s: SessionLike) => {
+      const live = byId.get(s.sessionId);
+      return live ? requestImageThumbs(live, {
+        home: os.homedir(),
+        remoteDevice: remoteDeviceArg(live.host),
+        exists: (f) => fs.existsSync(f),
+        previewUri: (f) => webview.asWebviewUri(vscode.Uri.file(f)).toString(),
+      }) : [];
+    };
     const subject = currentAgentPanelSubject();
-    return renderSessions(projectSessions(rows, p.name), Date.now(), subject?.sessionId ?? null);
+    return { html: renderSessions(rows, Date.now(), subject?.sessionId ?? null, thumbsFor), count: sessionCount(rows) };
+  }
+
+  /** A card click goes to the session: its tab in this window, else the tab the CLI
+   *  says holds it in another window, else a new tab resuming it on its device. The
+   *  other sidebar points at it in every case, as a Fleet row click does. */
+  async goToSession(sessionId: string, host: string | undefined): Promise<void> {
+    setAgentPanelSubjectFromFleet(sessionId, host);
+    void this.view.redrawSessions();
+    const local = terminals.getBySessionId(sessionId);
+    if (local) { local.terminal.show(false); return; }
+    const row = this.presented().find((r) => r.sessionId === sessionId);
+    if (row && heldInTab(row)) {
+      try {
+        await runAgentsArgs(['ps', 'focus', sessionId, '--attach-only'], { timeout: 30_000 });
+        return;
+      } catch (e) {
+        void vscode.window.showWarningMessage(`Could not focus the tab holding ${sessionId.slice(0, 8)}: ${errorText(e)}`);
+        return;
+      }
+    }
+    if (row?.resumable === false) {
+      void vscode.window.showInformationMessage(`${row.agentType || 'This harness'} sessions cannot be resumed, so ${sessionId.slice(0, 8)} has no tab to open.`);
+      return;
+    }
+    const { openAgentSessionByRecovery } = require('./extension') as typeof import('./extension');
+    const device = remoteDeviceArg(row?.host ?? host);
+    await openAgentSessionByRecovery(this.context, { sessionId, agentType: row?.agentType ?? '', ...(device ? { device } : {}) });
+  }
+
+  async openImage(filePath: string): Promise<void> {
+    // Only a file a card offered: a pasted image in this machine's stores.
+    const home = os.homedir();
+    const allowed = [`${home}/.agents/.history/attachments/`, `${home}/.agents/.cache/attachments/`];
+    if (!allowed.some((dir) => filePath.startsWith(dir)) || filePath.includes('..')) return;
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath), { preview: true });
   }
 
   redrawSessions(): Promise<void> {
-    return this.views.sessions.load(false);
+    return this.view.redrawSessions();
   }
 
   async pick(): Promise<void> {
@@ -223,7 +318,7 @@ class ProjectPanelController {
   refresh(): void {
     this.tickets = undefined;
     this.detected = undefined;
-    for (const v of Object.values(this.views)) void v.load(true);
+    this.view.refresh();
   }
 }
 
@@ -231,12 +326,12 @@ let activeController: ProjectPanelController | undefined;
 const sessionsCoalesce = createTrailingCoalesce();
 
 /** Called by extension.ts when a session-stream fact changed the store; the
- *  Sessions view redraws from memory (no subprocess).
+ *  Sessions tab redraws from memory (no subprocess).
  *  @public loaded with require('./projectPanel.vscode') in extension.ts, which knip cannot see */
 export function notifyProjectPanelSessionUpdate(): void {
   const controller = activeController;
   if (!controller) return;
-  // A burst of facts collapses into one redraw plus one catch-up, as in the right sidebar.
+  // A burst of facts collapses into one redraw plus one catch-up, as in the other sidebar.
   void coalesceTrailing(sessionsCoalesce, 'projectSessions', () => controller.redrawSessions());
 }
 
@@ -245,11 +340,9 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
   const controller = new ProjectPanelController(context);
   activeController = controller;
   context.subscriptions.push({ dispose: () => { if (activeController === controller) activeController = undefined; } });
-  for (const id of Object.keys(VIEW_IDS) as SectionId[]) {
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_IDS[id], controller.views[id], {
-      webviewOptions: { retainContextWhenHidden: true },
-    }));
-  }
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, controller.view, {
+    webviewOptions: { retainContextWhenHidden: true },
+  }));
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.project.refresh', () => controller.refresh()),
     vscode.commands.registerCommand('agents.project.pick', () => controller.pick().catch((e) => {
@@ -272,7 +365,7 @@ function shell(cspSource: string): string {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
+  content="default-src 'none'; img-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
 <style>
   /* Rush register, as in the Active Terminal panel. This block is the only one
      with color literals; dark editor = Altitude, light = Day, high contrast keeps
@@ -300,7 +393,7 @@ function shell(cspSource: string): string {
     --r-bad: var(--vscode-errorForeground); --r-bad-tint: transparent; --r-info: var(--vscode-textLink-foreground);
     --r-doing: var(--vscode-testing-iconPassed); --r-review: var(--vscode-testing-iconPassed); --r-todo: var(--vscode-descriptionForeground); --r-backlog: var(--vscode-contrastBorder); --r-gold: var(--vscode-focusBorder);
   }
-  body { padding: 2px 10px 12px; margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
+  body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
     background: var(--vscode-sideBar-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }
   body.loading main { opacity: 0.55; }
   section { padding: 8px 0; border-bottom: 1px solid var(--r-edge); }
@@ -361,38 +454,124 @@ function shell(cspSource: string): string {
   .err { color: var(--r-bad); white-space: pre-wrap; padding: 8px 0; }
   .empty { color: var(--r-caption); padding: 8px 0; }
   .empty a { color: var(--vscode-textLink-foreground); }
-  @media (prefers-reduced-motion: reduce) { .m-working, .ring .arc { animation: none; } }
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; padding: 0; }
+  .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--r-edge); flex: none; }
+  .tab { height: 26px; padding: 0 8px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
+  .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
+  .tab:hover { background: var(--r-hover); }
+  .tab[aria-selected="true"] { background: var(--r-hover); color: var(--r-text); font-weight: 600; }
+  .tab[aria-selected="true"] .lbl { display: inline; }
+  .tab:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  .tab .ti { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .tab .cnt { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); font-weight: 400; }
+  .tab .dot { position: absolute; top: -1px; right: -2px; min-width: 14px; height: 14px; line-height: 14px; border-radius: 7px; background: var(--r-warn-tint); color: var(--r-warn); font-size: 9.5px; font-weight: 700; text-align: center; padding: 0 3px; box-sizing: border-box; transform: scale(.85); }
+  .tab[aria-selected="true"] .dot { position: static; transform: none; }
+  .tab .dot:empty { display: none; }
+  main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
+  .divider { display: flex; gap: 6px; align-items: center; margin: 10px 4px 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--r-caption); }
+  .divider::after { content: ''; flex: 1; height: 1px; background: var(--r-edge); }
+  .card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; width: 100%; box-sizing: border-box; text-align: left; padding: 8px 8px 9px; margin: 2px 0; border-radius: 8px; color: inherit; cursor: pointer; }
+  .card:hover { background: var(--r-hover); } .card.sel { background: var(--r-hover); box-shadow: inset 2px 0 0 var(--r-gold); }
+  .card:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .card .top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
+  .card .go { display: none; font-size: 10.5px; color: var(--r-caption); border: 1px solid var(--r-edge); border-radius: 9px; padding: 0 7px; line-height: 16px; flex: none; }
+  .card:hover .go, .card:focus-visible .go { display: inline; } .card:hover .age, .card:focus-visible .age { display: none; }
+  .mk { width: 14px; height: 14px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; border: 1.5px solid currentColor; box-sizing: border-box; }
+  .mk-asks { color: var(--r-warn); background: var(--r-warn-tint); } .mk-stopped { color: var(--r-bad); }
+  .mk-working { color: var(--r-ok); border-style: dotted; animation: spin 2.4s linear infinite; }
+  .mk-yours { color: var(--r-gold); border-width: 0; } .mk-yours::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .mk-ended { color: var(--r-faint); opacity: .7; } .mk-unknown { color: var(--r-faint); border-style: dashed; }
+  .card .line { display: grid; grid-template-columns: 14px minmax(0,1fr); gap: 0 7px; align-items: start; font-size: 12px; line-height: 1.4; }
+  .card .line .ic { margin-top: 2px; color: var(--r-faint); width: 14px; height: 14px; }
+  .card .you span { color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .said span { color: var(--r-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .live span { color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-ended .ttl, .st-unknown .ttl { font-weight: 500; color: var(--r-text-2); } .st-ended .said span { color: var(--r-caption); }
+  .card .ask { margin-left: 21px; padding: 5px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; }
+  .card .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 21px; margin-top: 1px; }
+  .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 150px; padding: 1px 6px 1px 4px; border-radius: 9px; background: var(--r-well); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; }
+  .chip .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip.pr-ok { color: var(--r-ok); background: var(--r-ok-tint); } .chip.pr-bad { color: var(--r-bad); background: var(--r-bad-tint); } .chip.pr-run { color: var(--r-warn); background: var(--r-warn-tint); }
+  .card .thumbs { display: flex; gap: 4px; margin-left: 21px; }
+  .th { position: relative; width: 64px; height: 44px; border-radius: 5px; overflow: hidden; border: 1px solid var(--r-edge); display: block; flex: none; }
+  .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
+  .th b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; }
+  details.bare summary { font-size: 11px; color: var(--r-caption); padding: 8px 4px; }
+  @media (prefers-reduced-motion: reduce) { .m-working, .mk-working, .ring .arc { animation: none; } }
 </style>
 </head>
 <body>
-<main><div class="empty">Loading…</div></main>
+<div class="tabs" role="tablist" aria-label="Project">
+  <button class="tab" role="tab" data-tab="overview" aria-selected="false" title="Overview"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Overview</span></button>
+  <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
+  <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Pull requests</span></button>
+  <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Tickets"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Tickets</span></button>
+</div>
+<main role="tabpanel"><div class="empty">Loading…</div></main>
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
+  const tabs = [...document.querySelectorAll('.tab')];
+  const scroll = {};
+  let current = 'sessions';
+  function select(tab) {
+    tabs.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  }
+  function choose(tab) {
+    if (tab === current) return;
+    scroll[current] = main.scrollTop;
+    current = tab;
+    select(tab);
+    vscode.postMessage({ type: 'tab', tab });
+  }
   window.addEventListener('message', (e) => {
     const m = e.data;
-    if (m.type === 'html') {
-      // Redraws keep what the viewer opened and where they scrolled.
-      const open = new Set([...main.querySelectorAll('details')].map((d, i) => d.open ? (d.querySelector('summary')?.textContent || i) : null).filter((k) => k !== null));
-      const y = window.scrollY;
+    if (m.type === 'tab') { current = m.tab; select(m.tab); }
+    else if (m.type === 'count') {
+      const c = document.querySelector('[data-cnt="sessions"]'); if (c) c.textContent = m.n ? String(m.n) : '';
+      const d = document.querySelector('[data-asks]'); if (d) d.textContent = m.asks ? String(m.asks) : '';
+    }
+    else if (m.type === 'html' && m.tab === current) {
+      // A redraw of the same tab keeps what the viewer opened and where they scrolled.
+      const same = main.dataset.tab === m.tab;
+      const open = new Set(same ? [...main.querySelectorAll('details')].filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
+      const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
       main.innerHTML = m.html;
-      main.querySelectorAll('details').forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
-      window.scrollTo(0, y);
+      main.dataset.tab = m.tab;
+      if (same) main.querySelectorAll('details').forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
+      main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
       document.body.classList.remove('loading');
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
   });
   document.addEventListener('click', (e) => {
-    const row = e.target.closest('[data-session]');
-    if (row) { vscode.postMessage({ type: 'select', sessionId: row.dataset.session, host: row.dataset.host }); return; }
+    const tab = e.target.closest('.tab');
+    if (tab) { choose(tab.dataset.tab); return; }
+    const th = e.target.closest('.th');
+    if (th) { e.preventDefault(); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
+    const card = e.target.closest('[data-session]');
+    if (card) { vscode.postMessage({ type: 'session', sessionId: card.dataset.session, host: card.dataset.host }); return; }
     const a = e.target.closest('a');
     if (!a) return;
     e.preventDefault();
     if (a.dataset.url) vscode.postMessage({ type: 'open', url: a.dataset.url });
     else if (a.hasAttribute('data-pick')) vscode.postMessage({ type: 'pick' });
   });
+  document.addEventListener('keydown', (e) => {
+    const tab = e.target.closest && e.target.closest('.tab');
+    if (tab && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+      next.focus(); choose(next.dataset.tab); return;
+    }
+    const card = e.target.closest && e.target.closest('[data-session]');
+    if (card && e.key === 'Enter') card.click();
+  });
+  vscode.postMessage({ type: 'ready' });
 </script>
 </body>
 </html>`;
