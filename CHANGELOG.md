@@ -2,7 +2,9 @@
 
 All notable changes to AGI EXT (the VS Code extension) are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
-`## [Unreleased]
+`## [<version>]` section for the version being published.
+
+## [0.9.391] - 2026-10-11
 
 - `Agents: Resume Session…` (Cmd+Shift+Alt+R) resumes a session you pick by name.
   - It lists this window's project's sessions on every machine, newest first.
@@ -18,8 +20,6 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   late answer still appears. Fleet's connecting state uses the same bound.
 - Removed the commands this replaces: `Agents: Resume`, `Agents: Resume (Pick Session)` and
   `Agents: Session Resume`. Pick Host, Pick Harness and Best Profile are unchanged.
-
-## [<version>]` section for the version being published.
 
 ## [0.9.390] - 2026-10-11
 
