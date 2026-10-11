@@ -238,7 +238,8 @@ export interface SessionLike {
   context?: string;
   /** attached | background | parked, from the CLI; absent off that axis. */
   presence?: string;
-  previous?: boolean;
+  /** 'inactive' for an ended session the CLI listed as previous. */
+  state?: string;
   /** A tab in this window is bound to the session (it may be a shell the agent left). */
   tabHere?: boolean;
   resumable?: boolean;
@@ -270,8 +271,8 @@ export function backgroundKind(s: Pick<SessionLike, 'context' | 'presence'>): st
 }
 
 /** One row per session id: a live row wins over its ended or previous twin. */
-export function preferLive<T extends { sessionId: string; phase?: string; liveStatus?: string; previous?: boolean }>(rows: T[]): T[] {
-  const ended = (r: T) => !!r.previous || r.phase === 'done' || r.liveStatus === 'closed';
+export function preferLive<T extends { sessionId: string; phase?: string; liveStatus?: string; state?: string }>(rows: T[]): T[] {
+  const ended = (r: T) => r.state === 'inactive' || r.phase === 'done' || r.liveStatus === 'closed';
   const best = new Map<string, T>();
   for (const r of rows) {
     const held = best.get(r.sessionId);

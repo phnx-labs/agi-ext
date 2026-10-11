@@ -191,7 +191,7 @@ test('an ended session whose tab is still open says the agent is not running and
 
 test('one row per session: a live row wins over its ended or previous twin', () => {
   const rows = preferLive([
-    row({ sessionId: 'a', phase: 'done', liveStatus: 'closed', previous: true }),
+    row({ sessionId: 'a', phase: 'idle', liveStatus: 'idle', state: 'inactive' }),
     row({ sessionId: 'a', phase: 'running', liveStatus: 'running' }),
     row({ sessionId: 'b', phase: 'done', liveStatus: 'closed' }),
   ])
