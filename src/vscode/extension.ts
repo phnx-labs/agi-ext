@@ -5203,7 +5203,6 @@ let extensionContext: vscode.ExtensionContext | undefined;
 async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<void> {
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspacePath) return;
-  await terminals.closeRevivedDeadTerminalTabs().catch((err) => console.error('[RESTORE] closing dead tabs failed', err));
 
   // scanExisting snapshotted the store; read the snapshot, not the file, which
   // the scan's own registers may already have rewritten.
@@ -5279,12 +5278,16 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
       name: title,
       env: buildAgentTerminalEnv(session.terminalId, session.sessionId || null, workspacePath, session.version, { scrubSensitive: session.prefix.toLowerCase() !== 'sh', kind: session.prefix.toLowerCase() === 'sh' ? 'shell' : 'agent' }),
       isTransient: true,
+      // Restore runs as the window opens, before the workbench can open a terminal
+      // in an editor: an editor opened then is resolved as a text file and shows
+      // "The editor could not be opened". Create it hidden and show it once its
+      // process runs, when the terminal editor is ready.
+      hideFromUser: true,
       ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
     });
-    // A terminal whose process is the command gets no editor tab until shown.
-    terminal.show(true);
 
     const { pid } = await terminals.processIdWithin(terminal);
+    terminal.show(true);
     // Carry the tab's original creation time across the reload — the agent it is
     // being restored onto is older than this widget (see register's createdAt).
     terminals.register(terminal, session.terminalId, agentConfig, pid, context, session.label, session.createdAt);
