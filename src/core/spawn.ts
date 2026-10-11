@@ -64,6 +64,16 @@ export function parseSpawnRequest(query: string): SpawnRequest | null {
   return { command, cwd, split, agent, sessionId, title, nonce, project };
 }
 
+/** The nonce of a /spawn query even when the request itself is unusable, so the window can still answer. */
+export function spawnNonce(query: string): string | undefined {
+  try {
+    const obj = JSON.parse(Buffer.from(new URLSearchParams(query).get('p') ?? '', 'base64url').toString('utf8'));
+    return typeof obj?.nonce === 'string' && NONCE.test(obj.nonce) ? obj.nonce : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The ack a window writes for a /spawn request that carried a nonce. The CLI
 // polls ~/.swarmify/agents/spawn-acks/<nonce>.json instead of reporting
 // `codium --open-url` as success. Fixture both sides test against:
@@ -177,12 +187,12 @@ export function cliResumeOutcome(exitOk: boolean, output: string): { status: Spa
 export async function resumeSessionTab(
   sessionId: string,
   deps: {
-    liveTab(sessionId: string): { terminalId: string; focus(): void } | undefined;
+    liveTab(sessionId: string): Promise<{ terminalId: string; focus(): void } | undefined>;
     runResume(sessionId: string): Promise<{ ok: boolean; output: string }>;
   },
 ): Promise<{ status: SpawnAckStatus; terminalId: string | null; reason: string | null }> {
   if (!sessionId) return { status: 'failed', terminalId: null, reason: 'no session id' };
-  const live = deps.liveTab(sessionId);
+  const live = await deps.liveTab(sessionId);
   if (live) {
     live.focus();
     return { status: 'focused-existing', terminalId: live.terminalId, reason: null };

@@ -9,6 +9,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { homedir } from 'os';
 import YAML from 'yaml';
 import type { ManualSessionOverride } from './remoteAutoLabel';
@@ -107,25 +108,41 @@ export function saveWorkspaceSessions(
   }
 }
 
-/** Folders of every other editor window whose extension host is still running. */
-export function liveWindowFolders(selfPid: number): string[][] {
+/**
+ * Every other editor window whose extension host is still running: its folders
+ * and the sessions its live tabs show. A window is live when its pid answers and its
+ * file was written since this machine booted, so a pid reused after a reboot
+ * never makes a dead window look live.
+ */
+export function liveWindows(selfPid: number): Array<{ folders: string[]; sessionIds: string[] }> {
   let names: string[];
   try {
     names = fs.readdirSync(WINDOWS_DIR).filter((name) => name.endsWith('.yaml'));
   } catch {
     return [];
   }
-  const out: string[][] = [];
+  const bootedAt = Date.now() - os.uptime() * 1000;
+  const out: Array<{ folders: string[]; sessionIds: string[] }> = [];
   for (const name of names) {
-    const data = readYaml(path.join(WINDOWS_DIR, name));
+    const file = path.join(WINDOWS_DIR, name);
+    const data = readYaml(file);
     const pid = data?.pid;
     if (typeof pid !== 'number' || pid === selfPid || !Array.isArray(data.folders)) continue;
     try {
+      if (fs.statSync(file).mtimeMs < bootedAt) continue;
       process.kill(pid, 0);
     } catch {
       continue;
     }
-    out.push(data.folders);
+    const sessions: PersistedSession[] = Array.isArray(data.sessions) ? data.sessions : [];
+    out.push({
+      folders: data.folders,
+      // Only tabs whose process runs: a window still restoring lists sessions it
+      // has not reopened yet, which must not stop another window holding them.
+      sessionIds: sessions
+        .filter((session) => session.sessionId && typeof session.agentPid === 'number' && alive(session.agentPid))
+        .map((session) => session.sessionId as string),
+    });
   }
   return out;
 }
@@ -163,4 +180,13 @@ export function restorePlan(
     }
   }
   return plan;
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }

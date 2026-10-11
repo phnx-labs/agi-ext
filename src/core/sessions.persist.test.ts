@@ -158,16 +158,29 @@ describe('restore store edge cases', () => {
     expect(runInChild(home, `console.log(JSON.stringify(persist.getWorkspaceSessions('/work/a').map((s) => s.terminalId)))`)).toEqual(['keep']);
   });
 
-  test('liveWindowFolders lists other running windows only', () => {
+  test('liveWindows lists other running windows, their folders and sessions', () => {
     const home = freshHome();
     const dead = spawnSync('true').pid!;
     const result = runInChild(home, `
-      persist.saveWorkspaceSessions('/work/live', [], { folders: ['/work/live'], pid: process.ppid });
-      persist.saveWorkspaceSessions('/work/dead', [], { folders: ['/work/dead'], pid: ${dead} });
-      persist.saveWorkspaceSessions('/work/self', [], { folders: ['/work/self'], pid: process.pid });
-      console.log(JSON.stringify(persist.liveWindowFolders(process.pid)));`);
-    expect(result).toEqual([['/work/live']]);
+      const tab = (id, agentPid = process.ppid) => ({ terminalId: 't-' + id, prefix: 'cl', sessionId: id, createdAt: 1, agentPid });
+      persist.saveWorkspaceSessions('/work/live', [tab('s-live'), tab('s-pending', ${dead})], { folders: ['/work/live'], pid: process.ppid });
+      persist.saveWorkspaceSessions('/work/dead', [tab('s-dead')], { folders: ['/work/dead'], pid: ${dead} });
+      persist.saveWorkspaceSessions('/work/self', [tab('s-self')], { folders: ['/work/self'], pid: process.pid });
+      console.log(JSON.stringify(persist.liveWindows(process.pid)));`);
+    expect(result).toEqual([{ folders: ['/work/live'], sessionIds: ['s-live'] }]);
   });
+
+  test('a window file written before this boot is never live, even if its pid now answers', () => {
+    const home = freshHome();
+    const result = runInChild(home, `
+      const fs = await import('fs');
+      persist.saveWorkspaceSessions('/work/old', [], { folders: ['/work/old'], pid: process.ppid });
+      const dir = ${JSON.stringify('')} || (await import('path')).join(process.env.HOME, '.swarmify/agents/windows');
+      for (const f of fs.readdirSync(dir)) fs.utimesSync(dir + '/' + f, new Date(0), new Date(0));
+      console.log(JSON.stringify(persist.liveWindows(process.pid)));`);
+    expect(result).toEqual([]);
+  });
+
 });
 
 describe('restorePlan', () => {
