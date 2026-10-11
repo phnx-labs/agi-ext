@@ -59,7 +59,7 @@ function inline(escaped: string): string {
   return escaped
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/!?\[([^\]]+)\]\((?:&lt;)?(https?:\/\/[^)\s]+?)(?:&gt;)?\)/g, '<a href="#" data-url="$2">$1</a>')
+    .replace(/!?\[([^\]]+)\]\((?:&lt;)?(https?:\/\/[^)\s<*]+?)(?:&gt;)?\)/g, '<a href="#" data-url="$2">$1</a>')
     .replace(/\\([\\`*_{}[\]()#+\-.!~|])/g, '$1');
 }
 

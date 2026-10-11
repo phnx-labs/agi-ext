@@ -124,7 +124,12 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
-      else if (msg.type === 'setting' && typeof msg.key === 'string') void this.controller.setSetting(msg.key, msg.value).then(() => this.load('settings', true));
+      else if (msg.type === 'setting' && typeof msg.key === 'string') {
+        // Redraw either way, so a write that failed shows the stored value again.
+        void this.controller.setSetting(msg.key, msg.value)
+          .catch((e) => { void vscode.window.showErrorMessage(`Could not save the setting: ${errorText(e)}`); })
+          .finally(() => this.load('settings', true));
+      }
     });
     view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) void this.load(this.active, false); });
     view.onDidDispose(() => {
@@ -199,6 +204,8 @@ class ProjectView implements vscode.WebviewViewProvider {
     } catch (e) {
       ok = false;
       html = `<div class="err">${escapeHtml(errorText(e))}</div>`;
+      // A failed ticket read still offers the way back to the list.
+      if (tab === 'tickets' && this.ticket) html = `<button class="back" data-back>‹ Tickets</button>${html}`;
     }
     if (gen !== state.generation) return; // a newer load (refresh / project switch) owns the tab
     state.loadedFor = project.name;
@@ -220,8 +227,12 @@ class ProjectView implements vscode.WebviewViewProvider {
     await this.load('tickets', !!id);
   }
 
+  private commenting = false;
+
   private async comment(id: string, text: string): Promise<void> {
-    if (!text.trim() || this.ticket !== id) return;
+    // One `linear update` at a time: a second click must not post the comment twice.
+    if (!text.trim() || this.ticket !== id || this.commenting) return;
+    this.commenting = true;
     void this.view?.webview.postMessage({ type: 'loading' });
     try {
       await this.controller.comment(id, text);
@@ -229,6 +240,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       void this.view?.webview.postMessage({ type: 'idle' });
       void vscode.window.showErrorMessage(`Could not comment on ${id}: ${errorText(e)}`);
       return;
+    } finally {
+      this.commenting = false;
     }
     await this.load('tickets', true);
   }
@@ -877,7 +890,7 @@ export function shell(cspSource: string, logoCss = ''): string {
       document.body.classList.remove('loading');
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
-    else if (m.type === 'idle') document.body.classList.remove('loading');
+    else if (m.type === 'idle') { document.body.classList.remove('loading'); main.querySelectorAll('[data-comment]').forEach((b) => { b.disabled = false; }); }
     else if (m.type === 'notice') toast(m.text);
   });
   // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab
@@ -968,7 +981,8 @@ export function shell(cspSource: string, logoCss = ''): string {
     if (detail && e.target.closest('[data-start]')) { vscode.postMessage({ type: 'startTicket', id: detail.dataset.ticket }); return; }
     if (detail && e.target.closest('[data-comment]')) {
       const box = detail.querySelector('.cnew');
-      if (box && box.value.trim()) vscode.postMessage({ type: 'comment', id: detail.dataset.ticket, text: box.value });
+      const btn = e.target.closest('[data-comment]');
+      if (box && box.value.trim() && !btn.disabled) { btn.disabled = true; vscode.postMessage({ type: 'comment', id: detail.dataset.ticket, text: box.value }); }
       return;
     }
     const art = e.target.closest('[data-artifact]');

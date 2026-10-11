@@ -369,18 +369,22 @@ export interface SessionListPrefs {
   showEnded: boolean;
   folded: string[];
   hidden: Record<string, number>;
-  /** 2 once the Ended group defaults to shown and folded; older stored prefs lack it. */
+  /** 2 once Ended defaults to shown and folded; older stored prefs lack it. */
   v: 2;
 }
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: ['ended'], hidden: {}, v: 2 };
+/** The Ended group's key under App and under State; Machine and None have no Ended group. */
+const ENDED_GROUPS = ['ended', 'state:ended'];
+
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS], hidden: {}, v: 2 };
 
 const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
 const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
 
 /** A stored preference object, keeping only values this version knows. Prefs stored
  *  before v2 saved Ended off as the old default, not as a choice, so they get the
- *  new default: Ended shown and folded. Turning it on was a choice and is kept. */
+ *  new default: Ended shown and folded. Turning it on was a choice and is kept, and
+ *  a Machine or None grouping, which has no Ended group to fold, keeps Ended off. */
 export function readSessionPrefs(v: unknown): SessionListPrefs {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const hidden: Record<string, number> = {};
@@ -388,13 +392,15 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     for (const [id, ms] of Object.entries(o.hidden as Record<string, unknown>)) if (typeof ms === 'number') hidden[id] = ms;
   }
   const folded = Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [];
+  const group = GROUPS.includes(o.group as SessionGroupBy) ? (o.group as SessionGroupBy) : DEFAULT_SESSION_PREFS.group;
   const before = o.v !== 2 && o.showEnded !== true;
+  const foldable = group === 'app' || group === 'state';
   return {
-    group: GROUPS.includes(o.group as SessionGroupBy) ? (o.group as SessionGroupBy) : DEFAULT_SESSION_PREFS.group,
+    group,
     sort: SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort,
     showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
-    showEnded: before || (typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded),
-    folded: before && !folded.includes('ended') ? [...folded, 'ended'] : folded,
+    showEnded: before ? foldable : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
+    folded: before ? [...new Set([...folded, ...ENDED_GROUPS])] : folded,
     hidden,
     v: 2,
   };

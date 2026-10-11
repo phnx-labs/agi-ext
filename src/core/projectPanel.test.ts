@@ -253,7 +253,11 @@ test('stored preferences keep only values this version knows; older ones get End
     .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', showEnded: true, folded: ['here'], hidden: { a: 5 } })
   expect(readSessionPrefs(undefined)).toEqual(DEFAULT_SESSION_PREFS)
   // Before v2, Ended off was the old default, not a choice.
-  expect(readSessionPrefs({ group: 'app', showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended'], v: 2 })
+  expect(readSessionPrefs({ group: 'app', showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended', 'state:ended'], v: 2 })
+  // Machine grouping has no Ended group to fold, so Ended stays off rather than flooding the list.
+  expect(readSessionPrefs({ group: 'machine', showEnded: false })).toMatchObject({ showEnded: false })
+  const byState = renderSessions([row({ sessionId: 'gone', phase: 'done', liveStatus: 'closed' })], NOW, { selectedId: null, here: HERE, prefs: readSessionPrefs({ group: 'state' }) })
+  expect(byState).toContain('class="grp closed" data-group="state:ended"')
   expect(readSessionPrefs({ showEnded: false, folded: [], v: 2 })).toMatchObject({ showEnded: false, folded: [] })
 })
 
