@@ -116,7 +116,7 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('▪ svatlas')
     expect(html).not.toContain('sx-chip device')
     // The device is shown exactly once, in the row header.
-    const where = '<span class="sx-where" title="yosemite-s1"><b>yosemite-s1</b></span>'
+    const where = '<span class="sx-where host" title="Runs on yosemite-s1">yosemite-s1</span>'
     expect(html).toContain(where)
     expect(html.replace(where, '')).not.toContain('yosemite-s1')
     // a live session is always resumable
@@ -181,12 +181,11 @@ describe('SessionRow — compact card', () => {
     expect(html).toContain('phnx-3939-worker-preview')
   })
 
-  test('clicking a row expands into the full detail card (request / reply / activity / catch up)', () => {
+  test('clicking a row expands into the full detail card (request / reply / catch up)', () => {
     const html = renderToStaticMarkup(<SessionRow agent={agent({ firstUserMessage: 'The real first user turn, in full.', recent: [READ_CALL] })} {...rowProps} expanded />)
     expect(html).toContain('sx-detail')
     expect(html).toContain('Your request')
     expect(html).toContain('Latest reply')
-    expect(html).toContain('Activity')
     expect(html).toContain('Catch up')
     expect(html).toContain('The real first user turn, in full.')
     expect(html).not.toContain('Resume here')
@@ -509,25 +508,18 @@ describe('SessionsPane', () => {
     if (orig) Object.defineProperty(globalThis.navigator, 'clipboard', orig)
   })
 
-  test('an ENDED (Previous) row shows the meta line, not the empty activity bar', () => {
+  test('an ENDED (Previous) row shows the meta line', () => {
     const html = renderToStaticMarkup(<SessionRow agent={prevAgent({ id: 'ended1' })} {...rowProps} expanded />)
     expect(html).toContain('Ended session')
     expect(html).toContain('sx-endedmeta')
     expect(html).toContain('Ran &lt;1m · ended 2d ago</div>')
     expect(html).toContain('title="Aug 23, 12:00 PM"')
-    expect(html).not.toContain('sx-actbar')
   })
 
-  test('a LIVE row with tool calls keeps the activity bar and never shows the ended meta line', () => {
+  test('a LIVE row shows no activity bar and no ended meta; its activity is the shared Timeline', () => {
     const html = renderToStaticMarkup(<SessionRow agent={agent({ recent: [READ_CALL] })} {...rowProps} expanded />)
-    expect(html).toContain('sx-actbar')
-    expect(html).toContain('Activity')
-    expect(html).not.toContain('sx-endedmeta')
-  })
-
-  test('a LIVE row without tool calls shows no activity bar instead of a fake all-idle one', () => {
-    const html = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
     expect(html).not.toContain('sx-actbar')
+    expect(html).not.toContain('Activity')
     expect(html).not.toContain('sx-endedmeta')
   })
 
