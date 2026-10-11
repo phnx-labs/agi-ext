@@ -13,7 +13,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Fleet's Resume button, the side panel's Focus and ↻, and a Project sidebar card click do
   exactly the same thing, with the same notification. None of them types a resume command
   into a terminal any more. A multi-root window lists every folder's project, and the list
-  says "loading machines" until every machine has reported.
+  says "loading machines" until every machine has reported, for at most 8 seconds. After that it
+  shows what it has and names any machine that has not answered ("mark-1 didn't answer"); a
+  late answer still appears. Fleet's connecting state uses the same bound.
 - Removed the commands this replaces: `Agents: Resume`, `Agents: Resume (Pick Session)` and
   `Agents: Session Resume`. Pick Host, Pick Harness and Best Profile are unchanged.
 

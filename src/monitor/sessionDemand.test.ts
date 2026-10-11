@@ -25,6 +25,19 @@ describe('SessionStreamDemand', () => {
     expect(d.demand).toBe(false);
   });
 
+  test('demandSinceMs is when demand turned on, cleared when it turns off', () => {
+    let clock = 100;
+    const d = new SessionStreamDemand(() => clock);
+    expect(d.demandSinceMs).toBeUndefined();
+    d.setResumePickerOpen(true);
+    clock = 200;
+    d.setDashboardVisible(true); // union already on: the start stays put
+    expect(d.demandSinceMs).toBe(100);
+    d.setResumePickerOpen(false);
+    d.setDashboardVisible(false);
+    expect(d.demandSinceMs).toBeUndefined();
+  });
+
   test('onChange fires only when the union value flips', () => {
     const d = new SessionStreamDemand();
     const seen: boolean[] = [];
