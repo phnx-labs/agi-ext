@@ -24,6 +24,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   asked the CLI to open yet another tab and left the first one on the CLI's output.
 - `agents.resumeSession(<id>)`: one command that focuses the session's tab in this window or
   opens it in its project's window through the CLI, and returns the ack status.
+- A session another open window already shows is not reopened in this one after a restart.
+- Restored tabs open once their process runs, so none appears as "The editor could not be
+  opened", and each tab keeps its own title.
+- Reload Agent replaces the tab once the old agent has exited, instead of typing the resume
+  command above it; if the agent does not exit, it says so and opens no second copy.
+- A `/spawn` request the window cannot read still gets a `failed` answer when it names a nonce.
+- A corrupt or empty tab file restores nothing; it never brings back tabs from the old shared file.
 
 ## [0.9.388] - 2026-10-11
 

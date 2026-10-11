@@ -83,7 +83,7 @@ export function getWorkspaceSessions(workspaceKey: string, legacyKey: string = w
  * Replace this window's file. Only this window's file is touched; the temp file
  * is flushed to disk before the rename, so a reader or a power loss sees the old
  * file or the new one, never a torn or empty one. `folders` and `pid` let other
- * windows see which projects a live window holds (liveWindowFolders).
+ * windows see which projects and sessions a live window holds (liveWindows).
  */
 export function saveWorkspaceSessions(
   workspaceKey: string,
