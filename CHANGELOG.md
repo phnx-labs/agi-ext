@@ -4,6 +4,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The Project panel's Sessions tab shows where each live session runs. Sessions attached to
+  an editor tab sit under In your tabs; headless runs, team members, cloud tasks and sessions
+  sent to the background sit under Background with a chip naming which (from the CLI's
+  `context` and `presence`). An ended session whose tab is still open in this window says
+  "tab open · agent not running", and clicking it resumes the session instead of showing the
+  leftover shell.
+
 ## [0.9.389] - 2026-10-11
 
 - A tab you close stays closed after a crash or restart. Every window used to rewrite one

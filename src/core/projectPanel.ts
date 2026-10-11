@@ -6,7 +6,7 @@
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
 // the provider turns that into the section's error state, never an empty list.
 
-import { SESSION_STATE_ORDER, SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 
 export interface ProjectRef {
   name: string;
@@ -234,6 +234,12 @@ export interface SessionLike {
   worktreeSlug?: string;
   files?: { total: number };
   viewingIn?: string;
+  /** The CLI's context for the session: terminal, headless, teams, cloud, recent. */
+  context?: string;
+  /** attached | background | parked, from the CLI; absent off that axis. */
+  presence?: string;
+  /** A tab in this window is bound to the session (it may be a shell the agent left). */
+  tabHere?: boolean;
   resumable?: boolean;
   lastActivityMs: number;
   confirmedProject: string | null;
@@ -251,6 +257,18 @@ export interface CardThumb {
 export function heldInTab(s: Pick<SessionLike, 'viewingIn'>): boolean {
   return !!s.viewingIn && s.viewingIn !== 'detached';
 }
+
+/** Where a live session runs: in an editor tab you attached to, or in the background
+ *  (a headless run, a team member, a cloud task, or a session you sent to the background). */
+export function backgroundKind(s: Pick<SessionLike, 'context' | 'presence'>): string | null {
+  if (s.presence === 'background' || s.presence === 'parked') return 'background';
+  if (s.context === 'terminal') return null;
+  if (s.context === 'teams') return 'team';
+  if (s.context === 'cloud') return 'cloud';
+  return 'headless';
+}
+
+const LIVE: ReadonlySet<SessionStateKey> = new Set(['working', 'yours', 'unknown']);
 
 /** The project's sessions, newest first. */
 export function projectSessions(rows: SessionLike[], project: string): SessionLike[] {
@@ -332,8 +350,13 @@ export function renderSessionCard(s: SessionLike, now: number, selected: boolean
   const question = state === 'asks' ? plain(s.question?.text || s.attention?.question?.text || '') : '';
   const said = agentLine(s);
   const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
+  const isLive = LIVE.has(state) || state === 'asks';
+  const bg = isLive ? backgroundKind(s) : null;
+  const leftover = state === 'ended' && !!s.tabHere;
   const where = s.worktreeSlug || (s.branch && s.branch !== 'main' && s.branch !== 'master' ? s.branch : '');
   const chips = [
+    leftover ? `<span class="chip warn" title="A tab in this window still shows this session, but its agent is not running">tab open · agent not running</span>` : '',
+    bg ? `<span class="chip" title="Running in the background: no tab is attached">${escapeHtml(bg)}</span>` : '',
     s.prStatus ? prMini(s.prStatus) : '',
     s.ticket ? `<span class="chip">${icon('ticket', s.ticket)}${escapeHtml(s.ticket)}</span>` : '',
     where ? `<span class="chip" title="${escapeHtml(where)}">${icon('branch', where)}<span class="trunc">${escapeHtml(where)}</span></span>` : '',
@@ -341,7 +364,7 @@ export function renderSessionCard(s: SessionLike, now: number, selected: boolean
   ].filter(Boolean).join('');
   const shown = thumbs.slice(0, 3);
   const more = thumbs.length - shown.length;
-  const go = heldInTab(s) ? 'Focus' : s.resumable === false ? '' : 'Open';
+  const go = s.resumable === false && !isLive ? '' : leftover ? 'Resume' : isLive && heldInTab(s) ? 'Focus' : 'Open';
   return `<div class="card st-${state}${selected ? ' sel' : ''}" role="button" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" title="${escapeHtml(`${SESSION_STATE_WORD[state]} · ${s.host}${heldInTab(s) ? ` · ${s.viewingIn}` : ''}`)}">
     <span class="top"><span class="mk mk-${state}" role="img" aria-label="${SESSION_STATE_WORD[state]}">${STATE_GLYPH[state]}</span><span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span>${go ? `<span class="go">${go}</span>` : ''}</span>
     ${question ? `<span class="ask">${escapeHtml(question)}</span>` : ''}
@@ -362,9 +385,16 @@ export function renderSessions(rows: SessionLike[], now: number, selectedId: str
   const card = (s: SessionLike) => renderSessionCard(s, now, s.sessionId === selectedId, thumbsFor(s));
   const shown = rows.filter(hasContent);
   const bare = rows.filter((s) => !hasContent(s));
-  return SESSION_STATE_ORDER.map((key) => {
-    const group = shown.filter((s) => sessionStateOf(s) === key);
-    return group.length ? `<div class="divider">${SESSION_STATE_WORD[key]} <span class="n">${group.length}</span></div>${group.map(card).join('')}` : '';
+  const groups: [string, (s: SessionLike) => boolean][] = [
+    [SESSION_STATE_WORD.asks, (s) => sessionStateOf(s) === 'asks'],
+    [SESSION_STATE_WORD.stopped, (s) => sessionStateOf(s) === 'stopped'],
+    ['In your tabs', (s) => LIVE.has(sessionStateOf(s)) && backgroundKind(s) === null],
+    ['Background', (s) => LIVE.has(sessionStateOf(s)) && backgroundKind(s) !== null],
+    [SESSION_STATE_WORD.ended, (s) => sessionStateOf(s) === 'ended'],
+  ];
+  return groups.map(([label, pick]) => {
+    const group = shown.filter(pick);
+    return group.length ? `<div class="divider">${label} <span class="n">${group.length}</span></div>${group.map(card).join('')}` : '';
   }).join('') + (bare.length ? `<details class="bare"><summary>${bare.length} more with nothing to show</summary>${bare.map(card).join('')}</details>` : '');
 }
 

@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
   parseOverview, parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, projectSessions, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets, sessionCount,
+  activityLine, backgroundKind, projectSessions, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets, sessionCount,
   type SessionLike,
 } from './projectPanel'
 
@@ -150,20 +150,37 @@ test('pasted images show as thumbnails that open the full image; more than three
   expect(html).toContain('<b>+2</b>')
 })
 
-test('every session is listed, grouped by state in attention order; empty ones fold into one line at the end', () => {
+test('every session is listed: needs you, then live ones in your tabs, then the background, then ended; empty ones fold', () => {
   const html = renderSessions([
     row({ sessionId: 'ended', phase: 'done', liveStatus: 'closed', lastResponse: 'Shipped.' }),
-    row({ sessionId: 'yours', phase: 'idle', liveStatus: 'idle', lastResponse: 'Done on my side.' }),
+    row({ sessionId: 'tab', phase: 'idle', liveStatus: 'idle', context: 'terminal', presence: 'attached', lastResponse: 'Done on my side.' }),
     row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required' }),
-    row({ sessionId: 'work', lastResponse: 'Running the suite.' }),
+    row({ sessionId: 'bg', context: 'headless', lastResponse: 'Running the suite.' }),
     row({ sessionId: 'quiet', phase: 'done', liveStatus: 'closed' }),
   ], NOW, null)
-  const order = ['Needs you', 'Working', 'Your turn', 'Ended'].map((w) => html.indexOf(`class="divider">${w}`))
+  const order = ['Needs you', 'In your tabs', 'Background', 'Ended'].map((w) => html.indexOf(`class="divider">${w}`))
   expect(order.every((i) => i >= 0)).toBe(true)
   expect([...order].sort((x, y) => x - y)).toEqual(order)
-  expect(html).not.toContain('idle or done')
+  expect(html.indexOf('data-session="tab"')).toBeLessThan(html.indexOf('class="divider">Background'))
+  expect(html.indexOf('data-session="bg"')).toBeGreaterThan(html.indexOf('class="divider">Background'))
   expect(html).toContain('<details class="bare"><summary>1 more with nothing to show</summary>')
   expect(sessionCount([row({ lastResponse: 'x' }), row({}), row({ phase: 'waiting', lastResponse: 'y' })])).toEqual({ shown: 2, asks: 1 })
+})
+
+test('a live session with no attached tab says where it runs; a backgrounded tab session counts as background', () => {
+  expect(backgroundKind({ context: 'headless' })).toBe('headless')
+  expect(backgroundKind({ context: 'teams' })).toBe('team')
+  expect(backgroundKind({ context: 'cloud' })).toBe('cloud')
+  expect(backgroundKind({ context: 'terminal', presence: 'background' })).toBe('background')
+  expect(backgroundKind({ context: 'terminal', presence: 'attached' })).toBeNull()
+  expect(renderSessionCard(row({ context: 'teams', lastResponse: 'Reviewing.' }), NOW, false)).toContain('>team</span>')
+})
+
+test('an ended session whose tab is still open says the agent is not running and offers Resume', () => {
+  const html = renderSessionCard(row({ phase: 'done', liveStatus: 'closed', tabHere: true, viewingIn: 'Codium tab 3', lastResponse: 'Done.' }), NOW, false)
+  expect(html).toContain('tab open · agent not running')
+  expect(html).toContain('class="go">Resume<')
+  expect(renderSessionCard(row({ phase: 'done', liveStatus: 'closed', lastResponse: 'Done.' }), NOW, false)).not.toContain('agent not running')
 })
 
 test('a live tool call reads as the command it runs, never as a "Tool: args" label', () => {
