@@ -96,6 +96,37 @@ scripts/     build.sh / install.sh / release.sh: the only entry points
 - `src/core` never imports `vscode`; the only test double is `src/testing/vscodeDouble.ts`.
 - A missing CLI noun is an upgrade error, never a filesystem fallback.
 
+## Design
+
+The owner runs hundreds of sessions and catches up by glancing. Every surface answers "what is
+going on, where, and what came out of it" in one look; text explains only what a picture can't.
+
+- **Glance, then detail.** At rest a session is compact: title, a status pill, where it runs,
+  the agent's latest line, a strip of outputs. Hover or select expands to the full card (your
+  ask with its images, the agent's words, everything it made). Never "clean up" by deleting
+  that rich content; fold it behind hover instead.
+- **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
+  `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and
+  tickets, a dot-plus-word pill for state (color is never the only signal).
+- **Inputs are not outputs.** What the user attached is part of their message and is marked
+  "attached". Artifacts are what the agent made: PRs, folders under `.agents/artifacts/`,
+  plans, pages, rendered images. A count of edited files is neither.
+- **One card style.** Outlined 1 px hairline cards with even gaps; no colored side borders, no
+  drop shadows (shadows are for menus and popovers). Hover shifts tone in place; nothing lifts.
+  Gaps inside a card are at most half the gap between cards.
+- **Motion only for liveness.** The Working dot breathes; everything stops under
+  `prefers-reduced-motion`.
+- **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu. Group headers carry
+  the icon, a count and one dot per state, so a folded group still says what is inside.
+  Needs you is pinned above every grouping.
+- **A click selects; it never navigates.** Going somewhere or changing something is an explicit
+  icon: focus (↗), resume (▶), close (×). The list manages the user's tabs: × closes the tab
+  (with Undo; it asks first only when the agent is working or waiting), multi-select closes
+  several.
+- **Prototype first, with real data.** A visual change starts as a prototype built from the
+  live stream and the owner's real sessions, opened for them, rendered and inspected by you,
+  before any extension code. Mock data and screenshots you did not look at prove nothing.
+
 ## Known debt
 
 The thin-client violations still in the tree are listed with their fate in `docs/ARCH.md`
