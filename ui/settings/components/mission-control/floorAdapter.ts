@@ -26,6 +26,8 @@ import {
   type CiStatus,
   type TodoItem,
   type FloorAttachment,
+  type FloorTimeline,
+  type FloorUserTurn,
 } from './floorModel'
 import { attributeSessionProject, UNASSIGNED_PROJECT, type SessionProjectHints } from './sessionProjects'
 import type { UnifiedTask, RecentEvent, RecentToolCall, ProjectRule, SessionAttachment } from '../../types'
@@ -186,6 +188,11 @@ export interface RemoteSessionLike {
   /** CLI-authored recap title and full first user turn from SessionWatchRow. */
   title?: string
   firstUserMessage?: string
+  /** CLI step timeline, latest genuine request, and user turns (RemoteSession
+   *  `timeline` / `request` / `userTurns`). Absent when the row carries none. */
+  timeline?: FloorTimeline
+  request?: { text: string; headline: string }
+  userTurns?: FloorUserTurn[]
   context: string
   cloudTaskId: string
   cloudProvider: string
@@ -646,6 +653,7 @@ export function toFloorAgentFromUnified(
     spawnedTeam: u.spawnedTeam || undefined,
     attachments,
     branch: u.terminal?.branch ?? u.agent?.branch ?? '',
+    cwd: u.terminal?.cwd ?? u.agent?.cwd ?? undefined,
     worktreeSlug: cleanWorktreeSlug(u.terminal?.cwd ?? u.agent?.cwd),
     worktreePath,
     plans,
@@ -787,6 +795,10 @@ export function toFloorAgentFromRemote(
     topic: r.topic || r.label || undefined,
     title: r.title || undefined,
     firstUserMessage: r.firstUserMessage || undefined,
+    cwd: r.cwd || undefined,
+    timeline: r.timeline,
+    userTurns: r.userTurns?.length ? r.userTurns : undefined,
+    latestRequest: r.request?.text || undefined,
     files: 0,
     tools: 0,
     needs,
@@ -821,9 +833,10 @@ export function toFloorAgentFromRemote(
     // Live plan checklist from the CLI's TodoWrite (RUSH-1380). Empty when the session
     // wrote no todo list; the CLI now carries this for remote/device-dispatched agents.
     todos: remoteTodos,
-    // Remote = summary only: the sweep carries the session's task line (topic) / last
-    // response but no tool calls yet, so progress stays empty until Tier-2 enrichment.
-    summary: taskAnchor || r.lastResponse || 'No topic',
+    // A stream row carries no rolling narrative. The task anchor already lives in
+    // `prompt`/`topic` and the agent's words in `resp`/`timeline`; copying either here
+    // made the Sessions now-line repeat the first message under the title.
+    summary: '',
     recent: [],
     recentEvents: [],
     // tmux %pane handle + where it's being viewed, surfaced on the card.

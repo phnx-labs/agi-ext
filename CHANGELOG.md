@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- Fleet session rows say where and what. The header names the machine and the working
+  folder (`yosemite-m2 · ~/…/acme/atlas`); under the title, `You ›` is your latest message
+  (it was the first one) and `Agent ›` is the agent's latest reply. Live and Previous rows
+  both read these from the session stream; a Previous row without a reply on the stream
+  takes the newest thing the agent said in its timeline, and shows no Agent line when the
+  stream carries neither.
+- Expanding a row shows the latest reply in full and the session timeline, newest first:
+  each step's time, whether it was you, the agent or a tool-only step, and its tool, failure
+  and block counts, with how many earlier steps there were. The activity bar shows only when
+  the row has tool calls to tally, instead of a grey all-idle bar on every remote session.
+- Rows are as tall as what they show. Every row used to reserve 146px, which left an empty
+  block under rows with only a title and one line.
+
 ## [0.9.387] - 2026-10-09
 
 - The session sidebar shows what the agent produced first. Artifacts and the Pull request

@@ -918,7 +918,7 @@
 .sw-sessions .sx-expandbtn { color: var(--ds-text-muted); }
 .sw-sessions .sx-expandbtn:hover { color: var(--ds-text); }
 .sw-sessions .sx-av { flex: none; margin-top: 1px; }
-.sw-sessions .sx-roletag { width: 40px; }
+.sw-sessions .sx-roletag { width: 46px; }
 .sw-sessions .sx-titleline { margin-bottom: 3px; gap: 7px; }
 .sw-sessions .sx-proj { font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--brand); font-weight: 700; letter-spacing: .4px; text-transform: uppercase; flex: none; }
 .sw-sessions .sx-phase { margin-left: auto; flex: none; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 9.5px; letter-spacing: .3px; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--ds-border); color: var(--ds-text-dim); white-space: nowrap; }
@@ -952,6 +952,24 @@
 .sw-sessions .sx-goal { color: var(--ds-text-muted); font-size: 12px; font-style: italic; }
 .sw-sessions .sx-goal b { color: var(--ds-text-dim); font-style: normal; }
 .sw-sessions .sx-endedmeta { color: var(--ds-text-dim); font-size: 12px; padding: 6px 10px; border-left: 2px solid var(--ds-border); background: var(--ds-bg-sunken); border-radius: 0 7px 7px 0; }
+/* Where the session runs: machine + short working folder, beside the title. */
+.sw-sessions .sx-where { flex: 0 1 auto; min-width: 0; max-width: 45%; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--ds-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-sessions .sx-where b { color: var(--ds-text-dim); font-weight: 600; }
+/* CLI step timeline in the expanded card: time · role · text · tool counts. */
+.sw-sessions .sx-tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sw-sessions .sx-tl-step { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--ds-text-dim); min-width: 0; height: 18px; }
+.sw-sessions .sx-tl-at { flex: none; width: 112px; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--ds-text-muted); white-space: nowrap; }
+.sw-sessions .sx-tl-role { flex: none; width: 40px; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; font-weight: 700; }
+.sw-sessions .sx-tl-role.you { color: var(--ds-info); }
+.sw-sessions .sx-tl-role.agent { color: var(--ds-danger); }
+.sw-sessions .sx-tl-role.tools { color: var(--ds-text-muted); font-weight: 400; }
+.sw-sessions .sx-tl-text { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-sessions .sx-tl-step.you .sx-tl-text { color: var(--ds-text); }
+.sw-sessions .sx-tl-step.tools .sx-tl-text { color: var(--ds-text-muted); font-style: italic; }
+.sw-sessions .sx-tl-step.live .sx-tl-text { color: var(--ds-warning); }
+.sw-sessions .sx-tl-work { flex: none; font-family: "JetBrains Mono","SF Mono",ui-monospace,monospace; font-size: 10.5px; color: var(--ds-text-muted); white-space: nowrap; }
+.sw-sessions .sx-tl-earlier { font-size: 11px; color: var(--ds-text-muted); padding-left: 168px; }
+.sw-sessions .sx-tl-empty { font-size: 12px; color: var(--ds-text-muted); }
 /* Copy-on-click metadata pills — clearly interactive, and they never expand the row. */
 .sw-sessions .sx-chip[role="button"], .sw-sessions .sx-catch .lnk[role="button"] { cursor: pointer; }
 .sw-sessions .sx-metarow .sx-chip[role="button"]:hover { border-color: var(--ds-text-muted); color: var(--ds-text); }

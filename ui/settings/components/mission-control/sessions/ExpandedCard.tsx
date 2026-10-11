@@ -3,6 +3,7 @@ import { isPrevious, todoProgress, type FloorAgent } from '../floorModel'
 import type { SessionRowView } from '../recapModel'
 import { RowLinks } from './RowLinks'
 import { SessionMeta } from './SessionMeta'
+import { SessionTimeline } from './SessionTimeline'
 
 type ActivityKind = 'reading' | 'editing' | 'agents' | 'idle'
 const ACTIVITY_LEGEND: { kind: ActivityKind; label: string }[] = [
@@ -21,7 +22,6 @@ function activityKindOf(name: string): ActivityKind {
 
 function activitySegments(agent: FloorAgent): { kind: ActivityKind; pct: number }[] {
   const calls = agent.recent ?? []
-  if (calls.length === 0) return [{ kind: 'idle', pct: 100 }]
   const tally: Record<ActivityKind, number> = { reading: 0, editing: 0, agents: 0, idle: 0 }
   for (const call of calls) tally[activityKindOf(call.name)] += 1
   return (Object.keys(tally) as ActivityKind[])
@@ -40,6 +40,29 @@ function clockLabel(ms: number): string {
   }
 }
 
+/** Long text clamped to five lines with an explicit See more / See less toggle. */
+export function isLongText(text: string): boolean {
+  return text.length > 320 || text.split(/\r?\n/).length > 5
+}
+
+function ClampedText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const long = isLongText(text)
+  return (
+    <>
+      <div className={`sx-ask${long ? (open ? ' expanded' : ' collapsed') : ''}`}>{text}</div>
+      {long && (
+        <button
+          type="button"
+          className="sx-see-more"
+          aria-expanded={open}
+          onClick={(event) => { event.stopPropagation(); setOpen((shown) => !shown) }}
+        >{open ? 'See less' : 'See more'}</button>
+      )}
+    </>
+  )
+}
+
 export interface ExpandedCardProps {
   agent: FloorAgent
   row: SessionRowView
@@ -47,13 +70,14 @@ export interface ExpandedCardProps {
 }
 
 export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
-  const [showFullRequest, setShowFullRequest] = useState(false)
   const hasRealRequest = Boolean(a.firstUserMessage?.trim())
   // Preserve the genuine first turn byte-for-byte for the expanded view. Trimming
   // here would make the UI's “full” request subtly incomplete.
   const ask = hasRealRequest ? a.firstUserMessage! : (row.you.text || a.prompt || '')
-  const requestIsLong = ask.length > 320 || ask.split(/\r?\n/).length > 5
-  const segments = activitySegments(a)
+  // The activity bar tallies this window's own tool calls; a row without any (every
+  // stream-projected row) shows no bar rather than a fake all-idle one.
+  const hasActivity = (a.recent?.length ?? 0) > 0
+  const segments = hasActivity ? activitySegments(a) : []
   const todos = a.todos ?? []
   const { done, total } = todoProgress(todos)
   const startLabel = clockLabel(a.startedAtMs || 0)
@@ -64,15 +88,7 @@ export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
     <div className="sx-detail" onClick={(e) => e.stopPropagation()}>
       <div className="sx-dsec">
         <div className="sx-dcap">{hasRealRequest ? 'Your request' : 'Request summary'}</div>
-        {ask && <div className={`sx-ask${requestIsLong ? (showFullRequest ? ' expanded' : ' collapsed') : ''}`}>{ask}</div>}
-        {requestIsLong && (
-          <button
-            type="button"
-            className="sx-see-more"
-            aria-expanded={showFullRequest}
-            onClick={(event) => { event.stopPropagation(); setShowFullRequest((shown) => !shown) }}
-          >{showFullRequest ? 'See less' : 'See more'}</button>
-        )}
+        {ask && <ClampedText text={ask} />}
         {row.title && row.title.trim() && row.title.trim() !== ask.trim() && (
           <div className="sx-goal">{row.title}</div>
         )}
@@ -84,7 +100,14 @@ export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
           </div>
         )}
       </div>
-      {live ? (
+      {row.lastFull && (
+        <div className="sx-dsec">
+          <div className="sx-dcap">Latest reply</div>
+          <ClampedText text={row.lastFull} />
+        </div>
+      )}
+      <SessionTimeline timeline={a.timeline} nowMs={nowMs} />
+      {live ? (hasActivity && (
         <div className="sx-dsec">
           <div className="sx-dcap">Activity</div>
           <div className="sx-actbar">
@@ -95,10 +118,10 @@ export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
           </div>
           <div className="sx-actspan"><span>{startLabel || 'started'}</span><span>{nowLabel}</span></div>
         </div>
-      ) : (
+      )) : (
         <div className="sx-dsec">
           <div className="sx-dcap">Ended session</div>
-          <SessionMeta agent={a} row={row} nowMs={nowMs} />
+          <SessionMeta agent={a} nowMs={nowMs} />
         </div>
       )}
       {total > 0 && (

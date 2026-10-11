@@ -1,0 +1,110 @@
+{
+  "_comment": "Shape of one `agents feed watch --json` reset (2026-10-10 capture). Field set and presence match the real rows; text is neutral. live-offloaded: running on a worker with preview + timeline. previous-timeline: history row with timeline/userTurns but no preview (the CLI omits preview on previous rows). previous-bare: history row carrying only the first user message.",
+  "v": 1,
+  "type": "reset",
+  "streamId": "fixture",
+  "sequence": 1,
+  "capturedAt": 1791618600000,
+  "scope": "yosemite-m2",
+  "attention": [],
+  "agents": [
+    {
+      "rowKey": "live-offloaded",
+      "sessionId": "b64b7320-58de-412c-88ab-1cf46e3d4f20",
+      "kind": "claude",
+      "context": "headless",
+      "status": "running",
+      "activity": "working",
+      "previous": false,
+      "machine": "yosemite-m2",
+      "sourceDevice": "yosemite-m2",
+      "cwd": "/home/muqsit/src/github.com/acme/atlas",
+      "title": "Atlas merge guard owner ids",
+      "label": "Atlas merge guard owner ids",
+      "startedAtMs": 1791451700000,
+      "lastActivityMs": 1791618567166,
+      "firstUserMessage": "Look at the merge guard and tell me why my own approvals are rejected.",
+      "preview": "The merge guard now accepts your own-account approvals.\nI ran it against the real reviews and it allows the merge.",
+      "lastAgentLine": "The merge guard now accepts your own-account approvals.",
+      "tail": ["Checking the trusted owner list.", "The merge guard now accepts your own-account approvals."],
+      "request": {
+        "text": "Please add my account id to the trusted owner ids when you get a chance.",
+        "headline": "Please add my account id to the trusted owner ids when you get a chance.",
+        "kind": "text",
+        "attachments": [],
+        "pastedLines": 0,
+        "turns": 3
+      },
+      "userTurns": [
+        { "atMs": 1791451768076, "text": "Look at the merge guard and tell me why my own approvals are rejected.", "images": 0 },
+        { "atMs": 1791611769133, "text": "Done??", "images": 0 },
+        { "atMs": 1791618392107, "text": "Please add my account id to the trusted owner ids when you get a chance.", "images": 0 }
+      ],
+      "timeline": {
+        "steps": [
+          { "text": "Two of the things you asked for are blocked for me, so here is a script.", "at": "2026-10-10T06:37:25.154Z", "source": "narration", "tools": 1, "failed": 0, "blocked": 0 },
+          { "text": "Please add my account id to the trusted owner ids when you get a chance.", "at": "2026-10-10T07:46:32.107Z", "source": "user", "tools": 0, "failed": 0, "blocked": 0 },
+          { "text": "Read 1 file, ran 1 git command", "at": "2026-10-10T07:46:35.144Z", "source": "derived", "tools": 2, "failed": 0, "blocked": 0 },
+          { "text": "The lookup works when I run it directly.", "at": "2026-10-10T07:48:25.350Z", "source": "narration", "tools": 4, "failed": 1, "blocked": 0 },
+          { "text": "The merge guard now accepts your own-account approvals.", "at": "2026-10-10T07:49:27.166Z", "source": "narration", "tools": 0, "failed": 0, "blocked": 0 }
+        ],
+        "earlier": { "steps": 141, "tools": 278, "failed": 13 },
+        "tools": 291,
+        "failed": 13,
+        "blocked": 25,
+        "spanMs": 241521338,
+        "state": "ready"
+      }
+    },
+    {
+      "rowKey": "previous-timeline",
+      "sessionId": "01a1245e-7541-79b3-9255-928fb77d88d3",
+      "kind": "codex",
+      "context": "recent",
+      "status": "idle",
+      "previous": true,
+      "resumable": true,
+      "machine": "yosemite-m2",
+      "sourceDevice": "yosemite-m2",
+      "cwd": "/home/muqsit/src/github.com/acme/atlas",
+      "title": "Pull latest atlas main",
+      "startedAtMs": 1791500000000,
+      "lastActivityMs": 1791503600000,
+      "firstUserMessage": "git pull and tell me what changed",
+      "request": { "text": "Continue..", "headline": "Continue..", "kind": "text", "attachments": [], "pastedLines": 0, "turns": 2 },
+      "userTurns": [
+        { "atMs": 1791500000000, "text": "git pull and tell me what changed", "images": 0 },
+        { "atMs": 1791503500000, "text": "Continue..", "images": 0 }
+      ],
+      "timeline": {
+        "steps": [
+          { "text": "git pull and tell me what changed", "at": "2026-10-09T00:13:20.000Z", "source": "user", "tools": 0, "failed": 0, "blocked": 0 },
+          { "text": "Pulled 12 commits; the indexer and the export script changed.", "at": "2026-10-09T00:14:00.000Z", "source": "narration", "tools": 3, "failed": 0, "blocked": 0 },
+          { "text": "Continue..", "at": "2026-10-09T01:11:40.000Z", "source": "user", "tools": 0, "failed": 0, "blocked": 0 }
+        ],
+        "earlier": { "steps": 0, "tools": 0, "failed": 0 },
+        "tools": 3,
+        "failed": 0,
+        "blocked": 0,
+        "spanMs": 3600000,
+        "state": "ready"
+      }
+    },
+    {
+      "rowKey": "previous-bare",
+      "sessionId": "3c734cd4-fe3a-4e80-bba7-d69fe5ebbf23",
+      "kind": "claude",
+      "context": "recent",
+      "status": "idle",
+      "previous": true,
+      "resumable": true,
+      "machine": "yosemite-m2",
+      "sourceDevice": "yosemite-m2",
+      "cwd": "/home/muqsit/src/github.com/acme",
+      "title": "acme-63",
+      "startedAtMs": 1791400000000,
+      "lastActivityMs": 1791400600000,
+      "firstUserMessage": "Check the carousel post schedule."
+    }
+  ]
+}

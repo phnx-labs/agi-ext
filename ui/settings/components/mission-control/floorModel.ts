@@ -145,6 +145,33 @@ export interface FloorAttachment {
   thumbnailUri?: string
 }
 
+/** One CLI timeline step (`SessionWatchRow.timeline.steps[]`, normalized by
+ *  src/core/remoteSessions.ts normalizeTimeline). `source: 'user'` is your turn;
+ *  narration/thinking is the agent's own sentence; derived is a tool-only summary. */
+interface FloorTimelineStep {
+  text: string
+  at: string
+  source: 'narration' | 'thinking' | 'derived' | 'user'
+  tools: number
+  failed: number
+  blocked: number
+  live?: boolean
+}
+
+/** Mirror of RemoteTimeline: newest step LAST, plus a counter for older steps. */
+export interface FloorTimeline {
+  steps: FloorTimelineStep[]
+  earlier: { steps: number; tools: number; failed: number }
+  state: 'ready' | 'partial' | 'unavailable'
+  reason?: string
+}
+
+/** One genuine user turn from the CLI row (`userTurns[]`), oldest first. */
+export interface FloorUserTurn {
+  atMs: number
+  text: string
+}
+
 export interface FloorAgent {
   id: string
   host: string          // 'this-mac' for local; remote hostname otherwise. ROUTING key — reply/nudge/reassign target it.
@@ -187,6 +214,10 @@ export interface FloorAgent {
   topic?: string         // the session's task/label line from the roster (topic/label/prompt). The Sessions surface's row title + search field. Falls back to prompt/name when absent.
   title?: string         // CLI-authored recap title for the row header; distinct from the request body.
   firstUserMessage?: string // Full genuine first user turn from the CLI index. Undefined means the UI must label its fallback honestly.
+  cwd?: string           // the session's working folder from the CLI row; undefined when the row carries none
+  timeline?: FloorTimeline // CLI step timeline (user turns + agent narration); undefined when the row carries none
+  userTurns?: FloorUserTurn[] // genuine user turns, oldest first; the last one is your latest message
+  latestRequest?: string // the CLI's latest genuine request text (`request.text`), when the row carries one
   messages: string[]     // the last few assistant messages (from the CLI's last_messages window); [] when none. Drives the detail-pane Activity feed.
   question: StructuredQuestion | null
   /** The CLI attention row's kind, carried verbatim from the stream. Drives the

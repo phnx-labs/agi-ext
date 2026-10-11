@@ -1111,7 +1111,7 @@ describe('toFloorAgentFromRemote', () => {
     const a = toFloorAgentFromRemote(r, new Set())
     expect(a.name).toBe('Claude session')
     expect(a.name).not.toContain('019e30a2')
-    expect(a.summary).toBe('No topic')
+    expect(a.summary).toBe('')
   })
 
   test('uses a remote worktree slug as the task anchor when topic is absent', () => {
@@ -1127,7 +1127,7 @@ describe('toFloorAgentFromRemote', () => {
     }
     const a = toFloorAgentFromRemote(r, new Set())
     expect(a.prompt).toBe('rush-2031-factory-floor')
-    expect(a.summary).toBe('rush-2031-factory-floor')
+    expect(a.summary).toBe('')
   })
 
   test('keeps the streamed recap title separate from the full first user turn', () => {
