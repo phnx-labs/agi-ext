@@ -10,7 +10,6 @@ import { AgentConfig } from './agents.vscode';
 import { generateTerminalId, resolveRestoredVersion, RunningCounts } from '../core/terminals';
 import * as sessionsPersist from '../core/sessions.persist';
 import { canonicalSessionId } from '../core/canonicalSessionId';
-import { revivedDeadTerminalTabs } from '../core/tabIndex';
 import type { ManualSessionOverride } from '../core/remoteAutoLabel';
 import { needsSessionIdHydrate } from '../core/sessionIdHydrate';
 import { restoredSessionTabLabels } from '../core/sessionTabLabelSync';
@@ -1311,20 +1310,3 @@ export function loadPersistedSessions(): sessionsPersist.PersistedSession[] {
   return keys ? sessionsPersist.getWorkspaceSessions(keys.key, keys.legacyKey) : [];
 }
 
-/**
- * Close the terminal tabs a crash revived without a pty ("The editor could not be
- * opened"). The sessions they showed reopen through the persisted-session restore,
- * one live tab each. Non-agent and live terminals are never touched.
- */
-export async function closeRevivedDeadTerminalTabs(): Promise<number> {
-  const groups = vscode.window.tabGroups.all;
-  const live = new Set(vscode.window.terminals.map((t) => t.name));
-  const views = groups.map((g) => g.tabs.map((tab) => ({
-    label: tab.label,
-    isTerminal: tab.input instanceof vscode.TabInputTerminal,
-    hasInput: tab.input !== undefined && tab.input !== null,
-  })));
-  const dead = revivedDeadTerminalTabs(views, live).map(([g, t]) => groups[g].tabs[t]);
-  if (dead.length > 0) await vscode.window.tabGroups.close(dead, true);
-  return dead.length;
-}

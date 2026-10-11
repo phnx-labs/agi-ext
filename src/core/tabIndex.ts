@@ -39,23 +39,3 @@ export function resolveTabIndex(groups: TabView[][], terminalName: string): numb
   return undefined;
 }
 
-/**
- * Tabs a crash left behind. VSCodium reopens a terminal editor whose pty is gone
- * and can only show "The editor could not be opened": its label is the
- * unresolved `vscode-terminal:/<id>/<n>` resource (the 32-hex workspace id then
- * the instance number, e.g. `03c9…155e1`), it carries a
- * terminal input or none at all, and no live terminal has that name. Returns
- * [group, tab] positions, 0-based. A live terminal, agent or not, never matches.
- */
-export function revivedDeadTerminalTabs(
-  groups: Array<Array<TabView & { hasInput: boolean }>>,
-  liveTerminalNames: ReadonlySet<string>,
-): Array<[number, number]> {
-  const dead: Array<[number, number]> = [];
-  groups.forEach((tabs, g) => tabs.forEach((tab, t) => {
-    if ((tab.isTerminal || !tab.hasInput) && /^[0-9a-f]{32}[0-9]*$/.test(tab.label) && !liveTerminalNames.has(tab.label)) {
-      dead.push([g, t]);
-    }
-  }));
-  return dead;
-}

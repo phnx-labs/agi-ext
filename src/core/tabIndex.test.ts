@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { resolveTabIndex, revivedDeadTerminalTabs, type TabView } from './tabIndex';
+import { resolveTabIndex, type TabView } from './tabIndex';
 
 const term = (label: string): TabView => ({ label, isTerminal: true });
 const file = (label: string): TabView => ({ label, isTerminal: false });
@@ -42,20 +42,3 @@ describe('resolveTabIndex', () => {
   });
 });
 
-describe('revivedDeadTerminalTabs', () => {
-  const dead = '03c9c75324d09eecbef0224f5d8b155e1';
-  const tab = (label: string, isTerminal: boolean, hasInput = true) => ({ label, isTerminal, hasInput });
-
-  it('finds the "could not be opened" terminal tabs a crash revived, in every group', () => {
-    expect(revivedDeadTerminalTabs([
-      [tab('AGI EXT', false), tab(dead, true), tab('Claude 8d05c00f - real a1', true)],
-      [tab('5e0f59dc738aac894eab53bd08d18fd71', false, false), tab('7d488c93fef40e3dea9b84330f369ee012', true)],
-    ], new Set(['Claude 8d05c00f - real a1']))).toEqual([[0, 1], [1, 0], [1, 1]]);
-  });
-
-  it('never touches a live terminal, a file, or a terminal with an ordinary name', () => {
-    expect(revivedDeadTerminalTabs([
-      [tab(dead, true), tab('zsh', true), tab('deadbeefdeadbeefdeadbeefdeadbeef.ts', false), tab('0123456789abcdef0123456789abcdef', false)],
-    ], new Set([dead]))).toEqual([]);
-  });
-});
