@@ -16,7 +16,9 @@ describe('agent session editor-tab routing', () => {
     expect(helper).toContain('location: { viewColumn: vscode.ViewColumn.Active }');
     expect(helper).toContain('await registerAgentTerminal(terminal, context');
     expect(helper).toContain('terminalId = session.terminalId || terminals.nextId');
-    expect(helper.indexOf('terminal.show();')).toBeLessThan(helper.indexOf("readiness.waitFor(terminal, 'promptReady')"));
+    expect(helper).toContain('...agentTabShell(resumeCmd, process.env.SHELL)');
+    expect(helper).not.toContain('executeCommand(resumeCmd)');
+    expect(helper.indexOf('terminal.show();')).toBeLessThan(helper.indexOf("readiness.waitFor(terminal, 'agentReady')"));
   });
 
   test('CLI-owned recovery preserves an unpresented harness across editor reload', () => {
