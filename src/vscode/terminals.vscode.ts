@@ -698,14 +698,15 @@ export async function renameTerminal(terminal: vscode.Terminal, newName: string)
     if (entry) entry.pendingTitle = newName;
     return;
   }
-  const namesBefore = new Map(vscode.window.terminals.map((t) => [t, t.name]));
+  const live = vscode.window.terminals ?? [];
+  const namesBefore = new Map(live.map((t) => [t, t.name]));
   try {
     await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name: newName });
   } catch (err) {
     console.error('[TERMINALS] Failed to rename terminal', err);
     return;
   }
-  const hit = vscode.window.terminals.find((t) => t !== terminal && t.name === newName && namesBefore.get(t) !== newName);
+  const hit = (vscode.window.terminals ?? []).find((t) => t !== terminal && t.name === newName && namesBefore.get(t) !== newName);
   if (hit) {
     const previous = namesBefore.get(hit);
     console.warn(`[TERMINALS] Rename to "${newName}" landed on "${previous}"; restoring it`);
