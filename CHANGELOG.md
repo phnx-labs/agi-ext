@@ -4,6 +4,27 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- A tab you close stays closed after a crash or restart. Every window used to rewrite one
+  shared tab file, so a window holding a stale copy brought closed tabs back and could
+  erase another window's tabs; each window now keeps its own file, and a closed tab leaves
+  it immediately.
+- Restore opens one tab per session (no more two or three copies of the same session),
+  keeps each tab's remote device, and skips a session the window already shows. A
+  multi-root workspace keeps its tabs apart from a window opened on its first folder.
+- The second crash-recovery store (`workspaceState`), which could reopen tabs without
+  their device, is gone.
+- `/spawn` from the CLI opens a tab only in a window whose folders contain the session's
+  project, focuses the existing tab instead of duplicating it, and answers with an ack file
+  (`opened`, `focused-existing`, `wrong-window`, `failed`) so `agents sessions resume`
+  can say where the session actually opened. A request that names no project is refused.
+- A restored or resumed tab now runs the CLI's in-place resume (`agents sessions resume <id> -q`),
+  so the tab itself becomes the live agent. It used to run `--vscodium`, which from inside a tab
+  asked the CLI to open yet another tab and left the first one on the CLI's output.
+- `agents.resumeSession(<id>)`: one command that focuses the session's tab in this window or
+  opens it in its project's window through the CLI, and returns the ack status.
+
 ## [0.9.388] - 2026-10-11
 
 - Fleet session rows say where and what. The header shows the machine and the working
@@ -23,24 +44,6 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   all-idle bar on every remote session, and the Timeline's strip replaces it.
 - Rows are as tall as what they show. Every row used to reserve 146px, which left an empty
   block under rows with only a title and one line; every row now measures itself.
-- A tab you close stays closed after a crash or restart. Every window used to rewrite one
-  shared tab file, so a window holding a stale copy brought closed tabs back and could
-  erase another window's tabs; each window now keeps its own file, and a closed tab leaves
-  it immediately.
-- Restore opens one tab per session (no more two or three copies of the same session),
-  keeps each tab's remote device, and skips a session the window already shows. A
-  multi-root workspace keeps its tabs apart from a window opened on its first folder.
-- The second crash-recovery store (`workspaceState`), which could reopen tabs without
-  their device, is gone.
-- `/spawn` from the CLI opens a tab only in a window whose folders contain the session's
-  project, focuses the existing tab instead of duplicating it, and answers with an ack file
-  (`opened`, `focused-existing`, `wrong-window`, `failed`) so `agents sessions resume`
-  can say where the session actually opened. A request that names no project is refused.
-- A restored or resumed tab now runs the CLI's in-place resume (`agents sessions resume <id> -q`),
-  so the tab itself becomes the live agent. It used to run `--vscodium`, which from inside a tab
-  asked the CLI to open yet another tab and left the first one on the CLI's output.
-- `agents.resumeSession(<id>)`: one command that focuses the session's tab in this window or
-  opens it in its project's window through the CLI, and returns the ack status.
 
 ## [0.9.387] - 2026-10-09
 
