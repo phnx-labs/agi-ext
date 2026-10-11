@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.389] - 2026-10-11
 
 - A tab you close stays closed after a crash or restart. Every window used to rewrite one
   shared tab file, so a window holding a stale copy brought closed tabs back and could
