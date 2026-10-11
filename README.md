@@ -37,9 +37,7 @@ it is stale.
 src/core       pure presentation logic, no vscode import (launch composition, store, models)
 src/monitor    elected stream leader, demand gate, cross-window broadcast
 src/vscode     commands, terminals, sidebar, webview bridge, URI handler
-src/mcp        watchdog socket bridge and the MCP server it serves by path
-src/shared     re-exports the ui/ bundle imports through the @shared alias
-ui/settings    Fleet dashboard (React, Vite)
+src/shared     code shared by the sidebar and Project panel (session cards, state words)
 ui/editor      Reader: Markdown editor and HTML viewer
 assets/ icons/ extension artwork and the file-icon theme
 scripts/       build.sh, install.sh, release.sh: the only entry points

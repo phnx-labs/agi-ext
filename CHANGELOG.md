@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.394] - 2026-10-11
 
 - Removed the Fleet dashboard webview and everything only it used (Foreman voice orb, Dispatch
   modal, bench, recap ledger, the watchdog MCP bridge, cloud task polling). Removed commands and
