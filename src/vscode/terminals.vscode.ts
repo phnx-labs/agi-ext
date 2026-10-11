@@ -765,7 +765,7 @@ export async function scanExisting(
     // unless we rehydrate it from the persisted session here. Without this, a
     // remote session's resume command degrades to a local raw binary and the
     // label poller reads the wrong filesystem (extension.ts restore callers pass
-    // `session.host` into buildVersionedResumeCommand; scanExisting is the other
+    // `session.host` into the resume path; scanExisting is the other
     // reload path that must keep it, RUSH-2047).
     if (persistedByTerminalId?.host) {
       setHost(terminal, persistedByTerminalId.host);

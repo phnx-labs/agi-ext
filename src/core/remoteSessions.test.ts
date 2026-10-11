@@ -11,7 +11,6 @@ import {
   normalizeActiveSessions,
   normalizeRecentSession,
   buildRecoveryMigrationCommand,
-  buildRecoveryResumeCommand,
   normalizeQuestion,
   dedupeSessions,
   groupByHost,
@@ -988,24 +987,6 @@ describe('normalizeRecentSession — SessionPickerJsonRow lifecycle/recovery fie
     const s = normalizeRecentSession({ ...base }, 'mac-mini', Date.now());
     expect(s.state).toBe('inactive');
     expect(s.sourceDevice).toBe('mac-mini');
-  });
-});
-
-describe('buildRecoveryResumeCommand — device-targeted, injection-safe (PHNX-3593)', () => {
-  test('a remote device targets --device and opens as an editor tab', () => {
-    expect(buildRecoveryResumeCommand('49eae375-3669-4881-b1cc-02960453115e', 'yosemite-s0')).toBe(
-      "agents sessions resume '49eae375-3669-4881-b1cc-02960453115e' --device 'yosemite-s0' --vscodium",
-    );
-  });
-  test('no device omits --device (the CLI resolves it)', () => {
-    expect(buildRecoveryResumeCommand('abc-123', '')).toBe("agents sessions resume 'abc-123' --vscodium");
-    expect(buildRecoveryResumeCommand('abc-123')).toBe("agents sessions resume 'abc-123' --vscodium");
-  });
-  test('a shell-hostile id or device is single-quote escaped, never injected', () => {
-    const cmd = buildRecoveryResumeCommand("x'; rm -rf ~ #", 'dev name');
-    expect(cmd).toBe("agents sessions resume 'x'\\''; rm -rf ~ #' --device 'dev name' --vscodium");
-    // the injected `rm` is inside quotes, so it is a literal argument, not a command
-    expect(cmd.startsWith('agents sessions resume ')).toBe(true);
   });
 });
 

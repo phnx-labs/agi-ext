@@ -1415,22 +1415,6 @@ function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | 
 }
 
 /**
- * Build the CLI's device-targeted resume command for a PREVIOUS (crashed/ended)
- * session (PHNX-3593): `agents sessions resume <id> [--device <device>] --vscodium`.
- * Host-owned so a webview payload can only pick the session, never inject — every
- * interpolated value is single-quote escaped. `--device` is included only when a
- * real (non-local) device is given; `--vscodium` opens the resumed session as an
- * editor tab. Pure so the built command is unit-tested and quotable.
- */
-export function buildRecoveryResumeCommand(sessionId: string, device?: string): string {
-  const parts = ['agents', 'sessions', 'resume', shellQuote(sessionId)];
-  const d = (device || '').trim();
-  if (d) parts.push('--device', shellQuote(d));
-  parts.push('--vscodium');
-  return parts.join(' ');
-}
-
-/**
  * Move a historical session to another device through the CLI's existing
  * transcript-transport seam, then focus the confirmed-live target pane. Direct
  * `sessions resume --device <different-device>` is intentionally invalid: that

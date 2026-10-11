@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
 import { readManagedProjects } from '../core/managedProjects';
-import { decideSpawn, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
+import { decideSpawn, resumeSessionTab, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
   harnessLaunchRegistrations,
@@ -21,7 +21,7 @@ import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
 import { listRegisteredDevices, getRegisteredDevicesCache } from './deviceHealth.vscode';
 import { deviceBadge } from '../core/deviceName';
-import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand, buildRecoveryResumeCommand } from '../core/remoteSessions';
+import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand } from '../core/remoteSessions';
 import * as settings from './settings.vscode';
 import * as swarm from './swarm.vscode';
 import {
@@ -138,7 +138,7 @@ async function ensureAgentsCliInstalled(): Promise<void> {
     }
   }
 }
-import { supportsPrewarming, buildVersionedResumeCommand, exitSequenceFor } from '../core/prewarm';
+import { supportsPrewarming, inTabResumeCommand, exitSequenceFor } from '../core/prewarm';
 import { liveWindowFolders, restorePlan } from '../core/sessions.persist';
 import { generateClaudeSessionId, listOpencodeSessions } from '../core/prewarm.simple';
 import { canonicalSessionId } from '../core/canonicalSessionId';
@@ -1503,6 +1503,28 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('agents.sessionResume', () => resumeSession(context))
   );
 
+  // One entry point for "show me this session" (side panel, Fleet): focus this
+  // window's live tab, else let the CLI open it in the window that owns its
+  // project, which applies the same /spawn decision. Returns the ack result.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agents.resumeSession', (sessionId: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
+      liveTab: (id) => {
+        const entry = terminals.getBySessionId(id);
+        return entry && { terminalId: entry.id, focus: () => entry.terminal.show() };
+      },
+      runResume: async (id) => {
+        const { runAgentsArgs } = await import('../core/agentsBin');
+        try {
+          const { stdout, stderr } = await runAgentsArgs(['sessions', 'resume', id, '--vscodium'], { timeout: 60_000 });
+          return { ok: true, output: `${stdout}\n${stderr}` };
+        } catch (err) {
+          const e = err as { stdout?: string; stderr?: string; message?: string };
+          return { ok: false, output: `${e.stdout ?? ''}\n${e.stderr ?? e.message ?? ''}` };
+        }
+      },
+    }))
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.resume', () => resumeSessionsBatch(context))
   );
@@ -2113,6 +2135,21 @@ async function spawnCommandTerminal(
   context: vscode.ExtensionContext,
   req: SpawnRequest
 ): Promise<void> {
+  const result = await placeSpawnRequest(context, req);
+  if (!req.nonce) return;
+  try {
+    writeSpawnAck({ nonce: req.nonce, ...result });
+  } catch (err) {
+    console.error('[SPAWN] Failed to write ack', err);
+  }
+}
+
+type SpawnResult = Omit<SpawnAck, 'nonce'>;
+
+async function placeSpawnRequest(
+  context: vscode.ExtensionContext,
+  req: SpawnRequest
+): Promise<SpawnResult> {
   const detectedKey =
     (req.agent && getBuiltInByKey(req.agent) ? req.agent : null) ||
     readiness.detectAgentKeyFromArgs(req.command) ||
@@ -2121,28 +2158,22 @@ async function spawnCommandTerminal(
   const sessionId =
     req.sessionId || readiness.extractSessionIdFromArgs(req.command) || null;
   const windowFolders = terminals.windowFolders();
-  const ack = (status: SpawnAck['status'], tab?: { terminalId: string; title: string; pid?: number }): void => {
-    if (!req.nonce) return;
-    try {
-      writeSpawnAck({
-        nonce: req.nonce,
-        status,
-        windowFolders,
-        workspaceName: vscode.workspace.name ?? null,
-        terminalId: tab?.terminalId ?? null,
-        title: tab?.title ?? null,
-        sessionId,
-        pid: tab?.pid ?? null,
-        at: Date.now(),
-      });
-    } catch (err) {
-      console.error('[SPAWN] Failed to write ack', err);
-    }
-  };
-  if (!def) {
-    ack('failed');
-    return;
-  }
+  const result = (
+    status: SpawnAck['status'],
+    tab: { terminalId?: string; title?: string; pid?: number } = {},
+    reason: string | null = null,
+  ): SpawnResult => ({
+    status,
+    windowFolders,
+    workspaceName: vscode.workspace.name ?? null,
+    terminalId: tab.terminalId ?? null,
+    title: tab.title ?? null,
+    sessionId,
+    pid: tab.pid ?? null,
+    reason,
+    at: Date.now(),
+  });
+  if (!def) return result('failed', {}, 'no harness matches this request');
   const live = sessionId ? terminals.getBySessionId(sessionId) : undefined;
   const decision = decideSpawn({
     project: req.project,
@@ -2150,14 +2181,11 @@ async function spawnCommandTerminal(
     otherWindows: req.project ? liveWindowFolders(process.pid) : [],
     liveTerminalId: live?.id,
   });
-  if (decision === 'wrong-window') {
-    ack('wrong-window');
-    return;
-  }
+  if (decision === 'no-project') return result('failed', {}, 'the request names no project, so no window can claim it');
+  if (decision === 'wrong-window') return result('wrong-window');
   if (decision === 'focus' && live) {
     live.terminal.show();
-    ack('focused-existing', { terminalId: live.id, title: live.terminal.name, pid: live.pid });
-    return;
+    return result('focused-existing', { terminalId: live.id, title: live.terminal.name, pid: live.pid });
   }
 
   const agentConfig = createAgentConfig(
@@ -2202,24 +2230,31 @@ async function spawnCommandTerminal(
   });
 
   const pid = await terminals.processIdWithin(terminal);
-  ack(pid === undefined ? 'failed' : 'opened', { terminalId, title, pid });
   terminals.register(terminal, terminalId, agentConfig, pid, context);
   readiness.registerTerminal(terminal);
-
-  if (!isShell && detectedKey) {
-    const resumeKey = agentKeyFromSession(detectedKey);
-    if (resumeKey) {
-      terminals.setAgentType(terminal, resumeKey);
-      if (sessionId) {
-        terminals.setSessionId(terminal, sessionId);
-        startAutoLabelPollerForTerminal(terminal, context);
-      }
+  if (pid === undefined) return result('failed', { terminalId, title }, "the tab's shell did not start within 10s");
+  const resumeKey = !isShell && detectedKey ? agentKeyFromSession(detectedKey) : null;
+  if (resumeKey) {
+    terminals.setAgentType(terminal, resumeKey);
+    if (sessionId) {
+      terminals.setSessionId(terminal, sessionId);
+      startAutoLabelPollerForTerminal(terminal, context);
     }
-  } else {
+  } else if (isShell || !detectedKey) {
     armShellAdoptionForTerminal(terminal, context);
   }
+  // Answer as soon as the tab's process runs; the command follows once the
+  // shell prompt is ready, which can take longer than the caller waits.
+  void finishSpawnedTab(context, terminal, req.command);
+  return result('opened', { terminalId, title, pid });
+}
 
-  await sendCommandWhenReady(terminal, req.command);
+async function finishSpawnedTab(
+  context: vscode.ExtensionContext,
+  terminal: vscode.Terminal,
+  command: string,
+): Promise<void> {
+  await sendCommandWhenReady(terminal, command);
   if (vscode.window.activeTerminal === terminal) {
     updateStatusBarForTerminal(terminal, context.extensionPath);
   }
@@ -2716,7 +2751,7 @@ async function copySessionId() {
  * The agent key a session resumes under, for the PICKER paths (`Agents: Resume`
  * and `Agents: Session Resume`). Every harness AGI EXT presents can be resumed
  * here — the five prewarm agents through their native flag, the rest through
- * `agents run --resume` (see buildVersionedResumeCommand) — so the gate is
+ * the CLI's strict resume (see inTabResumeCommand) — so the gate is
  * membership in the agent registry, not the prewarm subset. `shell` is excluded:
  * a shell tab has no conversation to resume.
  *
@@ -2742,7 +2777,7 @@ export async function openAgentSessionTerminal(
   context: vscode.ExtensionContext,
   session: { id: string; shortId: string; agent: string; version?: string; account?: string; cwd?: string; host?: string; terminalId?: string },
   // When set, run THIS exact command in the resumed tab instead of the default
-  // `buildVersionedResumeCommand`. Used by the Sessions surface's PREVIOUS band to
+  // `inTabResumeCommand`. Used by the Sessions surface's PREVIOUS band to
   // run the CLI's own device-targeted recovery command (PHNX-3593) — the default
   // builder drops `--device`, which strands a cross-device crashed session.
   resumeCommandOverride?: string,
@@ -2772,7 +2807,7 @@ export async function openAgentSessionTerminal(
   // A resumed session belongs in ITS OWN directory, not whatever workspace this
   // window happens to have open — batch resume routinely spans several repos.
   const workspacePath = session.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  const resumeCmd = resumeCommandOverride ?? buildVersionedResumeCommand(agentKey!, session.id, session.version, session.host);
+  const resumeCmd = resumeCommandOverride ?? inTabResumeCommand(session.id);
 
   const terminalId = session.terminalId || terminals.nextId(agentConfig.prefix);
   const title = buildTerminalTitle(agentConfig.title, undefined, context, session.id);
@@ -2844,14 +2879,11 @@ export async function openAgentSessionById(
 }
 
 /**
- * Resume a PREVIOUS (crashed/ended) session straight from the CLI's own recovery
- * command (PHNX-3593), device-targeted, WITHOUT the local-only candidate lookup
- * `openAgentSessionById` does. A session recovered from a remote fleet device is
- * not in this machine's local `agents sessions --json` history, so the candidate
- * find would fail with "no longer resumable" even though the row is resumable —
- * and `buildVersionedResumeCommand` drops `--device`, stranding it on the wrong
- * box. The command is rebuilt HOST-SIDE from the id + device (the extension owns
- * the CLI noun), so a webview payload can only pick the session, never inject.
+ * Resume a PREVIOUS (crashed/ended) session WITHOUT the local-only candidate
+ * lookup `openAgentSessionById` does: a session from a remote fleet device is not
+ * in this machine's local history. The CLI's strict resume finds its origin
+ * device itself. The command is built here from the id, so a webview payload can
+ * only pick the session, never inject.
  */
 export async function openAgentSessionByRecovery(
   context: vscode.ExtensionContext,
@@ -2863,7 +2895,7 @@ export async function openAgentSessionByRecovery(
     // The transcript's cwd belongs to its origin device. Leave the local editor
     // terminal in this workspace; the CLI recovery record restores cwd remotely.
     { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, host: device || undefined },
-    buildRecoveryResumeCommand(opts.sessionId, device),
+    inTabResumeCommand(opts.sessionId),
   );
 }
 
@@ -3134,7 +3166,7 @@ function activeSessionTerminalEntry(): terminals.EditorTerminal | undefined {
  * device. Only the host changes: the harness and its pinned version stay, so
  * the host picker is the one decision the user makes. Transcripts sync
  * fleet-wide, so `agents run --device <picked> --resume <id>` picks the session
- * up wherever it lands (see buildVersionedResumeCommand).
+ * up wherever it lands (see inTabResumeCommand).
  *
  * Deliberate divergence from the batch path: no `cwd` is passed, so the new
  * tab opens in the current workspace rather than the session's own directory.
@@ -4636,7 +4668,7 @@ async function reloadActiveTerminal(context: vscode.ExtensionContext) {
 
     // Prewarm agents use their tuned exit keys; the rest fall back to Ctrl+C twice.
     const exitSequence = exitSequenceFor(agentType);
-    const resumeCommand = buildVersionedResumeCommand(agentType, sessionId, entry.version, entry.host);
+    const resumeCommand = inTabResumeCommand(sessionId);
 
     terminal.show();
     for (const seq of exitSequence) {
@@ -5272,15 +5304,9 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
         startAutoLabelPollerForTerminal(terminal, context);
       }
 
-      // Actually resume the session by sending the resume command. Any known
-      // harness resumes here, not just the prewarm five (#1747) — buildVersioned-
-      // ResumeCommand routes non-prewarm agents through `agents run --resume`.
+      // The tab becomes the live agent through the CLI's in-place strict resume.
       const restoredAgentKey = session.agentType ? agentKeyFromSession(session.agentType) : null;
-      const resumeCmd = session.recoveryAgent
-        ? buildRecoveryResumeCommand(session.sessionId, session.host)
-        : restoredAgentKey
-          ? buildVersionedResumeCommand(restoredAgentKey, session.sessionId, session.version, session.host)
-          : null;
+      const resumeCmd = session.recoveryAgent || restoredAgentKey ? inTabResumeCommand(session.sessionId) : null;
       if (resumeCmd) {
         try {
           await readiness.waitFor(terminal, 'promptReady');
@@ -5381,12 +5407,7 @@ async function reopenLastClosedSession(context: vscode.ExtensionContext): Promis
 
     // Any known harness reopens, not just the prewarm five (#1747).
     if (agentKeyFromSession(closed.agentType)) {
-      const resumeCmd = buildVersionedResumeCommand(
-        closed.agentType,
-        closed.sessionId,
-        closed.version,
-        closed.host
-      );
+      const resumeCmd = inTabResumeCommand(closed.sessionId);
       try {
         await readiness.waitFor(terminal, 'promptReady');
       } catch (err) {

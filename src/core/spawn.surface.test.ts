@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { decideSpawn, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
+import { cliResumeOutcome, decideSpawn, resumeSessionTab, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
 
 // The `…/spawn` URI verb reopens a session as an editor tab. AGI EXT no longer
 // spawns tmux-backed terminals at the extension level, so every request lands on
@@ -79,6 +79,44 @@ test('attach titles hide only complete host placeholders, preserving task text',
   expect(request('CC - investigate [host/yosemite-m3]')?.title).toBe('CC - investigate [host/yosemite-m3]');
 });
 
+describe('agents.resumeSession', () => {
+  const runCli = (script: string) => async () => {
+    const res = spawnSync('sh', ['-c', script], { encoding: 'utf8' });
+    return { ok: res.status === 0, output: `${res.stdout}\n${res.stderr}` };
+  };
+
+  test('a tab already showing the session is focused and the CLI is not run', async () => {
+    let focused = 0;
+    let ran = 0;
+    const result = await resumeSessionTab('s1', {
+      liveTab: (id) => (id === 's1' ? { terminalId: 'cl-1', focus: () => { focused++; } } : undefined),
+      runResume: async () => { ran++; return { ok: true, output: '' }; },
+    });
+    expect({ result, focused, ran }).toEqual({ result: { status: 'focused-existing', terminalId: 'cl-1', reason: null }, focused: 1, ran: 0 });
+  });
+
+  test('otherwise the CLI decides the window, and its exit code is the answer', async () => {
+    const liveTab = () => undefined;
+    expect(await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "Already open → focused tab \\"CC - x\\" in window \\"projB\\""') }))
+      .toEqual({ status: 'focused-existing', terminalId: null, reason: 'Already open → focused tab "CC - x" in window "projB"' });
+    expect((await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "no ack" >&2; exit 1') })).status).toBe('failed');
+    expect((await resumeSessionTab('', { liveTab, runResume: runCli('exit 0') })).reason).toBe('no session id');
+  });
+});
+
+describe('agents.resumeSession outcome from the CLI', () => {
+  test('exit 0 is opened or focused-existing, from the line the CLI printed', () => {
+    expect(cliResumeOutcome(true, 'Resumed b64b7320 "SV Atlas" (yosemite-m2)\n → VSCodium window "svatlas", new tab "CC - SV Atlas"\n'))
+      .toEqual({ status: 'opened', reason: '→ VSCodium window "svatlas", new tab "CC - SV Atlas"' });
+    expect(cliResumeOutcome(true, 'Already open → focused tab "CC - SV Atlas" in window "svatlas"').status).toBe('focused-existing');
+  });
+  test("a non-zero exit is failed with the CLI's own reason", () => {
+    expect(cliResumeOutcome(false, "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s.\n  Resume it in this terminal instead: agents sessions resume 0db3f95b\n"))
+      .toEqual({ status: 'failed', reason: 'Resume it in this terminal instead: agents sessions resume 0db3f95b' });
+    expect(cliResumeOutcome(false, '').reason).toBe('agents sessions resume failed with no output');
+  });
+});
+
 describe('spawn ack contract', () => {
   const fixture = JSON.parse(readFileSync(join(import.meta.dir, 'testdata/spawn-ack.json'), 'utf8')) as SpawnAck;
   const encode = (obj: Record<string, unknown>) => 'p=' + Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -98,7 +136,8 @@ describe('spawn ack contract', () => {
     expect(decideSpawn({ project: '/Users/dev/src/agi-menu/sub', windowFolders: folders })).toBe('open');
     expect(decideSpawn({ project: '/Users/dev/src/agents-cli', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('focus');
     expect(decideSpawn({ project: '/Users/dev/src/svatlas', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('wrong-window');
-    expect(decideSpawn({ windowFolders: folders })).toBe('open');
+    expect(decideSpawn({ windowFolders: folders })).toBe('no-project');
+    expect(decideSpawn({ windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('no-project');
   });
 
   test('a window on a parent folder leaves a nested project to the live window that holds it', () => {

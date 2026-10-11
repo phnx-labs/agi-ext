@@ -15,7 +15,7 @@ import type { ManualSessionOverride } from './remoteAutoLabel';
 
 const AGENTS_DATA_DIR = path.join(homedir(), '.swarmify', 'agents');
 const WINDOWS_DIR = path.join(AGENTS_DATA_DIR, 'windows');
-// Read once per workspace to carry tabs across the upgrade, never written.
+// The pre-upgrade shared store: imported once per first-folder key, never written.
 const LEGACY_SESSIONS_PATH = path.join(AGENTS_DATA_DIR, 'sessions.yaml');
 
 // Persisted session data for a single terminal
@@ -56,10 +56,10 @@ function readYaml(file: string): any {
 }
 
 /**
- * The tabs this window had open. Only a window that has never written its own
- * file reads the pre-upgrade shared file, at its first-folder key (`legacyKey`),
- * and only the first window to claim that key gets its tabs: two windows that
- * shared a key before the upgrade must not both reopen them.
+ * The tabs this window had open. A window that has never written its own file
+ * imports its slice of the pre-upgrade shared file once: it claims that file's
+ * first-folder key (`legacyKey`) before reading it, so the key is read at most
+ * once by one window and never again.
  */
 export function getWorkspaceSessions(workspaceKey: string, legacyKey: string = workspaceKey): PersistedSession[] {
   const own = windowFile(workspaceKey);
@@ -67,15 +67,15 @@ export function getWorkspaceSessions(workspaceKey: string, legacyKey: string = w
     const sessions = readYaml(own)?.sessions;
     return Array.isArray(sessions) ? sessions : [];
   }
-  const sessions = readYaml(LEGACY_SESSIONS_PATH)?.workspaces?.[legacyKey]?.sessions;
-  if (!Array.isArray(sessions) || sessions.length === 0) return [];
+  if (!fs.existsSync(LEGACY_SESSIONS_PATH)) return [];
   try {
     fs.mkdirSync(WINDOWS_DIR, { recursive: true });
     fs.closeSync(fs.openSync(path.join(WINDOWS_DIR, `legacy-${hashOf(legacyKey)}.claimed`), 'wx'));
   } catch {
     return [];
   }
-  return sessions;
+  const sessions = readYaml(LEGACY_SESSIONS_PATH)?.workspaces?.[legacyKey]?.sessions;
+  return Array.isArray(sessions) ? sessions : [];
 }
 
 /**
