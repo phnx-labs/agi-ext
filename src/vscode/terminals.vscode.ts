@@ -100,7 +100,7 @@ export interface EditorTerminal {
   identityAppliedSessionId?: string; // Session id the version/account (from the broadcast watch row) were applied for (even if a field is null); display gate — the status bar shows them only for THIS session, never a prior binding's leftover
   approvalStatus?: 'pending' | 'approved' | 'running' | 'complete'; // Swarm approval status
   autoLabelPollerId?: NodeJS.Timeout; // Poller for auto-label fetch (cleared once label is set)
-  appliedTitle?: string;    // Tab title last written via renameWithArg — dedupe guard so an unchanged title is never re-applied (and never disturbs focus)
+  appliedTitle?: string;    // Tab title showing now (creation name or last rename) — dedupe guard so an unchanged title is never re-applied (and never disturbs focus)
   pendingTitle?: string;    // Desired title for a tab that is NOT currently focused; applied on next focus. Renaming a background tab would steal focus, which we never do.
 }
 
@@ -342,7 +342,10 @@ export function register(
     agentConfig,
     createdAt: createdAt ?? Date.now(),
     pid,
-    messageQueue: []
+    messageQueue: [],
+    // The name a tab was created with is its title already; a rename to the same
+    // title is never issued.
+    appliedTitle: terminal.name || undefined,
   };
 
   if (pid !== undefined && context) {
@@ -688,20 +691,33 @@ export async function renameTerminal(terminal: vscode.Terminal, newName: string)
   // Already showing this exact title → nothing to do (and never re-issue a
   // command that could disturb focus).
   if (entry?.appliedTitle === newName) return;
-  // Not the focused tab → defer. Applying it now would require `.show()`, which
-  // steals focus. Store it; applyPendingTitle renders it on next focus.
+  // `renameWithArg` renames whichever terminal is active when the workbench runs
+  // it, so the target must be active right before the command, and a rename that
+  // landed on another tab is undone.
   if (vscode.window.activeTerminal !== terminal) {
     if (entry) entry.pendingTitle = newName;
     return;
   }
+  const namesBefore = new Map(vscode.window.terminals.map((t) => [t, t.name]));
   try {
     await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name: newName });
-    if (entry) {
-      entry.appliedTitle = newName;
-      entry.pendingTitle = undefined;
-    }
   } catch (err) {
     console.error('[TERMINALS] Failed to rename terminal', err);
+    return;
+  }
+  const hit = vscode.window.terminals.find((t) => t !== terminal && t.name === newName && namesBefore.get(t) !== newName);
+  if (hit) {
+    const previous = namesBefore.get(hit);
+    console.warn(`[TERMINALS] Rename to "${newName}" landed on "${previous}"; restoring it`);
+    if (previous && vscode.window.activeTerminal === hit) {
+      await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name: previous }).then(undefined, () => {});
+    }
+    if (entry) entry.pendingTitle = newName;
+    return;
+  }
+  if (entry) {
+    entry.appliedTitle = newName;
+    entry.pendingTitle = undefined;
   }
 }
 

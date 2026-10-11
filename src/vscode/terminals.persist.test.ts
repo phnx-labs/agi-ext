@@ -104,6 +104,53 @@ describe('restore store per window', () => {
     } finally { rmSync(home, { recursive: true }); }
   });
 
+  test('a rename never lands on another tab when the active tab changes before the workbench runs it', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const a1 = { name: 'Claude 8d05c00f - real a1', processId: Promise.resolve(1), creationOptions: { env: {} } };
+        const shell = { name: 'Shell - cleartest', processId: Promise.resolve(2), creationOptions: { env: {} } };
+        vscode.window.terminals = [a1, shell];
+        t.register(a1, 'cl-a1', config, 1);
+        t.register(shell, 'sh-1', config, 2);
+        // The workbench renames whatever is active when it runs the command; the
+        // user focuses the shell tab in between the extension's check and that run.
+        let switchBeforeRun = true;
+        vscode.commands.executeCommand = async (cmd, arg) => {
+          if (cmd !== 'workbench.action.terminal.renameWithArg') return;
+          if (switchBeforeRun) { vscode.window.activeTerminal = shell; switchBeforeRun = false; }
+          vscode.window.activeTerminal.name = arg.name;
+        };
+        vscode.window.activeTerminal = a1;
+        await t.renameTerminal(a1, 'CC - a1 new title');
+        assert.equal(shell.name, 'Shell - cleartest');
+        assert.equal(a1.name, 'Claude 8d05c00f - real a1');
+        assert.equal(t.getByTerminal(a1).pendingTitle, 'CC - a1 new title');
+        // Next time a1 is really active, the title lands on a1.
+        vscode.window.activeTerminal = a1;
+        await t.renameTerminal(a1, 'CC - a1 new title');
+        assert.equal(a1.name, 'CC - a1 new title');
+        assert.equal(shell.name, 'Shell - cleartest');
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
+  test('a tab created with its title is not renamed to the same title', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const a1 = { name: 'Claude 8d05c00f - real a1', processId: Promise.resolve(1), creationOptions: { env: {} } };
+        vscode.window.terminals = [a1];
+        vscode.window.activeTerminal = a1;
+        let renames = 0;
+        vscode.commands.executeCommand = async () => { renames++; };
+        t.register(a1, 'cl-a1', config, 1);
+        await t.renameTerminal(a1, 'Claude 8d05c00f - real a1');
+        assert.equal(renames, 0);
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
   test('a multi-root window and a folder window on its first folder keep separate tabs', () => {
     const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
     try {
