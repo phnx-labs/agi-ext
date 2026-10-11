@@ -110,8 +110,8 @@ describe('restore store per window', () => {
       window(home, folder('/work/projA'), `
         const closed = [];
         const tab = (label, input) => ({ label, input });
-        const dead = tab('03c9c75324d09eecbef0224f5d8b155e', new vscode.TabInputTerminal());
-        const orphan = tab('5e0f59dc738aac894eab53bd08d18fd7', undefined);
+        const dead = tab('03c9c75324d09eecbef0224f5d8b155e1', new vscode.TabInputTerminal());
+        const orphan = tab('5e0f59dc738aac894eab53bd08d18fd71', undefined);
         const liveAgent = tab('Claude 8d05c00f - real a1', new vscode.TabInputTerminal());
         const shell = tab('zsh', new vscode.TabInputTerminal());
         vscode.window.terminals = [{ name: 'Claude 8d05c00f - real a1' }, { name: 'zsh' }];

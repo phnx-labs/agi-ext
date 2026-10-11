@@ -43,14 +43,14 @@ describe('resolveTabIndex', () => {
 });
 
 describe('revivedDeadTerminalTabs', () => {
-  const dead = '03c9c75324d09eecbef0224f5d8b155e';
+  const dead = '03c9c75324d09eecbef0224f5d8b155e1';
   const tab = (label: string, isTerminal: boolean, hasInput = true) => ({ label, isTerminal, hasInput });
 
   it('finds the "could not be opened" terminal tabs a crash revived, in every group', () => {
     expect(revivedDeadTerminalTabs([
       [tab('AGI EXT', false), tab(dead, true), tab('Claude 8d05c00f - real a1', true)],
-      [tab('5e0f59dc738aac894eab53bd08d18fd7', false, false)],
-    ], new Set(['Claude 8d05c00f - real a1']))).toEqual([[0, 1], [1, 0]]);
+      [tab('5e0f59dc738aac894eab53bd08d18fd71', false, false), tab('7d488c93fef40e3dea9b84330f369ee012', true)],
+    ], new Set(['Claude 8d05c00f - real a1']))).toEqual([[0, 1], [1, 0], [1, 1]]);
   });
 
   it('never touches a live terminal, a file, or a terminal with an ordinary name', () => {
