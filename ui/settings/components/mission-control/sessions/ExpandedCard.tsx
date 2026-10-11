@@ -3,7 +3,7 @@ import { isPrevious, todoProgress, type FloorAgent } from '../floorModel'
 import type { SessionRowView } from '../recapModel'
 import { RowLinks } from './RowLinks'
 import { SessionMeta } from './SessionMeta'
-import { SessionTimeline } from './SessionTimeline'
+import { SessionCards } from './SessionCards'
 
 type ActivityKind = 'reading' | 'editing' | 'agents' | 'idle'
 const ACTIVITY_LEGEND: { kind: ActivityKind; label: string }[] = [
@@ -106,7 +106,7 @@ export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
           <ClampedText text={row.lastFull} />
         </div>
       )}
-      <SessionTimeline timeline={a.timeline} nowMs={nowMs} />
+      {a.sessionCard && <SessionCards snapshot={a.sessionCard} />}
       {live ? (hasActivity && (
         <div className="sx-dsec">
           <div className="sx-dcap">Activity</div>

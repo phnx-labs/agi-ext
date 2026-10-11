@@ -74,6 +74,9 @@ import { normalizeHost, groupByHost, dialablePeerScopes, type HostInfo } from '.
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, isLocalHost, remoteDeviceArg } from './remoteSessions.vscode';
+import { sessionCardFields } from '../core/sessionCardFields';
+import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
+import type { RemoteSession } from '../core/remoteSessions';
 import { rankRepos } from '../core/repoIndex';
 import { detectProjects } from '../core/projectDetect';
 import { getSyncStatus } from '../core/repoSync';
@@ -2124,6 +2127,9 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         const sessions = await discoverRecentSessions(message.limit || 50, sessionsWorkspace);
         settingsPanel?.webview.postMessage({ type: 'sessionsData', sessions });
         break;
+      case 'sessionCardAction':
+        await runSessionCardAction(message);
+        break;
       case 'fetchHostSessions': {
         try {
           const fetchedAt = Date.now();
@@ -2149,7 +2155,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           settingsPanel?.webview.postMessage({
             type: 'hostSessions',
             hosts,
-            sessions: hostSessions,
+            sessions: withSessionCards(hostSessions),
             groups,
             fetchedAt,
             hostFreshness,
@@ -2181,7 +2187,7 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           ).filter((session) => session.host === LOCAL_LABEL);
           settingsPanel?.webview.postMessage({
             type: 'localSessions',
-            sessions: localSessions,
+            sessions: withSessionCards(localSessions),
             fetchedAt,
             fromCache: false,
             activity: sessionPresentationStore.activityEvents(),
@@ -3524,6 +3530,55 @@ async function maybeUpdateTerminalTitles(oldSettings: AgentSettings, newSettings
 }
 
 // Generate webview HTML content
+/** The fields the Fleet card's shared session cards read beside the row's own
+ *  (src/core/sessionCardFields.ts), the same ones the sidebar builds. */
+function withSessionCards(sessions: RemoteSession[]): Array<RemoteSession & { card: ReturnType<typeof sessionCardFields> }> {
+  const webview = settingsPanel?.webview;
+  return sessions.map((session) => ({
+    ...session,
+    card: sessionCardFields(session, {
+      sessionId: session.sessionId, home: homedir(), remoteDevice: remoteDeviceArg(session.host),
+      previewUri: webview ? (p) => webview.asWebviewUri(vscode.Uri.file(p)).toString() : undefined,
+    }),
+  }));
+}
+
+/** A click inside a Fleet card's shared session cards, for the session it names. */
+async function runSessionCardAction(message: { sessionId?: unknown; host?: unknown; action?: { type?: unknown; path?: unknown; url?: unknown; role?: unknown } }): Promise<void> {
+  const action = message.action;
+  if (!action || typeof message.sessionId !== 'string') return;
+  const sessionId = message.sessionId;
+  const live = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
+    .find((session) => session.sessionId === sessionId && session.host === message.host);
+  const reply = (role: string, body: { items?: unknown[]; error?: string }) =>
+    settingsPanel?.webview.postMessage({ type: 'timelineFilter', role, sessionId, ...body });
+  switch (action.type) {
+    case 'openArtifact': {
+      if (!live || typeof action.path !== 'string') return;
+      const card = sessionCardFields(live, { sessionId, home: homedir(), remoteDevice: remoteDeviceArg(live.host) });
+      const named = card.artifacts.some((a) => a.path === action.path) || card.plan?.path === action.path;
+      await openSessionArtifact(action.path, live.host, named);
+      return;
+    }
+    case 'loadTimelineFilter': {
+      const role = typeof action.role === 'string' ? action.role : '';
+      if (!VERB_FILTER_ROLES.has(role)) { reply(role, { error: 'That filter is not available.' }); return; }
+      if (!live) { reply(role, { error: 'The session left the stream before the filter loaded.' }); return; }
+      if (remoteDeviceArg(live.host)) { reply(role, { error: 'This session is on another machine.' }); return; }
+      reply(role, await fetchTimelineFilter(role, sessionId));
+      return;
+    }
+    case 'revealCwd':
+      if (live && !remoteDeviceArg(live.host) && typeof action.path === 'string') {
+        void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(action.path));
+      }
+      return;
+    case 'openUrl':
+      if (typeof action.url === 'string') openExternalUrl(action.url);
+      return;
+  }
+}
+
 function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'out', 'ui', 'settings', 'main.js'));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'out', 'ui', 'settings', 'main.css'));
@@ -3543,6 +3598,8 @@ function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): s
   const kimiIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'kimi.png'));
   const droidIcon = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'droid.png'));
   const droidIconLight = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'droid-light.png'));
+  const fontJost = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'fonts', 'jost-var.woff2'));
+  const fontInter = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'assets', 'fonts', 'InterVariable.woff2'));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -3565,6 +3622,8 @@ function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): s
       kimi: "${kimiIcon}",
       droid: { dark: "${droidIcon}", light: "${droidIconLight}" }
     };
+    // The session panel faces, for the shared session cards in an expanded row.
+    window.__SESSION_FONTS__ = { jost: "${fontJost}", inter: "${fontInter}" };
   </script>
 </head>
 <body>

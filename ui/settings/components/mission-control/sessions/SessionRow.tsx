@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import { isPrevious, type FloorAgent } from '../floorModel'
 import { sessionRowView, type SessionRowView } from '../recapModel'
 import { AgentAvatar, agentIdFromPrefix } from '../AgentAvatar'
@@ -23,7 +23,12 @@ export interface SessionRowProps {
   onResumeContext?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
   /** Open the assign-project menu for this row. Absent -> no assign affordance. */
   onAssignProject?: (agent: FloorAgent, event: React.MouseEvent<HTMLButtonElement>) => void
+  /** Reports an expanded row's rendered height, so the list reserves exactly that. */
+  onMeasure?: (id: string, height: number) => void
 }
+
+// The row's vertical padding plus its bottom border (floor.css .sx-row).
+const ROW_CHROME_H = 25
 
 function PromptChips({ you }: { you: SessionRowView['you'] }) {
   if (you.kind === 'image') return <><span className="sx-imgchip">{'🖼'} screenshot</span>{you.text}</>
@@ -49,8 +54,17 @@ const PHASE_LABEL: Record<string, string> = {
 
 function SessionRowImpl({
   agent: a, nowMs, selected, active, expanded, height,
-  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext, onAssignProject,
+  onToggleSelect, onToggleStar, onResume, onSelect, onToggleExpand, onResumeContext, onAssignProject, onMeasure,
 }: SessionRowProps) {
+  const growRef = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const grow = growRef.current
+    if (!expanded || !onMeasure || !grow || typeof ResizeObserver === 'undefined') return
+    const report = () => onMeasure(a.id, Math.ceil(grow.getBoundingClientRect().height) + ROW_CHROME_H)
+    const watch = new ResizeObserver(report)
+    watch.observe(grow)
+    return () => watch.disconnect()
+  }, [expanded, onMeasure, a.id])
   const previous = isPrevious(a)
   const canResume = !previous || !!previousResumeMessage(a)
   const resumeTitle = previous
@@ -92,7 +106,7 @@ function SessionRowImpl({
         onClick={(e) => { e.stopPropagation(); onToggleStar(a) }}
       >{a.pinned ? '★' : '☆'}</button>
       <span className="sx-av"><AgentAvatar id={agentId} size={24} title={row.harnessTag || agentId} /></span>
-      <span className="sx-grow">
+      <span className="sx-grow" ref={growRef}>
         <div className="sx-titleline">
           {isUnassigned(a) ? (
             onAssignProject && (

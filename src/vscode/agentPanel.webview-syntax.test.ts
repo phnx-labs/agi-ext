@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { sessionPathUriString } from '../core/sessionPath';
+import { SESSION_CARDS_SCRIPT, sessionPanelCss } from '../shared/sessionCards';
 
 // The Active-Terminal panel's webview is a large inline <script> assembled inside
 // a TypeScript template literal. A single mis-escaped backslash — e.g. a regex
@@ -35,6 +36,8 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
   const cspSource = 'vscode-webview:';
   const fontJost = 'vscode-webview://fonts/jost-var.woff2';
   const fontInter = 'vscode-webview://fonts/InterVariable.woff2';
+  // The shared session cards (script and stylesheet) are interpolated too.
+  void SESSION_CARDS_SCRIPT; void sessionPanelCss;
   const html: string = eval('`' + body + '`');
 
   const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
@@ -62,9 +65,9 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
 // redefines every color token so a contrast theme never shows Rush colors.
 test('webview chrome is theme-adaptive: canvas pinned, colors only from the token block (PHNX-3809)', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
-  const styleMatch = src.match(/<style>([\s\S]*?)<\/style>/);
-  expect(styleMatch).not.toBeNull();
-  const style = styleMatch![1];
+  // The sidebar's <style> is the shared session panel stylesheet.
+  expect(src).toContain('<style>\n${sessionPanelCss(fontJost, fontInter)}\n</style>');
+  const style = sessionPanelCss('vscode-webview://fonts/jost-var.woff2', 'vscode-webview://fonts/InterVariable.woff2');
 
   // Canvas (html) and body must both resolve their background from a theme token
   // so no untinted void shows through in any theme.

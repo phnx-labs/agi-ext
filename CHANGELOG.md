@@ -12,12 +12,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   both read these from the session stream; a Previous row without a reply on the stream
   takes the newest thing the agent said in its timeline, and shows no Agent line when the
   stream carries neither.
-- Expanding a row shows the latest reply in full and the session timeline, newest first:
-  each step's time, whether it was you, the agent or a tool-only step, and its tool, failure
-  and block counts, with how many earlier steps there were. The activity bar shows only when
-  the row has tool calls to tally, instead of a grey all-idle bar on every remote session.
+- Expanding a row shows the latest reply in full, then the session's Artifacts and
+  Timeline exactly as the Active Session sidebar draws them: the activity strip with idle
+  gaps and your numbered turns, the time chips for each stretch of work, the Summary, You
+  and Failed filters (Agent, Tools and Reasoning too for a session on this machine), the
+  newest steps with their tool counts and ages, the earlier-steps counter, and the gallery
+  with image previews for a session on this machine. Both surfaces render these from one
+  shared module, so they cannot drift. The activity bar shows only when the row has tool
+  calls to tally, instead of a grey all-idle bar on every remote session.
 - Rows are as tall as what they show. Every row used to reserve 146px, which left an empty
-  block under rows with only a title and one line.
+  block under rows with only a title and one line; an expanded row measures itself.
 
 ## [0.9.387] - 2026-10-09
 
