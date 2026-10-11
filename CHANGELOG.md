@@ -20,7 +20,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   the ⌘⇧1 to ⌘⇧9 quick-launch agents, the Reader for .md and .html, and approval alerts.
 - Approval alerts now fire whenever a session with a tab in this window starts needing you,
   not only while the Fleet panel is open. They respect the on/off switch, which they used to
-  ignore, and the alert style: a native OS notification or an editor toast.
+  ignore, and the alert style: a native OS notification or an editor toast. Alerts are off
+  by default; turn them on in Settings › Approval alerts.
 
 ## [0.9.393] - 2026-10-11
 
