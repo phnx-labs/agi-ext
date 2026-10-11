@@ -9,6 +9,7 @@ import { runAgentsArgs } from '../core/agentsBin';
 import { parseProjectDetection } from '../core/projectPanel';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { pickRow, resumeItems, resumeNotice, type ResumeAnswer, type ResumeItem } from '../core/sessionPicker';
+import { silentNote } from '../core/streamWait';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { streamReadiness } from './deviceHealth.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
@@ -86,6 +87,7 @@ export async function showResumePicker(): Promise<void> {
   quickPick.show();
 
   let projects: string[] | null = null;
+  let recheck: ReturnType<typeof setTimeout> | undefined;
   const draw = () => {
     if (!projects) return;
     const items = resumeItems(sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), projects, {
@@ -99,18 +101,23 @@ export async function showResumePicker(): Promise<void> {
     const keep = quickPick.items.find((i) => i.session.sessionId === active);
     if (keep) quickPick.activeItems = [keep];
     // Until every machine the stream dials has reported, the list is partial: say
-    // so instead of presenting this machine's rows (or none) as the whole answer.
-    const { established, pending } = streamReadiness(LOCAL_MACHINE_ID);
+    // so for a bounded while (streamReadiness), then show what there is and name
+    // the machines that have not answered. A late answer still redraws the list.
+    const wait = streamReadiness(LOCAL_MACHINE_ID);
     const label = projects.join(', ');
-    if (!established || pending.length) {
+    if (recheck) clearTimeout(recheck);
+    recheck = wait.recheckInMs === null ? undefined : setTimeout(draw, wait.recheckInMs + 50);
+    if (wait.waiting) {
       quickPick.busy = true;
-      quickPick.placeholder = `${label}: loading machines${pending.length ? ` (${pending.join(', ')})` : ''}…`;
+      quickPick.placeholder = `${label}: loading machines…`;
       return;
     }
     quickPick.busy = false;
-    quickPick.placeholder = items.length
-      ? `${label}: ${items.length} session${items.length === 1 ? '' : 's'}. Type to filter by title or message`
-      : `No ${label} sessions on any machine`;
+    const note = silentNote(wait);
+    const count = items.length
+      ? `${label}: ${items.length} session${items.length === 1 ? '' : 's'}`
+      : `No ${label} sessions found`;
+    quickPick.placeholder = `${count}${note ? ` · ${note}` : ''}. Type to filter by title or message`;
   };
 
   const chosen = await new Promise<ResumeItem | undefined>((resolve) => {
@@ -138,6 +145,7 @@ export async function showResumePicker(): Promise<void> {
     });
   });
   redraw = undefined;
+  if (recheck) clearTimeout(recheck);
   sessionStreamDemand.setResumePickerOpen(false);
   quickPick.dispose();
   if (chosen) await resumeAndNotify({ sessionId: chosen.sessionId, host: chosen.host, title: chosen.title });

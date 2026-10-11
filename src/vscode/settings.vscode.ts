@@ -1092,6 +1092,8 @@ let lastFloorTasks: swarm.TaskSummary[] = [];
 // the 30s backstop. Leading-edge-only coalescing (plain cachedInFlight, ttl 0) dropped
 // exactly that final transition, so a session rendered `running` after it went idle.
 const floorPushes = createTrailingCoalesce();
+/** One redraw when the bounded stream wait ends with nothing else to trigger it. */
+let floorWaitRecheck: ReturnType<typeof setTimeout> | undefined;
 
 async function pushFloorUpdate(workspacePath?: string): Promise<void> {
   if (!settingsPanel || !floorSubscribed) return;
@@ -1107,11 +1109,15 @@ async function pushFloorUpdate(workspacePath?: string): Promise<void> {
     // approval-waiting state. Edge-triggered so it fires once per wait.
     notifyNewlyWaiting(floorTerminals);
     // Degraded = the merged floor is still establishing: the stream has not reset
-    // yet, or a peer the CLI fan-out dials has not reported (streamReadiness). The
-    // floor never flips to a confident "0 sessions" while a remote box is en route
-    // (PHNX-2735).
+    // yet, or a peer the CLI fan-out dials has not reported, within the bounded wait
+    // (streamReadiness). The floor never flips to a confident "0 sessions" while a
+    // remote box is en route (PHNX-2735), and never waits forever on a silent one:
+    // past the bound it shows what it has, and one redraw is armed for that moment.
     const readiness = streamReadiness(LOCAL_MACHINE_ID);
-    const degraded = !readiness.established || readiness.pending.length > 0;
+    const degraded = readiness.waiting;
+    if (floorWaitRecheck) clearTimeout(floorWaitRecheck);
+    floorWaitRecheck = readiness.recheckInMs === null ? undefined
+      : setTimeout(() => { floorWaitRecheck = undefined; void pushFloorUpdate(workspacePath); }, readiness.recheckInMs + 50);
     settingsPanel.webview.postMessage({ type: 'allTerminalsData', terminals: floorTerminals, degraded });
     settingsPanel.webview.postMessage({ type: 'feedActivity', activity: sessionPresentationStore.activityEvents() });
 

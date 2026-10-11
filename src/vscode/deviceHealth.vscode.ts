@@ -5,6 +5,8 @@ import { RepoSyncStatus } from '../core/repoSync';
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { dialablePeerScopes } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { streamWait, type StreamWait } from '../core/streamWait';
+import { sessionStreamDemand } from '../monitor/sessionDemand';
 
 const execFileAsync = promisify(execFile);
 
@@ -60,17 +62,20 @@ export function getRegisteredDevicesCache(): Device[] | null {
 }
 
 /**
- * The machines the merged session stream is still waiting on: every peer the CLI
- * fan-out actually dials (`dialablePeerScopes` mirrors its selection) that has not
- * delivered its reset or been marked unavailable. Until the stream has reset at
- * all, `established` is false. A view shows "loading machines" while either holds,
- * never a confident local-only or empty list (PHNX-2735).
+ * Whether a view of the merged session stream should still wait, and on whom. A
+ * machine is missing until it delivers its reset or is marked unavailable, among
+ * the peers the CLI fan-out actually dials (`dialablePeerScopes` mirrors its
+ * selection). The wait is bounded (src/core/streamWait.ts): past it the view shows
+ * what it has and names the silent machines; a late answer still merges in. The
+ * Fleet's degraded flag and the Resume Session picker both read this.
  */
-export function streamReadiness(localMachineId: string): { established: boolean; pending: string[] } {
-  return {
+export function streamReadiness(localMachineId: string, nowMs: number = Date.now()): StreamWait {
+  return streamWait({
     established: sessionPresentationStore.hasSeenReset(),
     pending: sessionPresentationStore.pendingScopes(dialablePeerScopes(getRegisteredDevicesCache() ?? [], localMachineId)),
-  };
+    sinceMs: sessionStreamDemand.demandSinceMs,
+    nowMs,
+  });
 }
 
 /** Strict registry read used by the one activation seed. */

@@ -19,6 +19,14 @@ export class SessionStreamDemand {
   private unresolvedTuples = false;
   private readonly listeners = new Set<(demand: boolean) => void>();
   private last = false;
+  private since: number | undefined;
+  constructor(private readonly now: () => number = Date.now) {}
+
+  /** When the net demand last turned on; undefined while this window demands nothing.
+   *  Views bound their wait for slow machines from here (src/core/streamWait.ts). */
+  get demandSinceMs(): number | undefined {
+    return this.since;
+  }
 
   /** True when this window currently needs the producer. */
   get demand(): boolean {
@@ -70,6 +78,7 @@ export class SessionStreamDemand {
     const now = this.demand;
     if (now === this.last) return;
     this.last = now;
+    this.since = now ? this.now() : undefined;
     for (const cb of this.listeners) {
       try { cb(now); } catch { /* a listener must never wedge demand tracking */ }
     }
