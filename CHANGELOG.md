@@ -17,7 +17,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   gaps and your numbered turns, the time chips for each stretch of work, the Summary, You
   and Failed filters (Agent, Tools and Reasoning too for a session on this machine), the
   newest steps with their tool counts and ages, the earlier-steps counter, and the gallery
-  with image previews for a session on this machine. Both surfaces render these from one
+  with image previews for a session on this machine (the dashboard now reads files under your
+  home folder, as the sidebar already did). Both surfaces render these from one
   shared module, so they cannot drift. The activity bar shows only when the row has tool
   calls to tally, instead of a grey all-idle bar on every remote session.
 - Rows are as tall as what they show. Every row used to reserve 146px, which left an empty
