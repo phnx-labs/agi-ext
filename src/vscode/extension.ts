@@ -5179,6 +5179,7 @@ let extensionContext: vscode.ExtensionContext | undefined;
 async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<void> {
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspacePath) return;
+  await terminals.closeRevivedDeadTerminalTabs().catch((err) => console.error('[RESTORE] closing dead tabs failed', err));
 
   // scanExisting snapshotted the store; read the snapshot, not the file, which
   // the scan's own registers may already have rewritten.
