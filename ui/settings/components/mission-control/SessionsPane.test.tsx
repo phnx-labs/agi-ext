@@ -191,6 +191,26 @@ describe('SessionRow — compact card', () => {
     expect(html).not.toContain('Resume here')
   })
 
+  test('the expanded request is labeled from the same source as the You line', () => {
+    // A later request and no recorded turns (the row shape the old turn-count rule
+    // mislabeled): You shows the request, so the first message is "First request".
+    const later = renderToStaticMarkup(<SessionRow agent={agent({ firstUserMessage: 'Open the PR.', latestRequest: 'Now merge it.' })} {...rowProps} expanded />)
+    expect(later).toContain('Now merge it.')
+    expect(later).toContain('First request')
+    expect(later).not.toContain('Your request')
+    const only = renderToStaticMarkup(<SessionRow agent={agent({ firstUserMessage: 'Open the PR.', userTurns: [{ atMs: 1, text: 'Open the PR.' }] })} {...rowProps} expanded />)
+    expect(only).toContain('Your request')
+  })
+
+  test('the collapsed row has no now-line or checklist count; the checklist lives in the expanded card', () => {
+    const todos = [{ content: 'Write it', status: 'completed' }, { content: 'Ship it', status: 'in_progress' }] as FloorAgent['todos']
+    const collapsed = renderToStaticMarkup(<SessionRow agent={agent({ summary: 'Editing the hero', verb: 'Editing', target: 'hero.tsx', todos })} {...rowProps} />)
+    expect(collapsed).not.toContain('sx-now')
+    expect(collapsed).not.toContain('checklist 1/2')
+    const open = renderToStaticMarkup(<SessionRow agent={agent({ todos })} {...rowProps} expanded />)
+    expect(open).toContain('Checklist — 1 of 2 done')
+  })
+
   test('labels a missing first turn honestly and toggles long real requests', () => {
     const fallback = renderToStaticMarkup(<SessionRow agent={agent()} {...rowProps} expanded />)
     expect(fallback).toContain('Request summary')
@@ -435,8 +455,8 @@ describe('SessionsPane', () => {
   })
 
   test('virtual row CSS keeps the declared height and clips long content to the viewport', () => {
-    // Padding 25 + title 23 + chips 32, plus 22 per optional line (now, You, Agent).
-    expect(rowHeight(agent({ firstUserMessage: 'ask', summary: 'Editing the hero' }), false)).toBe(146)
+    // Padding 25 + title 23 + chips 32, plus 22 per optional line (You, Agent).
+    expect(rowHeight(agent({ firstUserMessage: 'ask', summary: 'Editing the hero' }), false)).toBe(124)
     expect(rowHeight(agent({ resp: '', firstUserMessage: undefined, prompt: undefined, topic: undefined }), false)).toBe(80)
     // A rendered row's reported height wins over the estimate, collapsed or open.
     expect(rowHeight(agent(), false, 171)).toBe(171)

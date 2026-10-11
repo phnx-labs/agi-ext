@@ -54,7 +54,7 @@ export { SessionRow } from './sessions/SessionRow'
 // windowing below), so hundreds of rows render like twenty.
 
 // A collapsed row is sized from the lines it actually renders: padding, title line,
-// optional now-line / You / Agent lines, and the chip row. A fixed height left a
+// optional You / Agent lines, and the chip row. A fixed height left a
 // blank block under every row that had fewer lines than the tallest one.
 const ROW_PAD_H = 25
 const TITLE_H = 23
@@ -93,8 +93,8 @@ type VItem =
 
 export function rowHeight(agent: FloorAgent, expanded: boolean, measured?: number): number {
   const row = sessionRowView(agent)
-  const lines = collapsedLines(agent, row)
-  const collapsed = ROW_PAD_H + TITLE_H + META_H + LINE_H * [lines.now, lines.you, lines.agent].filter(Boolean).length
+  const lines = collapsedLines(row)
+  const collapsed = ROW_PAD_H + TITLE_H + META_H + LINE_H * [lines.you, lines.agent].filter(Boolean).length
   // A rendered row reports its height (SessionRow onMeasure); until it has, the
   // estimate below stands in.
   if (measured && measured > 0) return measured

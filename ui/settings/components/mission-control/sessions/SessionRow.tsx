@@ -44,14 +44,8 @@ function PromptChips({ you }: { you: SessionRowView['you'] }) {
 }
 
 /** Which optional lines the collapsed row renders; the virtual list sizes rows from it. */
-export function collapsedLines(a: FloorAgent, row: SessionRowView): { step: string; now: boolean; you: boolean; agent: boolean } {
-  const previous = isPrevious(a)
-  const live = previous ? '' : ((a.summary || '').trim() || (a.verb ? `${a.verb} ${a.target}`.trim() : ''))
-  // A stream row's live activity is the agent's latest words; the Agent line already
-  // shows them, so the now-line appears only when it says something else.
-  const step = live && row.lastFull.includes(live) ? '' : live
-  const now = Boolean(step) || (!previous && (a.todos?.length ?? 0) > 0)
-  return { step, now, you: row.youIsReal, agent: Boolean(row.lastLine) }
+export function collapsedLines(row: SessionRowView): { you: boolean; agent: boolean } {
+  return { you: row.youIsReal, agent: Boolean(row.lastLine) }
 }
 
 const PHASE_LABEL: Record<string, string> = {
@@ -85,14 +79,10 @@ function SessionRowImpl({
   const agentId = (a.agentType || agentIdFromPrefix(a.abbr) || row.harnessTag || 'agent').toLowerCase()
   const phaseClass = a.needs ? 'needs' : (a.phase || 'running')
   const phaseLabel = previous ? '' : a.needs ? 'needs you' : (PHASE_LABEL[a.phase] ?? a.phase ?? '')
-  const lines = collapsedLines(a, row)
-  const step = lines.step
   // "You ›" asserts the user actually typed something: it shows only when the CLI
   // carried a genuine user turn. A synthesized task label (topic, worktree slug, tab
   // name) never masquerades as the user's own words (PHNX-3939). "Agent ›" is the
   // agent's own latest words and is likewise omitted when the row carries none.
-  const todos = a.todos ?? []
-  const todoDone = todos.filter((todo) => String(todo.status) === 'completed').length
   return (
     <div
       className={`sx-row${selected ? ' sel' : ''}${active ? ' active' : ''}`}
@@ -132,12 +122,6 @@ function SessionRowImpl({
           {row.folder && <span className="sx-where folder" title={row.folderFull}>{row.folder}</span>}
           {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>
-        {lines.now ? (
-          <div className="sx-now">
-            {step && <b>{step}</b>}
-            {!previous && todos.length > 0 && <span>{step ? ' · ' : ''}checklist {todoDone}/{todos.length}</span>}
-          </div>
-        ) : null}
         {row.youIsReal && (
           <div className="sx-roleline">
             <span className="sx-roletag you">You ›</span>
