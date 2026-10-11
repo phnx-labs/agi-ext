@@ -34,7 +34,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - The Project panel is one view with four icon tabs (Overview, Sessions, Pull requests,
   Tickets) instead of four stacked views, so each list runs the full height of the
   sidebar. The active tab shows its label; a badge on Sessions counts sessions that need
-  you; the tab and each tab's scroll are remembered. Only the active tab loads (PHNX-4289).
+  you as of the last time Sessions was shown; the active tab is remembered and each tab
+  keeps its scroll while the panel is open. Only the active tab loads (PHNX-4289).
 - Sessions shows every session as a card that says what is going on: your last ask (with
   thumbnails of images you pasted, which open the full image), where the agent is now in its
   own words, its question when it asks you, the command it is running, and chips for its PR,

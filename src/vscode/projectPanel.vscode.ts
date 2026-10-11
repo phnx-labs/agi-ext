@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -49,6 +50,8 @@ const FRESH_MS = 60_000;
 type TabId = 'overview' | 'sessions' | 'prs' | 'tickets';
 const TABS: readonly TabId[] = ['overview', 'sessions', 'prs', 'tickets'];
 const VIEW_ID = 'agentsProject.panel';
+/** Where pasted images live on this machine: the only files the panel shows or opens. */
+const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attachments'), path.join(os.homedir(), '.agents', '.cache', 'attachments')];
 
 interface TabState {
   html: string | undefined;
@@ -69,7 +72,7 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
-    view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.file(os.homedir())] };
+    view.webview.options = { enableScripts: true, localResourceRoots: IMAGE_DIRS().map((d) => vscode.Uri.file(d)) };
     view.webview.html = shell(view.webview.cspSource);
     view.webview.onDidReceiveMessage((msg: { type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown }) => {
       if (msg.type === 'ready') this.onReady();
@@ -117,7 +120,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   async load(tab: TabId, force: boolean): Promise<void> {
     const state = this.tabs.get(tab)!;
     // A forced refresh on a hidden tab still has to reread when it is shown.
-    if (force) state.loadedAt = 0;
+    if (force) { state.loadedAt = 0; state.generation++; }
     const view = this.view;
     if (!view || !view.visible || tab !== this.active) return;
     const gen = ++state.generation;
@@ -164,7 +167,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   refresh(): void {
-    for (const t of TABS) void this.load(t, true);
+    for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
   }
 
   private post(tab: TabId, html: string): void {
@@ -297,10 +300,10 @@ class ProjectPanelController {
 
   async openImage(filePath: string): Promise<void> {
     // Only a file a card offered: a pasted image in this machine's stores.
-    const home = os.homedir();
-    const allowed = [`${home}/.agents/.history/attachments/`, `${home}/.agents/.cache/attachments/`];
-    if (!allowed.some((dir) => filePath.startsWith(dir)) || filePath.includes('..')) return;
-    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath), { preview: true });
+    let real: string;
+    try { real = await fs.promises.realpath(path.resolve(filePath)); } catch { return; }
+    if (!IMAGE_DIRS().some((dir) => real.startsWith(dir + path.sep))) return;
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(real), { preview: true });
   }
 
   redrawSessions(): Promise<void> {
@@ -573,8 +576,9 @@ function shell(cspSource: string): string {
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
       next.focus(); choose(next.dataset.tab); return;
     }
+    if (e.target.closest && e.target.closest('a')) return;
     const card = e.target.closest && e.target.closest('[data-session]');
-    if (card && e.key === 'Enter') card.click();
+    if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); card.click(); }
   });
   vscode.postMessage({ type: 'ready' });
 </script>
