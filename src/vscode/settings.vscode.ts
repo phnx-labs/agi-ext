@@ -17,7 +17,7 @@ import * as swarm from './swarm.vscode';
 import { notifyNewlyWaiting } from './waitingNotifier.vscode';
 import { fetchAllTasks, detectAvailableSources } from './tasks.vscode';
 import { getBuiltInByTitle, configFromDef } from './agents.vscode';
-import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionById, openAgentSessionByMigration, openAgentSessionByRecovery } from './extension';
+import { openSingleAgentWithQueue, runHeadlessAgent, openAgentSessionByMigration } from './extension';
 import { generateClaudeSessionId } from '../core/prewarm.simple';
 import { cachedInFlight, createTimedCache, coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { runAgents, resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
@@ -2957,13 +2957,17 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
         entry?.terminal.show(false);
         break;
       }
-      case 'focusRemoteSession': {
-        // Resume the agent session through the same registered editor-tab path used
-        // by local Fleet focus and the command-palette resume flows.
-        const host = typeof message.host === 'string' && message.host !== 'this-mac' ? message.host : '';
+      // Fleet Resume and Open: one resume action, the same as the picker and the
+      // side panel's ↻ (resumeSession.vscode.ts).
+      case 'resumeSession': {
         const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
-        if (!sessionId) { break; }
-        await openAgentSessionById(context, sessionId, host);
+        if (!sessionId) break;
+        const { resumeAndNotify } = await import('./resumeSession.vscode');
+        await resumeAndNotify({
+          sessionId,
+          host: typeof message.host === 'string' ? message.host : '',
+          title: typeof message.title === 'string' ? message.title : '',
+        });
         break;
       }
       case 'revealWorktree': {
@@ -3081,37 +3085,20 @@ function wirePanel(panel: vscode.WebviewPanel, context: vscode.ExtensionContext)
           openExternalUrl(message.url);
         }
         break;
-      // Focus a session by resuming it in a registered editor-tab terminal. The
-      // canonical helper preserves terminal identity for every host.
-      case 'focusSession': {
+      // Move a PREVIOUS session to another device (Resume's right-click menu). The
+      // CLI's migrate copies the transcript and recovers it there.
+      case 'migrateSession': {
         const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
-        if (!sessionId) break;
-        const host = typeof message.host === 'string' ? message.host : '';
-        await openAgentSessionById(context, sessionId, remoteDeviceArg(host));
-        break;
-      }
-      // Resume a PREVIOUS (crashed/ended) session from the CLI's own recovery command
-      // (PHNX-3593). Unlike focusSession, this does NOT depend on the local candidate
-      // list — a session recovered from a remote fleet device isn't in this machine's
-      // local history — and it targets the owning device via `--device`.
-      case 'resumePreviousSession': {
-        const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
-        if (!sessionId) break;
-        const agentType = typeof message.agentType === 'string' ? message.agentType : '';
         const sourceDevice = typeof message.sourceDevice === 'string' ? message.sourceDevice.trim() : '';
-        const requestedDevice = typeof message.device === 'string' ? message.device.trim() : '';
-        if (message.migrate === true && sourceDevice && requestedDevice && sourceDevice !== requestedDevice) {
-          await openAgentSessionByMigration(context, {
-            sessionId,
-            agentType,
-            sourceDevice,
-            targetDevice: requestedDevice,
-            sourceIsLocal: isLocalHost(sourceDevice),
-          });
-          break;
-        }
-        const device = remoteDeviceArg(requestedDevice) ?? '';
-        await openAgentSessionByRecovery(context, { sessionId, agentType, device });
+        const targetDevice = typeof message.device === 'string' ? message.device.trim() : '';
+        if (!sessionId || !sourceDevice || !targetDevice || sourceDevice === targetDevice) break;
+        await openAgentSessionByMigration(context, {
+          sessionId,
+          agentType: typeof message.agentType === 'string' ? message.agentType : '',
+          sourceDevice,
+          targetDevice,
+          sourceIsLocal: isLocalHost(sourceDevice),
+        });
         break;
       }
       // Stop a background (headless) run by killing its pid — sends it back to parked

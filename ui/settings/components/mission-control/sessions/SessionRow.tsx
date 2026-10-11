@@ -5,7 +5,7 @@ import { AgentAvatar, agentIdFromPrefix } from '../AgentAvatar'
 import { ExpandedCard } from './ExpandedCard'
 import { RowLinks } from './RowLinks'
 import { formatRelativeTime } from './sessionTime'
-import { previousResumeMessage, resumeSourceDevice } from './sessionActions'
+import { resumeMessageForAgent, resumeSourceDevice } from './sessionActions'
 import { isUnassigned } from '../sessionProjects'
 import { SESSION_STATE_WORD, sessionStateOf } from '@shared/sessionState'
 
@@ -64,7 +64,7 @@ function SessionRowImpl({
     return () => watch.disconnect()
   }, [expanded, onMeasure, a.id])
   const previous = isPrevious(a)
-  const canResume = !previous || !!previousResumeMessage(a)
+  const canResume = !previous || !!resumeMessageForAgent(a)
   const resumeTitle = previous
     ? `Resume — relaunch from the transcript on ${a.sourceDevice || a.hostLabel || a.host}`
     : 'Resume this session'
@@ -141,7 +141,7 @@ function SessionRowImpl({
             title={resumeTitle}
             onClick={(e) => { e.stopPropagation(); onResume(a) }}
             onContextMenu={(e) => {
-              if (!onResumeContext || !previousResumeMessage(a) || !resumeSourceDevice(a)) return
+              if (!onResumeContext || !previous || !resumeMessageForAgent(a) || !resumeSourceDevice(a)) return
               e.preventDefault()
               e.stopPropagation()
               onResumeContext(a, e)

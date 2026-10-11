@@ -390,12 +390,8 @@
         "title": "Agents: Session ID"
       },
       {
-        "command": "agents.resume",
-        "title": "Agents: Resume"
-      },
-      {
-        "command": "agents.resumePickSession",
-        "title": "Agents: Resume (Pick Session)"
+        "command": "agents.resumeSessionPick",
+        "title": "Agents: Resume Session…"
       },
       {
         "command": "agents.resumePickHost",
@@ -404,10 +400,6 @@
       {
         "command": "agents.resumePickHarness",
         "title": "Agents: Resume (Pick Harness)"
-      },
-      {
-        "command": "agents.sessionResume",
-        "title": "Agents: Session Resume"
       },
       {
         "command": "agents.resumeCurrentInBestProfile",
@@ -996,6 +988,11 @@
         "command": "agents.continueInNew",
         "key": "ctrl+shift+y",
         "mac": "cmd+shift+y"
+      },
+      {
+        "command": "agents.resumeSessionPick",
+        "key": "ctrl+shift+alt+r",
+        "mac": "cmd+shift+alt+r"
       },
       {
         "command": "agents.resumeCurrentInBestProfile",

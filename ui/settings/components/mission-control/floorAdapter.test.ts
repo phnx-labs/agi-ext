@@ -19,7 +19,7 @@ import {
 import type { UnifiedTask } from '../../types'
 import { SessionPresentationStore } from '../../../../src/core/sessionPresentationStore'
 import { isPrevious, mergeSessionAgents, visibleFloorAgents } from './floorModel'
-import { previousResumeMessage } from './sessions/sessionActions'
+import { resumeMessageForAgent } from './sessions/sessionActions'
 
 const NOW = 1_700_000_000_000
 
@@ -45,10 +45,7 @@ describe('canonical stream → Previous row', () => {
     })
     const [floor] = adaptRemote(presented, new Set(), 'zion')
     expect(isPrevious(floor!)).toBe(true)
-    expect(previousResumeMessage(floor!)).toMatchObject({
-      type: 'resumePreviousSession', sessionId: 'previous-session-id', agentType: 'codex',
-      sourceDevice: 'yosemite-s0', device: 'yosemite-s0', migrate: false,
-    })
+    expect(resumeMessageForAgent(floor!)).toMatchObject({ type: 'resumeSession', sessionId: 'previous-session-id', host: 'yosemite-s0' })
   })
 })
 

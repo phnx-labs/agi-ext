@@ -10,7 +10,7 @@ describe('agent session editor-tab routing', () => {
   test('the shared resume helper creates an editor tab and registers its identity', () => {
     const helper = extensionSource.slice(
       extensionSource.indexOf('export async function openAgentSessionTerminal'),
-      extensionSource.indexOf('export async function openAgentSessionById'),
+      extensionSource.indexOf('export async function openAgentSessionByRecovery'),
     );
 
     expect(helper).toContain('location: { viewColumn: vscode.ViewColumn.Active }');
@@ -24,7 +24,7 @@ describe('agent session editor-tab routing', () => {
   test('CLI-owned recovery preserves an unpresented harness across editor reload', () => {
     const helper = extensionSource.slice(
       extensionSource.indexOf('export async function openAgentSessionTerminal'),
-      extensionSource.indexOf('export async function openAgentSessionById'),
+      extensionSource.indexOf('export async function openAgentSessionByRecovery'),
     );
     const restore = extensionSource.slice(
       extensionSource.indexOf('async function restoreAgentTerminals'),
@@ -41,30 +41,23 @@ describe('agent session editor-tab routing', () => {
     expect(restore).toContain('inTabResumeCommand(session.sessionId)');
   });
 
-  test('Fleet focus and remote attach both use the shared registered path', () => {
-    const focusRemote = settingsSource.slice(
-      settingsSource.indexOf("case 'focusRemoteSession':"),
+  test('Fleet Resume and Open run the one resume action; migrate is its own verb', () => {
+    const resume = settingsSource.slice(
+      settingsSource.indexOf("case 'resumeSession':"),
       settingsSource.indexOf("case 'revealWorktree':"),
     );
-    const focusSession = settingsSource.slice(
-      settingsSource.indexOf("case 'focusSession':"),
+    const migrate = settingsSource.slice(
+      settingsSource.indexOf("case 'migrateSession':"),
       settingsSource.indexOf("case 'stopSession':"),
     );
-
-    expect(focusRemote).toContain('await openAgentSessionById(context, sessionId, host)');
-    expect(focusSession).toContain('await openAgentSessionById(context, sessionId');
-    expect(focusRemote).not.toContain('createTerminal');
-    expect(focusSession).not.toContain('createTerminal');
-  });
-
-  test('Previous-session messages invoke recovery rather than dead-session focus', () => {
-    const resumePrevious = settingsSource.slice(
-      settingsSource.indexOf("case 'resumePreviousSession':"),
-      settingsSource.indexOf("case 'stopSession':"),
-    );
-    expect(resumePrevious).toContain('await openAgentSessionByRecovery(context');
-    expect(resumePrevious).toContain('await openAgentSessionByMigration(context');
-    expect(resumePrevious).not.toContain('openAgentSessionById');
+    expect(resume).toContain('await resumeAndNotify({');
+    expect(resume).not.toContain('createTerminal');
+    expect(migrate).toContain('await openAgentSessionByMigration(context');
+    // The superseded focus/recovery messages are gone, not kept beside it.
+    for (const old of ["case 'focusSession':", "case 'focusRemoteSession':", "case 'resumePreviousSession':"]) {
+      expect(settingsSource).not.toContain(old);
+    }
+    expect(extensionSource).not.toContain('export async function openAgentSessionById');
   });
 
   test('Previous rows stay on the canonical stream with no history side channel', () => {

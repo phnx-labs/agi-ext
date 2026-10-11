@@ -2,7 +2,20 @@
 
 All notable changes to AGI EXT (the VS Code extension) are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
-`## [<version>]` section for the version being published.
+`## [Unreleased]
+
+- `Agents: Resume Session…` (Cmd+Shift+Alt+R) resumes a session you pick by name.
+  - It lists this window's project's sessions on every machine, newest first.
+  - Each row shows the title, the machine, your last message, the agent's last line,
+    how long ago, and OPEN when a tab already shows it. Typing filters by title or message.
+  - Enter brings an open tab to the front, or opens the live agent in the window that owns
+    the project. A notification says where it went, or why it could not.
+- Fleet's Resume button and the side panel's Focus and ↻ do exactly the same thing, with
+  the same notification.
+- Removed the commands this replaces: `Agents: Resume`, `Agents: Resume (Pick Session)` and
+  `Agents: Session Resume`. Pick Host, Pick Harness and Best Profile are unchanged.
+
+## [<version>]` section for the version being published.
 
 ## [0.9.390] - 2026-10-11
 

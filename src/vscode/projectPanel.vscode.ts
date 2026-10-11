@@ -348,6 +348,12 @@ export function notifyProjectPanelSessionUpdate(): void {
   void coalesceTrailing(sessionsCoalesce, 'projectSessions', () => controller.redrawSessions());
 }
 
+/** This window's project, as the Project sidebar resolves it (picked, else the one
+ *  containing the first workspace folder). Null with no folder or no project. */
+export function windowProject(): Promise<ProjectRef | null> {
+  return activeController ? activeController.project() : Promise.resolve(null);
+}
+
 /** @public loaded with require('./projectPanel.vscode') in extension.ts, which knip cannot see */
 export function registerProjectPanel(context: vscode.ExtensionContext): void {
   const controller = new ProjectPanelController(context);

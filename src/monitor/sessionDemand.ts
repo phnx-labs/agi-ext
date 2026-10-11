@@ -2,7 +2,7 @@
 //
 // One window "demands" the canonical `agents feed watch` producer while it is
 // actually showing live session state — its Fleet dashboard, its active-session
-// sidebar or its Project Sessions view is visible — or while it holds a tracked agent terminal whose identity
+// sidebar or its Project Sessions view is visible, or its Resume Session picker is open — or while it holds a tracked agent terminal whose identity
 // isn't resolved yet (the stream is what attributes it). The elected leader gates
 // the single producer on the UNION of every window's demand (host.ts), so an
 // idle, hidden window contributes nothing and the watcher stays torn down.
@@ -15,13 +15,14 @@ export class SessionStreamDemand {
   private dashboardVisible = false;
   private sidebarVisible = false;
   private projectSessionsVisible = false;
+  private resumePickerOpen = false;
   private unresolvedTuples = false;
   private readonly listeners = new Set<(demand: boolean) => void>();
   private last = false;
 
   /** True when this window currently needs the producer. */
   get demand(): boolean {
-    return this.dashboardVisible || this.sidebarVisible || this.projectSessionsVisible || this.unresolvedTuples;
+    return this.dashboardVisible || this.sidebarVisible || this.projectSessionsVisible || this.resumePickerOpen || this.unresolvedTuples;
   }
 
   setDashboardVisible(visible: boolean): void {
@@ -40,6 +41,13 @@ export class SessionStreamDemand {
   setProjectSessionsVisible(visible: boolean): void {
     if (this.projectSessionsVisible === visible) return;
     this.projectSessionsVisible = visible;
+    this.notify();
+  }
+
+  /** The "Agents: Resume Session…" picker lists stream rows while it is open. */
+  setResumePickerOpen(open: boolean): void {
+    if (this.resumePickerOpen === open) return;
+    this.resumePickerOpen = open;
     this.notify();
   }
 
