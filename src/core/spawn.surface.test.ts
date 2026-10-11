@@ -112,7 +112,7 @@ describe('agents.resumeSession outcome from the CLI', () => {
   });
   test("a non-zero exit is failed with the CLI's own reason", () => {
     expect(cliResumeOutcome(false, "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s.\n  Resume it in this terminal instead: agents sessions resume 0db3f95b\n"))
-      .toEqual({ status: 'failed', reason: 'Resume it in this terminal instead: agents sessions resume 0db3f95b' });
+      .toEqual({ status: 'failed', reason: "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s." });
     expect(cliResumeOutcome(false, '').reason).toBe('agents sessions resume failed with no output');
   });
 });

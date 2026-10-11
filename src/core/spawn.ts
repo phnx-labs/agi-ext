@@ -175,7 +175,10 @@ function canonicalPath(p: string): string {
 export function cliResumeOutcome(exitOk: boolean, output: string): { status: SpawnAckStatus; reason: string | null } {
   const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
   const last = lines[lines.length - 1] ?? null;
-  if (!exitOk) return { status: 'failed', reason: last ?? 'agents sessions resume failed with no output' };
+  // A failure's reason is what went wrong, not the CLI's "run this in a terminal"
+  // hint: the editor surfaces it and never asks anyone to type a session id.
+  const told = lines.filter((line) => !/^Resume it in this terminal\b/i.test(line));
+  if (!exitOk) return { status: 'failed', reason: told[told.length - 1] ?? last ?? 'agents sessions resume failed with no output' };
   return { status: lines.some((line) => line.startsWith('Already open')) ? 'focused-existing' : 'opened', reason: last };
 }
 
