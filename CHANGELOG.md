@@ -6,8 +6,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
-- Fleet session rows say where and what. The header names the machine and the working
-  folder (`yosemite-m2 · ~/…/acme/atlas`); under the title, `You ›` is your latest message
+- Fleet session rows say where and what. The header shows the machine and the working
+  folder as chips (`yosemite-m2`, `~/…/acme/atlas`); under the title, `You ›` is your latest message
   (it was the first one) and `Agent ›` is the agent's latest reply. Live and Previous rows
   both read these from the session stream; a Previous row without a reply on the stream
   takes the newest thing the agent said in its timeline, and shows no Agent line when the
@@ -19,10 +19,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   newest steps with their tool counts and ages, the earlier-steps counter, and the gallery
   with image previews for a session on this machine (the dashboard now reads files under your
   home folder, as the sidebar already did). Both surfaces render these from one
-  shared module, so they cannot drift. The activity bar shows only when the row has tool
-  calls to tally, instead of a grey all-idle bar on every remote session.
+  shared module, so they cannot drift. The old Fleet activity bar is gone; it drew a grey
+  all-idle bar on every remote session, and the Timeline's strip replaces it.
 - Rows are as tall as what they show. Every row used to reserve 146px, which left an empty
-  block under rows with only a title and one line; an expanded row measures itself.
+  block under rows with only a title and one line; every row now measures itself.
 
 ## [0.9.387] - 2026-10-09
 

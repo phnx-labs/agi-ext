@@ -92,7 +92,9 @@ describe('stream row -> Fleet session card', () => {
 
   test('collapsed live card shows machine + folder, your latest message, and the agent reply line', () => {
     const html = render(floorRows()[LIVE]!, false)
-    expect(html).toContain('<b>yosemite-m2</b> · ~/…/acme/atlas')
+    expect(html).toContain('<span class="sx-where host" title="Runs on yosemite-m2">yosemite-m2</span>')
+    expect(html).toContain('<span class="sx-where folder" title="/home/muqsit/src/github.com/acme/atlas">~/…/acme/atlas</span>')
+    expect(html).toContain('<span class="sx-resumelabel">Resume</span>')
     expect(html).toContain('You ›')
     expect(html).toContain('Please add my account id to the trusted owner ids')
     expect(html).not.toContain('tell me why my own approvals are rejected')

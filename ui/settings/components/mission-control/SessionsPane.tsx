@@ -100,7 +100,7 @@ export function rowHeight(agent: FloorAgent, expanded: boolean, measured?: numbe
   if (measured && measured > 0) return measured
   if (!expanded) return collapsed
   // The detail card: request, latest reply, the shared Artifacts and Timeline
-  // cards, activity or ended-session meta, checklist, catch-up links.
+  // cards, ended-session meta, checklist, catch-up links.
   const ask = agent.firstUserMessage?.trim() ? agent.firstUserMessage : (row.you.text || agent.prompt || '')
   const textH = (text: string) => {
     if (!text) return 0
@@ -111,7 +111,7 @@ export function rowHeight(agent: FloorAgent, expanded: boolean, measured?: numbe
   const askH = textH(ask) + (row.title && row.title.trim() !== ask.trim() ? 20 : 0)
   const replyH = textH(row.lastFull)
   const cardsH = agent.sessionCard ? 320 : 0
-  const statusH = isPrevious(agent) ? 50 : (agent.recent?.length ?? 0) > 0 ? 70 : 0
+  const statusH = isPrevious(agent) ? 50 : 0
   const todos = agent.todos ?? []
   const todoH = todos.length > 0 ? 22 + todos.length * 20 : 0
   const catchH = 44

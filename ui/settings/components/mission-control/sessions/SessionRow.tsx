@@ -128,13 +128,8 @@ function SessionRowImpl({
             <span className="sx-proj" title={a.project}>{a.project}</span>
           )}
           <span className="sx-ttl" title={row.title}>{row.title}</span>
-          {(row.host || row.folder) && (
-            <span className="sx-where" title={[row.host, row.folderFull].filter(Boolean).join(' · ')}>
-              {row.host && <b>{row.host}</b>}
-              {row.host && row.folder ? ' · ' : ''}
-              {row.folder}
-            </span>
-          )}
+          {row.host && <span className="sx-where host" title={`Runs on ${row.host}`}>{row.host}</span>}
+          {row.folder && <span className="sx-where folder" title={row.folderFull}>{row.folder}</span>}
           {phaseLabel && <span className={`sx-phase ${phaseClass}`} title={a.liveStatus || a.phase}>{phaseLabel}</span>}
         </div>
         {lines.now ? (
