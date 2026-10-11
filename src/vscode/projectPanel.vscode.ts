@@ -14,6 +14,7 @@ import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
   escapeHtml,
   heldInTab,
+  preferLive,
   parseOverview,
   parsePrs,
   parseProjectDetection,
@@ -32,7 +33,6 @@ import {
 import { currentAgentPanelSubject, setAgentPanelSubjectFromFleet } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
-import { sessionStateOf } from '../shared/sessionState';
 import { openExternalUrl } from './webviewSecurity';
 
 const execFileAsync = promisify(execFile);
@@ -257,7 +257,7 @@ class ProjectPanelController {
 
   sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
-    const rows = projectSessions(this.presented() as unknown as SessionLike[], p.name)
+    const rows = projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name)
       .map((r) => ({ ...r, tabHere: !!terminals.getBySessionId(r.sessionId) }));
     const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
     const thumbsFor = (s: SessionLike) => {
@@ -279,11 +279,11 @@ class ProjectPanelController {
   async goToSession(sessionId: string, host: string | undefined): Promise<void> {
     setAgentPanelSubjectFromFleet(sessionId, host);
     void this.view.redrawSessions();
-    const row = this.presented().find((r) => r.sessionId === sessionId);
-    // A tab bound to an ended session is a shell the agent left; resuming opens a live one.
-    const ended = row ? sessionStateOf(row) === 'ended' : false;
-    const local = terminals.getBySessionId(sessionId);
-    if (local && !ended) { local.terminal.show(false); return; }
+    // A tab running the agent wins over whatever the stream says; tabs the agent
+    // left are closed before anything new opens, as every other resume path does.
+    const { live, dead } = await terminals.sessionTabs(sessionId);
+    if (live) { live.terminal.show(false); return; }
+    const row = preferLive(this.presented().filter((r) => r.sessionId === sessionId))[0];
     if (row && heldInTab(row)) {
       try {
         await runAgentsArgs(['ps', 'focus', sessionId, '--attach-only'], { timeout: 30_000 });
@@ -297,6 +297,7 @@ class ProjectPanelController {
       void vscode.window.showInformationMessage(`${row.agentType || 'This harness'} sessions cannot be resumed, so ${sessionId.slice(0, 8)} has no tab to open.`);
       return;
     }
+    terminals.closeTabs(dead);
     const { openAgentSessionByRecovery } = require('./extension') as typeof import('./extension');
     const device = remoteDeviceArg(row?.host ?? host);
     await openAgentSessionByRecovery(this.context, { sessionId, agentType: row?.agentType ?? '', ...(device ? { device } : {}) });

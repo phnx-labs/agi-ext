@@ -238,6 +238,7 @@ export interface SessionLike {
   context?: string;
   /** attached | background | parked, from the CLI; absent off that axis. */
   presence?: string;
+  previous?: boolean;
   /** A tab in this window is bound to the session (it may be a shell the agent left). */
   tabHere?: boolean;
   resumable?: boolean;
@@ -262,10 +263,21 @@ export function heldInTab(s: Pick<SessionLike, 'viewingIn'>): boolean {
  *  (a headless run, a team member, a cloud task, or a session you sent to the background). */
 export function backgroundKind(s: Pick<SessionLike, 'context' | 'presence'>): string | null {
   if (s.presence === 'background' || s.presence === 'parked') return 'background';
-  if (s.context === 'terminal') return null;
   if (s.context === 'teams') return 'team';
   if (s.context === 'cloud') return 'cloud';
-  return 'headless';
+  if (s.context === 'headless' || (!s.context && !s.presence)) return 'headless';
+  return null;
+}
+
+/** One row per session id: a live row wins over its ended or previous twin. */
+export function preferLive<T extends { sessionId: string; phase?: string; liveStatus?: string; previous?: boolean }>(rows: T[]): T[] {
+  const ended = (r: T) => !!r.previous || r.phase === 'done' || r.liveStatus === 'closed';
+  const best = new Map<string, T>();
+  for (const r of rows) {
+    const held = best.get(r.sessionId);
+    if (!held || (ended(held) && !ended(r))) best.set(r.sessionId, r);
+  }
+  return rows.filter((r) => best.get(r.sessionId) === r);
 }
 
 const LIVE: ReadonlySet<SessionStateKey> = new Set(['working', 'yours', 'unknown']);

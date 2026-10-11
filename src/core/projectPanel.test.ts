@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
   parseOverview, parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, backgroundKind, projectSessions, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets, sessionCount,
+  activityLine, backgroundKind, preferLive, projectSessions, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets, sessionCount,
   type SessionLike,
 } from './projectPanel'
 
@@ -173,6 +173,9 @@ test('a live session with no attached tab says where it runs; a backgrounded tab
   expect(backgroundKind({ context: 'cloud' })).toBe('cloud')
   expect(backgroundKind({ context: 'terminal', presence: 'background' })).toBe('background')
   expect(backgroundKind({ context: 'terminal', presence: 'attached' })).toBeNull()
+  expect(backgroundKind({ context: '' })).toBe('headless')
+  expect(backgroundKind({ context: '', presence: 'attached' })).toBeNull()
+  expect(backgroundKind({ context: 'recent' })).toBeNull()
   expect(renderSessionCard(row({ context: 'teams', lastResponse: 'Reviewing.' }), NOW, false)).toContain('>team</span>')
 })
 
@@ -181,6 +184,18 @@ test('an ended session whose tab is still open says the agent is not running and
   expect(html).toContain('tab open · agent not running')
   expect(html).toContain('class="go">Resume<')
   expect(renderSessionCard(row({ phase: 'done', liveStatus: 'closed', lastResponse: 'Done.' }), NOW, false)).not.toContain('agent not running')
+  const stuck = renderSessionCard(row({ phase: 'done', liveStatus: 'closed', tabHere: true, resumable: false, lastResponse: 'Done.' }), NOW, false)
+  expect(stuck).toContain('agent not running')
+  expect(stuck).not.toContain('class="go"')
+})
+
+test('one row per session: a live row wins over its ended or previous twin', () => {
+  const rows = preferLive([
+    row({ sessionId: 'a', phase: 'done', liveStatus: 'closed', previous: true }),
+    row({ sessionId: 'a', phase: 'running', liveStatus: 'running' }),
+    row({ sessionId: 'b', phase: 'done', liveStatus: 'closed' }),
+  ])
+  expect(rows.map((r) => `${r.sessionId}:${r.phase}`)).toEqual(['a:running', 'b:done'])
 })
 
 test('a live tool call reads as the command it runs, never as a "Tool: args" label', () => {
