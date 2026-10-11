@@ -138,7 +138,7 @@ async function ensureAgentsCliInstalled(): Promise<void> {
     }
   }
 }
-import { supportsPrewarming, inTabResumeCommand, exitSequenceFor } from '../core/prewarm';
+import { agentTabShell, supportsPrewarming, inTabResumeCommand, exitSequenceFor } from '../core/prewarm';
 import { liveWindowFolders, restorePlan } from '../core/sessions.persist';
 import { generateClaudeSessionId, listOpencodeSessions } from '../core/prewarm.simple';
 import { canonicalSessionId } from '../core/canonicalSessionId';
@@ -2226,7 +2226,8 @@ async function placeSpawnRequest(
     name: title,
     env,
     cwd,
-    isTransient: true
+    isTransient: true,
+    ...agentTabShell(req.command, process.env.SHELL),
   });
 
   const pid = await terminals.processIdWithin(terminal);
@@ -2243,23 +2244,12 @@ async function placeSpawnRequest(
   } else if (isShell || !detectedKey) {
     armShellAdoptionForTerminal(terminal, context);
   }
-  // Answer as soon as the tab's process runs; the command follows once the
-  // shell prompt is ready, which can take longer than the caller waits.
-  void finishSpawnedTab(context, terminal, req.command);
-  return result('opened', { terminalId, title, pid });
-}
-
-async function finishSpawnedTab(
-  context: vscode.ExtensionContext,
-  terminal: vscode.Terminal,
-  command: string,
-): Promise<void> {
-  await sendCommandWhenReady(terminal, command);
   if (vscode.window.activeTerminal === terminal) {
     updateStatusBarForTerminal(terminal, context.extensionPath);
   }
   terminal.show();
   lastSpawnedTerminal = terminal;
+  return result('opened', { terminalId, title, pid });
 }
 
 async function newTaskWithContext(context: vscode.ExtensionContext) {
@@ -2818,6 +2808,7 @@ export async function openAgentSessionTerminal(
     cwd: session.cwd,
     env: buildAgentTerminalEnv(terminalId, session.id, workspacePath, session.version),
     isTransient: true,
+    ...agentTabShell(resumeCmd, process.env.SHELL),
   });
 
   await registerAgentTerminal(terminal, context, {
@@ -2835,18 +2826,6 @@ export async function openAgentSessionTerminal(
   terminal.show();
   if (session.account) {
     terminals.setAccount(terminal, session.account);
-  }
-  // Stamp the device so everything that later reads this session (label poller,
-  // rotate, resume) follows it to the machine the transcript actually lives on.
-  try {
-    await readiness.waitFor(terminal, 'promptReady');
-  } catch (err) {
-    console.warn(`[READINESS] promptReady wait failed: ${err}`);
-  }
-  if (terminal.shellIntegration) {
-    terminal.shellIntegration.executeCommand(resumeCmd);
-  } else {
-    terminal.sendText(resumeCmd);
   }
   readiness.armAgentReady(terminal, {
     agentKey: agentKey || session.agent,
@@ -5258,13 +5237,19 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
 
     const titleLabel = session.label || session.autoLabel;
     const title = buildTerminalTitle(displayTitle, titleLabel, context, session.sessionId || null);
+    // The tab's process is the CLI's in-place resume, so the tab becomes the live agent.
+    const restoredAgentKey = session.agentType ? agentKeyFromSession(session.agentType) : null;
+    const resumeCmd = session.sessionId && (session.recoveryAgent || restoredAgentKey)
+      ? inTabResumeCommand(session.sessionId)
+      : null;
 
     const terminal = vscode.window.createTerminal({
       iconPath: agentConfig.iconPath,
       location: { viewColumn: vscode.ViewColumn.Active },
       name: title,
       env: buildAgentTerminalEnv(session.terminalId, session.sessionId || null, workspacePath, session.version, { scrubSensitive: session.prefix.toLowerCase() !== 'sh', kind: session.prefix.toLowerCase() === 'sh' ? 'shell' : 'agent' }),
-      isTransient: true
+      isTransient: true,
+      ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
     });
 
     const pid = await terminal.processId;
@@ -5304,27 +5289,12 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
         startAutoLabelPollerForTerminal(terminal, context);
       }
 
-      // The tab becomes the live agent through the CLI's in-place strict resume.
-      const restoredAgentKey = session.agentType ? agentKeyFromSession(session.agentType) : null;
-      const resumeCmd = session.recoveryAgent || restoredAgentKey ? inTabResumeCommand(session.sessionId) : null;
-      if (resumeCmd) {
-        try {
-          await readiness.waitFor(terminal, 'promptReady');
-        } catch (err) {
-          console.warn(`[READINESS] promptReady wait failed: ${err}`);
-        }
-        if (terminal.shellIntegration) {
-          terminal.shellIntegration.executeCommand(resumeCmd);
-        } else {
-          terminal.sendText(resumeCmd);
-        }
-        if (restoredAgentKey) {
-          readiness.armAgentReady(terminal, {
-            agentKey: restoredAgentKey,
-            sessionId: session.sessionId,
-            cwd: workspacePath,
-          });
-        }
+      if (resumeCmd && restoredAgentKey) {
+        readiness.armAgentReady(terminal, {
+          agentKey: restoredAgentKey,
+          sessionId: session.sessionId,
+          cwd: workspacePath,
+        });
       }
     }
   };
@@ -5377,12 +5347,14 @@ async function reopenLastClosedSession(context: vscode.ExtensionContext): Promis
   );
 
   const terminalId = terminals.nextId(closed.prefix);
+  const resumeCmd = closed.agentType && agentKeyFromSession(closed.agentType) ? inTabResumeCommand(closed.sessionId) : null;
   const terminal = vscode.window.createTerminal({
     iconPath: closed.agentConfig.iconPath,
     location: { viewColumn: vscode.ViewColumn.Active },
     name: title,
     env: buildAgentTerminalEnv(terminalId, closed.sessionId, workspacePath, closed.version),
-    isTransient: true
+    isTransient: true,
+    ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
   });
 
   const pid = await terminal.processId;
@@ -5406,18 +5378,7 @@ async function reopenLastClosedSession(context: vscode.ExtensionContext): Promis
     startAutoLabelPollerForTerminal(terminal, context);
 
     // Any known harness reopens, not just the prewarm five (#1747).
-    if (agentKeyFromSession(closed.agentType)) {
-      const resumeCmd = inTabResumeCommand(closed.sessionId);
-      try {
-        await readiness.waitFor(terminal, 'promptReady');
-      } catch (err) {
-        console.warn(`[READINESS] promptReady wait failed: ${err}`);
-      }
-      if (terminal.shellIntegration) {
-        terminal.shellIntegration.executeCommand(resumeCmd);
-      } else {
-        terminal.sendText(resumeCmd);
-      }
+    if (resumeCmd) {
       readiness.armAgentReady(terminal, {
         agentKey: closed.agentType,
         sessionId: closed.sessionId,

@@ -2,16 +2,25 @@ import { describe, test, expect } from 'bun:test';
 import {
   PREWARM_CONFIGS,
   inTabResumeCommand,
+  agentTabShell,
   supportsPrewarming,
   exitSequenceFor,
   DEFAULT_EXIT_SEQUENCE,
 } from './prewarm';
 
 describe('inTabResumeCommand', () => {
-  test('runs the CLI strict resume in place, quietly, after clearing the typed line', () => {
+  test('runs the CLI strict resume in place, quietly', () => {
     expect(inTabResumeCommand('7b1cf038-8761-4e46-af43-5336e7e5a776')).toBe(
-      "clear; agents sessions resume '7b1cf038-8761-4e46-af43-5336e7e5a776' -q",
+      "agents sessions resume '7b1cf038-8761-4e46-af43-5336e7e5a776' -q",
     );
+  });
+
+  test("the resume command is the tab's own process, run by the login shell, never typed at a prompt", () => {
+    expect(agentTabShell("agents sessions resume 'x' -q", '/bin/bash')).toEqual({
+      shellPath: '/bin/bash',
+      shellArgs: ['-l', '-i', '-c', "agents sessions resume 'x' -q"],
+    });
+    expect(agentTabShell('cmd', undefined).shellPath).toBe('/bin/zsh');
   });
 
   test('never asks the CLI for another surface from inside a tab', () => {
@@ -21,7 +30,7 @@ describe('inTabResumeCommand', () => {
   });
 
   test('quotes a session selector so it cannot break out of the command', () => {
-    expect(inTabResumeCommand("a'; rm -rf /; #")).toBe("clear; agents sessions resume 'a'\\''; rm -rf /; #' -q");
+    expect(inTabResumeCommand("a'; rm -rf /; #")).toBe("agents sessions resume 'a'\\''; rm -rf /; #' -q");
   });
 });
 
