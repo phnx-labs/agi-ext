@@ -419,7 +419,6 @@ export interface SessionPlace {
   device: string;
 }
 
-const EDITOR_WORD = /\b(vs ?codium|codium|code|cursor)\b/i;
 const shortDevice = (d: string) => d.replace(/^yosemite-/, '');
 const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
 
@@ -429,7 +428,7 @@ export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
   const mine = (o: { device: string }) => o.device.toLowerCase() === here.device.toLowerCase();
   const observerHere = (s.observers ?? []).filter(mine);
   const ours = new Set([here.workspace, ...(here.folders ?? [])]);
-  const editorTab = observerHere.find((o) => EDITOR_WORD.test(o.viewingIn) && o.workspaceDir && !ours.has(baseName(o.workspaceDir)));
+  const editorTab = observerHere.find((o) => o.workspaceDir && !/ghostty/i.test(o.viewingIn) && !ours.has(baseName(o.workspaceDir)));
   const ghosttyTab = observerHere.find((o) => /ghostty/i.test(o.viewingIn));
   const tabOf = (words: string) => Number(words.match(/tab (\d+)/i)?.[1]) || null;
   const tab = s.tabIndex ?? (editorTab ? tabOf(editorTab.viewingIn) : null);
