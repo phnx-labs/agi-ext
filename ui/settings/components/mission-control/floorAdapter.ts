@@ -28,6 +28,7 @@ import {
   type FloorAttachment,
   type FloorTimeline,
   type FloorUserTurn,
+  type SessionCardSnapshot,
 } from './floorModel'
 import { attributeSessionProject, UNASSIGNED_PROJECT, type SessionProjectHints } from './sessionProjects'
 import type { UnifiedTask, RecentEvent, RecentToolCall, ProjectRule, SessionAttachment } from '../../types'
@@ -193,6 +194,13 @@ export interface RemoteSessionLike {
   timeline?: FloorTimeline
   request?: { text: string; headline: string }
   userTurns?: FloorUserTurn[]
+  /** Read only by the shared session cards, passed through as the row has them. */
+  checkpoints?: unknown
+  activityHistogram?: unknown
+  failures?: unknown
+  subagents?: unknown
+  /** Host-built card fields (src/core/sessionCardFields.ts) for this session. */
+  card?: { artifacts?: unknown; plan?: unknown; pullRequests?: unknown; linearIssue?: string; needsYou?: unknown; sessionLocal?: boolean }
   context: string
   cloudTaskId: string
   cloudProvider: string
@@ -799,6 +807,7 @@ export function toFloorAgentFromRemote(
     timeline: r.timeline,
     userTurns: r.userTurns?.length ? r.userTurns : undefined,
     latestRequest: r.request?.text || undefined,
+    sessionCard: sessionCardSnapshot(r),
     files: 0,
     tools: 0,
     needs,
@@ -847,6 +856,29 @@ export function toFloorAgentFromRemote(
       r.tail && r.tail.length ? r.tail : r.lastResponse ? [r.lastResponse] : [],
       resp,
     ),
+  }
+}
+
+/** The shared session cards' input: the same fields the sidebar snapshot carries. */
+function sessionCardSnapshot(r: RemoteSessionLike): SessionCardSnapshot | undefined {
+  if (!r.sessionId) return undefined
+  const card = r.card ?? {}
+  return {
+    fullSessionId: r.sessionId,
+    sessionHost: r.host,
+    sessionLocal: card.sessionLocal,
+    lastActivityMs: r.lastActivityMs || undefined,
+    timeline: r.timeline,
+    checkpoints: r.checkpoints,
+    activityHistogram: r.activityHistogram,
+    userTurns: r.userTurns,
+    failures: r.failures,
+    subagents: r.subagents,
+    needsYou: card.needsYou,
+    artifacts: card.artifacts,
+    plan: card.plan,
+    pullRequests: card.pullRequests,
+    linearIssue: card.linearIssue,
   }
 }
 

@@ -25,7 +25,7 @@ export function extractPrUrls(lines: string[]): PullRequestRef[] {
     PR_URL_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = PR_URL_RE.exec(line)) !== null) {
-      const ownerRepo = m[1];
+      const ownerRepo = m[1]!;
       const num = Number(m[2]);
       const dedupeKey = `${ownerRepo}#${num}`;
       if (seen.has(dedupeKey)) continue;

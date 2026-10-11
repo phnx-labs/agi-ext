@@ -12,7 +12,10 @@ import * as os from 'os';
 // substring evaluates identically to the runtime template.
 //
 // Path labels arrive preformatted by the host; the template preserves them.
-const SRC = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
+// The timeline and artifact cards moved to the module both surfaces share; the
+// sidebar inlines it verbatim, so the cards are extracted from both sources.
+const SRC = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8') + '\n' +
+  fs.readFileSync(path.join(import.meta.dir, '..', 'shared', 'sessionCards.ts'), 'utf8');
 
 function extractFn(name: string): string {
   const sig = `function ${name}(`;
@@ -593,7 +596,15 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
     ProgressLocation: { Window: 10 },
   });
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-artifacts-'));
-  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync('class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('localArtifactUri') + method('handleMessage') + method('loadTimelineFilter') + '}');
+  // Opening an artifact and loading a heavy filter live in the module the Fleet
+  // card shares (sessionCardActions.ts); the host methods call into it.
+  const ACTIONS = fs.readFileSync(path.join(import.meta.dir, 'sessionCardActions.ts'), 'utf8');
+  const moduleFn = (name: string) => {
+    const start = ACTIONS.indexOf('async function ' + name + '(');
+    const end = ACTIONS.indexOf('\n}\n', start) + 3;
+    return ACTIONS.slice(start, end);
+  };
+  const code = new Bun.Transpiler({ loader: 'ts' }).transformSync(moduleFn('localArtifactUri') + moduleFn('openSessionArtifact') + moduleFn('fetchTimelineFilter') + 'class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('handleMessage') + method('loadTimelineFilter') + '}');
   const pastedDir = path.join(cacheDir, 'pasted');
   const isInside = (p: string, dir: string) => { const rel = path.relative(dir, path.resolve(p)); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
   const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', 'remoteDeviceArg', 'path', 'fs', 'REMOTE_ARTIFACT_CACHE_DIR', 'PASTED_ATTACHMENT_DIR', 'isInside', code + '; return new Host();')(

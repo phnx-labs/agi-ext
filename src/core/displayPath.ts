@@ -18,7 +18,7 @@ export function displayPath(file: string, { cwd, home, isRemote = false, hostHom
   if (label === undefined) {
     const scratch = file.match(/^\/(?:private\/)?tmp\/claude-[^/]+\/([^/]+)\/([^/]+)\/(.+)$/);
     const encodedCwd = cwd?.replace(/[^a-zA-Z0-9]/g, '-');
-    if (scratch && scratch[1] === encodedCwd && scratch[2] === sessionId) label = scratch[3];
+    if (scratch && scratch[1] === encodedCwd && scratch[2] === sessionId) label = scratch[3]!;
     else if (/^\/(?:private\/)?tmp\/claude-/.test(file)) label = 'scratch/…/' + file.slice(file.lastIndexOf('/') + 1);
     else label = inside(home) !== undefined ? '~/' + inside(home) : file;
   }

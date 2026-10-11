@@ -166,6 +166,11 @@ export interface FloorTimeline {
   reason?: string
 }
 
+/** What the shared session cards (src/shared/sessionCards.ts) read for one session:
+ *  the row's timeline, turns, failures, activity strip and subagents, plus the
+ *  host-built card fields (src/core/sessionCardFields.ts). Opaque to React. */
+export type SessionCardSnapshot = Record<string, unknown> & { fullSessionId: string; sessionHost: string }
+
 /** One genuine user turn from the CLI row (`userTurns[]`), oldest first. */
 export interface FloorUserTurn {
   atMs: number
@@ -218,6 +223,7 @@ export interface FloorAgent {
   timeline?: FloorTimeline // CLI step timeline (user turns + agent narration); undefined when the row carries none
   userTurns?: FloorUserTurn[] // genuine user turns, oldest first; the last one is your latest message
   latestRequest?: string // the CLI's latest genuine request text (`request.text`), when the row carries one
+  sessionCard?: SessionCardSnapshot // the expanded row's Timeline and Artifacts input; undefined for a tab the stream has not indexed
   messages: string[]     // the last few assistant messages (from the CLI's last_messages window); [] when none. Drives the detail-pane Activity feed.
   question: StructuredQuestion | null
   /** The CLI attention row's kind, carried verbatim from the stream. Drives the

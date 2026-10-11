@@ -23,7 +23,6 @@ import { useVirtualList } from './useVirtualList'
 import { useNow } from './useNow'
 import { SessionRow, collapsedLines } from './sessions/SessionRow'
 import { isLongText } from './sessions/ExpandedCard'
-import { timelineHeight } from './sessions/SessionTimeline'
 import {
   ResumeDeviceMenu,
   type ResumeDevice,
@@ -92,14 +91,15 @@ type VItem =
   | { kind: 'header'; section: SessionSection; height: number; key: string }
   | { kind: 'row'; agent: FloorAgent; section: SessionSection; height: number; key: string }
 
-export function rowHeight(agent: FloorAgent, expanded: boolean): number {
+export function rowHeight(agent: FloorAgent, expanded: boolean, measured?: number): number {
   const row = sessionRowView(agent)
   const lines = collapsedLines(agent, row)
   const collapsed = ROW_PAD_H + TITLE_H + META_H + LINE_H * [lines.now, lines.you, lines.agent].filter(Boolean).length
   if (!expanded) return collapsed
-  // The detail card: request, latest reply, timeline, activity or ended-session meta,
-  // checklist, and the catch-up links. Estimate each so the virtual list reserves
-  // enough space without clipping.
+  // An expanded row reports its rendered height (SessionRow onMeasure); until it
+  // has, estimate the detail card: request, latest reply, the shared Artifacts and
+  // Timeline cards, activity or ended-session meta, checklist, catch-up links.
+  if (measured && measured > collapsed) return measured
   const ask = agent.firstUserMessage?.trim() ? agent.firstUserMessage : (row.you.text || agent.prompt || '')
   const textH = (text: string) => {
     if (!text) return 0
@@ -109,13 +109,13 @@ export function rowHeight(agent: FloorAgent, expanded: boolean): number {
   }
   const askH = textH(ask) + (row.title && row.title.trim() !== ask.trim() ? 20 : 0)
   const replyH = textH(row.lastFull)
-  const tlH = timelineHeight(agent.timeline)
+  const cardsH = agent.sessionCard ? 320 : 0
   const statusH = isPrevious(agent) ? 50 : (agent.recent?.length ?? 0) > 0 ? 70 : 0
   const todos = agent.todos ?? []
   const todoH = todos.length > 0 ? 22 + todos.length * 20 : 0
   const catchH = 44
-  const gaps = 12 * [askH, replyH, tlH, statusH, todoH, catchH].filter(Boolean).length
-  return collapsed + 10 + askH + replyH + tlH + statusH + todoH + catchH + gaps
+  const gaps = 12 * [askH, replyH, cardsH, statusH, todoH, catchH].filter(Boolean).length
+  return collapsed + 10 + askH + replyH + cardsH + statusH + todoH + catchH + gaps
 }
 
 const SORT_OPTS: { value: SessionSort; label: string }[] = [
@@ -147,6 +147,11 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
   const [desc, setDesc] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  // Rendered heights of expanded rows, reported by the rows themselves.
+  const [measured, setMeasured] = useState<Record<string, number>>({})
+  const onMeasure = useCallback((id: string, height: number) => {
+    setMeasured((prev) => (prev[id] === height ? prev : { ...prev, [id]: height }))
+  }, [])
   // How many Previous rows are shown; null = the default 7-day/50 bound. "Show 10
   // more" bumps it, paging further back through the resumable history.
   const [previousShown, setPreviousShown] = useState<number | null>(null)
@@ -204,11 +209,11 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
     for (const s of sections) {
       out.push({ kind: 'header', section: s, height: HEADER_H, key: `h:${s.key}` })
       for (const a of s.agents) {
-        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, expanded.has(a.id)), key: a.id })
+        out.push({ kind: 'row', agent: a, section: s, height: rowHeight(a, expanded.has(a.id), measured[a.id]), key: a.id })
       }
     }
     return out
-  }, [sections, expanded])
+  }, [sections, expanded, measured])
 
   const { scrollRef, onScroll, visibleItems: visible, totalHeight, padTop, padBottom } = useVirtualList(items, { overscan: OVERSCAN })
 
@@ -391,6 +396,7 @@ export function SessionsPane({ agents, onToggleStar, onResume, onResumeOnDevice,
                     onSelect={onSelect}
                     onToggleExpand={toggleExpand}
                     onAssignProject={openRowAssign}
+                    onMeasure={onMeasure}
                   />
                 )
               )}
