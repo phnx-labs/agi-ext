@@ -1,6 +1,6 @@
 /**
  * Canonical process-liveness check, shared across modules that key work by
- * OS pid (foreman registry, monitor lease, …).
+ * OS pid (monitor lease, …).
  *
  * `process.kill(pid, 0)` sends no signal — it only probes whether the pid is
  * deliverable:

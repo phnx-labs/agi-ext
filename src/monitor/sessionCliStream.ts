@@ -274,7 +274,7 @@ export class SessionCliStream {
               `agents feed watch crashed ${this.consecutiveImmediateFailures} times in a row within ` +
               `${SessionCliStream.IMMEDIATE_FAILURE_WINDOW_MS}ms of starting — giving up on the session ` +
               'stream. Run `agents doctor` to check the install, or `agents upgrade` to update the CLI, ' +
-              'then reopen the Fleet dashboard or a session sidebar to retry.'
+              'then reopen the session sidebar or the Project panel to retry.'
             );
             return;
           }

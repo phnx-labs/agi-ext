@@ -1,28 +1,16 @@
-// Cross-host session aggregation — pure types + normalize/group.
+// Cross-host session rows — pure types + normalize.
 //
-// This module has NO VS Code imports so it is unit-testable in isolation. The
-// SSH fan-out + host discovery live in src/vscode/remoteSessions.vscode.ts;
-// this file only turns rows from `agents sessions watch --json` into a
-// normalized RemoteSession and groups records by host.
-//
-// A RemoteSession is the cross-host analog of a local agent, shaped so the
-// webview can fold it into a FloorAgent (ui/settings/components/mission-control/
-// floorModel.ts). Field names are mirrored, but the two types are NOT shared —
-// data crosses the webview boundary via postMessage.
+// This module has NO VS Code imports so it is unit-testable in isolation. It
+// turns rows from `agents sessions watch --json` into a normalized RemoteSession,
+// the cross-host analog of a local agent.
 
 import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project';
-import type { ProjectRule } from '../shared/project';
-import { shellQuote } from './deviceDispatchShell';
 import { isHarnessEnvelope } from './harnessEnvelope';
 import { normalizePrStatus, type RemotePrStatus } from './prStatus';
 
-// Re-exported so existing host importers keep their `from '../core/remoteSessions'`
-// path. The impls now live in src/shared/project so the webview (@shared) imports
-// the SAME source instead of a hand-mirrored copy that silently drifts.
 export { resolveProject, normalizeHost };
-export type { ProjectRule } from '../shared/project';
 
-/** Mirror of floorModel.FloorPhase (kept in sync by hand; not imported). */
+/** The coarse lifecycle the panels sort and color by. */
 export type RemotePhase = 'running' | 'idle' | 'waiting' | 'failed' | 'done';
 
 /** Why an agent handed control back — mirrors the CLI AwaitingReason. */
@@ -121,46 +109,6 @@ export function isLocalHostIdentity(
   return normalizeHost(h) === localMachineId;
 }
 
-/** A registered device as seen by the host reconciler (from `agents devices list`). */
-export interface RegisteredDeviceInput {
-  name: string;
-  /** SSH target (the device's Tailscale dnsName). Falls back to `name` when absent. */
-  address?: string;
-  online?: boolean;
-}
-
-/** A host after reconciliation against the device registry. */
-export interface ReconciledHost {
-  /** Canonical device label (normalizeHost of the registry name). Grouping + sidebar key. */
-  name: string;
-  /** SSH target for the Tier-1 fetch; '' for the local machine (queried directly). */
-  address: string;
-  online: boolean;
-  isLocal: boolean;
-}
-
-/**
- * Scope the swept host roster to the DEVICE REGISTRY + the local machine — never
- * ssh-config aliases or raw tailnet peers, which are not dev machines and used to
- * flood the sidebar with phantom hosts (mark, mark-aws, phoenix, pi, plus the same
- * mac listed as localhost / mac-mini / "Muqsit's Mac mini"). The local machine is
- * always present and online (queried directly, no ssh); a registry entry that IS the
- * local machine is folded into it via normalizeHost so the machine appears exactly
- * once under its canonical name. Pure so it is unit-tested against real `agents
- * devices` shapes.
- */
-export function reconcileHosts(devices: RegisteredDeviceInput[], localHost: string): ReconciledHost[] {
-  const localKey = normalizeHost(localHost);
-  const byName = new Map<string, ReconciledHost>();
-  if (localKey) byName.set(localKey, { name: localKey, address: '', online: true, isLocal: true });
-  for (const d of devices) {
-    const key = normalizeHost(d.name);
-    if (!key || key === localKey) continue;
-    byName.set(key, { name: key, address: (d.address || d.name || '').trim(), online: d.online === true, isLocal: false });
-  }
-  return [...byName.values()];
-}
-
 /** Minimal device-registry shape the dialable-scope filter reads. */
 export interface RosterDeviceLite {
   name: string;
@@ -184,7 +132,7 @@ const DIALABLE_PEER_PLATFORMS: ReadonlySet<string> = new Set(['windows', 'linux'
  * The follower-degraded gate (PHNX-2735) waits on exactly these scopes: waiting
  * on a device the stream will never report for (an approved iPad reads `online`
  * but is never dialed, so it emits neither a `reset` nor a `scope unavailable`)
- * would leave the merged Floor stuck at "connecting" forever. This filter must
+ * would leave the panels stuck at "connecting" forever. This filter must
  * match the CLI's own peer selection, or the two drift and re-open that hang.
  */
 export function dialablePeerScopes(devices: readonly RosterDeviceLite[], localMachineId: string): string[] {
@@ -357,18 +305,6 @@ export interface RemoteSubagent {
   prompt?: string;
 }
 
-/**
- * The CLI's own recovery command for a resumable session
- * (`SessionPickerJsonRow.recovery`): `agents sessions resume <id> --device <device>`.
- * Carried verbatim so the Sessions surface runs the CLI's recommended command
- * instead of re-deriving one. null for a harness with no resume path.
- */
-interface RemoteRecovery {
-  command: 'agents' | string;
-  args: string[];
-  cwd?: string;
-}
-
 /** One tab showing a session, as the CLI's projection names it. */
 interface RemoteObserver {
   device: string;
@@ -399,11 +335,6 @@ export interface RemoteSession {
    *  detached-but-alive session into the "needs reconnecting" band. '' when the
    *  CLI supplied no status. */
   liveStatus: string;
-  /** Whether the session's OS process is still alive, from the CLI payload
-   *  (`pidAlive`). Distinguishes an orphaned-but-running session (resume attaches)
-   *  from a crashed one (resume relaunches via /continue). Defaults true when the
-   *  CLI omits it (a live roster row). */
-  pidAlive: boolean;
   /** Live now-line for the card (the CLI's `preview` while the agent is working). */
   activity: string;
   /** Output-token throughput from the CLI payload (`ActiveSession.tokPerSec`), rounded. */
@@ -432,7 +363,7 @@ export interface RemoteSession {
   /** Last few assistant turns (most-recent last), one line each — panel context. [] when none. */
   tail: string[];
   /** Live plan checklist from the CLI's most recent `TodoWrite` (RUSH-1380). Lets the
-   *  Fleet show an N/M pill + checklist for remote / device-dispatched agents
+   *  panels show an N/M pill + checklist for remote / device-dispatched agents
    *  that have no local tool-call stream. Absent when the session wrote no todo list. */
   todos?: RemoteTodoItem[];
   /** Clean 1–2 line goal distilled by the CLI summarizer from the raw first request
@@ -457,14 +388,10 @@ export interface RemoteSession {
   /** Files the session created/modified/deleted. Absent on an older CLI — the
    *  Files card renders nothing rather than guessing from the transcript. */
   files?: RemoteFiles;
-  /** Raw CLI output text, when the active-session payload carries it. */
-  output: string;
   /** Attachment refs/names from the CLI payload, normalized for thumbnail + preview. */
   attachments: RemoteAttachment[];
   prUrl: string | null;
   ticket: string | null;
-  /** Tracker refs this session CREATED (Linear create_issue / gh issue create). */
-  createdTickets: string[];
   /** Team name this session SPAWNED via `agents teams create/add`; '' when none. */
   spawnedTeam: string;
   branch: string;
@@ -510,9 +437,6 @@ export interface RemoteSession {
   /** User-set session label from the CLI payload. Kept separate from topic so UI
    *  card headers can prefer explicit names over inferred task lines. */
   label: string;
-  /** Absolute session-file path, kept so the fan-out can enrich the deduped
-   *  survivor without re-reading the raw record. */
-  sessionFile: string;
   /** The CLI record's `context` ('terminal' | 'cloud' | 'teams' | ...). Lets the
    *  webview treat cloud rows differently from terminal-backed agents. */
   context: string;
@@ -520,29 +444,11 @@ export interface RemoteSession {
    *  `parked`), absent when the session isn't on that axis (cloud/team/ad-hoc
    *  headless). Drives the detach/attach affordances. */
   presence?: string;
-  /** Cloud task id (`agents cloud message <id> <text>` is the reply channel for
-   *  cloud rows). Empty for non-cloud sessions. */
-  cloudTaskId: string;
-  /** Cloud provider ('rush' | 'codex' | 'factory' | ...), informational. Empty otherwise. */
-  cloudProvider: string;
   /** Team name for `teams`-context sessions (`agents factory answer <team> <text>`
    *  is their reply channel). Empty otherwise. */
   teamName: string;
   /** OS pid of the live process (terminal context), 0 when unknown. */
   pid: number;
-  /** Transport the CLI reached this session over ('ssh' remote, 'local', or ''). */
-  transport: string;
-  /** Reply rail from `provenance.reply.rail`: 'tmux' means drive the pane below with
-   *  `tmux send-keys`; '' means no programmatic channel (raw TTY) unless cloud/team. */
-  replyRail: string;
-  /** tmux pane target (e.g. '%65') for the tmux rail. Empty otherwise. */
-  replyMuxTarget: string;
-  /** tmux socket path for the tmux rail. Empty otherwise. */
-  replyMuxSocket: string;
-  /** The session's own tmux `%N` pane handle (from `provenance.mux.pane`), shown
-   *  on the card for unique addressing. Falls back to the reply-rail pane when the
-   *  CLI hasn't populated mux yet. Empty for non-tmux sessions. */
-  tmuxPane: string;
   /** Where the session is currently being viewed, pre-formatted by the CLI (e.g.
    *  "Codium tab 3", "Ghostty tab 2", "detached"). '' when the CLI supplies none. */
   viewingIn: string;
@@ -560,46 +466,13 @@ export interface RemoteSession {
   /** Whether an ended/idle session can be resumed (`SessionPickerJsonRow.resumable`).
    *  A harness with no resume path (grok/droid/cursor/…) reports false. */
   resumable?: boolean;
-  /** The CLI's own recovery command (`SessionPickerJsonRow.recovery`):
-   *  `agents sessions resume <id> --device <device>`. null for non-resumable. */
-  recovery?: RemoteRecovery | null;
   /** Canonical device label the session's transcript lives on
    *  (`SessionPickerJsonRow.sourceDevice`, e.g. 'zion', 'yosemite-s0'). '' when unknown. */
   sourceDevice?: string;
   /** Outcome metrics from either a live CLI row or a RECENT (historical) row.
    *  Undefined when the owning CLI cannot compute them. */
   durationMs?: number;
-  costUsd?: number;
   tokenCount?: number;
-}
-
-/** One machine's worth of sessions plus its reachability + freshness stamp. */
-export interface HostGroup {
-  host: string;
-  online: boolean;
-  /** When this host's data was fetched (epoch ms) — freshness for the UI. */
-  fetchedAt: number;
-  sessions: RemoteSession[];
-}
-
-/** Live load bucket for a host. Mirrors dispatch.types.ts HostLoad (webview
- *  contract) — kept in sync by hand; the two are NOT shared across the boundary. */
-export type HostLoad = 'idle' | 'free' | 'busy' | 'hot' | 'off' | 'unavailable';
-
-/** Reachability + live load of a discovered host. `agents`/`load`/`uses` are the
- *  live-load fields the Dispatch panel reads; they ride the existing hostSessions
- *  message. During discovery (before the host is probed) they hold their pre-probe
- *  values (agents 0, load idle/off, uses 0); the presentation store supplies
- *  measured values before the payload leaves the extension host. */
-export interface HostInfo {
-  name: string;
-  online: boolean;
-  /** Active agent sessions on this host (HostGroup.sessions.length). */
-  agents: number;
-  /** Load bucket derived from CPU load + agent count; 'off' when offline. */
-  load: HostLoad;
-  /** Usage weight for the ranking tiebreak (active-session count). */
-  uses: number;
 }
 
 /**
@@ -616,8 +489,6 @@ export interface RawActiveSession {
   project?: string;
   confirmedProject?: string | null;
   pid?: number;
-  /** Whether the CLI's process probe found the pid alive. */
-  pidAlive?: boolean;
   sessionId?: string;
   cwd?: string;
   label?: string;
@@ -639,7 +510,6 @@ export interface RawActiveSession {
   status?: string;
   teamName?: string;
   agentId?: string;
-  cloudProvider?: string;
   cloudTaskId?: string;
   cloudStatus?: string;
   branch?: string;
@@ -709,13 +579,11 @@ export interface RawActiveSession {
   timeline?: unknown;
   /** Files the session created/modified/deleted (`SessionFiles`). */
   files?: unknown;
-  output?: string;
   attachments?: unknown[];
   pr?: ({ url?: string; number?: number } & Record<string, unknown>) | null;
   worktree?: { slug?: string; path?: string; branch?: string } | null;
   ticket?: string | { id?: string; url?: string } | null;
-  /** Tracker refs the session CREATED + team it SPAWNED, from the CLI session scan. */
-  createdTickets?: string[];
+  /** Team the session SPAWNED, from the CLI session scan. */
   spawnedTeam?: string;
   /** Per-session rate/usage limit from the CLI (RUSH-1523). */
   rateLimited?: boolean;
@@ -724,28 +592,17 @@ export interface RawActiveSession {
    *  `sessions watch --json` — the load-bearing signal for which physical
    *  machine a session runs on. Absent for cloud rows (attributed to the querier). */
   machine?: string;
-  /** Durable lifecycle/recovery fields are also present on the recoverable rows
+  /** Durable lifecycle fields are also present on the recoverable rows
    * folded into the canonical watch stream. */
   state?: string;
   previous?: boolean;
   resumable?: boolean;
   sourceDevice?: string;
-  recovery?: { command?: string; args?: unknown[]; cwd?: string } | null;
   /**
    * AGI EXT / editor tab id (`AGENT_TERMINAL_ID`) when the launch inherited it.
    * Join key for "which session is MY tab running?" across local/`--device` runs.
    */
   terminalId?: string;
-  /** How the CLI says a reply reaches this session. `reply` is null for raw TTYs
-   *  (e.g. bare Ghostty) with no programmatic input channel; a tmux-backed session
-   *  carries the socket + pane to drive via `tmux send-keys` (over ssh when remote).
-   *  `mux` carries the session's OWN pane/socket (its authoritative %pane handle),
-   *  distinct from the reply rail which may target a different pane. */
-  provenance?: {
-    transport?: string;
-    reply?: { rail?: string; target?: string; socket?: string } | null;
-    mux?: { pane?: string; socket?: string; session?: string } | null;
-  } | null;
 }
 
 const TICKET_RE = /\b[A-Z][A-Z0-9]*-\d+\b/;
@@ -1165,7 +1022,7 @@ function normalizeAttachment(raw: unknown): RemoteAttachment | null {
 }
 
 /**
- * Map the CLI `status` string onto a FloorPhase.
+ * Map the CLI `status` string onto a RemotePhase.
  *   running            -> running
  *   input_required     -> waiting   (the cheap Tier-1 "needs you" signal)
  *   queued             -> running   (dispatched, work in the pipeline)
@@ -1206,15 +1063,6 @@ export function mapStatusToPhase(status: string | undefined): RemotePhase {
 // live in src/shared/project.ts (imported + re-exported above) — one impl shared
 // with the webview, no lockstep-mirrored copy.
 
-/**
- * Derive a display project from a working directory with no user rules — the
- * legacy default: worktrees fold to their repo, otherwise the cwd basename.
- * Thin wrapper over resolveProject so the two never diverge.
- */
-export function projectFromCwd(cwd: string): string {
-  return resolveProject(cwd);
-}
-
 /** Pull the session UUID out of a session-file path (Codex rollout stem → UUID). */
 function sessionIdFromFile(sessionFile: string | undefined): string {
   if (!sessionFile) return '';
@@ -1230,8 +1078,7 @@ function sessionIdFromFile(sessionFile: string | undefined): string {
 export function normalizeActiveSession(
   raw: RawActiveSession,
   host: string,
-  fetchedAt: number,
-  projectRules: ProjectRule[] = []
+  fetchedAt: number
 ): RemoteSession {
   const status = raw.status;
   const phase = mapStatusToPhase(status);
@@ -1277,13 +1124,11 @@ export function normalizeActiveSession(
     // cwd-less row — a cloud/factory run — where dropping it threw away the one repo
     // hint the CLI had (PHNX-3796). The webview filters run-CONTEXT words like
     // "cloud" out of it, so this never invents a project named after a context.
-    project: resolveProject(cwd, projectRules) || asStr(raw.project),
+    project: resolveProject(cwd) || asStr(raw.project),
     confirmedProject: asStr(raw.confirmedProject) || null,
     phase,
     // Raw lifecycle word kept verbatim (phase loses orphaned/crashed). Absent -> ''.
     liveStatus: (status || '').toLowerCase(),
-    // The CLI omits pidAlive for some rows (cloud/team) — treat a live roster row as alive.
-    pidAlive: raw.pidAlive !== false,
     // The now-line is live only while the CLI says the agent is working; an idle
     // or waiting session must not keep showing its last tool action as current.
     activity: raw.activity === 'working' && !isHarnessEnvelope(preview) ? preview : '',
@@ -1316,7 +1161,6 @@ export function normalizeActiveSession(
     request: normalizeRequest(raw.request),
     timeline: normalizeTimeline(raw.timeline),
     files: normalizeFiles(raw.files),
-    output: asStr(raw.output),
     attachments: Array.isArray(raw.attachments)
       ? raw.attachments.map(normalizeAttachment).filter((a): a is RemoteAttachment => Boolean(a))
       : [],
@@ -1324,7 +1168,6 @@ export function normalizeActiveSession(
     // fallback for older shapes.
     prUrl: asStr(raw.prUrl) || asStr(raw.pr?.url) || null,
     ticket: ticketMatch,
-    createdTickets: Array.isArray(raw.createdTickets) ? raw.createdTickets.map((t: unknown) => String(t)) : [],
     spawnedTeam: asStr(raw.spawnedTeam),
     // The remote branch lives at worktree.branch; the top-level `branch` is usually
     // absent, which is why remote branch was always empty.
@@ -1352,22 +1195,11 @@ export function normalizeActiveSession(
     // rows used lifecycle state='inactive'. Present one stable word to the UI.
     state: raw.previous === true ? 'inactive' : asStr(raw.state),
     resumable: raw.resumable === undefined ? undefined : raw.resumable === true,
-    recovery: normalizeRecovery(raw.recovery),
     sourceDevice: asStr(raw.sourceDevice) || host,
-    sessionFile: asStr(raw.sessionFile),
     context: asStr(raw.context),
     presence: asStr(raw.presence),
-    cloudTaskId: raw.cloudTaskId || '',
-    cloudProvider: raw.cloudProvider || '',
     teamName: raw.teamName || '',
     pid: typeof raw.pid === 'number' ? raw.pid : 0,
-    transport: raw.provenance?.transport || '',
-    replyRail: raw.provenance?.reply?.rail || '',
-    replyMuxTarget: raw.provenance?.reply?.target || '',
-    replyMuxSocket: raw.provenance?.reply?.socket || '',
-    // Prefer the session's own pane (provenance.mux.pane); fall back to the
-    // reply-rail pane, which today already carries a %pane for tmux sessions.
-    tmuxPane: raw.provenance?.mux?.pane || raw.provenance?.reply?.target || '',
     viewingIn: asStr(raw.viewingIn),
     terminalApp: asStr(raw.host),
     observers: normalizeObservers(raw.observerTerminals),
@@ -1383,279 +1215,6 @@ function normalizeObservers(value: unknown): RemoteObserver[] {
     if (!device) return [];
     return [{ device, viewingIn: asStr(e.viewingIn), workspaceDir: asStr(e.workspaceDir) }];
   });
-}
-
-/**
- * The FLAT `SessionMeta` shape emitted by `agents sessions --json` (recent, not
- * --active). Field names differ from the active payload (ticketId vs ticket,
- * gitBranch vs worktree.branch, lastActivity ISO vs startedAtMs), so recent sessions
- * get their own normalizer that lands on the SAME RemoteSession shape — one card path
- * for active AND recent. Unknown fields ignored.
- */
-export interface RawRecentSession {
-  id?: string;
-  shortId?: string;
-  agent?: string;
-  timestamp?: string;
-  lastActivity?: string;
-  project?: string;
-  confirmedProject?: string | null;
-  cwd?: string;
-  gitBranch?: string;
-  worktreeSlug?: string;
-  ticketId?: string;
-  createdTickets?: string[];
-  spawnedTeam?: string;
-  prUrl?: string;
-  prNumber?: number;
-  topic?: string;
-  title?: string;
-  model?: string;
-  firstUserMessage?: string;
-  label?: string;
-  machine?: string;
-  // SessionPickerJsonRow lifecycle/recovery fields (agents sessions --json): the
-  // CLI already joins the durable index against the live roster, so every row
-  // arrives with its resumability + the exact command to recover it.
-  state?: string;
-  resumable?: boolean;
-  sourceDevice?: string;
-  pid?: number | null;
-  recovery?: { command?: string; args?: unknown[]; cwd?: string } | null;
-  // Outcome metrics the CLI computes per session (may arrive as numeric strings).
-  durationMs?: number | string;
-  costUsd?: number | string;
-  tokenCount?: number | string;
-  messageCount?: number | string;
-}
-
-/**
- * Normalize the CLI's `recovery` object (SessionPickerJsonRow.recovery) into the
- * flat RemoteRecovery the UI runs. Returns null for a non-resumable harness (the
- * CLI emits null) or a malformed payload, so the row renders no dead action.
- */
-function normalizeRecovery(raw: RawRecentSession['recovery']): RemoteRecovery | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const command = asStr(raw.command);
-  const args = Array.isArray(raw.args) ? raw.args.map((a) => asStr(a)).filter((a) => a.length > 0) : [];
-  if (!command || args.length === 0) return null;
-  const cwd = asStr(raw.cwd);
-  return cwd ? { command, args, cwd } : { command, args };
-}
-
-/**
- * Move a historical session to another device through the CLI's existing
- * transcript-transport seam, then focus the confirmed-live target pane. Direct
- * `sessions resume --device <different-device>` is intentionally invalid: that
- * flag names the transcript's origin. When the origin is remote, migration must
- * execute there because that is where the indexed transcript lives.
- */
-export function buildRecoveryMigrationCommand(
-  sessionId: string,
-  sourceDevice: string,
-  targetDevice: string,
-  sourceIsLocal = false,
-): string {
-  const migrate = [
-    'agents', 'sessions', 'migrate', shellQuote(sessionId),
-    '--device', shellQuote(targetDevice), '--mode', 'resume', '--keep',
-  ];
-  const source = sourceDevice.trim();
-  const migrateCommand = source && !sourceIsLocal
-    ? ['agents', 'ssh', shellQuote(source), ...migrate].join(' ')
-    : migrate.join(' ');
-  const focus = ['agents', 'sessions', 'focus', shellQuote(sessionId), '--device', shellQuote(targetDevice)].join(' ');
-  return `${migrateCommand} && ${focus}`;
-}
-
-/** Map a recent (historical, non-active) SessionMeta onto RemoteSession. Recent =
- *  not live, so phase is always 'idle'; lastActivity drives the "…ago" stamp. */
-export function normalizeRecentSession(
-  raw: RawRecentSession,
-  host: string,
-  fetchedAt: number,
-  projectRules: ProjectRule[] = []
-): RemoteSession {
-  const cwd = asStr(raw.cwd);
-  const worktreeSlug = asStr(raw.worktreeSlug) || worktreeSlugOf(cwd);
-  const lastActivityMs = raw.lastActivity ? Date.parse(raw.lastActivity) || 0 : 0;
-  const startedAtMs = raw.timestamp ? Date.parse(raw.timestamp) || 0 : 0;
-  return {
-    host,
-    sessionId: asStr(raw.id),
-    agentType: asStr(raw.agent).toLowerCase(),
-    cwd,
-    // Same precedence as the live path (PHNX-3796): the cwd resolves first, so a
-    // user project RULE always wins, and the CLI's own project word is the fallback
-    // for a row with no cwd. This used to be reversed here, which silently ignored
-    // rules for historical rows.
-    project: resolveProject(cwd, projectRules) || asStr(raw.project),
-    confirmedProject: asStr(raw.confirmedProject) || null,
-    phase: 'idle',
-    // A recent (historical, not-live) session is a resumable transcript, not a
-    // running process — surface it as such rather than inventing an orphan state.
-    liveStatus: 'idle',
-    pidAlive: false,
-    activity: '',
-    tokPerSec: 0,
-    artifacts: [],
-    planFile: '',
-    subAgentCount: 0,
-    waitingForInput: false,
-    rateLimited: false,
-    awaitingReason: '',
-    lastResponse: '',
-    // Recent (historical) sessions are idle — no live decision to surface.
-    question: null,
-    tail: [],
-    output: '',
-    attachments: [],
-    prUrl: asStr(raw.prUrl) || null,
-    ticket: asStr(raw.ticketId) || null,
-    createdTickets: Array.isArray(raw.createdTickets) ? raw.createdTickets.map((t: unknown) => String(t)) : [],
-    spawnedTeam: asStr(raw.spawnedTeam),
-    branch: asStr(raw.gitBranch),
-    worktreeSlug,
-    worktreePath: worktreeSlug ? cwd : '',
-    sinceMs: startedAtMs > 0 ? Math.max(0, fetchedAt - startedAtMs) : 0,
-    startedAtMs,
-    lastActivityMs,
-    topic: asStr(raw.topic) || asStr(raw.label),
-    title: asStr(raw.title),
-    model: asStr(raw.model) || undefined,
-    firstUserMessage: asStr(raw.firstUserMessage),
-    label: asStr(raw.label),
-    sessionFile: '',
-    context: 'recent',
-    cloudTaskId: '',
-    cloudProvider: '',
-    teamName: '',
-    pid: 0,
-    transport: '',
-    replyRail: '',
-    replyMuxTarget: '',
-    replyMuxSocket: '',
-    // Recent sessions are historical/idle, not live — no tmux pane or "viewing in"
-    // client to resolve, so both are empty (the required-string default).
-    tmuxPane: '',
-    viewingIn: '',
-    terminalApp: '',
-    observers: [],
-    // Lifecycle + recovery from the CLI picker join. `state` defaults to 'inactive'
-    // (an ended session) so the Sessions surface can classify it as Previous; the
-    // recovery command is the CLI's own `sessions resume … --device <device>`.
-    state: asStr(raw.state) || 'inactive',
-    resumable: raw.resumable === true,
-    recovery: normalizeRecovery(raw.recovery),
-    sourceDevice: asStr(raw.sourceDevice) || host,
-    // Outcome metrics for the Recap ledger. The CLI emits these on the flat
-    // SessionMeta payload; coerce defensively (numeric strings observed in the wild).
-    durationMs: asNum(raw.durationMs),
-    costUsd: asNum(raw.costUsd),
-    tokenCount: asNum(raw.tokenCount),
-  };
-}
-
-/** Phase precedence for dedup — the most attention-worthy record wins. */
-const DEDUPE_PHASE_RANK: Record<RemotePhase, number> = {
-  waiting: 0,
-  failed: 1,
-  running: 2,
-  done: 3,
-  idle: 4,
-};
-
-/**
- * Collapse records that describe the SAME session into one.
- *
- * `agents sessions --active` reports one record per live *process*, but many
- * processes (login shell, node, the agent binary, extra tabs) attach to a single
- * session file — locally we've seen 9 pids resolve to one session. Left alone,
- * the header counts every process while the feed (keyed by session id) renders
- * only the distinct ids, so the count and the list diverge wildly. Dedup by
- * `sessionId` here so a "session" means a session, and keep the record whose phase
- * most needs the user (waiting > failed > running > done > idle) — e.g. one
- * waiting pane among eight running ones surfaces the whole session as waiting.
- * Records with an empty `sessionId` are passed through untouched (can't key them).
- */
-export function dedupeSessions(sessions: RemoteSession[]): RemoteSession[] {
-  const byId = new Map<string, RemoteSession>();
-  const passthrough: RemoteSession[] = [];
-  for (const s of sessions) {
-    if (!s.sessionId) {
-      passthrough.push(s);
-      continue;
-    }
-    const existing = byId.get(s.sessionId);
-    if (!existing || DEDUPE_PHASE_RANK[s.phase] < DEDUPE_PHASE_RANK[existing.phase]) {
-      byId.set(s.sessionId, s);
-    }
-  }
-  return [...byId.values(), ...passthrough];
-}
-
-/**
- * Parse session rows from the CLI payload (string or array) into
- * RemoteSessions for one host. Malformed input yields an empty array rather than
- * throwing, so one bad host never sinks the whole fan-out.
- */
-export function normalizeActiveSessions(
-  payload: string | unknown[],
-  host: string,
-  fetchedAt: number,
-  projectRules: ProjectRule[] = []
-): RemoteSession[] {
-  let arr: unknown[];
-  if (typeof payload === 'string') {
-    try {
-      const parsed = JSON.parse(payload);
-      arr = Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  } else if (Array.isArray(payload)) {
-    arr = payload;
-  } else {
-    return [];
-  }
-  return arr
-    .filter((r): r is RawActiveSession => !!r && typeof r === 'object')
-    .map((r) => normalizeActiveSession(r, host, fetchedAt, projectRules));
-}
-
-/**
- * Group normalized sessions by host into HostGroups. `hosts` supplies the full
- * roster + reachability so offline hosts still appear (with an empty session
- * list) instead of silently vanishing. `fetchedAt` stamps freshness.
- */
-export function groupByHost(
-  sessions: RemoteSession[],
-  hosts: HostInfo[],
-  fetchedAt: number
-): HostGroup[] {
-  const byHost = new Map<string, RemoteSession[]>();
-  for (const s of sessions) {
-    const list = byHost.get(s.host);
-    if (list) list.push(s);
-    else byHost.set(s.host, [s]);
-  }
-  const groups: HostGroup[] = [];
-  const seen = new Set<string>();
-  for (const h of hosts) {
-    seen.add(h.name);
-    groups.push({
-      host: h.name,
-      online: h.online,
-      fetchedAt,
-      sessions: byHost.get(h.name) || [],
-    });
-  }
-  // Any host that produced sessions but was not in the roster (defensive).
-  for (const [host, list] of byHost) {
-    if (seen.has(host)) continue;
-    groups.push({ host, online: true, fetchedAt, sessions: list });
-  }
-  return groups;
 }
 
 /** The two label-bearing fields of one `agents sessions <id> --json` record. */

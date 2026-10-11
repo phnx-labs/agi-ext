@@ -135,7 +135,7 @@ export default Extension.create({
                 editor.chain().focus().deleteRange(range).run();
                 const vscode = getVsCodeApi();
                 if (vscode) {
-                  vscode.postMessage({ type: 'triggerAgent', action: 'ask' });
+                  vscode.postMessage({ type: 'triggerAgent' });
                 }
               },
             },

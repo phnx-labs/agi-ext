@@ -66,7 +66,7 @@ VSIX_OUT="$DIST_DIR/swarm-ext-${VERSION}.vsix"
 bunx @vscode/vsce package --out "$VSIX_OUT"
 
 # Integrity guard: the extension `require()`s these at activation time (yaml in
-# core/agentInventory, sessions.persist, swarmifyConfig; ws in foreman.audio;
+# sessions.persist, swarmifyConfig;
 # sql.js in sessions.vscode for Cursor chat previews).
 # If vsce ever prunes them from the VSIX the extension throws on activate() and
 # EVERY `agents.*` command becomes "command not found" (this shipped once as
@@ -81,7 +81,7 @@ fi
 MISSING=""
 # Exact-line literal match (-xF): the deps contain regex metachars (sql.js) and
 # we want the top-level entry, not a substring.
-for dep in yaml sql.js ws; do
+for dep in yaml sql.js; do
     if ! printf '%s\n' "$VSIX_FILES" | grep -qxF "extension/node_modules/${dep}/package.json"; then
         MISSING="${MISSING} ${dep}"
     fi
@@ -93,6 +93,6 @@ if [ -n "$MISSING" ]; then
     rm -f "$VSIX_OUT"
     exit 1
 fi
-echo "Runtime dependencies present in VSIX (yaml, sql.js, ws)."
+echo "Runtime dependencies present in VSIX (yaml, sql.js)."
 
 echo "Build complete: $VSIX_OUT"

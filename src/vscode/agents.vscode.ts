@@ -3,7 +3,7 @@
 
 import * as vscode from 'vscode';
 import { getIconFilename } from '../core/utils';
-import { BUILT_IN_AGENTS, BuiltInAgentDef } from '../core/agents';
+import { BUILT_IN_AGENTS } from '../core/agents';
 import * as theme from './theme.vscode';
 
 // Runtime agent configuration (requires VS Code types)
@@ -38,14 +38,6 @@ export function getBuiltInByTitle(
 ): Omit<AgentConfig, 'count'> | null {
   const def = BUILT_IN_AGENTS.find(a => a.title === title);
   if (!def) return null;
-  return createAgentConfig(extensionPath, def.title, def.command, def.icon, def.prefix);
-}
-
-// Create agent config from a built-in definition
-export function configFromDef(
-  extensionPath: string,
-  def: BuiltInAgentDef
-): Omit<AgentConfig, 'count'> {
   return createAgentConfig(extensionPath, def.title, def.command, def.icon, def.prefix);
 }
 

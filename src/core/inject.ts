@@ -52,8 +52,8 @@ export function decodeInjectQuery(query: string): InjectPayload | null {
   if (typeof terminalId !== 'string' || !terminalId) return null;
   if (typeof text !== 'string') return null;
 
-  // enter/combined default to true/false when absent or non-boolean, matching
-  // the Ink-safe two-write default the watchdog bridge uses.
+  // enter/combined default to true/false when absent or non-boolean: the
+  // Ink-safe two-write default.
   const enter = typeof obj.enter === 'boolean' ? obj.enter : true;
   const combined = typeof obj.combined === 'boolean' ? obj.combined : false;
 
@@ -62,7 +62,7 @@ export function decodeInjectQuery(query: string): InjectPayload | null {
 
 // Locate the live terminal for an inject payload. The agents-cli passes the
 // session UUID as terminalId, but callers may also pass the internal terminal
-// id, so match on either — same lookup shape the watchdog bridge uses.
+// id, so match on either.
 export function selectInjectTarget<T extends InjectTerminal>(
   terminals: T[],
   terminalId: string

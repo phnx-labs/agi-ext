@@ -1,8 +1,7 @@
 // isLeader() gate — foundation 3/3 of the centralized-monitor epic (#64).
 //
 // `runOnLeaderOnly` is the single seam every heavy starter is wrapped in: the
-// monitor host (here, today) and the migrated probes/watchers/watchdog/panel
-// (#68-71, later). `start` runs once when this window GAINS leadership (or
+// monitor host and the probes and watchers migrated under it (#68-71). `start` runs once when this window GAINS leadership (or
 // immediately if it already holds it); the Disposable it returns is disposed
 // the moment leadership is LOST. Re-gaining leadership starts a fresh instance.
 //

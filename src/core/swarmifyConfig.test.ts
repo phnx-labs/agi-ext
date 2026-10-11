@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  AGENTS_CONFIG_FILENAME,
   AgentsConfig,
   getDefaultConfig,
   parseAgentsConfig,
@@ -8,61 +7,22 @@ import {
   mergeAgentsConfig,
   serializeAgentsConfig,
   isValidAgentId,
-  getContextMappings,
-  getSourceFiles,
-  getAliasesForSource,
 } from './swarmifyConfig';
 
 describe('swarmifyConfig', () => {
-  describe('constants', () => {
-    test('AGENTS_CONFIG_FILENAME is .agents', () => {
-      expect(AGENTS_CONFIG_FILENAME).toBe('.agents');
-    });
-  });
-
-  describe('getDefaultConfig', () => {
-    test('returns default config with AGENTS.md source', () => {
-      const config = getDefaultConfig();
-      expect(config.context[0].source).toBe('AGENTS.md');
-    });
-
-    test('returns default aliases as CLAUDE.md', () => {
-      const config = getDefaultConfig();
-      expect(config.context[0].aliases).toEqual(['CLAUDE.md']);
-    });
-
-    test('returns default agents as claude and codex', () => {
-      const config = getDefaultConfig();
-      expect(config.agents).toEqual(['claude', 'codex']);
-    });
-
-    test('returns default ralph filename as RALPH.md', () => {
-      const config = getDefaultConfig();
-      expect(config.tasks.ralph).toBe('RALPH.md');
-    });
-
-    test('returns default todo filename as TODO.md', () => {
-      const config = getDefaultConfig();
-      expect(config.tasks.todo).toBe('TODO.md');
+  test('the default config links AGENTS.md to CLAUDE.md for claude and codex', () => {
+    expect(getDefaultConfig()).toEqual({
+      context: [{ source: 'AGENTS.md', aliases: ['CLAUDE.md'] }],
+      agents: ['claude', 'codex'],
+      tasks: { ralph: 'RALPH.md', todo: 'TODO.md' },
     });
   });
 
   describe('isValidAgentId', () => {
-    test('returns true for valid agent ids', () => {
-      expect(isValidAgentId('claude')).toBe(true);
-      expect(isValidAgentId('codex')).toBe(true);
-      expect(isValidAgentId('gemini')).toBe(true);
-      expect(isValidAgentId('cursor')).toBe(true);
-      expect(isValidAgentId('opencode')).toBe(true);
-    });
-
     test('accepts every agent the CLI supports, not a hardcoded five (issue #741)', () => {
-      // The old list rejected newer CLI agents like grok and droid, so a valid
-      // `.agents` file silently lost entries on parse.
-      expect(isValidAgentId('grok')).toBe(true);
-      expect(isValidAgentId('droid')).toBe(true);
-      expect(isValidAgentId('antigravity')).toBe(true);
-      expect(isValidAgentId('openclaw')).toBe(true);
+      for (const id of ['claude', 'codex', 'gemini', 'cursor', 'opencode', 'grok', 'droid', 'antigravity', 'openclaw']) {
+        expect(isValidAgentId(id)).toBe(true);
+      }
     });
 
     test('returns false for invalid agent ids', () => {
@@ -72,108 +32,46 @@ describe('swarmifyConfig', () => {
   });
 
   describe('parseAgentsConfig', () => {
-    test('returns defaults for empty string', () => {
-      const config = parseAgentsConfig('');
-      expect(config).toEqual(getDefaultConfig());
+    test('returns defaults for an empty or whitespace-only file', () => {
+      expect(parseAgentsConfig('')).toEqual(getDefaultConfig());
+      expect(parseAgentsConfig('   \n\t  ')).toEqual(getDefaultConfig());
     });
 
-    test('returns defaults for whitespace-only string', () => {
-      const config = parseAgentsConfig('   \n\t  ');
-      expect(config).toEqual(getDefaultConfig());
-    });
-
-    test('parses YAML config with new schema', () => {
-      const yaml = `
-context:
-  - source: CLAUDE.md
-    aliases:
-      - AGENTS.md
-      - GEMINI.md
-agents:
-  - claude
-  - codex
-tasks:
-  ralph: TASKS.md
-  todo: TODOS.md
-`;
-      const config = parseAgentsConfig(yaml);
-      expect(config.context[0].source).toBe('CLAUDE.md');
-      expect(config.context[0].aliases).toEqual(['AGENTS.md', 'GEMINI.md']);
-      expect(config.agents).toEqual(['claude', 'codex']);
-      expect(config.tasks.ralph).toBe('TASKS.md');
-      expect(config.tasks.todo).toBe('TODOS.md');
-    });
-
-    test('parses multiple context mappings', () => {
-      const yaml = `
-context:
-  - source: AGENTS.md
-    aliases:
-      - CLAUDE.md
-  - source: TASKS.md
-    aliases:
-      - TASKS_CLAUDE.md
-      - TASKS_GEMINI.md
-`;
-      const config = parseAgentsConfig(yaml);
-      expect(config.context).toHaveLength(2);
-      expect(config.context[0].source).toBe('AGENTS.md');
-      expect(config.context[0].aliases).toEqual(['CLAUDE.md']);
-      expect(config.context[1].source).toBe('TASKS.md');
-      expect(config.context[1].aliases).toEqual(['TASKS_CLAUDE.md', 'TASKS_GEMINI.md']);
-    });
-
-    test('filters out invalid agent ids', () => {
-      const yaml = `
-agents:
-  - claude
-  - invalid
-  - codex
-`;
-      const config = parseAgentsConfig(yaml);
-      expect(config.agents).toEqual(['claude', 'codex']);
-    });
-
-    test('uses defaults for empty agents array', () => {
-      const yaml = `
-agents: []
-`;
-      const config = parseAgentsConfig(yaml);
-      expect(config.agents).toEqual(['claude', 'codex']); // default
-    });
-
-    test('trims task file names', () => {
-      const yaml = `
-tasks:
-  ralph: "  TASKS.md  "
-  todo: "  TODOS.md  "
-`;
-      const config = parseAgentsConfig(yaml);
-      expect(config.tasks.ralph).toBe('TASKS.md');
-      expect(config.tasks.todo).toBe('TODOS.md');
-    });
-
-    test('uses defaults for empty task file names', () => {
-      const yaml = `
-tasks:
-  ralph: ""
-  todo: "   "
-`;
-      const config = parseAgentsConfig(yaml);
-      expect(config.tasks.ralph).toBe('RALPH.md'); // default
-      expect(config.tasks.todo).toBe('TODO.md'); // default
-    });
-
-    test('trims sources and aliases', () => {
+    test('parses every context mapping, trimming sources, aliases and task names', () => {
       const yaml = `
 context:
   - source: "  AGENTS.md  "
     aliases:
       - "  CLAUDE.md  "
+  - source: TASKS.md
+    aliases:
+      - TASKS_CLAUDE.md
+      - TASKS_GEMINI.md
+agents:
+  - claude
+  - codex
+tasks:
+  ralph: "  TASKS.md  "
+  todo: TODOS.md
 `;
-      const config = parseAgentsConfig(yaml);
-      expect(config.context[0].source).toBe('AGENTS.md');
-      expect(config.context[0].aliases).toEqual(['CLAUDE.md']);
+      expect(parseAgentsConfig(yaml)).toEqual({
+        context: [
+          { source: 'AGENTS.md', aliases: ['CLAUDE.md'] },
+          { source: 'TASKS.md', aliases: ['TASKS_CLAUDE.md', 'TASKS_GEMINI.md'] },
+        ],
+        agents: ['claude', 'codex'],
+        tasks: { ralph: 'TASKS.md', todo: 'TODOS.md' },
+      });
+    });
+
+    test('drops invalid agent ids, and an empty agents list falls back to the default', () => {
+      expect(parseAgentsConfig('agents:\n  - claude\n  - invalid\n  - codex\n').agents).toEqual(['claude', 'codex']);
+      expect(parseAgentsConfig('agents: []\n').agents).toEqual(['claude', 'codex']);
+    });
+
+    test('an empty task file name falls back to the default', () => {
+      const config = parseAgentsConfig('tasks:\n  ralph: ""\n  todo: "   "\n');
+      expect(config.tasks).toEqual({ ralph: 'RALPH.md', todo: 'TODO.md' });
     });
   });
 
@@ -235,90 +133,13 @@ tasks:
     });
   });
 
-  describe('serializeAgentsConfig', () => {
-    test('serializes config to valid YAML', () => {
-      const config = getDefaultConfig();
-      const yaml = serializeAgentsConfig(config);
-
-      // Parse it back to verify
-      const parsed = parseAgentsConfig(yaml);
-      expect(parsed.context).toEqual(config.context);
-      expect(parsed.agents).toEqual(config.agents);
-      expect(parsed.tasks.ralph).toBe(config.tasks.ralph);
-      expect(parsed.tasks.todo).toBe(config.tasks.todo);
-    });
-
-    test('serializes custom config correctly', () => {
-      const config: AgentsConfig = {
-        context: [
-          { source: 'CLAUDE.md', aliases: ['AGENTS.md'] },
-        ],
-        agents: ['claude'],
-        tasks: {
-          ralph: 'TASKS.md',
-          todo: 'TODOS.md',
-        },
-      };
-      const yaml = serializeAgentsConfig(config);
-      const parsed = parseAgentsConfig(yaml);
-
-      expect(parsed.context[0].source).toBe('CLAUDE.md');
-      expect(parsed.context[0].aliases).toEqual(['AGENTS.md']);
-      expect(parsed.agents).toEqual(['claude']);
-      expect(parsed.tasks.ralph).toBe('TASKS.md');
-      expect(parsed.tasks.todo).toBe('TODOS.md');
-    });
-  });
-
-  describe('getContextMappings', () => {
-    test('returns all context mappings', () => {
-      const config: AgentsConfig = {
-        context: [
-          { source: 'AGENTS.md', aliases: ['CLAUDE.md'] },
-          { source: 'TASKS.md', aliases: ['TASKS_CLAUDE.md'] },
-        ],
-        agents: ['claude'],
-        tasks: { ralph: 'RALPH.md', todo: 'TODO.md' },
-      };
-      const mappings = getContextMappings(config);
-      expect(mappings).toHaveLength(2);
-      expect(mappings[0].source).toBe('AGENTS.md');
-      expect(mappings[1].source).toBe('TASKS.md');
-    });
-  });
-
-  describe('getSourceFiles', () => {
-    test('returns all source files from config', () => {
-      const config: AgentsConfig = {
-        context: [
-          { source: 'AGENTS.md', aliases: ['CLAUDE.md'] },
-          { source: 'TASKS.md', aliases: ['TASKS_CLAUDE.md'] },
-        ],
-        agents: ['claude'],
-        tasks: { ralph: 'RALPH.md', todo: 'TODO.md' },
-      };
-      const sources = getSourceFiles(config);
-      expect(sources).toEqual(['AGENTS.md', 'TASKS.md']);
-    });
-  });
-
-  describe('getAliasesForSource', () => {
-    test('returns aliases for a specific source', () => {
-      const config: AgentsConfig = {
-        context: [
-          { source: 'AGENTS.md', aliases: ['CLAUDE.md'] },
-          { source: 'TASKS.md', aliases: ['TASKS_CLAUDE.md'] },
-        ],
-        agents: ['claude'],
-        tasks: { ralph: 'RALPH.md', todo: 'TODO.md' },
-      };
-      expect(getAliasesForSource(config, 'AGENTS.md')).toEqual(['CLAUDE.md']);
-      expect(getAliasesForSource(config, 'TASKS.md')).toEqual(['TASKS_CLAUDE.md']);
-    });
-
-    test('returns empty array for unknown source', () => {
-      const config = getDefaultConfig();
-      expect(getAliasesForSource(config, 'UNKNOWN.md')).toEqual([]);
-    });
+  test('serializeAgentsConfig round-trips through parseAgentsConfig', () => {
+    const config: AgentsConfig = {
+      context: [{ source: 'CLAUDE.md', aliases: ['AGENTS.md'] }],
+      agents: ['claude'],
+      tasks: { ralph: 'TASKS.md', todo: 'TODOS.md' },
+    };
+    expect(parseAgentsConfig(serializeAgentsConfig(config))).toEqual(config);
+    expect(parseAgentsConfig(serializeAgentsConfig(getDefaultConfig()))).toEqual(getDefaultConfig());
   });
 });

@@ -1,51 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { activeMapCacheKey, fetchTerminalIdSessionMap, needsSessionIdHydrate, planSessionStreamRebinds, resolveSessionIdForTerminal } from './sessionIdHydrate';
+import { activeMapCacheKey, fetchTerminalIdSessionMap, needsSessionIdHydrate } from './sessionIdHydrate';
 import { sessionPresentationStore } from './sessionPresentationStore';
 
 afterEach(() => sessionPresentationStore.clear());
 
 describe('session id hydration from the canonical CLI stream', () => {
-  test('keeps A while A/B are ambiguous, then binds B after A is removed', () => {
-    const sessionA = '11111111-1111-4111-8111-111111111111';
-    const sessionB = '22222222-2222-4222-8222-222222222222';
-    const observerTerminals = [{ device: 'desktop', terminalId: 'CX-reused' }];
-    sessionPresentationStore.apply({
-      v: 1,
-      type: 'reset',
-      streamId: 'rebind', sequence: 1, capturedAt: 100, scope: 'worker', attention: [],
-      agents: [{ rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, startedAtMs: 100, observerTerminals }],
-    });
-    const tab = { id: 'CX-reused', host: 'worker', sessionId: sessionA };
-
-    sessionPresentationStore.apply({
-      v: 1,
-      type: 'agent.upsert',
-      streamId: 'rebind', sequence: 2, capturedAt: 200, scope: 'worker', rowKey: 'b',
-      agent: { rowKey: 'b', sourceDevice: 'worker', machine: 'worker', sessionId: sessionB, startedAtMs: 200, observerTerminals },
-    });
-    expect(planSessionStreamRebinds([tab], 'desktop', { localHostname: 'desktop' }))
-      .toEqual([]);
-    expect(tab.sessionId).toBe(sessionA);
-
-    sessionPresentationStore.apply({
-      v: 1,
-      type: 'agent.remove',
-      streamId: 'rebind', sequence: 3, capturedAt: 300, scope: 'worker', rowKey: 'a',
-    });
-    expect(planSessionStreamRebinds([tab], 'desktop', { localHostname: 'desktop' }))
-      .toEqual([{ id: 'CX-reused', canonicalId: sessionB }]);
-    tab.sessionId = sessionB;
-
-    sessionPresentationStore.apply({
-      v: 1,
-      type: 'agent.upsert',
-      streamId: 'rebind', sequence: 4, capturedAt: 400, scope: 'worker', rowKey: 'a',
-      agent: { rowKey: 'a', sourceDevice: 'worker', machine: 'worker', sessionId: sessionA, previous: true, startedAtMs: 100, observerTerminals },
-    });
-    expect(planSessionStreamRebinds([tab], 'desktop', { localHostname: 'desktop' })).toEqual([]);
-    expect(tab.sessionId).toBe(sessionB);
-  });
-
   test('a local session (owner is this desktop) maps its top-level terminal id', async () => {
     sessionPresentationStore.apply({
       v: 1,
@@ -54,35 +13,20 @@ describe('session id hydration from the canonical CLI stream', () => {
       agents: [{ rowKey: 'one', sourceDevice: 'desktop', sessionId: 'session-1', terminalId: 'CX-1', machine: 'desktop' }], attention: [],
     });
     expect(await fetchTerminalIdSessionMap('desktop', { localHostname: 'desktop' })).toEqual(new Map([['CX-1', 'session-1']]));
-    expect(await resolveSessionIdForTerminal('CX-1', 'desktop', { localHostname: 'desktop' })).toBe('session-1');
   });
 
-  test('a worker session observed from a desktop resolves via its observerTerminals binding (PHNX-3939)', async () => {
-    // The agent runs on box-a; its live terminal is a tab on THIS desktop. The
-    // owner may carry no top-level terminalId — the desktop binding rides in
-    // observerTerminals. resolveSessionIdForTerminal must still find it.
+  test('a worker session maps through THIS desktop\'s observerTerminals binding, scoped by host (PHNX-3939)', async () => {
     sessionPresentationStore.apply({
       v: 1,
       type: 'reset',
-      streamId: 'stream-a', sequence: 1, capturedAt: 1, scope: 'box-a',
-      agents: [{ rowKey: 'one', sourceDevice: 'box-a', sessionId: 'session-1', machine: 'box-a', observerTerminals: [{ device: 'desktop', terminalId: 'CX-1' }] }], attention: [],
-    });
-    expect(await resolveSessionIdForTerminal('CX-1', 'box-a', { localHostname: 'desktop' })).toBe('session-1');
-    // A remote owner's absence of an observer binding for THIS desktop yields nothing.
-    expect(await resolveSessionIdForTerminal('CX-1', 'box-a', { localHostname: 'other-desktop' })).toBeUndefined();
-  });
-
-  test('scopes remote rows by host via observer bindings', async () => {
-    sessionPresentationStore.apply({
-      v: 1,
-      type: 'reset',
-      streamId: 'stream-b', sequence: 1, capturedAt: 1, scope: 'fleet',
+      streamId: 'stream-b', sequence: 1, capturedAt: 1, scope: 'workers',
       agents: [
         { rowKey: 'one', sourceDevice: 'box-a', sessionId: 'one', machine: 'box-a', observerTerminals: [{ device: 'desktop', terminalId: 'T-1' }] },
         { rowKey: 'two', sourceDevice: 'box-b', sessionId: 'two', machine: 'box-b', observerTerminals: [{ device: 'desktop', terminalId: 'T-2' }] },
       ], attention: [],
     });
     expect(await fetchTerminalIdSessionMap('box-a', { localHostname: 'desktop' })).toEqual(new Map([['T-1', 'one']]));
+    expect((await fetchTerminalIdSessionMap('box-a', { localHostname: 'other-desktop' })).size).toBe(0);
   });
 });
 

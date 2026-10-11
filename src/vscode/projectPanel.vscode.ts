@@ -36,10 +36,10 @@ import {
   type TicketGroup,
 } from '../core/projectPanel';
 import { sessionStateOf } from '../shared/sessionState';
-import { currentAgentPanelSubject, setAgentPanelSubjectFromFleet } from './agentPanel.vscode';
+import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
-import { runSessionCardAction } from './sessionCardActions';
+import { openListedArtifact } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
@@ -469,7 +469,7 @@ class ProjectPanelController {
   }
 
   async openArtifact(sessionId: string, host: string | undefined, filePath: string): Promise<void> {
-    await runSessionCardAction({ sessionId, host, action: { type: 'openArtifact', path: filePath } }, this.presented(), () => undefined);
+    await openListedArtifact(sessionId, host, filePath, this.presented());
   }
 
   private here(webview: vscode.Webview): SessionHere {
@@ -516,7 +516,7 @@ class ProjectPanelController {
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
   select(sessionId: string, host: string | undefined): void {
-    setAgentPanelSubjectFromFleet(sessionId, host);
+    setAgentPanelSubjectFromProject(sessionId, host);
     void this.view.redrawSessions();
   }
 

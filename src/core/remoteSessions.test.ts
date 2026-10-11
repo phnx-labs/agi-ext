@@ -5,22 +5,14 @@ import {
   mapStatusToPhase,
   normalizeHost,
   resolveSessionHost,
-  projectFromCwd,
   resolveProject,
   normalizeActiveSession,
-  normalizeActiveSessions,
-  normalizeRecentSession,
-  buildRecoveryMigrationCommand,
   normalizeQuestion,
-  dedupeSessions,
-  groupByHost,
-  reconcileHosts,
   dialablePeerScopes,
   parseSessionLabelSource,
   isDerivedSessionName,
   type RemoteSession,
   type RawActiveSession,
-  type ProjectRule,
 } from './remoteSessions';
 
 const TESTDATA = path.join(__dirname, 'testdata');
@@ -99,87 +91,18 @@ describe('mapStatusToPhase', () => {
   });
 });
 
-describe('projectFromCwd', () => {
-  test('folds a worktree path to its repo', () => {
-    expect(
-      projectFromCwd('/Users/muqsit/src/github.com/muqsitnawaz/swarmify/.agents/worktrees/factory-floor-port')
-    ).toBe('swarmify');
-  });
-  test('uses the basename for a plain repo path', () => {
-    expect(projectFromCwd('/Users/muqsit/src/github.com/muqsitnawaz/agents')).toBe('agents');
-  });
-  test('tolerates trailing slashes and empty input', () => {
-    expect(projectFromCwd('/a/b/repo/')).toBe('repo');
-    expect(projectFromCwd('')).toBe('');
-  });
-});
-
 describe('resolveProject', () => {
-  const RULES: ProjectRule[] = [
-    { pattern: '**/agents/prix/api', project: 'Prix API' },
-    { pattern: '**/agents/prix/app', project: 'Prix App' },
-    { pattern: '/home/muqsit/src/monorepo', project: 'Monorepo Root' },
-  ];
-
-  test('a user rule wins over every default (glob match, first match wins)', () => {
-    // Both prix rules could conceptually apply to a deep path; the FIRST listed wins.
-    expect(resolveProject('/home/muqsit/src/github.com/o/agents/prix/api', RULES)).toBe('Prix API');
-    expect(resolveProject('/home/muqsit/src/github.com/o/agents/prix/app', RULES)).toBe('Prix App');
-  });
-
-  test('a glob rule also captures work inside the matched directory', () => {
-    expect(resolveProject('/x/y/agents/prix/api/src/routes', RULES)).toBe('Prix API');
-  });
-
-  test('a path-prefix rule (no glob) matches the dir and its descendants', () => {
-    expect(resolveProject('/home/muqsit/src/monorepo', RULES)).toBe('Monorepo Root');
-    expect(resolveProject('/home/muqsit/src/monorepo/packages/api', RULES)).toBe('Monorepo Root');
-    // A sibling that only shares a prefix string but not a path boundary must NOT match.
-    expect(resolveProject('/home/muqsit/src/monorepo-two', RULES)).toBe('monorepo-two');
-  });
-
-  test('rules take precedence over the git-repo-root default', () => {
-    expect(
-      resolveProject('/home/muqsit/src/github.com/o/agents/prix/api', RULES, '/home/muqsit/src/github.com/o/agents')
-    ).toBe('Prix API');
-  });
-
-  test('a monorepo subdir with no rule folds to its git repo root basename', () => {
-    // Without a rule, the leaf-dir default would say "api"; repoRoot folds it to the repo.
-    expect(resolveProject('/home/muqsit/src/github.com/o/agents/prix/api', [], '/home/muqsit/src/github.com/o/agents')).toBe('agents');
-  });
-
-  test('worktree folding beats the git-repo-root default', () => {
-    // A git worktree root basename is the slug; the path fold must win and yield the repo.
-    expect(
-      resolveProject(
-        '/Users/muqsit/src/github.com/muqsitnawaz/swarmify/.agents/worktrees/floor-port',
-        [],
-        '/Users/muqsit/src/github.com/muqsitnawaz/swarmify/.agents/worktrees/floor-port'
-      )
-    ).toBe('swarmify');
-  });
-
-  test('with no rules and no repoRoot it is the legacy last-segment behavior', () => {
+  test('folds a worktree to its repo, else the last path segment', () => {
+    expect(resolveProject('/Users/muqsit/src/github.com/muqsitnawaz/swarmify/.agents/worktrees/factory-floor-port')).toBe('swarmify');
     expect(resolveProject('/home/muqsit/src/github.com/o/prix-api')).toBe('prix-api');
+    expect(resolveProject('/a/b/repo/')).toBe('repo');
     expect(resolveProject('')).toBe('');
-  });
-
-  test('normalizeActiveSession applies the rules to the session project', () => {
-    const s = normalizeActiveSession(
-      { kind: 'claude', status: 'running', cwd: '/x/y/agents/prix/api', sessionFile: '/x/aaaaaaaa.jsonl' } as RawActiveSession,
-      'zion',
-      FETCHED_AT,
-      RULES
-    );
-    expect(s.project).toBe('Prix API');
   });
 
   test('carries the CLI confirmedProject, null when the cwd is in no defined project (PHNX-4289)', () => {
     const base = { kind: 'claude', status: 'running', cwd: '/x/y/agents-cli', sessionFile: '/x/aaaaaaaa.jsonl' };
     expect(normalizeActiveSession({ ...base, confirmedProject: 'agi' } as RawActiveSession, 'zion', FETCHED_AT).confirmedProject).toBe('agi');
     expect(normalizeActiveSession({ ...base, confirmedProject: null } as RawActiveSession, 'zion', FETCHED_AT).confirmedProject).toBeNull();
-    expect(normalizeRecentSession({ id: 'r1', agent: 'claude', cwd: '/x', confirmedProject: 'rush' } as never, 'zion', FETCHED_AT).confirmedProject).toBe('rush');
   });
 
   test('copies the glance fields verbatim and drops malformed entries', () => {
@@ -322,9 +245,8 @@ describe('resolveProject', () => {
       { kind: 'claude', status: 'running', cwd: '/x/y/agents/prix/api', project: 'something-else', sessionFile: '/x/aaaaaaaa.jsonl' } as RawActiveSession,
       'zion',
       FETCHED_AT,
-      RULES
     );
-    expect(local.project).toBe('Prix API');
+    expect(local.project).toBe('api');
 
     // With no cwd there is nothing to resolve, so the CLI's own word is the only
     // repo hint there is — dropping it is what left cloud rows with a blank project.
@@ -332,16 +254,14 @@ describe('resolveProject', () => {
       { kind: 'claude', status: 'running', context: 'cloud', cloudTaskId: 't1', project: 'phnx-labs/agi-ext' } as RawActiveSession,
       'pinnacles',
       FETCHED_AT,
-      RULES
     );
     expect(cloud.project).toBe('phnx-labs/agi-ext');
 
-    // A genuinely repo-less row still resolves to '' (the webview's Unassigned bucket).
+    // A genuinely repo-less row still resolves to ''.
     const bare = normalizeActiveSession(
       { kind: 'claude', status: 'running', context: 'cloud', cloudTaskId: 't2' } as RawActiveSession,
       'pinnacles',
       FETCHED_AT,
-      RULES
     );
     expect(bare.project).toBe('');
   });
@@ -449,23 +369,12 @@ describe('normalizeActiveSession', () => {
     }
   });
 
-  test('normalizes createdTickets to a string[] and spawnedTeam to a string', () => {
+  test('normalizes spawnedTeam to a string', () => {
     const base = ACTIVE.find((r) => r.context === 'terminal')!;
-    // Well-formed input passes through.
-    const ok = normalizeActiveSession(
-      { ...base, createdTickets: ['RUSH-1519', 'RUSH-1520'], spawnedTeam: 'redesign' } as unknown as RawActiveSession,
-      'this-mac', FETCHED_AT,
-    );
-    expect(ok.createdTickets).toEqual(['RUSH-1519', 'RUSH-1520']);
+    const ok = normalizeActiveSession({ ...base, spawnedTeam: 'redesign' } as unknown as RawActiveSession, 'this-mac', FETCHED_AT);
     expect(ok.spawnedTeam).toBe('redesign');
-    // Malformed input (object where an array/string is expected) must not leak through
-    // as a non-array/non-string — these render as React children on the card.
-    const bad = normalizeActiveSession(
-      { ...base, createdTickets: { id: 'x' }, spawnedTeam: { name: 'foo' } } as unknown as RawActiveSession,
-      'this-mac', FETCHED_AT,
-    );
-    expect(Array.isArray(bad.createdTickets)).toBe(true);
-    expect(bad.createdTickets).toEqual([]);
+    // An object where a string is expected must not leak through: it renders as a card child.
+    const bad = normalizeActiveSession({ ...base, spawnedTeam: { name: 'foo' } } as unknown as RawActiveSession, 'this-mac', FETCHED_AT);
     expect(typeof bad.spawnedTeam).toBe('string');
   });
 
@@ -515,14 +424,6 @@ describe('normalizeActiveSession', () => {
     expect(s.phase).toBe('running');
   });
 
-  test('carries cloud task id + provider + context through for the reply channel', () => {
-    const cloud = ACTIVE.find((r) => r.context === 'cloud' && r.status === 'queued')!;
-    const s = normalizeActiveSession(cloud, 'cloud', FETCHED_AT);
-    expect(s.context).toBe('cloud');
-    expect(s.cloudTaskId).toBe('task_e');
-    expect(s.cloudProvider).toBe(cloud.cloudProvider ?? '');
-  });
-
   test('carries pid for terminal records (0 when absent)', () => {
     const terminal = ACTIVE.find((r) => r.context === 'terminal')!;
     const s = normalizeActiveSession(terminal, 'this-mac', FETCHED_AT);
@@ -530,47 +431,12 @@ describe('normalizeActiveSession', () => {
     expect(s.teamName).toBe(terminal.teamName ?? '');
   });
 
-  test('captures the tmux reply rail (socket + pane) from provenance', () => {
+  test('carries the CLI viewingIn words', () => {
     const s = normalizeActiveSession(
-      { context: 'terminal', kind: 'claude', sessionId: 'abc', status: 'running',
-        provenance: { transport: 'ssh', reply: { rail: 'tmux', target: '%65', socket: '/tmp/tmux-1000/default' } } },
-      'yosemite-s0', FETCHED_AT,
-    );
-    expect(s.transport).toBe('ssh');
-    expect(s.replyRail).toBe('tmux');
-    expect(s.replyMuxTarget).toBe('%65');
-    expect(s.replyMuxSocket).toBe('/tmp/tmux-1000/default');
-  });
-
-  test('captures the session pane from provenance.mux and viewingIn', () => {
-    const s = normalizeActiveSession(
-      { context: 'terminal', kind: 'claude', sessionId: 'abc', status: 'running',
-        viewingIn: 'Codium tab 3',
-        provenance: { transport: 'local', mux: { pane: '%42', socket: '/sock', session: 'agents-1' } } },
+      { context: 'terminal', kind: 'claude', sessionId: 'abc', status: 'running', viewingIn: 'Codium tab 3' },
       'this-mac', FETCHED_AT,
     );
-    expect(s.tmuxPane).toBe('%42');
     expect(s.viewingIn).toBe('Codium tab 3');
-  });
-
-  test('tmuxPane falls back to the reply-rail pane when mux is absent', () => {
-    const s = normalizeActiveSession(
-      { context: 'terminal', kind: 'claude', sessionId: 'abc', status: 'running',
-        provenance: { transport: 'ssh', reply: { rail: 'tmux', target: '%65', socket: '/tmp/s' } } },
-      'yosemite-s0', FETCHED_AT,
-    );
-    expect(s.tmuxPane).toBe('%65');
-    expect(s.viewingIn).toBe('');
-  });
-
-  test('a raw TTY with reply=null carries no rail', () => {
-    const s = normalizeActiveSession(
-      { context: 'terminal', kind: 'claude', sessionId: 'ghost', status: 'running',
-        provenance: { transport: 'local', reply: null } },
-      'this-mac', FETCHED_AT,
-    );
-    expect(s.replyRail).toBe('');
-    expect(s.replyMuxTarget).toBe('');
   });
 
   test('extracts a ticket id from label/topic', () => {
@@ -584,26 +450,6 @@ describe('normalizeActiveSession', () => {
     const s = normalizeActiveSession(backend, 'this-mac', FETCHED_AT);
     expect(s.sinceMs).toBe(FETCHED_AT - 1782865917676);
     expect(s.startedAtMs).toBe(1782865917676);
-  });
-});
-
-describe('normalizeActiveSessions', () => {
-  test('parses the whole fixture (string or array) to one record each', () => {
-    const fromArray = normalizeActiveSessions(ACTIVE, 'this-mac', FETCHED_AT);
-    const fromString = normalizeActiveSessions(
-      JSON.stringify(ACTIVE),
-      'this-mac',
-      FETCHED_AT
-    );
-    expect(fromArray.length).toBe(ACTIVE.length);
-    expect(fromString.length).toBe(ACTIVE.length);
-    expect(fromString[0].sessionId).toBe(fromArray[0].sessionId);
-  });
-
-  test('malformed payload yields [] rather than throwing', () => {
-    expect(normalizeActiveSessions('not json', 'h', FETCHED_AT)).toEqual([]);
-    expect(normalizeActiveSessions('{"not":"an array"}', 'h', FETCHED_AT)).toEqual([]);
-    expect(normalizeActiveSessions([null as unknown as object, 42 as unknown as object], 'h', FETCHED_AT)).toEqual([]);
   });
 });
 
@@ -692,33 +538,6 @@ describe('live signals from the CLI payload (issue #741)', () => {
   });
 });
 
-describe('groupByHost', () => {
-  test('keeps offline hosts as empty groups and folds sessions in', () => {
-    const sessions = normalizeActiveSessions(ACTIVE, 'this-mac', FETCHED_AT);
-    const groups = groupByHost(
-      sessions,
-      [
-        { name: 'this-mac', online: true },
-        { name: 'mac-mini', online: false },
-      ],
-      FETCHED_AT
-    );
-    const local = groups.find((g) => g.host === 'this-mac')!;
-    const remote = groups.find((g) => g.host === 'mac-mini')!;
-    expect(local.online).toBe(true);
-    expect(local.sessions.length).toBe(ACTIVE.length);
-    expect(local.fetchedAt).toBe(FETCHED_AT);
-    expect(remote.online).toBe(false);
-    expect(remote.sessions).toEqual([]);
-  });
-
-  test('surfaces sessions from a host missing from the roster', () => {
-    const orphan = normalizeActiveSessions(ACTIVE, 'rogue-host', FETCHED_AT);
-    const groups = groupByHost(orphan, [{ name: 'this-mac', online: true }], FETCHED_AT);
-    expect(groups.find((g) => g.host === 'rogue-host')?.sessions.length).toBe(ACTIVE.length);
-  });
-});
-
 describe('normalizeActiveSession — topic', () => {
   test('carries the topic (or falls back to the cloud label) so remote cards are not blank', () => {
     const term = normalizeActiveSession(
@@ -755,105 +574,6 @@ describe('normalizeActiveSession — topic', () => {
   });
 });
 
-describe('dedupeSessions', () => {
-  // Real-world: `agents sessions --active` reports one record per live process,
-  // but many processes (shell, node, agent binary, extra tabs) share one session
-  // file. Nine pids resolving to one session must collapse to one card, or the
-  // header count and the feed diverge.
-  const many = (sessionFile: string, statuses: string[]): RemoteSession[] =>
-    statuses.map((status) =>
-      normalizeActiveSession(
-        { kind: 'claude', status, sessionFile, topic: 'shared session' } as RawActiveSession,
-        'zion',
-        FETCHED_AT
-      )
-    );
-
-  test('collapses processes that share one session file into a single session', () => {
-    const sessions = many('/x/24d7304d.jsonl', ['running', 'running', 'running', 'running']);
-    const unique = dedupeSessions(sessions);
-    expect(unique.length).toBe(1);
-    expect(unique[0].sessionId).toBe('24d7304d');
-  });
-
-  test('keeps the most attention-worthy phase (waiting beats running)', () => {
-    const sessions = many('/x/24d7304d.jsonl', ['running', 'running', 'input_required', 'running']);
-    const unique = dedupeSessions(sessions);
-    expect(unique.length).toBe(1);
-    expect(unique[0].phase).toBe('waiting');
-  });
-
-  test('does not merge distinct sessions, and passes through records with no id', () => {
-    const a = many('/x/aaaaaaaa.jsonl', ['running']);
-    const b = many('/x/bbbbbbbb.jsonl', ['running', 'idle']);
-    const noId = normalizeActiveSession({ kind: 'claude', status: 'running' } as RawActiveSession, 'zion', FETCHED_AT);
-    expect(noId.sessionId).toBe('');
-    const unique = dedupeSessions([...a, ...b, noId]);
-    // 2 distinct session files collapse to 2; the id-less record is kept as-is.
-    expect(unique.length).toBe(3);
-  });
-
-  test('collapses the SAME session id reported by two different hosts into one', () => {
-    // The reported bug: session 667403f9 was counted on BOTH yosemite-s1 and zion.
-    // dedupeSessions keys purely by sessionId, so run over the merged cross-host set
-    // it collapses the pair to one — the attention-worthy phase (waiting) survives.
-    const onHostA = normalizeActiveSession(
-      { kind: 'claude', status: 'running', sessionFile: '/x/667403f9.jsonl' } as RawActiveSession,
-      'yosemite-s1',
-      FETCHED_AT,
-    );
-    const onHostB = normalizeActiveSession(
-      { kind: 'claude', status: 'input_required', sessionFile: '/x/667403f9.jsonl' } as RawActiveSession,
-      'zion',
-      FETCHED_AT,
-    );
-    const unique = dedupeSessions([onHostA, onHostB]);
-    expect(unique.length).toBe(1);
-    expect(unique[0].sessionId).toBe('667403f9');
-    expect(unique[0].phase).toBe('waiting');
-  });
-});
-
-describe('reconcileHosts — scope the roster to the device registry + local machine', () => {
-  test('surfaces only registered devices + the always-online local machine', () => {
-    const hosts = reconcileHosts(
-      [
-        { name: 'mac-mini', address: 'mac-mini.tail.ts.net', online: true },
-        { name: 'zion', address: 'zion.tail.ts.net', online: false },
-      ],
-      'yosemite-s1',
-    );
-    const byName = new Map(hosts.map((h) => [h.name, h]));
-    expect([...byName.keys()].sort()).toEqual(['mac-mini', 'yosemite-s1', 'zion']);
-    // Local machine: always online, queried directly (no ssh address).
-    expect(byName.get('yosemite-s1')).toEqual({ name: 'yosemite-s1', address: '', online: true, isLocal: true });
-    // Registered remote: ssh reachable at its dnsName, online flag honored.
-    expect(byName.get('mac-mini')).toEqual({ name: 'mac-mini', address: 'mac-mini.tail.ts.net', online: true, isLocal: false });
-    expect(byName.get('zion')!.online).toBe(false);
-  });
-
-  test('does NOT surface ssh-config aliases or tailnet peers (the phantom hosts)', () => {
-    // reconcileHosts is fed ONLY the device registry, so aliases/peers never reach it.
-    const hosts = reconcileHosts([{ name: 'mac-mini', online: true }], 'zion');
-    const names = hosts.map((h) => h.name);
-    for (const phantom of ['mark', 'mark-aws', 'phoenix', 'pi', 'localhost']) {
-      expect(names).not.toContain(phantom);
-    }
-  });
-
-  test('an FQDN / case-variant local hostname folds onto its registry device', () => {
-    const hosts = reconcileHosts(
-      [{ name: 'zion', address: 'zion.tail.ts.net', online: true }],
-      'ZION.local',
-    );
-    // Only one 'zion' row, and it is the local machine (address '', isLocal true) —
-    // the registry entry was folded in, not listed a second time over ssh.
-    const zions = hosts.filter((h) => h.name === 'zion');
-    expect(zions.length).toBe(1);
-    expect(zions[0]).toEqual({ name: 'zion', address: '', online: true, isLocal: true });
-  });
-});
-
 describe('dialablePeerScopes — the peers the follower-degraded gate may wait on (PHNX-2735)', () => {
   test('includes online POSIX/Windows peers, normalized, excluding the local machine', () => {
     const scopes = dialablePeerScopes([
@@ -883,130 +603,6 @@ describe('dialablePeerScopes — the peers the follower-degraded gate may wait o
       { name: 'iphone182', online: true, platform: undefined },
     ], 'zion');
     expect(scopes).toEqual(['yosemite-s0']);
-  });
-});
-
-describe('normalizeRecentSession outcome metrics', () => {
-  const base = {
-    id: 'abc-123',
-    agent: 'Claude',
-    timestamp: '2026-07-10T10:00:00.000Z',
-    lastActivity: '2026-07-10T10:42:00.000Z',
-    cwd: '/repo',
-    topic: 'Ship the recap',
-  };
-
-  test('carries durationMs / costUsd / tokenCount through, coercing numeric strings', () => {
-    const s = normalizeRecentSession(
-      { ...base, durationMs: '2562344', costUsd: 5.6019435, tokenCount: '2849270' },
-      'zion',
-      Date.parse('2026-07-10T11:00:00.000Z'),
-    );
-    expect(s.durationMs).toBe(2562344);
-    expect(s.costUsd).toBeCloseTo(5.6019435);
-    expect(s.tokenCount).toBe(2849270);
-  });
-
-  test('a historical row resolves its cwd first, so project RULES win over the CLI word (PHNX-3796)', () => {
-    const withCwd = normalizeRecentSession(
-      { ...base, cwd: '/x/y/agents/prix/api', project: 'something-else' },
-      'zion',
-      FETCHED_AT,
-      [{ pattern: '**/agents/prix/api', project: 'Prix API' }]
-    );
-    expect(withCwd.project).toBe('Prix API');
-
-    // No cwd -> the CLI's own word is the only hint, same as the live path.
-    const cwdless = normalizeRecentSession(
-      { ...base, cwd: '', project: 'phnx-labs/agi-ext' },
-      'zion',
-      FETCHED_AT,
-      [{ pattern: '**/agents/prix/api', project: 'Prix API' }]
-    );
-    expect(cwdless.project).toBe('phnx-labs/agi-ext');
-  });
-
-  test('preserves the recap title and full first user turn on historical rows', () => {
-    const s = normalizeRecentSession({
-      ...base,
-      title: 'Shipping the recap ledger',
-      firstUserMessage: 'Ship the recap ledger.\nDo not lose this second line.',
-    }, 'zion', Date.now());
-    expect(s.title).toBe('Shipping the recap ledger');
-    expect(s.firstUserMessage).toBe('Ship the recap ledger.\nDo not lose this second line.');
-  });
-
-  test('missing or garbage metrics land as 0, never NaN', () => {
-    const s = normalizeRecentSession({ ...base, costUsd: 'n/a' }, 'zion', Date.now());
-    expect(s.durationMs).toBe(0);
-    expect(s.costUsd).toBe(0);
-    expect(s.tokenCount).toBe(0);
-  });
-});
-
-describe('normalizeRecentSession — SessionPickerJsonRow lifecycle/recovery fields (PHNX-3593)', () => {
-  const base = {
-    id: 'abc-123',
-    agent: 'Claude',
-    timestamp: '2026-08-30T10:00:00.000Z',
-    lastActivity: '2026-08-30T10:42:00.000Z',
-    cwd: '/repo',
-    topic: 'Fold in previous sessions',
-  };
-
-  test('carries state / resumable / sourceDevice + the CLI recovery command', () => {
-    const s = normalizeRecentSession(
-      {
-        ...base,
-        state: 'inactive',
-        resumable: true,
-        sourceDevice: 'yosemite-s0',
-        recovery: { command: 'agents', args: ['sessions', 'resume', 'abc-123', '--device', 'yosemite-s0'], cwd: '/repo' },
-      },
-      'yosemite-s0',
-      Date.parse('2026-08-30T11:00:00.000Z'),
-    );
-    expect(s.state).toBe('inactive');
-    expect(s.resumable).toBe(true);
-    expect(s.sourceDevice).toBe('yosemite-s0');
-    expect(s.recovery).toEqual({ command: 'agents', args: ['sessions', 'resume', 'abc-123', '--device', 'yosemite-s0'], cwd: '/repo' });
-  });
-
-  test('a non-resumable harness lands recovery null, resumable false', () => {
-    const s = normalizeRecentSession({ ...base, agent: 'grok', resumable: false, recovery: null }, 'zion', Date.now());
-    expect(s.resumable).toBe(false);
-    expect(s.recovery).toBeNull();
-  });
-
-  test('a malformed recovery (empty args) normalizes to null, never a dead command', () => {
-    const s = normalizeRecentSession({ ...base, resumable: true, recovery: { command: 'agents', args: [] } }, 'zion', Date.now());
-    expect(s.recovery).toBeNull();
-  });
-
-  test('state defaults to inactive and sourceDevice to the queried host when the CLI omits them', () => {
-    const s = normalizeRecentSession({ ...base }, 'mac-mini', Date.now());
-    expect(s.state).toBe('inactive');
-    expect(s.sourceDevice).toBe('mac-mini');
-  });
-});
-
-describe('buildRecoveryMigrationCommand — alternate-device recovery (PHNX-3621)', () => {
-  test('transports from the owning peer before focusing the selected target', () => {
-    expect(buildRecoveryMigrationCommand('abc-123', 'yosemite-s0', 'yosemite-m3')).toBe(
-      "agents ssh 'yosemite-s0' agents sessions migrate 'abc-123' --device 'yosemite-m3' --mode resume --keep && agents sessions focus 'abc-123' --device 'yosemite-m3'",
-    );
-  });
-
-  test('runs migration locally when the source is this device', () => {
-    expect(buildRecoveryMigrationCommand('abc-123', 'zion', 'yosemite-m3', true)).toBe(
-      "agents sessions migrate 'abc-123' --device 'yosemite-m3' --mode resume --keep && agents sessions focus 'abc-123' --device 'yosemite-m3'",
-    );
-  });
-
-  test('quotes every streamed identity before it reaches a shell', () => {
-    expect(buildRecoveryMigrationCommand("x'; whoami #", 'source box', 'target box')).toBe(
-      "agents ssh 'source box' agents sessions migrate 'x'\\''; whoami #' --device 'target box' --mode resume --keep && agents sessions focus 'x'\\''; whoami #' --device 'target box'",
-    );
   });
 });
 
@@ -1079,63 +675,53 @@ describe('parseSessionLabelSource', () => {
   // labelled at all.
   const record = (session: Record<string, unknown>) => JSON.stringify({ session, events: [] });
 
-  test('pulls the persisted name and the first message off the record', () => {
-    const parsed = parseSessionLabelSource(record({
+  test('reads the persisted name and first message off the local envelope, dropping a derived <dirname>-<n> name', () => {
+    expect(parseSessionLabelSource(record({
       id: 'abc', cwd: '/home/muqsit/src/agents-cli', label: 'Fix Fleet Login', topic: 'fix the fleet login',
-    }));
-    expect(parsed).toEqual({ label: 'Fix Fleet Login', topic: 'fix the fleet login' });
-  });
-
-  test('drops Claude derived <dirname>-<n> name so the caller summarizes instead', () => {
-    const parsed = parseSessionLabelSource(record({
+    }))).toEqual({ label: 'Fix Fleet Login', topic: 'fix the fleet login' });
+    expect(parseSessionLabelSource(record({
       cwd: '/home/muqsit/src/agents-cli', label: 'agents-cli-55', topic: 'add a host picker',
-    }));
-    expect(parsed).toEqual({ label: null, topic: 'add a host picker' });
-  });
-
-  test('keeps a ticket-style title that only LOOKS derived', () => {
-    // "RUSH-2058" matches <word>-<digits>, but it is not this session's dirname,
-    // so it is a real title and must survive.
-    const parsed = parseSessionLabelSource(record({
-      cwd: '/home/muqsit/src/agents-cli', label: 'RUSH-2058', topic: 'fork the session',
-    }));
-    expect(parsed?.label).toBe('RUSH-2058');
-  });
-
-  test('reports missing fields as null rather than empty strings', () => {
-    expect(parseSessionLabelSource(record({ cwd: '/x' }))).toEqual({ label: null, topic: null });
+    }))).toEqual({ label: null, topic: 'add a host picker' });
+    // "RUSH-2058" matches <word>-<digits> but is not this session's dirname, so it is a real title.
+    expect(parseSessionLabelSource(record({ cwd: '/home/muqsit/src/agents-cli', label: 'RUSH-2058' }))?.label).toBe('RUSH-2058');
     expect(parseSessionLabelSource(record({ cwd: '/x', label: '   ', topic: '' }))).toEqual({ label: null, topic: null });
   });
 
-  test('reads the first real user event when session.topic is missing', () => {
-    const raw = JSON.stringify({
-      session: { id: 'abc', cwd: '/x' },
-      events: [
-        { type: 'hook', hookName: 'SessionStart' },
-        { type: 'message', role: 'user', content: 'Base directory for this skill: /tmp/continue', _synthetic: true },
-        { type: 'message', role: 'user', content: 'Compact the PageHeader across every page' },
-      ],
-    });
-    expect(parseSessionLabelSource(raw, 'abc')).toEqual({
-      label: null,
-      topic: 'Compact the PageHeader across every page',
-    });
-  });
-
-  test('does not treat a synthetic user event as a topic', () => {
-    const raw = JSON.stringify({
-      session: { id: 'abc', cwd: '/x' },
-      events: [
-        { type: 'message', role: 'user', content: '<command-name>/continue</command-name>', _synthetic: true },
-      ],
-    });
-    expect(parseSessionLabelSource(raw, 'abc')).toEqual({ label: null, topic: null });
+  test('reads the first real user event when session.topic is missing, never a synthetic one', () => {
+    const raw = (events: unknown[]) => JSON.stringify({ session: { id: 'abc', cwd: '/x' }, events });
+    expect(parseSessionLabelSource(raw([
+      { type: 'hook', hookName: 'SessionStart' },
+      { type: 'message', role: 'user', content: 'Base directory for this skill: /tmp/continue', _synthetic: true },
+      { type: 'message', role: 'user', content: 'Compact the PageHeader across every page' },
+    ]), 'abc')).toEqual({ label: null, topic: 'Compact the PageHeader across every page' });
+    expect(parseSessionLabelSource(raw([
+      { type: 'message', role: 'user', content: '<command-name>/continue</command-name>', _synthetic: true },
+    ]), 'abc')).toEqual({ label: null, topic: null });
   });
 
   test('returns null for output that is not a session record', () => {
-    expect(parseSessionLabelSource('not json')).toBeNull();
-    expect(parseSessionLabelSource('{}')).toBeNull();
-    expect(parseSessionLabelSource('[]')).toBeNull();
+    for (const raw of ['not json', '{}', '[]']) expect(parseSessionLabelSource(raw, 'anything')).toBeNull();
+  });
+
+  // Captured from a real `agents sessions <id> --device yosemite-s0 --json` run.
+  // The first cut of this parser only understood the LOCAL `{ session, events }`
+  // shape and returned null for every offloaded tab, the exact case it serves.
+  test('reads the real REMOTE payload, a flat array rather than a { session } envelope', () => {
+    const remoteRaw = fs.readFileSync(path.join(__dirname, 'testdata', 'sessions-by-id-remote.json'), 'utf-8');
+    expect(Array.isArray(JSON.parse(remoteRaw))).toBe(true);
+    expect(parseSessionLabelSource(remoteRaw, 'e2f20244-fbb7-413a-8333-aa1b692851bc')!.topic).toBe('Reply with exactly: OK');
+  });
+
+  test('never labels a tab from a different session in a multi-record payload', () => {
+    const many = JSON.stringify([
+      { id: 'other', cwd: '/x', topic: 'someone elses work' },
+      { id: 'mine', cwd: '/x', topic: 'my work' },
+    ]);
+    expect(parseSessionLabelSource(many, 'mine')!.topic).toBe('my work');
+    expect(parseSessionLabelSource(many, 'absent')).toBeNull();
+    // Ambiguous with no id to disambiguate: refuse rather than guess.
+    expect(parseSessionLabelSource(many)).toBeNull();
+    expect(parseSessionLabelSource(JSON.stringify([{ id: 'solo', cwd: '/x', topic: 'solo work' }]))!.topic).toBe('solo work');
   });
 });
 
@@ -1149,58 +735,5 @@ describe('isDerivedSessionName', () => {
 
   test('is false when the cwd is unknown', () => {
     expect(isDerivedSessionName('agents-cli-55', '')).toBe(false);
-  });
-});
-
-describe('parseSessionLabelSource — the REMOTE payload shape', () => {
-  // Captured from a real `agents sessions <id> --device yosemite-s0 --json` run,
-  // not hand-written. The first cut of this parser only understood the LOCAL
-  // `{ session, events }` shape and returned null for every offloaded tab — the
-  // exact case it exists to serve — because the fixtures were written from the
-  // local shape instead of from the wire.
-  const remoteRaw = fs.readFileSync(
-    path.join(__dirname, 'testdata', 'sessions-by-id-remote.json'),
-    'utf-8',
-  );
-
-  test('is a flat ARRAY on the wire, not a { session } envelope', () => {
-    const parsed = JSON.parse(remoteRaw);
-    expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed[0].session).toBeUndefined();
-    expect(typeof parsed[0].id).toBe('string');
-  });
-
-  test('reads the label inputs straight off the real remote payload', () => {
-    const parsed = parseSessionLabelSource(remoteRaw, 'e2f20244-fbb7-413a-8333-aa1b692851bc');
-    expect(parsed).not.toBeNull();
-    expect(parsed!.topic).toBe('Reply with exactly: OK');
-  });
-
-  test('still reads the LOCAL { session } envelope', () => {
-    const local = JSON.stringify({
-      session: { id: 'abc', cwd: '/home/muqsit/src/x', label: 'Fix Fleet Login', topic: 'fix login' },
-      events: [],
-    });
-    expect(parseSessionLabelSource(local, 'abc')).toEqual({ label: 'Fix Fleet Login', topic: 'fix login' });
-  });
-
-  test('never labels a tab from a different session in a multi-record payload', () => {
-    const many = JSON.stringify([
-      { id: 'other', cwd: '/x', topic: 'someone elses work' },
-      { id: 'mine', cwd: '/x', topic: 'my work' },
-    ]);
-    expect(parseSessionLabelSource(many, 'mine')!.topic).toBe('my work');
-    expect(parseSessionLabelSource(many, 'absent')).toBeNull();
-    // Ambiguous with no id to disambiguate: refuse rather than guess.
-    expect(parseSessionLabelSource(many)).toBeNull();
-  });
-
-  test('a single-record array needs no id', () => {
-    const one = JSON.stringify([{ id: 'solo', cwd: '/x', topic: 'solo work' }]);
-    expect(parseSessionLabelSource(one)!.topic).toBe('solo work');
-  });
-
-  test('an empty array is no session, not a crash', () => {
-    expect(parseSessionLabelSource('[]', 'anything')).toBeNull();
   });
 });

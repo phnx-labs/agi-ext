@@ -1,7 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { isDeviceOnline } from '../core/deviceHealth';
-import { RepoSyncStatus } from '../core/repoSync';
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 import { dialablePeerScopes } from '../core/remoteSessions';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -19,14 +18,6 @@ export interface Device {
   registeredAt: number;
 }
 
-/**
- * The minimal device shape the fleet sweep actually reads (name + address +
- * reachability). Both `Device` and the persisted `HostPickerDevice` satisfy it,
- * so the host-picker cache can drive a usage sweep without carrying the full
- * registry row.
- */
-export type DeviceRef = Pick<Device, 'name' | 'host' | 'online'>;
-
 interface AgentsDeviceEntry {
   name: string;
   platform?: string;
@@ -41,7 +32,7 @@ interface AgentsDeviceEntry {
 // CLI: a missing tailscale block is NOT offline), and the SSH address from
 // address.dnsName.
 //
-// Floor background paths MUST use this registry read only — never
+// Background paths MUST use this registry read only — never
 // `agents doctor`, `agents devices status`, `agents fleet status`, or
 // `agents projects status` on a recurring/activation path.
 let registeredDevicesCache: Device[] | null = null;
@@ -67,7 +58,7 @@ export function getRegisteredDevicesCache(): Device[] | null {
  * the peers the CLI fan-out actually dials (`dialablePeerScopes` mirrors its
  * selection). The wait is bounded (src/core/streamWait.ts): past it the view shows
  * what it has and names the silent machines; a late answer still merges in. The
- * Fleet's degraded flag and the Resume Session picker both read this.
+ * Resume Session picker reads this.
  */
 export function streamReadiness(localMachineId: string, nowMs: number = Date.now()): StreamWait {
   return streamWait({
@@ -79,11 +70,11 @@ export function streamReadiness(localMachineId: string, nowMs: number = Date.now
 }
 
 /** Strict registry read used by the one activation seed. */
-export async function fetchRegisteredDevices(): Promise<Device[]> {
+async function fetchRegisteredDevices(): Promise<Device[]> {
   __deviceHealthTestCounters.registeredDeviceCliCalls++;
   const bin = await resolveAgentsBin();
   // 20s, not 8s: on a loaded box the CLI's per-run startup alone can exceed
-  // 8s. The Floor never blocks rendering on this call; it starts with persisted
+  // 8s. Nothing blocks rendering on this call; it starts with persisted
   // data and refreshes the cache once in the background.
   const { stdout } = await execFileAsync(bin, ['devices', 'list', '--json'], {
     timeout: 20_000,
@@ -104,7 +95,7 @@ export async function fetchRegisteredDevices(): Promise<Device[]> {
   return devices;
 }
 
-/** Existing non-Floor callers keep their empty-list error contract. */
+/** Callers that want an empty list, not an error, when the registry read fails. */
 export async function listRegisteredDevices(): Promise<Device[]> {
   try {
     return await fetchRegisteredDevices();
@@ -113,47 +104,6 @@ export async function listRegisteredDevices(): Promise<Device[]> {
   }
 }
 
-const PROBE_TIMEOUT_MS = 20_000;
-
 function augmentedEnv(binPath: string): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${bootstrapPath(binPath)}:${process.env.PATH ?? ''}` };
-}
-
-function isLocalHost(host: string): boolean {
-  return host === 'this-mac' || host === 'localhost' || host === '';
-}
-
-export async function probeReachable(host: string): Promise<boolean> {
-  if (isLocalHost(host)) return true;
-  try {
-    const device = (await fetchRegisteredDevices()).find((row) => row.name === host || row.host === host);
-    return device?.online !== false;
-  } catch {
-    return false;
-  }
-}
-
-// Sync status for a repo AS IT EXISTS ON THE DEVICE (not the local mac). A repo
-// that isn't cloned there is a first-class state ('missing') — the dispatch
-// policy clones it. Runs a single shell snippet locally or over SSH.
-export async function getDeviceSyncStatus(
-  host: string,
-  projectPath: string,
-  _opts: { isLocal: boolean },
-): Promise<RepoSyncStatus> {
-  const empty: RepoSyncStatus = { root: projectPath, state: 'unknown', ahead: 0, behind: 0, dirty: false, defaultBranch: '' };
-  if (!projectPath) return empty;
-  try {
-    const bin = await resolveAgentsBin();
-    const { stdout } = await execFileAsync(bin, ['devices', 'status', '--json'], { timeout: PROBE_TIMEOUT_MS, env: augmentedEnv(bin) });
-    const parsed = JSON.parse(stdout) as { devices?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
-    const rows = Array.isArray(parsed) ? parsed : parsed.devices ?? [];
-    const row = rows.find((item) => item.name === host || item.host === host);
-    const repos = Array.isArray(row?.repos) ? row.repos as Array<Record<string, unknown>> : [];
-    const repo = repos.find((item) => item.path === projectPath || item.root === projectPath);
-    if (repo) return repo as unknown as RepoSyncStatus;
-    return empty;
-  } catch {
-    return empty;
-  }
 }

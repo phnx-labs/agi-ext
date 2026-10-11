@@ -60,21 +60,6 @@ export async function fetchTerminalIdSessionMap(
 }
 
 /**
- * Resolve one tab's session id from the batched active map.
- * `terminalId` is the ext's AGENT_TERMINAL_ID (EditorTerminal.id).
- */
-export async function resolveSessionIdForTerminal(
-  terminalId: string | undefined,
-  host: string | undefined,
-  deps?: Parameters<typeof fetchTerminalIdSessionMap>[1],
-): Promise<string | undefined> {
-  const tid = terminalId?.trim();
-  if (!tid) return undefined;
-  const map = await fetchTerminalIdSessionMap(host, deps);
-  return map.get(tid);
-}
-
-/**
  * Plan event-driven tab rebindings from the already-projected session stream.
  *
  * The extension calls this after accepted agent reset/upsert/remove facts. Tabs

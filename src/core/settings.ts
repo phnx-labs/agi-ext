@@ -8,7 +8,7 @@ interface BuiltInAgentConfig {
 }
 
 // Custom agent configuration
-export interface CustomAgentConfig {
+interface CustomAgentConfig {
   name: string;
   command: string;
   login: boolean;
@@ -94,17 +94,6 @@ export interface PromptEntry {
   accessedAt: number;  // Last time prompt was used (for sorting by recency)
 }
 
-// Swarm agent types (subset of built-in agents that support swarm)
-export type SwarmAgentType = 'claude' | 'codex';
-export const ALL_SWARM_AGENTS: SwarmAgentType[] = ['claude', 'codex'];
-
-// User-defined mapping from a session cwd to a Fleet project group.
-// Canonical definition + resolveProject live in src/shared/project.ts (imported by
-// both the host and the webview); imported for local use + re-exported so existing
-// consumers keep their `from './settings'` path.
-import type { ProjectRule } from '../shared/project';
-export type { ProjectRule };
-
 // Full agent settings structure
 export interface AgentSettings {
   builtIn: {
@@ -121,15 +110,10 @@ export interface AgentSettings {
   custom: CustomAgentConfig[];
   aliases: CommandAlias[];
   quickLaunch?: QuickLaunchConfig;  // Quick launch slots for Cmd+Shift+1/2/3
-  swarmEnabledAgents: SwarmAgentType[];
   prompts: PromptEntry[];
   editor: EditorPreferences;
   display: DisplayPreferences;
   notifications?: NotificationSettings;
-  showWelcomeScreen: boolean;       // Open dashboard on VS Code startup
-  taskSources: TaskSourceSettings;  // Task sources for Tasks tab
-  githubOwner?: string;             // Default GitHub owner for cloud dispatch (e.g. "muqsitnawaz")
-  projectRules?: ProjectRule[];     // Ordered cwd->project mappings for Fleet grouping
 }
 
 interface EditorPreferences {
@@ -152,22 +136,6 @@ export interface NotificationSettings {
   enabledAgents: string[];
 }
 
-// Task source settings for multi-source Tasks tab.
-// TaskSource is canonical in src/shared/tasks.ts (shared with the webview).
-export type { TaskSource } from '../shared/tasks';
-
-export interface TaskSourceSettings {
-  linear: boolean;    // default: false (auto-enable if Linear MCP detected)
-  github: boolean;    // default: false (auto-enable if GitHub MCP detected)
-  githubAssignedOnly: boolean; // default: false (show all open issues, not just @me)
-}
-
-export const DEFAULT_TASK_SOURCE_SETTINGS: TaskSourceSettings = {
-  linear: true,
-  github: true,
-  githubAssignedOnly: false
-};
-
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: false,
   style: 'native',
@@ -181,18 +149,6 @@ export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   showSessionIdInTitles: true,
   labelReplacesTitle: false,  // Default: append label (e.g., "Claude - label")
   showLabelOnlyOnFocus: false  // Default: always show label
-};
-
-export const AGENT_MODELS: Record<string, string[]> = {
-  claude: ['claude-sonnet-4-5', 'claude-opus-4-5', 'claude-haiku-4-5'],
-  codex: ['gpt-5.2-codex', 'gpt-5.1-codex-max'],
-  cursor: ['composer-1'],
-  opencode: [],
-  shell: [],
-  antigravity: [],
-  grok: [],
-  kimi: [],
-  droid: []
 };
 
 export const DEFAULT_QUICK_LAUNCH: QuickLaunchConfig = {
@@ -249,14 +205,10 @@ export function getDefaultSettings(): AgentSettings {
     custom: [],
     aliases: [],
     quickLaunch: { ...DEFAULT_QUICK_LAUNCH },
-    swarmEnabledAgents: [...ALL_SWARM_AGENTS],
     prompts: [],
     editor: { markdownViewerEnabled: true },
     display: { ...DEFAULT_DISPLAY_PREFERENCES },
-    notifications: { ...DEFAULT_NOTIFICATION_SETTINGS },
-    showWelcomeScreen: true,
-    taskSources: { ...DEFAULT_TASK_SOURCE_SETTINGS },
-    projectRules: []
+    notifications: { ...DEFAULT_NOTIFICATION_SETTINGS }
   };
 }
 

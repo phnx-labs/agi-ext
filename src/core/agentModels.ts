@@ -1,12 +1,7 @@
-import { AGENT_MODELS } from './settings';
 import { runAgents } from './agentsBin';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { catalog: AgentCatalog | null; fetchedAt: number }>();
-
-// gemini is hard-deprecated (no launch path left in AGI EXT to run against a
-// fetched catalog — see RUSH-2089/RUSH-2202), so it is deliberately absent here.
-export const MODEL_CATALOG_AGENTS = ['claude', 'codex', 'cursor', 'opencode', 'antigravity', 'grok'] as const;
 
 interface AgentCatalogModel {
   id: string;
@@ -72,28 +67,8 @@ async function runFetchAgentCatalog(agent: string): Promise<AgentCatalog | null>
   }
 }
 
-export async function fetchAgentModels(agent: string): Promise<string[]> {
-  const catalog = await fetchAgentCatalog(agent);
-  if (!catalog) return AGENT_MODELS[agent] || [];
-  return catalog.models.map((m) => m.id);
-}
-
-export async function fetchAllAgentModels(): Promise<Record<string, string[]>> {
-  const entries = await Promise.all(
-    MODEL_CATALOG_AGENTS.map(async (a) => [a, await fetchAgentModels(a)] as const),
-  );
-  return Object.fromEntries(entries);
-}
-
 export async function isAgentInstalled(agent: string): Promise<boolean> {
   return (await fetchAgentCatalog(agent)) !== null;
-}
-
-export async function checkInstalledAgentsViaCli(): Promise<Record<string, boolean>> {
-  const entries = await Promise.all(
-    MODEL_CATALOG_AGENTS.map(async (a) => [a, await isAgentInstalled(a)] as const),
-  );
-  return { ...Object.fromEntries(entries), shell: true };
 }
 
 export async function resolveAlias(agent: string, alias: string): Promise<string | null> {

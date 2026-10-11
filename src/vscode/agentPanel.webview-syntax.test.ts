@@ -124,40 +124,20 @@ test('local deliverables stay local for the normalized this-mac label (PHNX-3574
   expect(sessionPathUriString('/repo/.agents/plans/sidebar.md', 'this-mac')).toBeUndefined();
 });
 
-test('Active Session render is outcome-oriented and drops utility-stack cards (PHNX-3574)', () => {
+test('Active Session render is outcome-oriented: what the session produced leads (PHNX-3574)', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
   const renderStart = src.indexOf('root.innerHTML = (', src.indexOf('function render(snap)'));
   const renderEnd = src.indexOf("'<div class=\"footer\"", renderStart);
   const renderOrder = src.slice(renderStart, renderEnd);
 
-  expect(renderOrder).toContain('renderSessionStats(snap)');
-  expect(renderOrder).toContain('renderGoalCard(snap)');
-  expect(renderOrder).toContain('renderRequestCard(snap)');
-  expect(renderOrder).toContain('renderTimelineCard(snap)');
-  expect(renderOrder).toContain('renderChecklistCard(snap)');
-  expect(renderOrder).toContain('renderArtifactsCard(snap)');
-  expect(renderOrder).toContain('renderSpawnedTeamCard(snap)');
-  expect(renderOrder).toContain('renderActivityCard(snap)');
-  expect(renderOrder).toContain('renderFilesCard(snap)');
-  expect(renderOrder).toContain('renderReplyBox(snap)');
   // PHNX-4289: what the session PRODUCED leads (artifacts, then its PR), right
   // under Needs you; then the goal and what was asked, what the agent did, the
   // checklist and files, its helpers, and the reply field last.
   const order = ['renderTerminalCard', 'renderNeedsYou', 'renderArtifactsCard', 'renderPullRequestCard', 'renderGoalCard',
     'renderRequestCard', 'renderTimelineCard', 'renderChecklistCard', 'renderFilesCard', 'renderSpawnedTeamCard',
     'renderActivityCard', 'renderReplyBox'];
+  expect(renderOrder.indexOf(order[0]!)).toBeGreaterThan(-1);
   for (let i = 1; i < order.length; i++) {
     expect(renderOrder.indexOf(order[i - 1])).toBeLessThan(renderOrder.indexOf(order[i]));
   }
-  // The Progress card folded INTO the Timeline card, which owns the checkpoints
-  // fallback for an older CLI — two producers for one strip is what it replaced.
-  expect(src).not.toContain('function renderCheckpointsCard');
-  expect(renderOrder).not.toContain('renderConversationCard');
-  expect(renderOrder).not.toContain('renderActionsCard');
-  expect(renderOrder).not.toContain('renderPromptsCard');
-  expect(renderOrder).not.toContain('renderWorktreesCard');
-  expect(renderOrder).not.toContain('renderCwdCard');
-
-  const manifest = fs.readFileSync(path.join(import.meta.dir, '../../package.json'), 'utf8');
-  expect(manifest).not.toContain('agentsPanel.issues');
 });

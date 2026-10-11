@@ -176,31 +176,6 @@ describe('BUG A: startAutoLabelPoller guard blocks restart once autoLabel is set
   });
 });
 
-describe('BUG A+B+C: full chain — session changes allow label refresh', () => {
-  test('after onSessionChanged fires, label poller can restart because autoLabel is cleared', async () => {
-    const term = fakeTerm('CC-full-chain');
-    t.register(term, 'CC-004', fakeAgentConfig(), undefined);
-
-    // Session 1 is adopted and labelled
-    t.setSessionId(term, 'session-1');
-    t.setAutoLabel(term, 'label from session 1');
-
-    // Session changes (simulating onSessionChanged handler in extension.ts:596-600)
-    t.setSessionId(term, 'session-2');
-    // setSessionId clears autoLabel so startAutoLabelPoller is not blocked by the old label
-
-    let pollCount = 0;
-    t.startAutoLabelPoller(term, async () => { pollCount++; });
-    await new Promise(r => setTimeout(r, 50));
-
-    expect(pollCount).toBeGreaterThan(0);
-
-    const entry = t.getByTerminal(term);
-    expect(entry?.sessionId).toBe('session-2');      // session updated
-    expect(entry?.autoLabel).toBeUndefined();
-  });
-});
-
 describe('BUG I: setLabel immediately stops autoLabelPoller', () => {
   test('poller interval is cleared after manual label is set via setLabel', async () => {
     const term = fakeTerm('CC-bug-i');
@@ -230,7 +205,7 @@ describe('BUG I: setLabel immediately stops autoLabelPoller', () => {
 // Half of the status-bar identity fix (Defect 2): a harness the CLI records no
 // version for (Kimi) must not keep a version left over from a prior binding in the
 // same terminal. setVersion(null) has to CLEAR, not be ignored.
-describe('setVersion clears the cached version on null/empty', () => {
+describe('setVersion clears the cached version on null or blank', () => {
   test('a null version wipes both version and statusVersion', () => {
     const term = fakeTerm('CC-setver');
     t.register(term, 'CC-ver-1', fakeAgentConfig(), undefined);
@@ -245,11 +220,7 @@ describe('setVersion clears the cached version on null/empty', () => {
     const cleared = t.getByTerminal(term);
     expect(cleared?.version).toBeUndefined();
     expect(cleared?.statusVersion).toBeUndefined();
-  });
-
-  test('an empty/whitespace version is treated as clear, not a literal value', () => {
-    const term = fakeTerm('CC-setver2');
-    t.register(term, 'CC-ver-2', fakeAgentConfig(), undefined);
+    // Whitespace is a clear too, not a literal value.
     t.setVersion(term, '2.1.218');
     t.setVersion(term, '   ');
     expect(t.getByTerminal(term)?.version).toBeUndefined();

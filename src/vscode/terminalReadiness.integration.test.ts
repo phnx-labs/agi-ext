@@ -104,86 +104,37 @@ describe('agentReady probe — real process state', () => {
   });
 });
 
-describe('shell adoption — detectAgentKeyFromArgs', () => {
-  test('direct invocation by binary name', () => {
-    expect(detectAgentKeyFromArgs('claude --foo')).toBe('claude');
-    expect(detectAgentKeyFromArgs('/usr/local/bin/codex')).toBe('codex');
-    expect(detectAgentKeyFromArgs('cursor-agent chat')).toBe('cursor');
-    expect(detectAgentKeyFromArgs('opencode')).toBe('opencode');
-    expect(detectAgentKeyFromArgs('gemini --model pro')).toBe(null);
+describe('shell adoption — argv parsing', () => {
+  test('detectAgentKeyFromArgs reads the binary, a node-wrapped script, or the agents run wrapper', () => {
+    const cases: Array<[string, string | null]> = [
+      ['claude --foo', 'claude'],
+      ['/usr/local/bin/codex', 'codex'],
+      ['cursor-agent chat', 'cursor'],
+      ['node /Users/me/.agents/versions/claude/2.1.140/home/.claude/local/claude.js', 'claude'],
+      ['/opt/homebrew/bin/agents run codex', 'codex'],
+      ['agents run kimi --strategy balanced', 'kimi'],
+      ['droid', 'droid'],
+      // Antigravity's installed binary is `agy` (CLI_AGENT_META).
+      ['agy --resume abc', 'antigravity'],
+      ['gemini --model pro', null],
+      ['agents run gemini --model pro', null],
+      ['git status', null],
+      ['', null],
+    ];
+    for (const [argv, key] of cases) expect(detectAgentKeyFromArgs(argv)).toBe(key);
   });
 
-  test('node-wrapped script path', () => {
-    expect(detectAgentKeyFromArgs('node /Users/me/.agents/versions/claude/2.1.140/home/.claude/local/claude.js'))
-      .toBe('claude');
-  });
-
-  test('agents-cli run wrapper', () => {
-    expect(detectAgentKeyFromArgs('agents run claude --interactive --session-id abc')).toBe('claude');
-    expect(detectAgentKeyFromArgs('/opt/homebrew/bin/agents run codex')).toBe('codex');
-    expect(detectAgentKeyFromArgs('agents run gemini --model pro')).toBe(null);
-  });
-
-  test('grok / kimi / droid / antigravity (added after the original five)', () => {
-    expect(detectAgentKeyFromArgs('agents run grok --interactive')).toBe('grok');
-    expect(detectAgentKeyFromArgs('agents run kimi --strategy balanced')).toBe('kimi');
-    expect(detectAgentKeyFromArgs('agents run droid --mode auto')).toBe('droid');
-    expect(detectAgentKeyFromArgs('agents run antigravity --interactive')).toBe('antigravity');
-    expect(detectAgentKeyFromArgs('grok --foo')).toBe('grok');
-    expect(detectAgentKeyFromArgs('kimi')).toBe('kimi');
-    expect(detectAgentKeyFromArgs('droid')).toBe('droid');
-    // Antigravity's installed binary is `agy` (CLI_AGENT_META).
-    expect(detectAgentKeyFromArgs('agy --resume abc')).toBe('antigravity');
-  });
-
-  test('unknown commands return null', () => {
-    expect(detectAgentKeyFromArgs('vim file.ts')).toBeNull();
-    expect(detectAgentKeyFromArgs('git status')).toBeNull();
-    expect(detectAgentKeyFromArgs('')).toBeNull();
-  });
-});
-
-describe('shell adoption — extractSessionIdFromArgs', () => {
-  const uuid = '7b1cf038-8761-4e46-af43-5336e7e5a776';
-
-  test('--session-id space-separated', () => {
-    expect(extractSessionIdFromArgs(`claude --session-id ${uuid}`)).toBe(uuid);
-  });
-
-  test('--session-id equals-separated', () => {
-    expect(extractSessionIdFromArgs(`claude --session-id=${uuid}`)).toBe(uuid);
-  });
-
-  test('--session (alternate flag) space-separated', () => {
-    expect(extractSessionIdFromArgs(`gemini --session ${uuid}`)).toBe(uuid);
-  });
-
-  // A resumed claude carries its live session id under `--resume`, not
-  // `--session-id` (agents-cli buildExecCommand). Recovering it here is what
-  // lets scanExisting bind a reloaded Remote-SSH pane to the session actually
-  // running in it, instead of a mtime-nearest sibling.
-  test('--resume space-separated (claude native resume)', () => {
-    expect(extractSessionIdFromArgs(`claude --resume ${uuid}`)).toBe(uuid);
-  });
-
-  test('--resume equals-separated', () => {
-    expect(extractSessionIdFromArgs(`claude --resume=${uuid}`)).toBe(uuid);
-  });
-
-  test('resume id wins for a real `agents run claude --resume` argv', () => {
-    const args = `node /path/agents run claude --resume ${uuid} --model opus`;
-    expect(extractSessionIdFromArgs(args)).toBe(uuid);
-  });
-
-  test('returns undefined when no session flag present', () => {
-    expect(extractSessionIdFromArgs('claude --foo bar')).toBeUndefined();
-    expect(extractSessionIdFromArgs('')).toBeUndefined();
-    // `--continue` (resume most-recent, no id) carries no UUID to extract.
-    expect(extractSessionIdFromArgs('claude --continue')).toBeUndefined();
-  });
-
-  test('ignores non-UUID values', () => {
-    expect(extractSessionIdFromArgs('claude --session-id not-a-uuid')).toBeUndefined();
-    expect(extractSessionIdFromArgs('claude --resume not-a-uuid')).toBeUndefined();
+  test('extractSessionIdFromArgs reads a UUID after --session-id, --session or --resume', () => {
+    const uuid = '7b1cf038-8761-4e46-af43-5336e7e5a776';
+    // A resumed claude carries its live id under `--resume` (agents-cli buildExecCommand);
+    // recovering it binds a reloaded Remote-SSH pane to the session actually running in it.
+    for (const argv of [`claude --session-id ${uuid}`, `claude --session-id=${uuid}`, `gemini --session ${uuid}`,
+      `claude --resume=${uuid}`, `node /path/agents run claude --resume ${uuid} --model opus`]) {
+      expect(extractSessionIdFromArgs(argv)).toBe(uuid);
+    }
+    // `--continue` (resume most-recent, no id) and non-UUID values carry nothing to extract.
+    for (const argv of ['claude --foo bar', '', 'claude --continue', 'claude --session-id not-a-uuid', 'claude --resume not-a-uuid']) {
+      expect(extractSessionIdFromArgs(argv)).toBeUndefined();
+    }
   });
 });

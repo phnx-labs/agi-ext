@@ -1,5 +1,5 @@
 // "Agents: Resume Session…": the window's project sessions as picker rows, and the
-// one notification every resume surface (picker, Fleet Resume, side panel ↻) shows
+// one notification every resume surface (picker, side panel ↻) shows
 // for the answer `agents.resumeSession` gives. Pure; the vscode glue is
 // src/vscode/resumeSession.vscode.ts.
 //

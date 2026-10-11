@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
-import { isAllowedExternalUrl, isAllowedWebviewCommand } from '../core/webviewSecurity';
+import { isAllowedExternalUrl } from '../core/webviewSecurity';
 
-export { isAllowedWebviewCommand };
 
 // Open a webview-supplied URL externally, but only if it parses and carries an
 // allowed scheme (see src/core/webviewSecurity). Silently drops empty/non-string

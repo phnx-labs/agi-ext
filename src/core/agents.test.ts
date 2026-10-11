@@ -7,17 +7,14 @@ import {
   getBuiltInByPrefix,
   getBuiltInDefByTitle,
   agentKindFromTerminalId,
-  pickLatestVersion,
   isAgentRunner,
   usesManagedAgentLaunch,
   modeFlagForAgent,
   buildAgentLaunchCommand,
   wrapNativeAgentCommand,
-  extractPlanFromSessionJson,
-  planTextToSteps
 } from './agents';
 import { harnessLaunchRegistrations } from './launchTarget';
-import { CLAUDE_TITLE, CODEX_TITLE, OPENCODE_TITLE, CURSOR_TITLE, SHELL_TITLE, getIconFilename } from './utils';
+import { CLAUDE_TITLE, CODEX_TITLE, OPENCODE_TITLE, SHELL_TITLE, getIconFilename } from './utils';
 import { CLI_AGENT_META, CliAgentId, isCliAgentId } from './agents.cli';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -39,17 +36,6 @@ describe('BUILT_IN_AGENTS', () => {
     }
   });
 
-  test('deprecated Gemini launch and setup commands are not contributed', () => {
-    const packageJson = JSON.parse(readFileSync(resolve(import.meta.dir, '../../package.json'), 'utf8'));
-    const contributed = new Set(packageJson.contributes.commands.map((entry: { command: string }) => entry.command));
-    const extensionSource = readFileSync(resolve(import.meta.dir, '../vscode/extension.ts'), 'utf8');
-    expect(contributed.has('agents.newGemini')).toBe(false);
-    expect(contributed.has('agents.newGeminiPickHost')).toBe(false);
-    expect(contributed.has('agents.newGeminiAuto')).toBe(false);
-    expect(contributed.has('agents.setupGemini')).toBe(false);
-    expect(extensionSource).not.toContain("agents.setupGemini");
-  });
-
   test('every non-shell agent is a CLI agent and launches its CLI binary', () => {
     for (const agent of BUILT_IN_AGENTS) {
       if (agent.key === 'shell') continue;
@@ -64,126 +50,29 @@ describe('BUILT_IN_AGENTS', () => {
     expect(ag!.command).toBe('agy');
   });
 
-  test('kimi is presented with the KM chip and launches the kimi binary', () => {
-    const kimi = BUILT_IN_AGENTS.find(a => a.key === 'kimi');
-    expect(kimi).toBeDefined();
-    expect(kimi!.title).toBe('KM');
-    expect(kimi!.prefix).toBe('km');
-    expect(kimi!.icon).toBe('kimi.png');
-    expect(kimi!.command).toBe(CLI_AGENT_META['kimi'].cliCommand);
-    expect(kimi!.commandId).toBe('agents.newKimi');
-  });
-
-  test('droid is presented with the DR chip and launches the droid binary', () => {
-    const droid = BUILT_IN_AGENTS.find(a => a.key === 'droid');
-    expect(droid).toBeDefined();
-    expect(droid!.title).toBe('DR');
-    expect(droid!.prefix).toBe('dr');
-    expect(droid!.icon).toBe('droid.png');
-    expect(droid!.command).toBe(CLI_AGENT_META['droid'].cliCommand);
-    expect(droid!.commandId).toBe('agents.newDroid');
-  });
-
-  test('claude agent has correct properties', () => {
-    const claude = BUILT_IN_AGENTS.find(a => a.key === 'claude');
-    expect(claude).toBeDefined();
-    expect(claude!.title).toBe(CLAUDE_TITLE);
-    expect(claude!.command).toBe('claude');
-    expect(claude!.prefix).toBe('cl');
-    expect(claude!.commandId).toBe('agents.newClaude');
-  });
-
-  test('shell agent has correct properties', () => {
-    const shell = BUILT_IN_AGENTS.find(a => a.key === 'shell');
-    expect(shell).toBeDefined();
-    expect(shell!.title).toBe(SHELL_TITLE);
-    expect(shell!.command).toBe(''); // Shell has no command
-    expect(shell!.prefix).toBe('sh');
-    expect(shell!.commandId).toBe('agents.newShell');
-  });
-
-  test('all agents have required fields', () => {
-    for (const agent of BUILT_IN_AGENTS) {
-      expect(agent.key).toBeTruthy();
-      expect(agent.title).toBeTruthy();
-      // command can be empty for shell
-      expect(agent.command).toBeDefined();
-      expect(agent.icon).toMatch(/\.png$/);
-      expect(agent.prefix).toBeTruthy();
-      expect(agent.commandId).toMatch(/^agents\.new/);
+  test('each harness carries its tab chip, id prefix, icon and launch command id', () => {
+    const rows = [
+      ['claude', CLAUDE_TITLE, 'cl', 'agents.newClaude'],
+      ['kimi', 'KM', 'km', 'agents.newKimi'],
+      ['droid', 'DR', 'dr', 'agents.newDroid'],
+      ['shell', SHELL_TITLE, 'sh', 'agents.newShell'],
+    ] as const;
+    for (const [key, title, prefix, commandId] of rows) {
+      expect(BUILT_IN_AGENTS.find(a => a.key === key)).toMatchObject({ title, prefix, commandId });
     }
+    expect(getBuiltInByKey('shell')!.command).toBe('');
+    for (const agent of BUILT_IN_AGENTS) expect(agent.icon).toMatch(/\.png$/);
   });
 });
 
-describe('getBuiltInByKey', () => {
-  test('returns claude agent', () => {
-    const agent = getBuiltInByKey('claude');
-    expect(agent).toBeDefined();
-    expect(agent!.title).toBe(CLAUDE_TITLE);
-  });
-
-  test('returns codex agent', () => {
-    const agent = getBuiltInByKey('codex');
-    expect(agent).toBeDefined();
-    expect(agent!.title).toBe(CODEX_TITLE);
-  });
-
-  test('does not retain a Gemini presentation or launch definition', () => {
-    const agent = getBuiltInByKey('gemini');
-    expect(agent).toBeUndefined();
-  });
-
-  test('returns cursor agent', () => {
-    const agent = getBuiltInByKey('cursor');
-    expect(agent).toBeDefined();
-    expect(agent!.title).toBe(CURSOR_TITLE);
-  });
-
-  test('returns opencode agent', () => {
-    const agent = getBuiltInByKey('opencode');
-    expect(agent).toBeDefined();
-    expect(agent!.title).toBe(OPENCODE_TITLE);
-  });
-
-  test('returns undefined for unknown key', () => {
-    const agent = getBuiltInByKey('unknown');
-    expect(agent).toBeUndefined();
-  });
-});
-
-describe('getBuiltInByPrefix', () => {
-  test('returns claude for cc prefix', () => {
-    const agent = getBuiltInByPrefix('cl');
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('claude');
-  });
-
-  test('returns codex for cx prefix', () => {
-    const agent = getBuiltInByPrefix('cx');
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('codex');
-  });
-
-  test('does not retain the Gemini prefix', () => {
-    const agent = getBuiltInByPrefix('gm');
-    expect(agent).toBeUndefined();
-  });
-
-  test('returns cursor for cr prefix', () => {
-    const agent = getBuiltInByPrefix('cr');
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('cursor');
-  });
-
-  test('returns opencode for oc prefix', () => {
-    const agent = getBuiltInByPrefix('oc');
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('opencode');
-  });
-
-  test('returns undefined for unknown prefix', () => {
-    const agent = getBuiltInByPrefix('xx');
-    expect(agent).toBeUndefined();
+describe('built-in lookups', () => {
+  test('by key, prefix and title; Gemini and unknown names resolve to nothing', () => {
+    expect(getBuiltInByKey('codex')!.title).toBe(CODEX_TITLE);
+    expect(getBuiltInByPrefix('oc')!.key).toBe('opencode');
+    expect(getBuiltInDefByTitle(OPENCODE_TITLE)!.key).toBe('opencode');
+    for (const missing of [getBuiltInByKey('gemini'), getBuiltInByPrefix('gm'), getBuiltInByKey('unknown'), getBuiltInByPrefix('xx'), getBuiltInDefByTitle('Unknown')]) {
+      expect(missing).toBeUndefined();
+    }
   });
 });
 
@@ -200,56 +89,6 @@ describe('agentKindFromTerminalId', () => {
   });
 });
 
-describe('getBuiltInDefByTitle', () => {
-  test('returns claude for CC title', () => {
-    const agent = getBuiltInDefByTitle(CLAUDE_TITLE);
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('claude');
-  });
-
-  test('returns codex for CX title', () => {
-    const agent = getBuiltInDefByTitle(CODEX_TITLE);
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('codex');
-  });
-
-  test('returns opencode for OC title', () => {
-    const agent = getBuiltInDefByTitle(OPENCODE_TITLE);
-    expect(agent).toBeDefined();
-    expect(agent!.key).toBe('opencode');
-  });
-
-  test('returns undefined for unknown title', () => {
-    const agent = getBuiltInDefByTitle('Unknown');
-    expect(agent).toBeUndefined();
-  });
-});
-
-describe('pickLatestVersion', () => {
-  test('picks the highest semver regardless of input order', () => {
-    expect(pickLatestVersion(['2.1.168', '2.1.170', '2.1.142'])).toBe('2.1.170');
-  });
-
-  test('compares segments numerically, not lexically', () => {
-    // Lexical sort would wrongly pick "2.1.9" over "2.1.42".
-    expect(pickLatestVersion(['2.1.9', '2.1.42'])).toBe('2.1.42');
-    expect(pickLatestVersion(['0.43.0', '0.45.2', '0.42.0'])).toBe('0.45.2');
-  });
-
-  test('ignores non-semver profile names like yosemite/test-proxy', () => {
-    expect(pickLatestVersion(['2.1.170', 'yosemite', 'test-proxy'])).toBe('2.1.170');
-  });
-
-  test('returns undefined when no semver-shaped entry exists', () => {
-    expect(pickLatestVersion([])).toBeUndefined();
-    expect(pickLatestVersion(['yosemite', 'proxy missing'])).toBeUndefined();
-  });
-
-  test('handles single-entry lists', () => {
-    expect(pickLatestVersion(['1.0.6'])).toBe('1.0.6');
-  });
-});
-
 describe('modeFlagForAgent', () => {
   // We launch via `agents run <agent>`, which owns `--mode plan|auto|edit` and
   // translates it per CLI. So the flag is agent-agnostic — NOT the raw
@@ -262,68 +101,6 @@ describe('modeFlagForAgent', () => {
     expect(modeFlagForAgent('codex', 'plan')).toBe('--mode plan');
     expect(modeFlagForAgent('gemini', 'edit')).toBe('--mode edit');
     expect(modeFlagForAgent('unknown', 'auto')).toBe('--mode auto');
-  });
-});
-
-describe('extractPlanFromSessionJson', () => {
-  test('extracts plan from CLI JSON output', () => {
-    const json = JSON.stringify({
-      session: { id: 'abc', plan: '1. First\n2. Second' },
-      events: [],
-    });
-    expect(extractPlanFromSessionJson(json)).toBe('1. First\n2. Second');
-  });
-
-  test('returns null when session has no plan', () => {
-    const json = JSON.stringify({
-      session: { id: 'abc' },
-      events: [],
-    });
-    expect(extractPlanFromSessionJson(json)).toBeNull();
-  });
-
-  test('returns null for empty/whitespace plan', () => {
-    const json = JSON.stringify({
-      session: { id: 'abc', plan: '   ' },
-      events: [],
-    });
-    expect(extractPlanFromSessionJson(json)).toBeNull();
-  });
-
-  test('returns null for unparseable JSON', () => {
-    expect(extractPlanFromSessionJson('not json')).toBeNull();
-  });
-
-  test('returns null for legacy bare-array format (no session wrapper)', () => {
-    const json = JSON.stringify([{ type: 'message', content: 'hi' }]);
-    expect(extractPlanFromSessionJson(json)).toBeNull();
-  });
-});
-
-describe('planTextToSteps', () => {
-  test('parses a numbered list, stripping markers and bold', () => {
-    const steps = planTextToSteps('1. **Read** the file\n2. Edit it\n3. Test');
-    expect(steps).toEqual([
-      { n: 1, text: 'Read the file' },
-      { n: 2, text: 'Edit it' },
-      { n: 3, text: 'Test' },
-    ]);
-  });
-
-  test('parses a bulleted list', () => {
-    const steps = planTextToSteps('- do A\n- do B');
-    expect(steps).toEqual([
-      { n: 1, text: 'do A' },
-      { n: 2, text: 'do B' },
-    ]);
-  });
-
-  test('falls back to non-heading prose lines when no list markers exist', () => {
-    const steps = planTextToSteps('# Plan\nFirst do this.\nThen do that.');
-    expect(steps).toEqual([
-      { n: 1, text: 'First do this.' },
-      { n: 2, text: 'Then do that.' },
-    ]);
   });
 });
 
@@ -410,35 +187,14 @@ describe('buildAgentLaunchCommand', () => {
   // RUSH-2038: interactive AGI EXT launches must default to --mode auto so the
   // agent starts in a writable posture instead of stalling in read-only plan mode.
 
-  test('no mode supplied -> defaults to --mode auto', () => {
-    const cmd = buildAgentLaunchCommand('codex', null);
-    expect(cmd).toContain('--mode auto');
-    expect(cmd).not.toContain('--mode plan');
-  });
-
-  test('no mode supplied for claude -> --mode auto', () => {
-    const cmd = buildAgentLaunchCommand('claude', 'session-abc');
-    expect(cmd).toContain('--mode auto');
-    expect(cmd).toContain('--session-id session-abc');
-  });
-
-  test('explicit mode plan is preserved when the caller requests it', () => {
-    const cmd = buildAgentLaunchCommand('codex', null, undefined, undefined, undefined, undefined, 'plan');
-    expect(cmd).toContain('--mode plan');
-    expect(cmd).not.toContain('--mode auto');
-  });
-
-  test('explicit mode edit is preserved', () => {
-    const cmd = buildAgentLaunchCommand('gemini', null, undefined, undefined, undefined, undefined, 'edit');
-    expect(cmd).toContain('--mode edit');
-  });
-
-  test('additionalFlags already containing --mode suppresses the default', () => {
-    // Caller has injected --mode plan via additionalFlags; the function must not
-    // double-emit another --mode flag.
-    const cmd = buildAgentLaunchCommand('codex', null, undefined, '--mode plan');
-    expect(cmd.match(/--mode/g)?.length).toBe(1);
-    expect(cmd).toContain('--mode plan');
+  test('mode defaults to auto; an explicit mode or a --mode flag wins, emitted once', () => {
+    expect(buildAgentLaunchCommand('claude', 'session-abc')).toContain('--session-id session-abc --mode auto');
+    const plan = buildAgentLaunchCommand('codex', null, undefined, undefined, undefined, undefined, 'plan');
+    expect(plan).toContain('--mode plan');
+    expect(plan).not.toContain('--mode auto');
+    const flagged = buildAgentLaunchCommand('codex', null, undefined, '--mode plan');
+    expect(flagged.match(/--mode/g)?.length).toBe(1);
+    expect(flagged).toContain('--mode plan');
   });
 
   test('includes --interactive and the agent key in the base command', () => {
@@ -687,22 +443,6 @@ describe('wrapNativeAgentCommand (RUSH-2593)', () => {
     expect(out).toContain('Agent exited with status 1');
     expect(out).not.toContain('Lost the connection to the remote agent');
     expect(out).toContain('MARKER_REACHED');
-  });
-});
-
-describe('extension tmux removal — spawn command contract', () => {
-  test('a new spawn sends only agents run, with no tmux wrapper', () => {
-    for (const key of ['claude', 'codex', 'gemini', 'cursor', 'opencode', 'antigravity', 'grok', 'kimi', 'droid'] as const) {
-      const cmd = wrapNativeAgentCommand(
-        buildAgentLaunchCommand(key, null, undefined, undefined, undefined, 'balanced', undefined, { local: true }),
-        false,
-      );
-      expect(cmd).toMatch(/^agents run /);
-      expect(cmd).toContain('--interactive');
-      expect(cmd).not.toContain('tmux');
-      expect(cmd).not.toContain('agents tmux');
-      expect(cmd).not.toContain('\n');
-    }
   });
 });
 

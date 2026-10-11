@@ -14,7 +14,7 @@ import {
 } from './utils';
 import { CLI_AGENT_META } from './agents.cli';
 import type { CliAgentId } from './agents.cli';
-import { shellQuote as _shellQuote } from './deviceDispatchShell';
+import { shellQuote as _shellQuote } from './shellQuote';
 
 // Built-in agent definition (static data)
 export interface BuiltInAgentDef {
@@ -78,21 +78,6 @@ export function isDeprecatedAgentKey(key: string): boolean {
   return DEPRECATED_AGENT_KEYS.has(base);
 }
 
-// The exact set of VS Code command ids a dashboard webview message is allowed to
-// dispatch. It is derived from the registered agents — every non-deprecated,
-// non-shell harness `agents.new<Harness>` id — plus the fixed non-launch commands
-// the webview legitimately fires. `shell` is excluded because the webview spawns
-// it via its own commandId only through the explicit registry path, and the
-// theme toggle is a built-in VS Code command, added separately by the caller.
-// Anything NOT in this set (an unregistered id, a deprecated harness, an
-// arbitrary VS Code command) must be refused so a single injected message cannot
-// run a command the extension never registered.
-export function webviewLaunchCommandIds(): string[] {
-  return BUILT_IN_AGENTS
-    .filter(a => a.key !== 'shell' && !isDeprecatedAgentKey(a.key))
-    .map(a => a.commandId);
-}
-
 // Lookup built-in agent by key (e.g., "claude", "codex")
 export function getBuiltInByKey(key: string): BuiltInAgentDef | undefined {
   return BUILT_IN_AGENTS.find(a => a.key === key);
@@ -137,53 +122,6 @@ const AGENTS_RUN_MODES: readonly AgentLaunchMode[] = ['plan', 'auto', 'edit'];
 // for call-site stability but not needed — `agents run --mode` is universal.
 export function modeFlagForAgent(_agentKey: string, mode: AgentLaunchMode): string | undefined {
   return AGENTS_RUN_MODES.includes(mode) ? `--mode ${mode}` : undefined;
-}
-
-// ---- Plan detection (a Plan-mode Claude agent emits a plan) ----------------
-// The CLI's session state engine (`state.ts`) captures the ExitPlanMode plan
-// markdown and surfaces it as `session.plan` in `agents sessions <id> --json`.
-// These pure helpers read the CLI JSON and turn the plan into the PendingPlan
-// the Floor renders. Kept here (not in the VS Code layer) so they're
-// unit-testable without a live session.
-
-export interface PlanStepData { n: number; text: string }
-
-// Extract the plan markdown from `agents sessions <id> --json` output. The CLI
-// emits `{ session: { plan?: string, ... }, events: [...] }` — this reads
-// `session.plan`, which the state engine populates from the LAST ExitPlanMode
-// tool call at scan time (last one wins so a re-planned session surfaces its
-// most recent plan). Returns null when no plan is present or the JSON is
-// unparseable, matching the polling contract in watchForPlan.
-export function extractPlanFromSessionJson(json: string): string | null {
-  try {
-    const parsed = JSON.parse(json);
-    const plan = parsed?.session?.plan;
-    return typeof plan === 'string' && plan.trim() ? plan : null;
-  } catch {
-    return null;
-  }
-}
-
-// Split plan markdown into ordered steps. Prefers explicit list items
-// (numbered `1.` / bulleted `-` / `*`), stripping the marker and any bold
-// heading wrapper; falls back to non-empty, non-heading lines so a prose plan
-// still yields steps. Renumbers sequentially so the Floor shows 1..N.
-export function planTextToSteps(plan: string): PlanStepData[] {
-  const lines = plan.split('\n').map(l => l.trim()).filter(Boolean);
-  const listItems: string[] = [];
-  for (const line of lines) {
-    const m = line.match(/^(?:\d+[.)]|[-*+])\s+(.*)$/);
-    const item = m?.[1]?.trim();
-    if (item) listItems.push(item);
-  }
-  const source = listItems.length > 0
-    ? listItems
-    : lines.filter(l => !l.startsWith('#'));
-  return source.map((text, i) => ({
-    n: i + 1,
-    // Drop surrounding markdown bold so a "**Step**: do x" reads cleanly.
-    text: text.replace(/\*\*/g, '').trim(),
-  }));
 }
 
 // Version/account selection strategy passed to `agents run --strategy`. Mirrors
@@ -363,37 +301,4 @@ export function isAgentRunner(agentKey: string): boolean {
  * selection; shell alone stays a raw terminal because it is not an agent. */
 export function usesManagedAgentLaunch(agentKey: string, _targetHost?: string): boolean {
   return isAgentRunner(agentKey);
-}
-
-// Compare two dotted version strings (e.g. "2.1.170" vs "2.1.42") numerically.
-// Returns >0 when a is newer, <0 when b is newer, 0 when equal. Non-numeric
-// segments sort below numeric ones so prerelease tags lose to plain releases.
-function compareVersions(a: string, b: string): number {
-  const segA = a.split('.');
-  const segB = b.split('.');
-  const len = Math.max(segA.length, segB.length);
-  for (let i = 0; i < len; i++) {
-    const na = parseInt(segA[i] ?? '', 10);
-    const nb = parseInt(segB[i] ?? '', 10);
-    const aIsNum = !Number.isNaN(na);
-    const bIsNum = !Number.isNaN(nb);
-    if (aIsNum && bIsNum) {
-      if (na !== nb) return na - nb;
-    } else if (aIsNum !== bIsNum) {
-      // A numeric segment outranks a missing/non-numeric one.
-      return aIsNum ? 1 : -1;
-    }
-    // Both non-numeric at this position: treat as equal, keep scanning.
-  }
-  return 0;
-}
-
-// Pick the newest installed version from a list of version strings. Entries
-// without a leading numeric segment (profiles like "yosemite", "test-proxy")
-// are ignored so they never win "Latest". Returns undefined when the list has
-// no semver-shaped entry.
-export function pickLatestVersion(versions: string[]): string | undefined {
-  const semverish = versions.filter(v => !Number.isNaN(parseInt(v.split('.')[0] ?? '', 10)));
-  if (semverish.length === 0) return undefined;
-  return semverish.reduce((best, v) => (compareVersions(v, best) > 0 ? v : best));
 }

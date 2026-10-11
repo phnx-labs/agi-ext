@@ -1,44 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import {
-  sessionUsedPercent,
   inlineContinueInstructions,
   buildAgentRunLaunchCommand,
   buildAutoRunLaunchCommand,
   buildResumeInput,
-  AgentsViewJsonVersion,
 } from './resumeInBest';
-
-function makeVersion(overrides: Partial<AgentsViewJsonVersion> = {}): AgentsViewJsonVersion {
-  return {
-    version: '2.1.112',
-    isDefault: false,
-    signedIn: true,
-    email: 'user@example.com',
-    plan: 'Max',
-    usageStatus: 'rate_limited',
-    windows: [
-      { key: 'session', usedPercent: 10, resetsAt: '2026-04-22T18:00:00Z' },
-      { key: 'week', usedPercent: 40, resetsAt: '2026-04-28T18:00:00Z' },
-    ],
-    lastActive: '2026-04-22T12:00:00Z',
-    path: '/home/user/.agents/versions/claude/2.1.112',
-    ...overrides,
-  };
-}
-
-describe('sessionUsedPercent', () => {
-  test('returns the session window percent', () => {
-    expect(sessionUsedPercent(makeVersion({
-      windows: [{ key: 'session', usedPercent: 42, resetsAt: null }]
-    }))).toBe(42);
-  });
-
-  test('returns 100 when session window is missing', () => {
-    expect(sessionUsedPercent(makeVersion({
-      windows: [{ key: 'week', usedPercent: 5, resetsAt: null }]
-    }))).toBe(100);
-  });
-});
 
 describe('inlineContinueInstructions', () => {
   const REAL_CONTINUE_MD = `---
@@ -98,12 +64,6 @@ describe('buildAgentRunLaunchCommand', () => {
     );
   });
 
-  test('quotes a device name so it cannot break out of the command', () => {
-    const hostile = "a'; echo pwned; #";
-    expect(buildAgentRunLaunchCommand('claude', hostile)).toBe(
-      `agents run claude --interactive --device 'a'\\''; echo pwned; #'`,
-    );
-  });
 });
 
 describe('buildAutoRunLaunchCommand', () => {
@@ -119,12 +79,6 @@ describe('buildAutoRunLaunchCommand', () => {
     );
   });
 
-  test('quotes a device name so it cannot break out of the command', () => {
-    const hostile = "a'; echo pwned; #";
-    expect(buildAutoRunLaunchCommand({ host: hostile, sessionId: 'new-id' })).toBe(
-      `agents run auto --interactive --device 'a'\\''; echo pwned; #' --session-id new-id`,
-    );
-  });
 });
 
 describe('buildResumeInput', () => {

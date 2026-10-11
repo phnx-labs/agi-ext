@@ -1,18 +1,17 @@
 // Per-window session-stream demand (PHNX-3939).
 //
 // One window "demands" the canonical `agents feed watch` producer while it is
-// actually showing live session state — its Fleet dashboard, its active-session
-// sidebar or its Project Sessions view is visible, or its Resume Session picker is open — or while it holds a tracked agent terminal whose identity
+// actually showing live session state — its active-session sidebar or its
+// Project Sessions view is visible, or its Resume Session picker is open — or while it holds a tracked agent terminal whose identity
 // isn't resolved yet (the stream is what attributes it). The elected leader gates
 // the single producer on the UNION of every window's demand (host.ts), so an
 // idle, hidden window contributes nothing and the watcher stays torn down.
 //
 // Kept vscode-free (a tiny observable boolean) so it unit-tests without the
-// extension host and so settings/agentPanel/extension can share one source of
+// extension host and so the panels and extension.ts can share one source of
 // truth instead of each hand-rolling a flag.
 
 export class SessionStreamDemand {
-  private dashboardVisible = false;
   private sidebarVisible = false;
   private projectSessionsVisible = false;
   private resumePickerOpen = false;
@@ -30,13 +29,7 @@ export class SessionStreamDemand {
 
   /** True when this window currently needs the producer. */
   get demand(): boolean {
-    return this.dashboardVisible || this.sidebarVisible || this.projectSessionsVisible || this.resumePickerOpen || this.unresolvedTuples;
-  }
-
-  setDashboardVisible(visible: boolean): void {
-    if (this.dashboardVisible === visible) return;
-    this.dashboardVisible = visible;
-    this.notify();
+    return this.sidebarVisible || this.projectSessionsVisible || this.resumePickerOpen || this.unresolvedTuples;
   }
 
   setSidebarVisible(visible: boolean): void {
@@ -67,7 +60,7 @@ export class SessionStreamDemand {
   }
 
   /** Fire `cb` only when the net demand VALUE flips, so a visibility toggle that
-   *  doesn't change the union (e.g. sidebar hides while dashboard stays visible)
+   *  doesn't change the union (e.g. sidebar hides while the picker stays open)
    *  never triggers a redundant report. Returns an unsubscribe. */
   onChange(cb: (demand: boolean) => void): () => void {
     this.listeners.add(cb);

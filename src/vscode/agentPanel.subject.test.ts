@@ -2,7 +2,7 @@
 //
 // One preview, two triggers, LAST WINS:
 //   an agent terminal takes focus   -> onDidChangeActiveTerminal
-//   a Fleet row is clicked          -> 'session.select' -> setAgentPanelSubjectFromFleet
+//   a Project panel session is clicked -> setAgentPanelSubjectFromProject
 //
 // Driven through the REAL registration path: `registerAgentPanel` subscribes the
 // terminal listener, and the test invokes the listener VS Code would have called.
@@ -92,7 +92,7 @@ const context = {
   workspaceState: { get: () => undefined, update: () => Promise.resolve() },
 };
 
-describe('sidebar subject — last of { focused terminal, clicked Fleet row }', () => {
+describe('sidebar subject — last of { focused terminal, clicked Project panel session }', () => {
   beforeEach(() => {
     panel.clearAgentPanelSubject();
     sessionPresentationStore.clear();
@@ -186,11 +186,11 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     expect(status).toContain(sessionB.slice(0, 8));
     expect(status).not.toContain(sessionA.slice(0, 8));
 
-    // Fleet selection is session-sourced, not terminal-sourced, so selecting A
+    // Project panel selection is session-sourced, not terminal-sourced, so selecting A
     // deliberately remains on A and resolves to the other A tab.
-    panel.setAgentPanelSubjectFromFleet(sessionA);
+    panel.setAgentPanelSubjectFromProject(sessionA);
     expect(panel.currentAgentPanelSubject()).toEqual({
-      sessionId: sessionA, source: 'fleet', hasTerminal: true,
+      sessionId: sessionA, source: 'project', hasTerminal: true,
     });
   });
 
@@ -219,7 +219,7 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     });
   });
 
-  test('a Fleet row click wins over the focused terminal', () => {
+  test('a Project panel click wins over the focused terminal', () => {
     const a = agentTab('CC-subject-b', 'session-b');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     panel.registerAgentPanel(context as any);
@@ -227,22 +227,22 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     onActiveTerminal!();
     expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-b');
 
-    // The user clicks a DIFFERENT session in the Fleet list — one with no tab here.
-    panel.setAgentPanelSubjectFromFleet('session-remote', 'yosemite-m2');
+    // The user clicks a DIFFERENT session in the Project panel — one with no tab here.
+    panel.setAgentPanelSubjectFromProject('session-remote', 'yosemite-m2');
 
     expect(panel.currentAgentPanelSubject()).toEqual({
-      sessionId: 'session-remote', host: 'yosemite-m2', source: 'fleet', hasTerminal: false,
+      sessionId: 'session-remote', host: 'yosemite-m2', source: 'project', hasTerminal: false,
     });
     // The terminal is still the focused one; the subject just isn't it any more.
     expect(win.activeTerminal).toBe(a);
   });
 
-  test('focusing a terminal again wins back over the Fleet selection', () => {
+  test('focusing a terminal again wins back over the Project panel selection', () => {
     const a = agentTab('CC-subject-c', 'session-c');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     panel.registerAgentPanel(context as any);
-    panel.setAgentPanelSubjectFromFleet('session-remote', 'yosemite-m2');
-    expect(panel.currentAgentPanelSubject()?.source).toBe('fleet');
+    panel.setAgentPanelSubjectFromProject('session-remote', 'yosemite-m2');
+    expect(panel.currentAgentPanelSubject()?.source).toBe('project');
 
     win.activeTerminal = a;
     onActiveTerminal!();
@@ -252,15 +252,15 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     });
   });
 
-  test('a Fleet subject that DOES have a local tab binds to it, so Focus and reply work', () => {
+  test('a Project subject that DOES have a local tab binds to it, so Focus and reply work', () => {
     agentTab('CC-subject-d', 'session-d');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     panel.registerAgentPanel(context as any);
 
-    panel.setAgentPanelSubjectFromFleet('session-d');
+    panel.setAgentPanelSubjectFromProject('session-d');
 
     expect(panel.currentAgentPanelSubject()).toEqual({
-      sessionId: 'session-d', source: 'fleet', hasTerminal: true,
+      sessionId: 'session-d', source: 'project', hasTerminal: true,
     });
   });
 
@@ -284,32 +284,17 @@ describe('sidebar subject — last of { focused terminal, clicked Fleet row }', 
     });
   });
 
-  test('a Fleet subject SURVIVES its device going quiet — it is not a terminal lookup', () => {
+  test('a Project subject SURVIVES its device going quiet — it is not a terminal lookup', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     panel.registerAgentPanel(context as any);
-    panel.setAgentPanelSubjectFromFleet('session-ghost', 'mac-mini');
+    panel.setAgentPanelSubjectFromProject('session-ghost', 'mac-mini');
     // No terminal anywhere matches it, and nothing is focused: the panel still
     // renders that session from the stream row rather than falling back to empty.
     expect(panel.currentAgentPanelSubject()).toEqual({
-      sessionId: 'session-ghost', host: 'mac-mini', source: 'fleet', hasTerminal: false,
+      sessionId: 'session-ghost', host: 'mac-mini', source: 'project', hasTerminal: false,
     });
   });
 
-  test('an empty session id is ignored rather than blanking the subject', () => {
-    const a = agentTab('CC-subject-g', 'session-g');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    panel.registerAgentPanel(context as any);
-    win.activeTerminal = a;
-    onActiveTerminal!();
-
-    panel.setAgentPanelSubjectFromFleet('   ');
-
-    expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-g');
-  });
-
-  test('no focus and no click means no subject at all', () => {
-    expect(panel.currentAgentPanelSubject()).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------

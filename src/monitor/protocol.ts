@@ -49,7 +49,7 @@ export const MONITOR_OP = {
   /**
    * Follower -> monitor: replace this window's panel-snapshot watch slice (#71).
    * The monitor's snapshot detector runs ONE machine-wide tick that computes the
-   * GLOBAL per-tick work every visible panel/floor used to fork on its own 4s
+   * GLOBAL per-tick work every visible panel used to fork on its own 4s
    * poll — `git branch`/`git diff --numstat HEAD` per workspace, `git worktree
    * list`, `agents view <type> --json` usage per agent, and `agents teams list`
    * per cwd — then broadcasts ONE `panel-snapshot` fact. Windows render from the
@@ -65,7 +65,7 @@ export interface ReportTuplesRequest {
   tuples: TerminalTuple[];
   /**
    * Whether THIS window currently needs the canonical session-CLI stream
-   * (PHNX-3939). True when its Fleet dashboard or active-session sidebar is
+   * (PHNX-3939). True when its active-session sidebar or Project panel is
    * visible, or it holds a tracked-but-unresolved agent tuple. The elected
    * monitor gates the single `agents feed watch` producer on the union of all
    * windows' demand: it spawns the watcher while ANY window demands it and tears

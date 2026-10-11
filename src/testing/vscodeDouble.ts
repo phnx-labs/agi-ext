@@ -6,8 +6,8 @@
 // own partial `vscode` object, so which parts of the API existed during a suite
 // run was decided by whichever mocking file happened to load last. That is how
 // `terminalReadiness.close.test.ts` passed on its own and failed all six of its
-// assertions in the suite: `watchdog.vscode.test.ts` sorts last and its double
-// has no `TerminalExitReason`, so `shouldTearDownAgentOnClose`'s
+// assertions in the suite: a file that sorted last registered a double with
+// no `TerminalExitReason`, so `shouldTearDownAgentOnClose`'s
 // `vscode.TerminalExitReason.User` read threw.
 //
 // API *constants* are the part that must not vary — they are fixed by the VS

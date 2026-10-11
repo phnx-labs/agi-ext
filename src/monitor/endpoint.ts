@@ -1,4 +1,4 @@
-// Leader-owned Unix socket endpoints: the monitor broadcast and watchdog sockets.
+// Leader-owned Unix socket endpoint for the monitor broadcast.
 //
 // Closing a Unix-socket server unlinks its path BY NAME, even after another
 // server has been bound there, and listen() refuses a path that exists. So the

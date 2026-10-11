@@ -30,10 +30,9 @@ CLI verb. Product requirements: `docs/PRD.md`. Architecture, module graph, debt:
 ```
 src/core     pure presentation logic, no vscode import
 src/monitor  stream leader, demand gate, broadcast, readiness (debt)
-src/vscode   commands, terminals, sidebar, webview/watchdog bridges, URI handler
-src/mcp      watchdog wire protocol + MCP server loaded by path
-src/shared   code both the host and ui/ import (@shared alias), e.g. sessionCards.ts
-ui/settings  Fleet dashboard (React); ui/editor  Reader custom editors
+src/vscode   commands, terminals, the two sidebars, URI handler
+src/shared   pure session presentation the sidebars' webview scripts reuse, e.g. sessionCards.ts
+ui/editor    Reader custom editors (React)
 scripts/     build.sh / install.sh / release.sh: the only entry points
 ```
 
@@ -65,18 +64,16 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   names for a remote session copies that one file into
   `~/.agents/.cache/remote-artifacts/<device>/` with one `agents ssh <device> --argv`
   call (`localArtifactUri`); any other path, or one that leaves that folder, is refused.
-  Both exceptions are the same in an expanded Fleet row, which draws the sidebar's own
-  Timeline and Artifacts cards (`src/shared/sessionCards.ts`): a click posts
-  `sessionCardAction` naming its session id and host, and `runSessionCardAction`
-  (`src/vscode/sessionCardActions.ts`) loads a filter only for a local session and copies
-  only an artifact that row lists. Nothing loads on expand.
+  The Project panel opens an artifact through the same path: `openListedArtifact`
+  (`src/vscode/sessionCardActions.ts`) finds the row by session id AND host and copies only
+  an artifact that row lists. Nothing loads on selection.
   A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
   `linear tasks <ID> --json` (`ProjectPanelController.ticketDetail`), on the click only, never
   on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
-- Fleet is a list, the sidebar is the one preview: a row click posts `session.select` and
-  spawns nothing. No detail rail, no `rightOpen` pref, no per-selection fetch.
+- The Active Session sidebar is the one preview: a Project panel session click sets its
+  subject (`setAgentPanelSubjectFromProject`) and spawns nothing. No per-selection fetch.
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`) and
   `harnessLaunchRegistrations` (`src/core/launchTarget.ts`): `--cwd` is the exact open
   workspace, emitted once for every variant except Pick Project, which emits `--project`;
@@ -90,14 +87,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.
 - Needs-you order is `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts`;
   a stall is a CLI signal, `FloorPhase` has no `stalled` member.
-- Project attribution uses only row hints through `matchLinearProject`
-  (`src/shared/linearProjects.ts`); no hint means the labeled Unassigned bucket, never a guess.
-  The Project sidebar is the one exception, and it is not a guess: it filters on the CLI's
-  own `confirmedProject` (`projectSessions`, `src/core/projectPanel.ts`).
-- One shell quoter (`shellQuote`, `src/core/deviceDispatchShell.ts`) and one binary resolver
+- Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
+  `src/core/projectPanel.ts`); the extension never guesses a project from a cwd.
+- One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
   and exec path (`resolveAgentsBin`, `runAgents`, `src/core/agentsBin.ts`).
 - Harness ids, labels, prefixes derive from `src/core/agents.cli.ts` and `PRESENTED_AGENTS`
-  in `src/core/agents.ts` through `src/shared/agents.ts`; no hand-written list in `ui/`.
+  in `src/core/agents.ts`; no hand-written list anywhere else, `ui/editor` included.
 - `src/core` never imports `vscode`; the only test double is `src/testing/vscodeDouble.ts`.
 - A missing CLI noun is an upgrade error, never a filesystem fallback.
 
@@ -136,10 +131,13 @@ going on, where, and what came out of it" in one look; text explains only what a
 
 The thin-client violations still in the tree are listed with their fate in `docs/ARCH.md`
 ("Findings"): `fetchRemoteSessionLabelSource`, `watchForPlan`,
-`sessionParse.ts`, the transcript `fs.watch`, `readinessDetector.ts`, the
-Foreman OpenAI dependency. Touching one means deleting or shrinking it, never extending it.
-Four tests assert on source text (`autoLabelHydration`, `statusBarIdentity.spawnStorm`,
-`agentPanel.webview-syntax`, `pollTimers.replacement`); read what each protects first.
+`sessionParse.ts`, the transcript `fs.watch`, `readinessDetector.ts`. Touching one means
+deleting or shrinking it, never extending it.
+Five tests assert on source text (`autoLabelHydration`: stream rebind before the sidebars
+refresh; `statusBarIdentity.spawnStorm`: identity only from the store;
+`agentPanel.webview-syntax`: the sidebar script parses and uses theme tokens;
+`pollTimers.replacement`: no poll timer in the sidebar; `extension.vscode`: resume opens an
+editor tab); read what each protects first.
 
 ## Conventions
 

@@ -3,10 +3,8 @@
 // Delivering text INTO a running agent through its editor-tab terminal has one
 // gotcha and two callers. The gotcha: Claude Code's Ink TUI ignores the newline
 // `sendText(_, true)` appends and needs an explicit carriage return, while every
-// other harness submits on the newline. The callers used to be the Fleet detail
-// rail's reply box (settings.vscode.ts `replyToAgent`) and the sidebar's slash
-// chips; the rail is gone and the sidebar's reply field took its place, so both
-// go through here instead of each re-deriving the rule.
+// other harness submits on the newline. The sidebar's reply field and its slash
+// chips both go through here instead of each re-deriving the rule.
 
 import type * as vscode from 'vscode';
 

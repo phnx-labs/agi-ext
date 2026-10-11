@@ -3,94 +3,32 @@ import {
   getDefaultSettings,
   hasLoginEnabled,
   migrateStaleClaudeQuickLaunch,
-  AgentSettings,
   QuickLaunchConfig,
 } from './settings';
 
 describe('getDefaultSettings', () => {
-  test('returns valid settings structure', () => {
+  test('every built-in starts with login off and 2 instances; labels and the Reader are on', () => {
     const settings = getDefaultSettings();
-
-    expect(settings.builtIn).toBeDefined();
-    expect(settings.builtIn.claude).toBeDefined();
-    expect(settings.builtIn.codex).toBeDefined();
-    expect(settings.builtIn.opencode).toBeDefined();
-    expect(settings.builtIn.cursor).toBeDefined();
+    for (const key of ['claude', 'codex', 'opencode', 'cursor'] as const) {
+      expect(settings.builtIn[key]).toEqual({ login: false, instances: 2 });
+    }
     expect(settings.custom).toEqual([]);
-    expect(settings.editor).toBeDefined();
-    expect(settings.display).toBeDefined();
-  });
-
-  test('all built-in agents have login disabled by default', () => {
-    const settings = getDefaultSettings();
-
-    expect(settings.builtIn.claude.login).toBe(false);
-    expect(settings.builtIn.codex.login).toBe(false);
-    expect(settings.builtIn.opencode.login).toBe(false);
-    expect(settings.builtIn.cursor.login).toBe(false);
-  });
-
-  test('display preferences defaults', () => {
-    const settings = getDefaultSettings();
-    expect(settings.display.showFullAgentNames).toBe(true);
-    expect(settings.display.showLabelsInTitles).toBe(true);
-    expect(settings.display.autoLabelInTabTitles).toBe(true);
-    expect(settings.display.showSessionIdInTitles).toBe(true);
-  });
-
-  test('all built-in agents have 2 instances by default', () => {
-    const settings = getDefaultSettings();
-
-    expect(settings.builtIn.claude.instances).toBe(2);
-    expect(settings.builtIn.codex.instances).toBe(2);
-    expect(settings.builtIn.opencode.instances).toBe(2);
-    expect(settings.builtIn.cursor.instances).toBe(2);
-  });
-
-  test('editor preferences defaults', () => {
-    const settings = getDefaultSettings();
+    expect(settings.display).toMatchObject({ showFullAgentNames: true, showLabelsInTitles: true, autoLabelInTabTitles: true, showSessionIdInTitles: true });
     expect(settings.editor.markdownViewerEnabled).toBe(true);
   });
 });
 
 describe('hasLoginEnabled', () => {
-  test('returns false for default settings', () => {
+  test('is true once a built-in or custom agent has login on', () => {
     const settings = getDefaultSettings();
     expect(hasLoginEnabled(settings)).toBe(false);
-  });
-
-  test('returns true when claude login is enabled', () => {
-    const settings = getDefaultSettings();
-    settings.builtIn.claude.login = true;
-    expect(hasLoginEnabled(settings)).toBe(true);
-  });
-
-  test('returns true when codex login is enabled', () => {
-    const settings = getDefaultSettings();
-    settings.builtIn.codex.login = true;
-    expect(hasLoginEnabled(settings)).toBe(true);
-  });
-
-  test('returns true when custom agent login is enabled', () => {
-    const settings = getDefaultSettings();
-    settings.custom.push({
-      name: 'Custom',
-      command: 'custom-cli',
-      login: true,
-      instances: 1
-    });
-    expect(hasLoginEnabled(settings)).toBe(true);
-  });
-
-  test('returns false when custom agent exists but login is disabled', () => {
-    const settings = getDefaultSettings();
-    settings.custom.push({
-      name: 'Custom',
-      command: 'custom-cli',
-      login: false,
-      instances: 1
-    });
+    settings.custom.push({ name: 'Custom', command: 'custom-cli', login: false, instances: 1 });
     expect(hasLoginEnabled(settings)).toBe(false);
+    settings.custom[0]!.login = true;
+    expect(hasLoginEnabled(settings)).toBe(true);
+    const codex = getDefaultSettings();
+    codex.builtIn.codex.login = true;
+    expect(hasLoginEnabled(codex)).toBe(true);
   });
 });
 

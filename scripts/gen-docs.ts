@@ -228,7 +228,7 @@ function propsOf(symbol: ts.Symbol, decl: ts.Declaration, checker: ts.TypeChecke
 /**
  * Each ui/<root>/ bundle mapped to the webview that loads it, read from the extension host source.
  * A registration claims the bundles its own file loads and those loaded by the src modules it
- * imports directly (settings.vscode.ts registers the Fleet panel; settingsWebview.ts builds its HTML).
+ * imports directly, so a webview whose HTML is built in a helper module is still found.
  */
 function webviewHosts(manifest: Manifest): Map<string, string> {
   const hosts = new Map<string, string>();

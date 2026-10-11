@@ -3,8 +3,6 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/vscode/extension.ts",
-        "src/mcp/watchdog-server.ts",
         "scripts/*.ts"
       ],
       "project": [
@@ -12,11 +10,9 @@
         "scripts/**/*.ts"
       ],
       "ignore": [
-        "src/testing/**",
         "**/testdata/**"
       ],
       "ignoreBinaries": [
-        "tsc",
         "vsce",
         "agents",
         "osascript",
@@ -24,19 +20,8 @@
       ]
     },
     "ui": {
-      "entry": [
-        "settings/main.tsx",
-        "editor/main.tsx",
-        "vite.config.ts",
-        "vite.settings.config.ts",
-        "vite.editor.config.ts",
-        "test-setup.ts"
-      ],
       "project": [
         "**/*.{ts,tsx}"
-      ],
-      "ignoreDependencies": [
-        "tailwindcss"
       ]
     }
   }

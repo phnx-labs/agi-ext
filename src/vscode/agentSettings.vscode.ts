@@ -4,16 +4,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { homedir } from 'os';
-import { AgentSettings, getDefaultSettings, ALL_SWARM_AGENTS, PromptEntry, DEFAULT_DISPLAY_PREFERENCES, DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_TASK_SOURCE_SETTINGS, DEFAULT_QUICK_LAUNCH, migrateStaleClaudeQuickLaunch, migrateLegacyQuickLaunchSlots } from '../core/settings';
+import { AgentSettings, getDefaultSettings, PromptEntry, DEFAULT_DISPLAY_PREFERENCES, DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_QUICK_LAUNCH, migrateStaleClaudeQuickLaunch, migrateLegacyQuickLaunchSlots } from '../core/settings';
 import { readPromptsFromPath, writePromptsToPath } from '../core/prompts';
-import { writeSwarmConfig } from './settingsActions';
 import * as workbench from './workbench.vscode';
 import * as terminals from './terminals.vscode';
 import { formatTerminalTitle, getSessionChunk, parseTerminalName } from '../core/utils';
 
 // Data directory: ~/.agents/
 const AGENTS_CONFIG_DIR = path.join(homedir(), '.agents');
-const AGENTS_CONFIG_PATH = path.join(AGENTS_CONFIG_DIR, 'config.json');
 const PROMPTS_PATH = path.join(AGENTS_CONFIG_DIR, 'prompts.json');
 
 // Read prompts from YAML file (persists across extension uninstall)
@@ -35,18 +33,6 @@ export function writePrompts(prompts: PromptEntry[]): void {
 export function getSettings(context: vscode.ExtensionContext): AgentSettings {
   const stored = context.globalState.get<AgentSettings>('agentSettings');
   if (stored) {
-    // Migrate: add swarmEnabledAgents if missing or filter out old agents
-    if (!stored.swarmEnabledAgents) {
-      stored.swarmEnabledAgents = [...ALL_SWARM_AGENTS];
-      context.globalState.update('agentSettings', stored);
-    } else {
-      // Filter to only include supported agents (claude, codex)
-      const filtered = stored.swarmEnabledAgents.filter(a => ALL_SWARM_AGENTS.includes(a));
-      if (filtered.length !== stored.swarmEnabledAgents.length) {
-        stored.swarmEnabledAgents = filtered.length > 0 ? filtered : [...ALL_SWARM_AGENTS];
-        context.globalState.update('agentSettings', stored);
-      }
-    }
     if (!stored.builtIn.opencode) {
       stored.builtIn.opencode = { login: false, instances: 2 };
       context.globalState.update('agentSettings', stored);
@@ -109,19 +95,6 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
       stored.aliases = [];
       context.globalState.update('agentSettings', stored);
     }
-    // Migrate: add welcome screen setting if missing (default: enabled)
-    if (stored.showWelcomeScreen === undefined) {
-      stored.showWelcomeScreen = true;
-      context.globalState.update('agentSettings', stored);
-    }
-    // Migrate: add task sources if missing
-    if (!stored.taskSources) {
-      stored.taskSources = { ...DEFAULT_TASK_SOURCE_SETTINGS };
-      context.globalState.update('agentSettings', stored);
-    } else if (stored.taskSources.githubAssignedOnly === undefined) {
-      stored.taskSources.githubAssignedOnly = DEFAULT_TASK_SOURCE_SETTINGS.githubAssignedOnly;
-      context.globalState.update('agentSettings', stored);
-    }
     // Migrate: add custom agents if missing
     if (!stored.custom) {
       stored.custom = [];
@@ -167,13 +140,10 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
         instances: a.count
       })),
       aliases: [],
-      swarmEnabledAgents: [...ALL_SWARM_AGENTS],
       prompts: readPrompts(),
       editor: { markdownViewerEnabled: true },
       display: { ...DEFAULT_DISPLAY_PREFERENCES },
-      notifications: { ...DEFAULT_NOTIFICATION_SETTINGS },
-      showWelcomeScreen: true,
-      taskSources: { ...DEFAULT_TASK_SOURCE_SETTINGS }
+      notifications: { ...DEFAULT_NOTIFICATION_SETTINGS }
     };
     context.globalState.update('agentSettings', migrated);
     return migrated;
@@ -190,14 +160,8 @@ export function getDefaultModel(
   return settings.builtIn[agentType]?.defaultModel;
 }
 
-// Save settings to global state and write configs to files
+// Save settings to global state and the prompt library to its file
 export async function saveSettings(context: vscode.ExtensionContext, settings: AgentSettings): Promise<void> {
-  try {
-    writeSwarmConfig(AGENTS_CONFIG_PATH, settings.swarmEnabledAgents);
-  } catch (error) {
-    void vscode.window.showErrorMessage(`Settings were not saved. Could not update ${AGENTS_CONFIG_PATH}: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
-  }
   await context.globalState.update('agentSettings', settings);
   // Sync prompts to file for persistence across uninstall
   if (settings.prompts) {

@@ -1,7 +1,7 @@
 // Pure functions for .agents config parsing/validation (no VS Code dependencies)
 
 import * as YAML from 'yaml';
-import { CLI_AGENT_IDS, CliAgentId, isCliAgentId } from './agents.cli';
+import { CliAgentId, isCliAgentId } from './agents.cli';
 
 export const AGENTS_CONFIG_FILENAME = '.agents';
 
@@ -180,20 +180,4 @@ export function serializeAgentsConfig(config: AgentsConfig): string {
   });
 
   return doc.toString();
-}
-
-// Get all context mappings from the config
-export function getContextMappings(config: AgentsConfig): ContextMapping[] {
-  return config.context;
-}
-
-// Get all source files from the config
-export function getSourceFiles(config: AgentsConfig): string[] {
-  return config.context.map(c => c.source);
-}
-
-// Get aliases for a specific source file
-export function getAliasesForSource(config: AgentsConfig, source: string): string[] {
-  const mapping = config.context.find(c => c.source === source);
-  return mapping ? mapping.aliases : [];
 }

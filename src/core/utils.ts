@@ -31,22 +31,6 @@ const PREFIX_MAPPINGS: Array<{ canonical: string; config: string; agentType: Ses
   { canonical: DROID_TITLE, config: 'dr', agentType: 'droid' }
 ];
 
-// Convert canonical prefix (CC) to config prefix (cl) - case insensitive
-export function canonicalToConfigPrefix(input: string | null): string | null {
-  if (!input) return null;
-  const lower = input.toLowerCase();
-  const mapping = PREFIX_MAPPINGS.find(m => m.canonical.toLowerCase() === lower);
-  return mapping?.config || null;
-}
-
-// Convert config prefix (cl) to canonical prefix (CC) - case insensitive
-export function configToCanonicalPrefix(input: string | null): string | null {
-  if (!input) return null;
-  const lower = input.toLowerCase();
-  const mapping = PREFIX_MAPPINGS.find(m => m.config.toLowerCase() === lower);
-  return mapping?.canonical || null;
-}
-
 // Map from prefix to SessionAgentType - accepts either format, case insensitive
 export function prefixToAgentType(input: string | null): SessionAgentType | null {
   if (!input) return null;
@@ -303,7 +287,7 @@ export function getIconFilename(prefix: string): string | null {
  * Get the agent prefix from an icon filename.
  * Reverse lookup for icon-based identification.
  */
-export function getPrefixFromIconFilename(iconFilename: string): string | null {
+function getPrefixFromIconFilename(iconFilename: string): string | null {
   return ICON_TO_PREFIX[iconFilename] || null;
 }
 
@@ -507,71 +491,7 @@ export function findTerminalNameByTabLabel(
   return terminalNames.find(name => name === tabLabel) ?? null;
 }
 
-export interface McpServerConfig {
-  type: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-}
-
-export interface McpConfig {
-  mcpServers?: Record<string, McpServerConfig>;
-}
-
-/**
- * Merge a new MCP server into an existing config.
- * Preserves existing servers while adding/updating the specified one.
- */
-export function mergeMcpConfig(
-  existing: McpConfig | null,
-  serverName: string,
-  serverConfig: McpServerConfig
-): McpConfig {
-  const config: McpConfig = existing ? { ...existing } : {};
-  config.mcpServers = { ...(config.mcpServers || {}), [serverName]: serverConfig };
-  return config;
-}
-
-/**
- * Create the swarm MCP server config for a given cli-ts path.
- */
-export function createSwarmServerConfig(cliTsIndexPath: string): McpServerConfig {
-  return {
-    type: 'stdio',
-    command: 'node',
-    args: [cliTsIndexPath],
-    env: {}
-  };
-}
-
 // === PROMPT UTILITIES ===
-
-export interface PromptEntryLike {
-  id: string;
-  isFavorite: boolean;
-  accessedAt: number;
-}
-
-/**
- * Sort prompt entries: favorites first, then by accessedAt (most recently used first).
- */
-export function sortPrompts<T extends PromptEntryLike>(entries: T[]): T[] {
-  return [...entries].sort((a, b) => {
-    // Favorites first
-    if (a.isFavorite !== b.isFavorite) {
-      return a.isFavorite ? -1 : 1;
-    }
-    // Then by accessedAt (most recently used first)
-    return b.accessedAt - a.accessedAt;
-  });
-}
-
-/**
- * Check if a prompt ID is a built-in prompt (not user-created).
- */
-export function isBuiltInPromptId(id: string): boolean {
-  return id.startsWith('builtin-');
-}
 
 /**
  * Truncate text with ellipsis for display.
