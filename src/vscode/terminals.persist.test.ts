@@ -196,7 +196,7 @@ describe('restore store per window', () => {
     try {
       window(home, folder('/work/projA'), `
         const { spawn } = await import('node:child_process');
-        const shell = spawn('sh', ['-c', 'sleep 1 & wait; sleep 30'], { stdio: 'ignore', detached: true });
+        const shell = spawn('sh', ['-c', 'sleep 1 & wait; exec sleep 30'], { stdio: 'ignore', detached: true });
         const stuck = spawn('sh', ['-c', 'sleep 30 & wait'], { stdio: 'ignore', detached: true });
         shell.unref(); stuck.unref();
         await new Promise((r) => setTimeout(r, 300));
