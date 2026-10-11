@@ -927,8 +927,6 @@
 .sw-sessions .sx-phase.failed { color: var(--ds-danger); border-color: rgba(248,113,113,.45); background: rgba(248,113,113,.14); }
 .sw-sessions .sx-phase.done { color: var(--ds-success); border-color: rgba(74,222,128,.4); background: rgba(74,222,128,.10); }
 .sw-sessions .sx-phase.needs { color: var(--ds-danger); border-color: rgba(248,113,113,.55); background: rgba(248,113,113,.16); font-weight: 700; }
-.sw-sessions .sx-now { font-size: 12px; color: var(--ds-text-dim); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sw-sessions .sx-now b { color: var(--ds-text); font-weight: 600; }
 .sw-sessions .sx-band.previous .g { background: var(--ds-violet); }
 .sw-sessions .sx-status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
 .sw-sessions .sx-status-dot.active { background: var(--ds-success); }

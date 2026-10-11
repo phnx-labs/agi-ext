@@ -235,6 +235,8 @@ export interface SessionRowView {
   /** True only when `you` came from a genuine user turn the CLI carried, never a
    *  synthesized label (topic, worktree slug, tab name). */
   youIsReal: boolean
+  /** True when `you` is the session's first turn (no later turn or request). */
+  youIsFirst: boolean
   harnessTag: string
   /** The agent's own latest words, never the task label. '' when the row has none. */
   lastLine: string
@@ -542,6 +544,7 @@ export function sessionRowView(
     recapSourceClass: recapSourceClass(recapSource),
     you,
     youIsReal: Boolean(realUserText),
+    youIsFirst: Boolean(realUserText) && realUserText === firstNonEmpty(overlay.firstUserMessage),
     harnessTag: harnessLabel(agent.abbr),
     lastLine,
     lastFull,

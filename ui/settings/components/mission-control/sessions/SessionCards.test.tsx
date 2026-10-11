@@ -100,8 +100,6 @@ describe('stream row -> Fleet session card', () => {
     expect(html).not.toContain('tell me why my own approvals are rejected')
     expect(html).toContain('Agent ›')
     expect(html).toContain('&quot;The merge guard now accepts your own-account approvals.&quot;')
-    // The live activity is the same reply, so no now-line repeats it.
-    expect(html).not.toContain('sx-now')
     expect(html).not.toContain('sx-cards')
   })
 

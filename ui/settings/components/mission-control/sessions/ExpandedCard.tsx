@@ -36,9 +36,8 @@ export interface ExpandedCardProps {
 
 export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
   const hasRealRequest = Boolean(a.firstUserMessage?.trim())
-  // The row's You line is the LATEST turn; once there are later ones, this
-  // block says it is the first so the two never read as the same message.
-  const laterTurns = (a.userTurns?.length ?? 0) > 1
+  // The row's You line is the latest turn (sessionRowView). When that is not the
+  // first turn, this block says it is the first so the two never read as one.
   // Preserve the genuine first turn byte-for-byte for the expanded view. Trimming
   // here would make the UI's “full” request subtly incomplete.
   const ask = hasRealRequest ? a.firstUserMessage! : (row.you.text || a.prompt || '')
@@ -49,7 +48,7 @@ export function ExpandedCard({ agent: a, row, nowMs }: ExpandedCardProps) {
   return (
     <div className="sx-detail" onClick={(e) => e.stopPropagation()}>
       <div className="sx-dsec">
-        <div className="sx-dcap">{!hasRealRequest ? 'Request summary' : laterTurns ? 'First request' : 'Your request'}</div>
+        <div className="sx-dcap">{!hasRealRequest ? 'Request summary' : row.youIsFirst ? 'Your request' : 'First request'}</div>
         {ask && <ClampedText text={ask} />}
         {row.title && row.title.trim() && row.title.trim() !== ask.trim() && (
           <div className="sx-goal">{row.title}</div>
