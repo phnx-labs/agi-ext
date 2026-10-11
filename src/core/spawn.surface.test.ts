@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { decideSpawn, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
@@ -99,6 +99,24 @@ describe('spawn ack contract', () => {
     expect(decideSpawn({ project: '/Users/dev/src/agents-cli', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('focus');
     expect(decideSpawn({ project: '/Users/dev/src/svatlas', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('wrong-window');
     expect(decideSpawn({ windowFolders: folders })).toBe('open');
+  });
+
+  test('a window on a parent folder leaves a nested project to the live window that holds it', () => {
+    expect(decideSpawn({ project: '/Users/dev/src/app/pkg', windowFolders: ['/Users/dev/src'], otherWindows: [['/Users/dev/src/app']] })).toBe('wrong-window');
+    expect(decideSpawn({ project: '/Users/dev/src/app/pkg', windowFolders: ['/Users/dev/src/app'], otherWindows: [['/Users/dev/src']] })).toBe('open');
+    expect(decideSpawn({ project: '/Users/dev/src/other', windowFolders: ['/Users/dev/src'], otherWindows: [['/Users/dev/src/app']] })).toBe('open');
+  });
+
+  test('folders compare through symlinks and, on macOS, without case', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spawn-real-'));
+    try {
+      mkdirSync(join(dir, 'real/proj'), { recursive: true });
+      symlinkSync(join(dir, 'real'), join(dir, 'link'));
+      expect(decideSpawn({ project: join(dir, 'link/proj'), windowFolders: [join(dir, 'real')] })).toBe('open');
+      if (process.platform === 'darwin') {
+        expect(decideSpawn({ project: join(dir, 'REAL/proj'), windowFolders: [join(dir, 'real')] })).toBe('open');
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('writeSpawnAck lands the fixture shape at spawn-acks/<nonce>.json', () => {

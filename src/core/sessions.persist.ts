@@ -38,13 +38,15 @@ export interface PersistedSession {
   agentPid?: number;            // shell pid of the terminal (liveness cross-check)
 }
 
+function hashOf(key: string): string {
+  return crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
+}
+
 function windowFile(workspaceKey: string): string {
-  const hash = crypto.createHash('sha256').update(workspaceKey).digest('hex').slice(0, 16);
-  return path.join(WINDOWS_DIR, `${hash}.yaml`);
+  return path.join(WINDOWS_DIR, `${hashOf(workspaceKey)}.yaml`);
 }
 
 function readYaml(file: string): any {
-  if (!fs.existsSync(file)) return undefined;
   try {
     return YAML.parse(fs.readFileSync(file, 'utf8')) ?? undefined;
   } catch (err) {
@@ -54,29 +56,78 @@ function readYaml(file: string): any {
 }
 
 /**
- * The tabs this window had open. `legacyKey` is the key the pre-upgrade shared
- * file used (the first folder path); it is read only while this window has never
- * written its own file.
+ * The tabs this window had open. Only a window that has never written its own
+ * file reads the pre-upgrade shared file, at its first-folder key (`legacyKey`),
+ * and only the first window to claim that key gets its tabs: two windows that
+ * shared a key before the upgrade must not both reopen them.
  */
 export function getWorkspaceSessions(workspaceKey: string, legacyKey: string = workspaceKey): PersistedSession[] {
-  const own = readYaml(windowFile(workspaceKey));
-  if (own) return Array.isArray(own.sessions) ? own.sessions : [];
-  const legacy = readYaml(LEGACY_SESSIONS_PATH);
-  const sessions = legacy?.workspaces?.[legacyKey]?.sessions;
-  return Array.isArray(sessions) ? sessions : [];
+  const own = windowFile(workspaceKey);
+  if (fs.existsSync(own)) {
+    const sessions = readYaml(own)?.sessions;
+    return Array.isArray(sessions) ? sessions : [];
+  }
+  const sessions = readYaml(LEGACY_SESSIONS_PATH)?.workspaces?.[legacyKey]?.sessions;
+  if (!Array.isArray(sessions) || sessions.length === 0) return [];
+  try {
+    fs.mkdirSync(WINDOWS_DIR, { recursive: true });
+    fs.closeSync(fs.openSync(path.join(WINDOWS_DIR, `legacy-${hashOf(legacyKey)}.claimed`), 'wx'));
+  } catch {
+    return [];
+  }
+  return sessions;
 }
 
-/** Replace this window's tabs. Only this window's file is touched, and a reader sees the old or new file, never a torn one. */
-export function saveWorkspaceSessions(workspaceKey: string, sessions: PersistedSession[]): void {
+/**
+ * Replace this window's file. Only this window's file is touched; the temp file
+ * is flushed to disk before the rename, so a reader or a power loss sees the old
+ * file or the new one, never a torn or empty one. `folders` and `pid` let other
+ * windows see which projects a live window holds (liveWindowFolders).
+ */
+export function saveWorkspaceSessions(
+  workspaceKey: string,
+  sessions: PersistedSession[],
+  window: { folders?: string[]; pid?: number } = {},
+): void {
   const file = windowFile(workspaceKey);
   const tmp = `${file}.${process.pid}.tmp`;
   try {
     fs.mkdirSync(WINDOWS_DIR, { recursive: true });
-    fs.writeFileSync(tmp, YAML.stringify({ workspace: workspaceKey, sessions }, { indent: 2 }));
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeSync(fd, YAML.stringify({ workspace: workspaceKey, folders: window.folders, pid: window.pid, sessions }, { indent: 2 }));
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, file);
   } catch (err) {
     console.error('[SESSIONS] Failed to save sessions file:', err);
+    try { fs.unlinkSync(tmp); } catch { /* already gone */ }
   }
+}
+
+/** Folders of every other editor window whose extension host is still running. */
+export function liveWindowFolders(selfPid: number): string[][] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(WINDOWS_DIR).filter((name) => name.endsWith('.yaml'));
+  } catch {
+    return [];
+  }
+  const out: string[][] = [];
+  for (const name of names) {
+    const data = readYaml(path.join(WINDOWS_DIR, name));
+    const pid = data?.pid;
+    if (typeof pid !== 'number' || pid === selfPid || !Array.isArray(data.folders)) continue;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      continue;
+    }
+    out.push(data.folders);
+  }
+  return out;
 }
 
 /**

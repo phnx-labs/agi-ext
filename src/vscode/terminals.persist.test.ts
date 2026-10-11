@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import YAML from 'yaml';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,6 +18,12 @@ function window(home: string, workspace: string, body: string) {
     const config = { prefix: 'cl', title: 'Claude', command: 'claude' };
     const term = (id) => ({ name: id, processId: Promise.resolve(1), creationOptions: { env: { AGENT_TERMINAL_ID: id } } });
     const ids = () => t.loadPersistedSessions().map((s) => s.terminalId);
+    const vscode = await import('vscode');
+    const live = (id) => ({ name: 'CC', exitStatus: undefined, processId: Promise.resolve(4242),
+      creationOptions: { env: { AGENT_TERMINAL_ID: id } } });
+    const row = (id, extra = {}) => ({ terminalId: id, prefix: 'CC', sessionId: 'sess-' + id, agentType: 'claude', createdAt: 1, ...extra });
+    const seed = async (rows) => (await import(${JSON.stringify(join(import.meta.dir, '../core/sessions.persist.ts'))}))
+      .saveWorkspaceSessions('/work/projA', rows);
     ${body}
     t.clear();
   `;
@@ -64,6 +71,36 @@ describe('restore store per window', () => {
         assert.deepEqual(ids(), ['cl-2']);
         assert.equal(t.loadPersistedSessions()[0].host, 'yosemite-m2');
       `);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
+  test('a scan that registers one tab while the store holds five keeps all five on disk', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        await seed(['cc-1', 'cc-2', 'cc-3', 'cc-4', 'cc-5'].map((id) => row(id, { host: 'yosemite-m2' })));
+        vscode.window.terminals = [live('cc-1')];
+        await t.scanExisting(() => config);
+        t.persistNow();
+        assert.deepEqual(ids(), ['cc-1', 'cc-2', 'cc-3', 'cc-4', 'cc-5']);
+        assert.deepEqual(t.pendingRestore().map((s) => s.terminalId), ['cc-2', 'cc-3', 'cc-4', 'cc-5']);
+        assert.equal(t.loadPersistedSessions()[4].host, 'yosemite-m2');
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
+  test('on the first launch after the upgrade, an early write keeps the pre-upgrade tabs', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      mkdirSync(join(home, '.swarmify/agents'), { recursive: true });
+      writeFileSync(join(home, '.swarmify/agents/sessions.yaml'), YAML.stringify({ workspaces: { '/work/projA': { cleanShutdown: true,
+        sessions: ['cc-1', 'cc-2', 'cc-3', 'cc-4', 'cc-5'].map((id) => ({ terminalId: id, prefix: 'CC', sessionId: 'sess-' + id, createdAt: 1 })) } } }));
+      window(home, folder('/work/projA'), `
+        vscode.window.terminals = [live('cc-1')];
+        await t.scanExisting(() => config);
+        t.persistNow();
+      `);
+      window(home, folder('/work/projA'), `assert.deepEqual(ids(), ['cc-1', 'cc-2', 'cc-3', 'cc-4', 'cc-5']);`);
     } finally { rmSync(home, { recursive: true }); }
   });
 

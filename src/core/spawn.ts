@@ -106,23 +106,48 @@ export function writeSpawnAck(ack: SpawnAck): void {
 
 /**
  * What this window does with a spawn request: refuse a project outside its
- * folders, focus its own live tab for the session, or open a new one. A request
- * without `project` (a CLI from before this contract) opens where it landed.
+ * folders, or one a live window holds through a deeper folder (a window on
+ * ~/src must not take ~/src/app from the window on ~/src/app), focus its own
+ * live tab for the session, or open a new one. A request without `project` (a
+ * CLI from before this contract) opens where it landed.
  */
 export function decideSpawn(input: {
   project?: string;
   windowFolders: readonly string[];
+  otherWindows?: readonly (readonly string[])[];
   liveTerminalId?: string;
 }): 'wrong-window' | 'focus' | 'open' {
-  if (input.project && !input.windowFolders.some((folder) => pathContains(folder, input.project!))) {
-    return 'wrong-window';
+  if (input.project) {
+    const mine = deepestMatch(input.windowFolders, input.project);
+    if (mine < 0) return 'wrong-window';
+    const theirs = Math.max(-1, ...(input.otherWindows ?? []).map((folders) => deepestMatch(folders, input.project!)));
+    if (theirs > mine) return 'wrong-window';
   }
   return input.liveTerminalId ? 'focus' : 'open';
 }
 
-function pathContains(folder: string, target: string): boolean {
-  const rel = path.relative(path.resolve(folder), path.resolve(target));
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+// Depth (path length) of the deepest folder containing target, or -1.
+function deepestMatch(folders: readonly string[], target: string): number {
+  const t = canonicalPath(target);
+  let best = -1;
+  for (const folder of folders) {
+    const f = canonicalPath(folder);
+    const rel = path.relative(f, t);
+    if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) best = Math.max(best, f.length);
+  }
+  return best;
+}
+
+// Symlinks resolved; lower-cased on macOS and Windows, whose default volumes
+// compare names without case.
+function canonicalPath(p: string): string {
+  let real: string;
+  try {
+    real = fs.realpathSync.native(p);
+  } catch {
+    real = path.resolve(p);
+  }
+  return process.platform === 'darwin' || process.platform === 'win32' ? real.toLowerCase() : real;
 }
 
 // Which surface a spawn request lands on.
