@@ -50,16 +50,15 @@ export const PREWARM_CONFIGS: Record<PrewarmAgentType, PrewarmConfig> = {
 };
 
 /**
- * Build the canonical resume command for any harness. The legacy parameters
- * remain at call sites as display metadata; none may override CLI policy.
+ * What a tab runs to become the session's live agent: the CLI's strict resume,
+ * in place, with its routing banners off (`-q`). The CLI restores the harness,
+ * device, account and cwd itself. `clear` wipes the typed line so the tab's first
+ * screen is the agent. Never `--vscodium` or `--device` here: from inside a tab
+ * those ask the CLI to open the session on another surface, so the tab itself
+ * never became the agent (the 2026-10-10 restore sat on that command).
  */
-export function buildVersionedResumeCommand(
-  _agentType: PrewarmAgentType | string,
-  sessionId: string,
-  _version?: string,
-  _host?: string,
-): string {
-  return `agents sessions resume ${shellQuote(sessionId)} --vscodium`;
+export function inTabResumeCommand(sessionId: string): string {
+  return `clear; agents sessions resume ${shellQuote(sessionId)} -q`;
 }
 
 /**

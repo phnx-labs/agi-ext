@@ -35,7 +35,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - `/spawn` from the CLI opens a tab only in a window whose folders contain the session's
   project, focuses the existing tab instead of duplicating it, and answers with an ack file
   (`opened`, `focused-existing`, `wrong-window`, `failed`) so `agents sessions resume`
-  can say where the session actually opened.
+  can say where the session actually opened. A request that names no project is refused.
+- A restored or resumed tab now runs the CLI's in-place resume (`agents sessions resume <id> -q`),
+  so the tab itself becomes the live agent. It used to run `--vscodium`, which from inside a tab
+  asked the CLI to open yet another tab and left the first one on the CLI's output.
+- `agents.resumeSession(<id>)`: one command that focuses the session's tab in this window or
+  opens it in its project's window through the CLI, and returns the ack status.
 
 ## [0.9.387] - 2026-10-09
 

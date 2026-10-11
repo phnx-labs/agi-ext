@@ -36,7 +36,7 @@ describe('agent session editor-tab routing', () => {
     expect(helper.indexOf("'agents.png'")).toBeLessThan(helper.indexOf('vscode.window.createTerminal'));
     expect(restore).toContain('session.prefix.toLowerCase() === RECOVERY_AGENT_PREFIX');
     expect(restore).toContain('terminals.setRecoveryAgent(terminal, session.recoveryAgent)');
-    expect(restore).toContain('buildRecoveryResumeCommand(session.sessionId, session.host)');
+    expect(restore).toContain('inTabResumeCommand(session.sessionId)');
   });
 
   test('Fleet focus and remote attach both use the shared registered path', () => {
@@ -76,7 +76,7 @@ describe('agent session editor-tab routing', () => {
       extensionSource.indexOf('export async function openAgentSessionByMigration'),
     );
     expect(recovery).not.toContain('cwd: opts.cwd');
-    expect(recovery).toContain('buildRecoveryResumeCommand(opts.sessionId, device)');
+    expect(recovery).toContain('inTabResumeCommand(opts.sessionId)');
   });
 });
 

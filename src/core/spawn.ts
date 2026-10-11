@@ -71,10 +71,11 @@ export function parseSpawnRequest(query: string): SpawnRequest | null {
 //   opened           this window started the tab's process (pid set)
 //   focused-existing this window already had a live tab for sessionId; it was focused
 //   wrong-window     this window's folders do not contain `project`; nothing opened
-//   failed           this window tried to open the tab and its process never started
+//   failed           nothing opened: the request named no project, no harness
+//                    matched, or the tab's process never started (`reason` says which)
 // A window speaks only for its own tabs: wrong-window says nothing about which
 // window, if any, holds the session.
-type SpawnAckStatus = 'opened' | 'focused-existing' | 'wrong-window' | 'failed';
+export type SpawnAckStatus = 'opened' | 'focused-existing' | 'wrong-window' | 'failed';
 
 export interface SpawnAck {
   nonce: string;
@@ -85,6 +86,7 @@ export interface SpawnAck {
   title: string | null;
   sessionId: string | null;
   pid: number | null;
+  reason: string | null;
   at: number;
 }
 
@@ -100,29 +102,33 @@ export function writeSpawnAck(ack: SpawnAck): void {
   const file = spawnAckPath(ack.nonce);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(ack));
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(ack));
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* already gone */ }
+    throw err;
+  }
 }
 
 /**
  * What this window does with a spawn request: refuse a project outside its
  * folders, or one a live window holds through a deeper folder (a window on
  * ~/src must not take ~/src/app from the window on ~/src/app), focus its own
- * live tab for the session, or open a new one. A request without `project` (a
- * CLI from before this contract) opens where it landed.
+ * live tab for the session, or open a new one. A request that names no project
+ * is refused: without it a window cannot tell whether the tab belongs to it.
  */
 export function decideSpawn(input: {
   project?: string;
   windowFolders: readonly string[];
   otherWindows?: readonly (readonly string[])[];
   liveTerminalId?: string;
-}): 'wrong-window' | 'focus' | 'open' {
-  if (input.project) {
-    const mine = deepestMatch(input.windowFolders, input.project);
-    if (mine < 0) return 'wrong-window';
-    const theirs = Math.max(-1, ...(input.otherWindows ?? []).map((folders) => deepestMatch(folders, input.project!)));
-    if (theirs > mine) return 'wrong-window';
-  }
+}): 'no-project' | 'wrong-window' | 'focus' | 'open' {
+  if (!input.project) return 'no-project';
+  const mine = deepestMatch(input.windowFolders, input.project);
+  if (mine < 0) return 'wrong-window';
+  const theirs = Math.max(-1, ...(input.otherWindows ?? []).map((folders) => deepestMatch(folders, input.project!)));
+  if (theirs > mine) return 'wrong-window';
   return input.liveTerminalId ? 'focus' : 'open';
 }
 
@@ -148,6 +154,41 @@ function canonicalPath(p: string): string {
     real = path.resolve(p);
   }
   return process.platform === 'darwin' || process.platform === 'win32' ? real.toLowerCase() : real;
+}
+
+/**
+ * The answer `agents.resumeSession` returns when the session has no tab in the
+ * calling window: the CLI's `sessions resume <id> --vscodium` raised the window
+ * that owns the project, sent it a /spawn, and waited for that window's ack. Its
+ * exit code says whether a tab is showing the session; its last line says where.
+ */
+export function cliResumeOutcome(exitOk: boolean, output: string): { status: SpawnAckStatus; reason: string | null } {
+  const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
+  const last = lines[lines.length - 1] ?? null;
+  if (!exitOk) return { status: 'failed', reason: last ?? 'agents sessions resume failed with no output' };
+  return { status: lines.some((line) => line.startsWith('Already open')) ? 'focused-existing' : 'opened', reason: last };
+}
+
+/**
+ * `agents.resumeSession`: show this session. A tab already showing it in this
+ * window is focused; otherwise the CLI's `sessions resume <id> --vscodium` opens
+ * it in the window that owns its project, which runs decideSpawn there.
+ */
+export async function resumeSessionTab(
+  sessionId: string,
+  deps: {
+    liveTab(sessionId: string): { terminalId: string; focus(): void } | undefined;
+    runResume(sessionId: string): Promise<{ ok: boolean; output: string }>;
+  },
+): Promise<{ status: SpawnAckStatus; terminalId: string | null; reason: string | null }> {
+  if (!sessionId) return { status: 'failed', terminalId: null, reason: 'no session id' };
+  const live = deps.liveTab(sessionId);
+  if (live) {
+    live.focus();
+    return { status: 'focused-existing', terminalId: live.terminalId, reason: null };
+  }
+  const { ok, output } = await deps.runResume(sessionId);
+  return { ...cliResumeOutcome(ok, output), terminalId: null };
 }
 
 // Which surface a spawn request lands on.
