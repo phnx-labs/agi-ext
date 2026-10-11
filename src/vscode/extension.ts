@@ -1522,7 +1522,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.resumeSession', (sessionId: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
       liveTab: async (id) => {
-        const entry = await terminals.liveAgentTab(id);
+        const entry = (await terminals.sessionTabs(id)).live;
         return entry && { terminalId: entry.id, focus: () => entry.terminal.show() };
       },
       runResume: resumeInProjectWindow,
@@ -2178,7 +2178,7 @@ async function placeSpawnRequest(
     at: Date.now(),
   });
   if (!def) return result('failed', {}, 'no harness matches this request');
-  const live = sessionId ? await terminals.liveAgentTab(sessionId) : undefined;
+  const { live, dead } = sessionId ? await terminals.sessionTabs(sessionId) : { live: undefined, dead: [] };
   const decision = decideSpawn({
     project: req.project,
     windowFolders,
@@ -2191,6 +2191,7 @@ async function placeSpawnRequest(
     live.terminal.show();
     return result('focused-existing', { terminalId: live.id, title: live.terminal.name, pid: live.pid });
   }
+  terminals.closeTabs(dead);
 
   const agentConfig = createAgentConfig(
     context.extensionPath,
@@ -2790,11 +2791,12 @@ export async function openAgentSessionTerminal(
   // Same placement as /spawn: a session this window shows is focused, and one
   // whose project belongs to another window opens there through the CLI.
   if (!resumeCommandOverride) {
-    const live = await terminals.liveAgentTab(session.id);
+    const { live, dead } = await terminals.sessionTabs(session.id);
     if (live) {
       live.terminal.show();
       return true;
     }
+    terminals.closeTabs(dead);
     if (session.cwd && decideSpawn({
       project: session.cwd,
       windowFolders: terminals.windowFolders(),
@@ -4685,6 +4687,12 @@ async function reloadActiveTerminal(context: vscode.ExtensionContext) {
     for (const seq of exitSequenceFor(agentType)) {
       await vscode.commands.executeCommand('workbench.action.terminal.sendSequence', { text: seq });
       await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    // Reopen only once the old agent is gone, or the new tab's resume meets the
+    // still-running process.
+    if (!(await terminals.waitForAgentExit(entry))) {
+      vscode.window.showWarningMessage(`The agent in this tab is still running after its exit keys, so it was not reloaded (no second copy opened).`);
+      return;
     }
     terminals.unregister(terminal);
     terminal.dispose();

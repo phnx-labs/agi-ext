@@ -151,6 +151,71 @@ describe('restore store per window', () => {
     } finally { rmSync(home, { recursive: true }); }
   });
 
+  test('a session is open only while its tab runs or is starting its agent; finding tabs closes nothing', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const { spawn } = await import('node:child_process');
+        const shellRunningAgent = spawn('sh', ['-c', 'sleep 30 & wait'], { stdio: 'ignore', detached: true });
+        const shellAtPrompt = spawn('sleep', ['30'], { stdio: 'ignore' });
+        shellRunningAgent.unref(); shellAtPrompt.unref();
+        await new Promise((r) => setTimeout(r, 300));
+        const old = Date.now() - 60_000;
+        const make = (id, pid, opts = {}) => {
+          const disposed = { n: 0 };
+          const terminal = { name: id, processId: Promise.resolve(pid), exitStatus: opts.exited ? { code: 0 } : undefined,
+            creationOptions: { env: { AGENT_TERMINAL_ID: id }, shellArgs: opts.shellArgs }, dispose() { disposed.n++; } };
+          t.register(terminal, id, config, pid, undefined, undefined, opts.createdAt ?? old);
+          t.setSessionId(terminal, 's-' + id);
+          return disposed;
+        };
+        const counts = [
+          make('cl-run', shellRunningAgent.pid),
+          make('cl-proc', shellAtPrompt.pid, { shellArgs: ['-l', '-i', '-c', "agents sessions resume 'x' -q"] }),
+          make('cl-starting', shellAtPrompt.pid, { createdAt: Date.now() }),
+          make('cl-idle', shellAtPrompt.pid),
+          make('cl-exit', shellRunningAgent.pid, { exited: true }),
+        ];
+        const state = async (id) => { const r = await t.sessionTabs('s-' + id); return [r.live?.id, r.dead.map((e) => e.id)]; };
+        assert.deepEqual(await state('cl-run'), ['cl-run', []]);
+        assert.deepEqual(await state('cl-proc'), ['cl-proc', []]);
+        assert.deepEqual(await state('cl-starting'), ['cl-starting', []]);
+        assert.deepEqual(await state('cl-idle'), [undefined, ['cl-idle']]);
+        assert.deepEqual(await state('cl-exit'), [undefined, ['cl-exit']]);
+        assert.deepEqual(counts.map((c) => c.n), [0, 0, 0, 0, 0]);
+        t.closeTabs((await t.sessionTabs('s-cl-idle')).dead);
+        assert.deepEqual(counts.map((c) => c.n), [0, 0, 0, 1, 0]);
+        assert.equal(t.getById('cl-idle'), undefined);
+        process.kill(-shellRunningAgent.pid, 'SIGKILL'); shellAtPrompt.kill('SIGKILL');
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  }, 20_000);
+
+  test('reload waits for the old agent to exit, and reports one that will not', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const { spawn } = await import('node:child_process');
+        const shell = spawn('sh', ['-c', 'sleep 1 & wait; sleep 30'], { stdio: 'ignore', detached: true });
+        const stuck = spawn('sh', ['-c', 'sleep 30 & wait'], { stdio: 'ignore', detached: true });
+        shell.unref(); stuck.unref();
+        await new Promise((r) => setTimeout(r, 300));
+        const make = (id, pid) => {
+          const terminal = { name: id, processId: Promise.resolve(pid), creationOptions: { env: {} }, dispose() {} };
+          t.register(terminal, id, config, pid);
+          return t.getById(id);
+        };
+        const exiting = make('cl-exiting', shell.pid);
+        const running = make('cl-stuck', stuck.pid);
+        const t0 = Date.now();
+        assert.equal(await t.waitForAgentExit(exiting, 5000), true);
+        assert.ok(Date.now() - t0 < 4000);
+        assert.equal(await t.waitForAgentExit(running, 1000), false);
+        process.kill(-shell.pid, 'SIGKILL'); process.kill(-stuck.pid, 'SIGKILL');
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  }, 20_000);
+
   test('a multi-root window and a folder window on its first folder keep separate tabs', () => {
     const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
     try {

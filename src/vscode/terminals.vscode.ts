@@ -263,34 +263,66 @@ export function getBySessionId(sessionId: string): EditorTerminal | undefined {
   return undefined;
 }
 
+const STARTING_MS = 15_000;
+
 /**
- * The tab showing this session only while its agent is running: the tab's
- * process is alive and either is the agent (a tab opened with agentTabShell) or
- * has a child process (the agent started from the tab's shell). A tab whose
- * agent exited is closed here, so the caller opens the session again and there
- * is still one tab per session.
+ * This window's tabs for a session, split into the one showing it (`live`) and
+ * tabs that no longer run its agent (`dead`). Pure: nothing is closed here; a
+ * caller about to open the session closes `dead` with closeTabs. A tab counts as
+ * live while its process runs and either is the agent (a tab opened with
+ * agentTabShell), has a child process (the agent started from the shell), or was
+ * created in the last 15s (its agent may still be starting).
  */
-export async function liveAgentTab(sessionId: string): Promise<EditorTerminal | undefined> {
-  if (!sessionId) return undefined;
-  for (const entry of [...editorTerminals.values()]) {
+export async function sessionTabs(sessionId: string): Promise<{ live: EditorTerminal | undefined; dead: EditorTerminal[] }> {
+  let live: EditorTerminal | undefined;
+  const dead: EditorTerminal[] = [];
+  if (!sessionId) return { live, dead };
+  for (const entry of editorTerminals.values()) {
     if (entry.sessionId !== sessionId) continue;
-    if (await runsAgent(entry)) return entry;
+    if (await runsAgent(entry)) live ??= entry;
+    else dead.push(entry);
+  }
+  return { live, dead };
+}
+
+export function closeTabs(entries: readonly EditorTerminal[]): void {
+  for (const entry of entries) {
     unregister(entry.terminal);
     entry.terminal.dispose();
   }
-  return undefined;
 }
 
 async function runsAgent(entry: EditorTerminal): Promise<boolean> {
-  if (entry.terminal.exitStatus !== undefined || entry.pid === undefined) return false;
-  try {
-    process.kill(entry.pid, 0);
-  } catch {
-    return false;
-  }
+  if (entry.terminal.exitStatus !== undefined) return false;
+  const starting = Date.now() - entry.createdAt < STARTING_MS;
+  if (starting && (entry.pid === undefined || pidAlive(entry.pid))) return true;
+  return agentRunning(entry);
+}
+
+async function agentRunning(entry: EditorTerminal): Promise<boolean> {
+  if (entry.terminal.exitStatus !== undefined || entry.pid === undefined || !pidAlive(entry.pid)) return false;
   const args = (entry.terminal.creationOptions as vscode.TerminalOptions | undefined)?.shellArgs;
   if (Array.isArray(args) && args.includes('-c')) return true;
   return (await probeChildPids(entry.pid)).length > 0;
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Wait up to `timeoutMs` for the tab's agent to exit; false if it is still running. */
+export async function waitForAgentExit(entry: EditorTerminal, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!(await agentRunning(entry))) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 }
 
 export function getAllTerminals(): EditorTerminal[] {
