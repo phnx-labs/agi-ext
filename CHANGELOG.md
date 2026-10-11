@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.392] - 2026-10-11
 
 - The Project sidebar's Sessions tab reads at a glance.
   - Each session is a compact card: title, a state pill (dot and word), where it runs, the
