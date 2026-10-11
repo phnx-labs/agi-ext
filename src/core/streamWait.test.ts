@@ -31,8 +31,9 @@ describe('streamWait', () => {
     expect(silentNote(w)).toBe("the session stream didn't answer");
   });
 
-  test('a window not demanding the stream yet starts its bound now', () => {
-    expect(streamWait({ established: false, pending: [], sinceMs: undefined, nowMs: T0 }).waiting).toBe(true);
+  test('a window not asking for the stream is not waiting and arms no recheck', () => {
+    expect(streamWait({ established: false, pending: ['mark-1'], sinceMs: undefined, nowMs: T0 }))
+      .toEqual({ waiting: false, silent: [], streamSilent: false, recheckInMs: null });
   });
 
   test('silentNote lists three machines readably', () => {

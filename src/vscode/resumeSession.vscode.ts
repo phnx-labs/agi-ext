@@ -54,6 +54,7 @@ export function notifyResumePickerUpdate(): void {
 /** Each workspace folder's agents project, found once per folder per window (the
  *  CLI's `projects status --path`, the Project sidebar's detection). */
 const folderProjects = new Map<string, Promise<string | null>>();
+let watchingFolders = false;
 
 function folderProject(folder: string): Promise<string | null> {
   let found = folderProjects.get(folder);
@@ -69,6 +70,11 @@ function folderProject(folder: string): Promise<string | null> {
 
 /** The projects of every folder this window holds: a multi-root window lists them all. */
 async function windowProjects(): Promise<string[]> {
+  if (!watchingFolders) {
+    watchingFolders = true;
+    // A folder added or removed may belong to another project: look again.
+    vscode.workspace.onDidChangeWorkspaceFolders(() => folderProjects.clear());
+  }
   const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
   const names = await Promise.all(folders.map(folderProject));
   return [...new Set(names.filter((n): n is string => !!n))];
@@ -76,7 +82,7 @@ async function windowProjects(): Promise<string[]> {
 
 /** `Agents: Resume Session…`: this window's projects' sessions on every machine.
  *  @public loaded with require('./resumeSession.vscode') in extension.ts, which knip cannot see */
-export async function showResumePicker(): Promise<void> {
+export async function showResumePicker(deps: { projects(): Promise<string[]> } = { projects: windowProjects }): Promise<void> {
   const quickPick = vscode.window.createQuickPick<PickItem>();
   quickPick.title = 'Agents: Resume Session';
   quickPick.placeholder = 'Finding this window\'s projects…';
@@ -88,8 +94,11 @@ export async function showResumePicker(): Promise<void> {
 
   let projects: string[] | null = null;
   let recheck: ReturnType<typeof setTimeout> | undefined;
+  // Set when the picker closes: a draw, a stream update or a project lookup that
+  // lands afterwards does nothing and arms nothing.
+  let closed = false;
   const draw = () => {
-    if (!projects) return;
+    if (closed || !projects) return;
     const items = resumeItems(sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), projects, {
       localHost: LOCAL_LABEL,
       localName: LOCAL_NAME,
@@ -131,7 +140,8 @@ export async function showResumePicker(): Promise<void> {
     });
     quickPick.onDidHide(() => { if (!accepted) resolve(undefined); });
     redraw = draw;
-    windowProjects().then((found) => {
+    deps.projects().then((found) => {
+      if (closed) return;
       if (!found.length) {
         quickPick.busy = false;
         quickPick.placeholder = 'No folder in this window belongs to an agents project.';
@@ -140,12 +150,15 @@ export async function showResumePicker(): Promise<void> {
       projects = found;
       draw();
     }, (e) => {
+      if (closed) return;
       quickPick.busy = false;
       quickPick.placeholder = `Could not find this window's projects: ${e instanceof Error ? e.message : String(e)}`;
     });
   });
-  redraw = undefined;
+  closed = true;
+  if (redraw === draw) redraw = undefined;
   if (recheck) clearTimeout(recheck);
+  recheck = undefined;
   sessionStreamDemand.setResumePickerOpen(false);
   quickPick.dispose();
   if (chosen) await resumeAndNotify({ sessionId: chosen.sessionId, host: chosen.host, title: chosen.title });

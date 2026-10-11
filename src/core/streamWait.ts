@@ -28,8 +28,10 @@ export function streamWait(input: {
 }): StreamWait {
   const bound = input.boundMs ?? WAIT_BOUND_MS;
   const missing = !input.established || input.pending.length > 0;
-  if (!missing) return { waiting: false, silent: [], streamSilent: false, recheckInMs: null };
-  const elapsed = input.nowMs - (input.sinceMs ?? input.nowMs);
+  // Nothing missing, or this window is not asking for the stream at all: no view is
+  // waiting on it, so there is nothing to show as loading and nothing to recheck.
+  if (!missing || input.sinceMs === undefined) return { waiting: false, silent: [], streamSilent: false, recheckInMs: null };
+  const elapsed = input.nowMs - input.sinceMs;
   if (elapsed < bound) return { waiting: true, silent: [], streamSilent: false, recheckInMs: bound - elapsed };
   return { waiting: false, silent: [...input.pending], streamSilent: !input.established, recheckInMs: null };
 }
