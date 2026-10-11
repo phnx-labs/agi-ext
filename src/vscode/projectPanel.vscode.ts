@@ -35,6 +35,7 @@ import {
   type SessionListPrefs,
   type TicketGroup,
 } from '../core/projectPanel';
+import { sessionStateOf } from '../shared/sessionState';
 import { currentAgentPanelSubject, setAgentPanelSubjectFromFleet } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
@@ -191,6 +192,10 @@ class ProjectView implements vscode.WebviewViewProvider {
     return this.load('sessions', false);
   }
 
+  notice(text: string): Thenable<boolean> | undefined {
+    return this.view?.webview.postMessage({ type: 'notice', text });
+  }
+
   refresh(): void {
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
   }
@@ -330,10 +335,14 @@ class ProjectPanelController {
   async closeLeftoverTabs(): Promise<void> {
     const project = await this.project();
     if (!project) return;
+    let closed = 0;
+    // Only sessions the CLI says ended: a live agent whose process probe missed keeps its tab.
     for (const r of projectSessions(preferLive(this.presented()) as unknown as SessionLike[], project.name)) {
+      if (sessionStateOf(r) !== 'ended') continue;
       const { live, dead } = await terminals.sessionTabs(r.sessionId);
-      if (!live && dead.length) terminals.closeTabs(dead);
+      if (!live && dead.length) { terminals.closeTabs(dead); closed += dead.length; }
     }
+    void this.view.notice(closed ? `Closed ${closed} tab${closed === 1 ? '' : 's'} whose agent was not running` : 'No tab here was left without its agent');
     void this.view.redrawSessions();
   }
 
@@ -348,7 +357,8 @@ class ProjectPanelController {
     return {
       device: normalizeHost(os.hostname()),
       localHost: LOCAL_LABEL,
-      workspace: vscode.workspace.name ?? 'this window',
+      workspace: (vscode.workspace.name ?? 'this window').replace(/ \(Workspace\)$/, ''),
+      folders: (vscode.workspace.workspaceFolders ?? []).map((f) => path.basename(f.uri.fsPath)),
       editor,
       editorName: editor === 'vscodium' ? 'VSCodium' : editor === 'cursor' ? 'Cursor' : 'VS Code',
       icons: { vscodium: asset('apps', 'vscodium.png'), vscode: asset('apps', 'vscode.png'), cursor: asset('cursor.png'), ghostty: asset('apps', 'ghostty.png') },
@@ -697,7 +707,14 @@ export function shell(cspSource: string): string {
       const open = new Set(same ? [...main.querySelectorAll('details')].filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
+      // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
+      const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
+      const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => [c.closest('.card').dataset.session, c]) : [];
+      const menuOpen = same && main.querySelector('.menu') && !main.querySelector('.menu').hidden;
       main.innerHTML = m.html;
+      if (keepToast) main.querySelector('.toast')?.replaceWith(keepToast);
+      for (const [id, box] of keepConfirm) main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')?.appendChild(box);
+      if (menuOpen) { main.querySelector('.menu').hidden = false; main.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
       main.dataset.tab = m.tab;
       if (same) main.querySelectorAll('details').forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       main.scrollTop = y;
@@ -706,6 +723,7 @@ export function shell(cspSource: string): string {
       document.body.classList.remove('loading');
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
+    else if (m.type === 'notice') toast(m.text);
   });
   // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab
   // whose agent is working or waiting asks first; everything else offers Undo.
@@ -725,7 +743,9 @@ export function shell(cspSource: string): string {
     if (multi.size < 2) { bar.hidden = true; return; }
     const cards = [...multi].map((id) => main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')).filter(Boolean);
     const tabs = cards.filter((c) => c.dataset.tab === '1').length;
-    bar.innerHTML = '<span>' + multi.size + ' selected</span>' + (tabs ? '<button data-bulk="close">Close ' + tabs + ' tab' + (tabs === 1 ? '' : 's') + '</button>' : '') + '<button data-bulk="clear">Clear</button>';
+    const hide = cards.length - tabs;
+    const words = [tabs ? 'Close ' + tabs + ' tab' + (tabs === 1 ? '' : 's') : '', hide ? (tabs ? 'hide ' : 'Hide ') + hide : ''].filter(Boolean).join(', ');
+    bar.innerHTML = '<span>' + multi.size + ' selected</span><button data-bulk="close">' + words + '</button><button data-bulk="clear">Clear</button>';
     bar.hidden = false;
   }
   function closeCards(cards) {
@@ -766,7 +786,7 @@ export function shell(cspSource: string): string {
       if (busy && !bulk.dataset.sure) { bulk.dataset.sure = '1'; bulk.textContent = busy + ' still running · close anyway'; return; }
       closeCards(cards); return;
     }
-    if (e.target.closest('[data-act="close-all"]')) { e.stopPropagation(); vscode.postMessage({ type: 'closeAll' }); toast('Closed the tabs whose agent was not running'); return; }
+    if (e.target.closest('[data-act="close-all"]')) { e.stopPropagation(); vscode.postMessage({ type: 'closeAll' }); return; }
     const gh = e.target.closest('.gh');
     if (gh) { vscode.postMessage({ type: 'fold', group: gh.parentElement.dataset.group }); return; }
     const card = e.target.closest('.card[data-session]');

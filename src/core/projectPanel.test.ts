@@ -130,6 +130,8 @@ test('a session lives where its tab is: this window, another window by its works
   expect(place({ host: 'yosemite-m1', context: 'terminal', presence: 'attached' })).toMatchObject({ kind: 'terminal' })
   expect(place({ phase: 'done', liveStatus: 'closed', tabHere: true })).toMatchObject({ kind: 'leftover', name: 'Tabs with no agent' })
   expect(place({ phase: 'done', liveStatus: 'closed' })).toMatchObject({ kind: 'ended' })
+  // A multi-root window: a tab whose workspace is one of this window's folders is this window, not another.
+  expect(sessionPlace(row({ host: 'yosemite-m6', context: 'terminal', presence: 'attached', observers: [{ device: 'zion', viewingIn: 'VSCodium tab 4', workspaceDir: '/x/agents-cli' }] }), { ...HERE, folders: ['agents', 'agents-cli'] }).kind).toBe('terminal')
   // A tab on another machine is not this desktop's window.
   expect(place({ host: 'yosemite-m6', context: 'terminal', presence: 'attached', observers: [{ device: 'mac-mini', viewingIn: 'VSCodium tab 2', workspaceDir: '/x/agents-cli' }] }).kind).toBe('terminal')
 })

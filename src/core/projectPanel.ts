@@ -396,6 +396,8 @@ export interface SessionHere {
   /** The `host` the presentation store gives sessions on this machine. */
   localHost: string;
   workspace: string;
+  /** The folder names this window has open; a tab in one of them is this window. */
+  folders?: string[];
   editor: 'vscodium' | 'vscode' | 'cursor';
   editorName: string;
   icons: Partial<Record<'vscodium' | 'vscode' | 'cursor' | 'ghostty', string>>;
@@ -426,7 +428,8 @@ export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
   const device = s.host === here.localHost ? here.device : s.host;
   const mine = (o: { device: string }) => o.device.toLowerCase() === here.device.toLowerCase();
   const observerHere = (s.observers ?? []).filter(mine);
-  const editorTab = observerHere.find((o) => EDITOR_WORD.test(o.viewingIn) && o.workspaceDir && baseName(o.workspaceDir) !== here.workspace);
+  const ours = new Set([here.workspace, ...(here.folders ?? [])]);
+  const editorTab = observerHere.find((o) => EDITOR_WORD.test(o.viewingIn) && o.workspaceDir && !ours.has(baseName(o.workspaceDir)));
   const ghosttyTab = observerHere.find((o) => /ghostty/i.test(o.viewingIn));
   const tabOf = (words: string) => Number(words.match(/tab (\d+)/i)?.[1]) || null;
   const tab = s.tabIndex ?? (editorTab ? tabOf(editorTab.viewingIn) : null);
