@@ -141,6 +141,28 @@ describe('stream row -> Fleet session card', () => {
     row.unmount()
   })
 
+  test('a scrolled artifact strip keeps its position when the stream re-renders the card', () => {
+    const first = floorRows('yosemite-m2')[LIVE]!
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const draw = (agent: FloorAgent) => act(() => {
+      root.render(<SessionRow agent={agent} nowMs={NOW} selected={false} active={false} expanded height={900}
+        onToggleSelect={noop} onToggleStar={noop} onResume={noop} onSelect={noop} onToggleExpand={noop} />)
+    })
+    draw(first)
+    const body = () => (host.querySelector('.sx-cards') as HTMLElement).shadowRoot!.querySelector('body')!
+    act(() => { (body().querySelector('[data-art-group]') as HTMLButtonElement).click() })
+    const strip = () => body().querySelector('[data-strip]') as HTMLElement
+    expect(strip()).not.toBeNull()
+    strip().scrollLeft = 40
+    // A stream tick: a new row object for the same session.
+    draw(floorRows('yosemite-m2')[LIVE]!)
+    expect(strip().scrollLeft).toBe(40)
+    act(() => root.unmount())
+    host.remove()
+  })
+
   test('a local session previews its images inline', () => {
     const local = floorRows('yosemite-m2')[LIVE]!
     expect(local.sessionCard).toMatchObject({ sessionLocal: true })
