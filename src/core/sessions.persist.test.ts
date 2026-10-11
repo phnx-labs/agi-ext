@@ -111,7 +111,62 @@ describe('restore store', () => {
       persist.saveWorkspaceSessions(${JSON.stringify(multiRootKey)}, []);
       console.log(JSON.stringify(persist.getWorkspaceSessions(${JSON.stringify(multiRootKey)}, '/work/projB')));`);
     expect(after).toEqual([]);
+    // Read once: the claim is spent, so a second fresh window gets nothing.
+    expect(runInChild(home, `console.log(JSON.stringify(persist.getWorkspaceSessions('/work/projB')))`)).toEqual([]);
     expect(fs.readFileSync(legacyPath, 'utf8')).toBe(before);
+  });
+});
+
+describe('restore store edge cases', () => {
+  const seedLegacy = (home: string) => {
+    const legacyPath = path.join(home, '.swarmify/agents/sessions.yaml');
+    fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+    fs.copyFileSync(LEGACY, legacyPath);
+  };
+  const windowFile = (home: string) => {
+    const dir = path.join(home, '.swarmify/agents/windows');
+    return path.join(dir, fs.readdirSync(dir).find((n) => n.endsWith('.yaml'))!);
+  };
+
+  test('an empty or corrupt window file never brings back pre-upgrade tabs', () => {
+    const home = freshHome();
+    seedLegacy(home);
+    runInChild(home, `persist.saveWorkspaceSessions('/work/projB', [{ terminalId: 'x', prefix: 'cl', createdAt: 1 }]); console.log(1);`);
+    for (const content of ['', 'sessions: [unclosed']) {
+      fs.writeFileSync(windowFile(home), content);
+      expect(runInChild(home, `console.log(JSON.stringify(persist.getWorkspaceSessions('/work/projB')))`)).toEqual([]);
+    }
+  });
+
+  test('two windows that shared a pre-upgrade key do not both get its tabs', () => {
+    const home = freshHome();
+    seedLegacy(home);
+    const first = runInChild(home, `console.log(JSON.stringify(persist.getWorkspaceSessions('file:///ws/untitled/workspace.json', '/work/projB')))`) as unknown[];
+    const second = runInChild(home, `console.log(JSON.stringify(persist.getWorkspaceSessions('/work/projB')))`) as unknown[];
+    expect([first.length, second.length]).toEqual([1, 0]);
+  });
+
+  test('a failed write leaves no temp file and keeps the previous file', () => {
+    const home = freshHome();
+    runInChild(home, `persist.saveWorkspaceSessions('/work/a', [{ terminalId: 'keep', prefix: 'cl', createdAt: 1 }]); console.log(1);`);
+    const file = windowFile(home);
+    fs.chmodSync(path.dirname(file), 0o500);
+    try {
+      runInChild(home, `persist.saveWorkspaceSessions('/work/a', []); console.log(1);`);
+    } finally { fs.chmodSync(path.dirname(file), 0o700); }
+    expect(fs.readdirSync(path.dirname(file)).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+    expect(runInChild(home, `console.log(JSON.stringify(persist.getWorkspaceSessions('/work/a').map((s) => s.terminalId)))`)).toEqual(['keep']);
+  });
+
+  test('liveWindowFolders lists other running windows only', () => {
+    const home = freshHome();
+    const dead = spawnSync('true').pid!;
+    const result = runInChild(home, `
+      persist.saveWorkspaceSessions('/work/live', [], { folders: ['/work/live'], pid: process.ppid });
+      persist.saveWorkspaceSessions('/work/dead', [], { folders: ['/work/dead'], pid: ${dead} });
+      persist.saveWorkspaceSessions('/work/self', [], { folders: ['/work/self'], pid: process.pid });
+      console.log(JSON.stringify(persist.liveWindowFolders(process.pid)));`);
+    expect(result).toEqual([['/work/live']]);
   });
 });
 

@@ -170,7 +170,9 @@ let persistTimeout: NodeJS.Timeout | null = null;
 /**
  * The restore store key for this window: its workspace file when it has one (a
  * multi-root workspace, saved or untitled), else its folder. `legacyKey` is the
- * first-folder key the pre-upgrade shared store used.
+ * first-folder key the pre-upgrade shared store used. Limits: saving an untitled
+ * workspace gives it a new key, so its tabs are not restored once; two windows
+ * on the same folder or workspace (which the editor normally prevents) share a file.
  */
 function restoreStoreKeys(): { key: string; legacyKey: string } | undefined {
   const folder = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
@@ -199,7 +201,35 @@ export function persistNow(): void {
     clearTimeout(persistTimeout);
     persistTimeout = null;
   }
-  sessionsPersist.saveWorkspaceSessions(keys.key, buildPersistedSessions());
+  sessionsPersist.saveWorkspaceSessions(keys.key, buildPersistedSessions(), {
+    folders: windowFolders(),
+    pid: process.pid,
+  });
+}
+
+export function windowFolders(): string[] {
+  return (vscode.workspace?.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+}
+
+const STALE_TERMINAL_MS = 10_000;
+
+/**
+ * A terminal's shell pid, or undefined when it has not started within 10s. A
+ * terminal tab the editor brought back after a crash can have no pty at all, and
+ * its processId then never settles.
+ */
+export async function processIdWithin(terminal: vscode.Terminal): Promise<number | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      terminal.processId,
+      new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), STALE_TERMINAL_MS); }),
+    ]);
+  } catch {
+    return undefined;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Accessors
@@ -654,8 +684,6 @@ export async function applyPendingTitle(terminal: vscode.Terminal): Promise<void
 
 // Lifecycle
 
-const STALE_TERMINAL_MS = 10_000;
-
 export async function scanExisting(
   inferAgentConfig: (name: string, knownPrefix?: string | null) => Omit<AgentConfig, 'count'> | null,
   context?: vscode.ExtensionContext,
@@ -664,8 +692,12 @@ export async function scanExisting(
   console.log('[TERMINALS] Scanning all terminals...');
   let registeredCount = 0;
 
-  // Load persisted sessions for session recovery
+  // Snapshot this window's store before registering anything. Every register or
+  // close persists, and a persist writes the live tabs plus `restoring`; without
+  // the snapshot, the first write during a slow scan would erase the crashed tabs
+  // restore exists to reopen, and consume the one-time upgrade read.
   const persistedSessions = loadPersistedSessions();
+  setRestoring(persistedSessions);
   console.log(`[TERMINALS] Loaded ${persistedSessions.length} persisted sessions`);
 
   for (const terminal of vscode.window.terminals) {
@@ -695,18 +727,7 @@ export async function scanExisting(
 
     const id = identOpts.terminalId || nextId(info.prefix);
 
-    let pid: number | undefined;
-    try {
-      // A terminal tab the editor brought back after a crash can have no pty at
-      // all, and its processId then never settles; waiting on it would hold the
-      // whole restore behind a dead tab.
-      pid = await Promise.race([
-        terminal.processId,
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), STALE_TERMINAL_MS)),
-      ]);
-    } catch (error) {
-      console.log(`[TERMINALS] Could not retrieve PID for terminal "${terminal.name}"`);
-    }
+    const pid = await processIdWithin(terminal);
 
     // A terminal-editor input can survive a window reload after its backing
     // pseudo-terminal has gone away. VS Code still exposes that stale input in
@@ -1240,6 +1261,11 @@ export function buildPersistedSessions(): sessionsPersist.PersistedSession[] {
 export function setRestoring(sessions: readonly sessionsPersist.PersistedSession[]): void {
   restoring.clear();
   for (const session of sessions) restoring.set(session.terminalId, session);
+}
+
+/** Persisted tabs not reopened yet: the scan's snapshot until restore narrows it. */
+export function pendingRestore(): sessionsPersist.PersistedSession[] {
+  return [...restoring.values()];
 }
 
 // This window's persisted tabs.

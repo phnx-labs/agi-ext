@@ -139,7 +139,7 @@ async function ensureAgentsCliInstalled(): Promise<void> {
   }
 }
 import { supportsPrewarming, buildVersionedResumeCommand, exitSequenceFor } from '../core/prewarm';
-import { restorePlan } from '../core/sessions.persist';
+import { liveWindowFolders, restorePlan } from '../core/sessions.persist';
 import { generateClaudeSessionId, listOpencodeSessions } from '../core/prewarm.simple';
 import { canonicalSessionId } from '../core/canonicalSessionId';
 import {
@@ -2118,11 +2118,9 @@ async function spawnCommandTerminal(
     readiness.detectAgentKeyFromArgs(req.command) ||
     null;
   const def = (detectedKey && getBuiltInByKey(detectedKey)) || getBuiltInByKey('shell');
-  if (!def) return;
-
   const sessionId =
     req.sessionId || readiness.extractSessionIdFromArgs(req.command) || null;
-  const windowFolders = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+  const windowFolders = terminals.windowFolders();
   const ack = (status: SpawnAck['status'], tab?: { terminalId: string; title: string; pid?: number }): void => {
     if (!req.nonce) return;
     try {
@@ -2141,8 +2139,17 @@ async function spawnCommandTerminal(
       console.error('[SPAWN] Failed to write ack', err);
     }
   };
+  if (!def) {
+    ack('failed');
+    return;
+  }
   const live = sessionId ? terminals.getBySessionId(sessionId) : undefined;
-  const decision = decideSpawn({ project: req.project, windowFolders, liveTerminalId: live?.id });
+  const decision = decideSpawn({
+    project: req.project,
+    windowFolders,
+    otherWindows: req.project ? liveWindowFolders(process.pid) : [],
+    liveTerminalId: live?.id,
+  });
   if (decision === 'wrong-window') {
     ack('wrong-window');
     return;
@@ -2194,7 +2201,7 @@ async function spawnCommandTerminal(
     isTransient: true
   });
 
-  const pid = await terminal.processId;
+  const pid = await terminals.processIdWithin(terminal);
   ack(pid === undefined ? 'failed' : 'opened', { terminalId, title, pid });
   terminals.register(terminal, terminalId, agentConfig, pid, context);
   readiness.registerTerminal(terminal);
@@ -5162,7 +5169,9 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspacePath) return;
 
-  const persisted = terminals.loadPersistedSessions();
+  // scanExisting snapshotted the store; read the snapshot, not the file, which
+  // the scan's own registers may already have rewritten.
+  const persisted = terminals.pendingRestore();
   if (persisted.length === 0) return;
 
   // One tab per session, and none for a tab scanExisting already adopted.
@@ -5171,6 +5180,7 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     terminalIds: new Set(tracked.map((e) => e.id)),
     sessionIds: new Set(tracked.map((e) => e.sessionId).filter((id): id is string => Boolean(id))),
   });
+  terminals.setRestoring(toRestore);
   if (toRestore.length === 0) {
     terminals.persistNow();
     return;
@@ -5303,7 +5313,6 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
   // of the batch; each tab still gets a label via the existing first-N-words
   // fallback (the same path a real LLM timeout already takes), and the
   // normal (non-restore) labeling path is unaffected.
-  terminals.setRestoring(toRestore);
   setLabelGenSuppressed(true);
   try {
     await runStaggered(toRestore, restoreOne, {
