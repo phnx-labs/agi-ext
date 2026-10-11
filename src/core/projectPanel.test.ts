@@ -1,8 +1,9 @@
 import { test, expect } from 'bun:test'
 import {
   parseOverview, parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, backgroundKind, preferLive, projectSessions, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets, sessionCount,
-  type SessionLike,
+  activityLine, backgroundKind, preferLive, projectSessions, readSessionPrefs, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets,
+  sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS,
+  type SessionHere, type SessionLike, type SessionListPrefs,
 } from './projectPanel'
 
 // Shapes captured from agents-cli 1.22.123 / linear-cli on 2026-10-08.
@@ -111,82 +112,140 @@ test('projectSessions keeps only the CLI-confirmed project, newest first', () =>
   expect(ordered.map((r) => r.sessionId)).toEqual(['new', 'old'])
 })
 
-test('a card says what is going on: your ask, the agent in its own words, chips; the device only in the tooltip', () => {
-  const html = renderSessionCard(row({
-    title: 'Health', phase: 'idle', liveStatus: 'idle', request: { headline: 'Dude, no, no, dude.' },
+const HERE: SessionHere = {
+  device: 'zion', localHost: 'this-mac', workspace: 'agents', editor: 'vscodium', editorName: 'VSCodium',
+  icons: { vscodium: 'vscode-resource:/assets/apps/vscodium.png', ghostty: 'vscode-resource:/assets/apps/ghostty.png' },
+}
+const prefs = (o: Partial<SessionListPrefs> = {}): SessionListPrefs => ({ ...DEFAULT_SESSION_PREFS, ...o })
+const card = (s: SessionLike, o: { thumbs?: { uri: string; path: string; label: string }[]; made?: ReturnType<typeof sessionMade> | null; selected?: boolean } = {}) =>
+  renderSessionCard(s, sessionPlace(s, HERE), NOW, { selected: !!o.selected, pinned: false, here: HERE, thumbs: o.thumbs ?? [], made: o.made ?? null })
+
+test('a session lives where its tab is: this window, another window by its workspace, Ghostty, the background, or a tab its agent left', () => {
+  const place = (o: Partial<SessionLike>) => sessionPlace(row(o), HERE)
+  expect(place({ host: 'yosemite-m5', tabHere: true, tabIndex: 32 })).toMatchObject({ kind: 'here', key: 'here', name: 'agents', where: 'm5 · tab 32' })
+  expect(place({ host: 'yosemite-m6', observers: [{ device: 'zion', viewingIn: 'VSCodium tab 4', workspaceDir: '/Users/me/src/agents-cli' }] }))
+    .toMatchObject({ kind: 'window', key: 'window:agents-cli', name: 'agents-cli', where: 'm6 · tab 4' })
+  expect(place({ host: 'this-mac', terminalApp: 'ghostty', context: 'terminal', presence: 'attached' })).toMatchObject({ kind: 'ghostty', where: 'zion' })
+  expect(place({ host: 'yosemite-m2', context: 'headless' })).toMatchObject({ kind: 'background', where: 'm2 · headless' })
+  expect(place({ host: 'yosemite-m1', context: 'terminal', presence: 'attached' })).toMatchObject({ kind: 'terminal' })
+  expect(place({ phase: 'done', liveStatus: 'closed', tabHere: true })).toMatchObject({ kind: 'leftover', name: 'Tabs with no agent' })
+  expect(place({ phase: 'done', liveStatus: 'closed' })).toMatchObject({ kind: 'ended' })
+  // A tab on another machine is not this desktop's window.
+  expect(place({ host: 'yosemite-m6', context: 'terminal', presence: 'attached', observers: [{ device: 'mac-mini', viewingIn: 'VSCodium tab 2', workspaceDir: '/x/agents-cli' }] }).kind).toBe('terminal')
+})
+
+test('a card at rest is one line plus a strip; the full card keeps your ask, the agent, and what it made', () => {
+  const s = row({
+    title: 'Health', phase: 'idle', liveStatus: 'idle', request: { headline: 'Dude, no, no, dude.' }, tabHere: true, tabIndex: 3, host: 'yosemite-m6',
     timeline: { steps: [{ text: 'older' }, { text: 'Your trusted publisher is set up correctly.' }] }, lastResponse: 'stale reply',
-    ticket: 'PHNX-4227', worktreeSlug: 'cli-health-1009', files: { total: 16 }, lastActivityMs: NOW - 22 * 60000,
-    prStatus: { number: 3855, checks: 'passing', isDraft: false }, viewingIn: 'Codium tab 3',
-  }), NOW, true)
+    lastActivityMs: NOW - 22 * 60000, prStatus: { number: 3855, checks: 'passing', isDraft: false },
+  })
+  const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
+  const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl">Health<')
-  expect(html).toContain('Dude, no, no, dude.')
-  expect(html).toContain('Your trusted publisher is set up correctly.')
+  expect(html).toContain('class="pill st-yours"><i></i>Your turn<')
+  expect(html).toContain('class="where">m6 · tab 3<')
+  expect(html).toContain('class="cline">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
   expect(html).toContain('PR #3855: ready to merge')
-  expect(html).toContain('cli-health-1009')
-  expect(html).toContain('16 files changed')
-  expect(html).toContain('>22m<')
-  expect(html).toContain('aria-label="Your turn"')
-  expect(html).toContain('class="go">Focus<')
-  expect(html).toContain('title="Your turn · yosemite-m6 · Codium tab 3"')
-  expect(html).not.toMatch(/>m6</)
+  expect(html).toContain('<div class="lab">You</div><div class="line">Dude, no, no, dude.<')
+  expect(html).toContain('<i>attached</i>')
+  expect(html).toContain('<div class="lab">Made</div>')
+  expect(html).toContain('agi-cli #3886')
+  expect(html).toContain('<b>covers/</b>')
+  expect(html).toContain('title="Made by the agent: a.png"')
+  expect(html).toContain('data-act="focus"')
+  expect(html).toContain('data-act="close"')
   expect(html).toContain('card st-yours sel')
-  expect(renderSessionCard(row({ lastResponse: 'I filed [PHNX-4324](https://linear.app/x/issue/PHNX-43' }), NOW, false)).toContain('I filed PHNX-4324<')
+  expect(html).toContain('>22m<')
+  expect(card(row({ lastResponse: 'I filed [PHNX-4324](https://linear.app/x/issue/PHNX-43' }))).toContain('I filed PHNX-4324<')
 })
 
-test('a pending question shows in an amber box; a detached session offers Open, a non-resumable one nothing', () => {
-  const ask = renderSessionCard(row({ phase: 'waiting', liveStatus: 'input_required', question: { text: 'Run the restart on m2?' }, viewingIn: 'detached' }), NOW, false)
-  expect(ask).toContain('class="ask">Run the restart on m2?<')
-  expect(ask).toContain('aria-label="Needs you"')
-  expect(ask).toContain('class="go">Open<')
-  expect(renderSessionCard(row({ phase: 'done', liveStatus: 'closed', resumable: false }), NOW, false)).not.toContain('class="go"')
+test('what a card offers follows where it lives: close a tab here, hide one with no tab, resume a tab its agent left', () => {
+  const busy = card(row({ phase: 'running', tabHere: true }))
+  expect(busy).toContain('data-busy="1"')
+  expect(busy).toContain('data-tab="1"')
+  const elsewhere = card(row({ host: 'yosemite-m1', context: 'terminal', presence: 'attached', lastResponse: 'x' }))
+  expect(elsewhere).toContain('data-act="hide"')
+  expect(elsewhere).not.toContain('data-act="close"')
+  const left = card(row({ phase: 'done', liveStatus: 'closed', tabHere: true, lastResponse: 'Done.' }))
+  expect(left).toContain('data-act="resume"')
+  expect(left).toContain('data-act="close"')
+  expect(card(row({ phase: 'done', liveStatus: 'closed', tabHere: true, resumable: false }))).not.toContain('data-act="resume"')
 })
 
-test('pasted images show as thumbnails that open the full image; more than three fold into +N', () => {
-  const thumbs = [1, 2, 3, 4, 5].map((i) => ({ uri: `vscode-resource:/a${i}.png`, path: `/h/.agents/.history/attachments/a${i}.png`, label: `a${i}.png` }))
-  const html = renderSessionCard(row({ request: { headline: 'Turn this into an animation' } }), NOW, false, thumbs)
-  expect(html.match(/class="th"/g)?.length).toBe(3)
-  expect(html).toContain('data-path="/h/.agents/.history/attachments/a1.png"')
-  expect(html).toContain('<b>+2</b>')
+test('a pending question shows as what the agent is waiting on, in the compact line too', () => {
+  const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', question: { text: 'Run the restart on m2?' } }))
+  expect(ask).toContain('class="cline">Run the restart on m2?<')
+  expect(ask).toContain('Agent · waiting on you</div><div class="ask">Run the restart on m2?<')
 })
 
-test('every session is listed: needs you, then live ones in your tabs, then the background, then ended; empty ones fold', () => {
-  const html = renderSessions([
-    row({ sessionId: 'ended', phase: 'done', liveStatus: 'closed', lastResponse: 'Shipped.' }),
-    row({ sessionId: 'tab', phase: 'idle', liveStatus: 'idle', context: 'terminal', presence: 'attached', lastResponse: 'Done on my side.' }),
-    row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required' }),
-    row({ sessionId: 'bg', context: 'headless', lastResponse: 'Running the suite.' }),
-    row({ sessionId: 'quiet', phase: 'done', liveStatus: 'closed' }),
-  ], NOW, null)
-  const order = ['Needs you', 'In your tabs', 'Background', 'Ended'].map((w) => html.indexOf(`class="divider">${w}`))
-  expect(order.every((i) => i >= 0)).toBe(true)
-  expect([...order].sort((x, y) => x - y)).toEqual(order)
-  expect(html.indexOf('data-session="tab"')).toBeLessThan(html.indexOf('class="divider">Background'))
-  expect(html.indexOf('data-session="bg"')).toBeGreaterThan(html.indexOf('class="divider">Background'))
-  expect(html).toContain('<details class="bare"><summary>1 more with nothing to show</summary>')
-  expect(sessionCount([row({ lastResponse: 'x' }), row({}), row({ phase: 'waiting', lastResponse: 'y' })])).toEqual({ shown: 2, asks: 1 })
+test('needs you is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
+  const rows = [
+    row({ sessionId: 'left', phase: 'done', liveStatus: 'closed', tabHere: true, lastResponse: 'Done.' }),
+    row({ sessionId: 'bg', host: 'yosemite-m2', context: 'headless', lastResponse: 'Running.' }),
+    row({ sessionId: 'gh', host: 'this-mac', terminalApp: 'ghostty', context: 'terminal', presence: 'attached', lastResponse: 'Hi.' }),
+    row({ sessionId: 'win', host: 'yosemite-m6', observers: [{ device: 'zion', viewingIn: 'VSCodium tab 1', workspaceDir: '/x/agents-cli' }], lastResponse: 'Ok.' }),
+    row({ sessionId: 'mine', tabHere: true, lastResponse: 'Here.' }),
+    row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', host: 'yosemite-m2', context: 'headless' }),
+  ]
+  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  const at = (id: string) => html.indexOf(`data-session="${id}"`)
+  expect(html.indexOf('class="pinned"')).toBeLessThan(html.indexOf('data-group='))
+  expect(at('ask')).toBeLessThan(at('mine'))
+  expect([at('mine'), at('win'), at('gh'), at('bg'), at('left')]).toEqual([at('mine'), at('win'), at('gh'), at('bg'), at('left')].sort((x, y) => x - y))
+  expect(html).toContain('<b>agents</b> <span class="n">1</span> <span class="gs">· VSCodium · this window</span>')
+  expect(html).toContain('<b>agents-cli</b>')
+  expect(html).toContain('src="vscode-resource:/assets/apps/ghostty.png"')
+  expect(html).toContain('data-act="close-all"')
+  expect(html).toContain('2 tabs · 5 live · 1 needs you')
+  expect(html.match(/data-group=/g)?.length).toBe(5)
 })
 
-test('a live session with no attached tab says where it runs; a backgrounded tab session counts as background', () => {
-  expect(backgroundKind({ context: 'headless' })).toBe('headless')
-  expect(backgroundKind({ context: 'teams' })).toBe('team')
-  expect(backgroundKind({ context: 'cloud' })).toBe('cloud')
-  expect(backgroundKind({ context: 'terminal', presence: 'background' })).toBe('background')
-  expect(backgroundKind({ context: 'terminal', presence: 'attached' })).toBeNull()
-  expect(backgroundKind({ context: '' })).toBe('headless')
-  expect(backgroundKind({ context: '', presence: 'attached' })).toBeNull()
-  expect(backgroundKind({ context: 'recent' })).toBeNull()
-  expect(renderSessionCard(row({ context: 'teams', lastResponse: 'Reviewing.' }), NOW, false)).toContain('>team</span>')
+test('show, hide and fold: leftover tabs and ended sessions follow Show, a hidden session returns when it moves, a folded group draws no cards', () => {
+  const left = row({ sessionId: 'left', phase: 'done', liveStatus: 'closed', tabHere: true })
+  const ended = row({ sessionId: 'ended', phase: 'done', liveStatus: 'closed', lastResponse: 'Shipped.' })
+  const live = row({ sessionId: 'live', tabHere: true, lastActivityMs: 50 })
+  const draw = (p: Partial<SessionListPrefs>) => renderSessions([left, ended, live], NOW, { selectedId: null, here: HERE, prefs: prefs(p) })
+  expect(draw({})).toContain('data-session="left"')
+  expect(draw({})).not.toContain('data-session="ended"')
+  expect(draw({ showLeftover: false, showEnded: true })).not.toContain('data-session="left"')
+  expect(draw({ showEnded: true })).toContain('data-session="ended"')
+  expect(draw({ hidden: { live: 50 } })).not.toContain('data-session="live"')
+  expect(draw({ hidden: { live: 40 } })).toContain('data-session="live"')
+  const folded = draw({ folded: ['here'] })
+  expect(folded).toContain('class="grp closed" data-group="here"')
+  expect(folded).not.toContain('data-session="live"')
+  expect(sessionCount([live, left, row({ phase: 'waiting' })], HERE, prefs())).toEqual({ shown: 2, asks: 1, tabs: 2 })
 })
 
-test('an ended session whose tab is still open says the agent is not running and offers Resume', () => {
-  const html = renderSessionCard(row({ phase: 'done', liveStatus: 'closed', tabHere: true, viewingIn: 'Codium tab 3', lastResponse: 'Done.' }), NOW, false)
-  expect(html).toContain('tab open · agent not running')
-  expect(html).toContain('class="go">Resume<')
-  expect(renderSessionCard(row({ phase: 'done', liveStatus: 'closed', lastResponse: 'Done.' }), NOW, false)).not.toContain('agent not running')
-  const stuck = renderSessionCard(row({ phase: 'done', liveStatus: 'closed', tabHere: true, resumable: false, lastResponse: 'Done.' }), NOW, false)
-  expect(stuck).toContain('agent not running')
-  expect(stuck).not.toContain('class="go"')
+test('group by machine, by state, or not at all', () => {
+  const rows = [row({ sessionId: 'a', host: 'yosemite-m5', tabHere: true }), row({ sessionId: 'b', host: 'this-mac', phase: 'idle', liveStatus: 'idle', tabHere: true })]
+  const byMachine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'machine' }) })
+  expect(byMachine.indexOf('data-group="machine:zion"')).toBeLessThan(byMachine.indexOf('data-group="machine:yosemite-m5"'))
+  const byState = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state' }) })
+  expect(byState.indexOf('data-group="state:working"')).toBeLessThan(byState.indexOf('data-group="state:yours"'))
+  expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'none' }) })).not.toContain('data-group=')
+})
+
+test('what the agent made groups by folder; only images this machine can show get a thumbnail', () => {
+  const made = sessionMade({
+    artifacts: [
+      { path: '/h/a/run/board.png', basename: 'board.png', bucket: 'artifacts', display: '~/a/run/board.png', uri: 'vscode-resource:/board.png' },
+      { path: '/h/a/run/notes.md', basename: 'notes.md', bucket: 'artifacts', display: '~/a/run/notes.md' },
+      { path: '/r/a/remote/shot.png', basename: 'shot.png', bucket: 'artifacts', display: 'm5:~/a/remote/shot.png' },
+    ],
+    plan: { path: '/h/plans/plan.md', display: '~/plans/plan.md' },
+    linearIssue: 'PHNX-1',
+  })
+  expect(made.folders.map((f) => [f.name, f.images.length, f.files.map((x) => x.name)])).toEqual([['run', 1, ['notes.md']], ['remote', 0, ['shot.png']], ['plans', 0, ['plan.md']]])
+  expect(made.ticket).toBe('PHNX-1')
+})
+
+test('stored preferences keep only values this version knows', () => {
+  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' } }))
+    .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', showEnded: true, folded: ['here'], hidden: { a: 5 } })
+  expect(readSessionPrefs(undefined)).toEqual(DEFAULT_SESSION_PREFS)
 })
 
 test('one row per session: a live row wins over its ended or previous twin', () => {
@@ -202,7 +261,7 @@ test('a live tool call reads as the command it runs, never as a "Tool: args" lab
   expect(activityLine('Bash: agents ssh zion ls')).toBe('<span class="cmd">$ agents ssh zion ls</span>')
   expect(activityLine('Read: src/a.ts')).toBe('<span class="tool">Read</span> <span class="cmd">src/a.ts</span>')
   expect(activityLine('thinking about it')).toBe('thinking about it')
-  const html = renderSessionCard(row({ activity: 'Bash: cd /tmp && ls', lastResponse: 'Checking the tree.' }), 0, false)
+  const html = card(row({ activity: 'Bash: cd /tmp && ls', lastResponse: 'Checking the tree.' }))
   expect(html).toContain('<span class="cmd">$ cd /tmp &amp;&amp; ls</span>')
   expect(html).not.toContain('Bash:')
 })

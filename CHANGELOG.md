@@ -4,6 +4,26 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The Project sidebar's Sessions tab reads at a glance.
+  - Each session is a compact card: title, a state pill (dot and word), where it runs, the
+    agent's latest line, and a strip with its PR, ticket, artifact folders and tiny images.
+    Hover or select it for the full card: your ask with the images you attached, the agent's
+    words, and Made, everything it produced, with thumbnails of images it rendered.
+  - A ⇅ menu sorts (last active, newest, name), shows or hides tabs with no agent and ended
+    sessions, and groups by App, Machine or State. Needs you stays pinned on top.
+  - Grouped by App, each group shows the app's icon and the workspace: this window, each
+    other VSCodium window by its workspace (`agents-cli`, `svatlas`), Ghostty, the background,
+    and tabs whose agent exited.
+- A click selects a session and never jumps to its tab. A focus icon goes to the tab, a play
+  icon resumes a tab whose agent exited, and × closes the tab, with Undo. Closing the tab of a
+  working or waiting agent asks first, because it ends the agent's process. A session with no
+  tab here can be hidden until it moves again. ⌘-click several to close them together, and
+  Close all clears tabs whose agent is not running.
+- Needs agents-cli 1.23.7 for other windows' workspace names; with an older CLI those sessions
+  group as other terminals.
+
 ## [0.9.391] - 2026-10-11
 
 - `Agents: Resume Session…` (Cmd+Shift+Alt+R) resumes a session you pick by name.

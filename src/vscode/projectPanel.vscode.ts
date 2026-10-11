@@ -8,7 +8,9 @@ import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
-import { requestImageThumbs } from '../core/sessionCardFields';
+import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
+import { resolveTabIndex, type TabView } from '../core/tabIndex';
+import { normalizeHost } from '../shared/project';
 import type { RemoteSession } from '../core/remoteSessions';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
@@ -24,14 +26,19 @@ import {
   renderPrs,
   renderSessions,
   renderTickets,
+  readSessionPrefs,
   sessionCount,
+  sessionMade,
   type ProjectRef,
+  type SessionHere,
   type SessionLike,
+  type SessionListPrefs,
   type TicketGroup,
 } from '../core/projectPanel';
 import { currentAgentPanelSubject, setAgentPanelSubjectFromFleet } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
+import { runSessionCardAction } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
 
 const execFileAsync = promisify(execFile);
@@ -45,6 +52,7 @@ const execFileAsync = promisify(execFile);
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
+const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const FRESH_MS = 60_000;
 
 type TabId = 'overview' | 'sessions' | 'prs' | 'tickets';
@@ -52,6 +60,12 @@ const TABS: readonly TabId[] = ['overview', 'sessions', 'prs', 'tickets'];
 const VIEW_ID = 'agentsProject.panel';
 /** Where pasted images live on this machine: the only files the panel shows or opens. */
 const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attachments'), path.join(os.homedir(), '.agents', '.cache', 'attachments')];
+
+interface SessionTarget { sessionId: string; host: string }
+interface PanelMessage {
+  type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown;
+}
 
 interface TabState {
   html: string | undefined;
@@ -72,17 +86,28 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
-    view.webview.options = { enableScripts: true, localResourceRoots: IMAGE_DIRS().map((d) => vscode.Uri.file(d)) };
+    // The editor's app icons ship in assets/; artifact images the agent made live
+    // under home, as in the session sidebar.
+    view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'assets'), vscode.Uri.file(os.homedir()), ...IMAGE_DIRS().map((d) => vscode.Uri.file(d))] };
     view.webview.html = shell(view.webview.cspSource);
-    view.webview.onDidReceiveMessage((msg: { type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown }) => {
+    view.webview.onDidReceiveMessage((msg: PanelMessage) => {
+      const host = typeof msg.host === 'string' ? msg.host : undefined;
+      const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
       if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
       else if (msg.type === 'open') openExternalUrl(msg.url);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
-      else if (msg.type === 'session' && typeof msg.sessionId === 'string') {
-        void this.controller.goToSession(msg.sessionId, typeof msg.host === 'string' ? msg.host : undefined);
-      }
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host);
+      else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
+      else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') void this.controller.openArtifact(msg.sessionId, host, msg.path);
+      else if (msg.type === 'close') void this.controller.closeSessions(targets);
+      else if (msg.type === 'reopen') void this.controller.reopen(targets);
+      else if (msg.type === 'hide') void this.controller.hide(targets, true);
+      else if (msg.type === 'unhide') void this.controller.hide(targets, false);
+      else if (msg.type === 'closeAll') void this.controller.closeLeftoverTabs();
+      else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
+      else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
     });
     view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) void this.load(this.active, false); });
     view.onDidDispose(() => {
@@ -254,31 +279,118 @@ class ProjectPanelController {
     return sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL);
   }
 
-  sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
-    if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
-    const rows = projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name)
-      .map((r) => ({ ...r, tabHere: !!terminals.getBySessionId(r.sessionId) }));
-    const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
-    const thumbsFor = (s: SessionLike) => {
-      const live = byId.get(s.sessionId);
-      return live ? requestImageThumbs(live, {
-        home: os.homedir(),
-        remoteDevice: remoteDeviceArg(live.host),
-        exists: (f) => fs.existsSync(f),
-        previewUri: (f) => webview.asWebviewUri(vscode.Uri.file(f)).toString(),
-      }) : [];
-    };
-    const subject = currentAgentPanelSubject();
-    return { html: renderSessions(rows, Date.now(), subject?.sessionId ?? null, thumbsFor), count: sessionCount(rows) };
+  private prefs(): SessionListPrefs {
+    return readSessionPrefs(this.context.workspaceState.get(SESSION_PREFS_KEY));
   }
 
-  /** A card click goes to the session, the same way every resume surface does
-   *  (resumeAndNotify): its tab comes to the front, else the live agent opens in the
-   *  window that owns its project. The other sidebar points at it, as a Fleet row
-   *  click does. */
-  async goToSession(sessionId: string, host: string | undefined): Promise<void> {
+  private async savePrefs(prefs: SessionListPrefs): Promise<void> {
+    await this.context.workspaceState.update(SESSION_PREFS_KEY, prefs);
+    void this.view.redrawSessions();
+  }
+
+  async setPref(key: string, value: unknown): Promise<void> {
+    await this.savePrefs(readSessionPrefs({ ...this.prefs(), [key]: value === 'true' ? true : value === 'false' ? false : value }));
+  }
+
+  async toggleFold(group: string): Promise<void> {
+    const prefs = this.prefs();
+    const folded = prefs.folded.includes(group) ? prefs.folded.filter((g) => g !== group) : [...prefs.folded, group];
+    await this.savePrefs({ ...prefs, folded });
+  }
+
+  /** Hide a session until it moves again, or bring it back. */
+  async hide(targets: SessionTarget[], on: boolean): Promise<void> {
+    const prefs = this.prefs();
+    const hidden = { ...prefs.hidden };
+    const rows = new Map(this.presented().map((r) => [r.sessionId, r]));
+    for (const { sessionId } of targets) {
+      if (on) hidden[sessionId] = rows.get(sessionId)?.lastActivityMs ?? Date.now();
+      else delete hidden[sessionId];
+    }
+    // Ids that left the stream are forgotten so the store does not grow forever.
+    for (const id of Object.keys(hidden)) if (!rows.has(id)) delete hidden[id];
+    await this.savePrefs({ ...prefs, hidden });
+  }
+
+  /** × on a card: close every tab in this window bound to the session. Closing a
+   *  tab ends the agent's process there; the session stays resumable (Undo). */
+  async closeSessions(targets: SessionTarget[]): Promise<void> {
+    for (const { sessionId } of targets) {
+      const { live, dead } = await terminals.sessionTabs(sessionId);
+      terminals.closeTabs([...(live ? [live] : []), ...dead]);
+    }
+    void this.view.redrawSessions();
+  }
+
+  async reopen(targets: SessionTarget[]): Promise<void> {
+    for (const t of targets) await this.goToSession(t.sessionId, t.host);
+  }
+
+  /** "Close all" on Tabs with no agent: the shells whose agent already exited. */
+  async closeLeftoverTabs(): Promise<void> {
+    const project = await this.project();
+    if (!project) return;
+    for (const r of projectSessions(preferLive(this.presented()) as unknown as SessionLike[], project.name)) {
+      const { live, dead } = await terminals.sessionTabs(r.sessionId);
+      if (!live && dead.length) terminals.closeTabs(dead);
+    }
+    void this.view.redrawSessions();
+  }
+
+  async openArtifact(sessionId: string, host: string | undefined, filePath: string): Promise<void> {
+    await runSessionCardAction({ sessionId, host, action: { type: 'openArtifact', path: filePath } }, this.presented(), () => undefined);
+  }
+
+  private here(webview: vscode.Webview): SessionHere {
+    const app = vscode.env.appName;
+    const editor: SessionHere['editor'] = /codium/i.test(app) ? 'vscodium' : /cursor/i.test(app) ? 'cursor' : 'vscode';
+    const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'assets', ...p)).toString();
+    return {
+      device: normalizeHost(os.hostname()),
+      localHost: LOCAL_LABEL,
+      workspace: vscode.workspace.name ?? 'this window',
+      editor,
+      editorName: editor === 'vscodium' ? 'VSCodium' : editor === 'cursor' ? 'Cursor' : 'VS Code',
+      icons: { vscodium: asset('apps', 'vscodium.png'), vscode: asset('apps', 'vscode.png'), cursor: asset('cursor.png'), ghostty: asset('apps', 'ghostty.png') },
+    };
+  }
+
+  sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
+    if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
+    const tabGroups: TabView[][] = vscode.window.tabGroups.all.map((g) => g.tabs.map((tab) => ({ label: tab.label, isTerminal: tab.input instanceof vscode.TabInputTerminal })));
+    const rows = projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name)
+      .map((r) => {
+        const tab = terminals.getBySessionId(r.sessionId);
+        return { ...r, tabHere: !!tab, tabIndex: tab ? resolveTabIndex(tabGroups, tab.terminal.name) : undefined };
+      });
+    const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
+    const previewUri = (f: string) => webview.asWebviewUri(vscode.Uri.file(f)).toString();
+    const thumbsFor = (s: SessionLike) => {
+      const live = byId.get(s.sessionId);
+      return live ? requestImageThumbs(live, { home: os.homedir(), remoteDevice: remoteDeviceArg(live.host), exists: (f) => fs.existsSync(f), previewUri }) : [];
+    };
+    const madeFor = (s: SessionLike) => {
+      const live = byId.get(s.sessionId);
+      if (!live) return null;
+      const remoteDevice = remoteDeviceArg(live.host);
+      return sessionMade(sessionCardFields(live, { sessionId: live.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri }));
+    };
+    const here = this.here(webview);
+    const prefs = this.prefs();
+    const subject = currentAgentPanelSubject();
+    const count = sessionCount(rows, here, prefs);
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor }), count: { shown: count.shown, asks: count.asks } };
+  }
+
+  /** A card click selects the session: the other sidebar shows it. Nothing opens. */
+  select(sessionId: string, host: string | undefined): void {
     setAgentPanelSubjectFromFleet(sessionId, host);
     void this.view.redrawSessions();
+  }
+
+  /** The focus and resume icons: its tab comes to the front, else the live agent
+   *  opens in the window that owns its project (resumeAndNotify, the one path). */
+  async goToSession(sessionId: string, host: string | undefined): Promise<void> {
     const row = preferLive(this.presented().filter((r) => r.sessionId === sessionId))[0];
     const { resumeAndNotify } = await import('./resumeSession.vscode');
     await resumeAndNotify({ sessionId, host: row?.host ?? host ?? '', title: row?.title || row?.label || row?.topic || '' });
@@ -352,7 +464,8 @@ function nonce(): string {
   return s;
 }
 
-function shell(cspSource: string): string {
+/** The panel's webview document; exported for the script syntax test. */
+export function shell(cspSource: string): string {
   const n = nonce();
   return /* html */ `<!doctype html>
 <html lang="en">
@@ -463,39 +576,88 @@ function shell(cspSource: string): string {
   .tab[aria-selected="true"] .dot { position: static; transform: none; }
   .tab .dot:empty { display: none; }
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
-  .divider { display: flex; gap: 6px; align-items: center; margin: 10px 4px 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--r-caption); }
-  .divider::after { content: ''; flex: 1; height: 1px; background: var(--r-edge); }
-  .card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; width: 100%; box-sizing: border-box; text-align: left; padding: 8px 8px 9px; margin: 2px 0; border-radius: 8px; color: inherit; cursor: pointer; }
-  .card:hover { background: var(--r-hover); } .card.sel { background: var(--r-hover); box-shadow: inset 2px 0 0 var(--r-gold); }
-  .card:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-  .card .top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
+  .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
+  .shead .sum { margin-left: auto; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .icon { width: 24px; height: 22px; display: grid; place-items: center; border-radius: 5px; border: 1px solid transparent; background: none; color: var(--r-caption); cursor: pointer; padding: 0; flex: none; }
+  .icon:hover, .icon[aria-expanded="true"] { background: var(--r-hover); border-color: var(--r-edge); color: var(--r-text); }
+  .icon .ic { width: 14px; height: 14px; }
+  .menu { position: absolute; right: 0; top: 26px; z-index: 5; min-width: 176px; padding: 5px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 10px 28px rgba(0,0,0,.28); }
+  .menu .sec { font-size: 11px; color: var(--r-faint); padding: 6px 8px 2px; }
+  .menu button { display: flex; gap: 8px; align-items: center; width: 100%; border: 0; background: none; color: var(--r-text); font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 5px; cursor: pointer; text-align: left; }
+  .menu button:hover { background: var(--r-hover); }
+  .menu .ck { width: 12px; } .menu .mi { width: 13px; height: 13px; fill: none; stroke: var(--r-caption); stroke-width: 1.4; }
+  .menu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 2px; }
+  .pinned { margin: 6px 0 10px; padding: 2px 5px 6px; border-radius: 9px; background: var(--r-warn-tint); }
+  .pinned .ph { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-warn); padding: 5px 4px 4px; }
+  .grp { margin-top: 8px; }
+  .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; }
+  .gh:hover { background: var(--r-hover); }
+  .gh .car { width: 10px; color: var(--r-faint); font-size: 10px; transition: transform .15s; } .grp.closed .car { transform: rotate(-90deg); }
+  .gi-box { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
+  .appic { width: 20px; height: 20px; display: block; }
+  .gi { width: 14px; height: 14px; fill: none; stroke: var(--r-caption); stroke-width: 1.4; }
+  .gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; } .gname b { font-weight: 600; } .gs { color: var(--r-faint); font-size: 11px; }
+  .dots { margin-left: auto; display: flex; gap: 3px; } .dots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+  .gact { margin-left: auto; font: inherit; font-size: 10.5px; border: 1px solid var(--r-edge); background: none; color: var(--r-caption); border-radius: 5px; padding: 0 7px; cursor: pointer; }
+  .gact:hover { color: var(--r-text); border-color: var(--r-faint); } .gact + .dots { margin-left: 6px; }
+  .items, .flat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 4px; } .pinned .card + .card { margin-top: 6px; }
+  .card { display: block; min-width: 0; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--r-glass); color: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
+  .card:hover, .card.sel, .card:focus-visible { background: var(--r-hover); border-color: var(--r-faint); outline: none; }
+  .card.multi { border-color: var(--r-gold); }
+  .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
-  .card .go { display: none; font-size: 10.5px; color: var(--r-caption); border: 1px solid var(--r-edge); border-radius: 9px; padding: 0 7px; line-height: 16px; flex: none; }
-  .card:hover .go, .card:focus-visible .go { display: inline; } .card:hover .age, .card:focus-visible .age { display: none; }
-  .mk { width: 14px; height: 14px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; border: 1.5px solid currentColor; box-sizing: border-box; }
-  .mk-asks { color: var(--r-warn); background: var(--r-warn-tint); } .mk-stopped { color: var(--r-bad); }
-  .mk-working { color: var(--r-ok); border-style: dotted; animation: spin 2.4s linear infinite; }
-  .mk-yours { color: var(--r-gold); border-width: 0; } .mk-yours::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-  .mk-ended { color: var(--r-faint); opacity: .7; } .mk-unknown { color: var(--r-faint); border-style: dashed; }
-  .card .line { display: grid; grid-template-columns: 14px minmax(0,1fr); gap: 0 7px; align-items: start; font-size: 12px; line-height: 1.4; }
-  .card .line .ic { margin-top: 2px; color: var(--r-faint); width: 14px; height: 14px; }
-  .card .you span { color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card .said span { color: var(--r-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .card .live span { color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .st-ended .ttl, .st-unknown .ttl { font-weight: 500; color: var(--r-text-2); } .st-ended .said span { color: var(--r-caption); }
-  .card .ask { margin-left: 21px; padding: 5px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; }
-  .card .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 21px; margin-top: 1px; }
-  .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 150px; padding: 1px 6px 1px 4px; border-radius: 9px; background: var(--r-well); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; }
-  .chip.warn { color: var(--r-warn); background: var(--r-warn-tint); max-width: none; white-space: nowrap; }
-  .chip .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip.pr-ok { color: var(--r-ok); background: var(--r-ok-tint); } .chip.pr-bad { color: var(--r-bad); background: var(--r-bad-tint); } .chip.pr-run { color: var(--r-warn); background: var(--r-warn-tint); }
-  .card .thumbs { display: flex; gap: 4px; margin-left: 21px; }
-  .th { position: relative; width: 64px; height: 44px; border-radius: 5px; overflow: hidden; border: 1px solid var(--r-edge); display: block; flex: none; }
-  .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
+  .acts { display: none; gap: 2px; flex: none; }
+  .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .card:hover .age, .card.sel .age, .card:focus-within .age { display: none; }
+  .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
+  .act:hover { background: var(--r-hover); border-color: var(--r-edge); color: var(--r-text); } .act.x:hover { color: var(--r-bad); }
+  .act .ic { width: 13px; height: 13px; stroke-width: 1.6; }
+  .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; min-width: 0; font-size: 10.5px; color: var(--r-faint); }
+  .meta .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
+  .pill { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; font-size: 10.5px; line-height: 16px; color: var(--r-text-2); }
+  .pill i, .dots i { background: var(--r-faint); } .pill i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+  .pill.solo { padding: 0 4px; border: 0; }
+  .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-asks { background: var(--r-warn) !important; }
+  .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-working { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
+  .pill.st-yours i, .d-yours { background: var(--r-gold) !important; } .st-stopped.pill { color: var(--r-bad); } .pill.st-stopped i, .d-stopped { background: var(--r-bad) !important; }
+  .st-ended.pill { opacity: .8; }
+  @keyframes breathe { 50% { opacity: .25; } }
+  .compact { display: grid; gap: 4px; margin-top: 4px; }
+  .cline { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+  .st-asks .cline { color: var(--r-text); }
+  .cstrip { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .tiny { height: 20px; width: 28px; object-fit: cover; border-radius: 3px; border: 1px solid var(--r-edge); display: block; } .tiny.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; }
+  .full { display: none; }
+  .card:hover .full, .card.sel .full, .card:focus-within .full { display: block; } .card:hover .compact, .card.sel .compact, .card:focus-within .compact { display: none; }
+  .lab { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); margin: 7px 0 2px; }
+  .card .line { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  .card .line.said { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .card .line.live { color: var(--r-caption); margin-top: 3px; } .card .line .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; } .card .line .tool { font-weight: 600; font-size: 11px; }
+  .card .ask { padding: 6px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .made { display: grid; gap: 5px; padding: 6px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-well); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 170px; padding: 1px 6px 1px 4px; border-radius: 5px; border: 1px solid var(--r-edge); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip.pr-ok { color: var(--r-ok); } .chip.pr-bad { color: var(--r-bad); } .chip.pr-run { color: var(--r-warn); }
+  .folder { display: flex; gap: 6px; align-items: flex-start; min-width: 0; color: var(--r-text-2); font-size: 11.5px; } .folder .ic { margin-top: 2px; color: var(--r-faint); }
+  .folder .fx { min-width: 0; display: grid; } .folder .fx span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .folder .fp { font-size: 10.5px; color: var(--r-faint); }
+  .folder:hover b { text-decoration: underline; }
+  .thumbs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
+  .th { position: relative; height: 40px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); display: block; flex: none; }
+  .th { width: 64px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
+  .th i { position: absolute; left: 3px; bottom: 3px; font-style: normal; font-size: 9px; background: rgba(0,0,0,.62); color: #fff; border-radius: 3px; padding: 0 3px; }
   .th b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; }
-  details.bare summary { font-size: 11px; color: var(--r-caption); padding: 8px 4px; }
-  @media (prefers-reduced-motion: reduce) { .m-working, .mk-working, .ring .arc { animation: none; } }
+  .more { font-size: 10.5px; border: 1px solid var(--r-edge); border-radius: 5px; padding: 0 6px; color: var(--r-caption); }
+  .confirm { margin-top: 8px; padding: 8px; border-radius: 7px; background: var(--r-warn-tint); color: var(--r-text-2); font-size: 11.5px; display: grid; gap: 6px; cursor: default; }
+  .confirm .cb { display: flex; gap: 6px; } .confirm button, .bulk button, .toast button { font: inherit; font-size: 11px; border: 1px solid var(--r-edge); background: none; color: var(--r-text); border-radius: 5px; padding: 2px 9px; cursor: pointer; }
+  .confirm .danger { color: var(--r-warn); border-color: var(--r-warn); }
+  .bulk, .toast { position: sticky; bottom: 6px; display: flex; gap: 8px; align-items: center; margin-top: 8px; padding: 6px 8px; border-radius: 9px; font-size: 11.5px; }
+  .bulk { background: var(--vscode-menu-background, var(--vscode-sideBar-background)); border: 1px solid var(--r-faint); box-shadow: 0 8px 22px rgba(0,0,0,.3); }
+  .bulk span, .toast span { flex: 1; } .toast { background: var(--r-text); color: var(--vscode-sideBar-background); } .toast button { color: inherit; border-color: transparent; font-weight: 700; text-decoration: underline; }
+  .bulk[hidden], .toast[hidden], .menu[hidden] { display: none; }
+  .reveal { position: fixed; z-index: 20; pointer-events: none; border-radius: 8px; border: 1px solid var(--r-faint); background: var(--vscode-sideBar-background); padding: 3px; display: none; }
+  .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
+  @media (prefers-reduced-motion: reduce) { .m-working, .st-working.pill i, .ring .arc { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -540,22 +702,114 @@ function shell(cspSource: string): string {
       if (same) main.querySelectorAll('details').forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
+      if (m.tab === 'sessions') syncBulk();
       document.body.classList.remove('loading');
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
   });
+  // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab
+  // whose agent is working or waiting asks first; everything else offers Undo.
+  const multi = new Set();
+  let toastTimer = 0;
+  let undo = null;
+  const target = (card) => ({ sessionId: card.dataset.session, host: card.dataset.host });
+  function toast(text, onUndo) {
+    const el = main.querySelector('.toast'); if (!el) return;
+    el.innerHTML = '<span></span>' + (onUndo ? '<button data-undo>Undo</button>' : '');
+    el.firstChild.textContent = text; el.hidden = false; undo = onUndo || null;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; undo = null; }, 6000);
+  }
+  function syncBulk() {
+    main.querySelectorAll('.card').forEach((c) => c.classList.toggle('multi', multi.has(c.dataset.session)));
+    const bar = main.querySelector('.bulk'); if (!bar) return;
+    if (multi.size < 2) { bar.hidden = true; return; }
+    const cards = [...multi].map((id) => main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')).filter(Boolean);
+    const tabs = cards.filter((c) => c.dataset.tab === '1').length;
+    bar.innerHTML = '<span>' + multi.size + ' selected</span>' + (tabs ? '<button data-bulk="close">Close ' + tabs + ' tab' + (tabs === 1 ? '' : 's') + '</button>' : '') + '<button data-bulk="clear">Clear</button>';
+    bar.hidden = false;
+  }
+  function closeCards(cards) {
+    const tabs = cards.filter((c) => c.dataset.tab === '1').map(target);
+    const hide = cards.filter((c) => c.dataset.tab !== '1').map(target);
+    if (tabs.length) vscode.postMessage({ type: 'close', targets: tabs });
+    if (hide.length) vscode.postMessage({ type: 'hide', targets: hide });
+    multi.clear(); syncBulk();
+    const words = [tabs.length ? 'Closed ' + tabs.length + ' tab' + (tabs.length === 1 ? '' : 's') : '', hide.length ? 'hid ' + hide.length : ''].filter(Boolean).join(', ');
+    toast(words, () => {
+      if (tabs.length) vscode.postMessage({ type: 'reopen', targets: tabs });
+      if (hide.length) vscode.postMessage({ type: 'unhide', targets: hide });
+    });
+  }
+  function askClose(card) {
+    if (card.querySelector('.confirm')) return;
+    const box = document.createElement('div');
+    box.className = 'confirm';
+    box.innerHTML = '<div></div><div class="cb"><button class="danger" data-confirm="yes">Close tab</button><button data-confirm="no">Keep</button></div>';
+    box.firstChild.textContent = 'The agent is ' + (card.classList.contains('st-working') ? 'working' : 'waiting on you') + '. Closing the tab ends its process; the session stays resumable.';
+    card.appendChild(box);
+  }
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
-    const th = e.target.closest('.th');
+    const menuBtn = e.target.closest('[data-menu]');
+    const menu = main.querySelector('.menu');
+    if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
+    const pref = e.target.closest('[data-pref]');
+    if (pref) { vscode.postMessage({ type: 'prefs', key: pref.dataset.pref, value: pref.dataset.value }); return; }
+    if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; main.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
+    if (e.target.closest('[data-undo]')) { const u = undo; undo = null; main.querySelector('.toast').hidden = true; if (u) u(); return; }
+    const bulk = e.target.closest('[data-bulk]');
+    if (bulk) {
+      if (bulk.dataset.bulk === 'clear') { multi.clear(); syncBulk(); return; }
+      const cards = [...multi].map((id) => main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')).filter(Boolean);
+      const busy = cards.filter((c) => c.dataset.tab === '1' && c.dataset.busy === '1').length;
+      if (busy && !bulk.dataset.sure) { bulk.dataset.sure = '1'; bulk.textContent = busy + ' still running · close anyway'; return; }
+      closeCards(cards); return;
+    }
+    if (e.target.closest('[data-act="close-all"]')) { e.stopPropagation(); vscode.postMessage({ type: 'closeAll' }); toast('Closed the tabs whose agent was not running'); return; }
+    const gh = e.target.closest('.gh');
+    if (gh) { vscode.postMessage({ type: 'fold', group: gh.parentElement.dataset.group }); return; }
+    const card = e.target.closest('.card[data-session]');
+    const confirm = e.target.closest('[data-confirm]');
+    if (confirm && card) { const yes = confirm.dataset.confirm === 'yes'; card.querySelector('.confirm')?.remove(); if (yes) closeCards([card]); return; }
+    const act = e.target.closest('[data-act]');
+    if (act && card) {
+      const kind = act.dataset.act;
+      if (kind === 'focus' || kind === 'resume') vscode.postMessage({ type: kind, sessionId: card.dataset.session, host: card.dataset.host });
+      else if (kind === 'close') { if (card.dataset.busy === '1') askClose(card); else closeCards([card]); }
+      else if (kind === 'hide') closeCards([card]);
+      return;
+    }
+    const th = e.target.closest('.th[data-path]');
     if (th) { e.preventDefault(); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
-    const card = e.target.closest('[data-session]');
-    if (card) { vscode.postMessage({ type: 'session', sessionId: card.dataset.session, host: card.dataset.host }); return; }
+    const art = e.target.closest('[data-artifact]');
+    if (art && card) { e.preventDefault(); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
+    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url }); return; }
+    if (card) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
+      vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host });
+      return;
+    }
     if (!a) return;
     e.preventDefault();
-    if (a.dataset.url) vscode.postMessage({ type: 'open', url: a.dataset.url });
-    else if (a.hasAttribute('data-pick')) vscode.postMessage({ type: 'pick' });
+    if (a.hasAttribute('data-pick')) vscode.postMessage({ type: 'pick' });
+  });
+  // Hovering a small image floats a larger one, saying whose it is.
+  const reveal = document.createElement('div');
+  reveal.className = 'reveal'; reveal.innerHTML = '<img alt=""><span></span>';
+  document.body.appendChild(reveal);
+  document.addEventListener('mouseover', (e) => {
+    const img = e.target.closest && e.target.closest('.tiny, .th img');
+    if (!img) { reveal.style.display = 'none'; return; }
+    reveal.querySelector('img').src = img.src;
+    reveal.querySelector('span').textContent = img.classList.contains('in') || img.closest('.th.in') ? 'Attached by you' : 'Made by the agent';
+    reveal.style.display = 'block';
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (reveal.style.display !== 'block') return;
+    reveal.style.left = Math.min(e.clientX + 12, innerWidth - 272) + 'px';
+    reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
     const tab = e.target.closest && e.target.closest('.tab');
@@ -563,8 +817,11 @@ function shell(cspSource: string): string {
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
       next.focus(); choose(next.dataset.tab); return;
     }
-    if (e.target.closest && e.target.closest('a')) return;
-    const card = e.target.closest && e.target.closest('[data-session]');
+    if (e.key === 'Escape') { const m = main.querySelector('.menu'); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
+    if (e.target.closest && e.target.closest('a, button')) return;
+    const gh = e.target.closest && e.target.closest('.gh');
+    if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }
+    const card = e.target.closest && e.target.closest('.card[data-session]');
     if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); card.click(); }
   });
   vscode.postMessage({ type: 'ready' });
