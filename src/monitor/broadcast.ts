@@ -9,11 +9,7 @@ import {
   MonitorFrame,
 } from './broadcastTypes';
 
-/**
- * Default socket path for the monitor broadcast channel. Deliberately separate
- * from the one-shot watchdog socket (`~/.agents/.tmp/watchdog.sock`) so this
- * parallel pub/sub channel never disturbs the existing request/reply bridge.
- */
+/** Default socket path for the monitor broadcast channel. */
 const MONITOR_SOCKET_PATH = path.join(
   os.homedir(),
   '.agents',

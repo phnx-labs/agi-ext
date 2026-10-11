@@ -126,18 +126,6 @@
         }
       },
       {
-        "command": "agents.configure",
-        "title": "Agents: Dashboard"
-      },
-      {
-        "command": "agents.dispatchTask",
-        "title": "Agents: Dispatch a Task"
-      },
-      {
-        "command": "agents.focusQuickSpawn",
-        "title": "Agents: New Agent Composer"
-      },
-      {
         "command": "agents.settings",
         "title": "Agents: Settings"
       },
@@ -290,10 +278,6 @@
         "title": "Agents: Setup Codex"
       },
       {
-        "command": "agents.newTask",
-        "title": "Agents: New Task"
-      },
-      {
         "command": "agents.handoff",
         "title": "Agents: Handoff"
       },
@@ -360,14 +344,6 @@
       {
         "command": "agents.detach",
         "title": "Agents: Detach (Send to Background)"
-      },
-      {
-        "command": "agents.watchdogEnable",
-        "title": "Agents: Watchdog (Enable)"
-      },
-      {
-        "command": "agents.watchdogDisable",
-        "title": "Agents: Watchdog (Disable)"
       },
       {
         "command": "agents.attach",
@@ -720,11 +696,6 @@
           "default": false,
           "description": "Disable auto-commit. When enabled, Autogit will only stage changes and generate a commit message, but not commit or push."
         },
-        "agents.openaiApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "OpenAI API key. Used by the Foreman voice coordinator (gpt-realtime-2). Autogit no longer uses this — commit messages are generated via `agents run claude --model haiku`."
-        },
         "agents.commitGenTimeoutMs": {
           "type": "number",
           "default": 60000,
@@ -864,11 +835,6 @@
         "mac": "cmd+shift+x"
       },
       {
-        "command": "agents.newTask",
-        "key": "ctrl+shift+n",
-        "mac": "cmd+shift+n"
-      },
-      {
         "command": "agents.spawnWithPrompt",
         "key": "ctrl+shift+j",
         "mac": "cmd+shift+j"
@@ -907,22 +873,6 @@
         "command": "agents.newCursor",
         "key": "ctrl+shift+u",
         "mac": "cmd+shift+u"
-      },
-      {
-        "command": "agents.configure",
-        "key": "ctrl+shift+f",
-        "mac": "cmd+shift+f"
-      },
-      {
-        "command": "agents.dispatchTask",
-        "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d"
-      },
-      {
-        "command": "agents.focusQuickSpawn",
-        "key": "ctrl+k",
-        "mac": "cmd+k",
-        "when": "activeWebviewPanelId == 'agentsSettings'"
       },
       {
         "command": "agents.quickLaunch0",
@@ -1075,21 +1025,18 @@
     "package": "bun run compile && vsce package",
     "lint:dead": "knip",
     "test": "bun test --timeout 30000",
-    "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/draftPrompt.test.ts src/core/labelgen.test.ts src/core/commitgen.test.ts"
+    "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/labelgen.test.ts src/core/commitgen.test.ts"
   },
   "devDependencies": {
     "@phnx-labs/cli-docs": "0.1.1",
     "@types/node": "^20.x",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",
-    "@types/ws": "^8.18.1",
     "knip": "^6.35.1",
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.3",
     "sql.js": "^1.13.0",
-    "ws": "^8.20.0",
     "yaml": "^2.8.2"
   },
   "bundledDependencies": [

@@ -1,12 +1,11 @@
-// The session cards both surfaces draw: the Active Session sidebar
-// (src/vscode/agentPanel.vscode.ts) and the Fleet card expanded in place
-// (ui/settings/components/mission-control/sessions/SessionCards.tsx).
+// The session cards the Active Session sidebar (src/vscode/agentPanel.vscode.ts)
+// draws.
 //
 // SESSION_CARDS_SCRIPT is plain webview JavaScript (the timeline with its seek
 // strip, phases and filters, and the artifacts gallery, plus the handlers that
 // wire them). It is a string because the sidebar inlines it into its nonce'd
-// <script>; Fleet evaluates it once per card. Each surface supplies the free
-// names it reads: root, viewState, vscode, lastSnapshot and render.
+// <script>, which supplies the free names it reads: root, viewState, vscode,
+// lastSnapshot and render.
 //
 // Written exactly as it was inside the sidebar's template literal: a regex
 // backslash is doubled, because this literal collapses `\\` to `\` the same way.
@@ -1404,7 +1403,7 @@ ${fontFaces}  body {
     font-size: 10.5px;
     margin-top: 4px;
   }
-  /* Header actions — Focus / Resume, the two verbs the removed Fleet rail owned. */
+  /* Header actions — Focus / Resume. */
   .head-actions {
     display: flex;
     gap: 5px;
@@ -1652,52 +1651,6 @@ ${fontFaces}  body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .team {
-    margin-top: 6px;
-    border: 1px solid var(--r-edge);
-    border-radius: 10px;
-    padding: 6px 8px;
-    background: var(--r-glass);
-  }
-  .team-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .team-name { font-weight: 600; }
-  .team-counts {
-    margin-left: auto;
-    font-size: 10.5px;
-    color: var(--r-caption);
-  }
-  .mate {
-    display: grid;
-    grid-template-columns: 14px 1fr auto auto;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 0 2px 4px;
-    font-size: 11.5px;
-  }
-  .mate-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    justify-self: center;
-  }
-  .mate-dot.running   { background: var(--r-ok); }
-  .mate-dot.completed { background: var(--r-caption); }
-  .mate-dot.pending   { background: var(--r-warn); }
-  .mate-dot.failed    { background: var(--r-bad); }
-  .mate-dot.stopped   { background: var(--r-caption); opacity: 0.5; }
-  .mate-name { font-family: var(--r-mono); }
-  .mate-agent {
-    color: var(--r-caption);
-    font-size: 10.5px;
-  }
-  .mate-status {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--r-caption);
   }
   .err {
     color: var(--r-bad);

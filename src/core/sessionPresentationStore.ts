@@ -1,7 +1,6 @@
 import { canonicalSessionId } from './canonicalSessionId';
 import type { SessionCliFactPayload } from '../monitor/protocol';
 import { normalizeActiveSession, normalizeHost, resolveSessionHost, type RawActiveSession, type RemoteSession } from './remoteSessions';
-import type { ProjectRule } from './settings';
 
 /** Window-local projection of the canonical CLI stream; contains no lifecycle logic. */
 export class SessionPresentationStore {
@@ -178,7 +177,6 @@ export class SessionPresentationStore {
   presentedSessions(
     localMachineId: string,
     localLabel: string,
-    projectRules: ProjectRule[] = [],
     fetchedAt: number = Date.now(),
   ): RemoteSession[] {
     return this.sessions().flatMap((value) => {
@@ -198,7 +196,7 @@ export class SessionPresentationStore {
         : typeof row.sourceDevice === 'string' ? row.sourceDevice
         : undefined;
       const host = resolveSessionHost(machine, localLabel, normalizeHost(localMachineId), localLabel);
-      return [normalizeActiveSession(raw, host, fetchedAt, projectRules)];
+      return [normalizeActiveSession(raw, host, fetchedAt)];
     });
   }
 

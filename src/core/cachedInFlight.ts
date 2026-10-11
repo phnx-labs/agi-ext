@@ -87,11 +87,11 @@ export function coalesceTrailing(
           const trailing = start();
           store.inFlight.set(key, trailing);
           // The leading caller has already returned, so nobody awaits this trailing
-          // run. Attach a handler so a rejecting fn() (e.g. the floor scan throwing)
+          // run. Attach a handler so a rejecting fn() (e.g. a scan throwing)
           // is a caught, no-op rejection here rather than a process-level unhandled
           // rejection. A caller that DOES arrive mid-trailing still gets `trailing`
           // and sees the rejection itself.
-          trailing.catch(() => { /* trailing floor rebuild failed; next fact re-runs it */ });
+          trailing.catch(() => { /* trailing rebuild failed; next fact re-runs it */ });
         } else {
           store.inFlight.delete(key);
         }

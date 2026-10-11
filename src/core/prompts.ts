@@ -79,20 +79,3 @@ export function writePromptsToPath(filePath: string, prompts: PromptEntry[]): bo
     return false;
   }
 }
-
-/**
- * Validate a prompt entry has all required fields.
- */
-export function isValidPromptEntry(entry: unknown): entry is PromptEntry {
-  if (typeof entry !== 'object' || entry === null) return false;
-  const e = entry as Record<string, unknown>;
-  return (
-    typeof e.id === 'string' &&
-    typeof e.title === 'string' &&
-    typeof e.content === 'string' &&
-    typeof e.isFavorite === 'boolean' &&
-    typeof e.createdAt === 'number' &&
-    typeof e.updatedAt === 'number' &&
-    typeof e.accessedAt === 'number'
-  );
-}

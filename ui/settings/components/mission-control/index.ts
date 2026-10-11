@@ -1,8 +1,0 @@
-export { MissionControlTab } from './MissionControlTab'
-export { TopBar } from './TopBar'
-export { TaskDetailModal } from './UnifiedAgentsPane'
-export type { CloudProviderId } from './UnifiedAgentsPane'
-export { StatusBar } from './StatusBar'
-export { Icon } from './icons'
-export { CommandPalette } from './CommandPalette'
-export type { TabKey } from './TopBar'

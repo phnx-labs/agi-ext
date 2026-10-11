@@ -1,5 +1,5 @@
 // One word for a session's state on every surface (Project panel, session
-// sidebar, Fleet row), read from the CLI's own row facts. The CLI decides the
+// sidebar), read from the CLI's own row facts. The CLI decides the
 // status (agents-cli SES-18, sessions-cli inferActivity); this only names it.
 //
 //   status input_required / phase waiting, or an open ask  -> Needs you
@@ -15,7 +15,7 @@ export interface SessionStateFacts {
   phase?: string;
   liveStatus?: string;
   attention?: { kind?: string; state?: string } | null;
-  /** An open attention item the caller only knows as a flag (Fleet's `needs`). */
+  /** An open attention item the caller only knows as present. */
   needsYou?: boolean;
 }
 
@@ -44,12 +44,12 @@ export function sessionStateOf(s: SessionStateFacts): SessionStateKey {
 
 /** Why the CLI raised an attention row, carried verbatim from the stream
  *  (`RemoteAttention.kind`). The extension classifies nothing. */
-export type AttentionKind = 'question' | 'permission' | 'plan_review' | 'declared' | 'failure' | 'stall' | 'review';
+type AttentionKind = 'question' | 'permission' | 'plan_review' | 'declared' | 'failure' | 'stall' | 'review';
 
 /** Needs-you order on every surface: an interactive hand-back (question, permission,
  *  plan_review, declared) leads, then a hard failure, a stall the CLI detected, and a
  *  review request. */
-export const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
+const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
   question: 0,
   permission: 1,
   plan_review: 2,

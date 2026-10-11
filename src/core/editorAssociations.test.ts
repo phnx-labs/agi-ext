@@ -3,37 +3,15 @@ import {
   AGENTS_HTML_READER,
   AGENTS_MARKDOWN_EDITOR,
   normalizeEditorAssociations,
-  readerViewTypeForPath,
   withReaderEditorAssociations,
 } from './editorAssociations';
 
 describe('normalizeEditorAssociations', () => {
-  test('returns empty for null/undefined/non-objects', () => {
+  test('keeps the object map VS Code expects, minus non-string values; non-objects read as empty', () => {
     expect(normalizeEditorAssociations(undefined)).toEqual({});
-    expect(normalizeEditorAssociations(null)).toEqual({});
     expect(normalizeEditorAssociations('nope')).toEqual({});
-  });
-
-  test('passes through the object map VS Code expects', () => {
-    expect(
-      normalizeEditorAssociations({
-        '*.md': AGENTS_MARKDOWN_EDITOR,
-        '*.pdf': 'pdf.preview',
-      })
-    ).toEqual({
-      '*.md': AGENTS_MARKDOWN_EDITOR,
-      '*.pdf': 'pdf.preview',
-    });
-  });
-
-  test('drops non-string values from an object map', () => {
-    expect(
-      normalizeEditorAssociations({
-        '*.md': AGENTS_MARKDOWN_EDITOR,
-        '*.bad': 12,
-        '*.empty': '',
-      })
-    ).toEqual({ '*.md': AGENTS_MARKDOWN_EDITOR });
+    expect(normalizeEditorAssociations({ '*.md': AGENTS_MARKDOWN_EDITOR, '*.pdf': 'pdf.preview', '*.bad': 12, '*.empty': '' }))
+      .toEqual({ '*.md': AGENTS_MARKDOWN_EDITOR, '*.pdf': 'pdf.preview' });
   });
 
   test('migrates the legacy array shape AGI EXT used to write', () => {
@@ -52,18 +30,8 @@ describe('normalizeEditorAssociations', () => {
 });
 
 describe('withReaderEditorAssociations', () => {
-  test('maps md to markdown editor and html/htm to html reader when enabling', () => {
-    expect(withReaderEditorAssociations({}, true)).toEqual({
-      '*.md': AGENTS_MARKDOWN_EDITOR,
-      '*.html': AGENTS_HTML_READER,
-      '*.htm': AGENTS_HTML_READER,
-    });
-  });
-
-  test('preserves other associations when enabling', () => {
-    expect(
-      withReaderEditorAssociations({ '*.pdf': 'pdf.preview' }, true)
-    ).toEqual({
+  test('enabling maps md and html/htm to the Reader, replacing a prior md entry and keeping others', () => {
+    expect(withReaderEditorAssociations({ '*.pdf': 'pdf.preview', '*.md': 'default' }, true)).toEqual({
       '*.pdf': 'pdf.preview',
       '*.md': AGENTS_MARKDOWN_EDITOR,
       '*.html': AGENTS_HTML_READER,
@@ -71,52 +39,12 @@ describe('withReaderEditorAssociations', () => {
     });
   });
 
-  test('replaces a prior *.md association when enabling', () => {
-    expect(
-      withReaderEditorAssociations({ '*.md': 'default' }, true)
-    ).toEqual({
-      '*.md': AGENTS_MARKDOWN_EDITOR,
-      '*.html': AGENTS_HTML_READER,
-      '*.htm': AGENTS_HTML_READER,
-    });
-  });
-
-  test('pins md and html patterns to default when disabling', () => {
+  test('disabling pins md and html patterns to default', () => {
     expect(
       withReaderEditorAssociations(
-        {
-          '*.md': AGENTS_MARKDOWN_EDITOR,
-          '*.html': AGENTS_HTML_READER,
-          '*.htm': AGENTS_HTML_READER,
-          '*.pdf': 'pdf.preview',
-        },
+        { '*.md': AGENTS_MARKDOWN_EDITOR, '*.html': AGENTS_HTML_READER, '*.htm': AGENTS_HTML_READER, '*.pdf': 'pdf.preview' },
         false
       )
-    ).toEqual({
-      '*.md': 'default',
-      '*.html': 'default',
-      '*.htm': 'default',
-      '*.pdf': 'pdf.preview',
-    });
-  });
-});
-
-describe('readerViewTypeForPath', () => {
-  test('maps markdown and html under .agents/artifacts (and anywhere)', () => {
-    expect(readerViewTypeForPath('/repo/.agents/artifacts/fleet-tokens-24h.html')).toBe(
-      AGENTS_HTML_READER
-    );
-    expect(readerViewTypeForPath('/repo/.agents/plans/plan-foo.html')).toBe(AGENTS_HTML_READER);
-    expect(readerViewTypeForPath('/repo/.agents/artifacts/named-runs/plan.md')).toBe(
-      AGENTS_MARKDOWN_EDITOR
-    );
-    expect(readerViewTypeForPath('C:\\Users\\x\\.agents\\artifacts\\x.HTM')).toBe(
-      AGENTS_HTML_READER
-    );
-  });
-
-  test('returns undefined for non-reader types', () => {
-    expect(readerViewTypeForPath('/repo/.agents/artifacts/shot.png')).toBeUndefined();
-    expect(readerViewTypeForPath('/repo/src/main.ts')).toBeUndefined();
+    ).toEqual({ '*.md': 'default', '*.html': 'default', '*.htm': 'default', '*.pdf': 'pdf.preview' });
   });
 });

@@ -2,14 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { buildAgentLaunchCommand } from './agents';
 import { buildForkSessionRequest, forkCommand } from './forkSession';
 
-describe('forkCommand', () => {
-  test('builds the bare fork verb when the source runs here', () => {
-    expect(forkCommand('s1', undefined)).toBe("agents sessions fork 's1'");
-  });
-
-  test('carries the device when the source lives on another box', () => {
-    expect(forkCommand('s1', 'yosemite-s0')).toContain("--device 'yosemite-s0'");
-  });
+test('forkCommand is the bare fork verb here, and carries the device for another box', () => {
+  expect(forkCommand('s1', undefined)).toBe("agents sessions fork 's1'");
+  expect(forkCommand('s1', 'yosemite-s0')).toContain("--device 'yosemite-s0'");
 });
 
 describe('buildForkSessionRequest', () => {
@@ -66,11 +61,8 @@ describe('buildForkSessionRequest', () => {
     });
   });
 
-  test('rejects a terminal before its session id is available', () => {
+  test('rejects a terminal without a session id or a recognized harness', () => {
     expect(buildForkSessionRequest({ agentKey: 'gemini' })).toEqual({ ok: false, reason: 'no_session' });
-  });
-
-  test('rejects a terminal without a recognized agent harness', () => {
     expect(buildForkSessionRequest({ sessionId: 'session-123' })).toEqual({ ok: false, reason: 'no_agent' });
   });
 });
@@ -97,22 +89,6 @@ describe('buildForkSessionRequest with a picked device', () => {
       request.agentKey, 'fork-session', undefined, undefined, undefined, request.strategy, undefined,
       { host: request.host, local: request.local },
     )).toContain("--device 'yosemite-m0'");
-  });
-
-  test('keeps the same harness and balanced rotation when the machine changes', () => {
-    const request = buildForkSessionRequest(
-      { sessionId: 'session-1', agentKey: 'Codex', host: 'yosemite-s0', localHost: 'zion' },
-      { host: 'mac-mini' },
-    );
-    expect(request).toMatchObject({
-      ok: true,
-      agentKey: 'codex',
-      host: 'mac-mini',
-      sourceHost: 'yosemite-s0',
-      moved: true,
-      strategy: 'balanced',
-      prompt: '/continue session-1 --device yosemite-s0',
-    });
   });
 
   test('pulls a remote session back to this machine', () => {

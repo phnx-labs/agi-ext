@@ -42,33 +42,6 @@ describe('launchOptsForTarget', () => {
   });
 });
 
-describe('launchOptsForHarnessCommand', () => {
-  it('default auto-picks the device and the account, with no prompt on either', () => {
-    expect(launchOptsForHarnessCommand('default', 'auto')).toEqual({});
-  });
-
-  it('preserves explicit local or ask placement and never adds an account prompt', () => {
-    expect(launchOptsForHarnessCommand('default', 'local')).toEqual({ local: true });
-    expect(launchOptsForHarnessCommand('default', 'ask')).toEqual({ pickHost: true });
-  });
-
-  it('Pick Host pins the device and balances the account, while Auto pins neither', () => {
-    // Pick Host no longer prompts for an account: it pins the device and lets the
-    // CLI balance the account on it (`--strategy balanced`, added by the builder
-    // when no accountPicker is set). Pick Account is the orthogonal command.
-    expect(launchOptsForHarnessCommand('pick-host')).toEqual({ pickHost: true });
-    expect(launchOptsForHarnessCommand('auto')).toEqual({});
-  });
-
-  it('Pick Account pins the account and auto-picks the device', () => {
-    expect(launchOptsForHarnessCommand('pick-account')).toEqual({ accountPicker: true });
-  });
-
-  it('Pick Project asks only for the project — never a host, so placement stays automatic', () => {
-    expect(launchOptsForHarnessCommand('pick-project')).toEqual({ pickProject: true });
-  });
-});
-
 describe('registered harness launch commands', () => {
   const RUNNERS = BUILT_IN_AGENTS.filter(({ key }) => key !== 'shell' && key !== 'gemini');
 

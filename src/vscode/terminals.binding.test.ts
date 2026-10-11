@@ -181,9 +181,9 @@ describe('terminal session identity', () => {
     assert.equal(await t.promptSessionId({ terminalId: 'missing' }), undefined);
   `));
 
-  test('foreman snapshot publishes the session the tab is bound to now, not its launch id', () => run(`
+  test('the registry snapshot publishes the session the tab is bound to now, not its launch id', () => run(`
     surface.window.terminals = [term];
-    const registry = await import(${JSON.stringify(join(import.meta.dir, 'foreman.registry.ts'))});
+    const registry = await import(${JSON.stringify(join(import.meta.dir, 'terminalRegistry.vscode.ts'))});
     t.register(term, 'CC-shell', config, process.pid);
     t.setSessionId(term, 'old');
     let entries = await registry.snapshotOwnTerminals();

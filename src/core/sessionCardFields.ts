@@ -19,7 +19,7 @@ export interface SessionCardFields {
 }
 
 /**
- * The session-card fields the sidebar and the Fleet card both read beside the
+ * The session-card fields the sidebar reads beside the
  * stream row's own (timeline, userTurns, failures, activityHistogram, subagents):
  * display paths, inline previews, PR and ticket links, the open ask. Pure: the
  * caller supplies the webview URI for a local preview, so a remote session's

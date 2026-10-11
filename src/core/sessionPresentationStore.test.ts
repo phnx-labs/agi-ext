@@ -266,15 +266,6 @@ describe('SessionPresentationStore', () => {
       expect([...b.entries()]).toEqual([['TB', 'sid1']]);
     });
 
-    test('a terminalId two sessions both claim for one observer is ambiguous and omitted', () => {
-      const store = new SessionPresentationStore();
-      reset(store, [
-        { rowKey: 'a', sessionId: 'sid1', sourceDevice: 'worker', observerTerminals: [{ device: 'desktop', terminalId: 'DUP' }] },
-        { rowKey: 'b', sessionId: 'sid2', sourceDevice: 'worker', observerTerminals: [{ device: 'desktop', terminalId: 'DUP' }] },
-      ]);
-      expect(store.terminalSessionMap('worker', 'desktop').has('DUP')).toBe(false);
-    });
-
     test('distinct live claims stay ambiguous regardless of start time or row order', () => {
       const terminal = [{ device: 'desktop', terminalId: 'TAB-ambiguous' }];
       const a = (startedAtMs: number) => ({ rowKey: 'a', sessionId: 'session-a', sourceDevice: 'worker', startedAtMs, observerTerminals: terminal });

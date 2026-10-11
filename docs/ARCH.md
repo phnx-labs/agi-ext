@@ -1,7 +1,7 @@
 ---
 kind: report
 title: AGI EXT architecture
-summary: "How the extension turns one agents-cli stream into tabs, a sidebar, and a Fleet dashboard, and turns gestures into one-shot CLI verbs; the measured module graph; the debt and the direction."
+summary: "How the extension turns one agents-cli stream into tabs and two sidebars, and turns gestures into one-shot CLI verbs; the measured module graph; the debt and the direction."
 status: "Internal design"
 project: agi-ext
 repository: phnx-labs/agi-ext
@@ -44,11 +44,11 @@ AGI EXT is a presentation and interaction layer over agents-cli. The CLI owns ev
 <rect x="56" y="240" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="257" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Presentation store (window-local projection)</text><text x="66" y="272" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">src/core/sessionPresentationStore.ts</text>
 <rect x="56" y="288" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="305" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Terminal registry + persistence</text><text x="66" y="320" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">terminals.vscode.ts · sessions.persist.ts</text>
 <rect x="56" y="336" width="320" height="40" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="353" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Command adapters + URI handler</text><text x="66" y="368" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">extension.ts · agents.ts · launchTarget.ts</text>
-<rect x="56" y="384" width="320" height="36" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="401" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Webview bridge</text><text x="66" y="414" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">settings.vscode.ts · agentPanel.vscode.ts</text>
+<rect x="56" y="384" width="320" height="36" rx="6" fill="#111312" stroke="#3f3f46"/><text x="66" y="401" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Sidebar bridges</text><text x="66" y="414" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agentPanel.vscode.ts · projectPanel.vscode.ts</text>
 <rect x="400" y="90" width="200" height="340" rx="10" fill="#161a18" stroke="#26302a"/>
 <text x="416" y="114" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="14" font-weight="600">Sandboxed webviews</text>
-<text x="416" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">React · Vite · postMessage</text>
-<rect x="416" y="144" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Fleet dashboard</text><text x="426" y="177" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ui/settings (3 tabs)</text><text x="426" y="191" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">list · needs-you · dispatch</text>
+<text x="416" y="130" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">HTML views · Reader (React) · postMessage</text>
+<rect x="416" y="144" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="162" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Project sidebar</text><text x="426" y="177" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agentsProject.panel (5 tabs)</text><text x="426" y="191" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">sessions · needs-you · tickets</text>
 <rect x="416" y="208" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="226" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Active Session sidebar</text><text x="426" y="241" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">agentsPanel.terminal</text><text x="426" y="255" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">the one session preview</text>
 <rect x="416" y="272" width="170" height="56" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="290" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Reader editors</text><text x="426" y="305" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">ui/editor · htmlReader.ts</text><text x="426" y="319" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">Markdown editor, HTML viewer</text>
 <rect x="416" y="336" width="170" height="84" rx="6" fill="#111312" stroke="#3f3f46"/><text x="426" y="354" fill="#e7ece8" font-family="system-ui,sans-serif" font-size="12">Agent terminals</text><text x="426" y="369" fill="#8b938c" font-family="ui-monospace,monospace" font-size="10">vscode.Terminal per agent</text><text x="426" y="383" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">local harness, or ssh to a</text><text x="426" y="397" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">host; not a webview, drawn</text><text x="426" y="411" fill="#8b938c" font-family="system-ui,sans-serif" font-size="10">here: it lives in the editor</text>
@@ -82,7 +82,7 @@ AGI EXT is a presentation and interaction layer over agents-cli. The CLI owns ev
 <figcaption>Facts flow in on one lime arrow. Everything else the extension does is a gesture becoming one command.</figcaption>
 </figure>
 
-The CLI owns facts and mechanisms. The extension owns presentation: which tab is visible, local labels, dashboard layout, transient selection, and the restoration metadata needed to reopen a tab. When the UI needs a fact the stream lacks, the fact is added to the CLI's `SessionWatchRow` (backfilled from the index, the way `version` landed), never reconstructed from transcripts or fetched on a poll (the one exception, an explicit-click timeline filter, is described under the sidebar row below)ing loop. That side channel is how the 2026-08-25 CPU incident happened (agi-cli#3019).
+The CLI owns facts and mechanisms. The extension owns presentation: which tab is visible, local labels, sidebar layout, transient selection, and the restoration metadata needed to reopen a tab. When the UI needs a fact the stream lacks, the fact is added to the CLI's `SessionWatchRow` (backfilled from the index, the way `version` landed), never reconstructed from transcripts or fetched on a poll (the one exception, an explicit-click timeline filter, is described under the sidebar row below)ing loop. That side channel is how the 2026-08-25 CPU incident happened (agi-cli#3019).
 
 The invariants, each checkable against the file named:
 
@@ -95,7 +95,7 @@ The invariants, each checkable against the file named:
 | User actions invoke the owning CLI noun exactly once | `src/core/agents.ts` `buildAgentLaunchCommand`, `src/core/agentsBin.ts` `runAgents` |
 | A missing CLI capability fails as an upgrade error, never a filesystem fallback | rule; `src/core/agentsBin.ts` `resolveAgentsBin` throws when the binary is absent |
 | Publisher and URI authority stay `swarmify.swarm-ext` | `package.json` `publisher`, `name`; the CLI emits `swarm-ext://swarmify.swarm-ext/…` |
-| `src/core` never imports `vscode` | `src/testing/vscodeDouble.test.ts`, the `@shared` Vite alias in `ui/` |
+| `src/core` never imports `vscode` | `src/testing/vscodeDouble.test.ts` |
 
 <a id="components"></a>
 
@@ -106,27 +106,23 @@ The extension host is a single Node process per editor window. It holds the elec
 | Component | Role | Source |
 |---|---|---|
 | Stream leader | Spawns and owns the single `agents feed watch --json` child in its own process group; exponential restart backoff to 30 s; SIGTERM then SIGKILL on stop | `src/monitor/sessionCliStream.ts` `SessionCliStream`, `SessionCliReplay` |
-| Demand gate | Union of every window's demand (dashboard visible, sidebar visible, unresolved agent tab); leases keyed by follower socket so a dropped window releases immediately; 5 s stop debounce | `src/monitor/host.ts` `MonitorHost`, `src/monitor/sessionDemand.ts` |
+| Demand gate | Union of every window's demand (Active Session sidebar visible, Project Sessions tab visible, Resume picker open, unresolved agent tab); leases keyed by follower socket so a dropped window releases immediately; 5 s stop debounce | `src/monitor/host.ts` `MonitorHost`, `src/monitor/sessionDemand.ts` |
 | Leader election | One window holds the lease: each claim creates the next numbered generation exclusively, so windows starting together elect one leader; a crashed holder (expired, dead pid) is taken over; the holder mirrors itself into the legacy lease file so older installed versions stay followers. Loss triggers election and replay, not one poller per follower. A failed start is retried with backoff to 30 s while the lease is held | `src/monitor/leader.ts`, `src/monitor/lease.ts`, `src/monitor/gate.ts` |
 | Broadcast | Unix-socket pub/sub from the leader to follower windows; frames carry monitor facts and session-CLI facts; requests (register tuples, snapshot) flow back | `src/monitor/broadcast.ts`, `src/monitor/protocol.ts`, `src/monitor/follower.ts` |
 | Presentation store | Window-local index of rows, attention, activity, per-scope sequence and reset state; selectors derive local/remote groupings and counts without becoming a source of truth | `src/core/sessionPresentationStore.ts` |
 | Terminal registry | Maps a `vscode.Terminal` to extension-local id, harness, host, version, account, label, and the canonical session id once known; persists per workspace | `src/vscode/terminals.vscode.ts`, `src/core/sessions.persist.ts`, `src/core/terminals.ts` |
-| Launch engine | Turns a command variant and the active workspace into one `agents run` line | `src/core/launchTarget.ts`, `src/core/agents.ts` `buildAgentLaunchCommand`, `src/core/deviceDispatchShell.ts` `shellQuote` |
+| Launch engine | Turns a command variant and the active workspace into one `agents run` line | `src/core/launchTarget.ts`, `src/core/agents.ts` `buildAgentLaunchCommand`, `src/core/shellQuote.ts` `shellQuote` |
 | CLI location | One resolver and one exec path for the `agents` binary; nvm node first on PATH, then the binary's dir | `src/core/agentsBin.ts` `resolveAgentsBin`, `bootstrapPath`, `runAgents` |
 | Command adapters | Every palette command; the `swarm-ext://` URI handler for `/focus`, `/inject`, and `/spawn` (the agents-cli terminal engine's `vscodium-agent` backend resumes a session into an editor tab through it; a request opens only in a window whose folders contain its `project` (no `project` is refused), focuses this window's live tab for the session instead of duplicating it, and with a `nonce` writes `~/.swarmify/agents/spawn-acks/<nonce>.json`, contract in `src/core/spawn.ts`); status bar | `src/vscode/extension.ts`, `src/vscode/sessions.vscode.ts`, `src/vscode/forkCommands.vscode.ts` |
-| Webview bridge | Serializes bounded view models into the Fleet webview and routes its messages to host actions | `src/vscode/settings.vscode.ts` (message router), `ui/settings/host/bridge.ts` |
 | Active Session sidebar | The one session preview; module-local subject; synchronous render from the store | `src/vscode/agentPanel.vscode.ts` |
-| Session cards | The Timeline and Artifacts cards (webview script + stylesheet) the sidebar inlines and an expanded Fleet row evaluates in a shadow root; their host fields and click actions | `src/shared/sessionCards.ts`, `src/core/sessionCardFields.ts`, `src/vscode/sessionCardActions.ts` |
+| Session cards | The Timeline and Artifacts cards (webview script + stylesheet) the sidebar inlines; their host fields and click actions (`openListedArtifact` for a Project panel card) | `src/shared/sessionCards.ts`, `src/core/sessionCardFields.ts`, `src/vscode/sessionCardActions.ts` |
 | Project sidebar | One view, five icon tabs (Overview, Sessions, Pull requests, Tickets, Settings) for one project; only the active tab loads. Sessions renders store rows filtered on the CLI's `confirmedProject` and is a stream-demand source only while it is the visible tab. Where a session lives (`sessionPlace`) comes from this window's tab registry, the row's `observerTerminals` (with `workspaceDir`) and its terminal app; what it made (`sessionMade`) from `sessionCardFields`; sort, show, group, folded groups and hidden sessions persist in workspace state. A card click selects (the other sidebar follows); focus and resume icons run `resumeAndNotify`; × closes this window's tabs for the session (`terminals.sessionTabs` + `closeTabs`) The other three read one CLI verb when shown or on Refresh, at most once a minute; no timer. A ticket click reads `linear tasks <ID> --json` once (`ticketDetail.ts`); Comment is one `linear update` argv; Start runs `agents.spawnWithPrompt` with the default agent. Settings renders `agentSettings` and the default/second agent titles and writes one key per change (`panelSettings.ts`); it reads nothing from the CLI. Harness logos are one `.hx-<agent>` class per harness built from `assets/` | `src/vscode/projectPanel.vscode.ts`, `src/core/projectPanel.ts`, `src/core/ticketDetail.ts`, `src/core/panelSettings.ts` |
-| Resume | `Agents: Resume Session…` lists the window's folders' projects' sessions from the store (scoped on `confirmedProject`, "loading machines" until every dialed peer reports or 8 s pass, then names the silent ones (`src/core/streamWait.ts`, shared with Fleet's degraded flag), a stream-demand source while open). Picker Enter, Fleet Resume/Open, the side panel's Focus and ↻, and Project card clicks all run `agents.resumeSession(sessionId, host)`: focus this window's tab, else `agents sessions resume <id> --vscodium [--device <machine>]` opens the live agent in the window owning the project. The answer is one notification; nothing is typed into a tab | `src/vscode/resumeSession.vscode.ts`, `src/core/sessionPicker.ts`, `src/core/spawn.ts` |
-| Session state words | One mapping from the CLI row (phase, live status, attention) to a state and its word, used by the Project panel, the session sidebar and Fleet rows; also the needs-you order (`ATTENTION_KIND_RANK`, `attentionRank`) | `src/shared/sessionState.ts` |
+| Resume | `Agents: Resume Session…` lists the window's folders' projects' sessions from the store (scoped on `confirmedProject`, "loading machines" until every dialed peer reports or 8 s pass, then names the silent ones (`src/core/streamWait.ts`), a stream-demand source while open). Picker Enter, the side panel's Focus and ↻, and Project card clicks all run `agents.resumeSession(sessionId, host)`: focus this window's tab, else `agents sessions resume <id> --vscodium [--device <machine>]` opens the live agent in the window owning the project. The answer is one notification; nothing is typed into a tab | `src/vscode/resumeSession.vscode.ts`, `src/core/sessionPicker.ts`, `src/core/spawn.ts` |
+| Session state words | One mapping from the CLI row (phase, live status, attention) to a state and its word, used by the Project panel and the session sidebar; also the needs-you order (`ATTENTION_KIND_RANK`, `attentionRank`) | `src/shared/sessionState.ts` |
 | Settings store | `globalState['agentSettings']` with its migrations, the prompt library, and retitling open tabs when a title preference changes | `src/vscode/agentSettings.vscode.ts` |
 | Approval alerts | On each applied stream fact, sessions with a tab in this window that just started needing you page once, gated on `notifications.enabled` and drawn in `notifications.style` | `src/vscode/waitingNotifier.vscode.ts`, called from `extension.ts` |
-| Fleet dashboard | React app with `floor`, `bench`, `panel` tabs; floor model, needs-you ranking, project attribution, dispatch panel, recap ledger | `ui/settings/App.tsx`, `ui/settings/components/mission-control/*` |
 | Reader | Optional custom editors for `.md` (TipTap) and `.html` (sandboxed viewer) | `src/vscode/customEditor.ts`, `src/vscode/htmlReader.ts`, `ui/editor/*` |
 | Autogit | Diff and status from the git extension; message from `agents run claude --model haiku`; stage, commit, push | `src/vscode/git.vscode.ts`, `src/core/commitgen.ts` |
-| Foreman orb | Realtime voice over OpenAI with ffmpeg audio capture; reads floor state, can dispatch and file issues | `src/vscode/foreman.*.ts`, `ui/settings/components/foreman/*` |
-| Watchdog bridge | Editor adapter that delivers socket requests to live terminals; the wire protocol and MCP server remain editor-independent | `src/vscode/watchdogBridge.vscode.ts`, `src/mcp/watchdogProtocol.ts`, `src/mcp/watchdog-server.ts` |
 
 <a id="projection"></a>
 
@@ -144,7 +140,7 @@ The extension host is a single Node process per editor window. It holds the elec
 <rect x="225" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="235" y="67" font-size="12">Leader window</text><text x="235" y="83" fill="#8b938c" font-size="9">SessionCliStream · MonitorHost</text>
 <rect x="425" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="435" y="67" font-size="12">Broadcast socket</text><text x="435" y="83" fill="#8b938c" font-size="9">MonitorBroadcastServer</text>
 <rect x="625" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="635" y="67" font-size="12">Presentation store</text><text x="635" y="83" fill="#8b938c" font-size="10">per window</text>
-<rect x="815" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="825" y="67" font-size="12">UI consumers</text><text x="825" y="83" fill="#8b938c" font-size="10">tabs · sidebar · Fleet</text>
+<rect x="815" y="50" width="180" height="40" rx="6" fill="#161a18" stroke="#3f3f46"/><text x="825" y="67" font-size="12">UI consumers</text><text x="825" y="83" fill="#8b938c" font-size="10">tabs · sidebars</text>
 </g>
 <g stroke="#3f3f46" stroke-dasharray="4 4"><line x1="115" y1="90" x2="115" y2="470"/><line x1="315" y1="90" x2="315" y2="470"/><line x1="515" y1="90" x2="515" y2="470"/><line x1="715" y1="90" x2="715" y2="470"/><line x1="905" y1="90" x2="905" y2="470"/></g>
 <rect x="310" y="110" width="10" height="330" fill="#26302a"/><rect x="710" y="150" width="10" height="290" fill="#26302a"/>
@@ -168,7 +164,7 @@ The extension host is a single Node process per editor window. It holds the elec
 <figcaption>The store is a projection. It contains no lifecycle logic and never becomes a source of truth.</figcaption>
 </figure>
 
-Exactly one elected window starts the long-lived child, and only while some window reports demand: a visible dashboard or sidebar, or a tracked agent tab whose identity the stream has not resolved yet. When no window demands it the producer is torn down after a 5 s debounce, so an idle window contributes no watcher. The leader normalizes newline-delimited events, keeps a replay cache so a window that gains demand paints current rows without waiting, and broadcasts each event to followers over the monitor socket. A child that keeps dying is respawned with exponential backoff up to 30 s, and its process group is torn down before a restart so an ssh descendant can never outlive it.
+Exactly one elected window starts the long-lived child, and only while some window reports demand: a visible sidebar or Project Sessions tab, an open Resume picker, or a tracked agent tab whose identity the stream has not resolved yet. When no window demands it the producer is torn down after a 5 s debounce, so an idle window contributes no watcher. The leader normalizes newline-delimited events, keeps a replay cache so a window that gains demand paints current rows without waiting, and broadcasts each event to followers over the monitor socket. A child that keeps dying is respawned with exponential backoff up to 30 s, and its process group is torn down before a restart so an ssh descendant can never outlive it.
 
 `feed watch` is the only producer of three things: session rows, `attention.*` (the sole input to needs-you), and `activity.append`. The cheaper `agents sessions watch --json --local` journal tail carries none of the attention or activity events and drops every remote session unless something replaces the fleet fan-out; switching to it is not a drop-in and stays blocked on the CLI side.
 
@@ -222,11 +218,11 @@ Correlation is not launch-only. A user may stop session A and start session B in
 
 The shell's `AGENT_TERMINAL_ID` remains stable across `agents.clear` and harness
 restarts. Every open tab with that id gets a `live-terminals.json` entry
-(`src/vscode/foreman.registry.ts`) carrying the `terminalId`, the harness `kind`
+(`src/vscode/terminalRegistry.vscode.ts`) carrying the `terminalId`, the harness `kind`
 from the prefix in `PRESENTED_AGENTS`, and the shell pid. The launch `sessionId` is
 present only when the extension minted one (Claude); Codex, Grok and the rest pick
-their id after start, and the CLI joins those tabs by `terminalId`. Readers dedupe by
-`terminalId`. A window's slice is pruned once its `at` is older than 10 minutes
+their id after start, and the CLI joins those tabs by `terminalId`. The CLI, the file's only reader
+(`viewing-in.ts`, `active.ts`), dedupes by `terminalId`. A window's slice is pruned once its `at` is older than 10 minutes
 even when its pids are alive: live windows rewrite it every 4 minutes, and a reload
 writes under a new window id. Shell start time never proves session ownership.
 Reload restores a session id from the exact persisted terminal-id record before
@@ -273,14 +269,14 @@ Flag order is fixed by `buildAgentLaunchCommand`: agent spec, `--interactive`, `
 
 ## Needs-you attention as pure projection
 
-The Fleet "Needs you" lane is a projection of the CLI attention rows the stream carries (`RemoteAttention` in `src/core/remoteSessions.ts`, joined onto their session in `sessionPresentationStore.sessions()`). Membership is `attention.state === 'open'`. Order comes from `attention.kind` through `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts` (the Project panel's pinned Needs you uses the same rank): question, permission, plan_review, declared, failure, stall, review, most-stuck-first within a kind. An interactive hand-back renders as a decision card carrying the harness's own choices; a failure as a failure card; a stall or review as a plain row. A stall is a CLI signal: `FloorPhase` carries no `stalled` member, and `phaseFromStatus` is a straight rename of the CLI-reported status for an unindexed local tab. `PHASE_PROGRESS_RANK` orders phases on the Sessions surface and is not the needs-you ranker. A tab the stream has not indexed carries no attention and never enters the lane from the client side.
+The Project panel's pinned "Needs you" group is a projection of the CLI attention rows the stream carries (`RemoteAttention` in `src/core/remoteSessions.ts`, joined onto their session in `sessionPresentationStore.sessions()`). Membership is `attention.state === 'open'`. Order comes from `attention.kind` through `attentionRank` (`ATTENTION_KIND_RANK`) in `src/shared/sessionState.ts`: question, permission, plan_review, declared, failure, stall, review. The Active Session sidebar shows the same open item under its header with the harness's own choices. A stall is a CLI signal: `sessionStateOf` reads it as Stopped and `SessionStateKey` has no `stalled` member. A tab the stream has not indexed carries no attention and never enters the group from the client side.
 
-Project attribution follows the same rule. `sessionProjects.ts` resolves a session's project only from hints the projected row carries (cwd or worktree path, the CLI's repo word, the PR's `owner/repo` slug, then branch, worktree slug, or team) through `matchLinearProject` in `src/shared/linearProjects.ts`, whose containment fallback is word-wise. A session no hint can attribute is the labeled Unassigned bucket with its reason; a manual assignment is a local presentation override.
+Project attribution follows the same rule: the Project panel filters on the CLI's own `confirmedProject` (`projectSessions` in `src/core/projectPanel.ts`) and never guesses a project from a cwd.
 
-The rest of the dashboard composes the same way. Session rows describe conversations and progress; attention facts keep the exact question, choices, and resolution lifecycle; activity facts supply chronological evidence such as plans, pull requests, teams, and artifacts. The dashboard may group, filter, sort, and decorate them, may hide background work by presentation policy without removing it from the model, and must never infer a new canonical status from transcript text or process scans. Device, project, and ticket views still arrive through separate bounded CLI reads and do not live in the presentation store. Optimistic UI is limited to transient feedback; durable changes arrive back through the feed.
+The rest of the Project panel composes the same way. Session rows describe conversations and progress; attention facts keep the exact question, choices, and resolution lifecycle; activity facts supply chronological evidence such as plans, pull requests, teams, and artifacts. The panel may group, filter, sort, and decorate them, and must never infer a new canonical status from transcript text or process scans. Its overview, pull request, and ticket tabs arrive through separate bounded CLI reads and do not live in the presentation store. Optimistic UI is limited to transient feedback; durable changes arrive back through the feed.
 
 <figure class="artifact-figure artifact-figure-diagram artifact-figure-wide">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Flowchart: an attention row on the stream passes a membership filter on state open, is ranked by ATTENTION_KIND_RANK, and renders as a decision card, a failure card, or a plain row">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 250" role="img" aria-label="Flowchart: an attention row on the stream passes a membership filter on state open and is ranked by ATTENTION_KIND_RANK into the pinned Needs you group">
 <title>Needs-you projection</title>
 <desc>ISO 5807 flowchart. Parallelogram: input from the stream. Diamond: decision. Rectangle: process. The three outputs are the card types the lane renders.</desc>
 <defs><marker id="ny-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#a1a1aa"/></marker></defs>
@@ -306,13 +302,7 @@ The rest of the dashboard composes the same way. Session rows describe conversat
 
 ## Findings
 
-The watchdog bridge and MCP client share the validated NDJSON contract in
-`src/mcp/watchdogProtocol.ts`; a newline, not EOF, completes a request or reply.
-Bridge teardown returns its completion promise to the leader gate, which retains
-ownership until pending startup and socket shutdown finish. The bridge never
-moves a successor's socket to repair ownership after the fact.
-
-Both leader sockets (monitor broadcast and watchdog) bind through `listenOwned`
+The leader's monitor broadcast socket binds through `listenOwned`
 in `src/monitor/endpoint.ts`: listen on a private path, then `link()` it to the
 shared path, which fails instead of replacing a live server. A leftover path is
 removed only when nothing accepts on it. Close unlinks the shared path only
@@ -327,12 +317,9 @@ Incomplete-frame buffering remains unbounded: the CLI producer defines no maximu
 reset size, so a consumer-only cap would silently lose legitimate session facts.
 A shared producer/consumer size contract is required before adding that bound.
 
-Cloud dispatch validates webview requests in `settingsActions.ts` before building
-CLI arguments. The host runs those arguments with VS Code `ProcessExecution`,
-without shell interpolation, in a task terminal that retains CLI prompts and
-following. The CLI owns budget enforcement; the extension does not detach the
-request or impose a submission timeout. Shared configuration updates reject
-malformed existing content rather than replacing it with an empty object.
+The Fleet dashboard (`ui/settings`), its Foreman voice orb, the watchdog MCP bridge
+(`src/mcp`), and cloud dispatch were deleted on 2026-10-11 (PHNX-4329). Their jobs are
+the Project panel, the AGI Menu, and the agents CLI (`agents watchdog`, `agents cloud`).
 
 The module graph was measured on this branch on 2026-09-11 with the `code:refactor` module scanner (its `modules.json` lives in the session artifacts and is not committed): 140 of 156 TypeScript files under `src/` parsed, 7 directory modules, 12 import edges, 2 cycles, 1 god module. Eleven of the twelve edges run between the five source modules and are all drawn below; the twelfth is `monitor/testdata` importing `monitor` three times, which is test fixtures and is listed in the footnote instead.
 
@@ -372,14 +359,7 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 
 **What the graph says.** `core` is healthy in kind and wrong in one edge: it imports `monitor` once (a type-only path through `src/monitor/protocol.ts` for `SessionCliFactPayload` in the presentation store) and `shared` imports `core` twice while `core` imports `shared` five times, which closes the `core ↔ monitor ↔ shared` cycle. `mcp ↔ vscode` is the second cycle: `src/mcp/watchdog-bridge.ts` imports `getAllTerminals` from `src/vscode/terminals.vscode.ts` while `vscode` imports `mcp` twice. `vscode` is the god area by size, not by fan-in: three files hold 12,090 of its 21,897 lines (`extension.ts` 5,659; `settings.vscode.ts` 3,625 with a 100-plus-case message router; `agentPanel.vscode.ts` 2,806 with inline webview HTML), and dynamic `import()` is what keeps the cycles compiling.
 
-**Watchdog boundary update (2026-09-13).** The graph above is the historical
-2026-09-11 measurement. The editor-specific watchdog adapter now lives in
-`src/vscode/watchdogBridge.vscode.ts`, beside the terminal registry it uses.
-The dependency is now `vscode → mcp` for the wire protocol; `src/mcp` no longer
-imports `vscode` or the terminal registry. The earlier callback proposal below
-is superseded for this boundary: relocating the existing adapter needs no new
-interface. Socket framing, leadership teardown, terminal delivery, and the MCP
-server's emitted path are unchanged. Other cycles remain separate work.
+**Fleet removal (2026-10-11).** The graph above is the historical 2026-09-11 measurement. `src/mcp` and `ui/settings` are deleted (PHNX-4329), so its `mcp` box and edges no longer exist.
 
 **Known debt.** These violate the thin-client rule. Touching one means deleting it or shrinking it, never adding to it.
 
@@ -387,13 +367,10 @@ server's emitted path are unchanged. Other cycles remain separate work.
 |---|---|---|
 | `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | a client-side `agents sessions <id> --json` fetch for the label and topic, which are already on the stream row; still called from `src/vscode/extension.ts` | delete now |
 | `src/core/prewarm.simple.ts` | still spawns `opencode session list` on every OpenCode tab open (the second, `workspaceState` crash-recovery mapping was deleted; the per-window file is the one restore store) | delete once the CLI daemon owns restore |
-| `src/vscode/settings.vscode.ts` `watchForPlan` | polls `agents sessions <id> --json` for the plan (rate-bounded, PHNX-3817) | delete once the CLI carries `plan` on `SessionWatchRow` (PHNX-3819) |
 | `src/monitor/sessionParse.ts` | resolves session-root directories for the readiness detector's file scan; obsolete parsing helpers were deleted in #74 | replace the remaining file scan with CLI-provided fields |
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
 | `src/monitor/readinessDetector.ts` | extension-invented lifecycle classifier (ps and pgrep loops) | move the signal into the CLI daemon, project it on the stream |
 | `src/vscode/agentPanel.vscode.ts` | `messageCount` and `recentFiles` are not on the stream and are dropped from the instant paint | add them to `SessionWatchRow`; never a lazy enrich |
-| `src/vscode/foreman.*` | realtime voice over an OpenAI key held by the extension | tolerated until the CLI offers a voice path |
-| Dashboard device, project, and ticket reads | separate bounded CLI reads outside the stream | move onto the stream when the CLI projects them |
 
 Wave 1 of PHNX-4044 (released as 0.9.371) removed 31 dead files and 49 dead exports, installed the knip gate, dropped `node-pty` and `@vscode/webview-ui-toolkit`, collapsed twelve shell quoters onto `shellQuote` and three binary resolvers onto `agentsBin.ts`, and derived the UI harness tables from the CLI catalog with a drift test.
 

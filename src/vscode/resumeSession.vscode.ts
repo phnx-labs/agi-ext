@@ -1,5 +1,5 @@
-// "Agents: Resume Session…" and the one resume action behind it, the Fleet Resume
-// button and the side panel ↻: `agents.resumeSession` focuses this window's tab or
+// "Agents: Resume Session…" and the one resume action behind it and the side
+// panel ↻: `agents.resumeSession` focuses this window's tab or
 // has the CLI open the live agent in the window that owns the project, and the
 // answer becomes one VSCodium notification. Nothing is printed into a tab.
 

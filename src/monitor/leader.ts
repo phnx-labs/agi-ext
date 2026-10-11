@@ -7,7 +7,8 @@
 //
 // Identity is `computeWindowId(sessionId, pid)`: a window RELOAD changes
 // process.pid, so the windowId changes too — leadership is therefore LOST and
-// must be re-elected, never silently continued (see foreman.registry.ts:49).
+// must be re-elected, never silently continued (see getOwnWindowId in
+// terminalRegistry.vscode.ts).
 //
 // Kept vscode-free: the wiring layer (extension.ts) supplies selfId/pid, so
 // this module — and the lease logic it drives — runs and tests in plain

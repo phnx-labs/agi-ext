@@ -8,14 +8,6 @@ import { runAgents } from './agentsBin';
 const execAsync = promisify(exec);
 
 export type AgentCli = 'claude' | 'codex' | 'opencode';
-export type PromptPackAgent = 'claude' | 'codex' | 'cursor';
-
-// Paths for testing
-const AGENT_COMMAND_PATHS: Record<AgentCli, string> = {
-  claude: path.join(os.homedir(), '.claude', 'commands', 'swarm.md'),
-  codex: path.join(os.homedir(), '.codex', 'prompts', 'swarm.md'),
-  opencode: path.join(os.homedir(), '.opencode', 'commands', 'swarm.md'),
-};
 
 // Paths where the /swarm command file lives for each CLI
 // Supported harnesses use markdown commands.
@@ -28,13 +20,6 @@ export function getAgentCommandPath(agent: AgentCli, command: string = 'swarm'):
 
   const ext = 'md';
   return path.join(baseDirs[agent], `${command}.${ext}`);
-}
-
-export function getPromptPackCommandPath(agent: PromptPackAgent, command: string = 'swarm'): string {
-  if (agent === 'cursor') {
-    return path.join(os.homedir(), '.cursor', 'commands', `${command}.md`);
-  }
-  return getAgentCommandPath(agent, command);
 }
 
 // Detect whether a CLI binary is available
@@ -67,18 +52,6 @@ export async function isAgentMcpEnabled(agent: AgentCli): Promise<boolean> {
 // Detect whether the /swarm slash-command file is present for a CLI
 export function isAgentCommandInstalled(agent: AgentCli, command: string = 'swarm'): boolean {
   const target = getAgentCommandPath(agent, command);
-  return fs.existsSync(target);
-}
-
-export function isPromptPackTargetAvailable(agent: PromptPackAgent): Promise<boolean> {
-  if (agent === 'cursor') {
-    return Promise.resolve(fs.existsSync(path.join(os.homedir(), '.cursor')));
-  }
-  return isAgentCliAvailable(agent);
-}
-
-export function isPromptPackInstalled(agent: PromptPackAgent, command: string = 'swarm'): boolean {
-  const target = getPromptPackCommandPath(agent, command);
   return fs.existsSync(target);
 }
 

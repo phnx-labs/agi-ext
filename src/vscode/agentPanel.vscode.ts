@@ -1,10 +1,9 @@
 // Agent Panel: the activity-bar sidebar view that is the ONE session preview in
-// the extension (PHNX-3939). The Fleet webview's detail rail is gone; everything
-// that described a session lives here.
+// the extension (PHNX-3939); everything that describes a session lives here.
 //
 // Subject model — two triggers, one subject, last wins:
 //   an agent terminal takes focus       -> onDidChangeActiveTerminal
-//   a Fleet row is clicked              -> webview 'session.select' {sessionId, host}
+//   a Project panel session is clicked  -> setAgentPanelSubjectFromProject {sessionId, host}
 // The subject is PRESENTATION STATE ONLY: never persisted, never written to a
 // config or workspaceState. A subject with no local terminal still renders — the
 // stream row alone is enough for a remote or finished session.
@@ -15,13 +14,10 @@
 //   - Conversation topic + recent tool calls (read/edit/run)
 //   - Linear ticket + PR URL extracted from the session, when present
 //   - Quick prompts (favorites first) — click to send into the focused terminal
-//   - Teams whose workspace_dir is related to the terminal's cwd
 //
 // Detection model:
 //   active terminal -> terminals.getByTerminal(t) -> EditorTerminal struct
 //   cwd            -> terminal.creationOptions.cwd
-//   teams          -> agents teams list --json + agents teams status <t> --json
-//                     filtered by pathsRelated(workspace_dir, cwd)
 //   git info       -> vscode.git extension repository state
 //   linear/PR      -> regex scan over the session preview + tail
 //
@@ -39,13 +35,10 @@ import { createHash } from 'crypto';
 import * as os from 'os';
 import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
-import { buildAgentTerminalEnv } from '../core/terminals';
-import { TeamWithMates } from './foreman.sources';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { openExternalUrl } from './webviewSecurity';
 import { parseLineForActivity, formatActivity, todoProgressFromItems, type TodoProgress } from '../core/session.activity';
 import {
-  extractPrUrls as extractPrUrlsHelper,
   type PullRequestRef as SharedPullRequestRef,
   type WorktreeRef as SharedWorktreeRef,
 } from '../core/panel.helpers';
@@ -72,7 +65,7 @@ import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 import { runAgents } from '../core/agentsBin';
 import { prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
-import { shellQuote } from '../core/deviceDispatchShell';
+import { shellQuote } from '../core/shellQuote';
 import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
 import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
@@ -125,10 +118,10 @@ type WorktreeRef = SharedWorktreeRef;
 interface PanelSnapshot {
   /** A local agent terminal backs the subject (drives terminal-only actions). */
   hasTerminal: boolean;
-  /** There is a session to render at all — from a terminal OR a Fleet row click. */
+  /** There is a session to render at all — from a terminal OR a Project panel click. */
   hasSubject?: boolean;
-  /** Where the subject came from; a Fleet subject shows "following the Fleet row". */
-  subjectSource?: 'terminal' | 'fleet';
+  /** Where the subject came from; a Project subject shows "following the Project panel selection". */
+  subjectSource?: 'terminal' | 'project';
   // Terminal facts
   terminalId?: string;       // internal id for action commands
   agentName?: string;        // "Claude"
@@ -229,29 +222,25 @@ interface PanelSnapshot {
   usageStatus?: 'available' | 'rate_limited' | 'out_of_credits' | null;
   // Plan files
   plan?: { path: string; display: string };
-  // Teams
-  teams: TeamWithMates[];
   // Derived state — drives state-driven Quick Actions
   agentState?: AgentState;
-  // Errors / diagnostics
-  teamsError?: string;
 }
 
 /**
  * The sidebar's subject: the LAST of { the focused agent terminal's session, a
- * clicked Fleet row }. Presentation state only — module-local, never persisted,
+ * clicked Project panel session }. Presentation state only — module-local, never persisted,
  * never round-tripped through settings or workspaceState. It is stored rather
  * than recomputed so a redraw triggered by something else (a stream fact, a
  * stream row update) cannot silently snap the panel back to the active terminal
- * after the user picked a different session in the Fleet list.
+ * after the user picked a different session in the Project panel.
  */
 interface PanelSubject {
   sessionId: string;
   /** Stable editor-terminal identity for a terminal-origin subject. */
   terminalId?: string;
-  /** Owning device for a Fleet subject; '' when the row is on this machine. */
+  /** Owning device for a Project subject; '' when the row is on this machine. */
   host?: string;
-  source: 'terminal' | 'fleet';
+  source: 'terminal' | 'project';
 }
 
 let panelSubject: PanelSubject | undefined;
@@ -270,7 +259,7 @@ function activeAgentEntry(): terminals.EditorTerminal | undefined {
  * focused agent terminal. `entry` is undefined for a session with no local tab —
  * that renders from the stream row alone.
  */
-function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal; host?: string; source: 'terminal' | 'fleet' } | undefined {
+function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal; host?: string; source: 'terminal' | 'project' } | undefined {
   const byId = (sessionId: string) =>
     terminals.getAllTerminals().find((e) => e.agentConfig && e.sessionId === sessionId);
   if (panelSubject) {
@@ -298,16 +287,12 @@ function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal
   return { sessionId: entry.sessionId ?? '', entry, source: 'terminal' };
 }
 
-/**
- * Point the sidebar at a session the user clicked in the Fleet list. Called by
- * the settings webview host on the 'session.select' message; the Fleet list keeps
- * the click/expand split (PHNX-3879) so the chevron still expands in place.
- */
-export function setAgentPanelSubjectFromFleet(sessionId: string, host?: string): void {
+/** Point the sidebar at a session the user clicked in the Project panel. */
+export function setAgentPanelSubjectFromProject(sessionId: string, host?: string): void {
   const id = (sessionId || '').trim();
   if (!id) return;
-  panelSubject = { sessionId: id, source: 'fleet', ...(host ? { host } : {}) };
-  // Reveal WITHOUT stealing focus, so the click keeps the user in the Fleet list
+  panelSubject = { sessionId: id, source: 'project', ...(host ? { host } : {}) };
+  // Reveal WITHOUT stealing focus, so the click keeps the user in the Project panel
   // while the preview updates beside it. A direct user action gets a direct
   // refresh (one shot, no timer) rather than the stream-fact coalescer, which
   // would skip entirely while the view was hidden.
@@ -339,7 +324,7 @@ export function clearAgentPanelSubject(): void {
  * snapshot. undefined when nothing is focused and nothing was clicked.
  */
 export function currentAgentPanelSubject():
-  | { sessionId: string; host?: string; source: 'terminal' | 'fleet'; hasTerminal: boolean }
+  | { sessionId: string; host?: string; source: 'terminal' | 'project'; hasTerminal: boolean }
   | undefined {
   const subject = resolveSubject();
   if (!subject) return undefined;
@@ -366,7 +351,7 @@ function computeAgentState(snap: PanelSnapshot): AgentState {
 
 class AgentPanelProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
-  private snapshot: PanelSnapshot = { hasTerminal: false, teams: [] };
+  private snapshot: PanelSnapshot = { hasTerminal: false };
   // IN-FLIGHT GUARD (#71): overlapping refreshes (4s poll racing an event-driven
   // refresh, or a slow local-fallback `agents view`) coalesce onto one running
   // build so two snapshot computations never run concurrently.
@@ -648,7 +633,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         }
         return;
       // Focus shows the panel's own tab, even one whose session id has not resolved.
-      // Otherwise Focus and ↻ Resume are the one resume action the picker and Fleet
+      // Otherwise Focus and ↻ Resume are the one resume action the picker and Project panel
       // use (resumeSession.vscode.ts): a tab already showing the session comes to the
       // front, else the live agent opens in the window that owns its project.
       case 'focusSubject':
@@ -684,7 +669,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   /**
    * Deliver a reply into the subject session. The only injectable channel the
    * sidebar owns is the session's own editor-tab terminal, over the shared rail
-   * the Fleet reply box used (`sessionReply.ts`). A subject with no local tab has
+   * in `sessionReply.ts`. A subject with no local tab has
    * no channel: say so inline rather than dropping the text silently.
    */
   private async replyToSession(text: string, terminalId: string | undefined): Promise<void> {
@@ -763,12 +748,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private async buildSnapshot(): Promise<PanelSnapshot> {
-    // The subject — the focused agent terminal OR the clicked Fleet row, last
-    // wins. A Fleet subject with no local tab still renders: everything the card
+    // The subject — the focused agent terminal OR the clicked Project panel session, last
+    // wins. A Project subject with no local tab still renders: everything the card
     // needs is on the stream row.
     const subject = resolveSubject();
     if (!subject) {
-      return { hasTerminal: false, hasSubject: false, teams: [] };
+      return { hasTerminal: false, hasSubject: false };
     }
     const entry = subject.entry;
 
@@ -811,14 +796,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       worktreePath,
       worktreeName,
       workspaceRoot,
-      teams: [],
     };
 
     // ── Fill from the CLI-normalized session stream (PHNX-3517) ─────────────
     // Everything a tab-switch needs to paint — what the agent is doing now, its
     // todo checklist, topic, last message, PR, branch — is already in memory,
     // NORMALIZED by the CLI-mirror (`presentedSessions` → RemoteSession), off the
-    // `agents sessions watch --json` stream the Fleet already consumes. Read it
+    // `agents sessions watch --json` stream the Project panel already consumes. Read it
     // SYNCHRONOUSLY (no subprocess) and reuse the SAME normalized fields every
     // other surface reads — the ext never re-derives them from the raw row. The
     // old path spawned `agents sessions … --include tools` + `agents teams
@@ -827,7 +811,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     if (sessionId) {
       const live = findLiveSession(sessionId, subject.host);
       if (live) {
-        // The card fields the Fleet card shares (src/core/sessionCardFields.ts).
+        // The card fields the Project panel shares (src/core/sessionCardFields.ts).
         const view = this.view;
         const card = sessionCardFields(live, {
           sessionId, cwd, home: os.homedir(), remoteDevice: remoteDeviceArg(live.host),
@@ -887,7 +871,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           snapshot.prRepo = prRepo(live.prStatus.url);
         }
 
-        // A Fleet subject has no local tab, so the agent identity, cwd and host
+        // A Project subject has no local tab, so the agent identity, cwd and host
         // come off the same row instead of the terminal's creation options.
         if (!entry) {
           snapshot.agentType = snapshot.agentType || live.agentType;
@@ -1006,12 +990,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       ? !sessionPresentationStore.hasSeenReset(deviceScope)
       : !sessionPresentationStore.hasSeenReset();
 
-    // The full teammate DAG is NOT on the warm stream, and its per-team
-    // `agents teams status` spawns are exactly what made a tab-switch slow. It is
-    // dropped from the hot render path (PHNX-3517): `spawnedTeam`/`teamName` on
-    // the stream already flag membership, and the Fleet panel owns the DAG view.
-    snapshot.teams = [];
-
     snapshot.agentState = computeAgentState(snapshot);
     return snapshot;
   }
@@ -1085,8 +1063,8 @@ function renderTerminalCard(s) {
   // The host stays on the face of the card: where it runs is what you act on.
   const host = s.hostLabel ? '<span class="where-chip mono">' + esc(s.hostLabel) + '</span>' : '';
   const whoRow = who.length || usageBadge || host ? '<div class="account-row">' + who.join(' · ') + host + usageBadge + '</div>' : '';
-  const following = s.subjectSource === 'fleet' && !s.hasTerminal
-    ? '<div class="account-row">following the Fleet selection</div>'
+  const following = s.subjectSource === 'project' && !s.hasTerminal
+    ? '<div class="account-row">following the Project panel selection</div>'
     : '';
 
   // ⋯ menu: the session id (copy, and the pencil that rebinds a tab, offered even
@@ -1161,7 +1139,7 @@ function renderNeedsYou(s) {
   );
 }
 // The word comes from the host (sessionStateOf, src/shared/sessionState.ts) so the
-// sidebar, the Project panel and Fleet say the same thing for the same row.
+// sidebar and the Project panel say the same thing for the same row.
 function sessionState(s) {
   const st = s.state || { key: 'unknown', word: 'Unknown' };
   const cls = st.key === 'asks' ? 'waiting' : st.key === 'working' ? 'running' : st.key === 'stopped' ? 'failed' : 'idle';
@@ -1592,8 +1570,7 @@ function renderFilesCard(s) {
   );
 }
 
-// The reply rail the removed Fleet "Ask Foreman" box owned: type, press Enter,
-// the host injects it into the session over the same channel the Fleet used.
+// The reply rail: type, press Enter, and the host injects it into the session.
 function renderReplyBox(s) {
   if (!s.fullSessionId) return '';
   return (
@@ -1799,75 +1776,18 @@ function renderCwdCard(s) {
   );
 }
 
-function statusClass(status) {
-  const s = String(status || '').toLowerCase();
-  if (s === 'running' || s === 'in_progress') return 'running';
-  if (s === 'completed' || s === 'done')      return 'completed';
-  if (s === 'pending' || s === 'queued')      return 'pending';
-  if (s === 'failed' || s === 'error')        return 'failed';
-  if (s === 'stopped' || s === 'cancelled')   return 'stopped';
-  return 'pending';
-}
-
-function renderTeammate(m) {
-  return (
-    '<div class="mate">' +
-      '<span class="mate-dot ' + statusClass(m.status) + '"></span>' +
-      '<span class="mate-name">' + esc(m.name) + '</span>' +
-      '<span class="mate-agent">' + esc(m.agent_type) + '</span>' +
-      '<span class="mate-status">' + esc(m.status) + '</span>' +
-    '</div>'
-  );
-}
-
-function renderTeam(t) {
-  const counts = [];
-  if (t.running)   counts.push(t.running + ' run');
-  if (t.pending)   counts.push(t.pending + ' pend');
-  if (t.completed) counts.push(t.completed + ' done');
-  if (t.failed)    counts.push(t.failed + ' fail');
-  const headRight = counts.length ? counts.join(' · ') : (t.agent_count + ' agent' + (t.agent_count === 1 ? '' : 's'));
-  const mates = (t.teammates || []).map(renderTeammate).join('');
-  return (
-    '<div class="team">' +
-      '<div class="team-head">' +
-        '<span class="team-name">' + esc(t.task_name) + '</span>' +
-        '<span class="team-counts">' + esc(headRight) + '</span>' +
-      '</div>' +
-      mates +
-    '</div>'
-  );
-}
-
-function renderTeamsCard(s) {
-  const teams = s.teams || [];
-  if (!teams.length) {
-    if (s.teamsError) {
-      return (
-        '<h2>Teams in this directory</h2>' +
-        '<div class="card"><div class="plan-meta">' + esc(s.teamsError) + '</div></div>'
-      );
-    }
-    return '';
-  }
-  return (
-    '<h2>Teams in this directory</h2>' +
-    teams.map(renderTeam).join('')
-  );
-}
-
 let lastSnapshot = null;
 
 function render(snap) {
   lastSnapshot = snap;
   const stripScroll = saveStripScroll();
   // The empty state is about having NO SUBJECT — not about having no terminal.
-  // A session picked in the Fleet list renders here with no local tab at all.
+  // A session picked in the Project panel renders here with no local tab at all.
   if (!snap || !snap.hasSubject) {
     root.innerHTML = (
       '<div class="empty">No session selected.<br><br>' +
       'Click an agent tab in the editor, open one with <b>Cmd+Shift+A</b>, ' +
-      'or click a row in the Fleet list.</div>'
+      'or click a session in the Project panel.</div>'
     );
     return;
   }
@@ -1964,8 +1884,7 @@ function render(snap) {
   const reply = root.querySelector('#reply-input');
   if (reply) {
     reply.addEventListener('keydown', (e) => {
-      // Enter sends; Shift+Enter is a newline. Same convention as the reply box
-      // the Fleet rail used, so muscle memory carries over.
+      // Enter sends; Shift+Enter is a newline.
       if (e.key !== 'Enter' || e.shiftKey) return;
       e.preventDefault();
       const text = reply.value.trim();
@@ -2097,14 +2016,6 @@ function collectRecentActivity(tailLines: string[], agentType: string, max: numb
   return out;
 }
 
-/**
- * Wrapper around the shared {@link extractPrUrlsHelper} kept here so existing
- * call sites in `buildSnapshot` stay readable. Tests live next to the helper.
- */
-function extractPrUrls(lines: string[]): PullRequestRef[] {
-  return extractPrUrlsHelper(lines);
-}
-
 /** Build presentation rows from the canonical session stream plus the workspace root. */
 type UsageStatus = 'available' | 'rate_limited' | 'out_of_credits' | null;
 
@@ -2178,16 +2089,6 @@ function getUsageStatusFromCli(sessionId: string | undefined): UsageStatus {
   return row?.rateLimited === true ? 'rate_limited' : null;
 }
 
-async function runInShellTerminal(command: string): Promise<void> {
-  const existing = vscode.window.terminals.find((t) => t.name === 'agents: shell');
-  const terminal = existing ?? vscode.window.createTerminal({
-    name: 'agents: shell',
-    env: buildAgentTerminalEnv(terminals.nextId('SH'), null),
-  });
-  terminal.show(true);
-  terminal.sendText(command);
-}
-
 function randomNonce(): string {
   let s = '';
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -2227,11 +2128,10 @@ export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanel
   );
 
   // Re-render on terminal lifecycle events. refresh() -> buildSnapshot() spawns
-  // 2-8 subprocesses (git/teams probes), so a burst of events — e.g. clicking
+  // git probes, so a burst of events — e.g. clicking
   // through editor tabs fires onDidChangeActiveTerminal per tab, and closing a
   // terminal fires close + active-change together — would stampede the box.
-  // Trailing-edge debounce (matching the inline clearTimeout/setTimeout idiom
-  // in settings.vscode.ts) coalesces a burst into one snapshot per window.
+  // A trailing-edge debounce coalesces a burst into one snapshot per window.
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   const debouncedRefresh = () => {
     if (refreshTimer) clearTimeout(refreshTimer);
@@ -2241,7 +2141,7 @@ export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanel
     }, 300);
   };
   // Focusing an agent terminal makes it the subject — the other half of the
-  // last-wins pair with the Fleet row click. Set BEFORE the debounce so a burst
+  // last-wins pair with the Project panel click. Set BEFORE the debounce so a burst
   // of tab switches still leaves the subject on the tab the user landed on.
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal(() => { setSubjectFromActiveTerminal(); debouncedRefresh(); }),

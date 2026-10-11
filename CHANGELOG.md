@@ -6,6 +6,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
+- Removed the Fleet dashboard webview and everything only it used (Foreman voice orb, Dispatch
+  modal, bench, recap ledger, the watchdog MCP bridge, cloud task polling). Removed commands and
+  keybindings, and what replaces each:
+  - `Agents: Dashboard` (`agents.configure`, ⌘⇧F): the Project sidebar (sessions, Needs you,
+    pull requests, tickets, Settings).
+  - `Agents: Dispatch a Task` (`agents.dispatchTask`, ⌘⇧D): `Agents: New <Harness>` and its
+    (Pick Host), (Pick Project) and (Pick Account) variants, or `agents run` in the CLI.
+  - `Agents: New Agent Composer` (`agents.focusQuickSpawn`, ⌘K in the dashboard): the same launch
+    commands, or `Agents: Spawn with Prompt` (⌘⇧J).
+  - `Agents: New Task` (`agents.newTask`, ⌘⇧N): `Agents: Spawn with Prompt`, or Start on a ticket
+    in the Project sidebar's Tickets tab. The Reader's "Ask Agent" slash command now opens
+    Spawn with Prompt.
+  - `Agents: Watchdog (Enable)` / `(Disable)` (`agents.watchdogEnable`, `agents.watchdogDisable`):
+    `agents watchdog enable` / `disable` in the CLI, which already ran the watchdog.
+  - The `agents.openaiApiKey` setting (Foreman only) is gone.
+- The extension no longer writes `agents.<harness>.enabled` into `~/.agents/config.json` on every
+  settings save; nothing in the extension could change that value any more.
+
 - The Project sidebar's session cards lead with the harness's logo and end their meta line with
   the model the CLI reported (`opus-5-5`). No chip when the CLI did not report one.
 - Ended sessions now show in a folded Ended group by default, so a session to resume (▶) is one

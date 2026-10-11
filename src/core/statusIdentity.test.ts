@@ -44,29 +44,16 @@ describe('displayIdentity — only the current session\'s identity', () => {
     expect(displayIdentity(claude, 'sess-A')).toEqual({ version: '2.1.218', account: 'tech@prix.dev' });
   });
 
-  it('withholds a prior session\'s identity when the shown session differs (the Kimi bug)', () => {
-    // Terminal now shows Kimi session sess-K, but the entry still carries the
-    // Claude identity resolved for sess-A. Nothing must leak.
+  it('withholds identity resolved for another session, before any id, or never applied (the Kimi bug)', () => {
+    // The terminal now shows Kimi session sess-K but still carries Claude's identity for sess-A.
     expect(displayIdentity(claude, 'sess-K')).toEqual({});
-  });
-
-  it('withholds identity before any session id is known', () => {
     expect(displayIdentity(claude, undefined)).toEqual({});
+    expect(displayIdentity({ version: '2.1.218' }, 'sess-K')).toEqual({}); // a restore-match leftover
   });
 
-  it('withholds identity that was never applied (no identityAppliedSessionId)', () => {
-    const leftover: StatusIdentitySource = { version: '2.1.218' }; // e.g. a restore-match leftover
-    expect(displayIdentity(leftover, 'sess-K')).toEqual({});
-  });
-
-  it('shows a version-only harness (Grok/Cursor/Droid: version, no account)', () => {
-    const grok: StatusIdentitySource = { identityAppliedSessionId: 'sess-G', version: '1.4.0' };
-    expect(displayIdentity(grok, 'sess-G')).toEqual({ version: '1.4.0', account: undefined });
-  });
-
-  it('shows blank for an identity-less harness (Kimi: no version, no account) once resolved', () => {
-    const kimi: StatusIdentitySource = { identityAppliedSessionId: 'sess-K' };
-    expect(displayIdentity(kimi, 'sess-K')).toEqual({ version: undefined, account: undefined });
+  it('shows a version-only harness as version only, and an identity-less one blank, once resolved', () => {
+    expect(displayIdentity({ identityAppliedSessionId: 'sess-G', version: '1.4.0' }, 'sess-G')).toEqual({ version: '1.4.0', account: undefined });
+    expect(displayIdentity({ identityAppliedSessionId: 'sess-K' }, 'sess-K')).toEqual({ version: undefined, account: undefined });
   });
 
   it('prefers the live version over the display-only statusVersion', () => {
@@ -94,11 +81,8 @@ describe('resolveStreamIdentityStamp — identity from the broadcast row', () =>
       .toEqual({ version: null, account: null, identityAppliedSessionId: 'sess-K' });
   });
 
-  it('returns null when the session is not on the stream yet (blank-until-resolved, retry next event)', () => {
+  it('returns null until the session is on the stream, and once the tab has moved on (never stamp a stale id)', () => {
     expect(resolveStreamIdentityStamp(undefined, 'sess-A', 'sess-A')).toBeNull();
-  });
-
-  it('returns null when the tab has moved on to another session (never stamp a stale id)', () => {
     expect(resolveStreamIdentityStamp({ version: '2.1.207', account: 'a@b.c' }, 'sess-OLD', 'sess-NEW')).toBeNull();
   });
 

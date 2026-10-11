@@ -1,12 +1,5 @@
 import { describe, test, expect } from 'bun:test';
 import { isDeviceOnline } from './deviceHealth';
-import { probeReachable } from '../vscode/deviceHealth.vscode';
-
-describe('probeReachable', () => {
-  test('treats this-mac as reachable', async () => {
-    expect(await probeReachable('this-mac')).toBe(true);
-  });
-});
 
 describe('isDeviceOnline', () => {
   // Regression: a reachable box (manually registered, or on the sync ignore-list)

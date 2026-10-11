@@ -1,9 +1,9 @@
 /**
  * Waiting/approval notification transition logic (RUSH-2039).
  *
- * The Fleet already knows when a session is blocked waiting for input
- * (`TerminalDetail.waitingForInput`, fed by the CLI's own state engine — for
- * Codex this is now driven by the PermissionRequest feed hook). But knowing it
+ * The session stream already says when a session is blocked waiting for input
+ * (`waitingForInput`, fed by the CLI's own state engine — for Codex this is
+ * driven by the PermissionRequest feed hook). But knowing it
  * and telling the user are two different things: before this, a blocked Codex
  * agent stalled silently. This module turns the per-poll waiting state into
  * edge-triggered notifications: fire once when a session ENTERS the waiting
@@ -31,7 +31,7 @@ export interface NewlyWaiting {
 
 /**
  * Given the set of session ids that were waiting last poll and the current
- * floor sessions, compute:
+ * sessions, compute:
  *   - `newlyWaiting`: sessions that entered the waiting state this poll (edge)
  *   - `nextWaiting`: the set to carry into the next poll
  *

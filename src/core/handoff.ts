@@ -81,8 +81,7 @@ interface AgentsCliSessionEvent {
 // coalesce onto one subprocess (`toolStatsInFlight`), it also leaves the
 // in-flight guard latched forever so that session's stats never recover
 // (PHNX-3467). Every other agents-CLI runner in this repo already passes a
-// timeout (agentsBin.ts `runAgentsArgs` 30s, foreman.sources.ts 3s,
-// tasks.vscode.ts 15s); this one was the outlier. Node's `execFile` timeout
+// timeout (agentsBin.ts `runAgentsArgs` 30s); this one was the outlier. Node's `execFile` timeout
 // SIGTERMs the child on expiry, matching those siblings. Exported (with an
 // injectable timeout) so a regression test can prove a hung child is killed
 // without waiting the full production budget.

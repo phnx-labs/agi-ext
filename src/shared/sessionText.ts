@@ -1,7 +1,6 @@
 // What a session list says about one session, derived once from its stream row:
-// your latest message, the agent's own latest words, and where it runs. The Fleet
-// row (ui/…/recapModel.ts sessionRowView) and the Resume Session picker
-// (src/core/sessionPicker.ts) both read these, so the two never disagree.
+// your latest message, the agent's own latest words, and where it runs. The
+// Resume Session picker (src/core/sessionPicker.ts) reads these.
 
 /** First non-blank string, trimmed; '' when none. */
 export function firstText(...values: Array<string | null | undefined>): string {
@@ -44,14 +43,4 @@ function latestAgentStep(timeline: TimelineLike | undefined | null): string {
  *  narration step. Never the task label; '' when the row has neither. */
 export function agentWords(replies: Array<string | null | undefined>, timeline?: TimelineLike | null): string {
   return firstText(...replies, latestAgentStep(timeline));
-}
-
-/** `/Users/me/src/github.com/me/repo` -> `~/…/me/repo`; short paths stay whole. */
-export function shortFolder(cwd: string | null | undefined): string {
-  const raw = (cwd ?? '').trim().replace(/[/\\]+$/, '');
-  if (!raw) return '';
-  const home = raw.replace(/^(\/Users\/[^/]+|\/home\/[^/]+|\[HOME\])(?=\/|$)/, '~');
-  const segs = home.split('/').filter(Boolean);
-  if (segs.length <= 3) return home;
-  return `${home.startsWith('~') ? '~/' : '/'}…/${segs.slice(-2).join('/')}`;
 }

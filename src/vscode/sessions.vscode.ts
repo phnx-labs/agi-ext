@@ -4,17 +4,8 @@ import * as readline from 'readline';
 import * as path from 'path';
 import { homedir } from 'os';
 import type { Dirent, Stats } from 'fs';
-import { runAgents } from '../core/agentsBin';
 import type { SqlJsStatic } from 'sql.js';
 import { cachedInFlight, createTimedCache } from '../core/cachedInFlight';
-
-export interface AgentSession {
-  agentType: 'claude' | 'codex' | 'gemini';
-  sessionId: string;
-  timestamp: Date;
-  path: string;
-  preview?: string;
-}
 
 // Cached SQL.js instance (lazy-loaded)
 let sqlJsPromise: Promise<SqlJsStatic | null> | null = null;
@@ -72,7 +63,7 @@ async function readHeadLines(filePath: string, maxLines: number): Promise<string
 
 // Read the last `maxLines` non-empty lines without loading the whole file.
 // Opens the file, seeks backward in 64KB chunks from EOF until enough lines collected.
-export async function readTailLines(filePath: string, maxLines: number): Promise<string[]> {
+async function readTailLines(filePath: string, maxLines: number): Promise<string[]> {
   const CHUNK_SIZE = 64 * 1024;
   let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
   try {
@@ -265,69 +256,6 @@ function extractPreviewLines(head: string): ExtractedPreview {
 
   if (!firstAny) return {};
   return { text: normalizePreview(firstAny) };
-}
-
-/** The subset of the CLI's flat `agents sessions --json` row (SessionMeta) read here. */
-interface CliRecentSessionRow {
-  id?: string;
-  agent?: string;
-  timestamp?: string;
-  lastActivity?: string;
-  filePath?: string;
-  topic?: string;
-  label?: string;
-}
-
-/**
- * Recent sessions across agents, from the CLI's own discovery (`agents sessions
- * --json --local`, issue #741). The CLI scans the real transcript roots — every
- * version home plus the current per-agent layouts (e.g. gemini's ~/.gemini/tmp,
- * which the old hand-rolled walk missed by scanning ~/.gemini/sessions) — so the
- * extension no longer re-implements per-agent directory formats. With a
- * workspace, the subprocess runs in that directory and the CLI's own workspace
- * scoping applies; without one, --all lists every workspace.
- */
-export async function discoverRecentSessions(
-  limit: number = 50,
-  workspacePath?: string
-): Promise<AgentSession[]> {
-  let stdout: string;
-  try {
-    const args = `sessions --json --local --limit ${limit}${workspacePath ? '' : ' --all'}`;
-    ({ stdout } = await runAgents(args, { cwd: workspacePath, timeout: 15_000 }));
-  } catch {
-    // CLI unavailable — no recent list, same as an unreadable session root before.
-    return [];
-  }
-
-  let rows: unknown[];
-  try {
-    const parsed = JSON.parse(stdout);
-    rows = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-
-  const sessions: AgentSession[] = [];
-  for (const row of rows as CliRecentSessionRow[]) {
-    if (!row || typeof row !== 'object') continue;
-    const agentType = row.agent;
-    // AgentSession is the session-picker shape; it only knows the transcript
-    // formats the extension can open.
-    if (agentType !== 'claude' && agentType !== 'codex' && agentType !== 'gemini') continue;
-    if (!row.id || !row.filePath) continue;
-    const ts = Date.parse(row.lastActivity || row.timestamp || '');
-    sessions.push({
-      agentType,
-      sessionId: row.id,
-      timestamp: Number.isNaN(ts) ? new Date(0) : new Date(ts),
-      path: row.filePath,
-      preview: row.topic || row.label || undefined,
-    });
-  }
-
-  sessions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-  return sessions.slice(0, limit);
 }
 
 // --- Session path resolution by sessionId ---

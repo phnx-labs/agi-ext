@@ -1,53 +1,9 @@
 import { buildForkSessionRequest, forkCommand, type ForkSessionSource } from '../core/forkSession';
-import { sessionPresentationStore } from '../core/sessionPresentationStore';
 
 export interface ForkPickHostLaunch<ViewColumn> {
   command: string;
   host?: string;
   viewColumn: ViewColumn;
-}
-
-export interface ForkPickHostRecord {
-  sourceSessionId: string;
-  sourceHost: string;
-  forkSessionId: string | null;
-  forkHost: string;
-  agentKey: string;
-  forkedAt: number;
-  terminalId: string;
-}
-
-export function remoteForkSessionId(
-  host: string,
-  terminalId: string,
-  observerDevice?: string,
-): string | null {
-  return sessionPresentationStore.terminalSessionMap(host, observerDevice).get(terminalId) ?? null;
-}
-
-/** Wait for a just-launched sibling to publish its session id. Local forks use
- * the extension terminal registry; offloaded forks use that host's active feed,
- * joined by the AGENT_TERMINAL_ID assigned before launch. */
-export async function resolveForkSessionId(opts: {
-  initialSessionId: string | null;
-  terminalId: string;
-  forkHost: string;
-  localHost: string;
-  attempts: number;
-  wait: () => Promise<void>;
-  readLocal: (terminalId: string) => string | null;
-  readRemote: (host: string, terminalId: string) => Promise<string | null>;
-}): Promise<string | null> {
-  if (opts.initialSessionId) return opts.initialSessionId;
-  const remote = opts.forkHost.trim().toLowerCase() !== opts.localHost.trim().toLowerCase();
-  for (let attempt = 0; attempt < opts.attempts; attempt++) {
-    await opts.wait();
-    const sessionId = remote
-      ? await opts.readRemote(opts.forkHost, opts.terminalId)
-      : opts.readLocal(opts.terminalId);
-    if (sessionId) return sessionId;
-  }
-  return null;
 }
 
 /** Keep the VS Code command id coupled to its executable handler. */
@@ -65,11 +21,9 @@ export function registerForkPickHostCommand<Disposable>(
 export async function handleForkPickHost<ViewColumn>(opts: {
   source: ForkSessionSource & { localHost: string };
   pickHost: (agentKey: string) => Promise<{ host?: string; cancelled: boolean }>;
-  openFork: (launch: ForkPickHostLaunch<ViewColumn>) => Promise<{ terminalId: string; sessionId: string | null }>;
-  recordFork: (edge: ForkPickHostRecord) => void;
+  openFork: (launch: ForkPickHostLaunch<ViewColumn>) => Promise<void>;
   showRejection: (reason: 'no_session' | 'no_agent') => void;
   viewColumn: ViewColumn;
-  now: () => number;
 }): Promise<void> {
   const dryRun = buildForkSessionRequest(opts.source);
   if (!dryRun.ok) {
@@ -86,18 +40,9 @@ export async function handleForkPickHost<ViewColumn>(opts: {
     return;
   }
 
-  const fork = await opts.openFork({
+  await opts.openFork({
     command: forkCommand(request.sessionId, request.host),
     host: request.host,
     viewColumn: opts.viewColumn,
-  });
-  opts.recordFork({
-    sourceSessionId: request.sessionId,
-    sourceHost: request.sourceHost ?? opts.source.localHost,
-    forkSessionId: fork.sessionId,
-    forkHost: request.host ?? opts.source.localHost,
-    agentKey: request.agentKey,
-    forkedAt: opts.now(),
-    terminalId: fork.terminalId,
   });
 }

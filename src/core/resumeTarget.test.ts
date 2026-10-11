@@ -13,14 +13,8 @@ const AGENTS = [
 function inventory(over: Partial<AgentInventory> = {}): AgentInventory {
   return {
     agent: 'codex',
-    strategy: 'balanced',
-    defaultVersion: null,
-    defaultAccount: null,
-    defaultPlan: null,
     signedInCount: 0,
     healthyCount: 0,
-    canRotate: false,
-    versions: [],
     ...over,
   };
 }

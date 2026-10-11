@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
+import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
 import { readManagedProjects } from '../core/managedProjects';
 import { cliResumeOutcome, decideSpawn, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
@@ -21,16 +21,9 @@ import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
 import { listRegisteredDevices, getRegisteredDevicesCache } from './deviceHealth.vscode';
 import { deviceBadge } from '../core/deviceName';
-import { isDerivedSessionName, normalizeHost, buildRecoveryMigrationCommand } from '../core/remoteSessions';
-import * as settings from './settings.vscode';
+import { isDerivedSessionName, normalizeHost } from '../core/remoteSessions';
 import * as settingsStore from './agentSettings.vscode';
 import * as swarm from './swarm.vscode';
-import {
-  registerWatchdogPaletteCommands,
-  migrateAutoRotateSettingOnce,
-} from './watchdog.vscode';
-import { startWatchdogBridge } from './watchdogBridge.vscode';
-import { ensureWatchdogMcpInstalled } from '../mcp/watchdogInstall';
 import * as terminals from './terminals.vscode';
 import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -84,8 +77,7 @@ import { DEFAULT_DISPLAY_PREFERENCES } from '../core/settings';
 import * as readiness from './terminalReadiness';
 import { resolveAlias, isAgentInstalled } from '../core/agentModels';
 import { buildForkSessionRequest, forkCommand } from '../core/forkSession';
-import { handleForkPickHost, registerForkPickHostCommand, remoteForkSessionId, resolveForkSessionId } from './forkCommands.vscode';
-import { FORK_LINEAGE_KEY, recordForkEdge, type ForkEdge } from '../core/forkLineage';
+import { handleForkPickHost, registerForkPickHostCommand } from './forkCommands.vscode';
 import {
   buildSessionBrowserRows,
   cleanSessionTopic,
@@ -101,8 +93,6 @@ import {
 } from './sessionBrowser.vscode';
 import { buildHarnessOptions } from '../core/resumeTarget';
 import { fetchAgentInventories } from '../core/agentInventory';
-// readAgentRunStrategy no longer needed: agents-cli reads strategy from
-// agents.yaml itself when invoked via `agents run`.
 import { resolveAgentsBin, AgentsBinNotFoundError } from '../core/agentsBin';
 
 const AGENTS_CLI_INSTALL_CMD = 'npm install -g @phnx-labs/agents-cli';
@@ -145,8 +135,6 @@ import {
 } from '../core/remoteAutoLabel';
 import { displayIdentity, formatAgentStatusBarText, formatAgentStatusBarTooltip, resolveStreamIdentityStamp } from '../core/statusIdentity';
 import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo } from './sessions.vscode';
-import * as tasksImport from './tasks.vscode';
-import { SOURCE_BADGES } from '../core/tasks';
 import * as handoff from '../core/handoff';
 import { decodeInjectQuery, selectInjectTarget } from '../core/inject';
 import { runMonitorHostOnLeader } from '../monitor/host';
@@ -210,33 +198,6 @@ function agentsSpawnEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${extraPath}:${process.env.PATH ?? ''}` };
 }
 
-// Dispatch an agent HEADLESS: `agents run <agent> --mode <m> --headless -p <prompt>`
-// spawned DETACHED with no terminal tab. The run outlives this call (`unref`) and
-// shows in `agents sessions --active` under this machine as context:'headless', so it
-// can be focused/resumed later via `agents sessions focus`. No shell: args go straight
-// to the binary (prompt stays a single arg, no quoting hazard).
-export function runHeadlessAgent(
-  agentKey: string,
-  prompt: string,
-  mode: AgentLaunchMode,
-  cwd?: string,
-): void {
-  // modeFlagForAgent -> '--mode auto' | '--mode edit' | ... ; split into argv parts.
-  const modeArgs = (modeFlagForAgent(agentKey, mode) ?? '').split(' ').filter(Boolean);
-  const args = ['run', agentKey, ...modeArgs, '--headless', '-p', prompt];
-  const child = spawn('agents', args, {
-    cwd: cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd(),
-    detached: true,
-    stdio: 'ignore',
-    env: agentsSpawnEnv(),
-  });
-  child.unref();
-}
-
-// Focus a session: `agents sessions focus <id>` opens/attaches a real terminal on it (a
-// background/headless run reopens in a new tab and resumes; a live terminal session is
-// attached). It auto-resolves the surface (no interactive picker), so it's safe to run
-// detached from the extension host.
 // Send the active agent terminal to the background: `agents sessions detach <id>`
 // stops its interactive process and continues it headless, then we close the tab.
 // When the active terminal isn't an agent, fall back to a picker over the live agent tabs.
@@ -379,11 +340,7 @@ async function pickProjectSlug(): Promise<{ slug?: string; cancelled: boolean }>
     return { cancelled: true };
   }
   if (projects.length === 0) {
-    const action = await vscode.window.showInformationMessage(
-      'No projects defined yet. Add one in the Agents dashboard, then try again.',
-      'Open Dashboard',
-    );
-    if (action === 'Open Dashboard') vscode.commands.executeCommand('agents.configure');
+    vscode.window.showInformationMessage('No projects defined yet. Define one with `agents projects add <name>`, then try again.');
     return { cancelled: true };
   }
   const picked = await vscode.window.showQuickPick(
@@ -950,10 +907,9 @@ export async function activate(context: vscode.ExtensionContext) {
   readiness.initReadiness(context);
 
   // Cross-window live-terminal registry: every VS Code window publishes its
-  // agent terminals to a shared JSON file so the Foreman (and future tools)
-  // can see the factory state across all windows. Keepalive every 15s; also
-  // fires on open/close.
-  initForemanRegistry(context);
+  // agent terminals to ~/.agents/.cache/terminals/live-terminals.json, which
+  // agents-cli reads to find the tab showing a session.
+  initTerminalRegistry(context);
 
   // Elect exactly one "monitor" owner across all open IDE windows (epic #64,
   // foundation #65). The winner will own the heavy global probes/watches in
@@ -1067,29 +1023,6 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     })
   );
-
-  // Start watchdog MCP bridge for smart agent mode
-  const watchdogBridge = startWatchdogBridge(context);
-  context.subscriptions.push(watchdogBridge);
-
-  // Register the watchdog MCP server in each supported agent's user-scope
-  // config so peer terminals can call `send_to_agent`. Fire-and-forget —
-  // failures are logged but never block activation.
-  ensureWatchdogMcpInstalled(watchdogBridge.mcpServerPath).catch((err) => {
-    console.warn('[WATCHDOG] ensureWatchdogMcpInstalled failed:', err);
-  });
-
-  // The extension holds NO watchdog loop: the CLI daemon watchdog
-  // (`agents watchdog enable`, under `agents __daemon-run`) is the sole
-  // watchdog — stall nudging AND rotate-on-exhaustion, injecting into vscodium
-  // tabs via the `/inject` URI verb over live-terminals.json and writing the
-  // shared watchdog.log the Fleet status card reads. What remains here
-  // is the palette on/off and the one-time settings migration.
-  context.subscriptions.push(...registerWatchdogPaletteCommands(vscode.commands.registerCommand));
-
-  // Migrate an explicit `agents.watchdog.autoRotate: false` (a deleted setting)
-  // to the CLI watchdog's off state — once per user.
-  void migrateAutoRotateSettingOnce(context.globalState);
 
   // Ensure CLAUDE.md has Swarm instructions if Swarm is enabled
   claudemd.ensureSwarmInstructions();
@@ -1278,18 +1211,6 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.configure', () => settings.openPanel(context))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.dispatchTask', () => settings.openPanelAndDispatch(context))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.focusQuickSpawn', () => settings.openPanelAndFocusQuickSpawn(context))
-  );
-
-  context.subscriptions.push(
     vscode.commands.registerCommand('agents.settings', () => {
       vscode.commands.executeCommand('workbench.action.openSettings', '@ext:agents');
     })
@@ -1342,9 +1263,8 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Persist the primary/secondary quick-launch slot titles the dashboard dials
-  // set. The webview's setDefaultAgent/setSecondaryAgent handlers fire these
-  // (settings.vscode.ts), and getDefaultAgent/getSecondaryAgent read them back
+  // Persist the primary/secondary agent titles the Project panel's Settings tab
+  // picks (projectPanel.vscode.ts), and getDefaultAgent/getSecondaryAgent read them back
   // from the SAME globalState keys — so each command MUST write both the
   // module-level variable (so an in-window launch sees the change without a
   // reload) and globalState under the exact key the reads use. Without these
@@ -1428,9 +1348,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.newTask', () => newTaskWithContext(context))
-  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.askAnotherAgent', () => askAnotherAgentFromTerminal(context))
@@ -1508,7 +1425,7 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // One entry point for "show me this session" (side panel, Fleet): focus this
+  // One entry point for "show me this session" (side panel, Project panel): focus this
   // window's live tab, else let the CLI open it in the window that owns its
   // project, which applies the same /spawn decision. Returns the ack result.
   context.subscriptions.push(
@@ -1639,13 +1556,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const aliases = currentSettings.aliases || [];
 
       if (aliases.length === 0) {
-        const action = await vscode.window.showInformationMessage(
-          'No aliases configured. Create one in the Agents dashboard.',
-          'Open Dashboard'
-        );
-        if (action === 'Open Dashboard') {
-          vscode.commands.executeCommand('agents.configure');
-        }
+        vscode.window.showInformationMessage('No aliases configured.');
         return;
       }
 
@@ -1912,24 +1823,6 @@ export async function activate(context: vscode.ExtensionContext) {
       if (tabChangeTimer) clearTimeout(tabChangeTimer);
     },
   });
-
-  // Revive/open the dashboard webview ONLY after every command above is
-  // registered. A restored or freshly opened panel posts webview messages
-  // (spawnAgent, executeCommand, setDefaultAgent, …) that dispatch `agents.*`
-  // commands the instant it loads; doing this before the registration block
-  // above raced the panel against its own commands and produced "command not
-  // found" toasts (PHNX-3249). The panel reviving a beat later is a fine
-  // trade for never firing at an unregistered command.
-  settings.registerPanelSerializer(context);
-
-  // Open Dashboard on startup if enabled (welcome screen).
-  const agentSettings = settingsStore.getSettings(context);
-  if (agentSettings.showWelcomeScreen) {
-    // Delay slightly to allow VS Code to fully initialize.
-    setTimeout(() => {
-      settings.openPanel(context);
-    }, 500);
-  }
 
   // Auto-open terminals on startup if any agents have login enabled
   const startupSettings = settingsStore.getSettings(context);
@@ -2251,69 +2144,6 @@ async function resumeInProjectWindow(id: string, device: string | undefined): Pr
   }
 }
 
-async function newTaskWithContext(context: vscode.ExtensionContext) {
-  const agentSettings = settingsStore.getSettings(context);
-  const { tasks } = await tasksImport.fetchAllTasks(context, agentSettings.taskSources);
-
-  let message: string;
-
-  if (tasks.length === 0) {
-    const userPrompt = await vscode.window.showInputBox({
-      prompt: 'Enter task for the agent',
-      placeHolder: 'What should the agent do?'
-    });
-
-    if (userPrompt === undefined) return;
-
-    message = userPrompt;
-  } else {
-    interface TaskQuickPickItem extends vscode.QuickPickItem {
-      task: typeof tasks[0];
-    }
-
-    const items: TaskQuickPickItem[] = tasks.map(task => {
-      const badge = SOURCE_BADGES[task.source];
-      const identifier = task.metadata.identifier;
-      const description = identifier ? `${badge.label} ${identifier}` : badge.label;
-
-      return {
-        label: task.title,
-        description,
-        detail: task.description ? `${task.description.slice(0, 100)}${task.description.length > 100 ? '...' : ''}` : undefined,
-        task
-      };
-    });
-
-    const selected = await vscode.window.showQuickPick(items, {
-      placeHolder: 'Select a task to work on',
-      matchOnDescription: true,
-      matchOnDetail: true
-    });
-
-    if (!selected) return;
-
-    const task = selected.task;
-    message = task.title;
-
-    if (task.description) {
-      message += `\n\n${task.description}`;
-    }
-
-    if (task.metadata.url) {
-      message += `\n\nReference: ${task.metadata.url}`;
-    }
-  }
-
-  const clipboardText = await vscode.env.clipboard.readText();
-  if (clipboardText && clipboardText.trim()) {
-    message = `<context>\n${clipboardText.trim()}\n</context>\n\n${message}`;
-  }
-
-  const agentConfig = getBuiltInByTitle(context.extensionPath, defaultAgentTitle);
-  if (agentConfig) {
-    await openSingleAgentWithQueue(context, agentConfig, [message]);
-  }
-}
 
 async function askAnotherAgentFromTerminal(context: vscode.ExtensionContext) {
   const clipboardText = (await vscode.env.clipboard.readText()).trim();
@@ -2857,20 +2687,6 @@ export async function openAgentSessionTerminal(
     vscode.window.showInformationMessage(`Session ${session.shortId} did not become ready; its terminal remains open with the CLI result.`);
     return false;
   }
-}
-
-/** Move a PREVIOUS session to a user-selected device, then attach its target
- * pane in the same editor-tab terminal. The CLI migration verb owns transcript
- * transport and liveness confirmation; the extension only renders the action. */
-export async function openAgentSessionByMigration(
-  context: vscode.ExtensionContext,
-  opts: { sessionId: string; agentType: string; sourceDevice: string; targetDevice: string; sourceIsLocal: boolean },
-): Promise<boolean> {
-  return openAgentSessionTerminal(
-    context,
-    { id: opts.sessionId, shortId: opts.sessionId.slice(0, 8), agent: opts.agentType, host: opts.targetDevice },
-    buildRecoveryMigrationCommand(opts.sessionId, opts.sourceDevice, opts.targetDevice, opts.sourceIsLocal),
-  );
 }
 
 /**
@@ -3873,7 +3689,7 @@ async function armAutoLabelPoller(
 
 // Arm shell-adoption on an SH terminal: poll its descendant process tree for
 // a known agent CLI (claude/codex/cursor/opencode). On detection,
-// re-register the entry as the detected agent so the dashboard, session
+// re-register the entry as the detected agent so the sidebar, session
 // tracker, label generation, autogit, and recap all treat it as that agent.
 // The VS Code tab icon is immutable so it keeps the SH chip — internal
 // state and downstream display only.
@@ -4646,7 +4462,7 @@ async function spawnWithContext(context: vscode.ExtensionContext): Promise<void>
  * verb (`agents sessions fork <id> [--device <host>]`). The tracked terminal's
  * AGENT_TERMINAL_ID env propagates into the verb's `agents run` child (the verb
  * inherits the env), so the sibling session publishes under this terminalId and
- * lineage / restore / Fleet tracking keep working. Mirrors the tracked-terminal
+ * lineage / restore / stream tracking keep working. Mirrors the tracked-terminal
  * setup in openSingleAgentWithQueue — including arming agentReady — minus the
  * message queue and the up-front session id, which the fork verb mints itself.
  */
@@ -4655,7 +4471,7 @@ async function openForkTerminal(
   agentConfig: Omit<AgentConfig, 'count'>,
   command: string,
   opts: { forkHost?: string; viewColumn?: vscode.ViewColumn },
-): Promise<{ terminalId: string; sessionId: string | null }> {
+): Promise<void> {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   const terminalId = terminals.nextId(agentConfig.prefix);
   const builtInDef = getBuiltInByPrefix(agentConfig.prefix);
@@ -4684,8 +4500,6 @@ async function openForkTerminal(
 
   terminal.show(false);
   await sendCommandWhenReady(terminal, wrapNativeAgentCommand(command, false));
-
-  return { terminalId, sessionId: null };
 }
 
 async function forkCurrentSession(
@@ -4731,12 +4545,10 @@ async function forkCurrentSession(
         command,
         { forkHost: host, viewColumn },
       ),
-      recordFork: (edge) => { void recordFork(context, edge); },
       showRejection: showForkRejection,
       // Open the fork as a normal full tab in the active group, not a side
       // split — it is a fresh session, not a pane to sit beside its parent.
       viewColumn: vscode.ViewColumn.Active,
-      now: Date.now,
     });
     return;
   }
@@ -4771,50 +4583,6 @@ function showForkRejection(reason: 'no_session' | 'no_agent'): void {
 function shortSessionId(sessionId: string): string {
   return sessionId.split('-')[0] ?? sessionId;
 }
-
-/**
- * Persist the fork edge. Claude mints its session id at launch, so the pair is
- * complete immediately; every other harness discovers its id after the CLI
- * writes the first transcript line, so we watch the terminal entry until the id
- * lands and record the finished edge then. A fork whose id never appears (the
- * tab was closed first) is recorded idless — an honest "this fork happened",
- * which the ledger skips rather than pairing wrongly.
- */
-async function recordFork(
-  context: vscode.ExtensionContext,
-  edge: ForkEdge & { terminalId: string },
-): Promise<void> {
-  const { terminalId, ...base } = edge;
-  const save = async (forkSessionId: string | null) => {
-    const edges = context.globalState.get<ForkEdge[]>(FORK_LINEAGE_KEY, []);
-    await context.globalState.update(FORK_LINEAGE_KEY, recordForkEdge(edges, { ...base, forkSessionId }));
-  };
-
-  const forkSessionId = await resolveForkSessionId({
-    initialSessionId: base.forkSessionId,
-    terminalId,
-    forkHost: base.forkHost,
-    localHost: LOCAL_MACHINE_ID,
-    attempts: FORK_ID_WAIT_MS / FORK_ID_POLL_MS,
-    wait: () => new Promise(resolve => setTimeout(resolve, FORK_ID_POLL_MS)),
-    readLocal: id => terminals.getById(id)?.sessionId ?? null,
-    readRemote: async (host, id) => {
-      try {
-        // This desktop is the observer, so a remote fork's tab resolves via its
-        // observerTerminals binding rather than a top-level id (PHNX-3939).
-        return remoteForkSessionId(host, id, LOCAL_MACHINE_ID);
-      } catch {
-        return null;
-      }
-    },
-  });
-  await save(forkSessionId);
-}
-
-// A harness that discovers its session id post-spawn writes the first transcript
-// line within a few seconds; a minute is generous cover for a cold remote start.
-const FORK_ID_POLL_MS = 2_000;
-const FORK_ID_WAIT_MS = 60_000;
 
 // --- The session browser (Agents: Fork (Pick Session)) ----------------------
 // `Agents: Fork` forks the tab you are sitting in. This is the other half: browse
@@ -5200,9 +4968,9 @@ async function reopenLastClosedSession(context: vscode.ExtensionContext): Promis
   console.log(`[REOPEN] Reopened session: ${closed.sessionId} (${closed.agentType})`);
 }
 
-function initForemanRegistry(context: vscode.ExtensionContext): void {
+function initTerminalRegistry(context: vscode.ExtensionContext): void {
   // Lazy import to avoid loading the registry before activate() fires.
-  const registry = require('./foreman.registry') as typeof import('./foreman.registry');
+  const registry = require('./terminalRegistry.vscode') as typeof import('./terminalRegistry.vscode');
   let timer: NodeJS.Timeout | undefined;
   const publish = async () => {
     try {
@@ -5236,7 +5004,7 @@ function initForemanRegistry(context: vscode.ExtensionContext): void {
 function initMonitorLeader(context: vscode.ExtensionContext): void {
   // Lazy import to keep activation lean and avoid loading the elector early.
   const leader = require('../monitor/leader') as typeof import('../monitor/leader');
-  const { computeWindowId } = require('../core/foreman.windowId') as typeof import('../core/foreman.windowId');
+  const { computeWindowId } = require('../core/windowId') as typeof import('../core/windowId');
   // process.pid is per-extension-host, so a window reload yields a fresh
   // windowId and leadership is re-elected rather than silently continued.
   const selfId = computeWindowId(vscode.env.sessionId, process.pid);
@@ -5263,11 +5031,11 @@ function initMonitorHost(context: vscode.ExtensionContext): void {
 // this window's terminal tuples over the broadcast request channel, and
 // resolves broadcast facts back to this window's own `vscode.Terminal` via the
 // window-local `editorTerminals` map (never moved out of this window). The
-// foreman-registry write (initForemanRegistry) stays as the disconnected-case
+// live-terminals.json write (initTerminalRegistry) stays as the disconnected-case
 // fallback — reportTuples is a no-op until the connection is up.
 function initMonitorFollower(context: vscode.ExtensionContext): void {
   const { MonitorFollower } = require('../monitor/follower') as typeof import('../monitor/follower');
-  const { computeWindowId } = require('../core/foreman.windowId') as typeof import('../core/foreman.windowId');
+  const { computeWindowId } = require('../core/windowId') as typeof import('../core/windowId');
   type TerminalTuple = import('../monitor/protocol').TerminalTuple;
 
   const windowId = computeWindowId(vscode.env.sessionId, process.pid);
@@ -5362,7 +5130,6 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
           // Activity/attention facts cannot change identity and skip this scan.
           syncTerminalSessionBindingsFromStream();
         }
-        void settings.refreshFloorFromSessionStream();
         void syncCanonicalSessionTabLabels(context);
         const { notifyAgentPanelSessionUpdate } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
         notifyAgentPanelSessionUpdate();

@@ -2,67 +2,36 @@ import { describe, test, expect } from 'bun:test';
 import { shortenDeviceName, deviceBadge } from './deviceName';
 
 describe('shortenDeviceName', () => {
-  test('strips a shared hyphen prefix, keeping the unique suffix', () => {
-    const roster = ['yosemite-m3', 'yosemite-m2', 'zion'];
-    expect(shortenDeviceName('yosemite-m3', roster)).toBe('m3');
-    expect(shortenDeviceName('yosemite-m2', roster)).toBe('m2');
-    // A peer that shares no prefix is unaffected.
-    expect(shortenDeviceName('zion', roster)).toBe('zion');
+  test('strips every shared leading token at a hyphen, underscore, space, camelCase or letter→digit boundary', () => {
+    const cases: Array<[string, string[], string]> = [
+      ['yosemite-m3', ['yosemite-m3', 'yosemite-m2', 'zion'], 'm3'],
+      ['zion', ['yosemite-m3', 'yosemite-m2', 'zion'], 'zion'],
+      ['yosemite_s1', ['yosemite_s1', 'yosemite_s2'], 's1'],
+      ['yosemite s1', ['yosemite s1', 'yosemite s2'], 's1'],
+      ['yosemiteXYZ', ['yosemiteXYZ', 'yosemiteABC'], 'XYZ'],
+      ['mark1a', ['mark1a', 'mark2a'], '1a'],
+      ['a-b-c-x', ['a-b-c-x', 'a-b-c-y'], 'x'],
+      // A delimiter boundary wins over the inner m→3 transition.
+      ['yosemite-m3', ['yosemite-m3', 'yosemite-s1'], 'm3'],
+    ];
+    for (const [name, roster, badge] of cases) expect(shortenDeviceName(name, roster)).toBe(badge);
   });
 
-  test('splits on underscore and space the same way as hyphen', () => {
-    expect(shortenDeviceName('yosemite_s1', ['yosemite_s1', 'yosemite_s2'])).toBe('s1');
-    expect(shortenDeviceName('yosemite s1', ['yosemite s1', 'yosemite s2'])).toBe('s1');
-  });
-
-  test('splits at a camelCase boundary when there is no delimiter', () => {
-    expect(shortenDeviceName('yosemiteXYZ', ['yosemiteXYZ', 'yosemiteABC'])).toBe('XYZ');
-  });
-
-  test('splits at a letter→digit boundary when there is no delimiter', () => {
-    // The cut lands on the mark→1 transition; the suffix keeps a letter, so it stands.
-    expect(shortenDeviceName('mark1a', ['mark1a', 'mark2a'])).toBe('1a');
+  test('leaves a name whole when alone, empty, or when peers diverge mid-token', () => {
+    expect(shortenDeviceName('yosemite-m3', ['yosemite-m3'])).toBe('yosemite-m3');
+    expect(shortenDeviceName('yosemite-m3', [])).toBe('yosemite-m3');
+    expect(shortenDeviceName('', ['', 'zion'])).toBe('');
+    // `mac` is a mid-token prefix of `macbook`: cutting there would produce `-mini`/`book-air`.
+    expect(shortenDeviceName('mac-mini', ['mac-mini', 'macbook-air'])).toBe('mac-mini');
   });
 
   test('never reduces a device to an all-digit badge', () => {
-    // `mark1`/`mark2` cut at the letter→digit boundary to `1`/`2` — unambiguous,
-    // but `$(vm) 1` names no machine a user can act on, so both stay whole.
+    // `mark1`/`mark2` would cut to `1`/`2`; `$(vm) 1` names no machine a user can act on.
     expect(shortenDeviceName('mark1', ['mark1', 'mark2'])).toBe('mark1');
-    // Asymmetric pair: one bare name, one digit-suffixed sibling.
     expect(shortenDeviceName('mark2', ['mark', 'mark2'])).toBe('mark2');
-    // Real roster case: `mark` and `mark-1` are both live fleet devices.
     const fleet = ['mark', 'mark-1', 'mark-aws-1'];
     expect(shortenDeviceName('mark-1', fleet)).toBe('mark-1');
     expect(shortenDeviceName('mark-aws-1', fleet)).toBe('aws-1');
-  });
-
-  test('a delimiter boundary wins over an inner letter→digit boundary', () => {
-    // `yosemite-m3` vs `yosemite-m2` share `yosemite-m`; the cut must land on the
-    // hyphen (→ `m3`), never on the m→3 transition (→ `3`).
-    expect(shortenDeviceName('yosemite-m3', ['yosemite-m3', 'yosemite-m2'])).toBe('m3');
-  });
-
-  test('a single device is returned unchanged', () => {
-    expect(shortenDeviceName('yosemite-m3', ['yosemite-m3'])).toBe('yosemite-m3');
-    expect(shortenDeviceName('yosemite-m3', [])).toBe('yosemite-m3');
-  });
-
-  test('no shared prefix leaves the name unchanged', () => {
-    expect(shortenDeviceName('zion', ['zion', 'mark', 'bismas-macbook-pro'])).toBe('zion');
-  });
-
-  test('never cuts mid-token: peers that diverge before the first delimiter', () => {
-    // `mac-mini` and `macbook-air` share only `mac`, which is a mid-token prefix
-    // of `macbook` — cutting there would produce `-mini`/`book-air`, so neither
-    // is shortened at all.
-    const roster = ['mac-mini', 'macbook-air'];
-    expect(shortenDeviceName('mac-mini', roster)).toBe('mac-mini');
-    expect(shortenDeviceName('macbook-air', roster)).toBe('macbook-air');
-  });
-
-  test('strips all shared leading tokens, keeping only the first divergent one', () => {
-    expect(shortenDeviceName('yosemite-m3', ['yosemite-m3', 'yosemite-s1'])).toBe('m3');
-    expect(shortenDeviceName('a-b-c-x', ['a-b-c-x', 'a-b-c-y'])).toBe('x');
   });
 
   test('is deterministic and order-independent across a realistic roster', () => {
@@ -72,51 +41,28 @@ describe('shortenDeviceName', () => {
     ];
     expect(shortenDeviceName('yosemite-m3', roster)).toBe('m3');
     expect(shortenDeviceName('yosemite-m3', [...roster].reverse())).toBe('m3');
-    expect(shortenDeviceName('yosemite-s1', roster)).toBe('s1');
-    // `mark` diverges from `mark-1` mid-token (`mark` vs `mark-`), and its only
-    // boundary lies past the shared span, so it is left whole.
+    // `mark` diverges from `mark-1` mid-token, so it is left whole.
     expect(shortenDeviceName('mark', roster)).toBe('mark');
   });
 
-  test('never renders two distinct devices with the same badge (collision guard)', () => {
-    // `prod-m1` and `staging-m1` each share a stem with a same-prefix sibling, so
-    // naive per-peer stripping would reduce BOTH to `m1` — indistinguishable in
-    // the status bar. The guard keeps the full name for the colliding pair.
+  test('never renders two devices with the same badge, or a badge that is another device\'s name', () => {
+    // Naive per-peer stripping would reduce both prod-m1 and staging-m1 to `m1`.
     const roster = ['prod-m1', 'prod-m2', 'staging-m1', 'staging-m2'];
     expect(shortenDeviceName('prod-m1', roster)).toBe('prod-m1');
     expect(shortenDeviceName('staging-m1', roster)).toBe('staging-m1');
-    // `prod-m2`/`staging-m2` collide the same way, so they keep their full names too.
-    expect(shortenDeviceName('prod-m2', roster)).toBe('prod-m2');
-  });
-
-  test('falls back to the full name when the suffix collides with a real device name', () => {
-    // `pool-web1` would strip to `web1`, but a device literally named `web1`
-    // exists — shortening would alias the two, so keep the full name.
-    const roster = ['pool-web1', 'pool-web2', 'web1'];
-    expect(shortenDeviceName('pool-web1', roster)).toBe('pool-web1');
-    expect(shortenDeviceName('pool-web2', roster)).toBe('web2');
-  });
-
-  test('an empty name is returned unchanged', () => {
-    expect(shortenDeviceName('', ['', 'zion'])).toBe('');
+    // `pool-web1` would strip to `web1`, which is a real device.
+    expect(shortenDeviceName('pool-web1', ['pool-web1', 'pool-web2', 'web1'])).toBe('pool-web1');
+    expect(shortenDeviceName('pool-web2', ['pool-web1', 'pool-web2', 'web1'])).toBe('web2');
   });
 });
 
 describe('deviceBadge', () => {
   const roster = ['yosemite-m1', 'yosemite-m2', 'zion'];
 
-  test('shortens against the roster the caller holds', () => {
+  test('shortens against the roster the caller holds, even for a host the cache has not seen', () => {
     expect(deviceBadge('yosemite-m1', roster)).toBe('m1');
-    expect(deviceBadge('zion', roster)).toBe('zion');
-  });
-
-  test('a host missing from the roster cache still shortens against its peers', () => {
-    // `yosemite-m9` registered after the last roster refresh: it must still
-    // collapse the shared stem rather than render the full name.
+    // `yosemite-m9` registered after the last roster refresh: it still collapses the stem.
     expect(deviceBadge('yosemite-m9', roster)).toBe('m9');
-  });
-
-  test('a host missing from an empty roster is returned whole', () => {
     expect(deviceBadge('yosemite-m9', [])).toBe('yosemite-m9');
   });
 

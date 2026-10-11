@@ -1,12 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   handleForkPickHost,
-  remoteForkSessionId,
   registerForkPickHostCommand,
-  resolveForkSessionId,
 } from './forkCommands.vscode';
 
 /**
@@ -43,7 +40,6 @@ describe('fork command contributions', () => {
     let command = '';
     let callback!: () => Promise<void>;
     let launch: unknown;
-    let edge: unknown;
     let rejection: unknown;
 
     registerForkPickHostCommand((id, run) => {
@@ -53,14 +49,9 @@ describe('fork command contributions', () => {
     }, () => handleForkPickHost({
       source: { sessionId: 'source-id', agentKey: 'claude', localHost: 'source-machine' },
       pickHost: async () => ({ host: 'chosen-host', cancelled: false }),
-      openFork: async (value) => {
-        launch = value;
-        return { terminalId: 'sibling-terminal', sessionId: 'sibling-id' };
-      },
-      recordFork: (value) => { edge = value; },
+      openFork: async (value) => { launch = value; },
       showRejection: (value) => { rejection = value; },
       viewColumn: 'Active',
-      now: () => 123,
     }));
 
     await callback();
@@ -71,15 +62,6 @@ describe('fork command contributions', () => {
       host: 'chosen-host',
       viewColumn: 'Active',
     });
-    expect(edge).toEqual({
-      sourceSessionId: 'source-id',
-      sourceHost: 'source-machine',
-      forkSessionId: 'sibling-id',
-      forkHost: 'chosen-host',
-      agentKey: 'claude',
-      forkedAt: 123,
-      terminalId: 'sibling-terminal',
-    });
     expect(rejection).toBeUndefined();
   });
 
@@ -88,79 +70,14 @@ describe('fork command contributions', () => {
     await handleForkPickHost({
       source: { sessionId: 'source-id', agentKey: 'grok', host: 'source-host', localHost: 'this-host' },
       pickHost: async () => ({ host: undefined, cancelled: false }),
-      openFork: async (value) => {
-        launch = value;
-        return { terminalId: 'GR-remote-to-local', sessionId: null };
-      },
-      recordFork: () => {},
+      openFork: async (value) => { launch = value; },
       showRejection: () => {},
       viewColumn: 'Active',
-      now: () => 123,
     });
     expect(launch).toEqual({
       command: "agents sessions fork 'source-id'",
       host: undefined,
       viewColumn: 'Active',
     });
-  });
-
-  test('a remote non-Claude fork resolves its child id by AGENT_TERMINAL_ID', async () => {
-    sessionPresentationStore.clear();
-    const calls: string[] = [];
-    const resolved = await resolveForkSessionId({
-      initialSessionId: null,
-      terminalId: 'CX-sibling-terminal',
-      forkHost: 'chosen-host',
-      localHost: 'source-host',
-      attempts: 2,
-      wait: async () => {},
-      readLocal: () => { throw new Error('remote fork must not use the local terminal registry'); },
-      readRemote: async (host, terminalId) => {
-        calls.push(`${host}:${terminalId}`);
-        if (calls.length === 1) return null;
-        sessionPresentationStore.apply({
-          v: 1,
-          streamId: 'fork-test',
-          sequence: 1,
-          type: 'reset',
-          scope: 'chosen-host',
-          agents: [
-            {
-              rowKey: 'fork-row',
-              sourceDevice: 'chosen-host',
-              terminalId: 'CX-sibling-terminal',
-              sessionId: 'sibling-session-id',
-              machine: 'chosen-host',
-            },
-          ], attention: [],
-        });
-        return remoteForkSessionId(host, terminalId);
-      },
-    });
-    expect(calls).toEqual([
-      'chosen-host:CX-sibling-terminal',
-      'chosen-host:CX-sibling-terminal',
-    ]);
-    expect(resolved).toBe('sibling-session-id');
-  });
-
-  test('remote fork identity scopes the same tab id to its observer desktop and execution host', () => {
-    sessionPresentationStore.clear();
-    try {
-      sessionPresentationStore.apply({
-        v: 1, type: 'reset', streamId: 'fork-observers', sequence: 1, scope: 'worker',
-        agents: [
-          { rowKey: 'a', sessionId: 'sibling-a', machine: 'worker', observerTerminals: [{ device: 'desktop-a', terminalId: 'CX-shared' }] },
-          { rowKey: 'b', sessionId: 'sibling-b', machine: 'worker', observerTerminals: [{ device: 'desktop-b', terminalId: 'CX-shared' }] },
-          { rowKey: 'owner-only', sessionId: 'worker-terminal', machine: 'worker', terminalId: 'CX-owner' },
-        ], attention: [],
-      });
-      expect(remoteForkSessionId('worker', 'CX-shared', 'desktop-a')).toBe('sibling-a');
-      expect(remoteForkSessionId('worker', 'CX-shared', 'desktop-b')).toBe('sibling-b');
-      expect(remoteForkSessionId('wrong-worker', 'CX-shared', 'desktop-a')).toBeNull();
-      expect(remoteForkSessionId('worker', 'CX-owner', 'desktop-a')).toBeNull();
-    } finally {
-      sessionPresentationStore.clear();
-    }
   });
 });

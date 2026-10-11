@@ -2,16 +2,11 @@ import { test, expect, beforeEach } from 'bun:test';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import {
-  fetchAgentModels,
   fetchAgentCatalog,
-  fetchAllAgentModels,
   isAgentInstalled,
-  checkInstalledAgentsViaCli,
   resolveAlias,
   clearAgentModelsCache,
-  MODEL_CATALOG_AGENTS,
 } from './agentModels';
-import { AGENT_MODELS } from './settings';
 
 const execAsync = promisify(exec);
 
@@ -41,24 +36,6 @@ test('fetchAgentCatalog returns null when agents-cli is unreachable', async () =
   }
 });
 
-test('fetchAgentModels falls back to hardcoded AGENT_MODELS when CLI is unreachable', async () => {
-  process.env.AGENTS_CLI_DISABLED = '1';
-  try {
-    const models = await fetchAgentModels('claude');
-    expect(models).toEqual(AGENT_MODELS.claude);
-  } finally {
-    delete process.env.AGENTS_CLI_DISABLED;
-  }
-});
-
-test('fetchAllAgentModels returns entries for every supported agent', async () => {
-  const all = await fetchAllAgentModels();
-  for (const agent of MODEL_CATALOG_AGENTS) {
-    expect(all[agent]).toBeDefined();
-    expect(Array.isArray(all[agent])).toBe(true);
-  }
-});
-
 test('live fetchAgentCatalog returns a populated catalog when agents-cli is present', async () => {
   if (!(await agentsCliAvailable())) return;
   const catalog = await fetchAgentCatalog('claude');
@@ -84,17 +61,12 @@ test('isAgentInstalled reports true for claude when CLI reports a catalog', asyn
   expect(await isAgentInstalled('claude')).toBe(true);
 });
 
-test('checkInstalledAgentsViaCli always reports shell=true', async () => {
-  const result = await checkInstalledAgentsViaCli();
-  expect(result.shell).toBe(true);
-});
-
 test('second call within TTL serves cached catalog (no exec)', async () => {
   if (!(await agentsCliAvailable())) return;
-  const first = await fetchAgentModels('claude');
+  const first = await fetchAgentCatalog('claude');
   process.env.AGENTS_CLI_DISABLED = '1';
   try {
-    const second = await fetchAgentModels('claude');
+    const second = await fetchAgentCatalog('claude');
     expect(second).toEqual(first);
   } finally {
     delete process.env.AGENTS_CLI_DISABLED;

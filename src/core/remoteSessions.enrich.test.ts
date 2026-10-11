@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeActiveSession, normalizeRecentSession } from './remoteSessions';
+import { normalizeActiveSession } from './remoteSessions';
 
 // The active-session payload carries nested worktree/pr/preview/ticket objects that
 // were previously dropped, leaving remote cards blank. These assert the enrichment.
@@ -41,32 +41,5 @@ describe('normalizeActiveSession — stop dropping nested fields', () => {
   test('still accepts a bare-string ticket (older payloads)', () => {
     const s = normalizeActiveSession({ ...base, ticket: 'RUSH-9' } as any, 'zion', 1_000_000);
     expect(s.ticket).toBe('RUSH-9');
-  });
-});
-
-describe('normalizeRecentSession — flat SessionMeta onto the same shape', () => {
-  test('maps ticketId/gitBranch/worktreeSlug/lastActivity, phase idle', () => {
-    const s = normalizeRecentSession(
-      {
-        id: 'r1',
-        agent: 'Claude',
-        project: 'agents-cli',
-        cwd: '/x/agents-cli',
-        gitBranch: 'main',
-        worktreeSlug: 'some-slug',
-        ticketId: 'RUSH-42',
-        topic: 'Fix the thing',
-        lastActivity: '2026-07-02T01:07:45.215Z',
-      },
-      'mac-mini',
-      2_000_000,
-    );
-    expect(s.phase).toBe('idle');
-    expect(s.ticket).toBe('RUSH-42');
-    expect(s.branch).toBe('main');
-    expect(s.worktreeSlug).toBe('some-slug');
-    expect(s.topic).toBe('Fix the thing');
-    expect(s.agentType).toBe('claude');
-    expect(s.lastActivityMs).toBe(Date.parse('2026-07-02T01:07:45.215Z'));
   });
 });

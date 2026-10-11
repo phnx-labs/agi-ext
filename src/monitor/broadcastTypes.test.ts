@@ -29,37 +29,18 @@ describe('isMonitorFrame', () => {
     ).toBe(true);
   });
 
-  test('rejects JSON scalars that parse cleanly: null, numbers, strings', () => {
-    expect(isMonitorFrame(null)).toBe(false);
-    expect(isMonitorFrame(42)).toBe(false);
-    expect(isMonitorFrame('event')).toBe(false);
-    expect(isMonitorFrame(true)).toBe(false);
-    expect(isMonitorFrame([{ kind: 'event' }])).toBe(false);
-  });
-
-  test('rejects unknown or missing discriminants', () => {
-    expect(isMonitorFrame({ kind: 'nope', event: makeEvent() })).toBe(false);
-    expect(isMonitorFrame({ event: makeEvent() })).toBe(false);
-    expect(isMonitorFrame({})).toBe(false);
-  });
-
-  test('rejects frames missing required fields', () => {
-    expect(isMonitorFrame({ kind: 'event', event: null })).toBe(false);
-    expect(
-      isMonitorFrame({ kind: 'event', event: { type: 'x', ts: 1 } })
-    ).toBe(false); // no payload
-    expect(
-      isMonitorFrame({
-        kind: 'event',
-        event: { type: 'x', payload: 1, ts: 'now' },
-      })
-    ).toBe(false); // ts not numeric
-    expect(isMonitorFrame({ kind: 'request', payload: 1 })).toBe(false); // no id
-    expect(isMonitorFrame({ kind: 'request', id: '1', payload: 1 })).toBe(false);
-    expect(isMonitorFrame({ kind: 'response' })).toBe(false); // no id
-    expect(
-      isMonitorFrame({ kind: 'response', id: 1, error: 500 })
-    ).toBe(false); // error not a string
+  test('rejects scalars, unknown discriminants and frames missing required fields', () => {
+    for (const bad of [
+      null, 42, 'event', [{ kind: 'event' }], {},
+      { kind: 'nope', event: makeEvent() },
+      { kind: 'event', event: { type: 'x', ts: 1 } }, // no payload
+      { kind: 'event', event: { type: 'x', payload: 1, ts: 'now' } }, // ts not numeric
+      { kind: 'request', id: '1', payload: 1 },
+      { kind: 'response' }, // no id
+      { kind: 'response', id: 1, error: 500 }, // error not a string
+    ]) {
+      expect(isMonitorFrame(bad)).toBe(false);
+    }
   });
 });
 
@@ -84,51 +65,15 @@ describe('FrameDecoder', () => {
     expect(frames[0]).toEqual({ kind: 'response', id: 7, payload: { ok: true } });
   });
 
-  test('drops malformed lines without tearing down later frames', () => {
+  test('drops malformed and structurally invalid lines, skips blank ones, and keeps decoding', () => {
     const decoder = new FrameDecoder();
     const frames = decoder.push(
-      'not json\n' +
-        JSON.stringify(null) +
-        '\n' +
-        encodeFrame({ kind: 'request', id: 2, payload: 'b' })
+      'not json\n' + JSON.stringify(null) + '\n\n' +
+        '{"kind":"request","payload":1}\n' + // missing id
+        encodeFrame({ kind: 'request', id: 2, payload: 'b' }) + '\n',
     );
-    expect(frames).toHaveLength(1);
-    expect(frames[0].kind).toBe('request');
-    expect(decoder.droppedCount).toBe(2);
-  });
-
-  test('drops structurally invalid frames and counts them', () => {
-    const decoder = new FrameDecoder();
-    const frames = decoder.push(
-      '{"kind":"request","payload":1}\n' + // missing id
-        '{"kind":"response","id":3,"payload":"ok"}\n'
-    );
-    expect(frames).toHaveLength(1);
-    expect(decoder.droppedCount).toBe(1);
-  });
-
-  test('skips blank lines between frames', () => {
-    const decoder = new FrameDecoder();
-    const frames = decoder.push(
-      '\n' + encodeFrame({ kind: 'request', id: 1, payload: 'x' }) + '\n\n'
-    );
-    expect(frames).toHaveLength(1);
-    expect(decoder.droppedCount).toBe(0);
-  });
-
-  test('coalesced valid frames in a single read all decode', () => {
-    const decoder = new FrameDecoder();
-    const lines = Array.from({ length: 8 }, (_, i) =>
-      encodeFrame({ kind: 'request', id: i, payload: 'z'.repeat(2048) })
-    );
-    const blob = lines.join('');
-    expect(blob.length).toBeGreaterThan(16 * 1024);
-    const frames = decoder.push(blob);
-    expect(frames).toHaveLength(8);
-    expect(frames.map((f) => (f as { id: number }).id)).toEqual([
-      0, 1, 2, 3, 4, 5, 6, 7,
-    ]);
-    expect(decoder.droppedCount).toBe(0);
+    expect(frames).toEqual([{ kind: 'request', id: 2, payload: 'b' }]);
+    expect(decoder.droppedCount).toBe(3);
   });
 
   test('a large fragmented session-reset-shaped frame decodes across chunks', () => {

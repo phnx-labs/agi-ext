@@ -27,11 +27,11 @@ test('the real manifest and ui/ tree generate a complete reference; --check catc
     expect(reference.counts.keybindings).toBe(contributes.keybindings.length);
 
     const component = (name: string) => reference.components.find((c: { name: string }) => c.name === name);
-    // Props come from the TypeScript types, JSDoc included.
-    const topBar = component('TopBar');
-    expect(topBar.file).toBe('ui/settings/components/mission-control/TopBar.tsx');
-    expect(topBar.props.find((p: { name: string }) => p.name === 'onDispatch')).toMatchObject({ type: '() => void', optional: true });
-    expect(topBar.props.find((p: { name: string }) => p.name === 'onDispatch').description).toContain('Dispatch button');
+    // Props come from the TypeScript types.
+    const toolbar = component('Toolbar');
+    expect(toolbar.file).toBe('ui/editor/components/Toolbar.tsx');
+    expect(toolbar.props.find((p: { name: string }) => p.name === 'onExportPdf')).toMatchObject({ type: '() => void', optional: false });
+    expect(toolbar.props.find((p: { name: string }) => p.name === 'exportError')).toMatchObject({ type: 'string | null', optional: true });
     // The pane is found through references, not only JSX: the editor mounts this one with ReactRenderer.
     expect(component('SlashCommandsList').usedIn).toEqual(['custom editor "Agents Reader (Markdown)" › Editor']);
     expect(original[0]).toContain('<nav');

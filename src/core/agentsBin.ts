@@ -14,7 +14,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { shellQuote } from './deviceDispatchShell';
+import { shellQuote } from './shellQuote';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);

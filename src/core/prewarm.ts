@@ -1,6 +1,6 @@
 // Session pre-warming - pure functions and types
 
-import { shellQuote } from './deviceDispatchShell';
+import { shellQuote } from './shellQuote';
 
 export type PrewarmAgentType = 'claude' | 'codex' | 'cursor' | 'opencode';
 
@@ -95,8 +95,3 @@ export function exitSequenceFor(agentType: string): readonly string[] {
     ? PREWARM_CONFIGS[agentType as PrewarmAgentType].exitSequence
     : DEFAULT_EXIT_SEQUENCE;
 }
-
-// === Blocking Prompt Detection ===
-
-type BlockedReason = 'trust_prompt' | 'auth_required' | 'rate_limit' | 'unknown_prompt';
-type FailedReason = 'timeout' | 'cli_error' | 'parse_error' | 'cli_not_found';

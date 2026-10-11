@@ -105,7 +105,7 @@ export class AgentsMarkdownEditorProvider implements vscode.CustomTextEditorProv
         return this.handleCheckActiveAgent(document, webview);
 
       case 'triggerAgent':
-        return this.handleAgentTrigger(message, webview);
+        return vscode.commands.executeCommand('agents.spawnWithPrompt');
 
       case 'aiAction':
         return this.handleAIAction(message, webview);
@@ -279,45 +279,6 @@ ${selection}
     const docUri = document.uri.toString();
     const hasActiveAgent = documentAgents.has(docUri);
     webview.postMessage({ type: 'activeAgentChanged', hasActiveAgent });
-  }
-
-  private async handleAgentTrigger(message: any, webview: vscode.Webview): Promise<void> {
-    const { action, topic } = message;
-
-    try {
-      let result = '';
-
-      if (action === 'ask') {
-        // Trigger new agent with input prompt
-        const input = await vscode.window.showInputBox({
-          prompt: 'What would you like to ask the agent?',
-          placeHolder: 'Enter your question...',
-        });
-
-        if (input) {
-          await vscode.env.clipboard.writeText(input);
-          await vscode.commands.executeCommand('agents.newTask');
-          result = 'Opening agent with your question...';
-        }
-      } else if (action === 'research') {
-        if (topic) {
-          await vscode.env.clipboard.writeText(`Research: ${topic}`);
-          await vscode.commands.executeCommand('agents.newTask');
-          result = `Researching: ${topic}...`;
-        }
-      }
-
-      webview.postMessage({
-        type: 'agentResult',
-        result,
-      });
-    } catch (error) {
-      vscode.window.showErrorMessage(`Agent error: ${error}`);
-      webview.postMessage({
-        type: 'agentResult',
-        result: 'Agent failed to respond. Please try again.',
-      });
-    }
   }
 
   private async handleAIAction(message: any, webview: vscode.Webview): Promise<void> {

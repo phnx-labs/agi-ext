@@ -1,34 +1,11 @@
-// Shared logic for resuming sessions into agent terminals. Consumes the shape
-// emitted by `agents view <agent> --json` (agents-cli >= 1.13.0) for the
-// inventory/status surfaces, and builds the launch + /continue input for the
-// resume flows. Lives in core/ so it can be unit-tested without VS Code.
+// Shared logic for resuming sessions into agent terminals: builds the launch and
+// /continue input for the resume flows. Lives in core/ so it can be unit-tested
+// without VS Code.
 //
 // NOTE: version PICKING for rotations no longer lives here — the resume paths
 // delegate host/harness/account selection to `agents run auto` (RUSH-2132).
 
-import { shellQuote } from './deviceDispatchShell';
-
-export interface AgentsViewJsonVersion {
-  version: string;
-  isDefault: boolean;
-  signedIn: boolean;
-  email: string | null;
-  plan: string | null;
-  usageStatus: 'available' | 'rate_limited' | 'out_of_credits' | null;
-  windows: Array<{ key: string; usedPercent: number; resetsAt: string | null }>;
-  lastActive: string | null;
-  path: string;
-}
-
-export interface AgentsViewJsonAgent {
-  agent: string;
-  versions: AgentsViewJsonVersion[];
-}
-
-export function sessionUsedPercent(v: AgentsViewJsonVersion): number {
-  const w = v.windows.find(w => w.key === 'session');
-  return w ? w.usedPercent : 100;
-}
+import { shellQuote } from './shellQuote';
 
 /**
  * Convert the central `continue.md` body into a self-contained prompt for
