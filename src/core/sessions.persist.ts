@@ -1,15 +1,22 @@
-// Session persistence for terminal restore across VS Code restarts
-// Stores session data in ~/.swarmify/agents/sessions.yaml
+// Session persistence for terminal restore across editor restarts.
+//
+// Each editor window owns one file, ~/.swarmify/agents/windows/<hash>.yaml, named
+// by its workspace identity and replaced atomically. Every window used to
+// read-modify-write one shared sessions.yaml with a plain truncate-and-write, so a
+// window that read mid-write or held a stale copy rewrote every other window's
+// tabs: closed tabs came back, and whole workspaces vanished.
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
 import YAML from 'yaml';
 import type { ManualSessionOverride } from './remoteAutoLabel';
 
-const SWARMIFY_DIR = path.join(homedir(), '.swarmify');
-const AGENTS_DATA_DIR = path.join(SWARMIFY_DIR, 'agents');
-const SESSIONS_PATH = path.join(AGENTS_DATA_DIR, 'sessions.yaml');
+const AGENTS_DATA_DIR = path.join(homedir(), '.swarmify', 'agents');
+const WINDOWS_DIR = path.join(AGENTS_DATA_DIR, 'windows');
+// Read once per workspace to carry tabs across the upgrade, never written.
+const LEGACY_SESSIONS_PATH = path.join(AGENTS_DATA_DIR, 'sessions.yaml');
 
 // Persisted session data for a single terminal
 export interface PersistedSession {
@@ -31,97 +38,78 @@ export interface PersistedSession {
   agentPid?: number;            // shell pid of the terminal (liveness cross-check)
 }
 
-// Per-workspace session data
-interface WorkspaceSessionData {
-  cleanShutdown: boolean;
-  sessions: PersistedSession[];
+function windowFile(workspaceKey: string): string {
+  const hash = crypto.createHash('sha256').update(workspaceKey).digest('hex').slice(0, 16);
+  return path.join(WINDOWS_DIR, `${hash}.yaml`);
 }
 
-// Root structure of sessions.yaml
-interface SessionsFile {
-  workspaces: Record<string, WorkspaceSessionData>;
-}
-
-// Ensure directory exists
-function ensureDir(): void {
-  fs.mkdirSync(AGENTS_DATA_DIR, { recursive: true });
-}
-
-// Load sessions file
-function loadSessionsFile(): SessionsFile {
+function readYaml(file: string): any {
+  if (!fs.existsSync(file)) return undefined;
   try {
-    if (fs.existsSync(SESSIONS_PATH)) {
-      const content = fs.readFileSync(SESSIONS_PATH, 'utf8');
-      const data = YAML.parse(content);
-      if (data && typeof data === 'object') {
-        return {
-          workspaces: data.workspaces || {}
-        };
-      }
-    }
+    return YAML.parse(fs.readFileSync(file, 'utf8')) ?? undefined;
   } catch (err) {
-    console.error('[SESSIONS] Failed to load sessions file:', err);
+    console.error(`[SESSIONS] Failed to read ${file}:`, err);
+    return undefined;
   }
-  return { workspaces: {} };
 }
 
-// Save sessions file
-function saveSessionsFile(data: SessionsFile): void {
+/**
+ * The tabs this window had open. `legacyKey` is the key the pre-upgrade shared
+ * file used (the first folder path); it is read only while this window has never
+ * written its own file.
+ */
+export function getWorkspaceSessions(workspaceKey: string, legacyKey: string = workspaceKey): PersistedSession[] {
+  const own = readYaml(windowFile(workspaceKey));
+  if (own) return Array.isArray(own.sessions) ? own.sessions : [];
+  const legacy = readYaml(LEGACY_SESSIONS_PATH);
+  const sessions = legacy?.workspaces?.[legacyKey]?.sessions;
+  return Array.isArray(sessions) ? sessions : [];
+}
+
+/** Replace this window's tabs. Only this window's file is touched, and a reader sees the old or new file, never a torn one. */
+export function saveWorkspaceSessions(workspaceKey: string, sessions: PersistedSession[]): void {
+  const file = windowFile(workspaceKey);
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
-    ensureDir();
-    const content = YAML.stringify(data, { indent: 2 });
-    fs.writeFileSync(SESSIONS_PATH, content);
+    fs.mkdirSync(WINDOWS_DIR, { recursive: true });
+    fs.writeFileSync(tmp, YAML.stringify({ workspace: workspaceKey, sessions }, { indent: 2 }));
+    fs.renameSync(tmp, file);
   } catch (err) {
     console.error('[SESSIONS] Failed to save sessions file:', err);
   }
 }
 
-// Get sessions for a workspace
-export function getWorkspaceSessions(workspacePath: string): PersistedSession[] {
-  const data = loadSessionsFile();
-  return data.workspaces[workspacePath]?.sessions || [];
-}
-
-// Save sessions for a workspace (called on deactivate)
-export function saveWorkspaceSessions(
-  workspacePath: string,
-  sessions: PersistedSession[],
-  cleanShutdown: boolean = true
-): void {
-  const data = loadSessionsFile();
-  data.workspaces[workspacePath] = {
-    cleanShutdown,
-    sessions
-  };
-  saveSessionsFile(data);
-  console.log(`[SESSIONS] Saved ${sessions.length} session(s) for ${workspacePath}`);
-}
-
-// Clear sessions for a workspace (called after successful restore)
-export function clearWorkspaceSessions(workspacePath: string): void {
-  const data = loadSessionsFile();
-  if (data.workspaces[workspacePath]) {
-    data.workspaces[workspacePath] = {
-      cleanShutdown: true,
-      sessions: []
-    };
-    saveSessionsFile(data);
+/**
+ * The persisted tabs to reopen: one tab per session, none for a session or
+ * terminal this window already shows. A duplicate keeps its first entry and
+ * takes any field that copy is missing (host, version, label) from the others.
+ */
+export function restorePlan(
+  persisted: readonly PersistedSession[],
+  live: { terminalIds: ReadonlySet<string>; sessionIds: ReadonlySet<string> },
+): PersistedSession[] {
+  const plan: PersistedSession[] = [];
+  const bySession = new Map<string, PersistedSession>();
+  for (const session of persisted) {
+    if (live.terminalIds.has(session.terminalId)) continue;
+    if (!session.sessionId) {
+      plan.push(session);
+      continue;
+    }
+    if (live.sessionIds.has(session.sessionId)) continue;
+    const first = bySession.get(session.sessionId);
+    if (!first) {
+      const copy = { ...session };
+      bySession.set(session.sessionId, copy);
+      plan.push(copy);
+      continue;
+    }
+    for (const [field, value] of Object.entries(session)) {
+      const key = field as keyof PersistedSession;
+      if (first[key] === undefined && value !== undefined && value !== null) {
+        (first as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
   }
-}
-
-// Update a single session's metadata (e.g., when sessionId is captured)
-export function updateSession(
-  workspacePath: string,
-  terminalId: string,
-  updates: Partial<PersistedSession>
-): void {
-  const data = loadSessionsFile();
-  const workspace = data.workspaces[workspacePath];
-  if (!workspace) return;
-
-  const session = workspace.sessions.find(s => s.terminalId === terminalId);
-  if (session) {
-    Object.assign(session, updates);
-    saveSessionsFile(data);
-  }
+  return plan;
 }

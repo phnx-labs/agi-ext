@@ -1,5 +1,4 @@
 // Session pre-warming - pure functions and types
-// VS Code integration in prewarm.vscode.ts
 
 import { shellQuote } from './deviceDispatchShell';
 
@@ -12,15 +11,6 @@ export interface PrewarmConfig {
   statusCommand: string;        // Command to get session info (e.g., '/status', '/stats')
   sessionIdPattern: RegExp;     // Pattern to extract session ID from output
   exitSequence: string[];       // Key sequences to cleanly exit
-}
-
-/** Terminal-to-session mapping for crash recovery */
-export interface TerminalSessionMapping {
-  terminalId: string;           // AGENT_TERMINAL_ID
-  sessionId: string;            // CLI session ID
-  agentType: PrewarmAgentType;
-  createdAt: number;
-  workingDirectory: string;
 }
 
 // Pre-warm configurations per agent

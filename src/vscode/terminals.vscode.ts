@@ -159,40 +159,47 @@ export function popClosedSession(): ClosedSession | undefined {
 // Two-map architecture (API.md)
 const editorTerminals = new Map<string, EditorTerminal>();
 const terminalToId = new WeakMap<vscode.Terminal, string>();
+// Tabs a restore has not reopened yet. They stay in the store until they are
+// live, so a crash or reload in the middle of a staggered restore loses none.
+const restoring = new Map<string, sessionsPersist.PersistedSession>();
 let terminalIdCounter = 0;
 
 // Debounced disk persistence
 let persistTimeout: NodeJS.Timeout | null = null;
 
 /**
+ * The restore store key for this window: its workspace file when it has one (a
+ * multi-root workspace, saved or untitled), else its folder. `legacyKey` is the
+ * first-folder key the pre-upgrade shared store used.
+ */
+function restoreStoreKeys(): { key: string; legacyKey: string } | undefined {
+  const folder = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
+  if (!folder) return undefined;
+  return { key: vscode.workspace.workspaceFile?.toString() ?? folder, legacyKey: folder };
+}
+
+/**
  * Schedule disk persistence (debounced to batch rapid changes).
  * Call this after any terminal state change.
  */
 function schedulePersist(): void {
-  const workspacePath = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspacePath) return;
-
+  if (!restoreStoreKeys()) return;
   if (persistTimeout) clearTimeout(persistTimeout);
   persistTimeout = setTimeout(() => {
-    persistSessions(workspacePath);
     persistTimeout = null;
-    console.log('[TERMINALS] Persisted sessions to disk');
+    persistNow();
   }, 500); // 500ms debounce
 }
 
-/**
- * Persist immediately (for critical operations like deactivate).
- */
+/** Persist immediately: on deactivate, after a restore, and when a tab closes. */
 export function persistNow(): void {
-  const workspacePath = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspacePath) return;
-
+  const keys = restoreStoreKeys();
+  if (!keys) return;
   if (persistTimeout) {
     clearTimeout(persistTimeout);
     persistTimeout = null;
   }
-  persistSessions(workspacePath);
-  console.log('[TERMINALS] Persisted sessions to disk (immediate)');
+  sessionsPersist.saveWorkspaceSessions(keys.key, buildPersistedSessions());
 }
 
 // Accessors
@@ -294,6 +301,7 @@ export function register(
   console.log(`[DEBUG register] Final entry.label: "${entry.label}"`);
   editorTerminals.set(id, entry);
   terminalToId.set(terminal, id);
+  restoring.delete(id);
   console.log(`[DEBUG register] editorTerminals now has ${editorTerminals.size} entries`);
 
   // Persist to disk
@@ -310,8 +318,8 @@ export function unregister(terminal: vscode.Terminal): void {
     editorTerminals.delete(id);
     terminalToId.delete(terminal);
 
-    // Persist to disk
-    schedulePersist();
+    // Immediately: a closed tab must be off disk before anything else can crash.
+    persistNow();
   }
 }
 
@@ -646,6 +654,8 @@ export async function applyPendingTitle(terminal: vscode.Terminal): Promise<void
 
 // Lifecycle
 
+const STALE_TERMINAL_MS = 10_000;
+
 export async function scanExisting(
   inferAgentConfig: (name: string, knownPrefix?: string | null) => Omit<AgentConfig, 'count'> | null,
   context?: vscode.ExtensionContext,
@@ -655,8 +665,7 @@ export async function scanExisting(
   let registeredCount = 0;
 
   // Load persisted sessions for session recovery
-  const workspacePath = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
-  const persistedSessions = workspacePath ? sessionsPersist.getWorkspaceSessions(workspacePath) : [];
+  const persistedSessions = loadPersistedSessions();
   console.log(`[TERMINALS] Loaded ${persistedSessions.length} persisted sessions`);
 
   for (const terminal of vscode.window.terminals) {
@@ -688,7 +697,13 @@ export async function scanExisting(
 
     let pid: number | undefined;
     try {
-      pid = await terminal.processId;
+      // A terminal tab the editor brought back after a crash can have no pty at
+      // all, and its processId then never settles; waiting on it would hold the
+      // whole restore behind a dead tab.
+      pid = await Promise.race([
+        terminal.processId,
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), STALE_TERMINAL_MS)),
+      ]);
     } catch (error) {
       console.log(`[TERMINALS] Could not retrieve PID for terminal "${terminal.name}"`);
     }
@@ -1185,6 +1200,7 @@ export function clear(): void {
     }
   }
   editorTerminals.clear();
+  restoring.clear();
   terminalIdCounter = 0;
   sessionSummaryCache.clear();
 }
@@ -1214,31 +1230,20 @@ export function buildPersistedSessions(): sessionsPersist.PersistedSession[] {
       agentPid: entry.pid,
     });
   }
+  for (const pending of restoring.values()) {
+    if (!editorTerminals.has(pending.terminalId)) sessions.push(pending);
+  }
 
   return sessions;
 }
 
-// Persist all current sessions for a workspace
-function persistSessions(workspacePath: string): void {
-  const sessions = buildPersistedSessions();
-  sessionsPersist.saveWorkspaceSessions(workspacePath, sessions, true);
+export function setRestoring(sessions: readonly sessionsPersist.PersistedSession[]): void {
+  restoring.clear();
+  for (const session of sessions) restoring.set(session.terminalId, session);
 }
 
-// Load persisted sessions for a workspace
-export function loadPersistedSessions(workspacePath: string): sessionsPersist.PersistedSession[] {
-  return sessionsPersist.getWorkspaceSessions(workspacePath);
-}
-
-// Clear persisted sessions after successful restore
-export function clearPersistedSessions(workspacePath: string): void {
-  sessionsPersist.clearWorkspaceSessions(workspacePath);
-}
-
-// Update a session's metadata (e.g., when CLI sessionId is captured)
-function updatePersistedSession(
-  workspacePath: string,
-  terminalId: string,
-  updates: Partial<sessionsPersist.PersistedSession>
-): void {
-  sessionsPersist.updateSession(workspacePath, terminalId, updates);
+// This window's persisted tabs.
+export function loadPersistedSessions(): sessionsPersist.PersistedSession[] {
+  const keys = restoreStoreKeys();
+  return keys ? sessionsPersist.getWorkspaceSessions(keys.key, keys.legacyKey) : [];
 }

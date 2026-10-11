@@ -1,0 +1,44 @@
+# Shape of a real shared sessions.yaml after a crash restore (2026-10-10):
+# window "projA" received tabs for projB through /spawn, one session appears
+# three times, and the restored copy lost its host.
+workspaces:
+  /work/projA:
+    cleanShutdown: true
+    sessions:
+      - terminalId: cl-1791351021462-9
+        prefix: cl
+        sessionId: e5ae558d-5f3c-4315-90f6-c0d78c7c607d
+        host: yosemite-m2
+        label: Finalize - Dev API
+        agentType: claude
+        version: 2.1.289
+        createdAt: 1791614667426
+      - terminalId: cl-1791114788329-17
+        prefix: cl
+        sessionId: bc627867-9402-4272-89ad-ec27e4dda56e
+        label: Clean - Random code issues
+        agentType: claude
+        createdAt: 1791614667421
+      - terminalId: cl-1791693167322-16
+        prefix: cl
+        sessionId: e5ae558d-5f3c-4315-90f6-c0d78c7c607d
+        autoLabel: Finalize - Dev API
+        agentType: claude
+        createdAt: 1791693167433
+      - terminalId: cl-1791693200000-20
+        prefix: cl
+        sessionId: e5ae558d-5f3c-4315-90f6-c0d78c7c607d
+        agentType: claude
+        createdAt: 1791693200000
+      - terminalId: sh-1791693300000-21
+        prefix: sh
+        createdAt: 1791693300000
+  /work/projB:
+    cleanShutdown: true
+    sessions:
+      - terminalId: cl-1791541629779-5
+        prefix: cl
+        sessionId: 9ff4d220-cce7-4ca1-a42d-01c16f2a40d7
+        host: yosemite-m2
+        agentType: claude
+        createdAt: 1791611635297

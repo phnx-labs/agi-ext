@@ -2,6 +2,9 @@
 // The VS Code glue that turns a SpawnRequest into an editor-tab terminal lives
 // in vscode/extension.ts (spawnCommandTerminal).
 
+import * as fs from 'fs';
+import { homedir } from 'os';
+import * as path from 'path';
 import { isHostFallbackLabel, parseTerminalName } from './utils';
 
 type SpawnSplit = 'right' | 'down';
@@ -24,6 +27,10 @@ export interface SpawnRequest {
   sessionId?: string;
   /** Optional pre-baked tab title; otherwise the extension formats from agent. */
   title?: string;
+  /** Names the ack file the window writes (spawnAckPath); no nonce, no ack. */
+  nonce?: string;
+  /** Local folder the tab belongs to; only a window whose folders contain it opens the tab. */
+  project?: string;
 }
 
 // Parse the query of a `…/spawn?p=<payload>` URI into a spawn request. The
@@ -52,7 +59,70 @@ export function parseSpawnRequest(query: string): SpawnRequest | null {
   const rawTitle = typeof obj?.title === 'string' ? obj.title.trim() : undefined;
   const title = rawTitle && !isHostFallbackLabel(rawTitle)
     && !isHostFallbackLabel(parseTerminalName(rawTitle).label) ? rawTitle : undefined;
-  return { command, cwd, split, agent, sessionId, title };
+  const nonce = typeof obj?.nonce === 'string' && NONCE.test(obj.nonce) ? obj.nonce : undefined;
+  const project = typeof obj?.project === 'string' && obj.project.trim() ? obj.project.trim() : undefined;
+  return { command, cwd, split, agent, sessionId, title, nonce, project };
+}
+
+// The ack a window writes for a /spawn request that carried a nonce. The CLI
+// polls ~/.swarmify/agents/spawn-acks/<nonce>.json instead of reporting
+// `codium --open-url` as success. Fixture both sides test against:
+// src/core/testdata/spawn-ack.json.
+//   opened           this window started the tab's process (pid set)
+//   focused-existing this window already had a live tab for sessionId; it was focused
+//   wrong-window     this window's folders do not contain `project`; nothing opened
+//   failed           this window tried to open the tab and its process never started
+// A window speaks only for its own tabs: wrong-window says nothing about which
+// window, if any, holds the session.
+type SpawnAckStatus = 'opened' | 'focused-existing' | 'wrong-window' | 'failed';
+
+export interface SpawnAck {
+  nonce: string;
+  status: SpawnAckStatus;
+  windowFolders: string[];
+  workspaceName: string | null;
+  terminalId: string | null;
+  title: string | null;
+  sessionId: string | null;
+  pid: number | null;
+  at: number;
+}
+
+const NONCE = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function spawnAckPath(nonce: string): string {
+  if (!NONCE.test(nonce)) throw new Error(`invalid spawn nonce: ${nonce}`);
+  return path.join(homedir(), '.swarmify', 'agents', 'spawn-acks', `${nonce}.json`);
+}
+
+/** Written whole or not at all, so a polling CLI never reads half an ack. */
+export function writeSpawnAck(ack: SpawnAck): void {
+  const file = spawnAckPath(ack.nonce);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(ack));
+  fs.renameSync(tmp, file);
+}
+
+/**
+ * What this window does with a spawn request: refuse a project outside its
+ * folders, focus its own live tab for the session, or open a new one. A request
+ * without `project` (a CLI from before this contract) opens where it landed.
+ */
+export function decideSpawn(input: {
+  project?: string;
+  windowFolders: readonly string[];
+  liveTerminalId?: string;
+}): 'wrong-window' | 'focus' | 'open' {
+  if (input.project && !input.windowFolders.some((folder) => pathContains(folder, input.project!))) {
+    return 'wrong-window';
+  }
+  return input.liveTerminalId ? 'focus' : 'open';
+}
+
+function pathContains(folder: string, target: string): boolean {
+  const rel = path.relative(path.resolve(folder), path.resolve(target));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 // Which surface a spawn request lands on.

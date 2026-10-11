@@ -1,0 +1,81 @@
+import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Each case is its own extension host (child process) against the real store,
+// so Bun's process-global module doubles stay out of it.
+function window(home: string, workspace: string, body: string) {
+  const script = `
+    import { mock } from 'bun:test';
+    import assert from 'node:assert/strict';
+    import { vscodeDouble } from ${JSON.stringify(join(import.meta.dir, '../testing/vscodeDouble.ts'))};
+    mock.module('vscode', () => vscodeDouble({ window: { terminals: [], activeTerminal: undefined, tabGroups: { all: [] } },
+      workspace: ${workspace} }));
+    const t = await import(${JSON.stringify(join(import.meta.dir, 'terminals.vscode.ts'))});
+    const config = { prefix: 'cl', title: 'Claude', command: 'claude' };
+    const term = (id) => ({ name: id, processId: Promise.resolve(1), creationOptions: { env: { AGENT_TERMINAL_ID: id } } });
+    const ids = () => t.loadPersistedSessions().map((s) => s.terminalId);
+    ${body}
+    t.clear();
+  `;
+  const result = spawnSync('bun', ['-e', script], { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
+  expect(result.status, result.stderr + result.stdout).toBe(0);
+}
+
+const folder = (p: string) => `{ workspaceFolders: [{ uri: { fsPath: '${p}' } }] }`;
+
+describe('restore store per window', () => {
+  test('a closed tab is off disk at once, so a crash right after cannot bring it back', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const devApi = term('cl-devapi'), keep = term('cl-keep');
+        t.register(devApi, 'cl-devapi', config, 1);
+        t.register(keep, 'cl-keep', config, 2);
+        t.setHost(devApi, 'yosemite-m2');
+        t.persistNow();
+        t.unregister(devApi);
+        assert.deepEqual(ids(), ['cl-keep']);
+      `);
+      // The next launch (crash restart) sees only the tab that was still open.
+      window(home, folder('/work/projA'), `assert.deepEqual(ids(), ['cl-keep']);`);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
+  test('a crash in the middle of a restore keeps the tabs not reopened yet', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      window(home, folder('/work/projA'), `
+        const pending = (id) => ({ terminalId: id, prefix: 'cl', sessionId: id, host: 'yosemite-m2', createdAt: 1 });
+        t.setRestoring([pending('cl-1'), pending('cl-2')]);
+        const restored = term('cl-1');
+        t.register(restored, 'cl-1', config, 1);
+        t.register(term('cl-3'), 'cl-3', config, 3);
+        t.persistNow();
+        assert.deepEqual(ids(), ['cl-1', 'cl-3', 'cl-2']);
+        // Closing a tab the restore already reopened removes it, even mid-restore.
+        t.unregister(restored);
+        assert.deepEqual(ids(), ['cl-3', 'cl-2']);
+        t.unregister(t.getById('cl-3').terminal);
+      `);
+      window(home, folder('/work/projA'), `
+        assert.deepEqual(ids(), ['cl-2']);
+        assert.equal(t.loadPersistedSessions()[0].host, 'yosemite-m2');
+      `);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+
+  test('a multi-root window and a folder window on its first folder keep separate tabs', () => {
+    const home = mkdtempSync(join(tmpdir(), 'terminals-persist-'));
+    try {
+      const multiRoot = `{ workspaceFile: { toString: () => 'file:///ws/untitled-1/workspace.json' },
+        workspaceFolders: [{ uri: { fsPath: '/work/agents-cli' } }, { uri: { fsPath: '/work/agi-menu' } }] }`;
+      window(home, multiRoot, `t.register(term('cl-multi'), 'cl-multi', config, 1); t.persistNow();`);
+      window(home, folder('/work/agents-cli'), `t.register(term('cl-folder'), 'cl-folder', config, 1); t.persistNow();`);
+      window(home, multiRoot, `assert.deepEqual(ids(), ['cl-multi']);`);
+      window(home, folder('/work/agents-cli'), `assert.deepEqual(ids(), ['cl-folder']);`);
+    } finally { rmSync(home, { recursive: true }); }
+  });
+});

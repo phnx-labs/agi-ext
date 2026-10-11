@@ -22,17 +22,6 @@ mock.module('./agents.vscode', () => ({
 
 
 
-mock.module('../core/sessions.persist', () => ({
-  buildPersistedSessions: () => [],
-  savePersistedSessions: () => {},
-  loadPersistedSessions: () => [],
-  clearPersistedSessions: () => {},
-  getWorkspaceSessions: () => [],
-  persistWorkspaceSessions: () => {},
-  updatePersistedSession: () => {},
-  PersistedSession: {},
-}));
-
 const t = await import('./terminals.vscode');
 
 function fakeTerm(name: string): vscode.Terminal {
@@ -138,6 +127,15 @@ describe('reload scan ignores terminal editor ghosts', () => {
     expect(count).toBe(0);
     expect(t.getByTerminal(ghost)).toBeUndefined();
   });
+
+  test('a crash-restored tab whose processId never settles does not hold the restore', async () => {
+    const vscode = await import('vscode');
+    const ghost = scannedTerm('CC — tab with no pty', new Promise<number | undefined>(() => {}));
+    (vscode.window.terminals as vscode.Terminal[]) = [ghost];
+
+    expect(await t.scanExisting(() => fakeAgentConfig())).toBe(0);
+    expect(t.getByTerminal(ghost)).toBeUndefined();
+  }, 20_000);
 });
 
 describe('BUG A: startAutoLabelPoller guard blocks restart once autoLabel is set', () => {
