@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { parseSpawnRequest, resolveSpawnSurface } from './spawn';
+import { spawnSync } from 'child_process';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { decideSpawn, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
 
 // The `…/spawn` URI verb reopens a session as an editor tab. AGI EXT no longer
 // spawns tmux-backed terminals at the extension level, so every request lands on
@@ -73,4 +77,43 @@ test('attach titles hide only complete host placeholders, preserving task text',
   expect(request('[host/yosemite-m3]')?.title).toBeUndefined();
   expect(request('CC - fix host/config parser')?.title).toBe('CC - fix host/config parser');
   expect(request('CC - investigate [host/yosemite-m3]')?.title).toBe('CC - investigate [host/yosemite-m3]');
+});
+
+describe('spawn ack contract', () => {
+  const fixture = JSON.parse(readFileSync(join(import.meta.dir, 'testdata/spawn-ack.json'), 'utf8')) as SpawnAck;
+  const encode = (obj: Record<string, unknown>) => 'p=' + Buffer.from(JSON.stringify(obj)).toString('base64url');
+
+  test('the request carries nonce and project; a nonce that could leave the ack folder is dropped', () => {
+    const req = parseSpawnRequest(encode({ command: 'claude --resume x', nonce: fixture.nonce, project: '/Users/dev/src/projB' }));
+    expect(req?.nonce).toBe(fixture.nonce);
+    expect(req?.project).toBe('/Users/dev/src/projB');
+    expect(parseSpawnRequest(encode({ command: 'c', nonce: '../../etc/passwd' }))?.nonce).toBeUndefined();
+    expect(() => spawnAckPath('../x')).toThrow();
+  });
+
+  test('only a window whose folders contain the project opens it, and its own live tab is focused instead of duplicated', () => {
+    const folders = ['/Users/dev/src/agents-cli', '/Users/dev/src/agi-menu'];
+    expect(decideSpawn({ project: '/Users/dev/src/svatlas', windowFolders: folders })).toBe('wrong-window');
+    expect(decideSpawn({ project: '/Users/dev/src/agents-cli-old', windowFolders: folders })).toBe('wrong-window');
+    expect(decideSpawn({ project: '/Users/dev/src/agi-menu/sub', windowFolders: folders })).toBe('open');
+    expect(decideSpawn({ project: '/Users/dev/src/agents-cli', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('focus');
+    expect(decideSpawn({ project: '/Users/dev/src/svatlas', windowFolders: folders, liveTerminalId: 'cl-1' })).toBe('wrong-window');
+    expect(decideSpawn({ windowFolders: folders })).toBe('open');
+  });
+
+  test('writeSpawnAck lands the fixture shape at spawn-acks/<nonce>.json', () => {
+    const home = mkdtempSync(join(tmpdir(), 'spawn-ack-'));
+    try {
+      const res = spawnSync('bun', ['-e', `
+        const m = await import(${JSON.stringify(join(import.meta.dir, 'spawn.ts'))});
+        m.writeSpawnAck(${JSON.stringify(fixture)});
+        console.log(m.spawnAckPath(${JSON.stringify(fixture.nonce)}));
+      `], { encoding: 'utf8', env: { ...process.env, HOME: home } });
+      expect(res.status, res.stderr).toBe(0);
+      const file = res.stdout.trim();
+      expect(file).toBe(join(home, '.swarmify/agents/spawn-acks', `${fixture.nonce}.json`));
+      expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(fixture);
+      expect(readdirSync(join(home, '.swarmify/agents/spawn-acks'))).toEqual([`${fixture.nonce}.json`]);
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
 });

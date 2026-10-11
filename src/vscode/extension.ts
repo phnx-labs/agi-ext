@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
 import { readManagedProjects } from '../core/managedProjects';
-import { parseSpawnRequest, resolveSpawnSurface, SpawnRequest } from '../core/spawn';
+import { decideSpawn, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
   harnessLaunchRegistrations,
@@ -139,6 +139,7 @@ async function ensureAgentsCliInstalled(): Promise<void> {
   }
 }
 import { supportsPrewarming, buildVersionedResumeCommand, exitSequenceFor } from '../core/prewarm';
+import { restorePlan } from '../core/sessions.persist';
 import { generateClaudeSessionId, listOpencodeSessions } from '../core/prewarm.simple';
 import { canonicalSessionId } from '../core/canonicalSessionId';
 import {
@@ -453,14 +454,6 @@ async function registerAgentTerminal(
   }
   if (sessionId) {
     terminals.setSessionId(terminal, sessionId);
-    if (resumeKey && supportsPrewarming(resumeKey)) {
-      const opts = terminal.creationOptions as vscode.TerminalOptions;
-      const cwd = typeof opts.cwd === 'string'
-        ? opts.cwd
-        : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-      const { recordTerminalSession } = await import('./prewarm.vscode');
-      await recordTerminalSession(context, terminalId, sessionId, resumeKey, cwd);
-    }
     if (resumeKey) {
       startAutoLabelPollerForTerminal(terminal, context);
     }
@@ -1017,24 +1010,6 @@ export async function activate(context: vscode.ExtensionContext) {
     (terminal) => startAutoLabelPollerForTerminal(terminal, context)
   )
     .then(() => restoreAgentTerminals(context))
-    .then(async () => {
-      const { restoreTerminals } = await import('./prewarm.vscode');
-      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      await restoreTerminals(context, {
-        listRestorableSessionIds,
-        // restoreAgentTerminals ran first in this chain and registered every tab
-        // it reopened; hand restoreTerminals those keys so it skips them and only
-        // reopens the eager-prewarm residual the debounced store missed.
-        trackedKeys: () => {
-          const all = terminals.getAllTerminals();
-          return {
-            terminalIds: new Set(all.map((entry) => entry.id)),
-            sessionIds: new Set(all.map((entry) => entry.sessionId).filter((id): id is string => Boolean(id))),
-          };
-        },
-        openAgentSessionTerminal,
-      }, workspacePath);
-    })
     .then(() => {
       // Adopt any SH terminals that are already running an agent CLI
       // (e.g. user launched claude before reload).
@@ -1086,8 +1061,7 @@ export async function activate(context: vscode.ExtensionContext) {
         terminals.setAgentType(terminal, agentType);
       }
 
-      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const persisted = workspacePath ? terminals.loadPersistedSessions(workspacePath).find((session) => session.terminalId === id) : undefined;
+      const persisted = terminals.loadPersistedSessions().find((session) => session.terminalId === id);
       const restoredId = terminals.restoredSessionId(identOpts.sessionId, persisted);
       if (restoredId !== undefined) {
         terminals.setSessionId(terminal, restoredId);
@@ -1796,9 +1770,12 @@ export async function activate(context: vscode.ExtensionContext) {
           });
         }
 
-        if (entry?.id) {
-          const { removeTerminalSession } = await import('./prewarm.vscode');
-          await removeTerminalSession(context, entry.id);
+        // A tab closed by anything but the window going away leaves the restore
+        // store now, before the remote stop below (up to 20s over ssh) can be cut
+        // short by a crash. A window shutdown keeps it so deactivate persists it.
+        const reason = terminal.exitStatus?.reason;
+        if (reason !== vscode.TerminalExitReason.Shutdown) {
+          terminals.unregister(terminal);
         }
 
         // #5b: a genuine user close (Cmd+W) tears the agent + its mux down so a
@@ -1810,7 +1787,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // just wires the user-close event to `agents sessions stop`.
         if (entry?.agentConfig) {
           await readiness.maybeTearDownAgentOnClose({
-            reason: terminal.exitStatus?.reason,
+            reason,
             sessionId: entry.sessionId,
             host: entry.host,
             stop: async (id, o) => {
@@ -1821,7 +1798,6 @@ export async function activate(context: vscode.ExtensionContext) {
           });
         }
 
-        terminals.unregister(terminal);
         updateActiveAgentContextKey(vscode.window.activeTerminal, context.extensionPath);
       })();
     })
@@ -2144,6 +2120,39 @@ async function spawnCommandTerminal(
   const def = (detectedKey && getBuiltInByKey(detectedKey)) || getBuiltInByKey('shell');
   if (!def) return;
 
+  const sessionId =
+    req.sessionId || readiness.extractSessionIdFromArgs(req.command) || null;
+  const windowFolders = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+  const ack = (status: SpawnAck['status'], tab?: { terminalId: string; title: string; pid?: number }): void => {
+    if (!req.nonce) return;
+    try {
+      writeSpawnAck({
+        nonce: req.nonce,
+        status,
+        windowFolders,
+        workspaceName: vscode.workspace.name ?? null,
+        terminalId: tab?.terminalId ?? null,
+        title: tab?.title ?? null,
+        sessionId,
+        pid: tab?.pid ?? null,
+        at: Date.now(),
+      });
+    } catch (err) {
+      console.error('[SPAWN] Failed to write ack', err);
+    }
+  };
+  const live = sessionId ? terminals.getBySessionId(sessionId) : undefined;
+  const decision = decideSpawn({ project: req.project, windowFolders, liveTerminalId: live?.id });
+  if (decision === 'wrong-window') {
+    ack('wrong-window');
+    return;
+  }
+  if (decision === 'focus' && live) {
+    live.terminal.show();
+    ack('focused-existing', { terminalId: live.id, title: live.terminal.name, pid: live.pid });
+    return;
+  }
+
   const agentConfig = createAgentConfig(
     context.extensionPath,
     def.title,
@@ -2155,8 +2164,6 @@ async function spawnCommandTerminal(
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   const cwd = req.cwd || workspaceFolder;
   const terminalId = terminals.nextId(agentConfig.prefix);
-  const sessionId =
-    req.sessionId || readiness.extractSessionIdFromArgs(req.command) || null;
   const title =
     req.title?.trim() ||
     buildTerminalTitle(agentConfig.title, undefined, context, sessionId);
@@ -2188,6 +2195,7 @@ async function spawnCommandTerminal(
   });
 
   const pid = await terminal.processId;
+  ack(pid === undefined ? 'failed' : 'opened', { terminalId, title, pid });
   terminals.register(terminal, terminalId, agentConfig, pid, context);
   readiness.registerTerminal(terminal);
 
@@ -2942,12 +2950,6 @@ async function fetchResumeCandidates(): Promise<ResumeCandidate[]> {
     lastActivityMs: row.lastActivityMs || Date.parse(row.timestamp || '') || 0,
     pid: row.pid || 0,
   }));
-}
-
-/** Session ids the CLI still exposes after applying its canonical stale-session reaping. */
-export async function listRestorableSessionIds(): Promise<Set<string>> {
-  const rows = await listSessionsViaCli(200);
-  return new Set(rows.map((row) => row.id).filter(Boolean));
 }
 
 /**
@@ -5160,19 +5162,17 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspacePath) return;
 
-  const persisted = terminals.loadPersistedSessions(workspacePath);
+  const persisted = terminals.loadPersistedSessions();
   if (persisted.length === 0) return;
 
-  // Check which persisted sessions are NOT properly tracked
-  // (VS Code may have restored them but without our icons/env vars)
+  // One tab per session, and none for a tab scanExisting already adopted.
   const tracked = terminals.getAllTerminals();
-  const trackedIds = new Set(tracked.map(e => e.id));
-
-  const toRestore = persisted.filter(
-    p => !trackedIds.has(p.terminalId),
-  );
+  const toRestore = restorePlan(persisted, {
+    terminalIds: new Set(tracked.map((e) => e.id)),
+    sessionIds: new Set(tracked.map((e) => e.sessionId).filter((id): id is string => Boolean(id))),
+  });
   if (toRestore.length === 0) {
-    terminals.clearPersistedSessions(workspacePath);
+    terminals.persistNow();
     return;
   }
 
@@ -5245,6 +5245,9 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     }
 
     if (session.sessionId !== undefined) terminals.setSessionId(terminal, session.sessionId);
+    // The device survives every restore, not only one that resumes below, or the
+    // next persist writes the tab back without it.
+    if (session.host) terminals.setHost(terminal, session.host);
     const restoredEntry = terminals.getByTerminal(terminal);
     if (restoredEntry) restoredEntry.manualSessionOverride = session.manualSessionOverride;
 
@@ -5254,11 +5257,6 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
         terminals.setAgentType(terminal, session.agentType as SessionAgentType);
       } else if (session.recoveryAgent) {
         terminals.setRecoveryAgent(terminal, session.recoveryAgent);
-      }
-      // Stamp the host before the poller starts so a restored offloaded tab
-      // keeps resolving its label (and its resume) on the machine that owns it.
-      if (session.host) {
-        terminals.setHost(terminal, session.host);
       }
       if (session.agentType) {
         startAutoLabelPollerForTerminal(terminal, context);
@@ -5305,6 +5303,7 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
   // of the batch; each tab still gets a label via the existing first-N-words
   // fallback (the same path a real LLM timeout already takes), and the
   // normal (non-restore) labeling path is unaffected.
+  terminals.setRestoring(toRestore);
   setLabelGenSuppressed(true);
   try {
     await runStaggered(toRestore, restoreOne, {
@@ -5313,9 +5312,12 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     });
   } finally {
     setLabelGenSuppressed(false);
+    terminals.setRestoring([]);
   }
 
-  terminals.clearPersistedSessions(workspacePath);
+  // The store is this window's live tabs: rewrite it now so a duplicate or a tab
+  // that failed to restore is gone, and a crash right after restore loses nothing.
+  terminals.persistNow();
   console.log(`[RESTORE] Restored ${toRestore.length} agent terminal(s)`);
 }
 
@@ -5592,8 +5594,6 @@ export async function deactivate(): Promise<void> {
   if (extensionContext) {
     // Persist open agent terminals for restore on next launch (immediate, not debounced)
     terminals.persistNow();
-    const { markCleanShutdown } = await import('./prewarm.vscode');
-    await markCleanShutdown(extensionContext);
   }
 
   // Release the monitor lease — but only AFTER the leader's async disposers finish
