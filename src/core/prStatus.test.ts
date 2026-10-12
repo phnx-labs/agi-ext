@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { normalizePrStatus, prAction, prRepo } from './prStatus';
+import { canOfferMerge, normalizePrStatus, parsePrForMerge, prAction, prRepo, rowMergeChoices } from './prStatus';
 
 // The shape the feed puts on a row's `pr` today (agents-cli 1.22.122: gh's own
 // words), plus the head commit, title and per-check items a newer CLI adds.
@@ -48,4 +48,30 @@ test('the card offers merge only when GitHub would take it, pinned to a known he
 test('the repo comes only from a github.com pull URL', () => {
   expect(prRepo('https://github.com/phnx-labs/agi-ext/pull/103')).toBe('phnx-labs/agi-ext');
   expect(prRepo('https://evil.example/phnx-labs/agi-ext/pull/1')).toBeUndefined();
+});
+
+
+test('Merge ▾ is offered for an open, non-draft, conflict-free PR with a head commit', () => {
+  const base = { url: 'https://github.com/o/r/pull/1', number: 1, state: 'open', isDraft: false, checkItems: [], headSha: 'abcdef1' } as const;
+  expect(canOfferMerge({ ...base, mergeable: 'mergeable', checks: 'failing' } as never)).toBe(true);
+  expect(canOfferMerge({ ...base, isDraft: true, mergeable: 'mergeable' } as never)).toBe(false);
+  expect(canOfferMerge({ ...base, mergeable: 'conflicting' } as never)).toBe(false);
+  expect(canOfferMerge({ ...base, headSha: undefined, mergeable: 'mergeable' } as never)).toBe(false);
+  expect(canOfferMerge(undefined)).toBe(false);
+});
+
+// `agents projects prs <project> --json --repo R --number N`, as it read PR #137 on 2026-10-12.
+const ONE_PR = JSON.stringify({ project: { name: 'agi-ui' }, repositories: [{ slug: 'phnx-labs/agi-ext', merge: { viewerIsAdmin: true, adminBypass: true, autoMergeAllowed: false },
+  pullRequests: [{ number: 137, isDraft: false, state: 'OPEN', headSha: 'c9070350ff776ff354df90ac8f828f5173da0939', mergeable: true, mergeableState: 'clean', reviewDecision: 'REVIEW_REQUIRED', ciState: null }] }] });
+
+test('merge from a PR row: one read gives the head and mergeability; methods when GitHub would merge, admin when you may bypass', () => {
+  const pr = parsePrForMerge(ONE_PR, 'phnx-labs/agi-ext', 137);
+  expect(pr).toMatchObject({ headSha: 'c9070350ff776ff354df90ac8f828f5173da0939', mergeableState: 'clean', viewerIsAdmin: true, adminBypass: true });
+  expect(rowMergeChoices(pr).map((c) => c.label)).toEqual(['Squash and merge', 'Rebase and merge', 'Create a merge commit', 'Admin merge (squash)']);
+  expect(rowMergeChoices({ ...pr!, mergeableState: 'blocked' }).map((c) => c.admin)).toEqual([true]);
+  expect(rowMergeChoices({ ...pr!, mergeableState: 'blocked', viewerIsAdmin: false })).toEqual([]);
+  expect(rowMergeChoices({ ...pr!, mergeableState: 'dirty' })).toEqual([]);
+  expect(rowMergeChoices({ ...pr!, isDraft: true })).toEqual([]);
+  expect(rowMergeChoices({ ...pr!, ciState: 'failure' }).map((c) => c.admin)).toEqual([true]);
+  expect(parsePrForMerge(ONE_PR, 'phnx-labs/agi-ext', 1)).toBeUndefined();
 });

@@ -2,14 +2,14 @@
 // sidebar), read from the CLI's own row facts. The CLI decides the
 // status (agents-cli SES-18, sessions-cli inferActivity); this only names it.
 //
-//   status input_required / phase waiting, or an open ask  -> Needs you
-//   orphaned, crashed, abandoned, failed, or an open stall  -> Stopped
-//   running                                                  -> Working
-//   idle: replied, process waiting for your next message     -> Your turn
-//   closed: the process exited, nothing about the work       -> Ended
-//   unknown: alive, no transcript the CLI could read          -> Unknown
+//   status input_required / phase waiting, or an open ask  -> asks     (Your move · asks)
+//   idle: replied, or an open stall/failure on a live agent  -> yours    (Your move · idle)
+//   running                                                  -> working  (Running)
+//   closed, or the process is gone (orphaned, crashed,
+//     abandoned, failed): nothing about whether it succeeded -> ended    (Ended)
+//   unknown: alive, no transcript the CLI could read          -> unknown  (Running · no transcript)
 
-export type SessionStateKey = 'asks' | 'stopped' | 'working' | 'yours' | 'ended' | 'unknown';
+export type SessionStateKey = 'asks' | 'working' | 'yours' | 'ended' | 'unknown';
 
 export interface SessionStateFacts {
   phase?: string;
@@ -19,13 +19,36 @@ export interface SessionStateFacts {
   needsYou?: boolean;
 }
 
+// On screen they collapse to three, by who has the ball (owner, 2026-10-12:
+// "how is Needs you different from idle, or from Your turn?"):
+//   Your move — the agent does nothing until you act; a tag says why
+//               (asks · idle), a question first
+//   Running   — the agent is working (or alive with no readable transcript)
+//   Ended     — the process exited
+export type SessionBall = 'move' | 'running' | 'ended';
+
+export const BALL_WORD: Record<SessionBall, string> = { move: 'Your move', running: 'Running', ended: 'Ended' };
+
+export function ballOf(key: SessionStateKey): SessionBall {
+  if (key === 'working' || key === 'unknown') return 'running';
+  if (key === 'ended') return 'ended';
+  return 'move';
+}
+
+/** The order Your move sorts in: a question before an idle turn. */
+const MOVE_RANK: Partial<Record<SessionStateKey, number>> = { asks: 0, yours: 1 };
+
+export function moveRank(key: SessionStateKey): number {
+  return MOVE_RANK[key] ?? Number.MAX_SAFE_INTEGER;
+}
+
+/** The words a state shows: the ball, plus the reason when it is your move. */
 export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
-  asks: 'Needs you',
-  stopped: 'Stopped',
-  working: 'Working',
-  yours: 'Your turn',
+  asks: 'Your move · asks',
+  yours: 'Your move · idle',
+  working: 'Running',
+  unknown: 'Running · no transcript',
   ended: 'Ended',
-  unknown: 'Unknown',
 };
 
 const ASK_KINDS = new Set(['question', 'permission', 'plan_review', 'declared']);
@@ -35,9 +58,11 @@ export function sessionStateOf(s: SessionStateFacts): SessionStateKey {
   const open = s.attention?.state === 'open' ? s.attention.kind ?? '' : '';
   const status = (s.liveStatus ?? '').toLowerCase();
   if (ASK_KINDS.has(open) || s.needsYou || s.phase === 'waiting' || status === 'input_required') return 'asks';
-  if (open === 'stall' || open === 'failure' || STOPPED_STATUS.has(status) || s.phase === 'failed') return 'stopped';
+  // The process is gone: Ended, whether or not the work succeeded.
+  if (STOPPED_STATUS.has(status) || s.phase === 'failed' || s.phase === 'done' || status === 'closed') return 'ended';
+  // A live agent the CLI flags as stalled or failed is not progressing: your move.
+  if (open === 'stall' || open === 'failure') return 'yours';
   if (s.phase === 'running') return 'working';
-  if (s.phase === 'done' || status === 'closed') return 'ended';
   if (status === 'unknown') return 'unknown';
   return 'yours';
 }

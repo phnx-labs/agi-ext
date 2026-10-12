@@ -66,7 +66,7 @@ const PATTERN_FALSE_POSITIVES = new Set([
   'HASH_KEY',
 ]);
 
-export function isSensitiveEnvKey(key: string): boolean {
+function isSensitiveEnvKey(key: string): boolean {
   if (key === 'PWD') return false; // Standard POSIX env var
   if (key.startsWith('AGENT_')) return false; // Our own internal tracking vars
   if (PATTERN_FALSE_POSITIVES.has(key)) return false;

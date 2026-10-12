@@ -21,8 +21,9 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const CACHE_TTL_MS = 60_000;
 
-/** The agents-cli family: `agents` and the standalone CLIs that own sessions and secrets. */
-export type CliTool = 'agents' | 'sessions' | 'secrets';
+/** The agents-cli family: `agents`, the standalone CLIs that own sessions and secrets,
+ *  and `artifacts`, which publishes an artifact as a shareable Rush link. */
+export type CliTool = 'agents' | 'sessions' | 'secrets' | 'artifacts';
 
 const cachedBins = new Map<CliTool, { bin: string; at: number }>();
 

@@ -6,6 +6,9 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
+import { parseGoals, renderGoals } from '../core/goals';
+import { mergeWithMenu } from './prMerge.vscode';
+import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
@@ -16,13 +19,11 @@ import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
   escapeHtml,
   preferLive,
-  parseOverview,
   parsePrs,
   parseProjectDetection,
   parseProjectList,
   parseTickets,
   projectSessions,
-  renderOverview,
   renderPrs,
   renderSessions,
   renderTickets,
@@ -49,22 +50,24 @@ import { buildIconPathFromUri } from './theme.vscode';
 
 const execFileAsync = promisify(execFile);
 
-// The Project sidebar panel (PHNX-4289): one view with icon tabs (Overview,
-// Sessions, Pull requests, Tickets, Settings) for one project, while the other
-// sidebar keeps the focused session. Only the active tab loads. Overview, Pull
-// requests and Tickets each read their one CLI verb when shown (at most once per
+// The Project sidebar panel (PHNX-4289): one view with tabs (Sessions, Issues,
+// Review, and a Settings gear) for one project, while the other sidebar keeps the
+// focused session. Only the active tab loads. Issues and Review each read their
+// one CLI verb when shown (at most once per
 // FRESH_MS) or on Refresh; a ticket's detail is one `linear tasks <ID>` read on the
 // click that opens it. Sessions draws the stream rows already in the presentation
 // store and demands the stream only while it is the visible tab. Settings reads
-// agentSettings and nothing else. No timer anywhere.
+// agentSettings and nothing else. Above the tabs, the company goal and today's
+// goal are one `linear goals --json` read when the panel shows (at most once per
+// FRESH_MS) or on Refresh. No timer anywhere.
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
 const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const FRESH_MS = 60_000;
 
-type TabId = 'overview' | 'sessions' | 'prs' | 'tickets' | 'settings';
-const TABS: readonly TabId[] = ['overview', 'sessions', 'prs', 'tickets', 'settings'];
+type TabId = 'sessions' | 'tickets' | 'prs' | 'settings';
+const TABS: readonly TabId[] = ['sessions', 'tickets', 'prs', 'settings'];
 const DEFAULT_AGENT_KEY = 'agents.defaultAgentTitle';
 const SECONDARY_AGENT_KEY = 'agents.secondaryAgentTitle';
 const VIEW_ID = 'agentsProject.panel';
@@ -74,7 +77,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown;
 }
 
 interface TabState {
@@ -124,6 +127,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
         // Redraw either way, so a write that failed shows the stored value again.
         void this.controller.setSetting(msg.key, msg.value)
@@ -131,7 +135,7 @@ class ProjectView implements vscode.WebviewViewProvider {
           .finally(() => this.load('settings', true));
       }
     });
-    view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) void this.load(this.active, false); });
+    view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
     view.onDidDispose(() => {
       this.view = undefined;
       for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
@@ -149,6 +153,7 @@ class ProjectView implements vscode.WebviewViewProvider {
    *  draw can be lost; the script says when it is ready and gets the tab again. */
   private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
+    void this.loadGoals(false);
     const cached = this.tabs.get(this.active)!.html;
     if (cached) this.post(this.active, cached);
     else void this.load(this.active, false);
@@ -254,6 +259,44 @@ class ProjectView implements vscode.WebviewViewProvider {
   refresh(projectChanged = false): void {
     if (projectChanged) this.ticket = null;
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
+    void this.loadGoals(true);
+  }
+
+  private merging = false;
+
+  /** Merge from a PR row: one read of that PR (the list has no head commit), a
+   *  method or admin merge from the menu, a dialog, then one pinned merge. */
+  private async mergeRow(repo: string, number: number): Promise<void> {
+    if (this.merging) return;
+    this.merging = true;
+    try {
+      const merged = await this.controller.mergeFromRow(repo, number);
+      if (merged) await this.load('prs', true);
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Merge failed: ${errorText(e).split('\n').slice(0, 3).join(' ')}`);
+    } finally {
+      this.merging = false;
+    }
+  }
+
+  private goalsAt = 0;
+
+  /** The two goal lines above the tabs; a failed read says so on one faint line. */
+  private async loadGoals(force: boolean): Promise<void> {
+    if (!this.view?.visible) return;
+    if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
+    this.goalsAt = Date.now();
+    let html: string;
+    const before = this.controller.todayId;
+    try {
+      html = await this.controller.goals();
+    } catch (e) {
+      this.goalsAt = 0;
+      html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
+    }
+    void this.view?.webview.postMessage({ type: 'goals', html });
+    // Today's ticket marks its sessions with ☀; redraw the list when it changes.
+    if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
   }
 
   private post(tab: TabId, html: string): void {
@@ -268,7 +311,7 @@ function errorText(e: unknown): string {
 
 class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
-  /** One `linear tasks` read feeds both Tickets and Overview's state bar. */
+  /** One `linear tasks` read feeds Issues (and a ticket's Start agent). */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
   /** The detail last drawn, so Start names the ticket the user is looking at. */
   private shownTicket: TicketDetail | undefined;
@@ -316,15 +359,6 @@ class ProjectPanelController {
 
   async render(id: Exclude<TabId, 'sessions' | 'settings'>, p: ProjectRef, force: boolean): Promise<string> {
     if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force));
-    if (id === 'overview') {
-      // Fans out to the fleet for live-session counts, so it is the slow read (~15s).
-      const [status, tickets] = await Promise.all([
-        runAgentsArgs(['projects', 'status', p.name, '--json'], { timeout: 90_000 }),
-        // A failed ticket read is shown in place, never drawn as "no tickets".
-        this.ticketGroups(p, force).then((groups) => ({ groups, error: null as string | null }), (e) => ({ groups: [] as TicketGroup[], error: errorText(e) })),
-      ]);
-      return renderOverview(parseOverview(status.stdout), new Date().toISOString().slice(0, 10), tickets.groups, tickets.error);
-    }
     // `prs list` exits 1 when a repo could not be read but still prints the envelope
     // with `partial: true`; render it rather than discarding it.
     let stdout: string;
@@ -336,6 +370,23 @@ class ProjectPanelController {
       stdout = out;
     }
     return renderPrs(parsePrs(stdout), Date.now());
+  }
+
+  /** Merge one PR from the list through the shared flow (read, pick, confirm, merge). */
+  async mergeFromRow(repo: string, number: number): Promise<boolean> {
+    const project = await this.project();
+    return project ? mergeWithMenu(project.name, repo, number) : false;
+  }
+
+  /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
+  todayId: string | undefined;
+
+  /** Company and today's goal: one `linear goals --json` read. */
+  async goals(): Promise<string> {
+    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+    const goals = parseGoals(stdout);
+    this.todayId = goals.today?.id;
+    return renderGoals(goals);
   }
 
   private linear(): string {
@@ -511,7 +562,9 @@ class ProjectPanelController {
     const prefs = this.prefs();
     const subject = currentAgentPanelSubject();
     const count = sessionCount(rows, here, prefs);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor }), count: { shown: count.shown, asks: count.asks } };
+    const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
+    const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
@@ -613,7 +666,7 @@ export function shell(cspSource: string, logoCss = ''): string {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
+  content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
 <style>
   /* Rush register, as in the Active Terminal panel. This block is the only one
      with color literals; dark editor = Altitude, light = Day, high contrast keeps
@@ -625,6 +678,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-ok: #86efac; --r-ok-tint: rgba(34,197,94,0.16); --r-warn: #fcd34d; --r-warn-tint: rgba(245,158,11,0.14);
     --r-bad: #fca5a5; --r-bad-tint: rgba(239,68,68,0.12); --r-info: #a5b4fc;
     --r-doing: #4ade80; --r-review: #bef264; --r-todo: #71717a; --r-backlog: #3f3f46; --r-gold: #D4B872;
+    --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-light {
     --r-text: #141829; --r-text-2: #4B4A55; --r-caption: #665E52; --r-faint: #8A8174;
@@ -633,6 +687,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-ok: #15803d; --r-ok-tint: rgba(22,163,74,0.12); --r-warn: #b45309; --r-warn-tint: rgba(217,119,6,0.12);
     --r-bad: #b91c1c; --r-bad-tint: rgba(220,38,38,0.08); --r-info: #4f46e5;
     --r-doing: #15803d; --r-review: #65a30d; --r-todo: #a8a29e; --r-backlog: #d6d3d1; --r-gold: #A8884A;
+    --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-high-contrast, body.vscode-high-contrast-light {
     --r-text: var(--vscode-foreground); --r-text-2: var(--vscode-foreground); --r-caption: var(--vscode-descriptionForeground); --r-faint: var(--vscode-descriptionForeground);
@@ -640,6 +695,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-ok: var(--vscode-testing-iconPassed); --r-ok-tint: transparent; --r-warn: var(--vscode-editorWarning-foreground); --r-warn-tint: transparent;
     --r-bad: var(--vscode-errorForeground); --r-bad-tint: transparent; --r-info: var(--vscode-textLink-foreground);
     --r-doing: var(--vscode-testing-iconPassed); --r-review: var(--vscode-testing-iconPassed); --r-todo: var(--vscode-descriptionForeground); --r-backlog: var(--vscode-contrastBorder); --r-gold: var(--vscode-focusBorder);
+    --r-av0: transparent; --r-av1: transparent; --r-av2: transparent; --r-av3: transparent; --r-av4: transparent; --r-av5: transparent; --r-on-av: var(--vscode-foreground);
   }
   body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
     background: var(--vscode-sideBar-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }
@@ -654,39 +710,38 @@ export function shell(cspSource: string, logoCss = ''): string {
   .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--r-text); }
   .n { color: var(--r-faint); font-variant-numeric: tabular-nums; font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .sub { color: var(--r-caption); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sbar { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; margin: 8px 0 5px; }
-  .sbar span, .legend i { display: block; }
-  .legend { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11px; color: var(--r-caption); }
-  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
   .st-doing { background: var(--r-doing); } .st-review { background: var(--r-review); } .st-todo { background: var(--r-todo); } .st-backlog { background: var(--r-backlog); }
   .ms { margin-top: 8px; } .ms .t { flex: 1; }
-  .mbar { height: 3px; border-radius: 2px; background: var(--r-well); margin-top: 4px; overflow: hidden; }
-  .mbar span { display: block; height: 100%; background: var(--r-ok); }
   .note { margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--r-well); color: var(--r-caption); }
   .note b { color: var(--r-text); }
   .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   .srow { display: grid; grid-template-columns: minmax(0,1fr) 18px; gap: 2px 8px; width: 100%; text-align: left; padding: 7px 6px; margin: 1px 0; border: none; border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer; }
   .srow:hover { background: var(--r-hover); } .srow.sel { background: var(--r-hover); box-shadow: inset 2px 0 0 var(--r-gold); }
   .srow:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-  .l1 { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .l2 { grid-column: 1; color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .l2.act { color: var(--r-caption); }
-  .l2 .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; }
-  .l2 .tool { color: var(--r-text-2); font-weight: 600; font-size: 11px; }
-  .l3 { grid-column: 1; display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--r-caption); font-size: 11px; font-family: var(--vscode-editor-font-family); }
   .fact { display: inline-flex; align-items: center; gap: 3px; }
   .fact.pr-ok { color: var(--r-ok); } .fact.pr-bad { color: var(--r-bad); } .fact.pr-run { color: var(--r-warn); }
   .mark { grid-column: 2; grid-row: 1 / span 2; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px; color: var(--r-faint); }
-  .m-asks { color: var(--r-warn); } .m-stopped, .m-failed { color: var(--r-bad); } .m-done { color: var(--r-ok); }
-  .m-working { color: var(--r-ok); border-style: dotted; animation: spin 2.4s linear infinite; }
-  .m-idle { border-style: dashed; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .quiet summary, details summary { cursor: pointer; padding: 6px 2px 2px; color: var(--r-caption); font-size: 11.5px; }
   details > summary { list-style: revert; }
   .pri { display: inline-flex; align-items: flex-end; gap: 1.5px; width: 12px; height: 11px; flex: none; margin-top: 3px; }
   .pri i { display: block; width: 2.5px; border-radius: 1px; background: var(--r-edge); }
-  .pri i.on { background: var(--r-faint); } .pri.p1 i.on { background: var(--r-bad); } .pri.p2 i.on { background: var(--r-warn); }
-  .trow, .prow { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px; padding: 5px 4px; border-radius: 6px; }
+  .pri i.on { background: var(--r-faint); }
+  .trow, .prow { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; padding: 5px 4px; border-radius: 6px; }
+  .prli { display: flex; align-items: center; gap: 4px; }
+  /* People: GitHub avatars on PRs, colored initials (or the agent's logo) on issues. */
+  .pav { width: 18px; height: 18px; border-radius: 50%; flex: none; align-self: center; margin-left: auto; }
+  .trow, .prow { align-items: center; }
+  .who { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; flex: none; }
+  .iav { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 8.5px; font-weight: 700; color: var(--r-on-av); flex: none; box-sizing: border-box; }
+  body.vscode-high-contrast .iav, body.vscode-high-contrast-light .iav { border: 1px solid var(--r-edge); }
+  .iav.av0 { background: var(--r-av0); } .iav.av1 { background: var(--r-av1); } .iav.av2 { background: var(--r-av2); }
+  .iav.av3 { background: var(--r-av3); } .iav.av4 { background: var(--r-av4); } .iav.av5 { background: var(--r-av5); }
+  .iav.agent { background: var(--r-glass); border: 1px solid var(--r-edge); }
+  .iav.agent .hx { width: 12px; height: 12px; }
+  .prli .prow { flex: 1; min-width: 0; }
+  .prli .act.merge { flex: none; opacity: .55; }
+  .prli:hover .act.merge, .prli .act.merge:focus-visible { opacity: 1; }
   .trow:hover, .prow:hover { background: var(--r-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
   .ring { width: 14px; height: 14px; flex: none; margin-top: 1px; display: inline-block; }
@@ -705,6 +760,19 @@ export function shell(cspSource: string, logoCss = ''): string {
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; padding: 0; }
   .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--r-edge); flex: none; }
+  .shead .today { margin-left: 6px; flex: none; font: 500 10.5px var(--r-sans); color: var(--r-text-2); border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px; background: transparent; cursor: pointer; }
+  .shead .today.on { border-color: var(--r-selected-edge); background: var(--r-selected); color: var(--r-text); }
+  .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
+  /* Goals: two quiet lines above the tabs, never a block. */
+  .goals { padding: 6px 10px 4px; flex: none; }
+  .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
+  .goals a:hover .gtx { color: var(--r-text); }
+  .goals .gl2 { color: var(--r-text-2); }
+  .goals .gl2 b { font-weight: 600; margin-right: 3px; }
+  .goals .gk { width: 13px; text-align: center; flex: none; }
+  .goals .gtx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .goals .gm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); }
+  .goals .gerr { font-size: 11px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tab { height: 26px; padding: 0 8px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
   .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
   .tab:hover { background: var(--r-hover); }
@@ -761,7 +829,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pill.solo { padding: 0 4px; border: 0; }
   .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-asks { background: var(--r-warn) !important; }
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-working { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
-  .pill.st-yours i, .d-yours { background: var(--r-gold) !important; } .st-stopped.pill { color: var(--r-bad); } .pill.st-stopped i, .d-stopped { background: var(--r-bad) !important; }
+  .pill.st-yours i, .d-yours { background: var(--r-gold) !important; }
+  .pill.st-blocked { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-blocked i { background: var(--r-bad) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
   .compact { display: grid; gap: 4px; margin-top: 4px; }
@@ -833,15 +902,15 @@ export function shell(cspSource: string, logoCss = ''): string {
   .settings select { font: inherit; font-size: 11px; color: var(--vscode-dropdown-foreground, var(--r-text)); border: 1px solid var(--vscode-dropdown-border, var(--r-edge)); border-radius: 4px; background: var(--vscode-dropdown-background, var(--r-glass)); padding: 2px; }
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
-  @media (prefers-reduced-motion: reduce) { .m-working, .st-working.pill i, .ring .arc { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-working.pill i, .ring .arc { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
+<div class="goals" hidden></div>
 <div class="tabs" role="tablist" aria-label="Project">
-  <button class="tab" role="tab" data-tab="overview" aria-selected="false" title="Overview"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Overview</span></button>
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
-  <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Pull requests</span></button>
-  <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Tickets"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Tickets</span></button>
+  <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
+  <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
   <button class="tab" role="tab" data-tab="settings" aria-selected="false" title="Settings"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg><span class="lbl">Settings</span></button>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
@@ -889,6 +958,7 @@ export function shell(cspSource: string, logoCss = ''): string {
       if (m.tab === 'sessions') syncBulk();
       document.body.classList.remove('loading');
     }
+    else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') { document.body.classList.remove('loading'); main.querySelectorAll('[data-comment]').forEach((b) => { b.disabled = false; }); }
     else if (m.type === 'notice') toast(m.text);
@@ -941,6 +1011,10 @@ export function shell(cspSource: string, logoCss = ''): string {
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
+    const merge = e.target.closest('[data-merge-repo]');
+    if (merge) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber) }); return; }
+    const goal = e.target.closest('.goals [data-url]');
+    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = main.querySelector('.menu');
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }

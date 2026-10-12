@@ -1,12 +1,12 @@
 // Pure model + HTML for the Project sidebar panel (PHNX-4289).
-// Each section is one CLI read: `agents projects status <name> --json` (Overview),
-// `linear tasks --project <linear> --json` (Tickets, and Overview's state bar),
-// `agents projects prs list <name> --json` (Pull requests). Sessions come from the
+// Each section is one CLI read: `linear tasks --project <linear> --json` (Issues),
+// `agents projects prs list <name> --json` (Review). Sessions come from the
 // session stream rows already in the presentation store, filtered on the CLI's
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
 // the provider turns that into the section's error state, never an empty list.
 
-import { SESSION_STATE_WORD, attentionRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { extractLinearTicketId } from './utils';
+import { BALL_WORD, SESSION_STATE_WORD, attentionRank, ballOf, moveRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
@@ -16,34 +16,14 @@ export interface ProjectRef {
   linearName: string | null;
 }
 
-interface Milestone {
-  name: string;
-  done: number;
-  total: number;
-  targetDate: string | null;
-}
-
-export interface OverviewModel {
-  name: string;
-  description: string | null;
-  done: number;
-  total: number;
-  inProgress: number;
-  milestones: Milestone[];
-  nextMilestone: string | null;
-  schedule: { kind: string; milestone: string | null; days: number | null } | null;
-  running: number;
-  idle: number;
-  openPrs: number;
-  latestRelease: { tag: string; publishedAt: string } | null;
-}
-
 interface Ticket {
   identifier: string;
   title: string;
   priority: number;
   milestone: string | null;
-  owner: string | null;
+  /** The person it is assigned to, and the agent it is delegated to, as Linear names them. */
+  assignee: string | null;
+  delegate: string | null;
 }
 
 export interface TicketGroup {
@@ -58,6 +38,8 @@ interface PrRow {
   isDraft: boolean;
   ciState: string | null;
   author: string;
+  /** The author's GitHub avatar, when the CLI carries it. */
+  avatar: string | null;
   date: string;
 }
 
@@ -109,39 +91,6 @@ export function parseProjectList(raw: string): ProjectRef[] {
 }
 
 /** `agents projects status <name> --json` prints a one-element card array. */
-export function parseOverview(raw: string): OverviewModel {
-  const cards = arr(JSON.parse(raw), 'project status');
-  if (cards.length !== 1) throw new Error(`Expected one project card, got ${cards.length}`);
-  const c = obj(cards[0], 'project card');
-  const linear = c.linear && typeof c.linear === 'object' ? (c.linear as Json) : null;
-  const milestones: Milestone[] = linear
-    ? arr(linear.milestones ?? [], 'milestones').map((m) => {
-        const d = obj(m, 'milestone');
-        return { name: str(d.name) ?? '(unnamed)', done: num(d.done), total: num(d.total), targetDate: str(d.targetDate) };
-      })
-    : [];
-  const next = linear?.nextMilestone && typeof linear.nextMilestone === 'object' ? (linear.nextMilestone as Json) : null;
-  const sched = c.schedule && typeof c.schedule === 'object' ? (c.schedule as Json) : null;
-  const status = c.byStatus && typeof c.byStatus === 'object' ? (c.byStatus as Json) : {};
-  const rel = c.latestRelease && typeof c.latestRelease === 'object' ? (c.latestRelease as Json) : null;
-  return {
-    name: str(c.name) ?? '(unnamed)',
-    description: str(c.description),
-    done: num(linear?.done),
-    total: num(linear?.total),
-    inProgress: num(linear?.inProgress),
-    milestones,
-    nextMilestone: str(next?.name),
-    schedule: sched && str(sched.kind)
-      ? { kind: str(sched.kind)!, milestone: str(sched.milestone), days: typeof sched.days === 'number' ? sched.days : null }
-      : null,
-    running: num(status.running),
-    idle: num(status.idle),
-    openPrs: Array.isArray(c.openPrs) ? c.openPrs.length : 0,
-    latestRelease: rel && str(rel.tag) ? { tag: str(rel.tag)!, publishedAt: str(rel.publishedAt) ?? '' } : null,
-  };
-}
-
 const STATE_ORDER: Record<string, number> = { started: 0, unstarted: 1, backlog: 2, triage: 3 };
 
 /** `linear tasks --project <name> --json`: open issues, grouped Doing → Todo → Backlog. */
@@ -161,7 +110,8 @@ export function parseTickets(raw: string): TicketGroup[] {
       title: str(d.title) ?? '',
       priority: num(d.priority),
       milestone: str(ms?.name),
-      owner: str(delegate?.name) ?? str(assignee?.name),
+      assignee: str(assignee?.name),
+      delegate: str(delegate?.name),
     };
     const g = groups.get(stateName) ?? { order, tickets: [] };
     g.tickets.push(ticket);
@@ -186,6 +136,7 @@ function prRow(p: unknown, dateKey: 'createdAt' | 'mergedAt'): PrRow {
     isDraft: d.isDraft === true,
     ciState: str(d.ciState),
     author: str(author.login) ?? '?',
+    avatar: /^https:\/\/avatars\.githubusercontent\.com\//.test(str(author.avatarUrl) ?? '') ? str(author.avatarUrl) : null,
     date: str(d[dateKey]) ?? '',
   };
 }
@@ -369,6 +320,8 @@ export interface SessionListPrefs {
   showEnded: boolean;
   folded: string[];
   hidden: Record<string, number>;
+  /** Show only the sessions on today's goal (its ticket id in the title, topic or reply). */
+  todayOnly: boolean;
   /** 2 once Ended defaults to shown and folded; older stored prefs lack it. */
   v: 2;
 }
@@ -376,7 +329,7 @@ export interface SessionListPrefs {
 /** The Ended group's key under App and under State; Machine and None have no Ended group. */
 const ENDED_GROUPS = ['ended', 'state:ended'];
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS], hidden: {}, v: 2 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS], hidden: {}, todayOnly: false, v: 2 };
 
 const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
 const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
@@ -402,8 +355,15 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     showEnded: before ? foldable : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
     folded: before ? [...new Set([...folded, ...ENDED_GROUPS])] : folded,
     hidden,
+    todayOnly: o.todayOnly === true,
     v: 2,
   };
+}
+
+/** Whether a session works on a ticket: its id in the title, topic, label or latest reply. */
+function onTicket(s: Pick<SessionLike, 'title' | 'topic' | 'label'> & { lastResponse?: string }, id: string | undefined): boolean {
+  if (!id) return false;
+  return [s.title, s.topic, s.label, s.lastResponse].some((t) => extractLinearTicketId(t || '') === id || (t || '').includes(id));
 }
 
 /** This window, as the list needs it: the machine it runs on, the workspace it has
@@ -495,6 +455,11 @@ export interface SessionListOptions {
   prefs: SessionListPrefs;
   thumbsFor?: (s: SessionLike) => CardThumb[];
   madeFor?: (s: SessionLike) => SessionMade | null;
+  /** Today's goal ticket (`linear goals`), so its sessions carry ☀ and can be filtered. */
+  todayId?: string;
+  /** Sessions whose agent posted that it is blocked and you have not written since
+   *  (status.blocked on the stream, `blockedSessions`); ids without a `session_` prefix. */
+  blockedIds?: ReadonlySet<string>;
 }
 
 const ACT_ICON = {
@@ -508,6 +473,7 @@ const ACT_ICON = {
   cloud: '<path d="M4.5 12h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.5 2.75 2.75 0 0 0 4.5 12z"/>',
   machine: '<rect x="2.5" y="3" width="11" height="7.5" rx="1"/><path d="M6 13.5h4M8 10.5v3"/>',
   state: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/>',
+  merge: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="8" r="1.5"/><path d="M4.5 5v6M4.5 5c0 3 3 3 5.5 3"/>',
 };
 function glyph(name: keyof typeof ACT_ICON, cls = 'ic'): string {
   return `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true">${ACT_ICON[name]}</svg>`;
@@ -537,7 +503,7 @@ function cardLine(s: SessionLike, state: SessionStateKey): string {
   return agentLine(s) || (s.request?.headline ? plain(s.request.headline) : '');
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean }): string {
   const state = sessionStateOf(s);
   const title = plain(s.title || s.topic || s.label || s.request?.headline || 'Untitled');
   const asked = s.request?.headline ? plain(s.request.headline) : '';
@@ -570,8 +536,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const madeBlock = (prs || ticketChip || folders.length) ? `<div class="lab">Made</div><div class="made">${prs || ticketChip ? `<div class="chips">${prs}${ticketChip}</div>` : ''}${folders.slice(0, 4).map((f) => `
       <a class="folder" href="#" data-artifact="${escapeHtml((f.files[0] ?? f.images[0]).path)}" title="${escapeHtml(f.display)}">${glyph('folder')}<span class="fx"><span><b>${escapeHtml(f.name)}/</b> · ${escapeHtml([...f.files, ...f.images].slice(0, 3).map((x) => x.name).join(', '))}${f.files.length + f.images.length > 3 ? ' …' : ''}</span><span class="fp">${escapeHtml(f.display)}</span></span></a>${f.images.length ? `<span class="thumbs">${f.images.slice(0, 3).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`).join('')}${f.images.length > 3 ? `<span class="more">+${f.images.length - 3}</span>` : ''}</span>` : ''}`).join('')}</div>` : '';
   return `<div class="card st-${state}${opts.selected ? ' sel' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-title="${escapeHtml(title)}">
-    <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
-    <div class="meta"><span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span><span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
+    <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span>${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
+    <div class="meta">${opts.blocked ? '<span class="pill st-blocked"><i></i>Your move · blocked</span>' : `<span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span>`}<span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
     <div class="compact">${line ? `<div class="cline">${escapeHtml(line)}</div>` : ''}${strip ? `<div class="cstrip">${strip}</div>` : ''}</div>
     <div class="full">
       ${asked && asked !== title ? `<div class="lab">You</div><div class="line">${escapeHtml(asked)}</div>` : ''}
@@ -583,9 +549,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   </div>`;
 }
 
-const STATE_ORDER_KEYS: SessionStateKey[] = ['working', 'yours', 'stopped', 'unknown', 'ended'];
 const PLACE_ORDER: Record<PlaceKind, number> = { here: 0, window: 1, ghostty: 2, terminal: 3, background: 4, leftover: 5, ended: 6 };
-const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', yours: 'yours', stopped: 'stopped', unknown: 'unknown', ended: 'ended' };
+const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', yours: 'yours', unknown: 'unknown', ended: 'ended' };
 
 /** What the list keeps after the viewer's Show choices and hidden sessions. */
 function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionListPrefs): { row: SessionLike; place: SessionPlace }[] {
@@ -612,23 +577,31 @@ function menuHtml(p: SessionListPrefs): string {
   </div>`;
 }
 
-/** The Sessions tab: a header with counts and the ⇅ menu, Needs you pinned, then
- *  the viewer's grouping. Each card is compact until hovered or selected. */
+/** The Sessions tab: a header with counts and the ⇅ menu, Your move pinned (a
+ *  question first, then a crash, then a finished reply), then the viewer's
+ *  grouping of the rest. Each card is compact until hovered or selected. */
 export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { here, prefs } = opts;
-  const all = visibleSessions(rows, here, prefs);
+  const visible = visibleSessions(rows, here, prefs);
+  const today = (r: SessionLike) => onTicket(r, opts.todayId);
+  const onToday = visible.filter(({ row }) => today(row)).length;
+  const all = prefs.todayOnly && opts.todayId ? visible.filter(({ row }) => today(row)) : visible;
   const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
-  const asks = sortRows(all.filter(({ row }) => sessionStateOf(row) === 'asks'), prefs.sort)
-    .sort((a, b) => attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
-  const rest = all.filter(({ row }) => sessionStateOf(row) !== 'asks');
+  const blocked = (r: SessionLike) => !!opts.blockedIds?.has(r.sessionId.replace(/^session_/, ''));
+  const isMine = (r: SessionLike) => blocked(r) || ballOf(sessionStateOf(r)) === 'move';
+  // Blocked first (the agent said it cannot go on), then a question, then an idle turn.
+  const rank = (r: SessionLike) => (blocked(r) ? -1 : moveRank(sessionStateOf(r)));
+  const mine = sortRows(all.filter(({ row }) => isMine(row)), prefs.sort)
+    .sort((a, b) => rank(a.row) - rank(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
+  const rest = all.filter(({ row }) => !isMine(row));
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null,
+    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row),
   });
   const c = sessionCount(rows, here, prefs);
-  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} need${c.asks === 1 ? 's' : ''} you</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} your move</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  const pinned = asks.length ? `<div class="pinned"><div class="ph">${SESSION_STATE_WORD.asks} <span class="n">${asks.length}</span></div>${asks.map((x) => card(x, true)).join('')}</div>` : '';
+  const pinned = mine.length ? `<div class="pinned"><div class="ph">${BALL_WORD.move} <span class="n">${mine.length}</span></div>${mine.map((x) => card(x, true)).join('')}</div>` : '';
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string };
   let groups: Group[];
   if (prefs.group === 'app') {
@@ -642,7 +615,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const devices = [...new Set(rest.map((x) => x.place.device))].sort((a, b) => Number(b === here.device) - Number(a === here.device) || a.localeCompare(b));
     groups = devices.map((d) => ({ key: `machine:${d}`, name: d, sub: d === here.device ? 'this machine' : '', icon: glyph('machine', 'gi'), items: rest.filter((x) => x.place.device === d) }));
   } else if (prefs.group === 'state') {
-    groups = STATE_ORDER_KEYS.map((k) => ({ key: `state:${k}`, name: SESSION_STATE_WORD[k], sub: '', icon: `<span class="pill st-${k} solo"><i></i></span>`, items: rest.filter((x) => sessionStateOf(x.row) === k) }));
+    groups = (['running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ballOf(sessionStateOf(x.row)) === b) }));
   } else {
     return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>` + tail;
   }
@@ -659,49 +632,17 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   }).join('') + tail;
 }
 
-/** The tab's numbers: live sessions, the ones that need you, tabs held here. */
+/** The tab's numbers: live sessions, the ones that are your move, tabs held here. */
 export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS): { shown: number; asks: number; tabs: number } {
   const items = here ? visibleSessions(rows, here, prefs) : rows.map((row) => ({ row, place: null as SessionPlace | null }));
   return {
     shown: items.filter(({ row }) => sessionStateOf(row) !== 'ended').length,
-    asks: items.filter(({ row }) => sessionStateOf(row) === 'asks').length,
+    asks: items.filter(({ row }) => ballOf(sessionStateOf(row)) === 'move').length,
     tabs: rows.filter((s) => s.tabHere).length,
   };
 }
 
 const pct = (done: number, total: number) => (total > 0 ? Math.round((done / total) * 100) : 0);
-
-function shortDate(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : '';
-}
-
-const STATE_TONE: Record<string, string> = { Doing: 'doing', 'In Progress': 'doing', 'In Review': 'review', Todo: 'todo', Backlog: 'backlog' };
-
-/** Overview: progress, a bar of open tickets by state, and the milestone that is
- *  current, or a plain statement that there is none. */
-export function renderOverview(m: OverviewModel, today: string, groups: TicketGroup[] = [], ticketsError: string | null = null): string {
-  const open = m.milestones.filter((x) => x.total === 0 || x.done < x.total)
-    .sort((a, b) => (a.targetDate ?? '9999').localeCompare(b.targetDate ?? '9999'));
-  const current = open.find((x) => x.targetDate === null || x.targetDate >= today) ?? null;
-  const late = open.filter((x) => x.targetDate !== null && x.targetDate < today);
-  const counted = groups.filter((g) => STATE_TONE[g.state]);
-  const total = counted.reduce((n, g) => n + g.tickets.length, 0);
-  const unplanned = groups.reduce((n, g) => n + g.tickets.filter((t) => !t.milestone).length, 0);
-  const stateBar = total
-    ? `<div class="sbar" role="img" aria-label="${counted.map((g) => `${g.tickets.length} ${g.state}`).join(', ')}">${counted.map((g) => `<span class="st-${STATE_TONE[g.state]}" style="flex:${g.tickets.length}" title="${g.tickets.length} ${escapeHtml(g.state)}"></span>`).join('')}</div>
-      <div class="legend">${counted.map((g) => `<span><i class="st-${STATE_TONE[g.state]}"></i>${g.tickets.length} ${escapeHtml(g.state)}</span>`).join('')}</div>`
-    : '';
-  const milestone = current
-    ? `<div class="ms"><div class="row"><span class="t">${escapeHtml(current.name)}</span><span class="n">${current.done}/${current.total}</span></div><div class="mbar"><span style="width:${pct(current.done, current.total)}%"></span></div>${current.targetDate ? `<div class="sub">due ${escapeHtml(current.targetDate)}</div>` : ''}</div>`
-    : `<div class="note"><b>No current milestone.</b>${late.length ? ` ${late.length} past due.` : ''}${unplanned ? ` ${unplanned} open tickets unplanned.` : ''}</div>`;
-  return `<section>
-    <div class="head"><span class="title">${escapeHtml(m.name)}</span><span class="n">${pct(m.done, m.total)}%</span></div>
-    ${m.description ? `<div class="sub">${escapeHtml(m.description)}</div>` : ''}
-    ${ticketsError ? `<div class="err">Tickets could not be read: ${escapeHtml(ticketsError)}</div>` : stateBar}
-    ${milestone}
-    ${m.latestRelease ? `<div class="sub">${escapeHtml(m.latestRelease.tag)} · ${escapeHtml(shortDate(m.latestRelease.publishedAt))}</div>` : ''}
-  </section>`;
-}
 
 const PRIORITY_TITLE: Record<number, string> = { 0: 'No priority', 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
 
@@ -711,11 +652,24 @@ function priorityBars(p: number): string {
   return `<span class="pri p${p}" role="img" aria-label="${PRIORITY_TITLE[p] ?? 'No priority'}" title="${PRIORITY_TITLE[p] ?? 'No priority'}">${[1, 2, 3].map((i) => `<i class="${i <= lit ? 'on' : ''}" style="height:${2 + i * 3}px"></i>`).join('')}</span>`;
 }
 
+/** A person as a colored initial (the hue fixed by their name); an agent member
+ *  Linear delegates to (claude, codex1, grok…) as its harness logo. */
+function personAvatar(name: string | null): string {
+  if (!name) return '';
+  const key = name.toLowerCase().replace(/\d+$/, '');
+  const logo = harnessLogo(key);
+  if (logo) return `<span class="iav agent" title="Delegated to ${escapeHtml(name)}">${logo}</span>`;
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const initials = name.split(/\s+/).map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+  return `<span class="iav av${h % 6}" title="${escapeHtml(name)}">${escapeHtml(initials)}</span>`;
+}
+
 export function renderTickets(groups: TicketGroup[]): string {
   if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
-    <ul>${g.tickets.map((t) => `<li><a class="trow" href="#" data-ticket="${escapeHtml(t.identifier)}">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${escapeHtml(t.identifier)}${t.owner ? ` · ${escapeHtml(t.owner)}` : ''}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span></a></li>`).join('')}</ul>
+    <ul>${g.tickets.map((t) => `<li><a class="trow" href="#" data-ticket="${escapeHtml(t.identifier)}">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${escapeHtml(t.identifier)}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span><span class="who">${personAvatar(t.delegate)}${personAvatar(t.assignee)}</span></a></li>`).join('')}</ul>
   </details>`).join('');
 }
 
@@ -735,7 +689,7 @@ export function renderPrs(m: PrsModel, now: number): string {
     const branch = r.branch ? `<span class="rmeta" title="${escapeHtml(r.branch.name)}: ${escapeHtml(r.branch.ciState ?? 'no CI')}">${ring(r.branch.ciState, false)}${escapeHtml(r.branch.name)}</span>` : '';
     return `<section>
       <div class="head"><span class="label">${escapeHtml(r.slug.split('/')[1] ?? r.slug)}</span>${branch}<span class="n">${r.open.length}</span></div>
-      <ul>${r.open.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, p.isDraft)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)} · ${escapeHtml(p.author)}</span></span></a></li>`).join('')}</ul>
+      <ul>${r.open.map((p) => `<li class="prli"><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, p.isDraft)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span>${p.avatar ? `<img class="pav" src="${escapeHtml(p.avatar)}" alt="${escapeHtml(p.author)}" title="${escapeHtml(p.author)}">` : personAvatar(p.author)}</a>${p.isDraft ? '' : `<button class="act merge" data-merge-repo="${escapeHtml(r.slug)}" data-merge-number="${p.number}" title="Merge #${p.number}: squash, rebase, merge commit, or admin merge">${glyph('merge')}</button>`}</li>`).join('')}</ul>
       ${r.merged.length ? `<details open><summary>merged <span class="n">${r.merged.length}</span></summary><ul>${r.merged.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, false)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span></a></li>`).join('')}</ul></details>` : ''}
     </section>`;
   }).join('');

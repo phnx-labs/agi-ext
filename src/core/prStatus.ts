@@ -89,6 +89,59 @@ export function prAction(pr: RemotePrStatus | undefined): PrAction {
   return { kind: 'none', reason: 'GitHub is still computing mergeability' };
 }
 
+type MergeMethod = 'squash' | 'rebase' | 'merge';
+
+/** One choice in the Merge ▾ menu: a method, or an admin merge that bypasses
+ *  branch protection (offered only when you may). */
+export interface MergeChoice { method: MergeMethod; admin: boolean; label: string; detail: string }
+
+/** Whether the session's PR can be offered Merge ▾ at all; the choices themselves
+ *  come from one read of the PR on the click (`mergeWithMenu`). */
+export function canOfferMerge(pr: RemotePrStatus | undefined): boolean {
+  return !!pr && pr.state === 'open' && !pr.isDraft && !!pr.headSha && pr.mergeable !== 'conflicting';
+}
+
+/** One PR as `agents projects prs <project> --json --repo R --number N` reads it, for a
+ *  merge from the Project panel's PR list (the list itself carries no head commit). */
+export interface PrForMerge {
+  headSha?: string; isDraft: boolean; state: string; mergeableState: string; reviewDecision: string; ciState: string; viewerIsAdmin: boolean; adminBypass: boolean;
+}
+
+export function parsePrForMerge(stdout: string, repo: string, number: number): PrForMerge | undefined {
+  const env = JSON.parse(stdout) as { repositories?: { slug?: string; merge?: { viewerIsAdmin?: unknown; adminBypass?: unknown }; pullRequests?: Record<string, unknown>[] }[] };
+  const r = (env.repositories ?? []).find((x) => x.slug === repo);
+  const p = (r?.pullRequests ?? []).find((x) => x.number === number);
+  if (!r || !p) return undefined;
+  const s = (v: unknown) => (typeof v === 'string' ? v : '');
+  const head = s(p.headSha);
+  return {
+    ...(/^[0-9a-f]{7,40}$/i.test(head) ? { headSha: head } : {}),
+    isDraft: p.isDraft === true,
+    state: s(p.state).toLowerCase(),
+    mergeableState: s(p.mergeableState).toLowerCase(),
+    reviewDecision: s(p.reviewDecision).toLowerCase(),
+    ciState: s(p.ciState).toLowerCase(),
+    viewerIsAdmin: r.merge?.viewerIsAdmin === true,
+    adminBypass: r.merge?.adminBypass === true,
+  };
+}
+
+/** The Merge menu for a PR list row: the three methods when GitHub would merge it,
+ *  and an admin merge when you are an admin of a repo that allows the bypass. */
+export function rowMergeChoices(pr: PrForMerge | undefined): MergeChoice[] {
+  if (!pr || pr.state !== 'open' || pr.isDraft || !pr.headSha || pr.mergeableState === 'dirty') return [];
+  const ready = (pr.mergeableState === 'clean' || pr.mergeableState === 'unstable' || pr.mergeableState === 'has_hooks') && pr.ciState !== 'failure' && pr.reviewDecision !== 'changes_requested';
+  const out: MergeChoice[] = ready
+    ? [
+      { method: 'squash', admin: false, label: 'Squash and merge', detail: 'one commit on the base branch' },
+      { method: 'rebase', admin: false, label: 'Rebase and merge', detail: 'replays each commit on the base branch' },
+      { method: 'merge', admin: false, label: 'Create a merge commit', detail: 'keeps every commit' },
+    ]
+    : [];
+  if (pr.viewerIsAdmin && pr.adminBypass) out.push({ method: 'squash', admin: true, label: 'Admin merge (squash)', detail: 'bypasses branch protection as a repository admin' });
+  return out;
+}
+
 /** `owner/repo` from a GitHub pull request URL. */
 export function prRepo(url: string): string | undefined {
   return url.match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/\d+/)?.[1];

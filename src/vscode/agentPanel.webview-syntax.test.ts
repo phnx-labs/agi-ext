@@ -43,10 +43,10 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
   const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   expect(scripts.length).toBeGreaterThan(0);
 
-  // Phase chip labels trim the day word with a whitespace class. Written with one
-  // backslash in source, the template literal emits /,?s+$/ and every label keeps
-  // its comma and double space; the emitted script must carry the real class.
-  expect(html).toContain('.replace(/,?\\s+$/, \'\')');
+  // prettyModel reads the model's version with a digit class. Written with one
+  // backslash in source, the template literal would emit /d+/ and every model would
+  // show its raw id; the emitted script must carry the real class.
+  expect(html).toContain('-(\\d+)-(\\d+)/');
 
   for (const script of scripts) {
     // `new Function` compiles (parses) the source without executing it; a
@@ -124,20 +124,34 @@ test('local deliverables stay local for the normalized this-mac label (PHNX-3574
   expect(sessionPathUriString('/repo/.agents/plans/sidebar.md', 'this-mac')).toBeUndefined();
 });
 
-test('Active Session render is outcome-oriented: what the session produced leads (PHNX-3574)', () => {
+test('Active Session render is one card: request, then what it made, then the feed it filters', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
   const renderStart = src.indexOf('root.innerHTML = (', src.indexOf('function render(snap)'));
   const renderEnd = src.indexOf("'<div class=\"footer\"", renderStart);
   const renderOrder = src.slice(renderStart, renderEnd);
 
-  // PHNX-4289: what the session PRODUCED leads (artifacts, then its PR), right
-  // under Needs you; then the goal and what was asked, what the agent did, the
-  // checklist and files, its helpers, and the reply field last.
-  const order = ['renderTerminalCard', 'renderNeedsYou', 'renderArtifactsCard', 'renderPullRequestCard', 'renderGoalCard',
-    'renderRequestCard', 'renderTimelineCard', 'renderChecklistCard', 'renderFilesCard', 'renderSpawnedTeamCard',
-    'renderActivityCard', 'renderReplyBox'];
+  // One card (owner, 2026-10-12): who and how it stands, the goal, an open ask,
+  // what you asked, what it made (the PR opens inside the Made row), then the strip
+  // and the feed it filters (files, subagents and the checklist are feed chips);
+  // the reply floats last.
+  const order = ['renderTerminalCard', 'renderSessionStats', 'renderGoalCard', 'renderNeedsYou',
+    'renderRequestCard', 'renderMadeShelf', 'renderRelated', 'renderTimelineCard', 'renderReplyBox'];
   expect(renderOrder.indexOf(order[0]!)).toBeGreaterThan(-1);
   for (let i = 1; i < order.length; i++) {
     expect(renderOrder.indexOf(order[i - 1])).toBeLessThan(renderOrder.indexOf(order[i]));
+  }
+});
+
+test('the stylesheet keeps the button reset: no selector list dangles into the next rule', () => {
+  // A selector list cut mid-way (its `{` line deleted) silently merges into the next
+  // rule; the panel's step rows and Made tiles then render as grey browser buttons.
+  const css = sessionPanelCss('');
+  const reset = css.match(/([^{}]*)\{\s*background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;\s*\}/);
+  expect(reset).not.toBeNull();
+  for (const sel of ['button.step', 'button.mk-open', 'button.mk', 'button.seek-range', 'button.timeline-more']) expect(reset![1]).toContain(sel);
+  const lines = css.split('\n');
+  for (let i = 0; i < lines.length - 1; i++) {
+    const a = lines[i]!.trimEnd(), b = lines[i + 1]!.trim();
+    if (a.endsWith(',') && !a.includes('{')) expect(b.includes('{') && b.includes('}') && !b.endsWith(',')).toBe(false);
   }
 });

@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
-  parseOverview, parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, backgroundKind, preferLive, projectSessions, readSessionPrefs, renderOverview, renderPrs, renderSessionCard, renderSessions, renderTickets,
+  parsePrs, parseProjectDetection, parseProjectList, parseTickets,
+  activityLine, backgroundKind, preferLive, projectSessions, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS,
   type SessionHere, type SessionLike, type SessionListPrefs,
 } from './projectPanel'
@@ -19,42 +19,6 @@ test('project list keeps projects without a Linear binding', () => {
     .toEqual([{ name: 'agi', linearName: 'AGI' }, { name: 'wispr', linearName: null }])
 })
 
-const STATUS = JSON.stringify([{
-  name: 'agi', description: 'Agents CLI',
-  linear: { name: 'AGI', done: 90, total: 100, inProgress: 4,
-    nextMilestone: { name: 'Ship B' },
-    milestones: [
-      { name: 'Ship A', done: 3, total: 3, targetDate: '2026-08-01' },
-      { name: 'Ship C', done: 1, total: 4, targetDate: '2026-12-01' },
-      { name: 'Ship B', done: 2, total: 5, targetDate: '2026-09-01' },
-    ] },
-  schedule: { kind: 'overdue', milestone: 'Ship B', days: 37 },
-  byStatus: { running: 1, idle: 9 },
-  openPrs: [{ number: 1 }, { number: 2 }],
-  latestRelease: { tag: 'v1.2.3', publishedAt: '2026-10-08T22:32:31Z' },
-}])
-
-test('overview: the current milestone shows; with none current it says so and counts unplanned work', () => {
-  const groups = parseTickets(JSON.stringify({ issues: [
-    { identifier: 'A-1', title: 'a', url: 'u', priority: 2, state: { type: 'started', name: 'Doing' } },
-    { identifier: 'A-2', title: 'b', url: 'u', priority: 3, state: { type: 'unstarted', name: 'Todo' }, projectMilestone: { name: 'Ship C' } },
-  ] }))
-  const withCurrent = renderOverview(parseOverview(STATUS), '2026-10-08', groups)
-  expect(withCurrent).toContain('Ship C')
-  expect(withCurrent).toContain('1/4')
-  expect(withCurrent).toContain('90%')
-  expect(withCurrent).toMatch(/aria-label="1 Doing, 1 Todo"/)
-  const none = renderOverview(parseOverview(STATUS), '2026-12-31', groups)
-  expect(none).toContain('No current milestone.')
-  expect(none).toContain('2 past due.')
-  expect(none).toContain('1 open tickets unplanned.')
-})
-
-test('overview refuses a status that is not one project card', () => {
-  expect(() => parseOverview('[]')).toThrow('Expected one project card, got 0')
-  expect(() => parseOverview('{}')).toThrow('Unexpected project status shape')
-})
-
 const issue = (id: string, type: string, name: string, priority: number, extra: object = {}) =>
   ({ identifier: id, title: `t ${id}`, url: `https://linear.app/x/${id}`, priority, state: { type, name }, ...extra })
 
@@ -62,13 +26,17 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   const groups = parseTickets(JSON.stringify({ issues: [
     issue('A-1', 'backlog', 'Backlog', 3),
     issue('A-2', 'unstarted', 'Todo', 0),
-    issue('A-3', 'started', 'Doing', 2, { delegate: { name: 'Claude' }, projectMilestone: { name: 'Ship B' } }),
+    issue('A-3', 'started', 'Doing', 2, { delegate: { name: 'claude' }, assignee: { name: 'Muqsit Nawaz' }, projectMilestone: { name: 'Ship B' } }),
     issue('A-4', 'unstarted', 'Todo', 1),
   ] }))
   expect(groups.map((g) => g.state)).toEqual(['Doing', 'Todo', 'Backlog'])
   expect(groups[1].tickets.map((t) => t.identifier)).toEqual(['A-4', 'A-2'])
-  expect(groups[0].tickets[0]).toMatchObject({ owner: 'Claude', milestone: 'Ship B' })
-  expect(renderTickets(groups)).toContain('data-ticket="A-3"')
+  expect(groups[0].tickets[0]).toMatchObject({ delegate: 'claude', assignee: 'Muqsit Nawaz', milestone: 'Ship B' })
+  const html = renderTickets(groups)
+  expect(html).toContain('data-ticket="A-3"')
+  // People, not names: the delegated agent as its harness logo, the assignee as a colored initial.
+  expect(html).toContain('<span class="iav agent" title="Delegated to claude"><i class="hx hx-claude"')
+  expect(html).toMatch(/<span class="iav av\d" title="Muqsit Nawaz">MN<\/span>/)
 })
 
 test('tickets render escapes titles from the tracker', () => {
@@ -92,9 +60,21 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   expect(html).toContain('this list is incomplete')
   expect(html).toContain('Could not read: HTTP 502')
   expect(html).toContain('aria-label="Draft"')
-  expect(html).toContain('#7 · 24h · m')
+  expect(html).toContain('#7 · 24h</span>')
+  // The author as a face: a colored initial when the row carries no GitHub avatar.
+  expect(html).toContain('<span class="iav av')
   expect(html).not.toContain('o/quiet')
   expect(html).toContain('<details open><summary>merged <span class="n">5</span>')
+})
+
+test('prs: an open, ready PR row carries a merge button; a draft does not', () => {
+  const model = parsePrs(JSON.stringify({ repositories: [{ slug: 'o/busy', pullRequests: [
+    { number: 7, title: 'draft', url: 'https://github.com/o/busy/pull/7', isDraft: true, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+    { number: 8, title: 'ready', url: 'https://github.com/o/busy/pull/8', isDraft: false, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+  ], recentlyMerged: [] }] }))
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'))
+  expect(html).toContain('data-merge-repo="o/busy" data-merge-number="8"')
+  expect(html).not.toContain('data-merge-number="7"')
 })
 
 const row = (o: Partial<SessionLike>): SessionLike => ({
@@ -147,7 +127,7 @@ test('a card at rest is one line plus a strip; the full card keeps your ask, the
   const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl">Health<')
-  expect(html).toContain('class="pill st-yours"><i></i>Your turn<')
+  expect(html).toContain('class="pill st-yours"><i></i>Your move · idle<')
   expect(html).toContain('class="where">m6 · tab 3<')
   expect(html).toContain('class="cline">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
@@ -184,7 +164,7 @@ test('a pending question shows as what the agent is waiting on, in the compact l
   expect(ask).toContain('Agent · waiting on you</div><div class="ask">Run the restart on m2?<')
 })
 
-test('needs you is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
+test('your move is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
   const rows = [
     row({ sessionId: 'left', phase: 'done', liveStatus: 'closed', tabHere: true, lastResponse: 'Done.' }),
     row({ sessionId: 'bg', host: 'yosemite-m2', context: 'headless', lastResponse: 'Running.' }),
@@ -202,7 +182,7 @@ test('needs you is pinned above every grouping; group by app orders this window,
   expect(html).toContain('<b>agents-cli</b>')
   expect(html).toContain('src="vscode-resource:/assets/apps/ghostty.png"')
   expect(html).toContain('data-act="close-all"')
-  expect(html).toContain('2 tabs · 5 live · 1 needs you')
+  expect(html).toContain('2 tabs · 5 live · 1 your move')
   expect(html.match(/data-group=/g)?.length).toBe(5)
 })
 
@@ -230,7 +210,10 @@ test('group by machine, by state, or not at all', () => {
   const byMachine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'machine' }) })
   expect(byMachine.indexOf('data-group="machine:zion"')).toBeLessThan(byMachine.indexOf('data-group="machine:yosemite-m5"'))
   const byState = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state' }) })
-  expect(byState.indexOf('data-group="state:working"')).toBeLessThan(byState.indexOf('data-group="state:yours"'))
+  // Three states: the replied session is pinned under Your move, the working one groups under Running.
+  expect(byState.indexOf('data-session="b"')).toBeLessThan(byState.indexOf('data-group="state:running"'))
+  expect(byState.indexOf('data-group="state:running"')).toBeLessThan(byState.indexOf('data-session="a"'))
+  expect(byState).not.toContain('data-group="state:yours"')
   expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'none' }) })).not.toContain('data-group=')
 })
 
@@ -270,6 +253,18 @@ test('a card leads with its harness logo and ends its meta line with the model t
   expect(bare).not.toContain('class="mdl"')
 })
 
+test('your move leads with a question, then an idle turn; a crashed process is Ended', () => {
+  const html = renderSessions([
+    row({ sessionId: 'done', phase: 'idle', liveStatus: 'idle', lastActivityMs: 9 }),
+    row({ sessionId: 'crash', phase: 'failed', liveStatus: 'crashed', lastActivityMs: 8, tabHere: true }),
+    row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', lastActivityMs: 1, attention: { kind: 'question', state: 'open' } }),
+    row({ sessionId: 'run', phase: 'running', liveStatus: 'running', lastActivityMs: 10 }),
+  ], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
+  const at = (id: string) => html.indexOf(`data-session="${id}"`)
+  expect([at('ask'), at('done'), at('run'), at('crash')]).toEqual([at('ask'), at('done'), at('run'), at('crash')].sort((x, y) => x - y))
+  expect(html).toContain('<div class="ph">Your move <span class="n">2</span></div>')
+})
+
 test('needs you orders by the CLI attention kind: a question before a permission before a stall', () => {
   const ask = (id: string, kind: string, ms: number) => row({ sessionId: id, phase: 'waiting', liveStatus: 'input_required', lastActivityMs: ms, attention: { kind, state: 'open' } })
   const html = renderSessions([ask('stall', 'stall', 3), ask('perm', 'permission', 2), ask('q', 'question', 1)], NOW, { selectedId: null, here: HERE, prefs: prefs() })
@@ -295,8 +290,41 @@ test('a live tool call reads as the command it runs, never as a "Tool: args" lab
   expect(html).not.toContain('Bash:')
 })
 
-test('overview shows a failed ticket read in place instead of an empty bar', () => {
-  const html = renderOverview(parseOverview(STATUS), '2026-10-08', [], 'linear: HTTP 401')
-  expect(html).toContain('Tickets could not be read: linear: HTTP 401')
-  expect(html).not.toContain('class="sbar"')
+
+test("today's goal: its sessions carry ☀, the header counts them, and the toggle shows only them", () => {
+  const rows = [
+    row({ sessionId: 'goal', title: 'Secrets in cloud runs', topic: 'Work on PHNX-4353: make the Rush Cloud infrastructure work with secrets', tabHere: true }),
+    row({ sessionId: 'other', title: 'Landing page hero', topic: 'PHNX-4290 landing page', tabHere: true }),
+  ]
+  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), todayId: 'PHNX-4353' })
+  expect(html).toContain('data-pref="todayOnly" data-value="true" aria-pressed="false"')
+  expect(html).toContain('☀ 1 on today</button>')
+  const goalCard = html.slice(html.indexOf('data-session="goal"'), html.indexOf('data-session="goal"') + 600)
+  expect(goalCard).toContain('<span class="tday" title="On today\'s goal">☀</span>')
+  const only = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ todayOnly: true }), todayId: 'PHNX-4353' })
+  expect(only).toContain('data-session="goal"')
+  expect(only).not.toContain('data-session="other"')
+  // No goal read yet: no toggle, no marks, nothing filtered.
+  const none = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ todayOnly: true }) })
+  expect(none).not.toContain('on today')
+  expect(none).toContain('data-session="other"')
+  expect(readSessionPrefs({ todayOnly: true }).todayOnly).toBe(true)
+  expect(readSessionPrefs({}).todayOnly).toBe(false)
+})
+
+test('prs: the author shows as their GitHub avatar, only from avatars.githubusercontent.com', () => {
+  const pr = (avatarUrl: string) => parsePrs(JSON.stringify({ repositories: [{ slug: 'o/r', pullRequests: [{ number: 9, title: 't', url: 'https://github.com/o/r/pull/9', isDraft: false, ciState: 'SUCCESS', author: { login: 'muqsitnawaz', avatarUrl }, createdAt: '2026-10-08T00:00:00Z' }], recentlyMerged: [] }] }))
+  expect(renderPrs(pr('https://avatars.githubusercontent.com/u/13007401?v=4'), Date.parse('2026-10-09T00:00:00Z'))).toContain('<img class="pav" src="https://avatars.githubusercontent.com/u/13007401?v=4" alt="muqsitnawaz"')
+  expect(renderPrs(pr('https://evil.example/x.png'), Date.parse('2026-10-09T00:00:00Z'))).not.toContain('evil.example')
+})
+
+test('a session whose agent posted blocked is pinned first, as Your move · blocked', () => {
+  const rows = [
+    row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open' }, tabHere: true }),
+    row({ sessionId: 'session_stuck', phase: 'idle', liveStatus: 'idle', tabHere: true }),
+  ]
+  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), blockedIds: new Set(['stuck']) })
+  expect(html.indexOf('data-session="session_stuck"')).toBeLessThan(html.indexOf('data-session="ask"'))
+  expect(html).toContain('<span class="pill st-blocked"><i></i>Your move · blocked</span>')
+  expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })).not.toContain('st-blocked')
 })
