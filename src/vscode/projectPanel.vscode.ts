@@ -761,7 +761,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pill.solo { padding: 0 4px; border: 0; }
   .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-asks { background: var(--r-warn) !important; }
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-working { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
-  .pill.st-yours i, .d-yours { background: var(--r-gold) !important; } .st-stopped.pill { color: var(--r-bad); } .pill.st-stopped i, .d-stopped { background: var(--r-bad) !important; }
+  .pill.st-yours i, .d-yours { background: var(--r-gold) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
   .compact { display: grid; gap: 4px; margin-top: 4px; }

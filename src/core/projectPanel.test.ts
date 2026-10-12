@@ -147,7 +147,7 @@ test('a card at rest is one line plus a strip; the full card keeps your ask, the
   const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl">Health<')
-  expect(html).toContain('class="pill st-yours"><i></i>Your turn<')
+  expect(html).toContain('class="pill st-yours"><i></i>Your move · idle<')
   expect(html).toContain('class="where">m6 · tab 3<')
   expect(html).toContain('class="cline">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
@@ -184,7 +184,7 @@ test('a pending question shows as what the agent is waiting on, in the compact l
   expect(ask).toContain('Agent · waiting on you</div><div class="ask">Run the restart on m2?<')
 })
 
-test('needs you is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
+test('your move is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
   const rows = [
     row({ sessionId: 'left', phase: 'done', liveStatus: 'closed', tabHere: true, lastResponse: 'Done.' }),
     row({ sessionId: 'bg', host: 'yosemite-m2', context: 'headless', lastResponse: 'Running.' }),
@@ -202,7 +202,7 @@ test('needs you is pinned above every grouping; group by app orders this window,
   expect(html).toContain('<b>agents-cli</b>')
   expect(html).toContain('src="vscode-resource:/assets/apps/ghostty.png"')
   expect(html).toContain('data-act="close-all"')
-  expect(html).toContain('2 tabs · 5 live · 1 needs you')
+  expect(html).toContain('2 tabs · 5 live · 1 your move')
   expect(html.match(/data-group=/g)?.length).toBe(5)
 })
 
@@ -230,7 +230,10 @@ test('group by machine, by state, or not at all', () => {
   const byMachine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'machine' }) })
   expect(byMachine.indexOf('data-group="machine:zion"')).toBeLessThan(byMachine.indexOf('data-group="machine:yosemite-m5"'))
   const byState = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state' }) })
-  expect(byState.indexOf('data-group="state:working"')).toBeLessThan(byState.indexOf('data-group="state:yours"'))
+  // Three states: the replied session is pinned under Your move, the working one groups under Running.
+  expect(byState.indexOf('data-session="b"')).toBeLessThan(byState.indexOf('data-group="state:running"'))
+  expect(byState.indexOf('data-group="state:running"')).toBeLessThan(byState.indexOf('data-session="a"'))
+  expect(byState).not.toContain('data-group="state:yours"')
   expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'none' }) })).not.toContain('data-group=')
 })
 
@@ -268,6 +271,18 @@ test('a card leads with its harness logo and ends its meta line with the model t
   const bare = card(row({ agentType: 'amp' }))
   expect(bare).not.toContain('class="hx')
   expect(bare).not.toContain('class="mdl"')
+})
+
+test('your move leads with a question, then an idle turn; a crashed process is Ended', () => {
+  const html = renderSessions([
+    row({ sessionId: 'done', phase: 'idle', liveStatus: 'idle', lastActivityMs: 9 }),
+    row({ sessionId: 'crash', phase: 'failed', liveStatus: 'crashed', lastActivityMs: 8, tabHere: true }),
+    row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', lastActivityMs: 1, attention: { kind: 'question', state: 'open' } }),
+    row({ sessionId: 'run', phase: 'running', liveStatus: 'running', lastActivityMs: 10 }),
+  ], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
+  const at = (id: string) => html.indexOf(`data-session="${id}"`)
+  expect([at('ask'), at('done'), at('run'), at('crash')]).toEqual([at('ask'), at('done'), at('run'), at('crash')].sort((x, y) => x - y))
+  expect(html).toContain('<div class="ph">Your move <span class="n">2</span></div>')
 })
 
 test('needs you orders by the CLI attention kind: a question before a permission before a stall', () => {

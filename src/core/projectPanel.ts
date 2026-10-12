@@ -6,7 +6,7 @@
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
 // the provider turns that into the section's error state, never an empty list.
 
-import { SESSION_STATE_WORD, attentionRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, SESSION_STATE_WORD, attentionRank, ballOf, moveRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
@@ -583,9 +583,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   </div>`;
 }
 
-const STATE_ORDER_KEYS: SessionStateKey[] = ['working', 'yours', 'stopped', 'unknown', 'ended'];
 const PLACE_ORDER: Record<PlaceKind, number> = { here: 0, window: 1, ghostty: 2, terminal: 3, background: 4, leftover: 5, ended: 6 };
-const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', yours: 'yours', stopped: 'stopped', unknown: 'unknown', ended: 'ended' };
+const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', yours: 'yours', unknown: 'unknown', ended: 'ended' };
 
 /** What the list keeps after the viewer's Show choices and hidden sessions. */
 function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionListPrefs): { row: SessionLike; place: SessionPlace }[] {
@@ -612,23 +611,24 @@ function menuHtml(p: SessionListPrefs): string {
   </div>`;
 }
 
-/** The Sessions tab: a header with counts and the ⇅ menu, Needs you pinned, then
- *  the viewer's grouping. Each card is compact until hovered or selected. */
+/** The Sessions tab: a header with counts and the ⇅ menu, Your move pinned (a
+ *  question first, then a crash, then a finished reply), then the viewer's
+ *  grouping of the rest. Each card is compact until hovered or selected. */
 export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { here, prefs } = opts;
   const all = visibleSessions(rows, here, prefs);
   const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
-  const asks = sortRows(all.filter(({ row }) => sessionStateOf(row) === 'asks'), prefs.sort)
-    .sort((a, b) => attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
-  const rest = all.filter(({ row }) => sessionStateOf(row) !== 'asks');
+  const mine = sortRows(all.filter(({ row }) => ballOf(sessionStateOf(row)) === 'move'), prefs.sort)
+    .sort((a, b) => moveRank(sessionStateOf(a.row)) - moveRank(sessionStateOf(b.row)) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
+  const rest = all.filter(({ row }) => ballOf(sessionStateOf(row)) !== 'move');
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null,
   });
   const c = sessionCount(rows, here, prefs);
-  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} need${c.asks === 1 ? 's' : ''} you</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} your move</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  const pinned = asks.length ? `<div class="pinned"><div class="ph">${SESSION_STATE_WORD.asks} <span class="n">${asks.length}</span></div>${asks.map((x) => card(x, true)).join('')}</div>` : '';
+  const pinned = mine.length ? `<div class="pinned"><div class="ph">${BALL_WORD.move} <span class="n">${mine.length}</span></div>${mine.map((x) => card(x, true)).join('')}</div>` : '';
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string };
   let groups: Group[];
   if (prefs.group === 'app') {
@@ -642,7 +642,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const devices = [...new Set(rest.map((x) => x.place.device))].sort((a, b) => Number(b === here.device) - Number(a === here.device) || a.localeCompare(b));
     groups = devices.map((d) => ({ key: `machine:${d}`, name: d, sub: d === here.device ? 'this machine' : '', icon: glyph('machine', 'gi'), items: rest.filter((x) => x.place.device === d) }));
   } else if (prefs.group === 'state') {
-    groups = STATE_ORDER_KEYS.map((k) => ({ key: `state:${k}`, name: SESSION_STATE_WORD[k], sub: '', icon: `<span class="pill st-${k} solo"><i></i></span>`, items: rest.filter((x) => sessionStateOf(x.row) === k) }));
+    groups = (['running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ballOf(sessionStateOf(x.row)) === b) }));
   } else {
     return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>` + tail;
   }
@@ -659,12 +659,12 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   }).join('') + tail;
 }
 
-/** The tab's numbers: live sessions, the ones that need you, tabs held here. */
+/** The tab's numbers: live sessions, the ones that are your move, tabs held here. */
 export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS): { shown: number; asks: number; tabs: number } {
   const items = here ? visibleSessions(rows, here, prefs) : rows.map((row) => ({ row, place: null as SessionPlace | null }));
   return {
     shown: items.filter(({ row }) => sessionStateOf(row) !== 'ended').length,
-    asks: items.filter(({ row }) => sessionStateOf(row) === 'asks').length,
+    asks: items.filter(({ row }) => ballOf(sessionStateOf(row)) === 'move').length,
     tabs: rows.filter((s) => s.tabHere).length,
   };
 }
