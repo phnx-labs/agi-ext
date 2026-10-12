@@ -167,10 +167,26 @@ function canonicalPath(p: string): string {
 }
 
 /**
+ * `agents run <harness> --resume <id> --terminal vscodium-agent`, run from the
+ * session's folder: the CLI sends /spawn to the window holding that folder and
+ * waits for its ack, and the tab's `run --resume` recovers the session on its own
+ * device. `run --terminal` takes neither `auto` nor `--device`, so the harness
+ * and the folder come from the stream row.
+ */
+export function projectWindowResume(session: { id: string; agent: string; cwd: string }): { args: string[]; cwd: string } | { error: string } {
+  if (!session.agent) return { error: `the session stream has not named the harness of ${session.id.slice(0, 8)} yet` };
+  if (!session.cwd) return { error: `the session stream has not named the folder of ${session.id.slice(0, 8)} yet` };
+  if (!fs.statSync(session.cwd, { throwIfNoEntry: false })?.isDirectory()) {
+    return { error: `${session.cwd} is not on this machine, so no window here holds it` };
+  }
+  return { args: ['run', session.agent, '--resume', session.id, '--terminal', 'vscodium-agent'], cwd: session.cwd };
+}
+
+/**
  * The answer `agents.resumeSession` returns when the session has no tab in the
- * calling window: the CLI's `sessions resume <id> --vscodium` raised the window
- * that owns the project, sent it a /spawn, and waited for that window's ack. Its
- * exit code says whether a tab is showing the session; its last line says where.
+ * calling window: `projectWindowResume` raised the window that owns the project,
+ * sent it a /spawn, and waited for that window's ack. Its exit code says whether
+ * a tab is showing the session; its last line says where.
  */
 export function cliResumeOutcome(exitOk: boolean, output: string): { status: SpawnAckStatus; reason: string | null } {
   const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -187,17 +203,15 @@ export function cliResumeOutcome(exitOk: boolean, output: string): { status: Spa
 
 /**
  * `agents.resumeSession`: show this session. A tab already showing it in this
- * window is focused; otherwise the CLI's `sessions resume <id> --vscodium` opens
- * it in the window that owns its project, which runs decideSpawn there.
+ * window is focused; otherwise `projectWindowResume` opens it in the window that
+ * owns its project, which runs decideSpawn there.
  */
 export async function resumeSessionTab(
   sessionId: string,
   deps: {
     liveTab(sessionId: string): Promise<{ terminalId: string; focus(): void } | undefined>;
-    /** `device` is the machine that owns the session, absent for this machine. */
-    runResume(sessionId: string, device: string | undefined): Promise<{ ok: boolean; output: string }>;
+    runResume(sessionId: string): Promise<{ ok: boolean; output: string }>;
   },
-  device?: string,
 ): Promise<{ status: SpawnAckStatus; terminalId: string | null; reason: string | null }> {
   if (!sessionId) return { status: 'failed', terminalId: null, reason: 'no session id' };
   const live = await deps.liveTab(sessionId);
@@ -205,7 +219,7 @@ export async function resumeSessionTab(
     live.focus();
     return { status: 'focused-existing', terminalId: live.terminalId, reason: null };
   }
-  const { ok, output } = await deps.runResume(sessionId, device);
+  const { ok, output } = await deps.runResume(sessionId);
   return { ...cliResumeOutcome(ok, output), terminalId: null };
 }
 

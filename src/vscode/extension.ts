@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
 import { readManagedProjects } from '../core/managedProjects';
-import { cliResumeOutcome, decideSpawn, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
+import { cliResumeOutcome, decideSpawn, projectWindowResume, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
   harnessLaunchRegistrations,
@@ -25,7 +25,7 @@ import { isDerivedSessionName, normalizeHost } from '../core/remoteSessions';
 import * as settingsStore from './agentSettings.vscode';
 import * as swarm from './swarm.vscode';
 import * as terminals from './terminals.vscode';
-import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
+import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   isScaffoldingSessionTopic,
@@ -1429,15 +1429,18 @@ export async function activate(context: vscode.ExtensionContext) {
   // window's live tab, else let the CLI open it in the window that owns its
   // project, which applies the same /spawn decision. Returns the ack result.
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.resumeSession', (sessionId: string, host?: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
+    vscode.commands.registerCommand('agents.resumeSession', (sessionId: string) => resumeSessionTab(canonicalSessionId(sessionId ?? '') ?? '', {
       liveTab: async (id) => {
         const { live, dead } = await terminals.sessionTabs(id);
         // Tabs the agent left (dead shells) close before anything new opens.
         if (!live) terminals.closeTabs(dead);
         return live && { terminalId: live.id, focus: () => live.terminal.show() };
       },
-      runResume: resumeInProjectWindow,
-    }, remoteDeviceArg(host)))
+      runResume: (id) => {
+        const live = sessionPresentationStore.liveSession(id);
+        return resumeInProjectWindow({ id, agent: live?.agent ?? '', cwd: live?.cwd ?? '' });
+      },
+    }))
   );
 
   context.subscriptions.push(
@@ -2131,15 +2134,13 @@ async function placeSpawnRequest(
   return result('opened', { terminalId, title, pid });
 }
 
-// `agents sessions resume <id> --vscodium [--device <machine>]`: the CLI raises the window that owns
-// the session's project and sends it a /spawn, which that window decides.
-// The one `agents sessions` call left (PHNX-4227): agents-cli has no other verb that opens a
-// session in its project's VSCodium window (`ps focus` picks no backend, `run --terminal
-// vscodium-agent` refuses `--device`). Move it when agents-cli gives this a home.
-async function resumeInProjectWindow(id: string, device: string | undefined): Promise<{ ok: boolean; output: string }> {
+// Opens the session in the window that owns its project; that window decides the /spawn.
+async function resumeInProjectWindow(session: { id: string; agent: string; cwd: string }): Promise<{ ok: boolean; output: string }> {
+  const plan = projectWindowResume(session);
+  if ('error' in plan) return { ok: false, output: plan.error };
   const { runAgentsArgs } = await import('../core/agentsBin');
   try {
-    const { stdout, stderr } = await runAgentsArgs(['sessions', 'resume', id, '--vscodium', ...(device ? ['--device', device] : [])], { timeout: 60_000 });
+    const { stdout, stderr } = await runAgentsArgs(plan.args, { cwd: plan.cwd, timeout: 60_000 });
     return { ok: true, output: `${stdout}\n${stderr}` };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string };
@@ -2616,7 +2617,7 @@ export async function openAgentSessionTerminal(
       windowFolders: terminals.windowFolders(),
       otherWindows: liveWindows(process.pid).map((w) => w.folders),
     }) === 'wrong-window') {
-      const { ok, output } = await resumeInProjectWindow(session.id, remoteDeviceArg(session.host));
+      const { ok, output } = await resumeInProjectWindow({ id: session.id, agent: session.agent, cwd: session.cwd });
       const { reason } = cliResumeOutcome(ok, output);
       if (!ok) void vscode.window.showWarningMessage(`Session ${session.shortId}: ${reason}`);
       return ok;
