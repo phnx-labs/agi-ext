@@ -125,6 +125,23 @@ describe('projectWindowResume', () => {
     expect(projectWindowResume({ id, agent: 'codex', cwd: '' })).toEqual({ error: 'the session stream has not named the folder of 022fe0a8 yet' });
     const gone = join(tmpdir(), `resume-window-missing-${process.pid}`);
     expect(projectWindowResume({ id, agent: 'codex', cwd: gone })).toEqual({ error: `${gone} is not on this machine, so no window here holds it` });
+    expect(projectWindowResume({ id, agent: 'codex', cwd: gone, remote: true }, [])).toEqual({ error: `${gone} is not on this machine, so no window here holds it` });
+  });
+
+  test("a remote session whose folder is not here opens in the window folder named like its project, else this window's first folder", () => {
+    const root = mkdtempSync(join(tmpdir(), 'resume-window-remote-'));
+    const other = join(root, 'other');
+    const proj = join(root, 'proj');
+    mkdirSync(other);
+    mkdirSync(proj);
+    try {
+      const args = ['run', 'claude', '--resume', id, '--terminal', 'vscodium-agent'];
+      expect(projectWindowResume({ id, agent: 'claude', cwd: '/Users/someone/src/proj', remote: true }, [other, proj])).toEqual({ args, cwd: proj });
+      expect(projectWindowResume({ id, agent: 'claude', cwd: '/Users/someone/src/elsewhere', remote: true }, [other, proj])).toEqual({ args, cwd: other });
+      expect(projectWindowResume({ id, agent: 'claude', cwd: '/Users/someone/src/proj' }, [other, proj])).toEqual({ error: '/Users/someone/src/proj is not on this machine, so no window here holds it' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

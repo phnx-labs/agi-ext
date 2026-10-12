@@ -25,7 +25,7 @@ import { isDerivedSessionName, normalizeHost } from '../core/remoteSessions';
 import * as settingsStore from './agentSettings.vscode';
 import * as swarm from './swarm.vscode';
 import * as terminals from './terminals.vscode';
-import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
+import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
   isScaffoldingSessionTopic,
@@ -1438,7 +1438,7 @@ export async function activate(context: vscode.ExtensionContext) {
       },
       runResume: (id) => {
         const live = sessionPresentationStore.liveSession(id);
-        return resumeInProjectWindow({ id, agent: live?.agent ?? '', cwd: live?.cwd ?? '' });
+        return resumeInProjectWindow({ id, agent: live?.agent ?? '', cwd: live?.cwd ?? '', remote: !!remoteDeviceArg(live?.machine) });
       },
     }))
   );
@@ -2135,8 +2135,8 @@ async function placeSpawnRequest(
 }
 
 // Opens the session in the window that owns its project; that window decides the /spawn.
-async function resumeInProjectWindow(session: { id: string; agent: string; cwd: string }): Promise<{ ok: boolean; output: string }> {
-  const plan = projectWindowResume(session);
+async function resumeInProjectWindow(session: { id: string; agent: string; cwd: string; remote: boolean }): Promise<{ ok: boolean; output: string }> {
+  const plan = projectWindowResume(session, terminals.windowFolders());
   if ('error' in plan) return { ok: false, output: plan.error };
   const { runAgentsArgs } = await import('../core/agentsBin');
   try {
@@ -2617,7 +2617,7 @@ export async function openAgentSessionTerminal(
       windowFolders: terminals.windowFolders(),
       otherWindows: liveWindows(process.pid).map((w) => w.folders),
     }) === 'wrong-window') {
-      const { ok, output } = await resumeInProjectWindow({ id: session.id, agent: session.agent, cwd: session.cwd });
+      const { ok, output } = await resumeInProjectWindow({ id: session.id, agent: session.agent, cwd: session.cwd, remote: !!remoteDeviceArg(session.host) });
       const { reason } = cliResumeOutcome(ok, output);
       if (!ok) void vscode.window.showWarningMessage(`Session ${session.shortId}: ${reason}`);
       return ok;
