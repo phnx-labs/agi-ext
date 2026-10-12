@@ -13,6 +13,7 @@
 # Usage:
 #   scripts/release.sh <x.y.z> [--pre <tag>] [--confirm] [--skip-build]
 #                              [--skip-tests] [--device <name>] [--here]
+#                              [--no-install]
 #
 # Examples:
 #   scripts/release.sh 0.9.206                            # dry-run
@@ -21,6 +22,7 @@
 #   scripts/release.sh 0.9.206 --confirm --skip-tests     # hotfix
 #   scripts/release.sh 0.9.206 --confirm --device zion    # pin the publish box
 #   scripts/release.sh 0.9.206 --confirm --here           # never route off-box
+#   scripts/release.sh 0.9.206 --confirm --no-install     # publish only: no local install, no editor reload
 #
 # Pre-flight order: changelog -> publish-host routing -> marketplace
 # version-collision -> token presence -> tests -> build -> publish. Cheap
@@ -41,6 +43,9 @@ SKIP_BUILD=0
 SKIP_TESTS=0
 PUBLISH_HOST=""
 STAY_HERE=0
+# Publish only: skip installing the vsix into local editors and the reload that
+# activates it (the publish box may be a laptop someone is working in).
+NO_INSTALL=0
 # Internal. Set on the re-invocation that runs ON the publish host, so it does
 # the work instead of routing again.
 PUBLISH_PHASE=0
@@ -53,7 +58,7 @@ PUBLISH_PHASE=0
 ORIGINAL_ARGV=("$@")
 
 usage() {
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -73,6 +78,7 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         --here)          STAY_HERE=1; shift ;;
+        --no-install)    NO_INSTALL=1; shift ;;
         --publish-phase) PUBLISH_PHASE=1; shift ;;
         -h|--help)     usage 0 ;;
         --*)           echo "Error: unknown flag $1" >&2; usage 1 ;;
@@ -189,6 +195,7 @@ route_to_publish_host() {
     [ -n "$PRE_TAG" ] && flags="$flags --pre $PRE_TAG"
     [ $SKIP_TESTS -eq 1 ] && flags="$flags --skip-tests"
     [ $SKIP_BUILD -eq 1 ] && flags="$flags --skip-build"
+    [ $NO_INSTALL -eq 1 ] && flags="$flags --no-install"
 
     echo "Routing the publish to $host (holds the '$PUBLISH_BUNDLE' bundle)."
     echo "  commit:  $sha"
@@ -498,6 +505,11 @@ command -v ovsx >/dev/null 2>&1 && [ "$OVSX_LIVE" -eq 0 ] && echo "  Warning: Op
 # cursor). Marketplace propagation can take minutes; we install from the local
 # artifact directly so the active IDE picks up the new version immediately.
 # Build is already done — re-using $VSIX.
+if [ "$NO_INSTALL" -eq 1 ]; then
+    echo
+    echo "Skipping the local install and editor reload (--no-install)."
+    exit 0
+fi
 echo
 echo "Installing $VSIX locally..."
 INSTALLED=0
