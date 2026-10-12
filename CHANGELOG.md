@@ -31,8 +31,18 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Sessions on today's goal carry ☀, and the Sessions header's "☀ N on today" shows only them.
 - The session card shows a Related line: up to three sessions on the same ticket, PR or branch,
   or with a similar request, picked from the rows already in memory; a chip opens that session.
-- A ready PR in the Project panel's Pull requests tab merges from its row: one read of that PR
-  for its head commit, then squash, rebase, merge commit or admin merge, each confirmed.
+- A ready PR in the Project panel's Review tab merges from its row: one read of that PR for its
+  head commit, then squash, rebase, merge commit or admin merge, each confirmed.
+- The Project panel's tabs are Sessions, Issues and Review (and the Settings gear); Overview is
+  gone, since the goals and cycle sit above the tabs. Issues show their people (the delegated
+  agent's logo, the assignee as a colored initial); Review shows each author's GitHub avatar.
+- An agent's own status posts (`agents feed post`) appear in the session feed (an Updates chip,
+  and among the steps under All). When its latest post says blocked and you have not written
+  since, the session is "Your move · blocked": a red strip in the sidebar with its words, and
+  pinned first in the Project panel.
+- Removed code the new layout no longer reads: the Overview tab and its status read, the
+  per-snapshot worktree walk, the transcript-tail activity parser, the quick-action, links,
+  worktree and cwd cards, and their styles.
 
 ## [0.9.396] - 2026-10-12
 

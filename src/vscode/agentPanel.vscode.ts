@@ -28,7 +28,6 @@
 //     (PHNX-2833: no local poll timer — the daemon is the only scheduler)
 
 import * as vscode from 'vscode';
-import { isHarnessEnvelope } from '../core/harnessEnvelope';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createHash } from 'crypto';
@@ -37,7 +36,7 @@ import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { openExternalUrl } from './webviewSecurity';
-import { parseLineForActivity, formatActivity, todoProgressFromItems, type TodoProgress } from '../core/session.activity';
+import { todoProgressFromItems, type TodoProgress } from '../core/session.activity';
 import {
   type PullRequestRef as SharedPullRequestRef,
   type WorktreeRef as SharedWorktreeRef,
@@ -72,6 +71,7 @@ import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../sha
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
+import { blockedUpdate, sessionUpdates, type SessionUpdate } from '../core/sessionUpdates';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
@@ -87,29 +87,10 @@ interface ConversationSummary {
   lastActivityMs?: number;
 }
 
-interface ActivityItem {
-  kind: string;   // 'reading' | 'editing' | 'running' | 'thinking' | 'completed' | ...
-  summary: string;
-  ts: number;
-}
-
 interface GitInfo {
   branch?: string;
   dirtyCount?: number;
 }
-
-// Derived from session mtime + git + PRs. Drives which Quick Actions render.
-// Deterministic — no LLM call. See computeAgentState().
-type AgentState =
-  | 'streaming'         // session JSONL touched recently — agent is producing output
-  | 'pr_open'           // a PR URL was extracted from the session
-  | 'idle_dirty'        // idle, working tree has changes
-  | 'idle_clean_wt'     // idle, clean tree, terminal is in a worktree
-  | 'idle_clean';       // idle, clean tree, no worktree
-
-// "Streaming" window: how recently the session file must have been touched
-// to still count as actively producing output.
-const STREAMING_MS = 10_000;
 
 // Re-export shared types so the rest of this file doesn't need to switch on
 // `SharedFoo` everywhere. Keeps the snapshot interface readable.
@@ -126,7 +107,6 @@ interface PanelSnapshot {
   // Terminal facts
   terminalId?: string;       // internal id for action commands
   agentName?: string;        // "Claude"
-  agentPrefix?: string;      // "CC"
   agentType?: string;        // "claude" | "codex" | ... — used for usage lookup
   agentIconUri?: string;     // webview URI to PNG logo
   sessionChunk?: string;     // first 8 of session UUID
@@ -140,22 +120,16 @@ interface PanelSnapshot {
   accountLabel?: string;
   // Filesystem
   cwd?: string;
-  worktreePath?: string;     // when distinguishable from workspace root
-  worktreeName?: string;     // basename shown compactly in the terminal card
   workspaceRoot?: string;
   // Git
   git?: GitInfo;
   // Conversation
   conversation?: ConversationSummary;
-  recentActivity?: ActivityItem[];
   // Clean 1–2 line goal (◈ GOAL), distilled by the CLI summarizer from the raw
   // request (PHNX-3939). Falls back to the conversation topic when the CLI has none.
   goal?: string;
   // Live progress checkpoints from the CLI summarizer (most-recent last).
   checkpoints?: RemoteCheckpoint[];
-  // The always-on summarizer checklist + its lifecycle. summaryState drives the
-  // empty state ('pending' → "summarizing…", else "No checklist yet").
-  summaryChecklist?: RemoteTodoItem[];
   summaryState?: 'pending' | 'ready' | 'skipped';
   // The user's own latest genuine request, tidied by the CLI. Falls back to
   // userPromptClean, then the conversation topic — never a synthesized sentence.
@@ -191,8 +165,6 @@ interface PanelSnapshot {
   inWorktree?: boolean;
   startedAtMs?: number;
   lastActivityMs?: number;
-  /** The CLI row's lifecycle phase (running, waiting, idle, failed, done). */
-  phase?: string;
   /** The session's state and its word, from the shared mapping (`sessionStateOf`). */
   state?: { key: SessionStateKey; word: string };
   // The open attention item in the harness's own words; absent when nothing waits on the user.
@@ -220,15 +192,15 @@ interface PanelSnapshot {
   prCanMerge?: boolean;
   /** Sessions to handle together with this one, from the rows already in the store. */
   related?: RelatedSession[];
+  /** The agent's own status posts (`agents feed post`), oldest first. */
+  updates?: SessionUpdate[];
+  /** Its latest post when that says blocked and you have not written since. */
+  blocked?: SessionUpdate;
   prRepo?: string;
-  // All worktrees attached to the workspace, including the main checkout
-  worktrees?: WorktreeRef[];
   // Account usage state — surfaces "out of credits" / "rate limited"
   usageStatus?: 'available' | 'rate_limited' | 'out_of_credits' | null;
   // Plan files
   plan?: { path: string; display: string };
-  // Derived state — drives state-driven Quick Actions
-  agentState?: AgentState;
 }
 
 /**
@@ -339,19 +311,6 @@ export function currentAgentPanelSubject():
     source: subject.source,
     hasTerminal: !!subject.entry,
   };
-}
-
-function computeAgentState(snap: PanelSnapshot): AgentState {
-  // Streaming wins over everything: while the session file is actively being
-  // written, the agent owns the input — show "Working", hide actions.
-  const lastMs = snap.conversation?.lastActivityMs;
-  if (lastMs && Date.now() - lastMs < STREAMING_MS) return 'streaming';
-  // PR open: once a PR is in flight, the primary action is to surface it.
-  if (snap.pullRequests && snap.pullRequests.length > 0) return 'pr_open';
-  const dirty = snap.git?.dirtyCount ?? 0;
-  if (dirty > 0) return 'idle_dirty';
-  if (snap.worktreePath) return 'idle_clean_wt';
-  return 'idle_clean';
 }
 
 class AgentPanelProvider implements vscode.WebviewViewProvider {
@@ -862,8 +821,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           : envWorkspaceDir;
 
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const worktreePath = cwd && workspaceRoot && path.resolve(cwd) !== path.resolve(workspaceRoot) ? cwd : undefined;
-    const worktreeName = cwd ? path.basename(cwd) : undefined;
 
 
     const sessionId = subject.sessionId || entry?.sessionId;
@@ -875,7 +832,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       subjectSource: subject.source,
       terminalId: entry?.id,
       agentName: entry?.agentConfig?.title,
-      agentPrefix: entry?.agentConfig?.prefix,
       agentType: entry?.agentType,
       agentIconUri: this.iconUriFor(entry?.agentConfig?.prefix),
       sessionChunk,
@@ -886,8 +842,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       autoLabel: entry?.autoLabel,
       account: entry?.statusAccount || entry?.account,
       cwd,
-      worktreePath,
-      worktreeName,
       workspaceRoot,
     };
 
@@ -942,19 +896,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.files = live.files ? { ...live.files, changes: live.files.changes.map((change) => ({ ...change, display: displayPath(change.path, pathOptions) })) } : undefined;
         snapshot.firstRequest = live.firstUserMessage || undefined;
         const summaryChecklist = live.summaryChecklist ?? live.todos ?? [];
-        snapshot.summaryChecklist = summaryChecklist;
 
         // Checklist — already the CLI-normalized RemoteTodoItem[]; just tally it.
         const todos = todoProgressFromItems(summaryChecklist);
         if (todos) snapshot.todoProgress = todos;
-
-        // "What's being worked on": the CLI's computed one-line `activity`, else
-        // the recent-turn tail.
-        if (live.activity && live.activity.trim()) {
-          snapshot.recentActivity = [{ kind: 'working', summary: live.activity.trim(), ts: Date.now() }];
-        } else if (live.tail.length && (entry?.agentType || live.agentType)) {
-          snapshot.recentActivity = collectRecentActivity(live.tail, entry?.agentType || live.agentType, 5);
-        }
 
         // PR: the CLI already extracted the url — structure it, don't re-scan.
         if (card.pullRequests) snapshot.pullRequests = card.pullRequests;
@@ -972,14 +917,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           const def = BUILT_IN_AGENTS.find((a) => a.key === live.agentType);
           if (def) {
             snapshot.agentName = snapshot.agentName || def.title;
-            snapshot.agentPrefix = snapshot.agentPrefix || def.prefix;
             snapshot.agentIconUri = snapshot.agentIconUri || this.iconUriFor(def.prefix);
           }
           snapshot.label = snapshot.label || live.label || undefined;
           if (!snapshot.cwd && live.cwd) {
             cwd = live.cwd;
             snapshot.cwd = live.cwd;
-            snapshot.worktreeName = path.basename(live.cwd);
           }
         }
         if (live.branch) snapshot.git = { branch: live.branch };
@@ -1001,7 +944,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.inWorktree = !!live.worktreeSlug;
         snapshot.startedAtMs = live.startedAtMs || undefined;
         snapshot.lastActivityMs = live.lastActivityMs || undefined;
-        snapshot.phase = live.phase;
         const stateKey = sessionStateOf(live);
         snapshot.state = { key: stateKey, word: SESSION_STATE_WORD[stateKey] };
         if (card.needsYou) snapshot.needsYou = card.needsYou as PanelSnapshot['needsYou'];
@@ -1010,6 +952,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.blockedCount = live.failures ? live.failures.filter((f) => f.blocked).length : undefined;
         snapshot.activityHistogram = live.activityHistogram;
         snapshot.userTurns = live.userTurns;
+        snapshot.updates = sessionUpdates(sessionPresentationStore.activityEvents(), live.sessionId);
+        snapshot.blocked = blockedUpdate(snapshot.updates, live.userTurns?.length ? live.userTurns[live.userTurns.length - 1]!.atMs : undefined);
         snapshot.subagents = live.subagents;
         if (live.subagents) snapshot.subAgentCount = live.subagents.length;
         const webview = this.view?.webview;
@@ -1054,11 +998,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     }
 
     // Worktrees + usage are STORE reads (no spawn) — kept on the fast path.
-    if (workspaceRoot) {
-      try {
-        snapshot.worktrees = await getWorktreesRouted(workspaceRoot, cwd);
-      } catch { /* best-effort */ }
-    }
     if (snapshot.agentType) {
       try {
         snapshot.usageStatus = getUsageStatusFromCli(sessionId);
@@ -1085,7 +1024,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       ? !sessionPresentationStore.hasSeenReset(deviceScope)
       : !sessionPresentationStore.hasSeenReset();
 
-    snapshot.agentState = computeAgentState(snapshot);
     return snapshot;
   }
 
@@ -1258,7 +1196,7 @@ function renderSessionStats(s) {
   const span = s.durationMs > 0 ? s.durationMs : (s.startedAtMs ? Date.now() - s.startedAtMs : 0);
   const age = compactDuration(span);
   if (!age && !s.lastActivityMs) return '';
-  const st = sessionState(s);
+  const st = s.blocked ? { cls: 'failed', word: 'Your move · blocked' } : sessionState(s);
   const ran = age ? (st.cls === 'running' ? ' <b>' + esc(age) + '</b>' : ' · ran <b>' + esc(age) + '</b>') : '';
   const active = s.lastActivityMs ? ' · active <b>' + esc(relTime(s.lastActivityMs)) + '</b>' : '';
   // The account the session runs on, quiet at the end of the line (agents accounts list).
@@ -1317,101 +1255,6 @@ function renderFailures(s) {
     '</details>'
   );
 }
-function renderActionsCard(s) {
-  if (!s.cwd) return '';
-  const state = s.agentState || 'idle_clean';
-
-  // Streaming: agent is actively producing output. Sending a slash command
-  // mid-stream would corrupt the prompt. Render a passive "Working..." pill
-  // so the slot doesn't collapse.
-  if (state === 'streaming') {
-    return (
-      '<h2>Quick actions</h2>' +
-      '<div class="card"><div class="working-pill"><span class="pulse-dot"></span>Working...</div></div>'
-    );
-  }
-
-  const dirty = (s.git && s.git.dirtyCount) || 0;
-
-  // Chips are the slash commands they actually send. Click injects the
-  // command into the focused terminal via the 'slash' action (handled in
-  // runQuickAction). One chip is marked primary based on the current
-  // agent state so the recommended next step stands out.
-  const SLASH_COMMANDS = ['/commit', '/done', '/next', '/finish', '/test', '/review'];
-
-  // Recommended chip by state:
-  //   dirty tree         -> /commit
-  //   in worktree, clean -> /done (wrap up)
-  //   plain idle         -> /next
-  let recommended;
-  switch (state) {
-    case 'idle_dirty': recommended = '/commit'; break;
-    case 'idle_clean_wt': recommended = '/done'; break;
-    case 'pr_open': recommended = '/done'; break;
-    case 'idle_clean':
-    default: recommended = '/next'; break;
-  }
-
-  const dirtyHint = dirty > 0
-    ? '<div class="actions-hint">' + dirty + ' uncommitted ' + (dirty === 1 ? 'change' : 'changes') + '</div>'
-    : '';
-
-  const chips = SLASH_COMMANDS.map((cmd) => {
-    const cls = cmd === recommended ? 'action-btn slash primary' : 'action-btn slash';
-    return '<button class="' + cls + '" data-action="slash" data-url="' + esc(cmd) + '">' + esc(cmd) + '</button>';
-  }).join('');
-
-  // Keep the PR shortcut visible when one exists — it's not a slash command
-  // but it's the most useful jump when a PR is open.
-  const prs = s.pullRequests || [];
-  const pr = state === 'pr_open' ? prs[prs.length - 1] : undefined;
-  const prRow = pr
-    ? '<div class="actions-pr"><button class="action-btn primary" data-action="openPr" data-url="' + esc(pr.url) + '">Open PR #' + pr.number + '</button></div>'
-    : '';
-
-  return (
-    '<h2>Quick actions</h2>' +
-    '<div class="card">' +
-      prRow +
-      '<div class="slash-grid">' + chips + '</div>' +
-      dirtyHint +
-    '</div>'
-  );
-}
-
-function renderLinksCard(s) {
-  // Linear ticket gets its own compact row above the multi-PR card so the
-  // "Pull Requests" header can stay focused on PRs (which can be many).
-  const prs = (s.pullRequests || []);
-  if (!s.linearIssue && prs.length === 0) return '';
-
-  const linearRow = s.linearIssue
-    ? '<div class="link-row"><span class="link-tag">linear</span>' +
-        '<a data-url="' + esc('https://linear.app/issue/' + encodeURIComponent(s.linearIssue)) + '">' +
-          esc(s.linearIssue) +
-        '</a></div>'
-    : '';
-
-  const prRows = prs.map((pr) => (
-    '<div class="link-row"><span class="link-tag">pr</span>' +
-      '<a data-url="' + esc(pr.url) + '">' +
-        esc(pr.ownerRepo) + ' #' + pr.number +
-      '</a></div>'
-  )).join('');
-
-  let html = '';
-  if (linearRow) {
-    html += '<h2>Linear</h2>' +
-      '<div class="card"><div class="links-list">' + linearRow + '</div></div>';
-  }
-  if (prRows) {
-    const heading = prs.length === 1 ? 'Pull request' : 'Pull requests (' + prs.length + ')';
-    html += '<h2>' + heading + '</h2>' +
-      '<div class="card"><div class="links-list">' + prRows + '</div></div>';
-  }
-  return html;
-}
-
 // ── Request ─────────────────────────────────────────────────────────────────
 // The user's OWN latest genuine turn: headline in bold, attachment / pasted-
 // terminal noise lifted into chips, the whole thing folded away behind
@@ -1684,6 +1527,18 @@ function renderMadeShelf(s, justReady) {
     (open ? renderPullRequestCard(s, justReady) : '') + '</div>';
 }
 
+// ── Blocked ─────────────────────────────────────────────────────────────────
+// The agent said it cannot go on without you (agents feed post, status.blocked):
+// its own words, in red, until you write after it.
+function renderBlocked(s) {
+  const b = s.blocked;
+  if (!b) return '';
+  return '<div class="blocked-strip" role="status"><div class="blocked-k">BLOCKED · ' + esc(relTime(b.atMs).toUpperCase()) + '</div>' +
+    '<div class="blocked-t">' + esc(b.title) + '</div>' + (b.detail ? '<div class="blocked-d">' + esc(truncate(b.detail, 280)) + '</div>' : '') +
+    '<div class="needs-you-btns"><button type="button" class="ny-btn primary" id="blocked-reply">Reply…</button>' +
+    (s.hasTerminal ? '<button type="button" class="ny-btn" data-action="focusSubject">Open tab</button>' : '') + '</div></div>';
+}
+
 // ── Related ─────────────────────────────────────────────────────────────────
 // One line of chips under Made: other sessions on the same ticket, PR or branch,
 // or with a similar request (relatedSessions, from the rows already in memory).
@@ -1912,54 +1767,6 @@ function renderMarkdownPreview(s) {
   return blocks.join('');
 }
 
-function renderWorktreesCard(s) {
-  const wts = s.worktrees || [];
-  // Suppress the card when there's only the main checkout — no useful list
-  // to show. Once any extra worktree exists it's worth surfacing all of them.
-  if (wts.length < 2) return '';
-  const rows = wts.map((w) => {
-    const marker = w.isActive
-      ? '<span class="wt-dot active" title="active terminal"></span>'
-      : '<span class="wt-dot"></span>';
-    const nameClass = w.isActive ? 'wt-name active' : 'wt-name';
-    const tag = w.isMain ? '<span class="wt-tag main">main</span>' : '';
-    const branch = w.branch ? '<span class="wt-branch">' + esc(w.branch) + '</span>' : '';
-    // wt-link (not path-link) so the click dispatches openWorktree, which
-    // opens the directory as a folder in a new window. vscode.open on a
-    // directory shows an error toast.
-    return (
-      '<div class="worktree">' +
-        marker +
-        '<a class="' + nameClass + ' wt-link" data-worktree-path="' + esc(w.path) + '" title="' + esc(w.path) + '">' +
-          esc(w.name) +
-        '</a>' +
-        tag + branch +
-      '</div>'
-    );
-  }).join('');
-  return (
-    '<h2>Worktrees (' + wts.length + ')</h2>' +
-    '<div class="card">' + rows + '</div>'
-  );
-}
-
-function renderCwdCard(s) {
-  if (!s.cwd) return '';
-  const rows = [];
-  rows.push(
-    '<dt>cwd</dt><dd><a class="path-link" data-path="' + esc(s.cwd) + '">' + esc(s.cwd) + '</a></dd>'
-  );
-  if (s.worktreePath && s.workspaceRoot && s.worktreePath !== s.workspaceRoot) {
-    rows.push(
-      '<dt>worktree</dt><dd><a class="path-link" data-path="' + esc(s.worktreePath) + '">' + esc(s.worktreePath) + '</a></dd>'
-    );
-  }
-  return (
-    '<h2>Working dir</h2>' +
-    '<div class="card"><dl class="row-grid">' + rows.join('') + '</dl></div>'
-  );
-}
-
 let lastSnapshot = null;
 
 function render(snap) {
@@ -1988,6 +1795,7 @@ function render(snap) {
       renderSessionStats(snap) +
       renderFailures(snap) +
       renderGoalCard(snap) +
+      renderBlocked(snap) +
       renderNeedsYou(snap) +
       renderRequestCard(snap) +
       renderMadeShelf(snap, justReady) +
@@ -2001,6 +1809,11 @@ function render(snap) {
   if (details) details.addEventListener('toggle', () => { viewState.detailsOpen = details.open; vscode.setState(viewState); });
   const failures = root.querySelector('#failures');
   if (failures) failures.addEventListener('toggle', () => { viewState.failuresOpen = failures.open; vscode.setState(viewState); });
+  const blockedReply = root.querySelector('#blocked-reply');
+  if (blockedReply) blockedReply.addEventListener('click', () => {
+    const r = root.querySelector('#reply-input');
+    if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
+  });
   const nyReply = root.querySelector('#needs-you-reply');
   if (nyReply) nyReply.addEventListener('click', () => {
     const r = root.querySelector('#reply-input');
@@ -2192,58 +2005,8 @@ async function readGitInfo(cwd: string): Promise<GitInfo | undefined> {
   }
 }
 
-function collectRecentActivity(tailLines: string[], agentType: string, max: number): ActivityItem[] {
-  const out: ActivityItem[] = [];
-  // Walk backward so we end up with the most recent items first.
-  const seen = new Set<string>();
-  for (let i = tailLines.length - 1; i >= 0 && out.length < max; i--) {
-    const activity = parseLineForActivity(tailLines[i], agentType as 'claude' | 'codex');
-    if (!activity || isHarnessEnvelope(activity.summary || '')) continue;
-    const formatted = formatActivity(activity);
-    const dedupeKey = `${activity.type}|${activity.summary}`;
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
-    out.push({
-      kind: activity.type,
-      summary: activity.summary || formatted,
-      ts: activity.timestamp.getTime(),
-    });
-  }
-  return out;
-}
-
 /** Build presentation rows from the canonical session stream plus the workspace root. */
 type UsageStatus = 'available' | 'rate_limited' | 'out_of_credits' | null;
-
-async function getWorktreesRouted(
-  workspaceRoot: string,
-  activeCwd: string | undefined,
-): Promise<WorktreeRef[]> {
-  const byPath = new Map<string, WorktreeRef>();
-  byPath.set(workspaceRoot, {
-    path: workspaceRoot,
-    name: path.basename(workspaceRoot),
-    isActive: activeCwd ? path.resolve(activeCwd) === path.resolve(workspaceRoot) : false,
-    isMain: true,
-  });
-  for (const value of sessionPresentationStore.sessions()) {
-    const row = value as { cwd?: unknown; branch?: unknown; worktree?: { path?: unknown; branch?: unknown } };
-    const worktreePath = typeof row.worktree?.path === 'string'
-      ? row.worktree.path
-      : typeof row.cwd === 'string' && row.cwd.includes(`${path.sep}.agents${path.sep}worktrees${path.sep}`)
-        ? row.cwd
-        : undefined;
-    if (!worktreePath || !path.resolve(worktreePath).startsWith(`${path.resolve(workspaceRoot)}${path.sep}`)) continue;
-    byPath.set(worktreePath, {
-      path: worktreePath,
-      name: path.basename(worktreePath),
-      branch: typeof row.worktree?.branch === 'string' ? row.worktree.branch : typeof row.branch === 'string' ? row.branch : undefined,
-      isActive: activeCwd ? path.resolve(activeCwd) === path.resolve(worktreePath) : false,
-      isMain: false,
-    });
-  }
-  return [...byPath.values()];
-}
 
 /** The CLI-normalized RemoteSession for a session id, from the warm
  *  `agents feed watch --json` stream, or undefined until the stream indexes

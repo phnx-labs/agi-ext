@@ -211,10 +211,11 @@ function renderSeekBar(s) {
 
 // Filters swap the default summary for one stream. You and Failed ride the row;
 // Agent, Tools and Reasoning are one agents-sessions call per click (cached).
-const TIMELINE_FILTERS = [{ id: 'summary', label: 'All' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }, { id: 'files', label: 'Files' }, { id: 'subagents', label: 'Subagents' }, { id: 'checklist', label: 'Checklist' }];
+const TIMELINE_FILTERS = [{ id: 'summary', label: 'All' }, { id: 'updates', label: 'Updates' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }, { id: 'files', label: 'Files' }, { id: 'subagents', label: 'Subagents' }, { id: 'checklist', label: 'Checklist' }];
 // Chips that show a section of the row in place of the steps; they need no load.
-const SECTION_FILTERS = ['files', 'subagents', 'checklist'];
+const SECTION_FILTERS = ['updates', 'files', 'subagents', 'checklist'];
 function sectionCount(s, id) {
+  if (id === 'updates') return (s.updates || []).length;
   if (id === 'files') return (s.files && (s.files.total || (s.files.changes || []).length)) || 0;
   if (id === 'subagents') return (s.subagents || []).length || s.subAgentCount || 0;
   if (id === 'checklist') return (s.todoProgress && s.todoProgress.total) || 0;
@@ -256,7 +257,7 @@ function currentFilter(s) {
 
 function renderFilterChips(s, active) {
   if (!s.fullSessionId) return '';
-  const counts = { user: (s.userTurns || []).length, failed: (s.failures || []).length, files: sectionCount(s, 'files'), subagents: sectionCount(s, 'subagents'), checklist: sectionCount(s, 'checklist') };
+  const counts = { user: (s.userTurns || []).length, failed: (s.failures || []).length, updates: sectionCount(s, 'updates'), files: sectionCount(s, 'files'), subagents: sectionCount(s, 'subagents'), checklist: sectionCount(s, 'checklist') };
   return '<div class="tl-filters">' + TIMELINE_FILTERS.map((f) => {
     if (f.id === 'user' && !s.userTurns) return '';
     if (f.id === 'failed' && !(s.failures && s.failures.length)) return '';
@@ -337,6 +338,15 @@ function renderFilteredBody(s, active) {
   return stale + lane + filteredRows(rows.reverse());
 }
 
+// One status post (agents feed post): its title, what it says, its links. A
+// blocked post reads red.
+function renderUpdate(u) {
+  return '<div class="upd' + (u.blocked ? ' blocked' : '') + '"><span class="upd-mk"></span><span class="upd-b"><b>' + esc(u.title || (u.blocked ? 'Blocked' : 'Update')) + '</b>' +
+    (u.detail ? ' <span class="upd-d">' + esc(truncate(u.detail, 220)) + '</span>' : '') +
+    (u.links.length ? '<span class="upd-l">' + u.links.map((l) => '<a class="chip path-link" data-path="' + esc(l.href) + '">' + esc(l.name) + '</a>').join('') + '</span>' : '') +
+    '</span><span class="step-at">' + esc(relTime(u.atMs)) + '</span></div>';
+}
+
 // The strip and the feed under it, inside the session card (no heading of its
 // own): the strip's range filters the feed, and the chips switch what it lists.
 function renderTimelineCard(s) {
@@ -369,6 +379,10 @@ function renderTimelineCard(s) {
     (range && s.sessionLocal && active !== 'tools'
       ? '<div class="tl-range card-note">' + esc(clockTime(range.startMs) + ' to ' + clockTime(range.endMs)) + ' · <button type="button" class="tl-refresh" data-filter="tools">Show tool calls</button></div>'
       : '');
+  if (active === 'updates') {
+    const ups = (s.updates || []).filter((u) => inRange(range, u.atMs)).slice().reverse();
+    return '<div class="feed">' + head + (ups.length ? ups.map(renderUpdate).join('') : '<div class="card-note">No updates in this range.</div>') + '</div>';
+  }
   if (active === 'files') return '<div class="feed">' + head + renderFilesCard(s) + '</div>';
   if (active === 'subagents') return '<div class="feed">' + head + renderSpawnedTeamCard(s) + '</div>';
   if (active === 'checklist') return '<div class="feed">' + head + renderChecklistCard(s) + '</div>';
@@ -380,13 +394,16 @@ function renderTimelineCard(s) {
   const none = range && !visible.length
     ? '<div class="card-note">No loaded step falls in this range; older steps are folded into the count below.</div>'
     : '';
-  const shown = none + visible.slice(0, TIMELINE_SHOWN).map(renderStep).join('');
-  const rest = visible.slice(TIMELINE_SHOWN);
+  // The agent's own status posts sit among its steps, newest first.
+  const ups = (s.updates || []).filter((u) => inRange(range, u.atMs)).map((u) => ({ at: u.atMs, html: renderUpdate(u) }));
+  const merged = visible.map((step) => ({ at: Date.parse(step.at) || 0, html: renderStep(step) })).concat(ups).sort((a, b) => b.at - a.at);
+  const shown = none + merged.slice(0, TIMELINE_SHOWN).map((x) => x.html).join('');
+  const rest = merged.slice(TIMELINE_SHOWN);
   // "N more" stays open across stream updates (it used to fold back on the next row).
   const key = (s.fullSessionId || '') + ':more';
   const more = rest.length
     ? (viewState.feedMore === key
-        ? rest.map(renderStep).join('') + '<button type="button" class="timeline-more" data-feed-more="">Show less</button>'
+        ? rest.map((x) => x.html).join('') + '<button type="button" class="timeline-more" data-feed-more="">Show less</button>'
         : '<button type="button" class="timeline-more" data-feed-more="' + esc(key) + '">' + rest.length + ' more</button>')
     : '';
   const earlierBits = [];
@@ -836,7 +853,6 @@ ${fontFaces}  body {
     gap: 6px;
     font-weight: 600;
   }
-  .agent-name { color: var(--r-text); }
   .session-chunk {
     font-family: var(--r-mono);
     color: var(--r-caption);
@@ -848,24 +864,6 @@ ${fontFaces}  body {
     color: var(--r-caption);
     font-size: 11px;
   }
-  .branch-row {
-    margin-top: 3px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    color: var(--r-caption);
-  }
-  .branch-name {
-    font-family: var(--r-mono);
-    color: var(--r-text);
-    background: transparent;
-    border: none;
-    padding: 0;
-    font-size: inherit;
-    cursor: pointer;
-  }
-  .branch-name:hover { text-decoration: underline; }
   .dirty-pill {
     background: var(--r-warn-tint);
     color: var(--r-text);
@@ -878,14 +876,6 @@ ${fontFaces}  body {
     font-size: 10px;
   }
   .dirty-pill:hover { filter: brightness(1.15); }
-  .working-pill {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--r-caption);
-    font-size: 11.5px;
-    padding: 4px 2px;
-  }
   .pulse-dot {
     width: 7px;
     height: 7px;
@@ -897,22 +887,6 @@ ${fontFaces}  body {
     0%, 100% { opacity: 0.35; }
     50% { opacity: 1; }
   }
-  .row-grid {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 8px;
-    margin-top: 4px;
-  }
-  .row-grid dt {
-    color: var(--r-caption);
-    font-size: 11px;
-  }
-  .row-grid dd {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .path-link {
     color: var(--r-link);
     cursor: pointer;
@@ -921,10 +895,6 @@ ${fontFaces}  body {
     font-size: 11px;
   }
   .path-link:hover { text-decoration: underline; }
-  .plan-meta {
-    color: var(--r-caption);
-    font-size: 11px;
-  }
   .conv-topic {
     color: var(--r-text);
     line-height: 1.4;
@@ -946,22 +916,6 @@ ${fontFaces}  body {
   .conv-topic .md-bullet {
     padding-left: 10px;
     text-indent: -8px;
-  }
-  .conv-meta {
-    margin-top: 6px;
-    color: var(--r-caption);
-    font-size: 11px;
-  }
-  .request-attachments {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 7px;
-  }
-  .attachment-link {
-    border: 1px solid var(--r-edge);
-    border-radius: 4px;
-    padding: 2px 5px;
   }
   .art-icon { width: 14px; height: 14px; flex: none; }
   .requester { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--r-caption); font-size: 11px; }
@@ -986,19 +940,7 @@ ${fontFaces}  body {
     font-size: 11.5px;
     line-height: 1.4;
   }
-  .activity-kind {
-    width: 56px;
-    flex-shrink: 0;
-    color: var(--r-caption);
-    text-transform: lowercase;
-    font-size: 10.5px;
-  }
-  .activity-summary {
-    color: var(--r-text);
-    word-break: break-word;
-  }
-  /* ◈ Goal (PHNX-3939) — teal accent label, the clean one-line read. */
-  .goal-card {
+  /* ◈ Goal (PHNX-3939) — teal accent label {
     display: flex;
     align-items: baseline;
     gap: 8px;
@@ -1022,21 +964,6 @@ ${fontFaces}  body {
     padding: 2px 0;
     font-size: 11.5px;
     line-height: 1.4;
-  }
-  .checkpoint-mk {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    align-self: center;
-    background: var(--r-warn);
-  }
-  .checkpoint-txt { color: var(--r-text); word-break: break-word; }
-  .checkpoint-at {
-    margin-left: auto;
-    flex-shrink: 0;
-    color: var(--r-caption);
-    font-size: 10.5px;
   }
   /* Always-on checklist empty/summarizing state. */
   .todo-empty {
@@ -1314,86 +1241,12 @@ ${fontFaces}  body {
   .action-btn.primary:hover {
     background: var(--r-gold-hover);
   }
-  .slash-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 5px;
-  }
   .action-btn.slash {
     flex: none;
     font-family: var(--r-mono);
     font-size: 11.5px;
     padding: 5px 8px;
     text-align: left;
-  }
-  .actions-pr {
-    margin-bottom: 8px;
-  }
-  .actions-hint {
-    margin-top: 8px;
-    color: var(--r-caption);
-    font-size: 10.5px;
-  }
-  .prompt-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .prompt-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: transparent;
-    color: var(--r-text);
-    border: 1px solid var(--r-edge);
-    border-radius: 4px;
-    padding: 6px 8px;
-    font: inherit;
-    font-size: 11.5px;
-    cursor: pointer;
-    text-align: left;
-    overflow: hidden;
-  }
-  .prompt-btn:hover {
-    background: var(--r-glass-hover);
-  }
-  .prompt-title {
-    font-weight: 500;
-    flex: 0 0 auto;
-  }
-  .prompt-preview {
-    color: var(--r-caption);
-    font-size: 10.5px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-  }
-  .prompt-star {
-    color: var(--r-warn);
-    font-size: 10px;
-    margin-right: 2px;
-  }
-  .links-list { display: flex; flex-direction: column; gap: 4px; }
-  .link-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11.5px;
-  }
-  .link-row a {
-    color: var(--r-link);
-    cursor: pointer;
-    text-decoration: none;
-    font-family: var(--r-mono);
-  }
-  .link-row a:hover { text-decoration: underline; }
-  .link-tag {
-    color: var(--r-caption);
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
   }
   .usage-badge {
     display: inline-block;
@@ -1421,44 +1274,6 @@ ${fontFaces}  body {
     gap: 6px;
     padding: 3px 0;
     font-size: 11.5px;
-  }
-  .wt-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--r-caption);
-    opacity: 0.5;
-    flex-shrink: 0;
-  }
-  .wt-dot.active {
-    background: var(--r-ok);
-    opacity: 1;
-  }
-  .wt-name {
-    color: var(--r-link);
-    cursor: pointer;
-    text-decoration: none;
-    font-family: var(--r-mono);
-  }
-  .wt-name:hover { text-decoration: underline; }
-  .wt-name.active { font-weight: 600; }
-  .wt-tag {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--r-caption);
-    background: var(--r-selected);
-    padding: 0 5px;
-    border-radius: 6px;
-  }
-  .wt-branch {
-    color: var(--r-caption);
-    font-family: var(--r-mono);
-    font-size: 10.5px;
-    margin-left: auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .err {
     color: var(--r-bad);
@@ -1591,17 +1406,15 @@ ${fontFaces}  body {
   .subagent .sub-dot { margin-top: 4px; }
   button:focus-visible, summary:focus-visible { outline: 1px solid var(--r-focus); }
   /* Links are the text color, underlined (no blue): the underline is what marks them. */
-  .path-link, button.path-link, .link-row a, .wt-name, .footer button, .tl-refresh, .timeline-more, .failures-show {
+  .path-link, button.path-link, .footer button, .tl-refresh, .timeline-more, .failures-show {
     text-decoration: underline; text-decoration-color: var(--r-edge-hi); text-underline-offset: 2px;
   }
-  .path-link:hover, button.path-link:hover, .link-row a:hover, .wt-name:hover, .footer button:hover, .tl-refresh:hover, .timeline-more:hover {
+  .path-link:hover, button.path-link:hover, .footer button:hover, .tl-refresh:hover, .timeline-more:hover {
     text-decoration-color: currentColor;
   }
   /* Glance header (v3): title, model, id, where it runs. */
   .session-title { font-weight: 600; font-size: 13px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .model-name { font-weight: 600; color: var(--r-text); }
-  .id-row { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
-  .id-row .session-chunk { font-size: 10.5px; opacity: .8; }
   .head-btn.small { width: 16px; height: 16px; font-size: 10px; }
   .where-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
   .where-chip { font-size: 10.5px; padding: 0 8px; border-radius: 999px; line-height: 17px; border: 1px solid var(--r-edge); color: var(--r-text-2); background: var(--r-glass); white-space: nowrap; }
@@ -1718,6 +1531,17 @@ ${fontFaces}  body {
   .mk-share svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .mk-file:hover .mk-share, .mk-file:focus-within .mk-share { opacity: 1; }
   .made .pr-card { margin: 2px 11px 4px; padding: 8px 10px; border: 1px solid var(--r-edge-hi); border-radius: 9px; background: var(--r-well); }
+  /* The agent's own status posts and its blocked strip. */
+  .upd { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; padding: 5px 0; font-size: 12px; }
+  .upd-mk { width: 7px; height: 7px; margin-top: 5px; border-radius: 2px; background: var(--r-text-2); }
+  .upd.blocked .upd-mk { background: var(--r-bad); }
+  .upd b { font-weight: 600; } .upd.blocked b { color: var(--r-bad); }
+  .upd-d { color: var(--r-caption); }
+  .upd-l { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+  .blocked-strip { margin: 8px -11px 2px; padding: 8px 11px; background: var(--r-bad-tint); border-top: 1px solid var(--r-bad); border-bottom: 1px solid var(--r-bad); }
+  .blocked-k { font-family: var(--r-mono); font-size: 10px; letter-spacing: 0.08em; color: var(--r-bad); }
+  .blocked-t { margin-top: 3px; font-weight: 600; }
+  .blocked-d { margin-top: 2px; font-size: 11.5px; color: var(--r-text-2); }
   /* Related: one line of chips. */
   .rel { display: flex; align-items: center; gap: 7px; margin: 2px 0 0; min-width: 0; }
   .rel-l { flex: none; font-family: var(--r-display); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }

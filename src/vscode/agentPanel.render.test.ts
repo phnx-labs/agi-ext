@@ -54,7 +54,7 @@ const NAMES = [
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
-  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'artifactItems',
+  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderUpdate', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
   'prVerdict', 'prCheckSegments', 'prJustReady', 'prRing', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind',
@@ -70,12 +70,13 @@ const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
 const viewState: Record<string, unknown> = {};
 const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
-  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, currentRange,
+  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, renderBlocked, currentRange,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
   renderPullRequestCard, prVerdict, prCheckSegments, prJustReady,
 }; })()`) as {
   renderMadeShelf: (s: unknown, justReady?: boolean) => string;
   renderRelated: (s: unknown) => string;
+  renderBlocked: (s: unknown) => string;
   currentRange: (s: unknown) => { startMs: number; endMs: number } | null;
   renderPullRequestCard: (s: unknown, justReady?: boolean) => string;
   prVerdict: (pr: unknown) => { ring: string; word: string; tone: string };
@@ -960,4 +961,25 @@ test('Related: one line of chips with each session state dot and why in the tool
   expect(html).toContain('class="rel-c state-running" data-related="b2"');
   expect(cards.renderRelated({ related: [] })).toBe('');
   expect(cards.renderRelated({})).toBe('');
+});
+
+test('blocked: the agent own words in a red strip, and its status posts sit among the steps in All and under Updates', () => {
+  const at = Date.parse('2026-10-12T11:00:00Z');
+  const blocked = { atMs: at, title: '1.22.48 publish blocked', detail: 'npm token 401 on mac-mini. Need npm login.', blocked: true, links: [] };
+  const strip = cards.renderBlocked({ blocked, hasTerminal: true });
+  expect(strip).toContain('class="blocked-strip"');
+  expect(strip).toContain('1.22.48 publish blocked');
+  expect(strip).toContain('id="blocked-reply"');
+  expect(cards.renderBlocked({})).toBe('');
+  const posted = { atMs: at - 3_600_000, title: 'Prototype v2 ready', detail: 'Chips + Other.', blocked: false, links: [{ name: 'index.html', href: '/u/a/index.html' }] };
+  const s = { ...snapshotFor('c9d700d5'), updates: [posted, blocked] };
+  const all = cards.renderTimelineCard(s);
+  expect(all).toContain('data-filter="updates"');
+  expect(all).toContain('<b>1.22.48 publish blocked</b>');
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  viewState.timelineFilter = { [s.fullSessionId as string]: 'updates' };
+  const only = cards.renderTimelineCard(s);
+  expect(only).toContain('class="upd blocked"');
+  expect(only).toContain('data-path="/u/a/index.html">index.html</a>');
+  for (const key of Object.keys(viewState)) delete viewState[key];
 });
