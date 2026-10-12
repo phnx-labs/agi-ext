@@ -113,13 +113,14 @@ going on, where, and what came out of it" in one look; text explains only what a
   "attached". Artifacts are what the agent made: PRs, folders under `.agents/artifacts/`,
   plans, pages, rendered images. A count of edited files is neither.
 - **One card style.** Outlined 1 px hairline cards with even gaps; no colored side borders, no
-  drop shadows (shadows are for menus and popovers). Hover shifts tone in place; nothing lifts.
+  drop shadows (shadows are for menus, popovers and the floating reply, which sits over the
+  panel). Hover shifts tone in place; nothing lifts.
   Gaps inside a card are at most half the gap between cards.
 - **Motion only for liveness.** The Working dot breathes; everything stops under
   `prefers-reduced-motion`.
 - **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu. Group headers carry
   the icon, a count and one dot per state, so a folded group still says what is inside.
-  Needs you is pinned above every grouping.
+  Your move (asks · idle) is pinned above every grouping, a question first.
 - **A click selects; it never navigates.** Going somewhere or changing something is an explicit
   icon: focus (↗), resume (▶), close (×). The list manages the user's tabs: × closes the tab
   (with Undo; it asks first only when the agent is working or waiting), multi-select closes

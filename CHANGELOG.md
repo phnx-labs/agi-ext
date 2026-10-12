@@ -4,6 +4,29 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The Active Session sidebar is one card (owner review, 2026-10-12). The title carries three
+  quick icons: open the tab (or resume a session with no tab here), fork, and ⋯ (model,
+  account, host and the session details moved there). Under it, one state line, the goal, an
+  open ask, and what you asked; then **Made**, one row of previews you scroll sideways: the
+  PR first with its state word and glyphs (it opens its card, with checks and merge, right
+  under the row), the other PRs and the ticket, then every artifact file, newest first.
+  Pages, docs and images on this machine carry Share, which runs
+  `artifacts share <file> --visibility org|me|unlisted` and copies the link. Last, the activity
+  strip: drag across it to choose any range (no more phase chips), and the feed under it
+  (steps, You, Failed, the heavy filters, and now Files, Subagents and Checklist as chips)
+  follows that range; artifacts made outside it dim in place. "N more" stays open across
+  updates. The reply floats over the bottom of the panel. A Running session with no output
+  for 5 minutes shows "Running, but quiet since …", revealed by a CSS delay, not a timer.
+- Session states are three, by who has the ball, on both panels: **Your move** (asks · idle),
+  **Running**, **Ended**. Needs you, Your turn and Stopped merge into Your move; a crashed,
+  orphaned or abandoned process is Ended, with no claim it succeeded; a live stall is idle.
+  The Project panel pins every Your-move session, a question first.
+- Merge ▾ on the PR card offers squash, rebase or a merge commit, and an admin merge that
+  bypasses branch protection. Each runs `agents projects prs merge … --sha <head> --method <m>`
+  once, after a dialog; `--admin` runs only from that menu, after its own warning.
+
 ## [0.9.396] - 2026-10-12
 
 - The packaged extension no longer carries compiled code from deleted source files

@@ -63,8 +63,8 @@ import { normalizeHost } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
-import { runAgents } from '../core/agentsBin';
-import { prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
+import { runAgents, runCliArgs } from '../core/agentsBin';
+import { mergeChoices, prAction, prRepo, type MergeChoice, type PrAction, type RemotePrStatus } from '../core/prStatus';
 import { shellQuote } from '../core/shellQuote';
 import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
@@ -215,6 +215,8 @@ interface PanelSnapshot {
   /** The session's PR as the feed reports it, and the one action the card may offer. */
   prStatus?: RemotePrStatus;
   prAction?: PrAction;
+  /** The Merge ▾ menu has a choice (a method, or an admin merge). */
+  prCanMerge?: boolean;
   prRepo?: string;
   // All worktrees attached to the workspace, including the main checkout
   worktrees?: WorktreeRef[];
@@ -463,6 +465,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       case 'prAction':
         await this.runPrAction(msg.action);
         return;
+      case 'shareArtifact':
+        if (typeof msg.path === 'string') await this.shareArtifact(msg.path);
+        return;
       case 'openWorktree':
         // Worktree paths are DIRECTORIES — `vscode.open` shows an error toast
         // for directories. Open as a folder in a new window instead so the
@@ -549,14 +554,17 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
    * One verb per click, pinned to the head commit the panel showed. The host
    * re-decides the action from its own snapshot (the webview only asks), confirms
    * in a modal, then runs `agents projects prs merge|automerge … --sha <head>`.
-   * Never --admin: branch protection stays in force.
+   * 'options' opens the Merge ▾ menu (squash, rebase, merge commit, and an admin
+   * merge); --admin runs only from that menu, after its own warning dialog, as
+   * the CLI reserves it for a person's explicit confirm.
    */
   private async runPrAction(requested: unknown): Promise<void> {
     // One action at a time: a second click while a dialog or a merge is open is ignored.
     if (this.prActionBusy) return;
     this.prActionBusy = true;
     try {
-      await this.decideAndRunPrAction(requested);
+      if (requested === 'options') await this.pickAndMerge();
+      else await this.decideAndRunPrAction(requested);
     } finally {
       this.prActionBusy = false;
     }
@@ -600,6 +608,78 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   }
 
   private prActionBusy = false;
+
+  /** Merge ▾: pick a method (or an admin merge), confirm, run once at the head shown. */
+  private async pickAndMerge(): Promise<void> {
+    const pr = this.snapshot.prStatus;
+    const choices = mergeChoices(pr);
+    const repo = pr ? prRepo(pr.url) : undefined;
+    const project = this.snapshot.project;
+    if (!pr || !pr.headSha || !choices.length || !repo || !project) {
+      void vscode.window.showWarningMessage('This pull request cannot be merged from here' + (prAction(pr).reason ? ': ' + prAction(pr).reason : '') + '.');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      choices.map((c) => ({ label: (c.admin ? '$(shield) ' : '') + c.label, description: c.detail, choice: c })),
+      { title: `Merge ${repo}#${pr.number} at ${pr.headSha.slice(0, 7)}`, placeHolder: 'How to merge' },
+    );
+    if (!picked) return;
+    const c: MergeChoice = picked.choice;
+    const head = pr.headSha.slice(0, 7);
+    const ask = c.admin
+      ? `Admin merge ${repo}#${pr.number} at ${head}? This bypasses branch protection (required reviews and checks) as a repository admin.`
+      : `${c.label}: ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}?`;
+    const go = c.admin ? 'Merge as admin' : 'Merge';
+    if (await vscode.window.showWarningMessage(ask, { modal: true }, go) !== go) return;
+    const now = this.snapshot.prStatus;
+    if (!now || now.url !== pr.url || now.headSha !== pr.headSha) {
+      void vscode.window.showWarningMessage(`Did not merge ${repo}#${pr.number}: a new commit landed while the dialog was open.`);
+      return;
+    }
+    const args = ['projects', 'prs', 'merge', project, '--repo', repo, '--number', String(pr.number), '--sha', pr.headSha, '--method', c.method, ...(c.admin ? ['--admin'] : [])];
+    try {
+      await runCliArgs('agents', args, { timeout: 60_000 });
+      void vscode.window.showInformationMessage(`Merged ${repo}#${pr.number}${c.admin ? ' as admin' : ''}.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err);
+      void vscode.window.showErrorMessage(`Merge failed: ${message}`);
+    }
+  }
+
+  /**
+   * Share: publish one artifact the row lists as a Rush link with
+   * `artifacts share <path> --visibility <me|org|unlisted> --json`, then copy the
+   * URL. Only for a file on this machine; the CLI refuses files with emails or
+   * credential-shaped strings, and that refusal is shown as is.
+   */
+  private async shareArtifact(filePath: string): Promise<void> {
+    const listed = (this.snapshot.artifacts ?? []).some((a) => a.path === filePath) || this.snapshot.plan?.path === filePath;
+    if (!listed) return;
+    if (!this.snapshot.sessionLocal) {
+      void vscode.window.showWarningMessage('Sharing works for artifacts on this machine. Open the session on its own machine to share this one.');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick([
+      { label: 'Rush org', description: 'anyone signed in to your organization', vis: 'org' },
+      { label: 'Only me', description: 'owner-only, needs your Rush sign-in', vis: 'me' },
+      { label: 'Anyone with the link', description: 'not listed, no sign-in needed', vis: 'unlisted' },
+    ], { title: `Share ${path.basename(filePath)} as a Rush artifact`, placeHolder: 'Who can open the link (expires in 30 days)' });
+    if (!picked) return;
+    try {
+      const { stdout } = await runCliArgs('artifacts', ['share', filePath, '--visibility', picked.vis, '--json'], { timeout: 120_000 });
+      const url = (stdout.match(/https?:\/\/[^\s"']+/) || [])[0];
+      if (url) {
+        await vscode.env.clipboard.writeText(url);
+        const open = await vscode.window.showInformationMessage(`Shared ${path.basename(filePath)} (${picked.label}). Link copied.`, 'Open');
+        if (open === 'Open') openExternalUrl(url);
+      } else {
+        void vscode.window.showInformationMessage(`Shared ${path.basename(filePath)}.`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err);
+      void vscode.window.showErrorMessage(`Share failed: ${message}`);
+    }
+  }
 
   private async runQuickAction(
     action: string,
@@ -645,6 +725,12 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         await resumeAndNotify({ sessionId, host: this.snapshot.sessionHost ?? '', title: this.snapshot.sessionTitle ?? '' });
         return;
       }
+      // Fork: the panel's own tab forks in place; a session with no tab here
+      // picks which session to fork, as Agents: Fork (Pick Session) does.
+      case 'forkSubject':
+        if (terminal && entry) { terminal.show(true); await vscode.commands.executeCommand('agents.forkCurrentSession'); }
+        else await vscode.commands.executeCommand('agents.forkPickSession');
+        return;
       case 'openPr':
         if (typeof url === 'string') {
           openExternalUrl(url);
@@ -868,6 +954,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (live.prStatus) {
           snapshot.prStatus = live.prStatus;
           snapshot.prAction = prAction(live.prStatus);
+          snapshot.prCanMerge = mergeChoices(live.prStatus).length > 0;
           snapshot.prRepo = prRepo(live.prStatus.url);
         }
 
@@ -1044,6 +1131,12 @@ function prettyModel(id) {
   return id;
 }
 
+const HEAD_ICON = {
+  open: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/></svg>',
+  resume: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5l7 4.5-7 4.5z"/></svg>',
+  fork: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.5"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="8" cy="12.5" r="1.5"/><path d="M4 5v1.5a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V5M8 8.5V11"/></svg>',
+};
+
 function renderTerminalCard(s) {
   const logo = s.agentIconUri
     ? '<img class="agent-logo" src="' + esc(s.agentIconUri) + '" alt="' + esc(s.agentName || '') + '" title="' + esc(s.agentName || '') + '" />'
@@ -1057,12 +1150,9 @@ function renderTerminalCard(s) {
   } else if (s.usageStatus === 'rate_limited') {
     usageBadge = '<span class="usage-badge usage-rate">⚠ rate-limited</span>';
   }
-  const who = [];
-  if (s.model) who.push('<b class="model-name" title="' + esc(s.model) + '">' + esc(prettyModel(s.model)) + '</b>');
-  if (s.accountLabel || s.account) who.push('<span title="' + esc(s.account || '') + '">' + esc(s.accountLabel ?? s.account) + '</span>');
-  // The host stays on the face of the card: where it runs is what you act on.
-  const host = s.hostLabel ? '<span class="where-chip mono">' + esc(s.hostLabel) + '</span>' : '';
-  const whoRow = who.length || usageBadge || host ? '<div class="account-row">' + who.join(' · ') + host + usageBadge + '</div>' : '';
+  // The face is the title and three quick icons; who runs it (model, account,
+  // host) lives in the ⋯ menu so the session's content starts higher up.
+  const usageRow = usageBadge ? '<div class="account-row">' + usageBadge + '</div>' : '';
   const following = s.subjectSource === 'project' && !s.hasTerminal
     ? '<div class="account-row">following the Project panel selection</div>'
     : '';
@@ -1071,6 +1161,9 @@ function renderTerminalCard(s) {
   // before the harness reports an id), project, branch, worktree, start time,
   // tokens, and the raw identity lines. Its open state is remembered.
   const menu = [];
+  if (s.model) menu.push(['Model', '<b class="model-name" title="' + esc(s.model) + '">' + esc(prettyModel(s.model)) + '</b>']);
+  if (s.accountLabel || s.account) menu.push(['Account', '<span title="' + esc(s.account || '') + '">' + esc(s.accountLabel ?? s.account) + '</span>']);
+  if (s.hostLabel) menu.push(['Host', '<span class="where-chip mono">' + esc(s.hostLabel) + '</span>']);
   const pencil = s.hasTerminal && s.terminalId
     ? '<button type="button" class="head-btn small" data-action="setSessionId" title="Set session ID for terminal" aria-label="Set session ID for terminal">✎</button>'
     : '';
@@ -1094,19 +1187,25 @@ function renderTerminalCard(s) {
   const menuBtn = menuBody
     ? '<summary class="head-btn menu-btn" aria-label="Session details" title="Session details">⋯</summary>'
     : '';
+  // Quick icons, each with its words in the tooltip: open the tab (or resume a
+  // session with no tab here) and fork. Both need the session id.
+  const icon = (action, label, svg) =>
+    '<button type="button" class="head-btn" data-action="' + action + '" aria-label="' + label + '" title="' + label + '">' + svg + '</button>';
   const actions =
     '<div class="head-actions">' +
       (s.fullSessionId
-        ? '<button type="button" class="head-btn" data-action="focusSubject" aria-label="Focus session" title="Focus session">◎</button>' +
-          '<button type="button" class="head-btn" data-action="resumeSubject" aria-label="Resume session" title="Resume session">↻</button>'
+        ? (s.hasTerminal
+            ? icon('focusSubject', 'Open its tab', HEAD_ICON.open)
+            : icon('resumeSubject', 'Resume session', HEAD_ICON.resume)) +
+          icon('forkSubject', 'Fork session', HEAD_ICON.fork)
         : '') +
     '</div>';
   return (
-    '<div class="card head-card">' +
+    '<div class="head-row">' +
       '<div class="agent-head">' +
         '<div class="agent-head-text">' +
           '<div class="title-line">' + logo + '<div class="title-row session-title" title="' + esc(title) + '">' + esc(title) + '</div></div>' +
-          whoRow +
+          usageRow +
           following +
         '</div>' +
         actions +
@@ -1142,7 +1241,8 @@ function renderNeedsYou(s) {
 // sidebar and the Project panel say the same thing for the same row.
 function sessionState(s) {
   const st = s.state || { key: 'unknown', word: 'Unknown' };
-  const cls = st.key === 'asks' ? 'waiting' : st.key === 'working' ? 'running' : st.key === 'stopped' ? 'failed' : 'idle';
+  // Your move reads amber (a question or an idle turn), Running green, Ended quiet.
+  const cls = st.key === 'asks' || st.key === 'yours' ? 'waiting' : st.key === 'working' || st.key === 'unknown' ? 'running' : 'idle';
   return { cls, word: st.word };
 }
 
@@ -1153,7 +1253,30 @@ function renderSessionStats(s) {
   const st = sessionState(s);
   const ran = age ? (st.cls === 'running' ? ' <b>' + esc(age) + '</b>' : ' · ran <b>' + esc(age) + '</b>') : '';
   const active = s.lastActivityMs ? ' · active <b>' + esc(relTime(s.lastActivityMs)) + '</b>' : '';
-  return '<div class="session-stats state-' + st.cls + '"><span class="state-dot"></span>' + esc(st.word) + ran + active + '</div>';
+  // The account the session runs on, quiet at the end of the line (agents accounts list).
+  const account = s.accountLabel || s.account
+    ? '<span class="stats-account" title="' + esc('Account ' + (s.account || s.accountLabel)) + '">' + esc((s.agentType ? s.agentType + '#' : '') + (s.accountLabel ?? s.account)) + '</span>'
+    : '';
+  return '<div class="session-stats state-' + st.cls + '"><span class="state-dot"></span><span class="stats-text">' + esc(st.word) + ran + active + '</span>' + account + '</div>' +
+    renderIdleWarning(s);
+}
+
+// A session you are flipping past should catch your eye once it has sat still for
+// IDLE_WARN_MS. The sidebar has no timers (it repaints only on stream facts), so
+// the warning is rendered up front and revealed by a CSS animation delay: it
+// appears on its own at the right moment even if no new row arrives. It names a
+// clock time, so its words stay true however long it stays up.
+const IDLE_WARN_MS = 5 * 60_000;
+
+function renderIdleWarning(s) {
+  // Your move is already amber on the state line; this catches a Running session gone quiet.
+  if (!s.lastActivityMs || !s.state || s.state.key !== 'working') return '';
+  const delay = Math.max(0, IDLE_WARN_MS - (Date.now() - s.lastActivityMs));
+  const since = new Date(s.lastActivityMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const words = 'Running, but quiet since ' + since;
+  return '<div class="idle-warn" role="status" style="--idle-delay:' + delay + 'ms" title="No output for more than 5 minutes: it may be on a long command">' +
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>' + esc(words) +
+    (s.hasTerminal ? '<button type="button" class="idle-open" data-action="focusSubject">Open</button>' : '') + '</div>';
 }
 
 // Failures stay out of the way: one quiet line only when something failed, and
@@ -1370,8 +1493,7 @@ function renderRequestCard(s) {
         '<img data-avatar src="' + esc(s.requester.avatar) + '" alt=""></span>' + esc(s.requester.name) + '</div>'
     : '';
   return (
-    '<h2>Request</h2>' +
-    '<div class="card">' +
+    '<div class="request-block">' +
       who +
       '<div class="' + headlineCls + '">' + esc(truncate(headline, 240)) + continues + '</div>' +
       renderImageThumbs(s) +
@@ -1481,24 +1603,77 @@ function renderPullRequestCard(s, justReady) {
       '</div>'
     : '';
   const branch = s.git && s.git.branch ? '<span class="pr-branch" title="Branch">⎇ ' + esc(s.git.branch) + '</span>' : '';
-  const primary = act.kind === 'merge'
+  const primary = (act.kind === 'merge'
     ? '<button type="button" class="action-btn primary" data-pr-action="merge">Merge</button>'
     : act.kind === 'automerge'
       ? '<button type="button" class="action-btn" data-pr-action="automerge" title="Turn on GitHub auto-merge">Merge when green</button>'
-      : '';
+      : '') +
+    // Merge ▾: squash, rebase, merge commit, or an admin merge (its own warning dialog).
+    (s.prCanMerge ? '<button type="button" class="action-btn" data-pr-action="options" title="Squash, rebase, merge commit, or admin merge" aria-label="Merge options">' + (act.kind === 'none' ? 'Merge ▾' : '▾') + '</button>' : '');
   const note = act.kind === 'none' && act.reason && pr.state === 'open' ? '<div class="card-note pr-note">' + esc(act.reason) + '</div>' : '';
   return (
-    '<h2>Pull request' + (s.prRepo ? '<span class="head-meta">' + esc(s.prRepo) + '</span>' : '') + '</h2>' +
     '<div class="card pr-card' + (justReady ? ' just-ready' : '') + '">' +
       '<div class="pr-head">' + prRing(v) +
         '<div class="pr-text"><div class="pr-title">#' + esc(pr.number) + (pr.title ? ' ' + esc(pr.title) : '') + '</div>' +
-        '<div class="pr-sub"><span class="pr-word pr-tone-' + v.tone + '">' + esc(v.word) + '</span>' + branch + '</div></div></div>' +
+        '<div class="pr-sub"><span class="pr-word pr-tone-' + v.tone + '">' + esc(v.word) + '</span>' + branch + (s.prRepo ? '<span class="pr-repo">' + esc(s.prRepo) + '</span>' : '') + '</div></div></div>' +
       '<div class="pr-strip">' + barEl + prReviewGlyph(pr) + prMergeGlyph(pr) + '</div>' +
       checks +
       '<div class="actions-row pr-actions">' + primary + '<button type="button" class="action-btn" data-url="' + esc(pr.url) + '">Open on GitHub ↗</button></div>' +
       note +
     '</div>'
   );
+}
+
+// ── Made ────────────────────────────────────────────────────────────────────
+// What the session made, as one row of previews you scroll sideways (owner,
+// 2026-10-12: "artifacts are important; a PR is an artifact, and so is the
+// ticket"). The PR leads with its state word and glyphs, and opens its card
+// (checks, review, Merge ▾) right under the row. Then other PRs, the ticket, and
+// every artifact file, newest first; an image previews, a page or doc shows its
+// type. A chosen timeline range dims files changed outside it, without moving
+// anything. Pages, docs and images on this machine carry Share.
+const SHARE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2.5M5 5.5l3-3 3 3M3.5 8.5v4.5h9V8.5"/></svg>';
+const SHAREABLE = /^(html?|md|markdown|pdf|png|jpe?g|gif|webp|svg)$/;
+
+function renderMadeShelf(s, justReady) {
+  const pr = s.prStatus;
+  const others = (s.pullRequests || []).filter((p) => !pr || p.url !== pr.url);
+  const files = [];
+  for (const it of artifactItems(s)) if (it.files) for (const f of it.files) files.push(f);
+  files.sort((a, b) => (b.editedAtMs || 0) - (a.editedAtMs || 0));
+  if (!pr && !others.length && !s.linearIssue && !files.length) return '';
+  const range = currentRange(s);
+  const open = !!pr && viewState.prOpen === pr.url;
+  const tiles = [];
+  if (pr) {
+    const v = prVerdict(pr);
+    tiles.push('<button type="button" class="mk mk-pr' + (open ? ' on' : '') + '" data-pr-open="' + esc(pr.url) + '" aria-expanded="' + open + '" title="' + esc('#' + pr.number + (pr.title ? ' ' + pr.title : '') + ': checks, review and merge') + '">' +
+      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(pr.number) + '</b><span class="mk-st pr-tone-' + v.tone + '">' + esc(v.word) + '</span></span>' +
+      '<span class="mk-t">' + esc(pr.title || s.prRepo || '') + '</span>' +
+      '<span class="mk-f">' + prReviewGlyph(pr) + prMergeGlyph(pr) + '</span></button>');
+  }
+  for (const p of others) {
+    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(p.url) + '" title="' + esc(p.url) + '">' +
+      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(p.number) + '</b></span><span class="mk-t">' + esc(p.ownerRepo) + '</span></button>');
+  }
+  if (s.linearIssue) {
+    const url = 'https://linear.app/issue/' + encodeURIComponent(s.linearIssue);
+    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(url) + '" title="' + esc(url) + '">' +
+      '<span class="mk-h">' + APP_ICON.linear + '<b>' + esc(s.linearIssue) + '</b></span><span class="mk-t">Linear ticket</span></button>');
+  }
+  for (const f of files) {
+    const kind = artifactKind(f);
+    const out = range && f.editedAtMs && !inRange(range, f.editedAtMs) ? ' out' : '';
+    const face = f.uri ? '<span class="mk-img">' + thumbImg(f) + '</span>' : '<span class="mk-doc" aria-hidden="true">' + esc(FILE_GLYPH[kind] || kind.slice(0, 4).toUpperCase()) + '</span>';
+    const share = s.sessionLocal && SHAREABLE.test(kind)
+      ? '<button type="button" class="mk-share" data-share="' + esc(f.path) + '" title="Share as a Rush artifact" aria-label="' + esc('Share ' + f.name) + '">' + SHARE_ICON + '</button>'
+      : '';
+    tiles.push('<div class="mk mk-file' + out + '"><button type="button" class="mk-open artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' + face +
+      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(kind + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
+  }
+  return '<div class="made"><div class="made-l">Made <span>' + tiles.length + '</span></div>' +
+    '<div class="made-strip" data-strip="made">' + tiles.join('') + '</div>' +
+    (open ? renderPullRequestCard(s, justReady) : '') + '</div>';
 }
 
 // ── Files ───────────────────────────────────────────────────────────────────
@@ -1631,27 +1806,13 @@ function renderSpawnedTeamCard(s) {
     '</div>'
   );
 }
-function renderActivityCard(s) {
-  const items = s.recentActivity || [];
-  if (!items.length) return '';
-  const rows = items.map((it) => (
-    '<div class="activity">' +
-      '<span class="activity-kind">' + esc(it.kind) + '</span>' +
-      '<span class="activity-summary">' + esc(truncate(it.summary, 80)) + '</span>' +
-    '</div>'
-  )).join('');
-  return (
-    '<h2>Recent activity</h2>' +
-    '<div class="card">' + rows + '</div>'
-  );
-}
 
 function renderGoalCard(s) {
   const goal = (s.goal || '').trim();
   if (!goal) return '';
+  // One line inside the session card; the whole goal is in the tooltip.
   return (
-    '<h2>Goal</h2>' +
-    '<div class="card goal-card">' +
+    '<div class="goal-line" title="' + esc('Goal: ' + goal) + '">' +
       '<span class="goal-mk">◈</span>' +
       '<span class="goal-txt">' + esc(truncate(goal, 240)) + '</span>' +
     '</div>'
@@ -1791,27 +1952,24 @@ function render(snap) {
     );
     return;
   }
-  // What the session produced leads: its artifacts as previews, then its PR.
-  // Then what was asked, what the agent has done, the checklist and the files it
-  // touched, its helpers — and a reply field last (PHNX-4289).
+  // One card, top to bottom (owner, 2026-10-12): the title with quick icons, the
+  // state, the goal, an open ask, what you asked, what it made, then the activity
+  // strip whose range filters the feed under it. The reply floats at the bottom.
   const pr = snap.prStatus;
   const prKey = pr ? (snap.fullSessionId || '') + '#' + pr.number : '';
   const justReady = pr ? prJustReady(prSeenChecks.get(prKey), pr) : false;
   if (pr) prSeenChecks.set(prKey, pr.checks || '');
   root.innerHTML = (
-    renderTerminalCard(snap) +
-    renderNeedsYou(snap) +
-    renderSessionStats(snap) +
-    renderFailures(snap) +
-    renderArtifactsCard(snap) +
-    renderPullRequestCard(snap, justReady) +
-    renderGoalCard(snap) +
-    renderRequestCard(snap) +
-    renderTimelineCard(snap) +
-    renderChecklistCard(snap) +
-    renderFilesCard(snap) +
-    renderSpawnedTeamCard(snap) +
-    renderActivityCard(snap) +
+    '<div class="card session-card">' +
+      renderTerminalCard(snap) +
+      renderSessionStats(snap) +
+      renderFailures(snap) +
+      renderGoalCard(snap) +
+      renderNeedsYou(snap) +
+      renderRequestCard(snap) +
+      renderMadeShelf(snap, justReady) +
+      renderTimelineCard(snap) +
+    '</div>' +
     renderReplyBox(snap) +
     '<div class="footer"><button id="refresh-btn">Refresh</button></div>'
   );
@@ -1850,6 +2008,17 @@ function render(snap) {
       e.preventDefault();
       vscode.postMessage({ type: 'openWorktree', path: el.getAttribute('data-worktree-path') });
     });
+  }
+  for (const el of root.querySelectorAll('[data-pr-open]')) {
+    el.addEventListener('click', () => {
+      const url = el.getAttribute('data-pr-open');
+      viewState.prOpen = viewState.prOpen === url ? '' : url;
+      vscode.setState(viewState);
+      render(lastSnapshot);
+    });
+  }
+  for (const el of root.querySelectorAll('[data-share]')) {
+    el.addEventListener('click', (e) => { e.stopPropagation(); vscode.postMessage({ type: 'shareArtifact', path: el.getAttribute('data-share') }); });
   }
   const prChecks = root.querySelector('[data-pr-checks]');
   if (prChecks) prChecks.addEventListener('click', () => {

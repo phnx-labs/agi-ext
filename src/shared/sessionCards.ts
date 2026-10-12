@@ -132,51 +132,20 @@ function seekSegments(h) {
   return segs;
 }
 
-// A phase is one stretch of work between idle gaps. Choosing one narrows the
-// strip, the steps and the You / Failed lists to that stretch.
-function timelinePhases(s) {
-  const h = s.activityHistogram;
-  if (!h || !h.buckets || !h.buckets.length || !(h.endMs > h.startMs)) return [];
-  const bucketMs = (h.endMs - h.startMs) / h.buckets.length;
-  const phases = [];
-  let cur = null;
-  for (const seg of seekSegments(h)) {
-    if (seg.gap) { cur = null; continue; }
-    const from = h.startMs + seg.i * bucketMs;
-    const to = h.startMs + (seg.i + 1) * bucketMs;
-    if (cur) cur.endMs = to; else phases.push(cur = { startMs: Math.round(from), endMs: Math.round(to) });
-  }
-  return phases.length > 1 ? phases : [];
-}
-
-// A remembered range applies only while it is still one of this session's phases:
-// once the strip is rebucketed or a stretch merges, it lapses instead of leaving
-// the strip dimmed with no chip showing why.
+// A range is any stretch you drag across on the strip (owner, 2026-10-12: "I
+// should be able to change the left and right boundary by myself"). A remembered
+// range applies while it still lies inside this session's strip and is narrower
+// than the whole of it; otherwise it lapses instead of dimming everything.
 function currentRange(s) {
   const r = (viewState.timelineRange || {})[(s && s.fullSessionId) || ''];
-  if (!Array.isArray(r) || r.length !== 2) return null;
-  return timelinePhases(s).some((p) => p.startMs === r[0] && p.endMs === r[1]) ? { startMs: r[0], endMs: r[1] } : null;
+  const h = s && s.activityHistogram;
+  if (!Array.isArray(r) || r.length !== 2 || !h || !(h.endMs > h.startMs)) return null;
+  if (!(r[1] > r[0]) || r[0] < h.startMs || r[1] > h.endMs || (r[0] <= h.startMs && r[1] >= h.endMs)) return null;
+  return { startMs: r[0], endMs: r[1] };
 }
 
 function inRange(range, ms) {
   return !range || (Number.isFinite(ms) && ms >= range.startMs && ms < range.endMs);
-}
-
-function renderPhaseChips(s) {
-  const phases = timelinePhases(s);
-  if (!phases.length) return '';
-  const range = currentRange(s);
-  let lastDay = '';
-  return '<div class="tl-phases" role="group" aria-label="Phases">' + phases.map((p) => {
-    const on = !!range && range.startMs === p.startMs && range.endMs === p.endMs;
-    const tip = clockTime(p.startMs) + ' to ' + clockTime(p.endMs);
-    const full = clockTime(p.startMs);
-    const time = new Date(p.startMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const day = full.slice(0, full.length - time.length).replace(/,?\\s+$/, '');
-    const label = day && day !== lastDay ? day + ' ' + time : time;
-    lastDay = day;
-    return '<button type="button" class="tl-filter tl-phase' + (on ? ' on' : '') + '" data-phase="' + p.startMs + '-' + p.endMs + '" aria-pressed="' + on + '" title="' + esc(tip) + '">' + esc(label) + '</button>';
-  }).join('') + '</div>';
 }
 
 function renderSeekBar(s) {
@@ -228,17 +197,29 @@ function renderSeekBar(s) {
   }
   if (s.needsYou) marks.push('<span class="seek-mk ask low" role="img" aria-label="Needs you" style="left:' + leftOf[n - 1].toFixed(2) + '%" title="Needs you">!</span>');
   return (
-    '<div class="seek" role="group" aria-label="Session activity">' +
+    '<div class="seek" role="group" aria-label="Session activity" data-bucket-ms="' + Math.round(bucketMs) + '">' +
       '<div class="seek-bars">' + bars + '</div>' +
       '<div class="seek-marks">' + marks.join('') + '</div>' +
-      '<div class="seek-axis"><span>' + esc(clockTime(h.startMs)) + '</span><span>' + esc(clockTime(h.endMs)) + '</span></div>' +
+      '<div class="seek-axis"><span>' + esc(clockTime(h.startMs)) + '</span>' +
+        (range
+          ? '<button type="button" class="seek-range" data-phase="" title="Show the whole session">' + esc(compactDuration(range.endMs - range.startMs)) + ' selected ×</button>'
+          : '<span class="seek-hint">' + esc((s.timeline && s.timeline.tools > 0 ? s.timeline.tools + ' tools · ' : '') + 'drag across to filter') + '</span>') +
+        '<span>' + esc(clockTime(h.endMs)) + '</span></div>' +
     '</div>'
   );
 }
 
 // Filters swap the default summary for one stream. You and Failed ride the row;
 // Agent, Tools and Reasoning are one agents-sessions call per click (cached).
-const TIMELINE_FILTERS = [{ id: 'summary', label: 'Summary' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }];
+const TIMELINE_FILTERS = [{ id: 'summary', label: 'All' }, { id: 'user', label: 'You' }, { id: 'failed', label: 'Failed' }, { id: 'assistant', label: 'Agent' }, { id: 'tools', label: 'Tools' }, { id: 'thinking', label: 'Reasoning' }, { id: 'files', label: 'Files' }, { id: 'subagents', label: 'Subagents' }, { id: 'checklist', label: 'Checklist' }];
+// Chips that show a section of the row in place of the steps; they need no load.
+const SECTION_FILTERS = ['files', 'subagents', 'checklist'];
+function sectionCount(s, id) {
+  if (id === 'files') return (s.files && (s.files.total || (s.files.changes || []).length)) || 0;
+  if (id === 'subagents') return (s.subagents || []).length || s.subAgentCount || 0;
+  if (id === 'checklist') return (s.todoProgress && s.todoProgress.total) || 0;
+  return 0;
+}
 const filterCache = {};
 const pendingFilters = {};
 const VERB_FILTERS = ['assistant', 'tools', 'thinking'];
@@ -275,11 +256,12 @@ function currentFilter(s) {
 
 function renderFilterChips(s, active) {
   if (!s.fullSessionId) return '';
-  const counts = { user: (s.userTurns || []).length, failed: (s.failures || []).length };
+  const counts = { user: (s.userTurns || []).length, failed: (s.failures || []).length, files: sectionCount(s, 'files'), subagents: sectionCount(s, 'subagents'), checklist: sectionCount(s, 'checklist') };
   return '<div class="tl-filters">' + TIMELINE_FILTERS.map((f) => {
     if (f.id === 'user' && !s.userTurns) return '';
     if (f.id === 'failed' && !(s.failures && s.failures.length)) return '';
     if (VERB_FILTERS.indexOf(f.id) >= 0 && !s.sessionLocal) return '';
+    if (SECTION_FILTERS.indexOf(f.id) >= 0 && !counts[f.id]) return '';
     const count = counts[f.id] ? '<em>' + counts[f.id] + '</em>' : '';
     return '<button type="button" class="tl-filter' + (f.id === active ? ' on' : '') + '" data-filter="' + f.id + '" aria-pressed="' + (f.id === active) + '">' + esc(f.label) + count + '</button>';
   }).join('') + '</div>';
@@ -355,13 +337,14 @@ function renderFilteredBody(s, active) {
   return stale + lane + filteredRows(rows.reverse());
 }
 
+// The strip and the feed under it, inside the session card (no heading of its
+// own): the strip's range filters the feed, and the chips switch what it lists.
 function renderTimelineCard(s) {
   // The stream has not established for this session's scope: say so instead of
-  // rendering an empty card that reads as "the agent has done nothing".
+  // rendering an empty feed that reads as "the agent has done nothing".
   if (s.streamDegraded) {
     return (
-      '<h2>Timeline</h2>' +
-      '<div class="card"><div class="card-note">' +
+      '<div class="feed"><div class="card-note">' +
         '<strong>Waiting for the session stream…</strong><br>' +
         'No row has arrived for ' + esc(s.streamScope || 'this machine') + ' yet. The elected ' +
         'window runs <code>agents feed watch --json</code> while a session view is open, and ' +
@@ -370,43 +353,41 @@ function renderTimelineCard(s) {
     );
   }
   const t = s.timeline || timelineFromCheckpoints(s);
-  if (!t) return '';
-  if (t.state === 'unavailable') {
+  if (t && t.state === 'unavailable') {
     return (
-      '<h2>Timeline</h2>' +
-      '<div class="card"><div class="card-note">' +
+      '<div class="feed"><div class="card-note">' +
         '<strong>Timeline unavailable for this harness</strong>' +
         (t.reason ? '<br>' + esc(t.reason) : '') +
       '</div></div>'
     );
   }
-  const steps = (t.steps || []).slice().reverse();   // newest first
-  if (!steps.length && !t.earlier.steps) return '';
-  const head = [];
-  if (s.lastActivityMs) head.push('last active ' + relTime(s.lastActivityMs));
-  if (t.tools > 0) head.push(t.tools + ' tools');
-  const meta = head.length ? '<span class="head-meta">' + esc(head.join(' · ')) + '</span>' : '';
   const active = currentFilter(s);
   const range = currentRange(s);
-  const rangeNote = range
-    ? '<div class="tl-range card-note">' + esc(clockTime(range.startMs) + ' to ' + clockTime(range.endMs)) + ' · ' +
-        (s.sessionLocal && active !== 'tools' ? '<button type="button" class="tl-refresh" data-filter="tools">Show tool calls</button> · ' : '') +
-        '<button type="button" class="tl-refresh" data-phase="">Clear range</button></div>'
-    : '';
-  const seekAndFilters = renderSeekBar(s) + renderPhaseChips(s) + renderFilterChips(s, active) + rangeNote;
-  if (active !== 'summary') {
-    return '<h2>Timeline' + meta + '</h2><div class="card">' + seekAndFilters + '<div class="tl-filtered">' + renderFilteredBody(s, active) + '</div></div>';
-  }
+  const strip = renderSeekBar(s);
+  // With no strip (an older CLI), the tool count still has a place to live.
+  const head = (strip || (t && t.tools > 0 ? '<div class="card-note tl-meta">' + esc(t.tools + ' tools' + (s.lastActivityMs ? ' · last active ' + relTime(s.lastActivityMs) : '')) + '</div>' : '')) + renderFilterChips(s, active) +
+    (range && s.sessionLocal && active !== 'tools'
+      ? '<div class="tl-range card-note">' + esc(clockTime(range.startMs) + ' to ' + clockTime(range.endMs)) + ' · <button type="button" class="tl-refresh" data-filter="tools">Show tool calls</button></div>'
+      : '');
+  if (active === 'files') return '<div class="feed">' + head + renderFilesCard(s) + '</div>';
+  if (active === 'subagents') return '<div class="feed">' + head + renderSpawnedTeamCard(s) + '</div>';
+  if (active === 'checklist') return '<div class="feed">' + head + renderChecklistCard(s) + '</div>';
+  if (active !== 'summary') return '<div class="feed">' + head + '<div class="tl-filtered">' + renderFilteredBody(s, active) + '</div></div>';
+  if (!t) return head ? '<div class="feed">' + head + '</div>' : '';
 
+  const steps = (t.steps || []).slice().reverse();   // newest first
   const visible = steps.filter((step) => !Number.isFinite(Date.parse(step.at)) || inRange(range, Date.parse(step.at)));
   const none = range && !visible.length
     ? '<div class="card-note">No loaded step falls in this range; older steps are folded into the count below.</div>'
     : '';
   const shown = none + visible.slice(0, TIMELINE_SHOWN).map(renderStep).join('');
   const rest = visible.slice(TIMELINE_SHOWN);
+  // "N more" stays open across stream updates (it used to fold back on the next row).
+  const key = (s.fullSessionId || '') + ':more';
   const more = rest.length
-    ? '<details><summary class="timeline-more">' + rest.length + ' more</summary>' +
-      rest.map(renderStep).join('') + '</details>'
+    ? (viewState.feedMore === key
+        ? rest.map(renderStep).join('') + '<button type="button" class="timeline-more" data-feed-more="">Show less</button>'
+        : '<button type="button" class="timeline-more" data-feed-more="' + esc(key) + '">' + rest.length + ' more</button>')
     : '';
   const earlierBits = [];
   if (t.earlier.steps > 0) {
@@ -414,35 +395,20 @@ function renderTimelineCard(s) {
     if (t.earlier.tools > 0) earlierBits.push(t.earlier.tools + ' tools');
     if (t.earlier.failed > 0) earlierBits.push(t.earlier.failed + ' failed');
   }
-  const earlier = earlierBits.length
-    ? '<div class="timeline-earlier">▸ ' + esc(earlierBits.join(' · ')) + '</div>'
-    : '';
-  const partial = t.state === 'partial'
-    ? '<div class="card-note" style="margin-top:6px">Partial: the transcript was capped this tick.</div>'
-    : '';
-  return (
-    '<h2>Timeline' + meta + '</h2>' +
-    '<div class="card">' + seekAndFilters + shown + more + earlier + partial + '</div>'
-  );
+  const earlier = earlierBits.length ? '<div class="timeline-earlier">▸ ' + esc(earlierBits.join(' · ')) + '</div>' : '';
+  const partial = t.state === 'partial' ? '<div class="card-note" style="margin-top:6px">Partial: the transcript was capped this tick.</div>' : '';
+  return '<div class="feed">' + head + shown + more + earlier + partial + '</div>';
 }
 
 // ── Artifacts ───────────────────────────────────────────────────────────────
-// Everything the session produced for a person: the CLI's artifacts as a
-// gallery (or grouped into their folders by app), the PRs and the ticket. Sort,
-// grouping and the folded state are the viewer's choice and persist; the data is
-// only what the row carries.
-const APP_LABEL = { github: 'GitHub', finder: 'Finder', linear: 'Linear' };
+// Everything the session produced for a person, as the row carries it: the CLI's
+// artifact files grouped into folders, its PRs and its ticket. The Made shelf in
+// the sidebar draws them; these are the shared pieces (icons, kinds, thumbnails).
 const APP_ICON = {
   github: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>',
   finder: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3.5" fill="#1E6FF0"/><path d="M8.6 0H12.5A3.5 3.5 0 0116 3.5v9A3.5 3.5 0 0112.5 16H7.4C7.9 12 8.9 9.5 7.2 9.2 6.4 9 7.6 3 8.6 0z" fill="#9DD0FF"/><path d="M4.7 5v1.6M11.3 5v1.6M3.8 11c2.6 1.8 5.8 1.8 8.4 0" stroke="#0B2A5C" stroke-width="1.1" fill="none" stroke-linecap="round"/></svg>',
   linear: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#5E6AD2"/><path d="M2.2 9.6l4.2 4.2M2.9 6.8l6.3 6.3M4.4 4.4l7.2 7.2M6.8 2.9l6.3 6.3" stroke="#fff" stroke-width="1.1"/></svg>',
 };
-const ARTIFACT_SORTS = {
-  latest: (a, b) => (b.editedAtMs || 0) - (a.editedAtMs || 0),
-  oldest: (a, b) => (a.editedAtMs || 0) - (b.editedAtMs || 0),
-  name: (a, b) => a.name.localeCompare(b.name),
-};
-
 function artifactItems(s) {
   const files = (s.artifacts || []).slice();
   if (s.plan && !files.some((a) => a.path === s.plan.path)) {
@@ -467,121 +433,12 @@ function artifactItems(s) {
   return items;
 }
 
-// The gallery is the default; Group by app is on only after the viewer turns it on.
-// A viewer who never toggled has no stored value, so one click must turn it on.
-function artifactGroupOn(stored) { return stored === true; }
-
-function renderArtifactsCard(s) {
-  const items = artifactItems(s);
-  if (!items.length) return '';
-  const sortKey = ARTIFACT_SORTS[viewState.artifactSort] ? viewState.artifactSort : 'latest';
-  // Visual first: the gallery is the default; grouping by app is the toggle.
-  const grouped = artifactGroupOn(viewState.artifactGroup);
-  const collapsed = !!viewState.artifactsCollapsed;
-  items.sort(ARTIFACT_SORTS[sortKey]);
-  const fileCount = items.reduce((n, it) => n + (it.files ? it.files.length : 0), 0);
-  const meta = items.length + (items.length === 1 ? ' item' : ' items') + (fileCount ? ' · ' + fileCount + (fileCount === 1 ? ' file' : ' files') : '');
-  const head =
-    '<h2><button type="button" class="art-toggle" data-art-toggle aria-expanded="' + !collapsed + '">' +
-      '<span class="caret">' + (collapsed ? '▸' : '▾') + '</span>Artifacts</button>' +
-      '<span class="head-meta">' + esc(meta) + '</span></h2>';
-  if (collapsed) return head + renderArtifactsSummary(items);
-  const options = [['latest', 'Latest edited'], ['oldest', 'Oldest first'], ['name', 'Name']]
-    .map((o) => '<option value="' + o[0] + '"' + (o[0] === sortKey ? ' selected' : '') + '>' + o[1] + '</option>').join('');
-  const bar =
-    '<div class="art-bar"><label>Sort <select data-art-sort>' + options + '</select></label>' +
-    '<button type="button" class="art-group" data-art-group aria-pressed="' + grouped + '">Group by app</button></div>';
-  let body = '';
-  if (grouped) {
-    const apps = [];
-    for (const it of items) {
-      let group = apps.find((g) => g.app === it.app);
-      if (!group) apps.push(group = { app: it.app, items: [] });
-      group.items.push(it);
-    }
-    body = apps.map((g) =>
-      '<div class="art-app">' + APP_ICON[g.app] + esc(APP_LABEL[g.app]) + '<span class="art-count">' + g.items.length + '</span></div>' +
-      g.items.map((it) => renderArtifactItem(it, s, sortKey, false)).join('')
-    ).join('');
-  } else {
-    const files = [];
-    for (const it of items) if (it.files) for (const f of it.files) files.push(f);
-    body = renderArtifactGallery(artifactGallery(files, sortKey)) +
-      items.filter((it) => !it.files).map((it) => renderArtifactItem(it, s, sortKey, true)).join('');
-  }
-  return head + '<div class="card art-card">' + bar + body + '</div>';
-}
-
-// The gallery: the newest file with a preview leads large, the other previews
-// follow as tiles in the viewer's order, and files with no preview (pages,
-// documents) close the card as compact tiles marked by their type.
-function artifactGallery(files, sortKey) {
-  let hero = null;
-  for (const f of files) if (f.uri && (!hero || (f.editedAtMs || 0) > (hero.editedAtMs || 0))) hero = f;
-  const rest = files.filter((f) => f !== hero).sort(ARTIFACT_SORTS[sortKey] || ARTIFACT_SORTS.latest);
-  return { hero: hero, images: rest.filter((f) => f.uri), files: rest.filter((f) => !f.uri) };
-}
-
 const FILE_GLYPH = { md: '¶', markdown: '¶', txt: '¶', html: '‹/›', htm: '‹/›', json: '{ }', csv: '▦', pdf: '▤' };
 
 function artifactKind(f) {
   const base = f.path.split('/').pop() || '';
   const dot = base.lastIndexOf('.');
   return dot > 0 ? base.slice(dot + 1).toLowerCase() : 'file';
-}
-
-function renderArtifactGallery(g) {
-  const caption = (f) => {
-    const age = f.editedAtMs ? relTime(f.editedAtMs) : '';
-    return '<span class="art-kind">' + esc(artifactKind(f)) + '</span>' + (age ? '<span class="art-age">' + esc(age) + '</span>' : '');
-  };
-  const hero = g.hero
-    ? '<button type="button" class="art-hero artifact-open" data-artifact="' + esc(g.hero.path) + '" title="' + esc(g.hero.path) + '">' +
-        '<span class="art-hero-img">' + thumbImg(g.hero) + '</span>' +
-        '<span class="art-cap"><b>' + esc(g.hero.name) + '</b><span class="art-cap-meta">' + caption(g.hero) + '</span></span></button>'
-    : '';
-  const images = g.images.length
-    ? '<div class="art-grid">' + g.images.map((f) =>
-        '<button type="button" class="art-shot artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
-          '<span class="art-shot-img">' + thumbImg(f) + '</span><span class="art-shot-cap">' + esc(f.name) + '</span></button>').join('') + '</div>'
-    : '';
-  const docs = g.files.length
-    ? '<div class="art-grid art-docs">' + g.files.map((f) => {
-        const kind = artifactKind(f);
-        return '<button type="button" class="art-doc artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
-          '<span class="art-glyph" aria-hidden="true">' + esc(FILE_GLYPH[kind] || kind.slice(0, 4).toUpperCase()) + '</span>' +
-          '<span class="art-doc-text"><span class="art-doc-name">' + esc(f.name) + '</span><span class="art-cap-meta">' + caption(f) + '</span></span></button>';
-      }).join('') + '</div>'
-    : '';
-  return hero + images + docs;
-}
-
-function renderArtifactItem(it, s, sortKey, showApp) {
-  const icon = showApp ? APP_ICON[it.app] : '';
-  if (it.pr) {
-    return '<button type="button" class="art-link" data-url="' + esc(it.pr.url) + '" title="' + esc(it.pr.url) + '">' +
-      icon + '<span class="art-link-kind">PR</span>' + esc(it.pr.ownerRepo) + ' #' + it.pr.number + '</button>';
-  }
-  if (it.ticket) {
-    const url = 'https://linear.app/issue/' + encodeURIComponent(it.ticket);
-    return '<button type="button" class="art-link" data-url="' + esc(url) + '" title="' + esc(url) + '">' +
-      icon + '<span class="art-link-kind">Ticket</span>' + esc(it.ticket) + '</button>';
-  }
-  const open = !!(viewState.openFolders || {})[it.key];
-  const files = it.files.slice().sort(ARTIFACT_SORTS[sortKey]);
-  const count = it.files.length + (it.files.length === 1 ? ' file' : ' files');
-  return (
-    '<div class="art-folder' + (open ? ' open' : '') + '">' +
-      '<div class="art-folder-head">' +
-        '<button type="button" class="art-folder-toggle" data-folder="' + esc(it.key) + '" aria-expanded="' + open + '" title="' + esc(it.key) + '">' +
-          '<span class="caret">' + (open ? '▾' : '▸') + '</span>' + icon + '<span class="art-folder-name">' + esc(it.name) + '</span></button>' +
-        (s.sessionLocal ? '<button type="button" class="art-reveal" data-reveal="' + esc(it.key) + '" title="Reveal in Finder">↗</button>' : '') +
-        (it.editedAtMs ? '<span class="art-time">' + esc(relTime(it.editedAtMs)) + '</span>' : '') +
-      '</div>' +
-      '<div class="art-meta">' + esc([it.display, count].filter(Boolean).join(' · ')) + '</div>' +
-      '<div class="art-files" data-strip="' + esc(it.key) + '">' + files.map(renderArtifactTile).join('') + '</div>' +
-    '</div>'
-  );
 }
 
 // An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
@@ -635,25 +492,6 @@ function queueThumb(uri) {
   });
 }
 
-function renderArtifactTile(f) {
-  const face = f.uri
-    ? thumbImg(f)
-    : '<span class="art-ext">' + esc((f.path.split('.').pop() || '').toUpperCase()) + '</span>';
-  return '<button type="button" class="art-tile artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' +
-    '<span class="art-thumb">' + face + '</span><span class="art-label">' + esc(f.name) + '</span></button>';
-}
-
-// The folded section still says what is there: the first thumbnails, which
-// apps hold artifacts, and when the newest one changed.
-function renderArtifactsSummary(items) {
-  const thumbs = [];
-  for (const it of items) for (const f of (it.files || [])) if (f.uri && thumbs.length < 3) thumbs.push(thumbImg(f));
-  const apps = items.map((it) => it.app).filter((app, i, all) => all.indexOf(app) === i).map((app) => APP_ICON[app]).join('');
-  const newest = Math.max(0, ...items.map((it) => it.editedAtMs || 0));
-  return '<button type="button" class="art-summary" data-art-toggle>' + thumbs.join('') + '<span class="art-apps">' + apps + '</span>' +
-    (newest ? '<span class="art-time">newest ' + esc(relTime(newest)) + '</span>' : '') + '</button>';
-}
-
 // Stream updates re-render the cards; a strip the viewer scrolled stays put.
 // A surface calls saveStripScroll before replacing root's HTML, then restores.
 function saveStripScroll() {
@@ -672,29 +510,53 @@ function restoreStripScroll(saved) {
 // Wires the timeline and artifact cards rendered into root: their thumbnails,
 // filters, phases, seek bar, step folds and links. Reads the surface's own
 // root, viewState, vscode, lastSnapshot and render.
+// Drag across the strip's bars to choose a range; a click without a drag still
+// jumps to that moment. The range is remembered per session.
+let seekDragged = false;
+function bindSeekDrag() {
+  const seek = root.querySelector('.seek');
+  if (!seek) return;
+  const half = Number(seek.getAttribute('data-bucket-ms') || 0) / 2;
+  let from = null;
+  const barAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('.seek-bar') : null; };
+  const mark = (a, b) => {
+    for (const bar of seek.querySelectorAll('.seek-bar')) {
+      const t = Number(bar.getAttribute('data-seek'));
+      bar.classList.toggle('sel', t >= Math.min(a, b) && t <= Math.max(a, b));
+    }
+  };
+  seek.addEventListener('pointerdown', (e) => {
+    const bar = barAt(e.clientX, e.clientY);
+    if (!bar) return;
+    from = Number(bar.getAttribute('data-seek'));
+    seekDragged = false;
+  });
+  seek.addEventListener('pointermove', (e) => {
+    if (from === null || !(e.buttons & 1)) return;
+    const bar = barAt(e.clientX, e.clientY);
+    if (!bar) return;
+    const to = Number(bar.getAttribute('data-seek'));
+    if (to !== from) { seekDragged = true; mark(from, to); }
+  });
+  seek.addEventListener('pointerup', (e) => {
+    if (from === null) return;
+    const bar = barAt(e.clientX, e.clientY);
+    const to = bar ? Number(bar.getAttribute('data-seek')) : from;
+    const start = from;
+    from = null;
+    if (!seekDragged || to === start) return;
+    const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
+    const next = Object.assign({}, viewState.timelineRange);
+    next[key] = [Math.round(Math.min(start, to) - half), Math.round(Math.max(start, to) + half)];
+    viewState.timelineRange = next;
+    vscode.setState(viewState);
+    render(lastSnapshot);
+  });
+}
+
 function bindSessionCards() {
   thumbObserver.disconnect();
   for (const img of root.querySelectorAll('img[data-thumb]')) if (!img.hasAttribute('src')) thumbObserver.observe(img);
-  for (const el of root.querySelectorAll('[data-art-toggle]')) {
-    el.addEventListener('click', () => { viewState.artifactsCollapsed = !viewState.artifactsCollapsed; vscode.setState(viewState); render(lastSnapshot); });
-  }
-  const artSort = root.querySelector('[data-art-sort]');
-  if (artSort) artSort.addEventListener('change', () => { viewState.artifactSort = artSort.value; vscode.setState(viewState); render(lastSnapshot); });
-  const artGroup = root.querySelector('[data-art-group]');
-  if (artGroup) artGroup.addEventListener('click', () => { viewState.artifactGroup = !artifactGroupOn(viewState.artifactGroup); vscode.setState(viewState); render(lastSnapshot); });
-  for (const el of root.querySelectorAll('[data-folder]')) {
-    el.addEventListener('click', () => {
-      const key = el.getAttribute('data-folder');
-      const open = Object.assign({}, viewState.openFolders);
-      if (open[key]) delete open[key]; else open[key] = true;
-      viewState.openFolders = open;
-      vscode.setState(viewState);
-      render(lastSnapshot);
-    });
-  }
-  for (const el of root.querySelectorAll('[data-reveal]')) {
-    el.addEventListener('click', () => vscode.postMessage({ type: 'revealCwd', path: el.getAttribute('data-reveal') }));
-  }
   for (const el of root.querySelectorAll('.artifact-open')) {
     el.addEventListener('click', (e) => {
       e.preventDefault();
@@ -722,9 +584,8 @@ function bindSessionCards() {
       const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
       const value = el.getAttribute('data-phase');
       const next = Object.assign({}, viewState.timelineRange);
-      const cur = currentRange(lastSnapshot);
       const parts = value ? value.split('-').map(Number) : null;
-      if (!parts || (cur && cur.startMs === parts[0] && cur.endMs === parts[1])) delete next[key];
+      if (!parts) delete next[key];
       else next[key] = parts;
       viewState.timelineRange = next;
       vscode.setState(viewState);
@@ -740,8 +601,13 @@ function bindSessionCards() {
       render(lastSnapshot);
     });
   }
+  bindSeekDrag();
+  for (const el of root.querySelectorAll('[data-feed-more]')) {
+    el.addEventListener('click', () => { viewState.feedMore = el.getAttribute('data-feed-more'); vscode.setState(viewState); render(lastSnapshot); });
+  }
   for (const el of root.querySelectorAll('[data-seek]')) {
     el.addEventListener('click', () => {
+      if (seekDragged) { seekDragged = false; return; }
       const at = Number(el.getAttribute('data-seek'));
       const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
       if (currentFilter(lastSnapshot) !== 'summary') {
@@ -836,6 +702,7 @@ ${fontFaces}  body {
     --r-bar: rgba(255, 255, 255, 0.30);
     --r-bar-hi: rgba(255, 255, 255, 0.62);
     --r-focus: rgba(255, 255, 255, 0.45);
+    --r-float: 0 10px 26px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   }
   body.vscode-light {
     --r-text: #141829;
@@ -865,6 +732,7 @@ ${fontFaces}  body {
     --r-bar: rgba(20, 24, 41, 0.24);
     --r-bar-hi: rgba(20, 24, 41, 0.55);
     --r-focus: rgba(20, 24, 41, 0.45);
+    --r-float: 0 10px 24px rgba(20, 24, 41, 0.18), 0 2px 6px rgba(20, 24, 41, 0.12);
   }
   body.vscode-high-contrast, body.vscode-high-contrast-light {
     --r-text: var(--vscode-foreground);
@@ -896,6 +764,7 @@ ${fontFaces}  body {
     --r-bar: var(--vscode-charts-blue);
     --r-bar-hi: var(--vscode-foreground);
     --r-focus: var(--vscode-focusBorder);
+    --r-float: none;
   }
   :root {
     color-scheme: light dark;
@@ -1094,18 +963,6 @@ ${fontFaces}  body {
     border-radius: 4px;
     padding: 2px 5px;
   }
-  .art-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: var(--r-caption); }
-  .art-bar select {
-    margin-left: 4px; font: inherit; border-radius: 3px; padding: 1px 2px;
-    background: var(--r-glass-strong); color: var(--r-text);
-    border: 1px solid var(--r-edge);
-  }
-  button.art-group {
-    font: inherit; font-size: 11px; cursor: pointer; border-radius: 999px; padding: 1px 9px;
-    border: 1px solid var(--r-edge);
-    background: transparent; color: var(--r-caption);
-  }
-  button.art-group[aria-pressed="true"] { background: var(--r-selected); color: var(--r-text); border-color: var(--r-selected-edge); font-weight: 600; }
   .art-icon { width: 14px; height: 14px; flex: none; }
   .requester { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--r-caption); font-size: 11px; }
   .avatar {
@@ -1114,59 +971,10 @@ ${fontFaces}  body {
     background: var(--r-selected); color: var(--r-text);
   }
   .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .art-app { display: flex; align-items: center; gap: 6px; margin: 10px 0 2px; font-size: 11.5px; font-weight: 600; }
-  .art-count { color: var(--r-caption); font-weight: 400; }
-  .art-folder { padding: 5px 0 6px; }
-  .art-folder-head { display: flex; align-items: center; gap: 4px; }
-  button.art-folder-toggle { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; }
-  .art-folder-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .caret { width: 10px; flex: none; color: var(--r-caption); font-size: 9px; }
-  .art-folder-head button.art-reveal { color: var(--r-caption); padding: 0 4px; }
-  .art-time { margin-left: auto; color: var(--r-caption); font-size: 11px; white-space: nowrap; }
-  .art-meta { margin: 1px 0 5px 15px; color: var(--r-caption); font-size: 11px; overflow-wrap: anywhere; }
-  .art-files { display: flex; gap: 6px; margin-left: 15px; padding-bottom: 4px; overflow-x: auto; }
-  .art-folder.open .art-files { flex-wrap: wrap; overflow-x: hidden; overflow-y: auto; max-height: 260px; }
-  button.art-tile { flex: none; width: 88px; }
-  .art-folder.open button.art-tile { width: calc(50% - 3px); }
-  .art-thumb {
-    display: flex; align-items: center; justify-content: center; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 6px;
-    border: 1px solid var(--r-edge); background: var(--r-well);
-  }
-  .art-thumb img { width: 100%; height: 100%; object-fit: cover; }
-  button.art-tile:hover .art-thumb { border-color: var(--r-focus); }
-  .art-ext { color: var(--r-caption); font-size: 10px; font-weight: 600; letter-spacing: 0.05em; }
-  .art-label {
-    display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--r-caption); font-family: var(--r-mono); font-size: 10.5px;
-  }
-  .art-card button.art-link {
-    display: flex; align-items: center; gap: 6px; width: 100%; margin: 3px 0; padding: 6px 9px; border-radius: 8px;
-    border: 1px solid var(--r-edge); color: var(--r-link); box-sizing: border-box;
-  }
-  .art-link-kind { color: var(--r-caption); font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase; }
-  button.art-summary { display: flex; align-items: center; gap: 6px; width: 100%; }
-  .art-summary img { width: 32px; height: 21px; object-fit: cover; border-radius: 2px; border: 1px solid var(--r-edge); }
-  .art-apps { display: flex; gap: 3px; }
-  button.art-toggle { display: inline-flex; align-items: center; gap: 4px; text-transform: inherit; letter-spacing: inherit; color: inherit; font-weight: inherit; }
   /* Gallery: the newest preview full width, the rest as 2-up tiles, then
      files with no preview as compact tiles marked by their type. */
-  .art-card button.art-hero { display: block; width: 100%; padding: 0; margin: 2px 0 6px; overflow: hidden; border-radius: 10px; border: 1px solid var(--r-edge); background: var(--r-well); cursor: zoom-in; }
-  .art-hero-img { display: block; aspect-ratio: 16 / 10; overflow: hidden; }
-  .art-hero-img img, .art-shot-img img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
-  .art-cap { display: grid; gap: 1px; padding: 6px 9px 7px; background: var(--r-glass); border-top: 1px solid var(--r-edge); }
-  .art-cap b { font-size: 12.5px; font-weight: 600; color: var(--r-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .art-cap-meta { display: flex; gap: 6px; align-items: baseline; font-family: var(--r-mono); font-size: 10px; color: var(--r-caption); white-space: nowrap; }
-  .art-kind { text-transform: uppercase; letter-spacing: 0.06em; color: var(--r-faint); }
-  .art-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; }
-  .art-card button.art-shot { display: block; min-width: 0; padding: 0; overflow: hidden; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--r-well); cursor: zoom-in; }
-  .art-shot-img { display: block; aspect-ratio: 4 / 3; overflow: hidden; }
-  .art-shot-cap { display: block; padding: 3px 6px 4px; font-size: 11px; color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-top: 1px solid var(--r-edge); background: var(--r-glass); }
-  .art-card button.art-doc { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 6px 7px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--r-glass); }
-  .art-glyph { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; background: var(--r-well); color: var(--r-caption); font-family: var(--r-mono); font-size: 10px; font-weight: 600; }
-  .art-doc-text { display: grid; min-width: 0; }
-  .art-doc-name { font-size: 11.5px; color: var(--r-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .art-card button.art-hero:hover, .art-card button.art-shot:hover, .art-card button.art-doc:hover { border-color: var(--r-focus); }
-  button.art-hero:focus-visible, button.art-shot:focus-visible, button.art-doc:focus-visible, button.pr-bar-btn:focus-visible { outline: 1px solid var(--r-focus); outline-offset: 1px; }
+  button.pr-bar-btn:focus-visible, .mk:focus-visible, .mk-open:focus-visible { outline: 1px solid var(--r-focus); outline-offset: 1px; }
   .team-summary { display: flex; align-items: center; gap: 8px; }
   .team-summary-name { color: var(--r-text); font-weight: 600; }
   .team-summary-count { margin-left: auto; color: var(--r-caption); font-size: 11px; }
@@ -1672,22 +1480,21 @@ ${fontFaces}  body {
     padding: 0;
   }
   .footer button:hover { text-decoration: underline; }
-  button.path-link, button.step, button.session-chunk, button.art-toggle, button.art-folder-toggle,
-  button.art-reveal, button.art-tile, button.art-link, button.art-summary,
-  button.art-hero, button.art-shot, button.art-doc, button.pr-bar-btn, button.pr-run {
+  button.path-link, button.step, button.session-chunk, button.pr-bar-btn, button.pr-run,
+  button.mk, button.mk-open, button.seek-range, button.timeline-more {
     background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
   }
   button.path-link { color: var(--r-link); padding: 0; }
   button.step { width: 100%; }
   /* Header: title line, then model · account · host; the ⋯ menu opens a drawer
      inside the card (no overlay, so nothing floats over the session). */
-  .head-card { position: relative; }
+  .head-row { position: relative; }
   .title-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
   .title-line .session-title { flex: 1; min-width: 0; }
   .head-menu > summary { list-style: none; position: absolute; top: 8px; right: 10px; }
   .head-menu > summary::-webkit-details-marker { display: none; }
   .head-menu[open] > summary { background: var(--r-selected); border-color: var(--r-selected-edge); }
-  .head-card .head-actions { margin-right: 26px; }
+  .head-row .head-actions { margin-right: 26px; }
   .menu-panel { display: none; }
   .head-menu[open] .menu-panel { display: block; margin: 9px 0 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--r-glass-strong); }
   .menu-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; padding: 3px 0; font-size: 11.5px; }
@@ -1702,7 +1509,6 @@ ${fontFaces}  body {
   .state-failed .state-dot { background: var(--r-bad); }
   /* Timeline phases: the strip dims outside the chosen stretch. */
   .seek-bar.out i { opacity: 0.22; }
-  .tl-phases { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
   .tl-range { margin: -2px 0 8px; }
   .sub-label { margin: 7px 0 2px 13px; font-family: var(--r-display); font-size: 9.5px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }
   .sub-asked { margin: 0 0 0 13px; padding: 6px 8px; border-radius: 8px; background: var(--r-well); font-size: 11.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1858,5 +1664,71 @@ ${fontFaces}  body {
   .sub-status { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--r-caption); }
   .sub-meta { font-size: 10.5px; color: var(--r-caption); margin: 3px 0 0 13px; }
   .sub-result { font-size: 11.5px; margin: 4px 0 0 13px; padding-left: 7px; border-left: 2px solid var(--r-edge); }
-  .sub-open { font-size: 11px; margin: 4px 0 0 13px; background: none; border: 0; padding: 0; color: var(--r-link); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }`;
+  .sub-open { font-size: 11px; margin: 4px 0 0 13px; background: none; border: 0; padding: 0; color: var(--r-link); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  /* ── One session card (owner, 2026-10-12) ─────────────────────────────────
+     Title with quick icons, the state, goal, ask and request, the Made shelf,
+     then the strip and the feed it filters. Sections inside the card are
+     separated by hairlines, not nested cards. */
+  .session-card { padding: 9px 11px 8px; }
+  .session-card .card { border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
+  .head-btn { width: 24px; height: 24px; border-radius: 6px; border-color: transparent; display: inline-grid; place-items: center; color: var(--r-caption); }
+  .head-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .head-btn:hover { color: var(--r-text); }
+  .head-menu > summary.head-btn { top: 0; right: 0; width: 24px; height: 24px; line-height: 22px; font-size: 13px; }
+  .session-stats { margin: 5px 0 0; }
+  .stats-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stats-account { margin-left: auto; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--r-mono); font-size: 10.5px; color: var(--r-faint); }
+  .session-stats.state-waiting { color: var(--r-warn); }
+  .session-stats.state-waiting .stats-text::first-line { font-weight: 600; }
+  /* A Running session gone quiet: revealed by its own delay, no timer. */
+  .idle-warn { display: flex; align-items: center; gap: 6px; margin: 6px -11px 0; padding: 0 11px; max-height: 0; overflow: hidden; opacity: 0; font-size: 11.5px; color: var(--r-warn); background: var(--r-warn-tint);
+    animation: idle-reveal 0s linear var(--idle-delay, 0ms) forwards, idle-pulse 2.4s ease-in-out var(--idle-delay, 0ms) infinite; }
+  .idle-warn svg { width: 13px; height: 13px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .idle-open { margin-left: auto; background: none; border: 0; color: var(--r-text); text-decoration: underline; cursor: pointer; font: inherit; }
+  @keyframes idle-reveal { to { max-height: 40px; opacity: 1; padding-top: 5px; padding-bottom: 5px; } }
+  @keyframes idle-pulse { 50% { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .idle-warn { animation: idle-reveal 0s linear var(--idle-delay, 0ms) forwards; } }
+  .goal-line { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--r-text-2); min-width: 0; }
+  .goal-line .goal-txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .request-block { margin-top: 9px; }
+  .request-block .request-headline { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Made: one row of previews, scrolled sideways. */
+  .made { margin: 9px -11px 0; }
+  .made-l { padding: 0 11px; font-family: var(--r-display); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }
+  .made-l span { letter-spacing: 0; color: var(--r-faint); }
+  .made-strip { display: flex; gap: 6px; overflow-x: auto; padding: 5px 11px 6px; scroll-snap-type: x proximity; scrollbar-width: thin;
+    -webkit-mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 20px), transparent); }
+  .mk { flex: none; width: 116px; height: 88px; border: 1px solid var(--r-edge); border-radius: 9px; background: var(--r-well); scroll-snap-align: start; position: relative; overflow: hidden; display: flex; flex-direction: column; text-align: left; }
+  .mk:hover { border-color: var(--r-edge-hi); }
+  .mk.on { border-color: var(--r-selected-edge); }
+  .mk.out { opacity: 0.32; }
+  .mk-pr { width: 148px; padding: 7px 8px; gap: 4px; }
+  .mk-h { display: flex; align-items: center; gap: 5px; font-size: 11px; min-width: 0; }
+  .mk-h b { font-family: var(--r-mono); font-size: 11px; white-space: nowrap; }
+  .mk-st { margin-left: auto; font-size: 10px; white-space: nowrap; }
+  .mk-t { font-size: 11.5px; color: var(--r-text-2); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: 1; }
+  .mk-f { display: flex; gap: 6px; align-items: center; }
+  .mk-open { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; }
+  .mk-img, .mk-doc { display: block; height: 54px; flex: none; border-bottom: 1px solid var(--r-edge); overflow: hidden; }
+  .mk-img img { width: 100%; height: 100%; object-fit: cover; }
+  .mk-doc { display: grid; place-items: center; font-family: var(--r-mono); font-size: 14px; color: var(--r-caption); }
+  .mk-n { display: block; padding: 4px 7px 0; font-size: 11.5px; color: var(--r-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk-m { display: block; padding: 0 7px; font-size: 10px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk-share { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--r-glass-strong); border: 1px solid var(--r-edge-hi); color: var(--r-text); opacity: 0; cursor: pointer; padding: 0; }
+  .mk-share svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .mk-file:hover .mk-share, .mk-file:focus-within .mk-share { opacity: 1; }
+  .made .pr-card { margin: 2px 11px 4px; padding: 8px 10px; border: 1px solid var(--r-edge-hi); border-radius: 9px; background: var(--r-well); }
+  /* The strip and the feed it filters. */
+  .feed { margin: 8px -11px 0; padding: 8px 11px 0; border-top: 1px solid var(--r-edge); }
+  .feed h2 { display: none; }
+  .feed .seek { margin-bottom: 6px; }
+  .seek-bar.sel i { background: var(--r-bar-hi); }
+  .seek-hint { font-family: var(--r-sans); color: var(--r-faint); }
+  button.seek-range { font-family: var(--r-sans); font-size: 10.5px; color: var(--r-text); border: 1px solid var(--r-selected-edge); border-radius: 999px; padding: 0 8px; }
+  button.timeline-more { display: block; margin: 4px 0; font-size: 11.5px; }
+  /* The reply floats over the bottom of the panel, so it is always in reach. */
+  .reply-box { position: sticky; bottom: 8px; z-index: 5; margin-top: 12px; border-radius: 12px; background: var(--r-glass-strong);
+    box-shadow: inset 0 1px 0 var(--r-sheen), var(--r-float); }
+  .reply-box:focus-within { transform: translateY(-1px); }
+  @media (prefers-reduced-motion: reduce) { .reply-box:focus-within { transform: none; } }`;
 }

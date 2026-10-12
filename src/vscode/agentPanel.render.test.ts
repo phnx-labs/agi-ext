@@ -49,17 +49,17 @@ const NAMES = [
   'renderGoalCard', 'renderChecklistCard',
   'requestChips', 'renderRequestCard',
   'timelineFromCheckpoints', 'stepChips', 'renderStep', 'renderTimelineCard',
-  'renderFilesCard', 'renderReplyBox', 'renderTerminalCard', 'renderArtifactsCard',
-  'artifactItems', 'renderArtifactItem', 'renderArtifactTile', 'renderArtifactsSummary', 'thumbImg',
+  'renderFilesCard', 'renderReplyBox', 'renderTerminalCard',
+  'thumbImg',
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
-  'sessionState', 'seekSegments', 'timelinePhases', 'currentRange', 'inRange', 'renderPhaseChips',
+  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
   'prVerdict', 'prCheckSegments', 'prJustReady', 'prRing', 'prReviewGlyph', 'prMergeGlyph',
-  'artifactGallery', 'artifactKind', 'renderArtifactGallery', 'artifactGroupOn',
+  'artifactKind',
 ];
-const CONSTS = ['APP_LABEL', 'APP_ICON', 'ARTIFACT_SORTS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
+const CONSTS = ['APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -70,16 +70,16 @@ const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
 const viewState: Record<string, unknown> = {};
 const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
-  renderFilesCard, renderReplyBox, renderTerminalCard, renderArtifactsCard,
+  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, currentRange,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
-  renderPullRequestCard, prVerdict, prCheckSegments, prJustReady, artifactGallery, artifactGroupOn,
+  renderPullRequestCard, prVerdict, prCheckSegments, prJustReady,
 }; })()`) as {
-  artifactGroupOn: (stored: unknown) => boolean;
+  renderMadeShelf: (s: unknown, justReady?: boolean) => string;
+  currentRange: (s: unknown) => { startMs: number; endMs: number } | null;
   renderPullRequestCard: (s: unknown, justReady?: boolean) => string;
   prVerdict: (pr: unknown) => { ring: string; word: string; tone: string };
   prCheckSegments: (pr: unknown) => { segments: { state: string; name: string }[]; passed: number; running: number; failed: number; counted: number };
   prJustReady: (prev: string | undefined, pr: unknown) => boolean;
-  artifactGallery: (files: unknown[], sortKey: string) => { hero: { path: string } | null; images: { path: string }[]; files: { path: string }[] };
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
   renderRequestCard: (s: unknown) => string;
@@ -87,7 +87,6 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderFilesCard: (s: unknown) => string;
   renderReplyBox: (s: unknown) => string;
   renderTerminalCard: (s: unknown) => string;
-  renderArtifactsCard: (s: unknown) => string;
   renderNeedsYou: (s: unknown) => string;
   renderSessionStats: (s: unknown) => string;
   renderFailures: (s: unknown) => string;
@@ -313,17 +312,21 @@ test('renderFilesCard shows the op mix and the true total when bounded, and noth
   expect(cards.renderFilesCard({ files: { changes: [], total: 0, source: 'tools' } })).toBe('');
 });
 
-test('the session header: title, model and host up front, Focus and Resume, the rest in the ⋯ menu', () => {
+test('the session header: the title and three quick icons; model, account and host live in the ⋯ menu', () => {
   {
+    // A session with its tab here: open the tab, and fork. No ◎ / ↻ (owner: "the rotation one reads as restart").
+    const tabbed = cards.renderTerminalCard({ fullSessionId: 'c9d700d5', agentName: 'Claude', sessionChunk: 'c9d700d5', hasTerminal: true });
+    expect(tabbed).toContain('data-action="focusSubject" aria-label="Open its tab"');
+    expect(tabbed).toContain('data-action="forkSubject" aria-label="Fork session"');
+    expect(tabbed).not.toContain('data-action="resumeSubject"');
+    expect(tabbed).not.toContain('>◎<');
+    expect(tabbed).not.toContain('>↻<');
+    // No tab here: resume (▶) instead of open.
     const header = cards.renderTerminalCard({ fullSessionId: 'c9d700d5', agentName: 'Claude', sessionChunk: 'c9d700d5' });
-    expect(header).toContain('data-action="focusSubject"');
-    expect(header).toContain('data-action="resumeSubject"');
-    expect(header).toContain('aria-label="Focus session"');
-    expect(header).toContain('>◎<');
-    expect(header).toContain('aria-label="Resume session"');
-    expect(header).toContain('>↻<');
-    // A tab that has not reported a session id yet gets neither verb (both need one).
-    expect(cards.renderTerminalCard({ agentName: 'Claude' })).not.toContain('data-action="focusSubject"');
+    expect(header).toContain('data-action="resumeSubject" aria-label="Resume session"');
+    expect(header).not.toContain('data-action="focusSubject"');
+    // A tab that has not reported a session id yet gets no verb (each needs one).
+    expect(cards.renderTerminalCard({ agentName: 'Claude' })).not.toContain('data-action="forkSubject"');
 
     // A Project subject with no local tab says so, so "Focus" reads as an offer.
     const fleet = cards.renderTerminalCard({ fullSessionId: 's1', subjectSource: 'project', hasTerminal: false });
@@ -368,11 +371,12 @@ test('the session header: title, model and host up front, Focus and Resume, the 
     const face = html.slice(0, html.indexOf('class="head-menu"'));
     const menu = html.slice(html.indexOf('class="menu-panel"'));
     expect(face).toContain('>Codebase health</div>');
-    expect(face).toContain('>Opus 5.5</b>');
-    expect(face).toContain('>yosemite-m1</span>');
+    // The face is the title and the quick icons; who runs it moves into the ⋯ menu.
+    expect(face).not.toContain('Opus 5.5');
+    expect(face).not.toContain('yosemite-m1');
     expect(face).not.toContain('copy-session');
     expect(face).not.toContain('where-chip proj');
-    for (const inMenu of ['id="copy-session"', 'where-chip proj">agents<', '⎇ main', '121m tok · 124 tok/s', 'menu-k">Started']) expect(menu).toContain(inMenu);
+    for (const inMenu of ['menu-k">Model', '>Opus 5.5</b>', 'menu-k">Account', '>work</span>', 'menu-k">Host', '>yosemite-m1</span>', 'id="copy-session"', 'where-chip proj">agents<', '⎇ main', '121m tok · 124 tok/s', 'menu-k">Started']) expect(menu).toContain(inMenu);
     expect(html).toContain('aria-label="Session details"');
     // A tab whose harness has not reported an id yet still gets the pencil to set one.
     const idless = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CX-1', agentName: 'Codex' });
@@ -382,84 +386,41 @@ test('the session header: title, model and host up front, Focus and Resume, the 
 });
 
 
-test('Artifacts lead with the newest preview large, then 2-up tiles, then typed file tiles; grouping by app is a one-click toggle (PHNX-4289)', () => {
-  {
-    const snap = {
-      sessionLocal: true,
-      linearIssue: 'PHNX-4248',
-      pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }],
-      artifacts: [
-        { path: '/u/Downloads/Old/a.png', display: '~/Downloads/Old/a.png', basename: 'a.png', bucket: 'docs', editedAtMs: 1_000, uri: 'vscode-resource:/a.png' },
-        { path: '/u/Downloads/New/index.html', display: '~/Downloads/New/index.html', basename: 'index.html', bucket: 'docs', editedAtMs: 3_000 },
-        { path: '/u/Downloads/New/hero.jpg', display: '~/Downloads/New/hero.jpg', basename: 'hero.jpg', title: 'Launch hero', bucket: 'docs', editedAtMs: 2_000, uri: 'vscode-resource:/hero.jpg' },
-      ],
-    };
-    for (const key of Object.keys(viewState)) delete viewState[key];
-    const html = cards.renderArtifactsCard(snap);
-    expect(html).toContain('4 items · 3 files');
-    // The newest file WITH a preview is the hero, captioned by its sidecar title and kind,
-    // even though a page was edited later.
-    expect(html).toContain('class="art-hero artifact-open" data-artifact="/u/Downloads/New/hero.jpg"');
-    expect(html).toContain('<b>Launch hero</b>');
-    expect(html).toContain('<span class="art-kind">jpg</span>');
-    // Raster previews wait for the downscaler instead of decoding the full image.
-    expect(html).toContain('<img data-thumb="vscode-resource:/hero.jpg" alt="">');
-    expect(html).toContain('class="art-shot artifact-open" data-artifact="/u/Downloads/Old/a.png"');
-    // A page with no preview is a compact tile marked by its type, after the previews.
-    expect(html).toContain('class="art-doc artifact-open" data-artifact="/u/Downloads/New/index.html"');
-    expect(html).toContain('<span class="art-glyph" aria-hidden="true">‹/›</span>');
-    expect(html.indexOf('art-hero')).toBeLessThan(html.indexOf('art-shot'));
-    expect(html.indexOf('art-shot')).toBeLessThan(html.indexOf('art-doc'));
-    expect(html).toContain('data-url="https://github.com/phnx-labs/agi-cli/pull/3716"');
-    expect(html).toContain('data-url="https://linear.app/issue/PHNX-4248"');
-    expect(html).toContain('data-art-group aria-pressed="false"');
-    expect(html).not.toContain('data-folder=');
-
-    viewState.artifactGroup = true;
-    const grouped = cards.renderArtifactsCard(snap);
-    expect(grouped).toContain('data-art-group aria-pressed="true"');
-    expect(grouped.indexOf('data-folder="/u/Downloads/New"')).toBeLessThan(grouped.indexOf('data-folder="/u/Downloads/Old"'));
-    expect(grouped.indexOf('data-artifact="/u/Downloads/New/index.html"')).toBeLessThan(grouped.indexOf('data-artifact="/u/Downloads/New/hero.jpg"'));
-    expect(grouped).toContain('<span class="art-ext">HTML</span>');
-    for (const app of ['GitHub', 'Finder', 'Linear']) expect(grouped).toContain(app + '<span class="art-count">');
-    expect(grouped).not.toContain('art-hero');
-
-    viewState.artifactSort = 'oldest';
-    const oldest = cards.renderArtifactsCard(snap);
-    expect(oldest.indexOf('data-folder="/u/Downloads/Old"')).toBeLessThan(oldest.indexOf('data-folder="/u/Downloads/New"'));
-
-    viewState.artifactsCollapsed = true;
-    const folded = cards.renderArtifactsCard(snap);
-    expect(folded).toContain('class="art-summary"');
-    expect(folded).not.toContain('data-folder=');
-    expect(folded).not.toContain('art-hero');
-    expect(cards.renderArtifactsCard({})).toBe('');
-    for (const key of Object.keys(viewState)) delete viewState[key];
-  }
-  {
-    const f = (name: string, editedAtMs: number, uri?: string) => ({ path: '/a/' + name, name, editedAtMs, ...(uri ? { uri } : {}) });
-    const files = [f('b.png', 2, 'u:b'), f('c.png', 5, 'u:c'), f('a.png', 3, 'u:a'), f('notes.md', 9), f('page.html', 1)];
-    const latest = cards.artifactGallery(files, 'latest');
-    expect(latest.hero!.path).toBe('/a/c.png');
-    expect(latest.images.map((x) => x.path)).toEqual(['/a/a.png', '/a/b.png']);
-    expect(latest.files.map((x) => x.path)).toEqual(['/a/notes.md', '/a/page.html']);
-    const byName = cards.artifactGallery(files, 'name');
-    expect(byName.hero!.path).toBe('/a/c.png');
-    expect(byName.images.map((x) => x.path)).toEqual(['/a/a.png', '/a/b.png']);
-    expect(cards.artifactGallery(files, 'oldest').files.map((x) => x.path)).toEqual(['/a/page.html', '/a/notes.md']);
-    // Nothing with a preview: no hero, every file is a typed tile.
-    const docs = cards.artifactGallery([f('notes.md', 1), f('page.html', 2)], 'latest');
-    expect(docs.hero).toBeNull();
-    expect(docs.images).toEqual([]);
-    expect(docs.files.map((x) => x.path)).toEqual(['/a/page.html', '/a/notes.md']);
-  }
-  {
-    // The click handler stores !artifactGroupOn(current); the card reads artifactGroupOn(stored).
-    const afterOneClick = !cards.artifactGroupOn(undefined);
-    expect(afterOneClick).toBe(true);
-    expect(cards.artifactGroupOn(afterOneClick)).toBe(true);
-    expect(cards.artifactGroupOn(!cards.artifactGroupOn(afterOneClick))).toBe(false);
-  }
+test('Made: one sideways row — the PR leads with its state, then other PRs and the ticket, then files newest first; a range dims, a local page can be shared', () => {
+  for (const key of Object.keys(viewState)) delete viewState[key];
+  const snap = {
+    fullSessionId: 'made', sessionLocal: true,
+    linearIssue: 'PHNX-4248',
+    prStatus: normalizePrStatus({ url: 'https://github.com/phnx-labs/agi-ext/pull/103', number: 103, title: 'Sidebar one card', state: 'MERGED', isDraft: false, mergeable: 'MERGEABLE', checks: 'passing' }),
+    pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }],
+    artifacts: [
+      { path: '/u/Downloads/Old/a.png', display: '~/Downloads/Old/a.png', basename: 'a.png', bucket: 'docs', editedAtMs: 1_000, uri: 'vscode-resource:/a.png' },
+      { path: '/u/Downloads/New/index.html', display: '~/Downloads/New/index.html', basename: 'index.html', bucket: 'docs', editedAtMs: 3_000 },
+      { path: '/u/Downloads/New/hero.jpg', display: '~/Downloads/New/hero.jpg', basename: 'hero.jpg', title: 'Launch hero', bucket: 'docs', editedAtMs: 2_000, uri: 'vscode-resource:/hero.jpg' },
+    ],
+    activityHistogram: { startMs: 0, endMs: 10_000, buckets: Array.from({ length: 10 }, () => ({ tools: 1, failed: 0, blocked: 0 })) },
+  };
+  const html = cards.renderMadeShelf(snap);
+  expect(html).toContain('Made <span>6</span>');
+  expect(html).toContain('data-strip="made"');
+  const at = (needle: string) => html.indexOf(needle);
+  // PR first (its state word), then the other PR, the ticket, then files newest first.
+  expect(html).toContain('<b>#103</b><span class="mk-st pr-tone-ok">Merged</span>');
+  expect([at('#103'), at('#3716'), at('PHNX-4248'), at('index.html'), at('Launch hero'), at('a.png')]).toEqual([at('#103'), at('#3716'), at('PHNX-4248'), at('index.html'), at('Launch hero'), at('a.png')].sort((x, y) => x - y));
+  // An image previews; a page shows its type mark and can be shared from this machine.
+  expect(html).toContain('<img data-thumb="vscode-resource:/hero.jpg"');
+  expect(html).toContain('data-share="/u/Downloads/New/index.html"');
+  expect(cards.renderMadeShelf({ ...snap, sessionLocal: false })).not.toContain('data-share=');
+  // Nothing dims until a range is chosen; then files changed outside it dim in place.
+  expect(html).not.toContain('mk-file out');
+  viewState.timelineRange = { made: [2_500, 4_000] };
+  const ranged = cards.renderMadeShelf(snap);
+  expect((ranged.match(/mk mk-file out/g) || []).length).toBe(2);
+  // The PR card opens under the row on a click (remembered), and nothing renders without outputs.
+  viewState.prOpen = 'https://github.com/phnx-labs/agi-ext/pull/103';
+  expect(cards.renderMadeShelf(snap)).toContain('class="card pr-card');
+  expect(cards.renderMadeShelf({})).toBe('');
+  for (const key of Object.keys(viewState)) delete viewState[key];
 });
 
 test('pencil message reaches the host command and reports command failures', async () => {
@@ -701,7 +662,7 @@ test('subagent rows show type, duration and tools up front; running first, older
   expect(html).toContain('5 · 1 running');
 });
 
-test('a phase chip narrows the strip, the steps and the You list to that stretch of work', () => {
+test('a dragged range narrows the strip, the steps and the You list; a range outside the strip lapses', () => {
   for (const key of Object.keys(viewState)) delete viewState[key];
   const startMs = Date.parse('2026-10-06T22:00:00Z');
   const bucketMs = 10 * 60_000;
@@ -718,37 +679,36 @@ test('a phase chip narrows the strip, the steps and the You list to that stretch
     ], earlier: { steps: 0, tools: 0, failed: 0 }, tools: 6, failed: 0, spanMs: 0, state: 'ready' },
   };
   const all = cards.renderTimelineCard(s);
-  expect((all.match(/class="tl-filter tl-phase/g) || []).length).toBe(2);
   expect(all).toContain('early work');
   expect(all).toContain('late work');
   expect(all).not.toContain('seek-bar out');
+  expect(all).toContain('drag across to filter');
+  expect(all).toContain('data-bucket-ms="' + bucketMs + '"');
 
+  // Any stretch inside the strip, not only a phase.
   viewState.timelineRange = { sess: [startMs + 9 * bucketMs, startMs + 12 * bucketMs] };
   const late = cards.renderTimelineCard(s);
   expect(late).toContain('late work');
   expect(late).not.toContain('early work');
   expect(late).toContain('seek-bar out');
-  expect(late).toContain('data-phase="">Clear range</button>');
-  expect(late).toContain('aria-pressed="true"');
+  expect(late).toContain('data-phase="" title="Show the whole session">30m selected ×</button>');
   viewState.timelineFilter = { sess: 'user' };
   const you = cards.renderTimelineCard(s);
   expect(you).toContain('second burst ask');
   expect(you).not.toContain('first burst ask');
 
-  // A remembered range that is no longer one of the phases lapses: nothing stays dimmed.
+  // A range outside the strip, or the whole of it, lapses: nothing stays dimmed.
   viewState.timelineFilter = {};
-  viewState.timelineRange = { sess: [startMs + 1, startMs + 2] };
-  const lapsed = cards.renderTimelineCard(s);
-  expect(lapsed).not.toContain('seek-bar out');
-  expect(lapsed).not.toContain('Clear range');
-  expect(lapsed).toContain('early work');
+  for (const r of [[startMs - 5, startMs - 1], [startMs, startMs + 12 * bucketMs], [startMs + 5, startMs + 5]]) {
+    viewState.timelineRange = { sess: r };
+    const lapsed = cards.renderTimelineCard(s);
+    expect(lapsed).not.toContain('seek-bar out');
+    expect(lapsed).not.toContain('selected ×');
+  }
   // A step with no usable time cannot be placed, so a range never hides it.
   viewState.timelineRange = { sess: [startMs + 9 * bucketMs, startMs + 12 * bucketMs] };
   const undated = cards.renderTimelineCard({ ...s, timeline: { ...s.timeline, steps: [...s.timeline.steps, { text: 'undated step', at: '', source: 'narration', tools: 1, failed: 0, blocked: 0 }] } });
   expect(undated).toContain('undated step');
-
-  // One stretch of work has nothing to choose between, so no chips.
-  expect(cards.renderTimelineCard({ ...s, activityHistogram: { ...s.activityHistogram, buckets: buckets.map(() => ({ tools: 1, failed: 0, blocked: 0 })) } })).not.toContain('tl-phase');
   for (const key of Object.keys(viewState)) delete viewState[key];
 });
 
@@ -765,7 +725,7 @@ test('the PR card: a ring, one word and an icon strip; the verdict, check segmen
     for (const key of Object.keys(viewState)) delete viewState[key];
     // Today's row (agents-cli 1.22.122): status, but no head commit, so no merge button and the reason why.
     const today = cards.renderPullRequestCard({ ...prRow(), git: { branch: 'agents/phnx-4289' } });
-    expect(today).toContain('>Pull request<span class="head-meta">phnx-labs/agi-ext</span>');
+    expect(today).toContain('<span class="pr-repo">phnx-labs/agi-ext</span>');
     expect(today).toContain('#103');
     // Checks pass but a review is required: green ring, and the word says what is left.
     expect(today).toContain('class="pr-ring ok" role="img" aria-label="Needs review"');

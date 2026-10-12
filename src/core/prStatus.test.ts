@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { normalizePrStatus, prAction, prRepo } from './prStatus';
+import { mergeChoices, normalizePrStatus, prAction, prRepo } from './prStatus';
 
 // The shape the feed puts on a row's `pr` today (agents-cli 1.22.122: gh's own
 // words), plus the head commit, title and per-check items a newer CLI adds.
@@ -48,4 +48,18 @@ test('the card offers merge only when GitHub would take it, pinned to a known he
 test('the repo comes only from a github.com pull URL', () => {
   expect(prRepo('https://github.com/phnx-labs/agi-ext/pull/103')).toBe('phnx-labs/agi-ext');
   expect(prRepo('https://evil.example/phnx-labs/agi-ext/pull/1')).toBeUndefined();
+});
+
+
+test('merge choices: the three methods when the PR can merge, an admin merge whenever it is open, never on a draft, a conflict or without a head', () => {
+  const base = { url: 'https://github.com/o/r/pull/1', number: 1, state: 'open', isDraft: false, checkItems: [], headSha: 'abcdef1' } as const;
+  const ready = mergeChoices({ ...base, mergeable: 'mergeable', checks: 'passing' } as never);
+  expect(ready.map((c) => c.label)).toEqual(['Squash and merge', 'Rebase and merge', 'Create a merge commit', 'Admin merge (squash)']);
+  expect(ready.filter((c) => c.admin)).toHaveLength(1);
+  // A failing check or missing review blocks the normal methods; only the admin choice stays.
+  expect(mergeChoices({ ...base, mergeable: 'mergeable', checks: 'failing' } as never).map((c) => c.admin)).toEqual([true]);
+  expect(mergeChoices({ ...base, isDraft: true, mergeable: 'mergeable' } as never)).toEqual([]);
+  expect(mergeChoices({ ...base, mergeable: 'conflicting' } as never)).toEqual([]);
+  expect(mergeChoices({ ...base, headSha: undefined, mergeable: 'mergeable' } as never)).toEqual([]);
+  expect(mergeChoices(undefined)).toEqual([]);
 });

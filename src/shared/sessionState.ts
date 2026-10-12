@@ -35,8 +35,7 @@ export function ballOf(key: SessionStateKey): SessionBall {
   return 'move';
 }
 
-/** Why it is your move, as the short tag a row carries; and the order those sort in. */
-export const MOVE_REASON: Partial<Record<SessionStateKey, string>> = { asks: 'asks', yours: 'idle' };
+/** The order Your move sorts in: a question before an idle turn. */
 const MOVE_RANK: Partial<Record<SessionStateKey, number>> = { asks: 0, yours: 1 };
 
 export function moveRank(key: SessionStateKey): number {
