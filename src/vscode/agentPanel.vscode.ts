@@ -518,7 +518,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
   /**
    * A heavy timeline filter (agent messages, reasoning, tool calls) is too big to
-   * ride every stream row, so it is one `agents sessions <id> --include <role>`
+   * ride every stream row, so it is one `sessions <id> --include <role> --json`
    * call per explicit click, never per selection. The result goes back to the
    * webview as-is; a CLI error is shown, not hidden.
    */
@@ -802,10 +802,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     // Everything a tab-switch needs to paint — what the agent is doing now, its
     // todo checklist, topic, last message, PR, branch — is already in memory,
     // NORMALIZED by the CLI-mirror (`presentedSessions` → RemoteSession), off the
-    // `agents sessions watch --json` stream the Project panel already consumes. Read it
+    // `agents feed watch --json` stream the Project panel already consumes. Read it
     // SYNCHRONOUSLY (no subprocess) and reuse the SAME normalized fields every
     // other surface reads — the ext never re-derives them from the raw row. The
-    // old path spawned `agents sessions … --include tools` + `agents teams
+    // old path spawned a `--include tools` transcript read + `agents teams
     // status` per team on EVERY switch (2-8 subprocesses), which behind the
     // all-or-nothing snapshot wedged the panel on "Loading…" for seconds.
     if (sessionId) {
@@ -2050,7 +2050,7 @@ async function getWorktreesRouted(
 }
 
 /** The CLI-normalized RemoteSession for a session id, from the warm
- *  `agents sessions watch --json` stream, or undefined until the stream indexes
+ *  `agents feed watch --json` stream, or undefined until the stream indexes
  *  it. Reuses `presentedSessions` — the ext's mirror of the CLI shape — so the
  *  sidebar reads the SAME normalized fields (`lastResponse`, `todos`, `activity`,
  *  `prUrl`, `branch`) every other surface does, never re-deriving them from the

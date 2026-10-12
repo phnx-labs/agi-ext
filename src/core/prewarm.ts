@@ -50,14 +50,16 @@ export const PREWARM_CONFIGS: Record<PrewarmAgentType, PrewarmConfig> = {
 };
 
 /**
- * What a tab runs to become the session's live agent: the CLI's strict resume,
- * in place, with its routing banners off (`-q`). The CLI restores the harness,
- * device, account and cwd itself. Never `--vscodium` or `--device` here: from
- * inside a tab those ask the CLI to open the session on another surface, so the
- * tab itself never became the agent (the 2026-10-10 restore sat on that command).
+ * What a tab runs to become the session's live agent: the CLI's own recovery
+ * command (`agents run auto --resume <id> --interactive`, what `agents ps focus`
+ * opens for a session with no live pane), in place, with its preamble off
+ * (`--quiet`). The CLI resolves the harness, origin device, account and cwd
+ * itself. Never `--terminal` or `--device` here: from inside a tab those ask the
+ * CLI to open the session on another surface, so the tab itself never became the
+ * agent (the 2026-10-10 restore sat on that command).
  */
 export function inTabResumeCommand(sessionId: string): string {
-  return `agents sessions resume ${shellQuote(sessionId)} -q`;
+  return `agents run auto --resume ${shellQuote(sessionId)} --interactive --quiet`;
 }
 
 /**

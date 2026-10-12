@@ -281,7 +281,7 @@
       "git": 1,
       "run": 1
      },
-     "now": "agents sessions a4cc585c-a6f9-4f21-a5ee-634a72e2ca68 --device mark-1 --markdown --include "
+     "now": "sessions a4cc585c-a6f9-4f21-a5ee-634a72e2ca68 --host mark-1 --markdown --include "
     },
     {
      "text": "I’m using the skill-creator guidance to update the existing browser instructions alongside the…",

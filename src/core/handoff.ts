@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { homedir } from 'os';
-import { execFile } from 'child_process';
+import { runCliArgs } from './agentsBin';
 import { todoProgressFromCli, type TodoProgress } from './session.activity';
 
 export interface SessionToolStats {
@@ -75,34 +75,24 @@ interface AgentsCliSessionEvent {
   text?: string;
 }
 
-// Bound every one-shot `agents` spawn. Without a deadline a wedged CLI child —
+// Bound every one-shot `sessions` spawn. Without a deadline a wedged CLI child —
 // exactly what a sleep/wake transition or a stuck FS/network read can produce —
 // is never killed: it orphans (untracked, reparented) and, because callers
 // coalesce onto one subprocess (`toolStatsInFlight`), it also leaves the
 // in-flight guard latched forever so that session's stats never recover
-// (PHNX-3467). Every other agents-CLI runner in this repo already passes a
-// timeout (agentsBin.ts `runAgentsArgs` 30s); this one was the outlier. Node's `execFile` timeout
-// SIGTERMs the child on expiry, matching those siblings. Exported (with an
-// injectable timeout) so a regression test can prove a hung child is killed
-// without waiting the full production budget.
-export const AGENTS_SESSIONS_TIMEOUT_MS = 15_000;
+// (PHNX-3467). Node's `execFile` timeout SIGTERMs the child on expiry. Exported
+// (with an injectable timeout) so a regression test can prove a hung child is
+// killed without waiting the full production budget.
+export const SESSIONS_CLI_TIMEOUT_MS = 15_000;
 
-export function runAgentsSessions(
+/** One transcript read through the standalone `sessions` CLI, resolved like `agents`. */
+export async function runSessionsCli(
   args: string[],
   cwd?: string,
-  timeoutMs: number = AGENTS_SESSIONS_TIMEOUT_MS,
+  timeoutMs: number = SESSIONS_CLI_TIMEOUT_MS,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'agents',
-      args,
-      { cwd, maxBuffer: 8 * 1024 * 1024, timeout: timeoutMs, killSignal: 'SIGTERM' },
-      (err, stdout) => {
-        if (err) reject(err);
-        else resolve(stdout);
-      },
-    );
-  });
+  const { stdout } = await runCliArgs('sessions', args, { cwd, maxBuffer: 8 * 1024 * 1024, timeout: timeoutMs });
+  return stdout;
 }
 
 export async function getSessionSummaryViaAgentsCli(
@@ -110,7 +100,7 @@ export async function getSessionSummaryViaAgentsCli(
   cwd?: string
 ): Promise<string | null> {
   try {
-    const stdout = await runAgentsSessions(['sessions', sessionId], cwd);
+    const stdout = await runSessionsCli([sessionId], cwd);
     const text = stdout.trim();
     return text.length > 0 ? text : null;
   } catch {
@@ -125,11 +115,11 @@ export async function getSessionMessagesViaAgentsCli(
 ): Promise<HandoffMessage[]> {
   try {
     const turns = Math.max(1, Math.ceil(maxMessages / 2));
-    const stdout = await runAgentsSessions(
-      ['sessions', sessionId, '--json', '--last', String(turns), '--include', 'user,assistant'],
+    const stdout = await runSessionsCli(
+      [sessionId, '--json', '--last', String(turns), '--include', 'user,assistant'],
       cwd
     );
-    // 1.20.51+ emits { session, events }; older CLIs emit a bare event array.
+    // A role-filtered `sessions <id> --json` is { session, events }; a bare array is a pre-1.20.51 CLI.
     const parsed = JSON.parse(stdout);
     const events: AgentsCliSessionEvent[] = Array.isArray(parsed) ? parsed : (parsed.events ?? []);
     const messages: HandoffMessage[] = [];
@@ -153,11 +143,14 @@ async function computeSessionToolStats(
   sessionId: string,
   cwd?: string
 ): Promise<SessionToolStats> {
-  const stdout = await runAgentsSessions(
-    ['sessions', sessionId, '--json', '--include', 'tools'],
+  // The transcript form, not `--include tools` alone: that is the tool-search
+  // envelope, read from an index the scanner may not have reached yet, and
+  // without the structured `args` the file counts need.
+  const stdout = await runSessionsCli(
+    [sessionId, '--json', '--exclude', 'user,assistant,thinking'],
     cwd
   );
-  // 1.20.51+ emits { session, events }; older CLIs emit a bare event array.
+  // A role-filtered `sessions <id> --json` is { session, events }; a bare array is a pre-1.20.51 CLI.
   const parsedStats = JSON.parse(stdout);
   const events: Array<{ type: string; tool?: string; args?: Record<string, unknown> }> = Array.isArray(
     parsedStats
@@ -205,7 +198,7 @@ interface ToolStatsCacheEntry {
 // transcript only grows when the agent acts, so cache the result keyed by the
 // session file's mtime+size and re-shell out only when it actually changed.
 // An in-flight guard coalesces concurrent callers onto one subprocess so a slow
-// `agents sessions` call can't stack across ticks (#94).
+// `sessions` call can't stack across ticks (#94).
 const toolStatsCache = new Map<string, ToolStatsCacheEntry>();
 const toolStatsInFlight = new Map<string, Promise<SessionToolStats>>();
 

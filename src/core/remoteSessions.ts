@@ -1,7 +1,7 @@
 // Cross-host session rows — pure types + normalize.
 //
 // This module has NO VS Code imports so it is unit-testable in isolation. It
-// turns rows from `agents sessions watch --json` into a normalized RemoteSession,
+// turns rows from `agents feed watch --json` into a normalized RemoteSession,
 // the cross-host analog of a local agent.
 
 import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project';
@@ -26,7 +26,7 @@ interface RemoteQuestionOption {
 
 /**
  * The structured decision an agent is waiting on, carried verbatim from the CLI
- * state engine (`agents sessions watch --json` → ActiveSession.question). This
+ * state engine (`agents feed watch --json` → ActiveSession.question). This
  * is the load-bearing "what does it want from me" signal the NEEDS-YOU card renders
  * — the UI no longer has to regex it back out of a truncated preview line.
  */
@@ -64,8 +64,8 @@ export interface RemoteAttachment {
 // normalizeHost now lives in src/shared/project.ts (imported + re-exported above).
 
 /**
- * Decide which HOSTS bucket a session belongs to. A bare `agents sessions
- * --active --json` fans out over the whole fleet, so a single query answers for
+ * Decide which HOSTS bucket a session belongs to. A bare `agents ps
+ * --json` fans out over the whole fleet, so a single query answers for
  * many machines — each row carries its own `machine` id. Bucket by that id, NOT
  * by the host we happened to query (`fallbackHost`), or every remote session
  * collapses onto the querying machine. The local machine's own id maps to
@@ -476,7 +476,7 @@ export interface RemoteSession {
 }
 
 /**
- * The subset of `agents sessions watch --json` upsert records we consume. Every
+ * The subset of `agents feed watch --json` upsert records we consume. Every
  * field is optional because the payload shape varies by context (terminal /
  * teams / cloud). Unknown fields are ignored.
  */
@@ -1217,7 +1217,7 @@ function normalizeObservers(value: unknown): RemoteObserver[] {
   });
 }
 
-/** The two label-bearing fields of one `agents sessions <id> --json` record. */
+/** The two label-bearing fields of one by-id session record. */
 export interface SessionLabelSource {
   /** The session's persisted name, when it has a real one. */
   label: string | null;
@@ -1226,19 +1226,18 @@ export interface SessionLabelSource {
 }
 
 /**
- * Pull the label inputs out of `agents sessions <id> --json`.
+ * Pull the label inputs out of one by-id session read.
  *
  * A tab whose agent runs on another machine has no local transcript to read, so
  * this is the only way it can ever show anything but the bare agent prefix. The
  * CLI already resolves both fields on whichever host owns the session.
  *
- * **The payload has two shapes, and the remote one is the shape that matters
- * here.** Locally, `agents sessions <id> --json` renders the detail view and
- * emits `{ session, events }`. With `--device` the lookup is routed to the peer
- * and comes back as the FLAT array of `SessionMeta` records instead (the same
- * shape `fetchRecentForHost` consumes). Reading only `.session` therefore found
- * nothing for exactly the offloaded tabs this exists to label. Both are handled;
- * `sessionId` disambiguates when an array carries more than one record.
+ * **The payload has two shapes.** `agents ps preview <id> --json` (what the
+ * extension runs) and a role-filtered `sessions <id> --json` wrap the record as
+ * `{ session, … }`; a bare `sessions <id> --json [--host <h>]` answers with the
+ * FLAT array of `SessionMeta` records (the same shape `fetchRecentForHost`
+ * consumes). Both are handled; `sessionId` disambiguates when an array carries
+ * more than one record.
  *
  * `label` is dropped when it is Claude's derived `<dirname>-<n>` placeholder —
  * that names the repo, not the work, and surfacing it would also stop the caller
@@ -1255,8 +1254,8 @@ export function parseSessionLabelSource(rawJson: string, sessionId?: string): Se
   if (!record) return null;
   const label = typeof record.label === 'string' && record.label.trim() ? record.label.trim() : null;
   let topic = typeof record.topic === 'string' && record.topic.trim() ? record.topic.trim() : null;
-  // `agents sessions <id> --json` is `{ session, events }` and the session
-  // object often has no topic/label (those live on the list/active shapes).
+  // A transcript read is `{ session, events }` and the session object often
+  // has no topic/label (those live on the list/active shapes).
   // The events array still has the first real user turn — use it so an
   // offloaded tab can be labelled without a second query.
   if (!topic) {

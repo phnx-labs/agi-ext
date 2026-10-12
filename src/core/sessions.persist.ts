@@ -31,7 +31,7 @@ export interface PersistedSession {
   label?: string;               // User-set label
   autoLabel?: string;           // Harness/LLM-generated label; remains replaceable
   agentType?: string;           // Agent type key (e.g., "claude", "codex")
-  recoveryAgent?: string;       // Opaque CLI harness recovered through `agents sessions resume`.
+  recoveryAgent?: string;       // Opaque CLI harness recovered through `agents run auto --resume`.
                                 // Kept separate from agentType so an unpresented harness is never
                                 // misidentified as a built-in after an editor reload.
   version?: string;             // Pinned agent version, if known (e.g., "2.1.113")

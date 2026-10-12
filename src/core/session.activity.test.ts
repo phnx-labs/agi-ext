@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { todoProgressFromCli, todoProgressFromItems } from './session.activity';
 import type { TodoProgressItem } from './session.activity';
 
-// todoProgressFromCli maps the CLI's computed checklist (`agents sessions <id>
+// todoProgressFromCli maps the CLI's computed checklist (`sessions <id>
 // --json` → `session.todos`, shape { items: [{content,status,activeForm}], done,
 // total }) into the panel's TodoProgress. The extension no longer re-parses the
 // transcript for todos (RUSH-1503) — the CLI state engine is the one source.

@@ -3,7 +3,7 @@ import { buildAgentLaunchCommand } from './agents';
 import { buildForkSessionRequest, forkCommand } from './forkSession';
 
 test('forkCommand is the bare fork verb here, and carries the device for another box', () => {
-  expect(forkCommand('s1', undefined)).toBe("agents sessions fork 's1'");
+  expect(forkCommand('s1', undefined)).toBe("agents fork 's1'");
   expect(forkCommand('s1', 'yosemite-s0')).toContain("--device 'yosemite-s0'");
 });
 

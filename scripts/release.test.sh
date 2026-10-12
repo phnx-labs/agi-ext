@@ -47,11 +47,11 @@ fi
 # --- RUSH-2987: the secrets re-entry must carry the original arguments -----
 #
 # release.sh parses argv with a `while [ $# -gt 0 ]` loop that shifts every
-# argument away, then re-execs itself under `agents secrets exec` to pick up the
+# argument away, then re-execs itself under `secrets exec` to pick up the
 # marketplace PATs. Replaying "$@" there replays an EMPTY argv: the re-entered
 # script finds no version, falls through to `usage 1`, and the release dies at
 # the token step with a usage dump. This drives the real script with stubbed
-# `agents`/`vsce`/`ovsx` and asserts the version reaches the re-exec.
+# `secrets`/`vsce`/`ovsx` and asserts the version reaches the re-exec.
 RELEASE_VERSION="$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$EXT_ROOT/CHANGELOG.md" | tr -d '#[] ')"
 if [ -z "$RELEASE_VERSION" ]; then
     fail "could not read a released version out of CHANGELOG.md"
@@ -60,17 +60,17 @@ else
     STUB_HOME="$(mktemp -d)"
     REEXEC_ARGV="$STUB_DIR/reexec-argv"
 
-    # `agents secrets list` makes this box look like the publish host (no ssh
-    # routing); `agents secrets exec ... -- true` is the resolvability probe;
+    # `secrets list` makes this box look like the publish host (no ssh
+    # routing); `secrets exec ... -- true` is the resolvability probe;
     # any other exec is the re-entry, whose argv we record instead of running.
-    cat > "$STUB_DIR/agents" <<'STUB'
+    cat > "$STUB_DIR/secrets" <<'STUB'
 #!/bin/bash
-if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "list" ]; then
+if [ "${1:-}" = "list" ]; then
     echo "vs-marketplace       2     never - no prompt"
     exit 0
 fi
-if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "exec" ]; then
-    shift 3                       # drop: secrets exec <bundle>
+if [ "${1:-}" = "exec" ]; then
+    shift 2                       # drop: exec <bundle>
     [ "${1:-}" = "--" ] && shift
     if [ "${1:-}" = "true" ]; then exit 0; fi
     printf '%s\n' "$@" > "$REEXEC_ARGV_PATH"
@@ -93,7 +93,7 @@ STUB
 echo '{}'
 exit 0
 STUB
-    chmod +x "$STUB_DIR/agents" "$STUB_DIR/vsce" "$STUB_DIR/ovsx"
+    chmod +x "$STUB_DIR/secrets" "$STUB_DIR/vsce" "$STUB_DIR/ovsx"
 
     # HOME is redirected because release.sh prepends "$HOME/.bun/bin" to PATH
     # before the marketplace check — a real vsce there would shadow the stub.
@@ -129,10 +129,10 @@ else
     BUN_CALLS="$STUB_DIR/bun-calls"
     RUN_OUT="$STUB_DIR/run-out"
 
-    # `agents secrets list` makes this box the publish host (no routing).
-    cat > "$STUB_DIR/agents" <<'STUB'
+    # `secrets list` makes this box the publish host (no routing).
+    cat > "$STUB_DIR/secrets" <<'STUB'
 #!/bin/bash
-if [ "${1:-}" = "secrets" ] && [ "${2:-}" = "list" ]; then
+if [ "${1:-}" = "list" ]; then
     echo "vs-marketplace       2     never - no prompt"
     exit 0
 fi
@@ -163,7 +163,7 @@ STUB
 echo '{}'
 exit 0
 STUB
-    chmod +x "$STUB_DIR/agents" "$STUB_DIR/bun" "$STUB_DIR/vsce" "$STUB_DIR/ovsx"
+    chmod +x "$STUB_DIR/secrets" "$STUB_DIR/bun" "$STUB_DIR/vsce" "$STUB_DIR/ovsx"
 
     # PATs in env so the secrets re-exec is skipped and the script reaches the
     # install block directly. Dry-run (no --confirm) so nothing is published; the

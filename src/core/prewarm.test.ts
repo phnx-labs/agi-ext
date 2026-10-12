@@ -9,28 +9,28 @@ import {
 } from './prewarm';
 
 describe('inTabResumeCommand', () => {
-  test('runs the CLI strict resume in place, quietly', () => {
+  test('runs the CLI recovery command in place, quietly', () => {
     expect(inTabResumeCommand('7b1cf038-8761-4e46-af43-5336e7e5a776')).toBe(
-      "agents sessions resume '7b1cf038-8761-4e46-af43-5336e7e5a776' -q",
+      "agents run auto --resume '7b1cf038-8761-4e46-af43-5336e7e5a776' --interactive --quiet",
     );
   });
 
   test("the resume command is the tab's own process, run by the login shell, never typed at a prompt", () => {
-    expect(agentTabShell("agents sessions resume 'x' -q", '/bin/bash')).toEqual({
+    expect(agentTabShell("agents run auto --resume 'x' --interactive --quiet", '/bin/bash')).toEqual({
       shellPath: '/bin/bash',
-      shellArgs: ['-l', '-i', '-c', "agents sessions resume 'x' -q"],
+      shellArgs: ['-l', '-i', '-c', "agents run auto --resume 'x' --interactive --quiet"],
     });
     expect(agentTabShell('cmd', undefined).shellPath).toBe('/bin/zsh');
   });
 
   test('never asks the CLI for another surface from inside a tab', () => {
     const cmd = inTabResumeCommand('abc123');
-    for (const flag of ['--vscodium', '--device', '--iterm', '--ghostty', '--tmux']) expect(cmd).not.toContain(flag);
+    for (const flag of ['--terminal', '--vscodium', '--device', '--iterm', '--ghostty', '--tmux']) expect(cmd).not.toContain(flag);
     expect(cmd).not.toMatch(/(^|; )claude /);
   });
 
   test('quotes a session selector so it cannot break out of the command', () => {
-    expect(inTabResumeCommand("a'; rm -rf /; #")).toBe("agents sessions resume 'a'\\''; rm -rf /; #' -q");
+    expect(inTabResumeCommand("a'; rm -rf /; #")).toBe("agents run auto --resume 'a'\\''; rm -rf /; #' --interactive --quiet");
   });
 });
 

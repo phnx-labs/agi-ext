@@ -5,7 +5,7 @@ import { join } from 'path';
 // Structural guard for RUSH-3184 / agi-cli#3019: the per-tab identity side channel
 // that caused the 2026-08-25 CPU incident must stay deleted. The status bar reads
 // identity from the broadcast watch row (SessionPresentationStore), never a per-tab
-// `agents sessions <id> --device <host> --json` respawn. The behavioral contract is
+// by-id session-detail respawn over `--device <host>`. The behavioral contract is
 // in src/core/spawnStorm.regression.test.ts.
 const extensionSource = readFileSync(join(import.meta.dir, 'extension.ts'), 'utf8');
 

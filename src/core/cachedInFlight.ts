@@ -5,8 +5,8 @@
 // This is the guard that stops several uncoordinated drivers (the launch-health
 // timer, the Dispatch panel's deviceHealth probe, each agent launch) from EACH
 // spawning a full-fleet fan-out of `agents` subprocesses for the same host —
-// the pile-up that thrashed dozens of duplicate `agents sessions --active
-// --device <box>` processes on a loaded box. `fetchDeviceStats` had this guard
+// the pile-up that thrashed dozens of duplicate active-roster reads for one
+// `--device <box>` on a loaded box. `fetchDeviceStats` had this guard
 // inline; `countRunningAgents` did not, so it was the one probe that stacked.
 
 export interface TimedCache<T> {

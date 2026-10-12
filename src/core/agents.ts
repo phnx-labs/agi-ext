@@ -251,13 +251,13 @@ export function buildAgentLaunchCommand(
  *   or the remote run ended unexpectedly. The agent may still be alive on the
  *   peer, so the wrapper frames it as a recoverable reconnect and points at the
  *   session list — not a bare "status 255" that reads like a crash (RUSH-3125,
- *   F6). It deliberately does NOT auto-run `agents sessions resume`: a dead peer
+ *   F6). It deliberately does NOT auto-run `agents run --resume`: a dead peer
  *   pane silently resumes a COPY and loses the in-flight turn, which is a real
  *   open bug (RUSH-3139), so recovery stays a deliberate user action until that
- *   lands. `agents sessions --active` is used rather than a specific id because
+ *   lands. The `agents ps` roster is named rather than a specific id because
  *   only the CLI knows the resolved/launch id for a non-Claude harness, and its
- *   own give-up notice already printed the exact `agents sessions resume <id>`
- *   line above when one applies.
+ *   own give-up notice already printed the exact resume line above when one
+ *   applies.
  * - **any other nonzero** — a launch failure (the remote host is unreachable at
  *   start, the CLI rejects the invocation, the binary is missing). There is no
  *   session to rejoin, so the generic status line stays.
@@ -273,7 +273,7 @@ export function buildAgentLaunchCommand(
 export function wrapNativeAgentCommand(command: string, isShell: boolean): string {
   if (!command || isShell) return command;
   const reconnectMsg =
-    'Lost the connection to the remote agent — it may still be running on the peer. Reconnect from:  agents sessions --active';
+    'Lost the connection to the remote agent — it may still be running on the peer. Reconnect from:  agents ps';
   const genericMsg = 'Agent exited with status $ec — terminal kept open so you can read the error above.';
   return (
     `${command}; ec=$?; ` +

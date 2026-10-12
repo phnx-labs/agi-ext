@@ -171,7 +171,7 @@ describe('restore store per window', () => {
         };
         const counts = [
           make('cl-run', shellRunningAgent.pid),
-          make('cl-proc', shellAtPrompt.pid, { shellArgs: ['-l', '-i', '-c', "agents sessions resume 'x' -q"] }),
+          make('cl-proc', shellAtPrompt.pid, { shellArgs: ['-l', '-i', '-c', "agents run auto --resume 'x' --interactive --quiet"] }),
           make('cl-starting', shellAtPrompt.pid, { createdAt: Date.now() }),
           make('cl-idle', shellAtPrompt.pid),
           make('cl-exit', shellRunningAgent.pid, { exited: true }),

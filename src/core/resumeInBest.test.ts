@@ -8,7 +8,7 @@ import {
 
 describe('inlineContinueInstructions', () => {
   const REAL_CONTINUE_MD = `---
-description: Resume a previous task - load context via agents sessions, assess state, then continue working
+description: Resume a previous task - load context via sessions, assess state, then continue working
 ---
 
 Resume previous work: $ARGUMENTS
@@ -17,7 +17,7 @@ You are picking up where a previous session left off.
 
 ## Step 1: Load the prior session
 
-Run \`agents sessions $ARGUMENTS\` to load the transcript.`;
+Run \`sessions $ARGUMENTS --markdown\` to load the transcript.`;
 
   test('strips YAML frontmatter', () => {
     const out = inlineContinueInstructions(REAL_CONTINUE_MD, 'abc123');
@@ -30,7 +30,7 @@ Run \`agents sessions $ARGUMENTS\` to load the transcript.`;
     const out = inlineContinueInstructions(REAL_CONTINUE_MD, 'abc123');
     expect(out).not.toContain('$ARGUMENTS');
     expect(out).toContain('Resume previous work: abc123');
-    expect(out).toContain('agents sessions abc123');
+    expect(out).toContain('sessions abc123 --markdown');
   });
 
   test('handles body without frontmatter', () => {
@@ -98,7 +98,7 @@ describe('buildResumeInput', () => {
   test('falls back to terse instructions when continue.md cannot be read', () => {
     const input = buildResumeInput('old-fallback', false, null);
     expect(input).toContain('old-fallback');
-    expect(input).toContain('agents sessions old-fallback');
+    expect(input).toContain('sessions old-fallback --markdown');
   });
 
   test('always uses the OLD session id, never a new one', () => {

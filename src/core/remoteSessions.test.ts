@@ -454,7 +454,7 @@ describe('normalizeActiveSession', () => {
 });
 
 describe('live signals from the CLI payload (issue #741)', () => {
-  // activity / tokPerSec / awaitingReason ride the `agents sessions --active
+  // activity / tokPerSec / awaitingReason ride the `agents ps
   // --json` rows themselves — the extension no longer re-derives them from the
   // transcript tail (the old enrichWithSessionContent).
   const base: RawActiveSession = {
@@ -671,7 +671,7 @@ describe('normalizeActiveSession — todos plan progress (RUSH-1380)', () => {
 
 describe('parseSessionLabelSource', () => {
   // A tab whose agent runs on another machine has no local transcript; this is
-  // the parse of `agents sessions <id> --device <name> --json` that lets it be
+  // the parse of a by-id session read (`agents ps preview <id> --device <name> --json`) that lets it be
   // labelled at all.
   const record = (session: Record<string, unknown>) => JSON.stringify({ session, events: [] });
 
@@ -703,7 +703,7 @@ describe('parseSessionLabelSource', () => {
     for (const raw of ['not json', '{}', '[]']) expect(parseSessionLabelSource(raw, 'anything')).toBeNull();
   });
 
-  // Captured from a real `agents sessions <id> --device yosemite-s0 --json` run.
+  // Captured from a real by-id session read against yosemite-s0 (the flat SessionMeta array shape).
   // The first cut of this parser only understood the LOCAL `{ session, events }`
   // shape and returned null for every offloaded tab, the exact case it serves.
   test('reads the real REMOTE payload, a flat array rather than a { session } envelope', () => {

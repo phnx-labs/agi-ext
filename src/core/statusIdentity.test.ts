@@ -63,8 +63,8 @@ describe('displayIdentity — only the current session\'s identity', () => {
 });
 
 // RUSH-3184: the status bar's version/account come from the broadcast watch row
-// via resolveStreamIdentityStamp, NOT a per-tab `agents sessions <id> --device
-// <host> --json` respawn. The pure decision is tested here; the no-spawn
+// via resolveStreamIdentityStamp, NOT a per-tab by-id session-detail respawn
+// over `--device <host>`. The pure decision is tested here; the no-spawn
 // guarantee is structural (see src/vscode/statusBarIdentity.spawnStorm.test.ts).
 describe('resolveStreamIdentityStamp — identity from the broadcast row', () => {
   it('stamps the row identity authoritatively for the shown session', () => {

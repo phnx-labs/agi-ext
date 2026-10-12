@@ -1,10 +1,10 @@
 import { isAgentRunner, shquote, type RunStrategy } from './agents';
 
-/** The one-shot fork verb: `agents sessions fork <id> [--device <host>]`. agents-cli
+/** The one-shot fork verb: `agents fork <id> [--device <host>]`. agents-cli
  *  resolves the source cross-fleet and launches a recap-seeded same-harness sibling,
  *  so the extension only presents the command and tracks its terminal. */
 export function forkCommand(sessionId: string, host: string | undefined): string {
-  const parts = ['agents', 'sessions', 'fork', shquote(sessionId)];
+  const parts = ['agents', 'fork', shquote(sessionId)];
   if (host) parts.push('--device', shquote(host));
   return parts.join(' ');
 }
@@ -57,8 +57,8 @@ function sameMachine(a: string | undefined, b: string | undefined): boolean {
 /**
  * The prompt the sibling agent starts with. Same machine: a bare `/continue`,
  * which resolves through that box's own index. Moved: a single-id lookup does
- * NOT fan out across the fleet — `agents sessions <id>` answers "No session with
- * id … on this machine" — so a fork that runs elsewhere has to be told where the
+ * NOT fan out across the fleet — `sessions <id>` reads only this machine's
+ * index — so a fork that runs elsewhere has to be told where the
  * transcript is, and `--device <machine>` is the CLI's own recovery hint.
  */
 function forkPrompt(sessionId: string, moved: boolean, sourceMachine: string | undefined): string {

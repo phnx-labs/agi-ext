@@ -11,7 +11,7 @@
  * goes.
  */
 
-/** One transcript row as `agents sessions --json` emits it (the fields the browser reads). */
+/** One transcript row as `sessions --json` emits it (the fields the browser reads). */
 export interface BrowsableSession {
   id: string;
   shortId: string;

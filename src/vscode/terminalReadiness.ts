@@ -318,7 +318,7 @@ export interface AgentCloseTeardown {
   /** The device the agent runs on, when offloaded (`--device`); undefined for a local tab. */
   host: string | undefined;
   /**
-   * Runs `agents sessions stop <id>` — injected so the teardown decision is
+   * Runs `agents ps stop <id>` — injected so the teardown decision is
    * testable without spawning the CLI. Called ONLY for a genuine user close of
    * a tab that tracks a live session id.
    */

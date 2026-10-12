@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { resolveAgentsBin, runAgents, clearAgentsBinCache, AgentsBinNotFoundError, bootstrapPath } from './agentsBin';
+import { resolveAgentsBin, runAgents, runCliArgs, clearAgentsBinCache, AgentsBinNotFoundError, bootstrapPath } from './agentsBin';
 
 describe('agentsBin', () => {
   beforeEach(() => {
@@ -35,6 +35,11 @@ describe('agentsBin', () => {
     expect(stdout).toContain('--repo');
   });
 
+  test('runCliArgs resolves the standalone sessions CLI the same way as agents', async () => {
+    const { stdout } = await runCliArgs('sessions', ['--version'], { timeout: 5_000 });
+    expect(/\d+\.\d+\.\d+/.test(stdout)).toBe(true);
+  });
+
   test('bootstrapPath includes the binary directory and node fallbacks', () => {
     const aug = bootstrapPath('/Users/test/.nvm/versions/node/v22.0.0/bin/agents');
     expect(aug.includes('/Users/test/.nvm/versions/node/v22.0.0/bin')).toBe(true);
@@ -57,6 +62,7 @@ describe('agentsBin', () => {
   test('AgentsBinNotFoundError carries a useful message', () => {
     const err = new AgentsBinNotFoundError();
     expect(err.message.includes('agents CLI not found')).toBe(true);
+    expect(new AgentsBinNotFoundError('sessions').message.includes('sessions CLI not found')).toBe(true);
     expect(err.name).toBe('AgentsBinNotFoundError');
   });
 });

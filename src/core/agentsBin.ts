@@ -1,11 +1,12 @@
-// Resolve the absolute path to the `agents` CLI binary and run commands
-// against it.
+// Resolve the absolute path to an agents-cli family binary (`agents`, and the
+// standalone `sessions` and `secrets` it installs beside itself) and run
+// commands against it.
 //
 // VS Code Electron processes (Cursor, Code, Codium) launched from Dock or
 // Finder inherit a minimal PATH that doesn't include the user's nvm bin or
 // `~/.agents/shims`. Calling `execAsync('agents ...')` directly fails with
 // "command not found" even though the user's terminal has it. This module
-// resolves the binary once via the shell + filesystem probes, then runs all
+// resolves each binary once via the shell + filesystem probes, then runs all
 // subsequent commands with an absolute path and a bootstrapped PATH that
 // includes node so the `#!/usr/bin/env node` shebang resolves.
 
@@ -20,71 +21,77 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const CACHE_TTL_MS = 60_000;
 
-let cachedBin: string | undefined;
-let cachedAt = 0;
+/** The agents-cli family: `agents` and the standalone CLIs that own sessions and secrets. */
+export type CliTool = 'agents' | 'sessions' | 'secrets';
+
+const cachedBins = new Map<CliTool, { bin: string; at: number }>();
 
 export class AgentsBinNotFoundError extends Error {
-  constructor() {
-    super('agents CLI not found on PATH or in common install locations (~/.agents/shims, nvm bins, /opt/homebrew/bin, /usr/local/bin)');
+  constructor(tool: CliTool = 'agents') {
+    super(`${tool} CLI not found on PATH or in common install locations (~/.agents/shims, nvm bins, ~/.local/bin, /opt/homebrew/bin, /usr/local/bin)`);
     this.name = 'AgentsBinNotFoundError';
   }
 }
 
 /**
- * Resolve the absolute path to the `agents` CLI binary. Cached for 60s.
+ * Resolve the absolute path to one agents-cli family binary. Cached for 60s per tool.
  *
  * Order of attempts:
- *   1. `$SHELL -c 'command -v agents'` (non-login so .zshenv loads nvm
+ *   1. `$SHELL -c 'command -v <tool>'` (non-login so .zshenv loads nvm
  *      without /etc/zprofile prepending stale brew paths).
- *   2. Filesystem probes: ~/.agents/shims/agents, nvm bins (newest first),
- *      /opt/homebrew/bin/agents, /usr/local/bin/agents.
+ *   2. Filesystem probes: ~/.agents/shims/<tool>, nvm bins (newest first),
+ *      ~/.local/bin, /opt/homebrew/bin, /usr/local/bin.
  *
  * Throws AgentsBinNotFoundError if no candidate exists as a file.
  */
-export async function resolveAgentsBin(): Promise<string> {
+async function resolveCliBin(tool: CliTool): Promise<string> {
   // Test/escape hatch: explicitly mark agents-cli as unavailable. Lets tests
   // simulate the missing-CLI fallback without playing PATH games (the regular
   // resolver intentionally ignores PATH so it works from the VS Code host).
   if (process.env.AGENTS_CLI_DISABLED === '1') {
-    throw new AgentsBinNotFoundError();
+    throw new AgentsBinNotFoundError(tool);
   }
-  if (cachedBin && Date.now() - cachedAt < CACHE_TTL_MS) return cachedBin;
+  const cached = cachedBins.get(tool);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.bin;
+  const remember = (bin: string) => {
+    cachedBins.set(tool, { bin, at: Date.now() });
+    return bin;
+  };
 
   try {
     const shell = process.env.SHELL || '/bin/zsh';
-    const { stdout } = await execAsync(`${shell} -c 'command -v agents'`, { timeout: 5_000 });
+    const { stdout } = await execAsync(`${shell} -c 'command -v ${tool}'`, { timeout: 5_000 });
     const p = stdout.trim();
-    if (p && fs.existsSync(p) && fs.statSync(p).isFile()) {
-      cachedBin = p;
-      cachedAt = Date.now();
-      return p;
-    }
+    if (p && fs.existsSync(p) && fs.statSync(p).isFile()) return remember(p);
   } catch {
     /* fall through to filesystem probes */
   }
 
-  const candidates: string[] = [path.join(os.homedir(), '.agents', 'shims', 'agents')];
+  const candidates: string[] = [path.join(os.homedir(), '.agents', 'shims', tool)];
   try {
     const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
     const versions = fs.readdirSync(nvmDir).sort().reverse();
-    for (const v of versions) candidates.push(path.join(nvmDir, v, 'bin', 'agents'));
+    for (const v of versions) candidates.push(path.join(nvmDir, v, 'bin', tool));
   } catch {
     /* no nvm */
   }
-  candidates.push('/opt/homebrew/bin/agents', '/usr/local/bin/agents');
+  candidates.push(path.join(os.homedir(), '.local', 'bin', tool), `/opt/homebrew/bin/${tool}`, `/usr/local/bin/${tool}`);
 
   for (const p of candidates) {
     try {
       if (!fs.existsSync(p) || !fs.statSync(p).isFile()) continue;
-      cachedBin = p;
-      cachedAt = Date.now();
-      return p;
+      return remember(p);
     } catch {
       /* next */
     }
   }
 
-  throw new AgentsBinNotFoundError();
+  throw new AgentsBinNotFoundError(tool);
+}
+
+/** Resolve the absolute path to the `agents` CLI binary. */
+export function resolveAgentsBin(): Promise<string> {
+  return resolveCliBin('agents');
 }
 
 /**
@@ -138,12 +145,13 @@ export async function runAgents(
   });
 }
 
-/** Run agents through an argv boundary; use this whenever arguments contain user data. */
-export async function runAgentsArgs(
+/** Run one agents-cli family binary through an argv boundary; use this whenever arguments contain user data. */
+export async function runCliArgs(
+  tool: CliTool,
   args: string[],
   options: RunAgentsOptions = {},
 ): Promise<{ stdout: string; stderr: string }> {
-  const bin = await resolveAgentsBin();
+  const bin = await resolveCliBin(tool);
   const augmented = bootstrapPath(bin);
   return execFileAsync(bin, args, {
     timeout: options.timeout ?? 30_000,
@@ -153,8 +161,15 @@ export async function runAgentsArgs(
   });
 }
 
-/** Test-only: drop the cached path so the next call re-resolves. */
+/** Run agents through an argv boundary; use this whenever arguments contain user data. */
+export function runAgentsArgs(
+  args: string[],
+  options: RunAgentsOptions = {},
+): Promise<{ stdout: string; stderr: string }> {
+  return runCliArgs('agents', args, options);
+}
+
+/** Test-only: drop the cached paths so the next call re-resolves. */
 export function clearAgentsBinCache(): void {
-  cachedBin = undefined;
-  cachedAt = 0;
+  cachedBins.clear();
 }

@@ -5,7 +5,7 @@ import { displayIdentity, resolveStreamIdentityStamp, type StatusIdentitySource 
 // Regression for RUSH-3184 / agi-cli#3019 — the 2026-08-25 CPU incident.
 //
 // The status bar's version/account used to hydrate through a per-tab
-// `agents sessions <id> --device <host> --json` fetch (`fetchSessionIdentity`)
+// by-id session-detail fetch over `--device <host>` (`fetchSessionIdentity`)
 // re-fired by an event-pumped, backoff-less gate (`tryHydrateSessionIdentity`).
 // For N remote `--device` tabs whose identity never fully resolved, every
 // status-bar / live-id refresh respawned one Node+SSH process per tab every
@@ -81,7 +81,7 @@ describe('status-bar identity spawn storm (RUSH-3184)', () => {
     }
 
     // The whole storm is pure store reads — one per (tab, tick). There is no
-    // `agents sessions <id> --device` exec in the path at all: the count of by-id
+    // by-id session-detail exec in the path at all: the count of by-id
     // subprocesses is structurally zero (nothing here can spawn one).
     expect(liveReads).toBe(N * N);
   });

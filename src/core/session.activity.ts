@@ -8,11 +8,11 @@ import { isSensitiveEnvKey } from './terminals';
  *
  * The whole-transcript derivations that used to live here — current activity,
  * waiting-for-input, output-token throughput — were deleted in issue #741: the
- * CLI's state engine computes them and `agents sessions watch --json` carries
+ * CLI's state engine computes them and `agents feed watch --json` carries
  * them as ActiveSession.activity / awaitingReason / tokPerSec.
  *
  * The todo/plan-progress transcript parser was likewise deleted in RUSH-1503: the
- * CLI carries the computed checklist on `agents sessions <id> --json` as
+ * CLI carries the computed checklist on a session's transcript read as
  * `session.todos`, mapped into the panel shape by `todoProgressFromCli`.
  */
 
@@ -65,7 +65,7 @@ export function todoProgressFromItems(items: TodoProgressItem[] | undefined | nu
  * Map the CLI's computed checklist into the panel's TodoProgress shape (RUSH-1503).
  *
  * The CLI state engine derives the latest `TodoWrite` (Claude) / `update_plan`
- * (Codex) for EVERY agent and carries it on `agents sessions <id> --json` as
+ * (Codex) for EVERY agent and carries it on a session's transcript read as
  * `session.todos` ({ items: [{ content, status, activeForm }], done, total }). The
  * extension consumes that here instead of re-parsing the raw transcript itself — one
  * source of truth for checklist state. `done`/`total` are recomputed from the mapped

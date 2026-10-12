@@ -1,7 +1,7 @@
 /**
  * Batched session-id discovery for AGI EXT tabs.
  *
- * Reads the shared `agents sessions watch --json` projection for every tab.
+ * Reads the shared `agents feed watch --json` projection for every tab.
  * No per-tab subprocesses or extension-owned freshness cache.
  *
  * Placement flags: uses `--device` / local only — never `--where`.

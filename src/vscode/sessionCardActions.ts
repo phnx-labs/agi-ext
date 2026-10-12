@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { runAgents } from '../core/agentsBin';
+import { runAgents, runCliArgs } from '../core/agentsBin';
 import { shellQuote } from '../core/shellQuote';
 import { isInside } from '../core/displayPath';
 import { sessionCardFields } from '../core/sessionCardFields';
@@ -14,7 +14,7 @@ import { remoteDeviceArg } from './remoteSessions.vscode';
 
 const REMOTE_ARTIFACT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'remote-artifacts');
 
-/** Timeline filters that need the full transcript stream, one `agents sessions` call per click. */
+/** Timeline filters that need the full transcript stream, one `sessions` call per click. */
 export const VERB_FILTER_ROLES = new Set(['assistant', 'thinking', 'tools']);
 
 /**
@@ -59,13 +59,14 @@ export async function openSessionArtifact(filePath: string, sessionHost: string 
 
 /**
  * A heavy timeline filter (agent messages, reasoning, tool calls) is too big to
- * ride every stream row, so it is one `agents sessions <id> --include <role>`
- * call per explicit click, for a session on this machine. A CLI error comes back
- * as the answer, not hidden.
+ * ride every stream row, so it is one `sessions <id> --include <role> --json`
+ * call per explicit click, for a session on this machine. `tools` alone answers
+ * with the tool-search envelope (`sessions[].calls`); a message role with the
+ * transcript (`events`). A CLI error comes back as the answer, not hidden.
  */
 export async function fetchTimelineFilter(role: string, sessionId: string): Promise<{ items?: unknown[]; error?: string }> {
   try {
-    const { stdout } = await runAgents(`sessions ${shellQuote(sessionId)} --include ${role} --json`, { timeout: 20_000 });
+    const { stdout } = await runCliArgs('sessions', [sessionId, '--include', role, '--json'], { timeout: 20_000 });
     const parsed = JSON.parse(stdout);
     const items = role === 'tools'
       ? ((parsed.sessions || []).find((x: { id?: string }) => x.id === sessionId)?.calls || []).map((c: { timestamp?: string; tool?: string; input?: string; outcome?: string }) => ({
