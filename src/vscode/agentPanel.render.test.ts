@@ -612,13 +612,22 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   expect(calls).toEqual(['sessions s-1 --include assistant --json']);
   expect(posted.at(-1)).toMatchObject({ type: 'timelineFilter', role: 'assistant', sessionId: 's-1', items: [{ text: 'checking' }] });
 
+  cli = () => ({ stdout: JSON.stringify({ schemaVersion: 1, coverage: { indexedFiles: 1 }, sessions: [{ id: 's-1', calls: [{ timestamp: '2026-10-03T00:00:01Z', tool: 'Bash', input: 'ls', outcome: 'error' }] }] }) });
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'tools', sessionId: 's-1' });
+  expect(calls.at(-1)).toBe('sessions s-1 --include tools --json');
+  expect(posted.at(-1)).toMatchObject({ role: 'tools', items: [{ text: 'Bash: ls', bad: true }] });
+  // A session the tool index has not reached says so instead of showing an empty list.
+  cli = () => ({ stdout: JSON.stringify({ schemaVersion: 1, coverage: { indexedFiles: 0 }, sessions: [] }) });
+  await host.handleMessage({ type: 'loadTimelineFilter', role: 'tools', sessionId: 's-1' });
+  expect(posted.at(-1)).toMatchObject({ role: 'tools', error: 'Tool calls for this session are not indexed yet.' });
+
   cli = () => { throw new Error('unknown session s-1\nmore'); };
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'thinking', sessionId: 's-1' });
   expect(posted.at(-1)).toMatchObject({ role: 'thinking', error: 'unknown session s-1' });
 
   host.snapshot.sessionLocal = false;
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'tools', sessionId: 's-1' });
-  expect(calls).toHaveLength(2);
+  expect(calls).toHaveLength(4);
   expect(posted.at(-1)).toMatchObject({ role: 'tools', sessionId: 's-1', error: 'This session is on another machine.' });
 });
 

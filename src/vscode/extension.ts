@@ -2133,6 +2133,9 @@ async function placeSpawnRequest(
 
 // `agents sessions resume <id> --vscodium [--device <machine>]`: the CLI raises the window that owns
 // the session's project and sends it a /spawn, which that window decides.
+// The one `agents sessions` call left (PHNX-4227): agents-cli has no other verb that opens a
+// session in its project's VSCodium window (`ps focus` picks no backend, `run --terminal
+// vscodium-agent` refuses `--device`). Move it when agents-cli gives this a home.
 async function resumeInProjectWindow(id: string, device: string | undefined): Promise<{ ok: boolean; output: string }> {
   const { runAgentsArgs } = await import('../core/agentsBin');
   try {

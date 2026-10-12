@@ -6,8 +6,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [Unreleased]
 
-- The extension no longer calls the `agents sessions` and `agents secrets` command groups, which
-  agents-cli is removing (PHNX-4227). Transcript reads, the session pickers and Copy Session Trace
+- The extension stops calling the `agents sessions` and `agents secrets` command groups, which
+  agents-cli is removing (PHNX-4227), with one exception: Resume Session, the side panel's Focus
+  and a Project card click still open the agent in its project's window with
+  `agents sessions resume <id> --vscodium`, because agents-cli has no other command that does
+  that yet. They stop working once agents-cli deletes `agents sessions`, until that command moves. Transcript reads, the session pickers and Copy Session Trace
   use the standalone `sessions` CLI (found the same way as `agents`, so a Dock-launched editor
   still finds it); closing a tab runs `agents ps stop`, Detach runs `agents ps detach`, Fork runs
   `agents fork`, a restored or reopened tab runs `agents run auto --resume <id>`, and a remote
@@ -16,6 +19,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - The sidebar's Tool calls filter lists the session's calls again: it reads the tool-search
   answer of `sessions <id> --include tools --json`, where the old call returned a shape the
   filter could not read and showed nothing.
+  A session the tool index has not reached yet says so instead of showing an empty list.
 - Copy Session Trace works again (`sessions trace <id>`; the old `--trace` flag was gone).
 - `Agents: Fork (Pick Session)` lists this machine's sessions, and another device's when you
   switch to it (`sessions --host <device>`). Before, one unreachable fleet device turned the
