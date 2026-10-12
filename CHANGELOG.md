@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.396] - 2026-10-12
+
+- The packaged extension no longer carries compiled code from deleted source files
+  (PHNX-4344). `scripts/build.sh` compiles into an empty `out/`; before, the release box's
+  reused clone kept old output, so 0.9.395 shipped the deleted `settings.vscode.js`, which
+  still named `agents sessions resume`. Nothing loaded it, but the package no longer
+  contains any `agents sessions` or `agents focus` call.
+
 ## [0.9.395] - 2026-10-12
 
 - The extension stops calling the `agents sessions` and `agents secrets` command groups, which

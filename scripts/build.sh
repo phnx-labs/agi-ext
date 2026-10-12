@@ -53,8 +53,11 @@ bun run lint:dead
 echo "Checking the generated extension reference..."
 bun scripts/gen-docs.ts --check
 
-# Compile TypeScript
+# Compile into an empty out/: tsc never deletes the output of a removed source, and
+# the release box reuses one clone, so 0.9.395 shipped the deleted settings.vscode.js
+# still calling `agents sessions resume`. vsce packages whatever out/ holds.
 echo "Compiling TypeScript..."
+rm -rf out
 bun run compile
 
 # Package extension

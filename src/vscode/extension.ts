@@ -2003,8 +2003,8 @@ function aliveSpawnParent(): vscode.Terminal | undefined {
 
 // Open an editor-tab terminal running an arbitrary command (the /spawn verb).
 //
-// Prefer an explicit agent from the spawn payload (sessions focus/resume over
-// vscodium-agent), then fall back to sniffing the command line for a local
+// Prefer an explicit agent from the spawn payload (`agents run --resume
+// --terminal vscodium-agent`), then fall back to sniffing the command line for a local
 // resume like `claude --resume <id>` / `agents run grok …`. Only when neither
 // yields a harness do we open as SH + shell-adoption — that path cannot set the
 // icon later (VS Code tab icons are immutable) and cannot promote remote
