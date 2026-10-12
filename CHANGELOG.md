@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.397] - 2026-10-12
 
 - The Active Session sidebar is one card (owner review, 2026-10-12). The title carries three
   quick icons: open the tab (or resume a session with no tab here), fork, and ⋯ (model,
