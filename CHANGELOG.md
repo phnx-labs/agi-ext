@@ -26,6 +26,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Merge ▾ on the PR card offers squash, rebase or a merge commit, and an admin merge that
   bypasses branch protection. Each runs `agents projects prs merge … --sha <head> --method <m>`
   once, after a dialog; `--admin` runs only from that menu, after its own warning.
+- The Project panel opens with the company goal and today's goal as two quiet lines above
+  the tabs, read once from `linear goals --json` when the panel shows; each opens in Linear.
 
 ## [0.9.396] - 2026-10-12
 

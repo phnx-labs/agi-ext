@@ -6,6 +6,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
+import { parseGoals, renderGoals } from '../core/goals';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
@@ -56,7 +57,9 @@ const execFileAsync = promisify(execFile);
 // FRESH_MS) or on Refresh; a ticket's detail is one `linear tasks <ID>` read on the
 // click that opens it. Sessions draws the stream rows already in the presentation
 // store and demands the stream only while it is the visible tab. Settings reads
-// agentSettings and nothing else. No timer anywhere.
+// agentSettings and nothing else. Above the tabs, the company goal and today's
+// goal are one `linear goals --json` read when the panel shows (at most once per
+// FRESH_MS) or on Refresh. No timer anywhere.
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
@@ -131,7 +134,7 @@ class ProjectView implements vscode.WebviewViewProvider {
           .finally(() => this.load('settings', true));
       }
     });
-    view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) void this.load(this.active, false); });
+    view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
     view.onDidDispose(() => {
       this.view = undefined;
       for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
@@ -149,6 +152,7 @@ class ProjectView implements vscode.WebviewViewProvider {
    *  draw can be lost; the script says when it is ready and gets the tab again. */
   private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
+    void this.loadGoals(false);
     const cached = this.tabs.get(this.active)!.html;
     if (cached) this.post(this.active, cached);
     else void this.load(this.active, false);
@@ -254,6 +258,24 @@ class ProjectView implements vscode.WebviewViewProvider {
   refresh(projectChanged = false): void {
     if (projectChanged) this.ticket = null;
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
+    void this.loadGoals(true);
+  }
+
+  private goalsAt = 0;
+
+  /** The two goal lines above the tabs; a failed read says so on one faint line. */
+  private async loadGoals(force: boolean): Promise<void> {
+    if (!this.view?.visible) return;
+    if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
+    this.goalsAt = Date.now();
+    let html: string;
+    try {
+      html = await this.controller.goals();
+    } catch (e) {
+      this.goalsAt = 0;
+      html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
+    }
+    void this.view?.webview.postMessage({ type: 'goals', html });
   }
 
   private post(tab: TabId, html: string): void {
@@ -336,6 +358,12 @@ class ProjectPanelController {
       stdout = out;
     }
     return renderPrs(parsePrs(stdout), Date.now());
+  }
+
+  /** Company and today's goal: one `linear goals --json` read. */
+  async goals(): Promise<string> {
+    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+    return renderGoals(parseGoals(stdout));
   }
 
   private linear(): string {
@@ -705,6 +733,16 @@ export function shell(cspSource: string, logoCss = ''): string {
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; padding: 0; }
   .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--r-edge); flex: none; }
+  /* Goals: two quiet lines above the tabs, never a block. */
+  .goals { padding: 6px 10px 4px; flex: none; }
+  .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
+  .goals a:hover .gtx { color: var(--r-text); }
+  .goals .gl2 { color: var(--r-text-2); }
+  .goals .gl2 b { font-weight: 600; margin-right: 3px; }
+  .goals .gk { width: 13px; text-align: center; flex: none; }
+  .goals .gtx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .goals .gm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); }
+  .goals .gerr { font-size: 11px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tab { height: 26px; padding: 0 8px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
   .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
   .tab:hover { background: var(--r-hover); }
@@ -837,6 +875,7 @@ export function shell(cspSource: string, logoCss = ''): string {
 </style>
 </head>
 <body>
+<div class="goals" hidden></div>
 <div class="tabs" role="tablist" aria-label="Project">
   <button class="tab" role="tab" data-tab="overview" aria-selected="false" title="Overview"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Overview</span></button>
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
@@ -889,6 +928,7 @@ export function shell(cspSource: string, logoCss = ''): string {
       if (m.tab === 'sessions') syncBulk();
       document.body.classList.remove('loading');
     }
+    else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') { document.body.classList.remove('loading'); main.querySelectorAll('[data-comment]').forEach((b) => { b.disabled = false; }); }
     else if (m.type === 'notice') toast(m.text);
@@ -941,6 +981,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
+    const goal = e.target.closest('.goals [data-url]');
+    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = main.querySelector('.menu');
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }

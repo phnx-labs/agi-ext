@@ -70,6 +70,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
   `linear tasks <ID> --json` (`ProjectPanelController.ticketDetail`), on the click only, never
   on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
+  A fourth: the Project panel's goal lines are one `linear goals --json` read when the panel
+  shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never per tab or per click.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
 - The Active Session sidebar is the one preview: a Project panel session click sets its
