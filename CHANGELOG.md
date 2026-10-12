@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.395] - 2026-10-12
 
 - The extension stops calling the `agents sessions` and `agents secrets` command groups, which
   agents-cli is removing (PHNX-4227), with one exception: Resume Session, the side panel's Focus
