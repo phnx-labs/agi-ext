@@ -325,8 +325,8 @@ describe('Focus / ↻ Resume run agents.resumeSession', () => {
     await provider.runQuickAction('resumeSubject', undefined, undefined);
     await provider.runQuickAction('focusSubject', undefined, undefined);
     expect(commandCalls).toEqual([
-      ['agents.resumeSession', 'session-remote', 'yosemite-m2'],
-      ['agents.resumeSession', 'session-remote', 'yosemite-m2'],
+      ['agents.resumeSession', 'session-remote'],
+      ['agents.resumeSession', 'session-remote'],
     ]);
     expect(notices).toEqual([
       'Opened "Merge guard" (yosemite-m2) in svatlas.',
