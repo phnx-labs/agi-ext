@@ -135,7 +135,7 @@ test('Active Session render is one card: request, then what it made, then the fe
   // and the feed it filters (files, subagents and the checklist are feed chips);
   // the reply floats last.
   const order = ['renderTerminalCard', 'renderSessionStats', 'renderGoalCard', 'renderNeedsYou',
-    'renderRequestCard', 'renderMadeShelf', 'renderTimelineCard', 'renderReplyBox'];
+    'renderRequestCard', 'renderMadeShelf', 'renderRelated', 'renderTimelineCard', 'renderReplyBox'];
   expect(renderOrder.indexOf(order[0]!)).toBeGreaterThan(-1);
   for (let i = 1; i < order.length; i++) {
     expect(renderOrder.indexOf(order[i - 1])).toBeLessThan(renderOrder.indexOf(order[i]));

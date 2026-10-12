@@ -71,6 +71,7 @@ import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields
 import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
+import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
@@ -217,6 +218,8 @@ interface PanelSnapshot {
   prAction?: PrAction;
   /** The Merge ▾ menu has a choice (a method, or an admin merge). */
   prCanMerge?: boolean;
+  /** Sessions to handle together with this one, from the rows already in the store. */
+  related?: RelatedSession[];
   prRepo?: string;
   // All worktrees attached to the workspace, including the main checkout
   worktrees?: WorktreeRef[];
@@ -508,6 +511,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           typeof msg.text === 'string' ? msg.text : '',
           typeof msg.terminalId === 'string' ? msg.terminalId : undefined,
         );
+        return;
+      case 'selectRelated':
+        // A Related chip makes that session the subject, as a Project panel click does.
+        if (typeof msg.sessionId === 'string') setAgentPanelSubjectFromProject(msg.sessionId, typeof msg.host === 'string' ? msg.host : undefined);
         return;
       case 'insertPathInTerminal':
         if (typeof msg.path === 'string' && msg.path) {
@@ -986,6 +993,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.attachments = live.attachments;
         const remoteDevice = remoteDeviceArg(live.host);
         snapshot.sessionTitle = live.title || live.label || undefined;
+        snapshot.related = relatedSessions(live, sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), Date.now());
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
         snapshot.hostLabel = remoteDevice || os.hostname().split('.')[0];
@@ -1676,6 +1684,21 @@ function renderMadeShelf(s, justReady) {
     (open ? renderPullRequestCard(s, justReady) : '') + '</div>';
 }
 
+// ── Related ─────────────────────────────────────────────────────────────────
+// One line of chips under Made: other sessions on the same ticket, PR or branch,
+// or with a similar request (relatedSessions, from the rows already in memory).
+// Each chip carries its state dot and, in its tooltip, why it is related; a click
+// makes it the subject.
+const RELATED_DOT = { asks: 'waiting', yours: 'waiting', working: 'running', unknown: 'running', ended: 'idle' };
+
+function renderRelated(s) {
+  const rel = s.related || [];
+  if (!rel.length) return '';
+  return '<div class="rel"><span class="rel-l">Related</span><div class="rel-s" data-strip="related">' + rel.map((r) =>
+    '<button type="button" class="rel-c state-' + (RELATED_DOT[r.state] || 'idle') + '" data-related="' + esc(r.sessionId) + '" data-related-host="' + esc(r.host || '') + '" title="' + esc(r.title + ' · ' + r.why) + '">' +
+      '<span class="state-dot"></span>' + esc(truncate(r.title, 48)) + '</button>').join('') + '</div></div>';
+}
+
 // ── Files ───────────────────────────────────────────────────────────────────
 // The paths the HARNESS recorded as created / modified / deleted. Nothing is
 // inferred from the filesystem: no 'files' on the row means no card.
@@ -1968,6 +1991,7 @@ function render(snap) {
       renderNeedsYou(snap) +
       renderRequestCard(snap) +
       renderMadeShelf(snap, justReady) +
+      renderRelated(snap) +
       renderTimelineCard(snap) +
     '</div>' +
     renderReplyBox(snap) +
@@ -2016,6 +2040,9 @@ function render(snap) {
       vscode.setState(viewState);
       render(lastSnapshot);
     });
+  }
+  for (const el of root.querySelectorAll('[data-related]')) {
+    el.addEventListener('click', () => vscode.postMessage({ type: 'selectRelated', sessionId: el.getAttribute('data-related'), host: el.getAttribute('data-related-host') || undefined }));
   }
   for (const el of root.querySelectorAll('[data-share]')) {
     el.addEventListener('click', (e) => { e.stopPropagation(); vscode.postMessage({ type: 'shareArtifact', path: el.getAttribute('data-share') }); });

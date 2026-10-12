@@ -28,6 +28,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   once, after a dialog; `--admin` runs only from that menu, after its own warning.
 - The Project panel opens with the company goal and today's goal as two quiet lines above
   the tabs, read once from `linear goals --json` when the panel shows; each opens in Linear.
+- Sessions on today's goal carry ☀, and the Sessions header's "☀ N on today" shows only them.
+- The session card shows a Related line: up to three sessions on the same ticket, PR or branch,
+  or with a similar request, picked from the rows already in memory; a chip opens that session.
+- A ready PR in the Project panel's Pull requests tab merges from its row: one read of that PR
+  for its head commit, then squash, rebase, merge commit or admin merge, each confirmed.
 
 ## [0.9.396] - 2026-10-12
 

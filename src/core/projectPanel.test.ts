@@ -97,6 +97,16 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   expect(html).toContain('<details open><summary>merged <span class="n">5</span>')
 })
 
+test('prs: an open, ready PR row carries a merge button; a draft does not', () => {
+  const model = parsePrs(JSON.stringify({ repositories: [{ slug: 'o/busy', pullRequests: [
+    { number: 7, title: 'draft', url: 'https://github.com/o/busy/pull/7', isDraft: true, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+    { number: 8, title: 'ready', url: 'https://github.com/o/busy/pull/8', isDraft: false, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+  ], recentlyMerged: [] }] }))
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'))
+  expect(html).toContain('data-merge-repo="o/busy" data-merge-number="8"')
+  expect(html).not.toContain('data-merge-number="7"')
+})
+
 const row = (o: Partial<SessionLike>): SessionLike => ({
   sessionId: 's', host: 'yosemite-m6', title: 'T', label: '', topic: '', phase: 'running', liveStatus: 'running',
   lastResponse: '', activity: '', ticket: null, lastActivityMs: 0, confirmedProject: 'agi', ...o,
@@ -314,4 +324,25 @@ test('overview shows a failed ticket read in place instead of an empty bar', () 
   const html = renderOverview(parseOverview(STATUS), '2026-10-08', [], 'linear: HTTP 401')
   expect(html).toContain('Tickets could not be read: linear: HTTP 401')
   expect(html).not.toContain('class="sbar"')
+})
+
+test("today's goal: its sessions carry ☀, the header counts them, and the toggle shows only them", () => {
+  const rows = [
+    row({ sessionId: 'goal', title: 'Secrets in cloud runs', topic: 'Work on PHNX-4353: make the Rush Cloud infrastructure work with secrets', tabHere: true }),
+    row({ sessionId: 'other', title: 'Landing page hero', topic: 'PHNX-4290 landing page', tabHere: true }),
+  ]
+  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), todayId: 'PHNX-4353' })
+  expect(html).toContain('data-pref="todayOnly" data-value="true" aria-pressed="false"')
+  expect(html).toContain('☀ 1 on today</button>')
+  const goalCard = html.slice(html.indexOf('data-session="goal"'), html.indexOf('data-session="goal"') + 600)
+  expect(goalCard).toContain('<span class="tday" title="On today\'s goal">☀</span>')
+  const only = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ todayOnly: true }), todayId: 'PHNX-4353' })
+  expect(only).toContain('data-session="goal"')
+  expect(only).not.toContain('data-session="other"')
+  // No goal read yet: no toggle, no marks, nothing filtered.
+  const none = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ todayOnly: true }) })
+  expect(none).not.toContain('on today')
+  expect(none).toContain('data-session="other"')
+  expect(readSessionPrefs({ todayOnly: true }).todayOnly).toBe(true)
+  expect(readSessionPrefs({}).todayOnly).toBe(false)
 })

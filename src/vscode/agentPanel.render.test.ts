@@ -54,12 +54,12 @@ const NAMES = [
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
-  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'artifactItems',
+  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
   'prVerdict', 'prCheckSegments', 'prJustReady', 'prRing', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind',
 ];
-const CONSTS = ['APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
+const CONSTS = ['RELATED_DOT', 'APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -70,11 +70,12 @@ const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
 const viewState: Record<string, unknown> = {};
 const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
-  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, currentRange,
+  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, currentRange,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
   renderPullRequestCard, prVerdict, prCheckSegments, prJustReady,
 }; })()`) as {
   renderMadeShelf: (s: unknown, justReady?: boolean) => string;
+  renderRelated: (s: unknown) => string;
   currentRange: (s: unknown) => { startMs: number; endMs: number } | null;
   renderPullRequestCard: (s: unknown, justReady?: boolean) => string;
   prVerdict: (pr: unknown) => { ring: string; word: string; tone: string };
@@ -946,4 +947,17 @@ test('with a range set, the loaded tool calls draw as a zoomed lane over that st
   expect(html).toContain('title="turn 1 · late ask">1</span>');
   expect(html).not.toContain('early.ts');
   for (const key of Object.keys(viewState)) delete viewState[key];
+});
+
+test('Related: one line of chips with each session state dot and why in the tooltip; nothing when there are none', () => {
+  const html = cards.renderRelated({ related: [
+    { sessionId: 'a1', host: 'yosemite-m6', title: 'Codex sign-in accounts', state: 'asks', why: 'same ticket PHNX-4338' },
+    { sessionId: 'b2', host: 'zion', title: 'Launch gate: OpenCode harness', state: 'working', why: 'similar request' },
+  ] });
+  expect(html).toContain('<span class="rel-l">Related</span>');
+  expect(html).toContain('data-strip="related"');
+  expect(html).toContain('class="rel-c state-waiting" data-related="a1" data-related-host="yosemite-m6" title="Codex sign-in accounts · same ticket PHNX-4338"');
+  expect(html).toContain('class="rel-c state-running" data-related="b2"');
+  expect(cards.renderRelated({ related: [] })).toBe('');
+  expect(cards.renderRelated({})).toBe('');
 });

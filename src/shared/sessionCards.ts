@@ -1718,6 +1718,14 @@ ${fontFaces}  body {
   .mk-share svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .mk-file:hover .mk-share, .mk-file:focus-within .mk-share { opacity: 1; }
   .made .pr-card { margin: 2px 11px 4px; padding: 8px 10px; border: 1px solid var(--r-edge-hi); border-radius: 9px; background: var(--r-well); }
+  /* Related: one line of chips. */
+  .rel { display: flex; align-items: center; gap: 7px; margin: 2px 0 0; min-width: 0; }
+  .rel-l { flex: none; font-family: var(--r-display); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }
+  .rel-s { display: flex; gap: 5px; overflow-x: auto; min-width: 0; scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 16px), transparent); mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 16px), transparent); }
+  button.rel-c { flex: none; display: inline-flex; align-items: center; gap: 5px; max-width: 200px; padding: 1px 8px; border: 1px solid var(--r-edge); border-radius: 999px; background: transparent; color: var(--r-text-2); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  button.rel-c:hover { border-color: var(--r-edge-hi); color: var(--r-text); }
+  .rel-c .state-dot { width: 6px; height: 6px; }
   /* The strip and the feed it filters. */
   .feed { margin: 8px -11px 0; padding: 8px 11px 0; border-top: 1px solid var(--r-edge); }
   .feed h2 { display: none; }

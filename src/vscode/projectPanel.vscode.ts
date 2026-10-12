@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { parseGoals, renderGoals } from '../core/goals';
+import { parsePrForMerge, rowMergeChoices } from '../core/prStatus';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
@@ -77,7 +78,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown;
 }
 
 interface TabState {
@@ -127,6 +128,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
         // Redraw either way, so a write that failed shows the stored value again.
         void this.controller.setSetting(msg.key, msg.value)
@@ -261,6 +263,23 @@ class ProjectView implements vscode.WebviewViewProvider {
     void this.loadGoals(true);
   }
 
+  private merging = false;
+
+  /** Merge from a PR row: one read of that PR (the list has no head commit), a
+   *  method or admin merge from the menu, a dialog, then one pinned merge. */
+  private async mergeRow(repo: string, number: number): Promise<void> {
+    if (this.merging) return;
+    this.merging = true;
+    try {
+      const merged = await this.controller.mergeFromRow(repo, number);
+      if (merged) await this.load('prs', true);
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Merge failed: ${errorText(e).split('\n').slice(0, 3).join(' ')}`);
+    } finally {
+      this.merging = false;
+    }
+  }
+
   private goalsAt = 0;
 
   /** The two goal lines above the tabs; a failed read says so on one faint line. */
@@ -269,6 +288,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
     this.goalsAt = Date.now();
     let html: string;
+    const before = this.controller.todayId;
     try {
       html = await this.controller.goals();
     } catch (e) {
@@ -276,6 +296,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
     }
     void this.view?.webview.postMessage({ type: 'goals', html });
+    // Today's ticket marks its sessions with ☀; redraw the list when it changes.
+    if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
   }
 
   private post(tab: TabId, html: string): void {
@@ -360,10 +382,43 @@ class ProjectPanelController {
     return renderPrs(parsePrs(stdout), Date.now());
   }
 
+  /** Merge one PR from the list: read it, pick, confirm, merge at the head read. */
+  async mergeFromRow(repo: string, number: number): Promise<boolean> {
+    const project = await this.project();
+    if (!project) return false;
+    const { stdout } = await runAgentsArgs(['projects', 'prs', project.name, '--json', '--repo', repo, '--number', String(number)], { timeout: 60_000 });
+    const pr = parsePrForMerge(stdout, repo, number);
+    const choices = rowMergeChoices(pr);
+    if (!pr || !pr.headSha || !choices.length) {
+      void vscode.window.showWarningMessage(`${repo}#${number} cannot be merged from here${pr?.isDraft ? ': it is a draft' : pr?.mergeableState === 'dirty' ? ': it has conflicts' : ''}.`);
+      return false;
+    }
+    const head = pr.headSha.slice(0, 7);
+    const picked = await vscode.window.showQuickPick(
+      choices.map((c) => ({ label: (c.admin ? '$(shield) ' : '') + c.label, description: c.detail, choice: c })),
+      { title: `Merge ${repo}#${number} at ${head}`, placeHolder: 'How to merge' },
+    );
+    if (!picked) return false;
+    const c = picked.choice;
+    const go = c.admin ? 'Merge as admin' : 'Merge';
+    const ask = c.admin
+      ? `Admin merge ${repo}#${number} at ${head}? This bypasses branch protection (required reviews and checks) as a repository admin.`
+      : `${c.label}: ${repo}#${number} at ${head}?`;
+    if (await vscode.window.showWarningMessage(ask, { modal: true }, go) !== go) return false;
+    await runAgentsArgs(['projects', 'prs', 'merge', project.name, '--repo', repo, '--number', String(number), '--sha', pr.headSha, '--method', c.method, ...(c.admin ? ['--admin'] : [])], { timeout: 60_000 });
+    void vscode.window.showInformationMessage(`Merged ${repo}#${number}${c.admin ? ' as admin' : ''}.`);
+    return true;
+  }
+
+  /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
+  todayId: string | undefined;
+
   /** Company and today's goal: one `linear goals --json` read. */
   async goals(): Promise<string> {
     const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
-    return renderGoals(parseGoals(stdout));
+    const goals = parseGoals(stdout);
+    this.todayId = goals.today?.id;
+    return renderGoals(goals);
   }
 
   private linear(): string {
@@ -539,7 +594,7 @@ class ProjectPanelController {
     const prefs = this.prefs();
     const subject = currentAgentPanelSubject();
     const count = sessionCount(rows, here, prefs);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
@@ -715,6 +770,10 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pri i { display: block; width: 2.5px; border-radius: 1px; background: var(--r-edge); }
   .pri i.on { background: var(--r-faint); } .pri.p1 i.on { background: var(--r-bad); } .pri.p2 i.on { background: var(--r-warn); }
   .trow, .prow { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px; padding: 5px 4px; border-radius: 6px; }
+  .prli { display: flex; align-items: center; gap: 4px; }
+  .prli .prow { flex: 1; min-width: 0; }
+  .prli .act.merge { flex: none; opacity: .55; }
+  .prli:hover .act.merge, .prli .act.merge:focus-visible { opacity: 1; }
   .trow:hover, .prow:hover { background: var(--r-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
   .ring { width: 14px; height: 14px; flex: none; margin-top: 1px; display: inline-block; }
@@ -733,6 +792,9 @@ export function shell(cspSource: string, logoCss = ''): string {
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; padding: 0; }
   .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--r-edge); flex: none; }
+  .shead .today { margin-left: 6px; flex: none; font: 500 10.5px var(--r-sans); color: var(--r-text-2); border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px; background: transparent; cursor: pointer; }
+  .shead .today.on { border-color: var(--r-selected-edge); background: var(--r-selected); color: var(--r-text); }
+  .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
   /* Goals: two quiet lines above the tabs, never a block. */
   .goals { padding: 6px 10px 4px; flex: none; }
   .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
@@ -981,6 +1043,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
+    const merge = e.target.closest('[data-merge-repo]');
+    if (merge) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber) }); return; }
     const goal = e.target.closest('.goals [data-url]');
     if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
     const menuBtn = e.target.closest('[data-menu]');

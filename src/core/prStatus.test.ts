@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { mergeChoices, normalizePrStatus, prAction, prRepo } from './prStatus';
+import { mergeChoices, normalizePrStatus, parsePrForMerge, prAction, prRepo, rowMergeChoices } from './prStatus';
 
 // The shape the feed puts on a row's `pr` today (agents-cli 1.22.122: gh's own
 // words), plus the head commit, title and per-check items a newer CLI adds.
@@ -62,4 +62,20 @@ test('merge choices: the three methods when the PR can merge, an admin merge whe
   expect(mergeChoices({ ...base, mergeable: 'conflicting' } as never)).toEqual([]);
   expect(mergeChoices({ ...base, headSha: undefined, mergeable: 'mergeable' } as never)).toEqual([]);
   expect(mergeChoices(undefined)).toEqual([]);
+});
+
+// `agents projects prs <project> --json --repo R --number N`, as it read PR #137 on 2026-10-12.
+const ONE_PR = JSON.stringify({ project: { name: 'agi-ui' }, repositories: [{ slug: 'phnx-labs/agi-ext', merge: { viewerIsAdmin: true, adminBypass: true, autoMergeAllowed: false },
+  pullRequests: [{ number: 137, isDraft: false, state: 'OPEN', headSha: 'c9070350ff776ff354df90ac8f828f5173da0939', mergeable: true, mergeableState: 'clean', reviewDecision: 'REVIEW_REQUIRED', ciState: null }] }] });
+
+test('merge from a PR row: one read gives the head and mergeability; methods when GitHub would merge, admin when you may bypass', () => {
+  const pr = parsePrForMerge(ONE_PR, 'phnx-labs/agi-ext', 137);
+  expect(pr).toMatchObject({ headSha: 'c9070350ff776ff354df90ac8f828f5173da0939', mergeableState: 'clean', viewerIsAdmin: true, adminBypass: true });
+  expect(rowMergeChoices(pr).map((c) => c.label)).toEqual(['Squash and merge', 'Rebase and merge', 'Create a merge commit', 'Admin merge (squash)']);
+  expect(rowMergeChoices({ ...pr!, mergeableState: 'blocked' }).map((c) => c.admin)).toEqual([true]);
+  expect(rowMergeChoices({ ...pr!, mergeableState: 'blocked', viewerIsAdmin: false })).toEqual([]);
+  expect(rowMergeChoices({ ...pr!, mergeableState: 'dirty' })).toEqual([]);
+  expect(rowMergeChoices({ ...pr!, isDraft: true })).toEqual([]);
+  expect(rowMergeChoices({ ...pr!, ciState: 'failure' }).map((c) => c.admin)).toEqual([true]);
+  expect(parsePrForMerge(ONE_PR, 'phnx-labs/agi-ext', 1)).toBeUndefined();
 });

@@ -1,3 +1,4 @@
+import { extractLinearTicketId } from './utils';
 // Pure model + HTML for the Project sidebar panel (PHNX-4289).
 // Each section is one CLI read: `agents projects status <name> --json` (Overview),
 // `linear tasks --project <linear> --json` (Tickets, and Overview's state bar),
@@ -369,6 +370,8 @@ export interface SessionListPrefs {
   showEnded: boolean;
   folded: string[];
   hidden: Record<string, number>;
+  /** Show only the sessions on today's goal (its ticket id in the title, topic or reply). */
+  todayOnly: boolean;
   /** 2 once Ended defaults to shown and folded; older stored prefs lack it. */
   v: 2;
 }
@@ -376,7 +379,7 @@ export interface SessionListPrefs {
 /** The Ended group's key under App and under State; Machine and None have no Ended group. */
 const ENDED_GROUPS = ['ended', 'state:ended'];
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS], hidden: {}, v: 2 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS], hidden: {}, todayOnly: false, v: 2 };
 
 const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
 const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
@@ -402,8 +405,15 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     showEnded: before ? foldable : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
     folded: before ? [...new Set([...folded, ...ENDED_GROUPS])] : folded,
     hidden,
+    todayOnly: o.todayOnly === true,
     v: 2,
   };
+}
+
+/** Whether a session works on a ticket: its id in the title, topic, label or latest reply. */
+function onTicket(s: Pick<SessionLike, 'title' | 'topic' | 'label'> & { lastResponse?: string }, id: string | undefined): boolean {
+  if (!id) return false;
+  return [s.title, s.topic, s.label, s.lastResponse].some((t) => extractLinearTicketId(t || '') === id || (t || '').includes(id));
 }
 
 /** This window, as the list needs it: the machine it runs on, the workspace it has
@@ -495,6 +505,8 @@ export interface SessionListOptions {
   prefs: SessionListPrefs;
   thumbsFor?: (s: SessionLike) => CardThumb[];
   madeFor?: (s: SessionLike) => SessionMade | null;
+  /** Today's goal ticket (`linear goals`), so its sessions carry ☀ and can be filtered. */
+  todayId?: string;
 }
 
 const ACT_ICON = {
@@ -508,6 +520,7 @@ const ACT_ICON = {
   cloud: '<path d="M4.5 12h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.5 2.75 2.75 0 0 0 4.5 12z"/>',
   machine: '<rect x="2.5" y="3" width="11" height="7.5" rx="1"/><path d="M6 13.5h4M8 10.5v3"/>',
   state: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/>',
+  merge: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="8" r="1.5"/><path d="M4.5 5v6M4.5 5c0 3 3 3 5.5 3"/>',
 };
 function glyph(name: keyof typeof ACT_ICON, cls = 'ic'): string {
   return `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true">${ACT_ICON[name]}</svg>`;
@@ -537,7 +550,7 @@ function cardLine(s: SessionLike, state: SessionStateKey): string {
   return agentLine(s) || (s.request?.headline ? plain(s.request.headline) : '');
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean }): string {
   const state = sessionStateOf(s);
   const title = plain(s.title || s.topic || s.label || s.request?.headline || 'Untitled');
   const asked = s.request?.headline ? plain(s.request.headline) : '';
@@ -570,7 +583,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const madeBlock = (prs || ticketChip || folders.length) ? `<div class="lab">Made</div><div class="made">${prs || ticketChip ? `<div class="chips">${prs}${ticketChip}</div>` : ''}${folders.slice(0, 4).map((f) => `
       <a class="folder" href="#" data-artifact="${escapeHtml((f.files[0] ?? f.images[0]).path)}" title="${escapeHtml(f.display)}">${glyph('folder')}<span class="fx"><span><b>${escapeHtml(f.name)}/</b> · ${escapeHtml([...f.files, ...f.images].slice(0, 3).map((x) => x.name).join(', '))}${f.files.length + f.images.length > 3 ? ' …' : ''}</span><span class="fp">${escapeHtml(f.display)}</span></span></a>${f.images.length ? `<span class="thumbs">${f.images.slice(0, 3).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`).join('')}${f.images.length > 3 ? `<span class="more">+${f.images.length - 3}</span>` : ''}</span>` : ''}`).join('')}</div>` : '';
   return `<div class="card st-${state}${opts.selected ? ' sel' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-title="${escapeHtml(title)}">
-    <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span><span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
+    <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span>${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
     <div class="meta"><span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span><span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
     <div class="compact">${line ? `<div class="cline">${escapeHtml(line)}</div>` : ''}${strip ? `<div class="cstrip">${strip}</div>` : ''}</div>
     <div class="full">
@@ -616,16 +629,19 @@ function menuHtml(p: SessionListPrefs): string {
  *  grouping of the rest. Each card is compact until hovered or selected. */
 export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { here, prefs } = opts;
-  const all = visibleSessions(rows, here, prefs);
+  const visible = visibleSessions(rows, here, prefs);
+  const today = (r: SessionLike) => onTicket(r, opts.todayId);
+  const onToday = visible.filter(({ row }) => today(row)).length;
+  const all = prefs.todayOnly && opts.todayId ? visible.filter(({ row }) => today(row)) : visible;
   const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
   const mine = sortRows(all.filter(({ row }) => ballOf(sessionStateOf(row)) === 'move'), prefs.sort)
     .sort((a, b) => moveRank(sessionStateOf(a.row)) - moveRank(sessionStateOf(b.row)) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
   const rest = all.filter(({ row }) => ballOf(sessionStateOf(row)) !== 'move');
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null,
+    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row),
   });
   const c = sessionCount(rows, here, prefs);
-  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} your move</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} your move</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   const pinned = mine.length ? `<div class="pinned"><div class="ph">${BALL_WORD.move} <span class="n">${mine.length}</span></div>${mine.map((x) => card(x, true)).join('')}</div>` : '';
@@ -735,7 +751,7 @@ export function renderPrs(m: PrsModel, now: number): string {
     const branch = r.branch ? `<span class="rmeta" title="${escapeHtml(r.branch.name)}: ${escapeHtml(r.branch.ciState ?? 'no CI')}">${ring(r.branch.ciState, false)}${escapeHtml(r.branch.name)}</span>` : '';
     return `<section>
       <div class="head"><span class="label">${escapeHtml(r.slug.split('/')[1] ?? r.slug)}</span>${branch}<span class="n">${r.open.length}</span></div>
-      <ul>${r.open.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, p.isDraft)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)} · ${escapeHtml(p.author)}</span></span></a></li>`).join('')}</ul>
+      <ul>${r.open.map((p) => `<li class="prli"><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, p.isDraft)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)} · ${escapeHtml(p.author)}</span></span></a>${p.isDraft ? '' : `<button class="act merge" data-merge-repo="${escapeHtml(r.slug)}" data-merge-number="${p.number}" title="Merge #${p.number}: squash, rebase, merge commit, or admin merge">${glyph('merge')}</button>`}</li>`).join('')}</ul>
       ${r.merged.length ? `<details open><summary>merged <span class="n">${r.merged.length}</span></summary><ul>${r.merged.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, false)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span></a></li>`).join('')}</ul></details>` : ''}
     </section>`;
   }).join('');
