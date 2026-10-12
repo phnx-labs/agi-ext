@@ -7,7 +7,7 @@ import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { parseGoals, renderGoals } from '../core/goals';
-import { parsePrForMerge, rowMergeChoices } from '../core/prStatus';
+import { mergeWithMenu } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
@@ -372,32 +372,10 @@ class ProjectPanelController {
     return renderPrs(parsePrs(stdout), Date.now());
   }
 
-  /** Merge one PR from the list: read it, pick, confirm, merge at the head read. */
+  /** Merge one PR from the list through the shared flow (read, pick, confirm, merge). */
   async mergeFromRow(repo: string, number: number): Promise<boolean> {
     const project = await this.project();
-    if (!project) return false;
-    const { stdout } = await runAgentsArgs(['projects', 'prs', project.name, '--json', '--repo', repo, '--number', String(number)], { timeout: 60_000 });
-    const pr = parsePrForMerge(stdout, repo, number);
-    const choices = rowMergeChoices(pr);
-    if (!pr || !pr.headSha || !choices.length) {
-      void vscode.window.showWarningMessage(`${repo}#${number} cannot be merged from here${pr?.isDraft ? ': it is a draft' : pr?.mergeableState === 'dirty' ? ': it has conflicts' : ''}.`);
-      return false;
-    }
-    const head = pr.headSha.slice(0, 7);
-    const picked = await vscode.window.showQuickPick(
-      choices.map((c) => ({ label: (c.admin ? '$(shield) ' : '') + c.label, description: c.detail, choice: c })),
-      { title: `Merge ${repo}#${number} at ${head}`, placeHolder: 'How to merge' },
-    );
-    if (!picked) return false;
-    const c = picked.choice;
-    const go = c.admin ? 'Merge as admin' : 'Merge';
-    const ask = c.admin
-      ? `Admin merge ${repo}#${number} at ${head}? This bypasses branch protection (required reviews and checks) as a repository admin.`
-      : `${c.label}: ${repo}#${number} at ${head}?`;
-    if (await vscode.window.showWarningMessage(ask, { modal: true }, go) !== go) return false;
-    await runAgentsArgs(['projects', 'prs', 'merge', project.name, '--repo', repo, '--number', String(number), '--sha', pr.headSha, '--method', c.method, ...(c.admin ? ['--admin'] : [])], { timeout: 60_000 });
-    void vscode.window.showInformationMessage(`Merged ${repo}#${number}${c.admin ? ' as admin' : ''}.`);
-    return true;
+    return project ? mergeWithMenu(project.name, repo, number) : false;
   }
 
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
@@ -700,7 +678,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-ok: #86efac; --r-ok-tint: rgba(34,197,94,0.16); --r-warn: #fcd34d; --r-warn-tint: rgba(245,158,11,0.14);
     --r-bad: #fca5a5; --r-bad-tint: rgba(239,68,68,0.12); --r-info: #a5b4fc;
     --r-doing: #4ade80; --r-review: #bef264; --r-todo: #71717a; --r-backlog: #3f3f46; --r-gold: #D4B872;
-    --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca;
+    --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-light {
     --r-text: #141829; --r-text-2: #4B4A55; --r-caption: #665E52; --r-faint: #8A8174;
@@ -709,7 +687,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-ok: #15803d; --r-ok-tint: rgba(22,163,74,0.12); --r-warn: #b45309; --r-warn-tint: rgba(217,119,6,0.12);
     --r-bad: #b91c1c; --r-bad-tint: rgba(220,38,38,0.08); --r-info: #4f46e5;
     --r-doing: #15803d; --r-review: #65a30d; --r-todo: #a8a29e; --r-backlog: #d6d3d1; --r-gold: #A8884A;
-    --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca;
+    --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-high-contrast, body.vscode-high-contrast-light {
     --r-text: var(--vscode-foreground); --r-text-2: var(--vscode-foreground); --r-caption: var(--vscode-descriptionForeground); --r-faint: var(--vscode-descriptionForeground);
@@ -717,7 +695,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-ok: var(--vscode-testing-iconPassed); --r-ok-tint: transparent; --r-warn: var(--vscode-editorWarning-foreground); --r-warn-tint: transparent;
     --r-bad: var(--vscode-errorForeground); --r-bad-tint: transparent; --r-info: var(--vscode-textLink-foreground);
     --r-doing: var(--vscode-testing-iconPassed); --r-review: var(--vscode-testing-iconPassed); --r-todo: var(--vscode-descriptionForeground); --r-backlog: var(--vscode-contrastBorder); --r-gold: var(--vscode-focusBorder);
-    --r-av0: var(--vscode-foreground); --r-av1: var(--vscode-foreground); --r-av2: var(--vscode-foreground); --r-av3: var(--vscode-foreground); --r-av4: var(--vscode-foreground); --r-av5: var(--vscode-foreground);
+    --r-av0: transparent; --r-av1: transparent; --r-av2: transparent; --r-av3: transparent; --r-av4: transparent; --r-av5: transparent; --r-on-av: var(--vscode-foreground);
   }
   body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
     background: var(--vscode-sideBar-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }
@@ -755,7 +733,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pav { width: 18px; height: 18px; border-radius: 50%; flex: none; align-self: center; margin-left: auto; }
   .trow, .prow { align-items: center; }
   .who { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; flex: none; }
-  .iav { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 8.5px; font-weight: 700; color: var(--r-text); flex: none; }
+  .iav { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 8.5px; font-weight: 700; color: var(--r-on-av); flex: none; box-sizing: border-box; }
+  body.vscode-high-contrast .iav, body.vscode-high-contrast-light .iav { border: 1px solid var(--r-edge); }
   .iav.av0 { background: var(--r-av0); } .iav.av1 { background: var(--r-av1); } .iav.av2 { background: var(--r-av2); }
   .iav.av3 { background: var(--r-av3); } .iav.av4 { background: var(--r-av4); } .iav.av5 { background: var(--r-av5); }
   .iav.agent { background: var(--r-glass); border: 1px solid var(--r-edge); }

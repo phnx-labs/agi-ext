@@ -92,21 +92,13 @@ export function prAction(pr: RemotePrStatus | undefined): PrAction {
 type MergeMethod = 'squash' | 'rebase' | 'merge';
 
 /** One choice in the Merge ▾ menu: a method, or an admin merge that bypasses
- *  branch protection. Each runs `agents projects prs merge … --sha <head>
- *  --method <m> [--admin]`; the CLI reserves --admin for a person's explicit
- *  confirm, so it is offered only here and confirmed in its own dialog. */
+ *  branch protection (offered only when you may). */
 export interface MergeChoice { method: MergeMethod; admin: boolean; label: string; detail: string }
 
-export function mergeChoices(pr: RemotePrStatus | undefined): MergeChoice[] {
-  if (!pr || pr.state !== 'open' || pr.isDraft || !pr.headSha || pr.mergeable === 'conflicting') return [];
-  const normal: MergeChoice[] = prAction(pr).kind === 'merge'
-    ? [
-      { method: 'squash', admin: false, label: 'Squash and merge', detail: 'one commit on the base branch' },
-      { method: 'rebase', admin: false, label: 'Rebase and merge', detail: 'replays each commit on the base branch' },
-      { method: 'merge', admin: false, label: 'Create a merge commit', detail: 'keeps every commit' },
-    ]
-    : [];
-  return [...normal, { method: 'squash', admin: true, label: 'Admin merge (squash)', detail: 'bypasses branch protection as a repository admin' }];
+/** Whether the session's PR can be offered Merge ▾ at all; the choices themselves
+ *  come from one read of the PR on the click (`mergeWithMenu`). */
+export function canOfferMerge(pr: RemotePrStatus | undefined): boolean {
+  return !!pr && pr.state === 'open' && !pr.isDraft && !!pr.headSha && pr.mergeable !== 'conflicting';
 }
 
 /** One PR as `agents projects prs <project> --json --repo R --number N` reads it, for a

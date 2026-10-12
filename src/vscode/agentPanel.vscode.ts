@@ -63,7 +63,8 @@ import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight
 import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 import { runAgents, runCliArgs } from '../core/agentsBin';
-import { mergeChoices, prAction, prRepo, type MergeChoice, type PrAction, type RemotePrStatus } from '../core/prStatus';
+import { canOfferMerge, prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
+import { mergeWithMenu } from './prMerge.vscode';
 import { shellQuote } from '../core/shellQuote';
 import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
@@ -575,37 +576,17 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
 
   private prActionBusy = false;
 
-  /** Merge ▾: pick a method (or an admin merge), confirm, run once at the head shown. */
+  /** Merge ▾: the shared merge flow on this session's PR (one read, pick, confirm, merge). */
   private async pickAndMerge(): Promise<void> {
     const pr = this.snapshot.prStatus;
-    const choices = mergeChoices(pr);
     const repo = pr ? prRepo(pr.url) : undefined;
     const project = this.snapshot.project;
-    if (!pr || !pr.headSha || !choices.length || !repo || !project) {
-      void vscode.window.showWarningMessage('This pull request cannot be merged from here' + (prAction(pr).reason ? ': ' + prAction(pr).reason : '') + '.');
+    if (!pr || !repo || !project) {
+      void vscode.window.showWarningMessage('This pull request cannot be merged from here' + (!project ? ': this session has no project' : '') + '.');
       return;
     }
-    const picked = await vscode.window.showQuickPick(
-      choices.map((c) => ({ label: (c.admin ? '$(shield) ' : '') + c.label, description: c.detail, choice: c })),
-      { title: `Merge ${repo}#${pr.number} at ${pr.headSha.slice(0, 7)}`, placeHolder: 'How to merge' },
-    );
-    if (!picked) return;
-    const c: MergeChoice = picked.choice;
-    const head = pr.headSha.slice(0, 7);
-    const ask = c.admin
-      ? `Admin merge ${repo}#${pr.number} at ${head}? This bypasses branch protection (required reviews and checks) as a repository admin.`
-      : `${c.label}: ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}?`;
-    const go = c.admin ? 'Merge as admin' : 'Merge';
-    if (await vscode.window.showWarningMessage(ask, { modal: true }, go) !== go) return;
-    const now = this.snapshot.prStatus;
-    if (!now || now.url !== pr.url || now.headSha !== pr.headSha) {
-      void vscode.window.showWarningMessage(`Did not merge ${repo}#${pr.number}: a new commit landed while the dialog was open.`);
-      return;
-    }
-    const args = ['projects', 'prs', 'merge', project, '--repo', repo, '--number', String(pr.number), '--sha', pr.headSha, '--method', c.method, ...(c.admin ? ['--admin'] : [])];
     try {
-      await runCliArgs('agents', args, { timeout: 60_000 });
-      void vscode.window.showInformationMessage(`Merged ${repo}#${pr.number}${c.admin ? ' as admin' : ''}.`);
+      await mergeWithMenu(project, repo, pr.number);
     } catch (err) {
       const message = err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err);
       void vscode.window.showErrorMessage(`Merge failed: ${message}`);
@@ -906,7 +887,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (live.prStatus) {
           snapshot.prStatus = live.prStatus;
           snapshot.prAction = prAction(live.prStatus);
-          snapshot.prCanMerge = mergeChoices(live.prStatus).length > 0;
+          snapshot.prCanMerge = canOfferMerge(live.prStatus);
           snapshot.prRepo = prRepo(live.prStatus.url);
         }
 

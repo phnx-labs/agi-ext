@@ -72,8 +72,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
   A fourth: the Project panel's goal lines are one `linear goals --json` read when the panel
   shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never per tab or per click.
-  A fifth: a PR row's merge icon reads that one PR (`agents projects prs <name> --json --repo R
-  --number N`) on the click only, for its head commit (`ProjectPanelController.mergeFromRow`).
+  A fifth: merging a PR (the sidebar's Merge ▾ or a Project panel PR row) reads that one PR
+  (`agents projects prs <name> --json --repo R --number N`) on the click, and again after the
+  dialog, for its head commit and whether you may bypass protection (`mergeWithMenu`,
+  `src/vscode/prMerge.vscode.ts`); `--admin` only after its own warning dialog.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
 - The Active Session sidebar is the one preview: a Project panel session click sets its
