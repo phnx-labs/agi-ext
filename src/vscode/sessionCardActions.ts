@@ -62,14 +62,18 @@ export async function openSessionArtifact(filePath: string, sessionHost: string 
  * ride every stream row, so it is one `sessions <id> --include <role> --json`
  * call per explicit click, for a session on this machine. `tools` alone answers
  * with the tool-search envelope (`sessions[].calls`); a message role with the
- * transcript (`events`). A CLI error comes back as the answer, not hidden.
+ * transcript (`events`). A CLI error comes back as the answer, not hidden, and
+ * so does a session the tool index has not reached yet: an empty list there
+ * would read as "no tool calls".
  */
 export async function fetchTimelineFilter(role: string, sessionId: string): Promise<{ items?: unknown[]; error?: string }> {
   try {
     const { stdout } = await runCliArgs('sessions', [sessionId, '--include', role, '--json'], { timeout: 20_000 });
     const parsed = JSON.parse(stdout);
+    const indexed = role === 'tools' ? (parsed.sessions || []).find((x: { id?: string }) => x.id === sessionId) : undefined;
+    if (role === 'tools' && !indexed) return { error: 'Tool calls for this session are not indexed yet.' };
     const items = role === 'tools'
-      ? ((parsed.sessions || []).find((x: { id?: string }) => x.id === sessionId)?.calls || []).map((c: { timestamp?: string; tool?: string; input?: string; outcome?: string }) => ({
+      ? (indexed.calls || []).map((c: { timestamp?: string; tool?: string; input?: string; outcome?: string }) => ({
           at: c.timestamp, text: (c.tool || 'tool') + ': ' + String(c.input || '').slice(0, 300), bad: c.outcome && c.outcome !== 'ok',
         }))
       : (parsed.events || []).map((e: { timestamp?: string; content?: string }) => ({ at: e.timestamp, text: String(e.content || '').slice(0, 600) }));
