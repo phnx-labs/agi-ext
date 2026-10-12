@@ -143,7 +143,7 @@ echo
 # on exactly one machine. Tokens are never copied between hosts, so the publish
 # must RUN where the bundle is. Decide that here, before any expensive step.
 #
-# `agents secrets list` is the probe: the bundle either resolves on a box or it
+# `secrets list` is the probe: the bundle either resolves on a box or it
 # does not, and asking the live store beats maintaining a hardcoded list of
 # which machine is "the release box".
 
@@ -163,9 +163,9 @@ fi
 host_has_publish_bundle() {
     local host="${1:-}" out
     if [ -z "$host" ]; then
-        out="$(agents secrets list 2>/dev/null || true)"
+        out="$(secrets list 2>/dev/null || true)"
     else
-        out="$(agents ssh "$host" 'agents secrets list 2>/dev/null' 2>/dev/null || true)"
+        out="$(agents ssh "$host" 'secrets list 2>/dev/null' 2>/dev/null || true)"
     fi
     printf '%s\n' "$out" | grep -qE "^${PUBLISH_BUNDLE}[[:space:]]" && echo yes
 }
@@ -242,7 +242,7 @@ elif [ -n "$(host_has_publish_bundle '')" ]; then
     echo
 elif [ $STAY_HERE -eq 1 ]; then
     echo "Error: --here was passed, but $THIS_HOST has no '$PUBLISH_BUNDLE' bundle." >&2
-    echo "       Create it here (agents secrets create $PUBLISH_BUNDLE) or drop --here to route." >&2
+    echo "       Create it here (secrets create $PUBLISH_BUNDLE) or drop --here to route." >&2
     exit 1
 else
     if ! command -v agents >/dev/null 2>&1; then
@@ -271,7 +271,7 @@ else
         echo "Error: no reachable host holds the '$PUBLISH_BUNDLE' bundle." >&2
         echo "       Tried: ${PUBLISH_HOST_CANDIDATES[*]}" >&2
         echo "       Create it on the box that should publish:" >&2
-        echo "         agents secrets create $PUBLISH_BUNDLE && agents secrets add $PUBLISH_BUNDLE VSCE_PAT" >&2
+        echo "         secrets create $PUBLISH_BUNDLE && secrets add $PUBLISH_BUNDLE VSCE_PAT" >&2
         exit 1
     fi
     route_to_publish_host "$TARGET_HOST"
@@ -342,12 +342,12 @@ fi
 # Resolve from the keychain bundle if env not already set. Both paths leave
 # VSCE_PAT and OVSX_PAT exported in the script's process — never logged.
 if { [ $PUBLISH_VSCE -eq 1 ] && [ -z "${VSCE_PAT:-}" ]; } || { [ $PUBLISH_OVSX -eq 1 ] && [ -z "${OVSX_PAT:-}" ]; }; then
-    if ! command -v agents >/dev/null 2>&1; then
-        echo "Error: VSCE_PAT/OVSX_PAT not in env and agents-cli not installed." >&2
-        echo "       Either export them or install agents-cli to read keychain bundle 'vs-marketplace'." >&2
+    if ! command -v secrets >/dev/null 2>&1; then
+        echo "Error: VSCE_PAT/OVSX_PAT not in env and the secrets CLI is not installed." >&2
+        echo "       Either export them or install agents-cli (it installs secrets) to read bundle 'vs-marketplace'." >&2
         exit 1
     fi
-    # Re-enter this script under `agents secrets exec` so VSCE_PAT/OVSX_PAT ride
+    # Re-enter this script under `secrets exec` so VSCE_PAT/OVSX_PAT ride
     # the child process env and never touch stdout (RUSH-2774 — the plaintext
     # export mode was removed). Probe resolvability FIRST: `exec cmd || handler`
     # never runs the handler once cmd has started (exec replaces the process), so
@@ -355,23 +355,23 @@ if { [ $PUBLISH_VSCE -eq 1 ] && [ -z "${VSCE_PAT:-}" ]; } || { [ $PUBLISH_OVSX -
     # a loop when the bundle exists but lacks the keys; the checks below then
     # fail with the add-keys hint.
     if [ -z "${EXT_RELEASE_SECRETS_EXEC:-}" ]; then
-        if ! agents secrets exec vs-marketplace -- true >/dev/null 2>&1; then
+        if ! secrets exec vs-marketplace -- true >/dev/null 2>&1; then
             echo "Error: failed to resolve the 'vs-marketplace' bundle." >&2
-            echo "       Create with: agents secrets create vs-marketplace" >&2
+            echo "       Create with: secrets create vs-marketplace" >&2
             echo "       Then add VSCE_PAT and OVSX_PAT keys." >&2
             exit 1
         fi
         # Replay ORIGINAL_ARGV, not "$@" — see the note at its definition.
-        EXT_RELEASE_SECRETS_EXEC=1 exec agents secrets exec vs-marketplace -- "$0" "${ORIGINAL_ARGV[@]}"
+        EXT_RELEASE_SECRETS_EXEC=1 exec secrets exec vs-marketplace -- "$0" "${ORIGINAL_ARGV[@]}"
     fi
 fi
 
 if [ $PUBLISH_VSCE -eq 1 ] && [ -z "${VSCE_PAT:-}" ]; then
-    echo "Error: VSCE_PAT not present in the vs-marketplace bundle (agents secrets add vs-marketplace VSCE_PAT / OVSX_PAT)." >&2
+    echo "Error: VSCE_PAT not present in the vs-marketplace bundle (secrets add vs-marketplace VSCE_PAT / OVSX_PAT)." >&2
     exit 1
 fi
 if [ $PUBLISH_OVSX -eq 1 ] && [ -z "${OVSX_PAT:-}" ]; then
-    echo "Error: OVSX_PAT not present in the vs-marketplace bundle (agents secrets add vs-marketplace VSCE_PAT / OVSX_PAT)." >&2
+    echo "Error: OVSX_PAT not present in the vs-marketplace bundle (secrets add vs-marketplace VSCE_PAT / OVSX_PAT)." >&2
     exit 1
 fi
 
@@ -392,7 +392,7 @@ fi
 # the test run and the build (each needs the workspace deps) would die here. The
 # routing heredoc no longer installs; the install lives here so it happens exactly
 # once per invocation and is never duplicated across the local and remote paths.
-# Placed after the `agents secrets exec` re-exec above so it runs once, not twice.
+# Placed after the `secrets exec` re-exec above so it runs once, not twice.
 echo "${DRY}Installing dependencies..."
 bun install --silent
 (cd ui && bun install --silent)

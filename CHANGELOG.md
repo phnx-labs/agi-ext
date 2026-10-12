@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The extension no longer calls the `agents sessions` and `agents secrets` command groups, which
+  agents-cli is removing (PHNX-4227). Transcript reads, the session pickers and Copy Session Trace
+  use the standalone `sessions` CLI (found the same way as `agents`, so a Dock-launched editor
+  still finds it); closing a tab runs `agents ps stop`, Detach runs `agents ps detach`, Fork runs
+  `agents fork`, a restored or reopened tab runs `agents run auto --resume <id>`, and a remote
+  tab's label comes from `agents ps preview`. `scripts/release.sh` reads the marketplace tokens
+  with `secrets list` and `secrets exec`.
+- The sidebar's Tool calls filter lists the session's calls again: it reads the tool-search
+  answer of `sessions <id> --include tools --json`, where the old call returned a shape the
+  filter could not read and showed nothing.
+- Copy Session Trace works again (`sessions trace <id>`; the old `--trace` flag was gone).
+- `Agents: Fork (Pick Session)` lists this machine's sessions, and another device's when you
+  switch to it (`sessions --host <device>`). Before, one unreachable fleet device turned the
+  whole list into an error.
+- The lost-connection line on a remote tab now points at `agents ps`.
+
 ## [0.9.394] - 2026-10-11
 
 - Removed the Fleet dashboard webview and everything only it used (Foreman voice orb, Dispatch

@@ -54,7 +54,7 @@ const SENSITIVE_PATTERNS = [
 // vars. Users who genuinely need an API key for a particular run opt in
 // explicitly via `agents run <agent> --secrets <bundle>`, which agents-cli
 // injects from Keychain. That keeps credential storage centralized in
-// `agents secrets` (macOS Keychain, biometry-gated) as project policy
+// the `secrets` CLI (macOS Keychain, biometry-gated) as project policy
 // requires.
 // SQL/relational schema env names end in _KEY but are not credentials.
 // Without this exemption the dynamic /_KEY$/ pattern would scrub them.

@@ -58,7 +58,7 @@ describe('fork command contributions', () => {
 
     expect(command).toBe('agents.forkPickHost');
     expect(launch).toEqual({
-      command: "agents sessions fork 'source-id' --device 'chosen-host'",
+      command: "agents fork 'source-id' --device 'chosen-host'",
       host: 'chosen-host',
       viewColumn: 'Active',
     });
@@ -75,7 +75,7 @@ describe('fork command contributions', () => {
       viewColumn: 'Active',
     });
     expect(launch).toEqual({
-      command: "agents sessions fork 'source-id'",
+      command: "agents fork 'source-id'",
       host: undefined,
       viewColumn: 'Active',
     });

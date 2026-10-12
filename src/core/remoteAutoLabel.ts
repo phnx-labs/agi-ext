@@ -6,7 +6,7 @@
  * A picked-host Codex launches idless: `openSingleAgent` mints an id up front
  * only for Claude, so a remote Codex tab starts as a bare `CX` prefix with no
  * session id. Its canonical id shows up "later" through the shared
- * AGENT_TERMINAL_ID -> `agents sessions --active --device <device>` join
+ * AGENT_TERMINAL_ID -> `agents ps --json -D <device>` join
  * (`sessionIdHydrate.ts`). The bug (RUSH-2411): stamping that id refreshed the
  * status bar but never armed the auto-label poller, so the tab kept the bare
  * `CX` chip instead of a topic-derived title — unlike a LOCAL tab, where the

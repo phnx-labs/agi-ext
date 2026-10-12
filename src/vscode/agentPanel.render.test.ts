@@ -572,8 +572,9 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   const code = new Bun.Transpiler({ loader: 'ts' }).transformSync(moduleFn('localArtifactUri') + moduleFn('openSessionArtifact') + moduleFn('fetchTimelineFilter') + 'class Host { snapshot = { fullSessionId: "s-1", sessionLocal: true }; view = { webview: { postMessage: (m) => posted.push(m) } }; ' + method('handleMessage') + method('loadTimelineFilter') + '}');
   const pastedDir = path.join(cacheDir, 'pasted');
   const isInside = (p: string, dir: string) => { const rel = path.relative(dir, path.resolve(p)); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
-  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', 'remoteDeviceArg', 'path', 'fs', 'REMOTE_ARTIFACT_CACHE_DIR', 'PASTED_ATTACHMENT_DIR', 'isInside', code + '; return new Host();')(
-    vscode, (p: string) => 'vscode-remote://' + p, async (args: string) => { calls.push(args); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted,
+  const host = new Function('vscode', 'sessionPathUri', 'runAgents', 'runCliArgs', 'shellQuote', 'VERB_FILTER_ROLES', 'posted', 'remoteDeviceArg', 'path', 'fs', 'REMOTE_ARTIFACT_CACHE_DIR', 'PASTED_ATTACHMENT_DIR', 'isInside', code + '; return new Host();')(
+    vscode, (p: string) => 'vscode-remote://' + p, async (args: string) => { calls.push(args); return cli(); },
+    async (tool: string, args: string[]) => { calls.push([tool, ...args].join(' ')); return cli(); }, (v: string) => "'" + v + "'", new Set(['assistant', 'tools', 'thinking']), posted,
     (host?: string) => (host && host !== 'this-mac' ? host : undefined), path, fs, cacheDir, pastedDir, isInside);
 
   await host.handleMessage({ type: 'openArtifact', path: '/a/plan.html' });
@@ -608,7 +609,7 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
     expect.objectContaining({ type: 'timelineFilter', role: 'rm -rf', sessionId: 's-1', error: 'That filter is not available.' }),
   ]);
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 's-1' });
-  expect(calls).toEqual(["sessions 's-1' --include assistant --json"]);
+  expect(calls).toEqual(['sessions s-1 --include assistant --json']);
   expect(posted.at(-1)).toMatchObject({ type: 'timelineFilter', role: 'assistant', sessionId: 's-1', items: [{ text: 'checking' }] });
 
   cli = () => { throw new Error('unknown session s-1\nmore'); };

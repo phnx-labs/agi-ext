@@ -178,7 +178,7 @@ export function cliResumeOutcome(exitOk: boolean, output: string): { status: Spa
   // A failure's reason is what went wrong, not the CLI's "run this in a terminal"
   // hint: the editor surfaces it and never asks anyone to type a session id.
   const told = lines.filter((line) => !/^Resume it in this terminal\b/i.test(line));
-  const reason = told[told.length - 1] ?? last ?? 'agents sessions resume failed with no output';
+  const reason = told[told.length - 1] ?? last ?? 'resume failed with no output';
   // The CLI reports a /spawn that reached a window not holding the project as a
   // failure naming that window ("… which does not hold <project>; nothing was opened").
   if (!exitOk) return { status: /\bwhich does not hold\b/.test(reason) ? 'wrong-window' : 'failed', reason };

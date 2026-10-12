@@ -179,8 +179,8 @@ describe('SessionPresentationStore', () => {
   });
 
   // RUSH-3184: the status bar reads a session's version + account off THIS
-  // broadcast row instead of spawning a per-tab `agents sessions <id> --device
-  // <host> --json`. `version` rides the stream per RUSH-2205; `account` was added
+  // broadcast row instead of spawning a per-tab by-id session read over
+  // `--device <host>`. `version` rides the stream per RUSH-2205; `account` was added
   // to the CLI backfill for RUSH-3184.
   test('liveSession projects version + account off the broadcast row for the status bar', () => {
     const store = new SessionPresentationStore();

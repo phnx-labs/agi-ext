@@ -119,13 +119,13 @@ describe('agents.resumeSession outcome from the CLI', () => {
     expect(cliResumeOutcome(true, 'Already open → focused tab "CC - SV Atlas" in window "svatlas"').status).toBe('focused-existing');
   });
   test("a non-zero exit is failed with the CLI's own reason", () => {
-    expect(cliResumeOutcome(false, "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s.\n  Resume it in this terminal instead: agents sessions resume 0db3f95b\n"))
+    expect(cliResumeOutcome(false, "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s.\n  Resume it in this terminal instead: agents run claude --resume 0db3f95b\n"))
       .toEqual({ status: 'failed', reason: "Can't open 0db3f95b: VSCodium didn't confirm a tab within 10s." });
-    expect(cliResumeOutcome(false, '').reason).toBe('agents sessions resume failed with no output');
+    expect(cliResumeOutcome(false, '').reason).toBe('resume failed with no output');
   });
   test('a failure with only the type-this-id hint still reports it, and exit 0 never reads as failed', () => {
-    expect(cliResumeOutcome(false, 'Resume it in this terminal instead: agents sessions resume 0db3f95b\n'))
-      .toEqual({ status: 'failed', reason: 'Resume it in this terminal instead: agents sessions resume 0db3f95b' });
+    expect(cliResumeOutcome(false, 'Resume it in this terminal instead: agents run claude --resume 0db3f95b\n'))
+      .toEqual({ status: 'failed', reason: 'Resume it in this terminal instead: agents run claude --resume 0db3f95b' });
     expect(cliResumeOutcome(true, '').status).toBe('opened');
   });
   test("a /spawn that reached the wrong window is wrong-window, with the CLI's words", () => {

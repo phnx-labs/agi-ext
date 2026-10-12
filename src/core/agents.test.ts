@@ -427,11 +427,11 @@ describe('wrapNativeAgentCommand (RUSH-2593)', () => {
       const wrapped = wrapNativeAgentCommand(`bash -c 'exit ${code}'`, false);
       const out = execFileSync('bash', ['-c', `${wrapped}; echo MARKER_REACHED`], { encoding: 'utf8' });
       expect(out).toContain('Lost the connection to the remote agent');
-      expect(out).toContain('agents sessions --active');
+      expect(out).toContain('Reconnect from:  agents ps');
       // Framed as recoverable, never as a raw status code…
       expect(out).not.toContain(`Agent exited with status ${code}`);
       // …never silently resumed (that is RUSH-3139's copy-of-the-session bug)…
-      expect(out).not.toContain('agents sessions resume');
+      expect(out).not.toContain('--resume');
       // …and the shell survives past the message.
       expect(out).toContain('MARKER_REACHED');
     });

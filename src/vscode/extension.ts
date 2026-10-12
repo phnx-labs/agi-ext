@@ -198,7 +198,7 @@ function agentsSpawnEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${extraPath}:${process.env.PATH ?? ''}` };
 }
 
-// Send the active agent terminal to the background: `agents sessions detach <id>`
+// Send the active agent terminal to the background: `agents ps detach <id>`
 // stops its interactive process and continues it headless, then we close the tab.
 // When the active terminal isn't an agent, fall back to a picker over the live agent tabs.
 async function detachAgentToBackground(): Promise<void> {
@@ -232,7 +232,7 @@ async function detachAgentToBackground(): Promise<void> {
     void vscode.window.showWarningMessage('That agent has no resolved session id yet — try again once it has started.');
     return;
   }
-  const child = spawn('agents', ['sessions', 'detach', sessionId], {
+  const child = spawn('agents', ['ps', 'detach', sessionId], {
     detached: true,
     stdio: 'ignore',
     env: agentsSpawnEnv(),
@@ -1378,7 +1378,7 @@ export async function activate(context: vscode.ExtensionContext) {
     registerForkPickSessionCommand(vscode.commands.registerCommand, () => forkPickedSession(context))
   );
 
-  // Now an alias of Fork: the `agents sessions fork` verb is always recap-seeded,
+  // Now an alias of Fork: the `agents fork` verb is always recap-seeded,
   // so there is no separate non-recap fork. Kept as a distinct command because the
   // user actively invokes Fork (Recap).
   context.subscriptions.push(
@@ -1702,16 +1702,16 @@ export async function activate(context: vscode.ExtensionContext) {
         // session, and killing it would break crash-restore — so the CLI stop
         // fires only for `terminal.exitStatus.reason === User` (see
         // maybeTearDownAgentOnClose). The CLI owns the teardown; the extension
-        // just wires the user-close event to `agents sessions stop`.
+        // just wires the user-close event to `agents ps stop`.
         if (entry?.agentConfig) {
           await readiness.maybeTearDownAgentOnClose({
             reason,
             sessionId: entry.sessionId,
             host: entry.host,
             stop: async (id, o) => {
-              const { runAgents } = await import('../core/agentsBin');
-              await runAgents(`sessions stop ${id}${o.local ? ' --local' : ''}`, { timeout: 20_000 })
-                .catch((err) => console.error('[TERMINALS] sessions stop on close failed', err));
+              const { runAgentsArgs } = await import('../core/agentsBin');
+              await runAgentsArgs(['ps', 'stop', id, ...(o.local ? ['--local'] : [])], { timeout: 20_000 })
+                .catch((err) => console.error('[TERMINALS] ps stop on close failed', err));
             },
           });
         }
@@ -2408,8 +2408,8 @@ interface CliSessionItem {
  * the extension reporting "No sessions found".
  */
 async function listSessionsViaCli(limit = 30): Promise<CliSessionItem[]> {
-  const { runAgents } = await import('../core/agentsBin');
-  const { stdout } = await runAgents(`sessions --all --json --no-interactive --limit ${limit}`, {
+  const { runCliArgs } = await import('../core/agentsBin');
+  const { stdout } = await runCliArgs('sessions', ['--all', '--json', '--no-interactive', '--limit', String(limit)], {
     maxBuffer: 10 * 1024 * 1024,
   });
   const parsed = JSON.parse(stdout);
@@ -2504,11 +2504,11 @@ async function copySessionTrace(_context: vscode.ExtensionContext) {
   });
   if (!session) return;
 
-  const { runAgents } = await import('../core/agentsBin');
+  const { runCliArgs } = await import('../core/agentsBin');
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   try {
-    const { stdout } = await runAgents(`sessions view ${session.id} --trace`, {
+    const { stdout } = await runCliArgs('sessions', ['trace', session.id], {
       maxBuffer: 10 * 1024 * 1024,
       cwd: workspacePath,
     });
@@ -2802,7 +2802,7 @@ async function resumeCurrentPickHost(context: vscode.ExtensionContext) {
  * different harness on the SAME device. Native `--resume` only works inside
  * the harness that wrote the transcript, so the new harness gets the old
  * session through the universal continue replay (buildResumeInput → the agent
- * loads the transcript via `agents sessions <id>` and keeps working).
+ * loads the transcript via `sessions <id> --markdown` and keeps working).
  */
 async function resumeCurrentPickHarness(context: vscode.ExtensionContext) {
   const entry = activeSessionTerminalEntry();
@@ -3382,7 +3382,7 @@ async function applyLabelSource(
  *
  * Same two-step shape as the local path — reuse a real persisted name, else
  * summarize the first user message — but both inputs come from
- * `agents sessions <id> [--device <host>] --json`. A ticket id in the first
+ * `agents ps preview <id> --json [--device <host>]`. A ticket id in the first
  * message is prefixed exactly as locally, so a remote tab reads the same as a
  * local one.
  */
@@ -4006,7 +4006,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
     // live-id lookup below can't reach the remote box), stamp its real
     // version/account from the broadcast watch row BEFORE rendering the bar, so the
     // identity shows immediately from the stream projection. No side-channel spawn:
-    // this is the single-stream read that replaced the per-tab `agents sessions`
+    // this is the single-stream read that replaced the per-tab by-id session
     // fetch (RUSH-3184). We deliberately do NOT fall back to `agents view` machine
     // defaults when there is no id — that showed a version and account unrelated to
     // the running session (the reported bug).
@@ -4459,7 +4459,7 @@ async function spawnWithContext(context: vscode.ExtensionContext): Promise<void>
  */
 /**
  * Open a TRACKED editor terminal that runs an arbitrary agent command — the fork
- * verb (`agents sessions fork <id> [--device <host>]`). The tracked terminal's
+ * verb (`agents fork <id> [--device <host>]`). The tracked terminal's
  * AGENT_TERMINAL_ID env propagates into the verb's `agents run` child (the verb
  * inherits the env), so the sibling session publishes under this terminalId and
  * lineage / restore / stream tracking keep working. Mirrors the tracked-terminal
@@ -4596,17 +4596,18 @@ function shortSessionId(sessionId: string): string {
 const SESSION_BROWSER_LIMIT = 60;
 
 /**
- * Recent transcripts for the browser. Bare, this is the local index (fast, no
- * SSH). With `device`, the CLI fans the same listing out to that box over SSH and
- * answers with the identical row shape — which is why one parser serves both.
+ * Recent transcripts for the browser: `sessions --all --json`. Bare, this is the
+ * local index (fast, no SSH). With `device`, `--host <device>` reads that box's
+ * index over SSH and answers with the identical row shape — which is why one
+ * parser serves both.
  */
 async function listBrowsableSessions(
   device?: string,
   currentSessionId?: string | null,
   currentSessionDevice?: string,
 ): Promise<BrowsableSession[]> {
-  const { runAgents } = await import('../core/agentsBin');
-  return loadBrowsableSessions(runAgents, {
+  const { runCliArgs } = await import('../core/agentsBin');
+  return loadBrowsableSessions((args, options) => runCliArgs('sessions', args, options), {
     device,
     localMachine: LOCAL_MACHINE_ID,
     limit: SESSION_BROWSER_LIMIT,

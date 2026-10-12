@@ -7,7 +7,7 @@ describe('parseFrontmatter', () => {
 name: secrets
 description: "Manage named bundles of environment variables backed by macOS Keychain."
 argument-hint: "[list|view|create]"
-allowed-tools: Bash(agents secrets*)
+allowed-tools: Bash(secrets*)
 user-invocable: true
 ---
 

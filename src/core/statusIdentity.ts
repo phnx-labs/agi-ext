@@ -57,8 +57,8 @@ export function formatAgentStatusBarText(
 
 /**
  * Decide the version/account to stamp on a tab from its live stream row — the
- * single-stream projection that replaced the per-tab `agents sessions <id>
- * --device <host> --json` respawn (RUSH-3184). Pure so the no-spawn guarantee is
+ * single-stream projection that replaced the per-tab by-id session-detail
+ * respawn over `--device <host>` (RUSH-3184). Pure so the no-spawn guarantee is
  * unit-tested directly.
  *
  * Returns null when the session is not on the stream yet (do not stamp; the next

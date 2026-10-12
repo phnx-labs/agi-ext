@@ -8,13 +8,22 @@ interface SessionBrowserRunResult {
   stderr: string;
 }
 
+/** Runs the standalone `sessions` CLI with this argv. */
 export type SessionBrowserRunner = (
-  args: string,
+  args: string[],
   options: { maxBuffer: number; timeout: number },
 ) => Promise<SessionBrowserRunResult>;
 
-function parseSessionList(stdout: string): BrowsableSession[] {
-  const parsed = JSON.parse(stdout);
+/** A listing that is not JSON is the CLI's error; its stderr says why. A remote
+ *  host's shell may print warnings on stderr beside a good listing, so stderr
+ *  alone is not a failure. */
+function parseSessionList(stdout: string, stderr: string): BrowsableSession[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (err) {
+    throw new Error(stderr.trim() || (err as Error).message);
+  }
   if (!Array.isArray(parsed)) return [];
   return parsed.filter((session): session is BrowsableSession =>
     !!session && typeof session === 'object' && typeof session.id === 'string');
@@ -32,12 +41,11 @@ export async function loadBrowsableSessions(
   },
 ): Promise<BrowsableSession[]> {
   const timeout = 45_000;
-  const listed = await run(`sessions --all --json --no-interactive --limit ${opts.limit}`, {
+  const listed = await run(['--all', '--json', '--no-interactive', '--limit', String(opts.limit), ...(opts.device ? ['--host', opts.device] : [])], {
     maxBuffer: 16 * 1024 * 1024,
     timeout,
   });
-  if (listed.stderr.trim()) throw new Error(listed.stderr.trim());
-  return parseSessionList(listed.stdout);
+  return parseSessionList(listed.stdout, listed.stderr);
 }
 
 class LatestSessionBrowserRequest {

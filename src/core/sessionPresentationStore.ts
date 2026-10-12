@@ -275,7 +275,7 @@ export class SessionPresentationStore {
    * `version` and `account` are what the status bar renders as the session's
    * identity. They ride the stream (`version` per RUSH-2205, `account` per
    * RUSH-3184) so the status bar reads a broadcast row instead of spawning a
-   * per-tab `agents sessions <id> --device <host> --json` — the event-pumped
+   * per-tab by-id session-detail read over SSH — the event-pumped
    * respawn that caused the 2026-08-25 CPU incident (agi-cli#3019). Both are
    * `null` for a harness the CLI records no identity for (Kimi has neither,
    * Grok/Cursor a version but no account) or before the CLI has indexed them.

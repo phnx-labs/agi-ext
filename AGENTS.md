@@ -58,7 +58,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   from the store and honestly shows "Waiting for the session stream…" or the CLI's
   `unavailable` reason; it never fakes an empty card. One named exception: a timeline filter
   too large for every row (agent messages, tool calls, reasoning) is one
-  `agents sessions <id> --include <role> --json` call on an explicit click (the chip, or
+  `sessions <id> --include <role> --json` call on an explicit click (the chip, or
   Refresh once newer activity arrives), never on selection or a timer, and only for a
   session on this machine (`loadTimelineFilter`). A second: clicking an artifact the row
   names for a remote session copies that one file into
@@ -83,14 +83,15 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
-- Closing a tab sends `agents sessions stop <id>` only on `TerminalExitReason.User`
+- Closing a tab sends `agents ps stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.
 - Needs-you order is `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts`;
   a stall is a CLI signal, `FloorPhase` has no `stalled` member.
 - Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
   `src/core/projectPanel.ts`); the extension never guesses a project from a cwd.
 - One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
-  and exec path (`resolveAgentsBin`, `runAgents`, `src/core/agentsBin.ts`).
+  and exec path for `agents` and the standalone `sessions`/`secrets` it installs
+  (`resolveAgentsBin`, `runCliArgs`, `runAgents`, `src/core/agentsBin.ts`).
 - Harness ids, labels, prefixes derive from `src/core/agents.cli.ts` and `PRESENTED_AGENTS`
   in `src/core/agents.ts`; no hand-written list anywhere else, `ui/editor` included.
 - `src/core` never imports `vscode`; the only test double is `src/testing/vscodeDouble.ts`.

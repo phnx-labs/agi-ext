@@ -301,7 +301,7 @@ export interface TerminalTitleOptions {
 /**
  * The CLI's fallback session label for a nameless host-dispatched session is
  * exactly `[host/<device>]` (agents-cli `hosts/session-index.ts`; shared with
- * `agents sessions` output, so it is NOT changed CLI-side). The executing
+ * `sessions` output, so it is NOT changed CLI-side). The executing
  * device already rides the stream as the structured `machine` field and belongs
  * in the status bar, never the tab title — so a label that is ONLY this chip is
  * dropped from presentation. The match is anchored to the whole label: a real

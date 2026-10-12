@@ -85,5 +85,5 @@ export function buildResumeInput(
   if (centralContinueMdBody) {
     return inlineContinueInstructions(centralContinueMdBody, oldSessionId);
   }
-  return `Resume previous work by loading session ${oldSessionId}. Run \`agents sessions ${oldSessionId}\` to load the transcript, assess current state, then continue working.`;
+  return `Resume previous work by loading session ${oldSessionId}. Run \`sessions ${oldSessionId} --markdown\` to load the transcript, assess current state, then continue working.`;
 }
