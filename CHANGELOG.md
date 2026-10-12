@@ -10,8 +10,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   agents-cli is removing (PHNX-4227). Resume Session, the side panel's Focus and a Project card
   click open the agent in its project's window with
   `agents run <harness> --resume <id> --terminal vscodium-agent`, run from the session's folder;
-  the resumed run still recovers on the session's own machine. A session whose folder is not on
-  this machine now says so instead of failing inside the CLI. A tab the CLI opens through a
+  the resumed run still recovers on the session's own machine. A session from another machine
+  whose folder is not here opens in this window's folder named like its project, else this
+  window's first folder; a local session whose folder is gone says so. A tab the CLI opens through a
   node-installed agents-cli (`node …/agents-cli/dist/index.js run cursor …`) now wears its agent's
   icon instead of a plain shell's. Transcript reads, the session pickers and Copy Session Trace
   use the standalone `sessions` CLI (found the same way as `agents`, so a Dock-launched editor

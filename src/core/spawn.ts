@@ -173,13 +173,23 @@ function canonicalPath(p: string): string {
  * device. `run --terminal` takes neither `auto` nor `--device`, so the harness
  * and the folder come from the stream row.
  */
-export function projectWindowResume(session: { id: string; agent: string; cwd: string }): { args: string[]; cwd: string } | { error: string } {
+export function projectWindowResume(
+  session: { id: string; agent: string; cwd: string; remote?: boolean },
+  windowFolders: readonly string[] = [],
+): { args: string[]; cwd: string } | { error: string } {
   if (!session.agent) return { error: `the session stream has not named the harness of ${session.id.slice(0, 8)} yet` };
   if (!session.cwd) return { error: `the session stream has not named the folder of ${session.id.slice(0, 8)} yet` };
-  if (!fs.statSync(session.cwd, { throwIfNoEntry: false })?.isDirectory()) {
-    return { error: `${session.cwd} is not on this machine, so no window here holds it` };
+  const args = ['run', session.agent, '--resume', session.id, '--terminal', 'vscodium-agent'];
+  if (fs.statSync(session.cwd, { throwIfNoEntry: false })?.isDirectory()) return { args, cwd: session.cwd };
+  // A session from another machine records that machine's path. `--resume` still
+  // recovers it on its own device; the tab opens here, in the open folder named
+  // like its project, else this window's first folder.
+  if (session.remote) {
+    const name = path.basename(session.cwd);
+    const anchor = windowFolders.find((folder) => path.basename(folder) === name) ?? windowFolders[0];
+    if (anchor) return { args, cwd: anchor };
   }
-  return { args: ['run', session.agent, '--resume', session.id, '--terminal', 'vscodium-agent'], cwd: session.cwd };
+  return { error: `${session.cwd} is not on this machine, so no window here holds it` };
 }
 
 /**
