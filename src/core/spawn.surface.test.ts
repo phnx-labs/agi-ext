@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { cliResumeOutcome, decideSpawn, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
+import { cliResumeOutcome, decideSpawn, projectWindowResume, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, spawnAckPath, type SpawnAck } from './spawn';
 
 // The `…/spawn` URI verb reopens a session as an editor tab. AGI EXT no longer
 // spawns tmux-backed terminals at the extension level, so every request lands on
@@ -103,12 +103,28 @@ describe('agents.resumeSession', () => {
     expect((await resumeSessionTab('', { liveTab, runResume: runCli('exit 0') })).reason).toBe('no session id');
   });
 
-  test("the session's machine reaches the CLI; this machine's sessions name none", async () => {
-    const devices: Array<string | undefined> = [];
-    const runResume = async (_id: string, device: string | undefined) => { devices.push(device); return { ok: true, output: 'ok' }; };
-    await resumeSessionTab('s3', { liveTab: async () => undefined, runResume }, 'yosemite-m2');
-    await resumeSessionTab('s4', { liveTab: async () => undefined, runResume });
-    expect(devices).toEqual(['yosemite-m2', undefined]);
+});
+
+describe('projectWindowResume', () => {
+  const id = '022fe0a8-7674-402a-a5e0-248195894663';
+
+  test("names the session's harness and runs from its folder, with no --device or auto", () => {
+    const folder = mkdtempSync(join(tmpdir(), 'resume-window-'));
+    try {
+      expect(projectWindowResume({ id, agent: 'claude', cwd: folder })).toEqual({
+        args: ['run', 'claude', '--resume', id, '--terminal', 'vscodium-agent'],
+        cwd: folder,
+      });
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses without a harness, a folder, or a folder on this machine', () => {
+    expect(projectWindowResume({ id, agent: '', cwd: tmpdir() })).toEqual({ error: 'the session stream has not named the harness of 022fe0a8 yet' });
+    expect(projectWindowResume({ id, agent: 'codex', cwd: '' })).toEqual({ error: 'the session stream has not named the folder of 022fe0a8 yet' });
+    const gone = join(tmpdir(), `resume-window-missing-${process.pid}`);
+    expect(projectWindowResume({ id, agent: 'codex', cwd: gone })).toEqual({ error: `${gone} is not on this machine, so no window here holds it` });
   });
 });
 

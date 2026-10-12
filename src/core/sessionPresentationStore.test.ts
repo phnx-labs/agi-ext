@@ -171,6 +171,7 @@ describe('SessionPresentationStore', () => {
       topic: 'Compact the PageHeader across every page',
       label: '',
       cwd: '/home/muqsit/src/github.com/muqsitnawaz/svatlas',
+      agent: 'claude',
       version: null,
       account: null,
       accountLabel: null,

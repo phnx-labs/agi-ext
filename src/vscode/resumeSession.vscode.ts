@@ -29,7 +29,7 @@ export async function resumeAndNotify(target: ResumeTarget): Promise<void> {
   const machine = target.host === LOCAL_LABEL ? LOCAL_NAME : target.host;
   let answer: ResumeAnswer;
   try {
-    answer = await vscode.commands.executeCommand<ResumeAnswer | undefined>('agents.resumeSession', target.sessionId, target.host)
+    answer = await vscode.commands.executeCommand<ResumeAnswer | undefined>('agents.resumeSession', target.sessionId)
       ?? { status: 'failed', terminalId: null, reason: 'agents.resumeSession gave no answer' };
   } catch (e) {
     answer = { status: 'failed', terminalId: null, reason: e instanceof Error ? e.message : String(e) };
