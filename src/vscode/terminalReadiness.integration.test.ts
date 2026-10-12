@@ -113,6 +113,8 @@ describe('shell adoption — argv parsing', () => {
       ['node /Users/me/.agents/versions/claude/2.1.140/home/.claude/local/claude.js', 'claude'],
       ['/opt/homebrew/bin/agents run codex', 'codex'],
       ['agents run kimi --strategy balanced', 'kimi'],
+      ['/usr/local/bin/node /usr/local/lib/node_modules/@phnx-labs/agents-cli/dist/index.js run cursor --resume abc', 'cursor'],
+      ["'/opt/node/bin/node' '/opt/lib/node_modules/@phnx-labs/agents-cli/dist/index.js' run cursor", 'cursor'],
       ['droid', 'droid'],
       // Antigravity's installed binary is `agy` (CLI_AGENT_META).
       ['agy --resume abc', 'antigravity'],

@@ -211,10 +211,12 @@ const BINARY_TO_AGENT: Record<string, AgentLauncherKey> = {
 /**
  * Detect a known agent CLI from a `ps -o args=` output string.
  * Handles direct invocation, absolute paths, node-wrapped scripts, and
- * `agents run <agent>` wrappers from agents-cli.
+ * `agents run <agent>` wrappers from agents-cli, node-wrapped or not.
  */
 export function detectAgentKeyFromArgs(args: string): AgentLauncherKey | null {
-  const runMatch = args.match(new RegExp(`\\bagents\\s+run\\s+(${AGENT_RUN_KEYS})\\b`));
+  // A node install runs agents-cli as `node …/agents-cli/dist/index.js run <agent>`
+  // (its getCliLaunch), which is how `agents run --terminal` spells the tab's command.
+  const runMatch = args.match(new RegExp(`(?:\\bagents|/agents-cli/dist/index\\.js)'?\\s+run\\s+(${AGENT_RUN_KEYS})\\b`));
   if (runMatch) return runMatch[1] as AgentLauncherKey;
 
   const tokens = args.split(/\s+/).filter(Boolean);
