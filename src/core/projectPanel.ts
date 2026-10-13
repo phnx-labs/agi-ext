@@ -5,7 +5,10 @@
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
 // the provider turns that into the section's error state, never an empty list.
 
+import * as os from 'os';
+import * as path from 'path';
 import { extractLinearTicketId } from './utils';
+import { ticketFace } from './ticketFaces';
 import { BALL_WORD, SESSION_STATE_WORD, attentionRank, ballOf, moveRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
@@ -14,6 +17,8 @@ import type { SessionCardFields } from './sessionCardFields';
 export interface ProjectRef {
   name: string;
   linearName: string | null;
+  /** Its repositories and where each is checked out; only `agents projects list` carries them. */
+  repos?: { slug: string; path: string }[];
 }
 
 interface Ticket {
@@ -86,8 +91,32 @@ export function parseProjectList(raw: string): ProjectRef[] {
     const name = str(d.name);
     if (!name) throw new Error('Unexpected project shape from the CLI');
     const linear = d.linear && typeof d.linear === 'object' ? (d.linear as Json) : null;
-    return { name, linearName: str(linear?.name) };
+    const repos = Array.isArray(d.repos)
+      ? d.repos.flatMap((r) => {
+        const o = r && typeof r === 'object' ? (r as Json) : {};
+        const slug = str(o.slug);
+        return slug ? [{ slug, path: str(o.path) ?? '' }] : [];
+      })
+      : [];
+    return { name, linearName: str(linear?.name), repos };
   });
+}
+
+/** `~/…` for a path under home, as the CLI prints it. */
+export function displayHome(p: string, home: string = os.homedir()): string {
+  return p === home ? '~' : p.startsWith(home + '/') ? '~' + p.slice(home.length) : p;
+}
+
+/** Projects with a repository checked out inside `folder`: a window opened on a
+ *  parent folder holds several, and the panel's project menu offers those first. */
+export function projectsInFolder(all: ProjectRef[], folder: string, home: string): { projects: { name: string; repos: string[] }[] } {
+  const abs = (p: string) => (p === '~' ? home : p.startsWith('~/') ? path.join(home, p.slice(2)) : p);
+  const inside = (p: string) => !!folder && (abs(p) === folder || abs(p).startsWith(folder.replace(/\/+$/, '') + '/'));
+  return {
+    projects: all
+      .filter((p) => (p.repos ?? []).some((r) => r.path && inside(r.path)))
+      .map((p) => ({ name: p.name, repos: (p.repos ?? []).map((r) => r.slug.split('/').pop() ?? r.slug) })),
+  };
 }
 
 /** `agents projects status <name> --json` prints a one-element card array. */
@@ -503,6 +532,37 @@ function cardLine(s: SessionLike, state: SessionStateKey): string {
   return agentLine(s) || (s.request?.headline ? plain(s.request.headline) : '');
 }
 
+/** How long a session ran: "47m", "13h 8m", "2d 3h". */
+export function ranFor(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/** When it ran, by day: "yesterday 6:50 PM → today 7:56 AM", "Oct 11 · 4:20 AM → 12:32 PM". */
+export function ranSpan(start: number, end: number, now: number): string {
+  const day = (t: number) => new Date(t).toDateString();
+  const dayWord = (t: number) => {
+    if (day(t) === day(now)) return 'today';
+    if (day(t) === day(now - 86_400_000)) return 'yesterday';
+    return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  const clock = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return day(start) === day(end)
+    ? `${dayWord(start)} · ${clock(start)} → ${clock(end)}`
+    : `${dayWord(start)} ${clock(start)} → ${dayWord(end)} ${clock(end)}`;
+}
+
+/** The ticket as a tile you open to read; the title and state come from a Linear read this window made. */
+function ticketTile(id: string): string {
+  const f = ticketFace(id);
+  return `<a class="tkt" href="#" data-open-ticket="${escapeHtml(id)}" title="Read ${escapeHtml(id)}">` +
+    `<span class="tkh">${icon('ticket', id)}<b>${escapeHtml(id)}</b>${f.state ? `<span class="tks">${escapeHtml(f.state)}</span>` : ''}</span>` +
+    `<span class="tkx">${escapeHtml(f.title ?? 'Linear ticket')}</span><span class="tkm">Read ›</span></a>`;
+}
+
 export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean }): string {
   const state = sessionStateOf(s);
   const title = plain(s.title || s.topic || s.label || s.request?.headline || 'Untitled');
@@ -522,7 +582,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     ? `<button class="act x" data-act="close" title="Close the tab">${glyph('close')}</button>`
     : `<button class="act x" data-act="hide" title="Hide until it does something new">${glyph('hide')}</button>`;
   const prChip = s.prStatus ? prMini(s.prStatus) : '';
-  const ticketChip = (made?.ticket ?? s.ticket) ? `<span class="chip">${icon('ticket', made?.ticket ?? s.ticket ?? '')}${escapeHtml(made?.ticket ?? s.ticket ?? '')}</span>` : '';
+  const ticketId = made?.ticket ?? s.ticket ?? '';
+  const ticketChip = ticketId ? `<a class="chip" href="#" data-open-ticket="${escapeHtml(ticketId)}">${icon('ticket', ticketId)}${escapeHtml(ticketId)}</a>` : '';
+  const ran = state === 'ended' && s.startedAtMs && s.lastActivityMs > s.startedAtMs ? s.lastActivityMs - s.startedAtMs : 0;
   const folders = made?.folders ?? [];
   const outImages = folders.flatMap((f) => f.images);
   const tiny = [
@@ -533,13 +595,14 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const shown = opts.thumbs.slice(0, 3);
   const more = opts.thumbs.length - shown.length;
   const prs = made?.prs.length ? made.prs.map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}">${icon('pr', p.label)}${escapeHtml(p.label)}</a>`).join('') : prChip;
-  const madeBlock = (prs || ticketChip || folders.length) ? `<div class="lab">Made</div><div class="made">${prs || ticketChip ? `<div class="chips">${prs}${ticketChip}</div>` : ''}${folders.slice(0, 4).map((f) => `
+  const madeBlock = (prs || ticketId || folders.length) ? `<div class="lab">Made</div><div class="made">${prs ? `<div class="chips">${prs}</div>` : ''}${ticketId ? ticketTile(ticketId) : ''}${folders.slice(0, 4).map((f) => `
       <a class="folder" href="#" data-artifact="${escapeHtml((f.files[0] ?? f.images[0]).path)}" title="${escapeHtml(f.display)}">${glyph('folder')}<span class="fx"><span><b>${escapeHtml(f.name)}/</b> · ${escapeHtml([...f.files, ...f.images].slice(0, 3).map((x) => x.name).join(', '))}${f.files.length + f.images.length > 3 ? ' …' : ''}</span><span class="fp">${escapeHtml(f.display)}</span></span></a>${f.images.length ? `<span class="thumbs">${f.images.slice(0, 3).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`).join('')}${f.images.length > 3 ? `<span class="more">+${f.images.length - 3}</span>` : ''}</span>` : ''}`).join('')}</div>` : '';
   return `<div class="card st-${state}${opts.selected ? ' sel' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-title="${escapeHtml(title)}">
     <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span>${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
-    <div class="meta">${opts.blocked ? '<span class="pill st-blocked"><i></i>Your move · blocked</span>' : `<span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}</span>`}<span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
+    <div class="meta">${opts.blocked ? '<span class="pill st-blocked"><i></i>Your move · blocked</span>' : `<span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}</span>`}<span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
     <div class="compact">${line ? `<div class="cline">${escapeHtml(line)}</div>` : ''}${strip ? `<div class="cstrip">${strip}</div>` : ''}</div>
     <div class="full">
+      ${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
       ${asked && asked !== title ? `<div class="lab">You</div><div class="line">${escapeHtml(asked)}</div>` : ''}
       ${shown.length ? `${asked && asked !== title ? '' : '<div class="lab">You</div>'}<span class="thumbs">${shown.map((t, i) => `<a class="th in" href="#" data-path="${escapeHtml(t.path)}" title="Attached by you: ${escapeHtml(t.label)}"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}"><i>attached</i>${i === shown.length - 1 && more > 0 ? `<b>+${more}</b>` : ''}</a>`).join('')}</span>` : ''}
       ${question ? `<div class="lab">Agent · waiting on you</div><div class="ask">${escapeHtml(question)}</div>` : said ? `<div class="lab">Agent</div><div class="line said">${escapeHtml(said)}</div>` : ''}
@@ -677,6 +740,18 @@ function ring(state: string | null, draft: boolean): string {
   const tone = draft ? 'draft' : state === 'SUCCESS' ? 'ok' : state === 'FAILURE' || state === 'ERROR' ? 'bad' : state ? 'run' : 'none';
   const words = draft ? 'Draft' : tone === 'ok' ? 'Checks passed' : tone === 'bad' ? 'Checks failing' : tone === 'run' ? 'Checks running' : 'No checks';
   return `<span class="ring r-${tone}" role="img" aria-label="${words}" title="${words}"><svg viewBox="0 0 18 18"><circle class="trk" cx="9" cy="9" r="7"/><circle class="arc" cx="9" cy="9" r="7"/>${tone === 'ok' ? '<path class="chk" d="M5.8 9.2l2.2 2.2 4.2-4.6"/>' : ''}</svg></span>`;
+}
+
+/** Review while repositories answer one by one: each finished one draws its PRs, the rest say they are being read. */
+export function renderPrsProgress(slugs: string[], done: Map<string, PrsModel['repos'][number]>, now: number): string {
+  const ready = slugs.flatMap((s) => { const r = done.get(s); return r ? [r] : []; });
+  const waiting = slugs.filter((s) => !done.has(s));
+  const body = ready.length ? renderPrs({ repos: ready, partial: false }, now) : '';
+  const quiet = ready.filter((r) => !r.error && r.open.length === 0 && r.merged.length === 0).map((r) => r.slug.split('/').pop());
+  return (waiting.length ? `<div class="reading">Reading ${waiting.map((w) => escapeHtml(w.split('/').pop() ?? w)).join(', ')}…</div>` : '') +
+    body +
+    (quiet.length ? `<div class="quiet">No open or recent PRs in ${quiet.map((q) => escapeHtml(q ?? '')).join(', ')}.</div>` : '') +
+    (!waiting.length && !body && !quiet.length ? '<div class="empty">No pull requests.</div>' : '');
 }
 
 export function renderPrs(m: PrsModel, now: number): string {

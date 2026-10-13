@@ -35,3 +35,12 @@ describe('openListedArtifact', () => {
     expect(errors).toEqual(['Not opening /home/u/a/m2.png: the session left the stream.']);
   });
 });
+
+test('a failed remote copy names the real reason, and a file from a removed worktree says where the merged copy lives', async () => {
+  const { artifactCopyError } = await import('./sessionCardActions');
+  const gone = { message: 'Command failed: agents ssh yosemite-m5 --argv …', stderr: 'base64: /home/me/src/agents-cli/.agents/worktrees/code-health/cli/HEALTH.md: No such file or directory\n' };
+  expect(artifactCopyError('/home/me/src/agents-cli/.agents/worktrees/code-health/cli/HEALTH.md', 'yosemite-m5', gone))
+    .toBe('HEALTH.md is gone from yosemite-m5: it was in the worktree code-health, which was removed. If that work merged, the file is in the repo at /home/me/src/agents-cli/cli/HEALTH.md.');
+  expect(artifactCopyError('/tmp/x.md', 'm5', { message: 'x', stderr: 'base64: /tmp/x.md: No such file or directory' })).toBe('x.md is no longer on m5 at /tmp/x.md.');
+  expect(artifactCopyError('/tmp/x.md', 'm5', { message: 'Command failed\nmore', stderr: 'ssh: connect to host m5: timed out\n' })).toBe('Could not copy /tmp/x.md from m5: ssh: connect to host m5: timed out');
+});

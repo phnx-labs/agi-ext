@@ -444,10 +444,7 @@ function artifactItems(s) {
     folder.files.push(Object.assign({ name: f.title || f.basename }, f));
     folder.editedAtMs = Math.max(folder.editedAtMs, f.editedAtMs || 0);
   }
-  const items = Array.from(folders.values());
-  for (const pr of (s.pullRequests || [])) items.push({ app: 'github', key: pr.url, name: pr.ownerRepo + ' #' + pr.number, pr });
-  if (s.linearIssue) items.push({ app: 'linear', key: s.linearIssue, name: s.linearIssue, ticket: s.linearIssue });
-  return items;
+  return Array.from(folders.values());
 }
 
 const FILE_GLYPH = { md: '¶', markdown: '¶', txt: '¶', html: '‹/›', htm: '‹/›', json: '{ }', csv: '▦', pdf: '▤' };
@@ -509,19 +506,58 @@ function queueThumb(uri) {
   });
 }
 
-// Stream updates re-render the cards; a strip the viewer scrolled stays put.
-// A surface calls saveStripScroll before replacing root's HTML, then restores.
-function saveStripScroll() {
-  const at = {};
-  for (const el of root.querySelectorAll('[data-strip]')) at[el.getAttribute('data-strip')] = [el.scrollLeft, el.scrollTop];
-  return at;
+// Stream updates arrive several times a minute on a busy session. Replacing the
+// card's HTML on each one tore down every node: the panel jittered, hover ended
+// and a scrolled strip snapped back (owner video, 2026-10-12). patchChildren
+// turns the live children into the new markup in place: an unchanged node stays
+// the same node. A node is reused only when its tag, id, class and data-*
+// attribute names match, so a reused node keeps the handler it was bound with;
+// every handler reads its data-* values when clicked. A fold keeps the open
+// state the viewer gave it, and a thumbnail keeps the src the observer filled.
+function nodeSig(n) {
+  if (n.nodeType !== 1) return String(n.nodeType);
+  const names = [];
+  for (const a of n.attributes) {
+    if (a.name === 'class' || a.name === 'id') names.push(a.name + '=' + a.value);
+    else if (a.name.indexOf('data-') === 0) names.push(a.name);
+  }
+  return n.nodeName + '|' + names.sort().join(',');
 }
 
-function restoreStripScroll(saved) {
-  for (const el of root.querySelectorAll('[data-strip]')) {
-    const at = saved[el.getAttribute('data-strip')];
-    if (at) { el.scrollLeft = at[0]; el.scrollTop = at[1]; }
+function patchAttrs(live, next) {
+  const kept = (name) => (name === 'open' && live.nodeName === 'DETAILS') || (name === 'src' && live.hasAttribute('data-thumb'));
+  for (const a of Array.from(live.attributes)) if (!next.hasAttribute(a.name) && !kept(a.name)) live.removeAttribute(a.name);
+  for (const a of Array.from(next.attributes)) if (!kept(a.name) && live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
+}
+
+function patchNode(live, next) {
+  const was = Array.from(live.childNodes);
+  const now = Array.from(next.childNodes);
+  for (let i = 0; i < now.length; i++) {
+    const x = was[i];
+    const y = now[i];
+    if (!x) { live.appendChild(y); continue; }
+    if (nodeSig(x) !== nodeSig(y)) { live.replaceChild(y, x); continue; }
+    if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+    if (x.isEqualNode(y)) continue;
+    patchAttrs(x, y);
+    patchNode(x, y);
   }
+  for (let i = was.length - 1; i >= now.length; i--) live.removeChild(was[i]);
+}
+
+function patchChildren(live, html) {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  patchNode(live, t.content);
+}
+
+// A patched node keeps its listeners, so each binding runs once per node.
+function bindOnce(el, key) {
+  const mark = '__bound_' + key;
+  if (el[mark]) return false;
+  el[mark] = true;
+  return true;
 }
 
 // Wires the timeline and artifact cards rendered into root: their thumbnails,
@@ -532,8 +568,7 @@ function restoreStripScroll(saved) {
 let seekDragged = false;
 function bindSeekDrag() {
   const seek = root.querySelector('.seek');
-  if (!seek) return;
-  const half = Number(seek.getAttribute('data-bucket-ms') || 0) / 2;
+  if (!seek || !bindOnce(seek, 'drag')) return;
   let from = null;
   const barAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('.seek-bar') : null; };
   const mark = (a, b) => {
@@ -563,6 +598,7 @@ function bindSeekDrag() {
     from = null;
     if (!seekDragged || to === start) return;
     const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
+    const half = Number(seek.getAttribute('data-bucket-ms') || 0) / 2;
     const next = Object.assign({}, viewState.timelineRange);
     next[key] = [Math.round(Math.min(start, to) - half), Math.round(Math.max(start, to) + half)];
     viewState.timelineRange = next;
@@ -575,13 +611,13 @@ function bindSessionCards() {
   thumbObserver.disconnect();
   for (const img of root.querySelectorAll('img[data-thumb]')) if (!img.hasAttribute('src')) thumbObserver.observe(img);
   for (const el of root.querySelectorAll('.artifact-open')) {
-    el.addEventListener('click', (e) => {
+    if (bindOnce(el, 'open')) el.addEventListener('click', (e) => {
       e.preventDefault();
       vscode.postMessage({ type: 'openArtifact', path: el.getAttribute('data-artifact') });
     });
   }
   for (const el of root.querySelectorAll('[data-filter]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'filter')) el.addEventListener('click', () => {
       const id = el.getAttribute('data-filter');
       const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
       const next = Object.assign({}, viewState.timelineFilter);
@@ -597,7 +633,7 @@ function bindSessionCards() {
     });
   }
   for (const el of root.querySelectorAll('[data-phase]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'phase')) el.addEventListener('click', () => {
       const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
       const value = el.getAttribute('data-phase');
       const next = Object.assign({}, viewState.timelineRange);
@@ -610,7 +646,7 @@ function bindSessionCards() {
     });
   }
   for (const el of root.querySelectorAll('[data-refresh-filter]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'refresh')) el.addEventListener('click', () => {
       const id = el.getAttribute('data-refresh-filter');
       const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
       requestTimelineFilter(key, id);
@@ -620,10 +656,10 @@ function bindSessionCards() {
   }
   bindSeekDrag();
   for (const el of root.querySelectorAll('[data-feed-more]')) {
-    el.addEventListener('click', () => { viewState.feedMore = el.getAttribute('data-feed-more'); vscode.setState(viewState); render(lastSnapshot); });
+    if (bindOnce(el, 'more')) el.addEventListener('click', () => { viewState.feedMore = el.getAttribute('data-feed-more'); vscode.setState(viewState); render(lastSnapshot); });
   }
   for (const el of root.querySelectorAll('[data-seek]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'seek')) el.addEventListener('click', () => {
       if (seekDragged) { seekDragged = false; return; }
       const at = Number(el.getAttribute('data-seek'));
       const key = (lastSnapshot && lastSnapshot.fullSessionId) || '';
@@ -649,7 +685,7 @@ function bindSessionCards() {
     });
   }
   for (const el of root.querySelectorAll('[data-expand]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'expand')) el.addEventListener('click', () => {
       const expanded = el.getAttribute('aria-expanded') === 'true';
       viewState.expandedSteps = viewState.expandedSteps || {};
       const key = el.getAttribute('data-step-key');
@@ -661,7 +697,7 @@ function bindSessionCards() {
     });
   }
   for (const el of root.querySelectorAll('[data-url]:not([data-action])')) {
-    el.addEventListener('click', (e) => {
+    if (bindOnce(el, 'url')) el.addEventListener('click', (e) => {
       e.preventDefault();
       vscode.postMessage({ type: 'openUrl', url: el.getAttribute('data-url') });
     });
@@ -928,7 +964,7 @@ ${fontFaces}  body {
   .caret { width: 10px; flex: none; color: var(--r-caption); font-size: 9px; }
   /* Gallery: the newest preview full width, the rest as 2-up tiles, then
      files with no preview as compact tiles marked by their type. */
-  button.pr-bar-btn:focus-visible, .mk:focus-visible, .mk-open:focus-visible { outline: 1px solid var(--r-focus); outline-offset: 1px; }
+  .mk:focus-visible, .mk-open:focus-visible { outline: 1px solid var(--r-focus); outline-offset: 1px; }
   .team-summary { display: flex; align-items: center; gap: 8px; }
   .team-summary-name { color: var(--r-text); font-weight: 600; }
   .team-summary-count { margin-left: auto; color: var(--r-caption); font-size: 11px; }
@@ -1295,7 +1331,7 @@ ${fontFaces}  body {
     padding: 0;
   }
   .footer button:hover { text-decoration: underline; }
-  button.path-link, button.step, button.session-chunk, button.pr-bar-btn, button.pr-run,
+  button.path-link, button.step, button.session-chunk,
   button.mk, button.mk-open, button.seek-range, button.timeline-more {
     background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
   }
@@ -1333,61 +1369,26 @@ ${fontFaces}  body {
   .lane-track { position: relative; height: 26px; border-bottom: 1px solid var(--r-edge); }
   .lane-tick { position: absolute; bottom: 0; width: 2px; height: 18px; margin-left: -1px; border-radius: 1px; background: var(--r-bar-hi); }
   .lane-tick.bad { background: var(--r-bad); height: 24px; }
-  /* Pull request card: a state ring and one word, then one icon strip
-     (segmented checks, review, merge); the checks fold under the bar. */
-  .pr-head { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; }
-  .pr-text { min-width: 0; }
-  .pr-title { font-weight: 600; color: var(--r-text); line-height: 1.35; overflow-wrap: anywhere; }
-  .pr-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; font-size: 11px; }
-  .pr-word { font-weight: 600; color: var(--r-caption); }
+  /* Pull request: one status word, a segmented check bar with its count, and
+     the review and merge glyphs in the ⋯ menu. */
   .pr-tone-ok { color: var(--r-ok); }
   .pr-tone-warn { color: var(--r-warn); }
   .pr-tone-bad { color: var(--r-bad); }
-  .pr-branch { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-  .pr-ring { width: 18px; height: 18px; display: block; margin-top: 1px; }
-  .pr-ring svg { width: 18px; height: 18px; display: block; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .pr-ring .trk { stroke: var(--r-edge-hi); }
-  .pr-ring .arc { stroke: var(--r-warn); stroke-dasharray: 14 40; transform-origin: 9px 9px; animation: pr-spin 1s linear infinite; }
-  .pr-ring.ok .arc { stroke: var(--r-ok); stroke-dasharray: 44 0; animation: none; }
-  .pr-ring.bad .arc { stroke: var(--r-bad); stroke-dasharray: 44 0; animation: none; }
-  .pr-ring.draft .arc { stroke: var(--r-faint); stroke-dasharray: 3 3; animation: none; }
-  .pr-ring.none .arc { stroke: transparent; animation: none; }
-  .pr-ring .chk { stroke: var(--r-ok); stroke-width: 1.8; stroke-dasharray: 12; stroke-dashoffset: 0; }
-  .pr-ring .x { stroke: var(--r-bad); stroke-width: 1.6; }
-  .just-ready .pr-ring.ok .arc { animation: pr-close .45s ease both; }
-  .just-ready .pr-ring.ok .chk { animation: pr-draw .35s .3s ease both; }
-  @keyframes pr-spin { to { transform: rotate(360deg); } }
-  @keyframes pr-close { from { stroke-dasharray: 14 40; } to { stroke-dasharray: 44 0; } }
-  @keyframes pr-draw { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
-  .pr-strip { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
-  .pr-bar-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 3px 0; border-radius: 4px; }
-  button.pr-bar-btn:hover .pr-bar { box-shadow: 0 0 0 1px var(--r-focus); }
-  .pr-bar { flex: 1; min-width: 0; display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; }
+  .pr-bar { flex: 1; min-width: 0; display: flex; gap: 2px; height: 5px; border-radius: 3px; overflow: hidden; }
   .pr-bar .seg { flex: 1; min-width: 2px; background: var(--r-edge-hi); }
   .pr-bar .seg.passed { background: var(--r-ok); }
   .pr-bar .seg.running { background: var(--r-warn); }
   .pr-bar .seg.failed { background: var(--r-bad); }
   .pr-bar .seg.skipped { background: var(--r-edge); }
-  .pr-frac { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-caption); }
+  .pr-frac { flex: none; font-family: var(--r-mono); font-size: 10px; font-weight: 600; color: var(--r-caption); }
   .pr-glyph { flex: none; width: 16px; height: 16px; color: var(--r-faint); }
   .pr-glyph svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
   .pr-glyph.ok { color: var(--r-ok); }
   .pr-glyph.bad { color: var(--r-bad); }
   .pr-glyph .badge { stroke-width: 1.8; }
-  .pr-checks { margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--r-edge); }
-  .pr-check { display: flex; gap: 7px; align-items: baseline; padding: 2px 0; font-size: 11.5px; }
-  .pr-check-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pr-mark { width: 10px; flex: none; font-family: var(--r-mono); color: var(--r-caption); }
-  .pr-passed .pr-mark { color: var(--r-ok); }
-  .pr-failed .pr-mark { color: var(--r-bad); }
-  .pr-running .pr-mark { color: var(--r-warn); }
-  button.pr-run { flex: none; font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); padding: 0; }
-  button.pr-run:hover { color: var(--r-link); text-decoration: underline; }
-  .pr-actions { margin-top: 9px; }
-  .pr-note { margin-top: 6px; }
-  @media (prefers-reduced-motion: reduce) {
-    .pr-ring .arc, .pr-ring .chk { animation: none !important; }
-  }
+  .menu-pr { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .menu-pr .action-btn { padding: 2px 8px; }
+  .menu-note { flex-basis: 100%; color: var(--r-caption); font-size: 11px; }
   /* Files as a tree. */
   .files-card { position: relative; }
   .ft-toggle { display: flex; justify-content: flex-end; gap: 2px; margin: -2px 0 4px; }
@@ -1519,8 +1520,8 @@ ${fontFaces}  body {
   .mk-h { display: flex; align-items: center; gap: 5px; font-size: 11px; min-width: 0; }
   .mk-h b { font-family: var(--r-mono); font-size: 11px; white-space: nowrap; }
   .mk-st { margin-left: auto; font-size: 10px; white-space: nowrap; }
-  .mk-t { font-size: 11.5px; color: var(--r-text-2); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: 1; }
-  .mk-f { display: flex; gap: 6px; align-items: center; }
+  .mk-t { font-size: 11.5px; color: var(--r-text-2); line-height: 1.3; max-height: 2.6em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: none; text-align: left; }
+  .mk-f { display: flex; gap: 6px; align-items: center; margin-top: auto; }
   .mk-open { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; }
   .mk-img, .mk-doc { display: block; height: 54px; flex: none; border-bottom: 1px solid var(--r-edge); overflow: hidden; }
   .mk-img img { width: 100%; height: 100%; object-fit: cover; }
@@ -1530,7 +1531,40 @@ ${fontFaces}  body {
   .mk-share { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--r-glass-strong); border: 1px solid var(--r-edge-hi); color: var(--r-text); opacity: 0; cursor: pointer; padding: 0; }
   .mk-share svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .mk-file:hover .mk-share, .mk-file:focus-within .mk-share { opacity: 1; }
-  .made .pr-card { margin: 2px 11px 4px; padding: 8px 10px; border: 1px solid var(--r-edge-hi); border-radius: 9px; background: var(--r-well); }
+  .mk-checks { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
+  .mk-go, .mk-read { margin-left: auto; flex: none; font-size: 10.5px; color: var(--r-faint); }
+  .mk:hover .mk-go, .mk:hover .mk-read { color: var(--r-text); }
+  .tk-st { color: var(--r-caption); }
+  .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: mk-busy 1s ease-in-out infinite alternate; }
+  @keyframes mk-busy { to { opacity: 0.35; } }
+  /* Back and forward through the sessions this panel showed. */
+  .nav-row { display: flex; align-items: center; gap: 2px; margin: 0 2px 6px; min-width: 0; }
+  .nav-btn { width: 22px; height: 22px; border: 0; border-radius: 5px; background: transparent; color: var(--r-text-2); font-size: 17px; line-height: 1; cursor: pointer; padding: 0; flex: none; }
+  .nav-btn:hover:not([disabled]) { background: var(--r-well); color: var(--r-text); }
+  .nav-btn[disabled] { opacity: 0.3; cursor: default; }
+  .nav-crumb { border: 0; background: transparent; color: var(--r-caption); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav-crumb:hover { color: var(--r-text); text-decoration: underline; }
+  /* Dictation in the reply box. */
+  .reply-box .reply-mic { position: absolute; right: 8px; top: 8px; width: 24px; height: 24px; border-radius: 999px; border: 0; background: transparent; color: var(--r-caption); cursor: pointer; display: grid; place-items: center; padding: 0; }
+  .reply-mic svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+  .reply-mic:hover { background: var(--r-well); color: var(--r-text); }
+  .reply-box.listening .reply-mic { color: var(--r-bad); box-shadow: 0 0 0 1px var(--r-bad); }
+  .reply-box.listening .reply-mic rect { fill: currentColor; }
+  .reply-mic:disabled { opacity: 0.5; cursor: default; }
+  .dictation { position: absolute; left: 12px; right: 40px; top: 10px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+  .dictation[hidden] { display: none; }
+  .reply-box.listening textarea, .reply-box.transcribing textarea { color: transparent; }
+  .reply-box.listening textarea::placeholder, .reply-box.transcribing textarea::placeholder { color: transparent; }
+  .dict-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--r-bad); animation: dict-pulse 1s infinite; flex: none; }
+  .dict-wave { display: flex; align-items: center; gap: 2px; height: 14px; flex: 1; }
+  .dict-wave i { width: 2px; height: 30%; background: var(--r-text-2); border-radius: 1px; animation: dict-wave .6s ease-in-out infinite alternate; }
+  .dict-wave i:nth-child(3n) { animation-delay: .2s; } .dict-wave i:nth-child(3n+1) { animation-delay: .4s; }
+  .reply-box.transcribing .dict-wave i { animation: none; opacity: 0.4; }
+  .reply-box.transcribing .dict-dot { background: var(--r-faint); animation: none; }
+  .dict-t { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); flex: none; }
+  @keyframes dict-wave { to { height: 100%; } }
+  @keyframes dict-pulse { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .dict-wave i, .dict-dot, .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }
   /* The agent's own status posts and its blocked strip. */
   .upd { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; padding: 5px 0; font-size: 12px; }
   .upd-mk { width: 7px; height: 7px; margin-top: 5px; border-radius: 2px; background: var(--r-text-2); }
@@ -1562,5 +1596,7 @@ ${fontFaces}  body {
   .reply-box { position: sticky; bottom: 8px; z-index: 5; margin-top: 12px; border-radius: 12px; background: var(--r-glass-strong);
     box-shadow: inset 0 1px 0 var(--r-sheen), var(--r-float); }
   .reply-box:focus-within { transform: translateY(-1px); }
+  .reply-box textarea { padding-right: 38px; }
+  .reply-box[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .reply-box:focus-within { transform: none; } }`;
 }

@@ -73,6 +73,8 @@ import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './s
 import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
 import { blockedUpdate, sessionUpdates, type SessionUpdate } from '../core/sessionUpdates';
+import { ticketFace, type TicketFace } from '../core/ticketFaces';
+import { dictation } from './dictation.vscode';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
@@ -184,7 +186,10 @@ interface PanelSnapshot {
   artifacts?: (RemoteSessionArtifact & { display: string; uri?: string })[];
   attachments?: RemoteAttachment[];
   // Linked artifacts — multi-PR (the agent may have opened several in one session)
-  linearIssue?: string;
+  /** The session's ticket, with its title and state when this window read them (ticketFaces). */
+  ticket?: TicketFace;
+  /** Where Back and Forward lead: the titles of the neighbouring subjects. */
+  nav?: { back?: string; fwd?: string };
   pullRequests?: PullRequestRef[];
   /** The session's PR as the feed reports it, and the one action the card may offer. */
   prStatus?: RemotePrStatus;
@@ -222,6 +227,59 @@ interface PanelSubject {
 }
 
 let panelSubject: PanelSubject | undefined;
+
+/**
+ * The sessions this panel showed, for its ‹ › buttons (owner video, 2026-10-12:
+ * "when you click here it goes here, but there is no way to go back"). Every
+ * subject change pushes the one it leaves; a new change clears Forward, as in a
+ * browser. A stop keeps the title it had, so the button can name it.
+ */
+interface TrailStop { subject: PanelSubject; title: string }
+const TRAIL_MAX = 30;
+const trail: { back: TrailStop[]; fwd: TrailStop[] } = { back: [], fwd: [] };
+
+const subjectKey = (s: PanelSubject) => s.sessionId || s.terminalId || '';
+
+/** The subject on screen now, as a stop to come back to. */
+function currentStop(): TrailStop | undefined {
+  const on = resolveSubject();
+  if (!on) return undefined;
+  const subject: PanelSubject = {
+    sessionId: on.sessionId,
+    ...(on.entry ? { terminalId: on.entry.id } : {}),
+    ...(on.host ? { host: on.host } : {}),
+    source: on.source,
+  };
+  return { subject, title: activeProvider?.titleOf(on.sessionId) || 'the previous session' };
+}
+
+/** Make `next` the subject, leaving the current one on the Back trail. */
+function moveSubject(next: PanelSubject): void {
+  const here = currentStop();
+  panelSubject = next;
+  if (!here || subjectKey(here.subject) === subjectKey(next)) return;
+  trail.back.push(here);
+  if (trail.back.length > TRAIL_MAX) trail.back.shift();
+  trail.fwd = [];
+}
+
+/** Step Back or Forward; false when that way is empty. */
+function stepTrail(dir: 'back' | 'fwd'): boolean {
+  const from = dir === 'back' ? trail.back : trail.fwd;
+  const to = dir === 'back' ? trail.fwd : trail.back;
+  const stop = from.pop();
+  if (!stop) return false;
+  const here = currentStop();
+  if (here) to.push(here);
+  panelSubject = stop.subject;
+  return true;
+}
+
+function trailTitles(): { back?: string; fwd?: string } {
+  const back = trail.back[trail.back.length - 1]?.title;
+  const fwd = trail.fwd[trail.fwd.length - 1]?.title;
+  return { ...(back ? { back } : {}), ...(fwd ? { fwd } : {}) };
+}
 
 /** The focused agent terminal, when one is focused and it is an agent tab. */
 function activeAgentEntry(): terminals.EditorTerminal | undefined {
@@ -269,7 +327,7 @@ function resolveSubject(): { sessionId: string; entry?: terminals.EditorTerminal
 export function setAgentPanelSubjectFromProject(sessionId: string, host?: string): void {
   const id = (sessionId || '').trim();
   if (!id) return;
-  panelSubject = { sessionId: id, source: 'project', ...(host ? { host } : {}) };
+  moveSubject({ sessionId: id, source: 'project', ...(host ? { host } : {}) });
   // Reveal WITHOUT stealing focus, so the click keeps the user in the Project panel
   // while the preview updates beside it. A direct user action gets a direct
   // refresh (one shot, no timer) rather than the stream-fact coalescer, which
@@ -286,12 +344,14 @@ export function setAgentPanelSubjectFromProject(sessionId: string, host?: string
 function setSubjectFromActiveTerminal(): void {
   const entry = activeAgentEntry();
   if (!entry) return;
-  panelSubject = { sessionId: entry.sessionId ?? '', terminalId: entry.id, source: 'terminal' };
+  moveSubject({ sessionId: entry.sessionId ?? '', terminalId: entry.id, source: 'terminal' });
 }
 
 /** Forget the subject entirely (dispose, and the reset point for tests). */
 export function clearAgentPanelSubject(): void {
   panelSubject = undefined;
+  trail.back = [];
+  trail.fwd = [];
 }
 
 /**
@@ -419,7 +479,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       case 'openArtifact':
         if (typeof msg.path === 'string') {
           const named = (this.snapshot.artifacts ?? []).some((a) => a.path === msg.path) || this.snapshot.plan?.path === msg.path;
-          await openSessionArtifact(msg.path, this.snapshot.sessionHost, named);
+          // A remote file copies first; the tile says so until it opens or fails.
+          this.view?.webview.postMessage({ type: 'artifactBusy', path: msg.path, busy: true });
+          try {
+            await openSessionArtifact(msg.path, this.snapshot.sessionHost, named);
+          } finally {
+            this.view?.webview.postMessage({ type: 'artifactBusy', path: msg.path, busy: false });
+          }
         }
         return;
       case 'loadTimelineFilter':
@@ -471,6 +537,17 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           typeof msg.text === 'string' ? msg.text : '',
           typeof msg.terminalId === 'string' ? msg.terminalId : undefined,
         );
+        return;
+      case 'nav':
+        if ((msg.dir === 'back' || msg.dir === 'fwd') && stepTrail(msg.dir)) void this.refresh();
+        return;
+      case 'openTicket':
+        // The ticket opens in the Project panel's Issues tab: one read, with comments.
+        if (typeof msg.id === 'string' && msg.id) void vscode.commands.executeCommand('agents.project.openTicket', msg.id);
+        return;
+      case 'dictate':
+        if (msg.on === true) void dictation.start((update) => this.view?.webview.postMessage({ type: 'dictation', ...update }));
+        else if (msg.on === false) void dictation.stop();
         return;
       case 'selectRelated':
         // A Related chip makes that session the subject, as a Project panel click does.
@@ -728,11 +805,19 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   async refresh(): Promise<void> {
     if (!this.view) return;
     this.snapshot = await this.runBuildSnapshot();
+    this.snapshot.nav = trailTitles();
     this.syncPlanWatcher(this.snapshot.cwd);
     if (this.webviewReady) {
       this.view.webview.postMessage({ type: 'snapshot', data: this.snapshot });
     }
     // If not ready, snapshot stays cached; the 'ready' handler will push it.
+  }
+
+  /** The title the panel showed for a session, when it is the one on screen. */
+  titleOf(sessionId: string): string | undefined {
+    const s = this.snapshot;
+    if (!sessionId || s.fullSessionId !== sessionId) return undefined;
+    return s.sessionTitle || s.label || s.autoLabel || s.agentName;
   }
 
   /** Show the sidebar without taking keyboard focus from whatever opened it. */
@@ -852,7 +937,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           messageCount: 0,
           lastActivityMs: live.lastActivityMs || undefined,
         };
-        if (card.linearIssue) snapshot.linearIssue = card.linearIssue;
+        if (card.linearIssue) snapshot.ticket = ticketFace(card.linearIssue);
 
         // Goal + Checklist (PHNX-3939) — synchronous field copies from the warm
         // row. NO await, NO fetch: the tab-switch path must stay instant, so these
@@ -1096,6 +1181,20 @@ function renderTerminalCard(s) {
     : '';
   if (s.sessionChunk || pencil) {
     menu.push(['Session', (s.sessionChunk ? '<button type="button" class="session-chunk" id="copy-session" title="Copy full session ID" aria-label="Copy full session ID">' + esc(s.sessionChunk) + '</button>' : '<span class="menu-v">not reported yet</span>') + pencil]);
+  }
+  // The PR's merge actions live here; the Made tile opens the PR on GitHub.
+  const pr = s.prStatus;
+  if (pr) {
+    const act = s.prAction || { kind: 'none', reason: '' };
+    const merge = (act.kind === 'merge'
+      ? '<button type="button" class="action-btn primary" data-pr-action="merge">Merge</button>'
+      : act.kind === 'automerge'
+        ? '<button type="button" class="action-btn" data-pr-action="automerge" title="Turn on GitHub auto-merge">Merge when green</button>'
+        : '') +
+      // Merge ▾: squash, rebase, merge commit, or an admin merge (its own warning dialog).
+      (s.prCanMerge ? '<button type="button" class="action-btn" data-pr-action="options" title="Squash, rebase, merge commit, or admin merge" aria-label="Merge options">' + (act.kind === 'none' ? 'Merge ▾' : '▾') + '</button>' : '');
+    const note = act.kind === 'none' && act.reason && pr.state === 'open' ? '<span class="menu-note">' + esc(act.reason) + '</span>' : '';
+    menu.push(['PR', '<span class="menu-pr"><span class="mono">#' + esc(pr.number) + '</span>' + prReviewGlyph(pr) + prMergeGlyph(pr) + merge + '</span>' + note]);
   }
   const branch = s.git && s.git.branch;
   const chips = [];
@@ -1341,27 +1440,25 @@ function renderRequestCard(s) {
 // a merge glyph) whose words live in each icon's title and aria-label. The
 // per-check list folds under the bar. At most one action the host decided
 // (Merge, or Merge when green), which it confirms before running.
-const PR_CHECK_MARK = { passed: '✓', failed: '✕', running: '◌', skipped: '–' };
 const PR_SEGMENT_ORDER = { passed: 0, running: 1, failed: 2, skipped: 3 };
-const prSeenChecks = new Map();
 
-// One word for where the PR stands, and the ring that draws it.
+// One word for where the PR stands, and its tone.
 function prVerdict(pr) {
-  if (pr.state === 'merged') return { ring: 'ok', word: 'Merged', tone: 'ok' };
-  if (pr.state === 'closed') return { ring: 'none', word: 'Closed', tone: 'idle' };
-  if (pr.checks === 'failing') return { ring: 'bad', word: 'Failing', tone: 'bad' };
-  if (pr.isDraft) return { ring: 'draft', word: 'Draft', tone: 'idle' };
-  if (pr.mergeable === 'conflicting') return { ring: 'bad', word: 'Conflicts', tone: 'bad' };
-  if (pr.review === 'changes_requested') return { ring: 'bad', word: 'Changes requested', tone: 'bad' };
-  if (pr.checks === 'pending') return { ring: 'running', word: 'Checks running', tone: 'warn' };
+  if (pr.state === 'merged') return { word: 'Merged', tone: 'ok' };
+  if (pr.state === 'closed') return { word: 'Closed', tone: 'idle' };
+  if (pr.checks === 'failing') return { word: 'Failing', tone: 'bad' };
+  if (pr.isDraft) return { word: 'Draft', tone: 'idle' };
+  if (pr.mergeable === 'conflicting') return { word: 'Conflicts', tone: 'bad' };
+  if (pr.review === 'changes_requested') return { word: 'Changes requested', tone: 'bad' };
+  if (pr.checks === 'pending') return { word: 'Checks running', tone: 'warn' };
   if (pr.checks === 'passing') {
     // Green checks alone are not "Ready": a required review or an unknown merge
     // state still stands between the PR and a merge.
-    if (pr.review === 'review_required') return { ring: 'ok', word: 'Needs review', tone: 'warn' };
-    if (pr.mergeable !== 'mergeable') return { ring: 'ok', word: 'Checks passed', tone: 'ok' };
-    return { ring: 'ok', word: 'Ready', tone: 'ok' };
+    if (pr.review === 'review_required') return { word: 'Needs review', tone: 'warn' };
+    if (pr.mergeable !== 'mergeable') return { word: 'Checks passed', tone: 'ok' };
+    return { word: 'Ready', tone: 'ok' };
   }
-  return { ring: 'none', word: 'Open', tone: 'idle' };
+  return { word: 'Open', tone: 'idle' };
 }
 
 // One bar segment per check the row lists, greens first so the bar fills like
@@ -1378,19 +1475,6 @@ function prCheckSegments(pr) {
     .map((c) => ({ state: c.state, name: c.name }));
   const count = (state) => items.filter((c) => c.state === state).length;
   return { segments: segments, passed: count('passed'), running: count('running'), failed: count('failed'), counted: items.filter((c) => c.state !== 'skipped').length };
-}
-
-// The ring closes into a check once, when this PR's checks turn green between
-// two renders the viewer saw; the first sight of a green PR does not animate.
-function prJustReady(prev, pr) {
-  return !!pr && pr.checks === 'passing' && pr.state !== 'merged' && prev !== undefined && prev !== 'passing';
-}
-
-function prRing(v) {
-  return '<span class="pr-ring ' + v.ring + '" role="img" aria-label="' + esc(v.word) + '">' +
-    '<svg viewBox="0 0 18 18" aria-hidden="true"><circle class="trk" cx="9" cy="9" r="7"/><circle class="arc" cx="9" cy="9" r="7"/>' +
-    (v.ring === 'ok' ? '<path class="chk" d="M5.8 9.2l2.2 2.2 4.2-4.6"/>' : '') +
-    (v.ring === 'bad' ? '<path class="x" d="M6.5 6.5l5 5M11.5 6.5l-5 5"/>' : '') + '</svg></span>';
 }
 
 function prReviewGlyph(pr) {
@@ -1410,102 +1494,74 @@ function prMergeGlyph(pr) {
     '<path d="M4.5 5.2v5.6M4.5 5.6c.2 1.8 2 2.4 5.3 2.4"/></svg></span>';
 }
 
-function renderPullRequestCard(s, justReady) {
-  const pr = s.prStatus;
-  if (!pr) return '';
-  const act = s.prAction || { kind: 'none', reason: '' };
-  const v = prVerdict(pr);
-  const bar = prCheckSegments(pr);
-  const open = viewState.prChecksOpen === pr.url;
-  const items = pr.checkItems || [];
-  const checkWords = bar.counted
-    ? bar.passed + ' of ' + bar.counted + ' checks passed' + (bar.running ? ', ' + bar.running + ' running' : '') + (bar.failed ? ', ' + bar.failed + ' failed' : '')
-    : pr.checks ? (pr.checks === 'passing' ? 'Checks passed' : pr.checks === 'failing' ? 'A check failed' : 'Checks running') : 'No checks reported';
-  const segs = bar.segments.map((c) => '<i class="seg ' + esc(c.state) + '" title="' + esc(c.name + ': ' + c.state) + '"></i>').join('');
-  const barBody = '<span class="pr-bar" aria-hidden="true">' + (segs || '<i class="seg none"></i>') + '</span>' +
-    (bar.counted ? '<span class="pr-frac">' + bar.passed + '/' + bar.counted + '</span>' : '');
-  const barEl = items.length
-    ? '<button type="button" class="pr-bar-btn" data-pr-checks="' + esc(pr.url) + '" aria-expanded="' + open + '" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords + (open ? ', hide checks' : ', show checks')) + '">' + barBody + '</button>'
-    : '<span class="pr-bar-btn" role="img" title="' + esc(checkWords) + '" aria-label="' + esc(checkWords) + '">' + barBody + '</span>';
-  const checks = items.length && open
-    ? '<div class="pr-checks">' + items.map((c) =>
-        '<div class="pr-check pr-' + esc(c.state) + '"><span class="pr-mark">' + esc(PR_CHECK_MARK[c.state] || '·') + '</span>' +
-        '<span class="pr-check-name">' + esc(c.name) + '</span>' +
-        (c.url ? '<button type="button" class="pr-run" data-url="' + esc(c.url) + '" title="' + esc(c.url) + '">run ↗</button>' : '') + '</div>').join('') +
-      '</div>'
-    : '';
-  const branch = s.git && s.git.branch ? '<span class="pr-branch" title="Branch">⎇ ' + esc(s.git.branch) + '</span>' : '';
-  const primary = (act.kind === 'merge'
-    ? '<button type="button" class="action-btn primary" data-pr-action="merge">Merge</button>'
-    : act.kind === 'automerge'
-      ? '<button type="button" class="action-btn" data-pr-action="automerge" title="Turn on GitHub auto-merge">Merge when green</button>'
-      : '') +
-    // Merge ▾: squash, rebase, merge commit, or an admin merge (its own warning dialog).
-    (s.prCanMerge ? '<button type="button" class="action-btn" data-pr-action="options" title="Squash, rebase, merge commit, or admin merge" aria-label="Merge options">' + (act.kind === 'none' ? 'Merge ▾' : '▾') + '</button>' : '');
-  const note = act.kind === 'none' && act.reason && pr.state === 'open' ? '<div class="card-note pr-note">' + esc(act.reason) + '</div>' : '';
-  return (
-    '<div class="card pr-card' + (justReady ? ' just-ready' : '') + '">' +
-      '<div class="pr-head">' + prRing(v) +
-        '<div class="pr-text"><div class="pr-title">#' + esc(pr.number) + (pr.title ? ' ' + esc(pr.title) : '') + '</div>' +
-        '<div class="pr-sub"><span class="pr-word pr-tone-' + v.tone + '">' + esc(v.word) + '</span>' + branch + (s.prRepo ? '<span class="pr-repo">' + esc(s.prRepo) + '</span>' : '') + '</div></div></div>' +
-      '<div class="pr-strip">' + barEl + prReviewGlyph(pr) + prMergeGlyph(pr) + '</div>' +
-      checks +
-      '<div class="actions-row pr-actions">' + primary + '<button type="button" class="action-btn" data-url="' + esc(pr.url) + '">Open on GitHub ↗</button></div>' +
-      note +
-    '</div>'
-  );
-}
-
 // ── Made ────────────────────────────────────────────────────────────────────
 // What the session made, as one row of previews you scroll sideways (owner,
 // 2026-10-12: "artifacts are important; a PR is an artifact, and so is the
-// ticket"). The PR leads with its state word and glyphs, and opens its card
-// (checks, review, Merge ▾) right under the row. Then other PRs, the ticket, and
-// every artifact file, newest first; an image previews, a page or doc shows its
-// type. A chosen timeline range dims files changed outside it, without moving
-// anything. Pages, docs and images on this machine carry Share.
+// ticket"). The PR tile carries its checks as a bar and a count, and opens the PR
+// on GitHub; merging lives in the ⋯ menu (owner video, 2026-10-12: "show how many
+// pass here; clicking it takes us to the link"). The ticket is a tile that opens
+// the ticket to read. Then every artifact file, newest first; an image previews,
+// a page or doc shows its type, and a click opens it in the editor. A chosen
+// timeline range dims files changed outside it, without moving anything. Pages,
+// docs and images on this machine carry Share.
 const SHARE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2.5M5 5.5l3-3 3 3M3.5 8.5v4.5h9V8.5"/></svg>';
+const MIC_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>';
 const SHAREABLE = /^(html?|md|markdown|pdf|png|jpe?g|gif|webp|svg)$/;
+const busyArtifacts = new Set();
 
-function renderMadeShelf(s, justReady) {
+function prChecksBar(pr) {
+  const bar = prCheckSegments(pr);
+  const words = bar.counted
+    ? bar.passed + ' of ' + bar.counted + ' checks passed' + (bar.running ? ', ' + bar.running + ' running' : '') + (bar.failed ? ', ' + bar.failed + ' failed' : '')
+    : pr.checks ? (pr.checks === 'passing' ? 'Checks passed' : pr.checks === 'failing' ? 'A check failed' : 'Checks running') : 'No checks reported';
+  const segs = bar.segments.map((c) => '<i class="seg ' + esc(c.state) + '"></i>').join('');
+  return '<span class="mk-checks" role="img" title="' + esc(words) + '" aria-label="' + esc(words) + '">' +
+    '<span class="pr-bar">' + (segs || '<i class="seg none"></i>') + '</span>' +
+    (bar.counted ? '<span class="pr-frac pr-tone-' + (bar.failed ? 'bad' : bar.passed === bar.counted ? 'ok' : 'warn') + '">' + bar.passed + '/' + bar.counted + '</span>' : '') +
+  '</span>';
+}
+
+function renderMadeShelf(s) {
   const pr = s.prStatus;
   const others = (s.pullRequests || []).filter((p) => !pr || p.url !== pr.url);
   const files = [];
   for (const it of artifactItems(s)) if (it.files) for (const f of it.files) files.push(f);
   files.sort((a, b) => (b.editedAtMs || 0) - (a.editedAtMs || 0));
-  if (!pr && !others.length && !s.linearIssue && !files.length) return '';
+  const tk = s.ticket;
+  if (!pr && !others.length && !tk && !files.length) return '';
   const range = currentRange(s);
-  const open = !!pr && viewState.prOpen === pr.url;
   const tiles = [];
   if (pr) {
     const v = prVerdict(pr);
-    tiles.push('<button type="button" class="mk mk-pr' + (open ? ' on' : '') + '" data-pr-open="' + esc(pr.url) + '" aria-expanded="' + open + '" title="' + esc('#' + pr.number + (pr.title ? ' ' + pr.title : '') + ': checks, review and merge') + '">' +
+    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(pr.url) + '" title="' + esc('Open #' + pr.number + (pr.title ? ' ' + pr.title : '') + ' on GitHub') + '">' +
       '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(pr.number) + '</b><span class="mk-st pr-tone-' + v.tone + '">' + esc(v.word) + '</span></span>' +
       '<span class="mk-t">' + esc(pr.title || s.prRepo || '') + '</span>' +
-      '<span class="mk-f">' + prReviewGlyph(pr) + prMergeGlyph(pr) + '</span></button>');
+      '<span class="mk-f">' + prChecksBar(pr) + '<span class="mk-go" aria-hidden="true">↗</span></span></button>');
   }
   for (const p of others) {
-    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(p.url) + '" title="' + esc(p.url) + '">' +
-      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(p.number) + '</b></span><span class="mk-t">' + esc(p.ownerRepo) + '</span></button>');
+    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(p.url) + '" title="' + esc('Open ' + p.url) + '">' +
+      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(p.number) + '</b></span><span class="mk-t">' + esc(p.ownerRepo) + '</span>' +
+      '<span class="mk-f"><span class="mk-go" aria-hidden="true">↗</span></span></button>');
   }
-  if (s.linearIssue) {
-    const url = 'https://linear.app/issue/' + encodeURIComponent(s.linearIssue);
-    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(url) + '" title="' + esc(url) + '">' +
-      '<span class="mk-h">' + APP_ICON.linear + '<b>' + esc(s.linearIssue) + '</b></span><span class="mk-t">Linear ticket</span></button>');
+  if (tk) {
+    tiles.push('<button type="button" class="mk mk-pr mk-tk" data-ticket="' + esc(tk.id) + '" title="' + esc('Read ' + tk.id + (tk.title ? ' ' + tk.title : '')) + '">' +
+      '<span class="mk-h">' + APP_ICON.linear + '<b>' + esc(tk.id) + '</b>' + (tk.state ? '<span class="mk-st tk-st">' + esc(tk.state) + '</span>' : '') + '</span>' +
+      '<span class="mk-t">' + esc(tk.title || 'Linear ticket') + '</span>' +
+      '<span class="mk-f"><span class="mk-read">Read ›</span></span></button>');
   }
   for (const f of files) {
     const kind = artifactKind(f);
     const out = range && f.editedAtMs && !inRange(range, f.editedAtMs) ? ' out' : '';
+    const busy = busyArtifacts.has(f.path) ? ' busy' : '';
     const face = f.uri ? '<span class="mk-img">' + thumbImg(f) + '</span>' : '<span class="mk-doc" aria-hidden="true">' + esc(FILE_GLYPH[kind] || kind.slice(0, 4).toUpperCase()) + '</span>';
     const share = s.sessionLocal && SHAREABLE.test(kind)
       ? '<button type="button" class="mk-share" data-share="' + esc(f.path) + '" title="Share as a Rush artifact" aria-label="' + esc('Share ' + f.name) + '">' + SHARE_ICON + '</button>'
       : '';
-    tiles.push('<div class="mk mk-file' + out + '"><button type="button" class="mk-open artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc(f.path) + '">' + face +
-      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(kind + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
+    tiles.push('<div class="mk mk-file' + out + busy + '"><button type="button" class="mk-open artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc('Open ' + f.path) + '">' + face +
+      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(busy ? 'opening…' : kind + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
   }
   return '<div class="made"><div class="made-l">Made <span>' + tiles.length + '</span></div>' +
-    '<div class="made-strip" data-strip="made">' + tiles.join('') + '</div>' +
-    (open ? renderPullRequestCard(s, justReady) : '') + '</div>';
+    '<div class="made-strip" data-strip="made">' + tiles.join('') + '</div></div>';
 }
 
 // ── Blocked ─────────────────────────────────────────────────────────────────
@@ -1604,16 +1660,6 @@ function renderFilesCard(s) {
   );
 }
 
-// The reply rail: type, press Enter, and the host injects it into the session.
-function renderReplyBox(s) {
-  if (!s.fullSessionId) return '';
-  return (
-    '<div class="reply-box">' +
-      '<textarea id="reply-input" rows="1" placeholder="Reply to this session… (Enter to send)"></textarea>' +
-      '<div class="reply-err" id="reply-err" hidden></div>' +
-    '</div>'
-  );
-}
 
 const SUBAGENTS_FINISHED_SHOWN = 3;
 
@@ -1750,9 +1796,15 @@ function renderMarkdownPreview(s) {
 
 let lastSnapshot = null;
 
+// The reply box is built once and lives outside the patched card, so a stream
+// update never takes away the caret or what you are typing (owner video,
+// 2026-10-12). A draft belongs to its session: switching subjects puts it away
+// and brings back that session's own draft.
+const replyDrafts = {};
+let replySession = '';
+
 function render(snap) {
   lastSnapshot = snap;
-  const stripScroll = saveStripScroll();
   // The empty state is about having NO SUBJECT — not about having no terminal.
   // A session picked in the Project panel renders here with no local tab at all.
   if (!snap || !snap.hasSubject) {
@@ -1763,14 +1815,19 @@ function render(snap) {
     );
     return;
   }
+  let body = root.querySelector('#panel-body');
+  if (!body) {
+    root.innerHTML = '<div id="panel-body"></div>' + renderReplyBox() +
+      '<div class="footer"><button id="refresh-btn">Refresh</button></div>';
+    body = root.querySelector('#panel-body');
+    bindReplyBox();
+  }
+  syncReplyBox(snap);
   // One card, top to bottom (owner, 2026-10-12): the title with quick icons, the
   // state, the goal, an open ask, what you asked, what it made, then the activity
   // strip whose range filters the feed under it. The reply floats at the bottom.
-  const pr = snap.prStatus;
-  const prKey = pr ? (snap.fullSessionId || '') + '#' + pr.number : '';
-  const justReady = pr ? prJustReady(prSeenChecks.get(prKey), pr) : false;
-  if (pr) prSeenChecks.set(prKey, pr.checks || '');
-  root.innerHTML = (
+  patchChildren(body,
+    renderNav(snap) +
     '<div class="card session-card">' +
       renderTerminalCard(snap) +
       renderSessionStats(snap) +
@@ -1779,41 +1836,50 @@ function render(snap) {
       renderBlocked(snap) +
       renderNeedsYou(snap) +
       renderRequestCard(snap) +
-      renderMadeShelf(snap, justReady) +
+      renderMadeShelf(snap) +
       renderRelated(snap) +
       renderTimelineCard(snap) +
-    '</div>' +
-    renderReplyBox(snap) +
-    '<div class="footer"><button id="refresh-btn">Refresh</button></div>'
+    '</div>'
   );
+  bindPanel();
+}
+
+// Back and forward through the sessions this panel showed. The host keeps the
+// trail; the card only names where Back leads.
+function renderNav(s) {
+  const n = s.nav;
+  if (!n || (!n.back && !n.fwd)) return '';
+  const btn = (dir, label, to) =>
+    '<button type="button" class="nav-btn" data-nav="' + dir + '"' + (to ? ' title="' + esc(label + ' to ' + to) + '"' : ' disabled') + ' aria-label="' + label + '">' + (dir === 'back' ? '‹' : '›') + '</button>';
+  return '<div class="nav-row">' + btn('back', 'Back', n.back) + btn('fwd', 'Forward', n.fwd) +
+    (n.back ? '<button type="button" class="nav-crumb" data-nav="back" title="' + esc('Back to ' + n.back) + '">' + esc(n.back) + '</button>' : '') +
+  '</div>';
+}
+
+function focusReply() {
+  const r = root.querySelector('#reply-input');
+  if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
+}
+
+function bindPanel() {
   const details = root.querySelector('#session-details');
-  if (details) details.addEventListener('toggle', () => { viewState.detailsOpen = details.open; vscode.setState(viewState); });
+  if (details && bindOnce(details, 'toggle')) details.addEventListener('toggle', () => { viewState.detailsOpen = details.open; vscode.setState(viewState); });
   const failures = root.querySelector('#failures');
-  if (failures) failures.addEventListener('toggle', () => { viewState.failuresOpen = failures.open; vscode.setState(viewState); });
-  const blockedReply = root.querySelector('#blocked-reply');
-  if (blockedReply) blockedReply.addEventListener('click', () => {
-    const r = root.querySelector('#reply-input');
-    if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
-  });
-  const nyReply = root.querySelector('#needs-you-reply');
-  if (nyReply) nyReply.addEventListener('click', () => {
-    const r = root.querySelector('#reply-input');
-    if (r) { r.scrollIntoView({ block: 'center' }); r.focus(); }
-  });
-  restoreStripScroll(stripScroll);
-  for (const img of root.querySelectorAll('img[data-avatar]')) img.addEventListener('error', () => img.remove());
+  if (failures && bindOnce(failures, 'toggle')) failures.addEventListener('toggle', () => { viewState.failuresOpen = failures.open; vscode.setState(viewState); });
+  for (const el of root.querySelectorAll('#blocked-reply, #needs-you-reply')) if (bindOnce(el, 'reply')) el.addEventListener('click', focusReply);
+  for (const img of root.querySelectorAll('img[data-avatar]')) if (bindOnce(img, 'error')) img.addEventListener('error', () => img.remove());
   bindSessionCards();
   for (const el of root.querySelectorAll('[data-files-view]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'files')) el.addEventListener('click', () => {
       viewState.filesView = el.getAttribute('data-files-view');
       vscode.setState(viewState);
       render(lastSnapshot);
     });
   }
   const copy = root.querySelector('#copy-session');
-  if (copy) copy.addEventListener('click', () => vscode.postMessage({ type: 'copySessionId' }));
+  if (copy && bindOnce(copy, 'copy')) copy.addEventListener('click', () => vscode.postMessage({ type: 'copySessionId' }));
   for (const el of root.querySelectorAll('.path-link')) {
-    el.addEventListener('click', (e) => {
+    if (bindOnce(el, 'path')) el.addEventListener('click', (e) => {
       e.preventDefault();
       vscode.postMessage({ type: 'openPath', path: el.getAttribute('data-path') });
     });
@@ -1822,46 +1888,34 @@ function render(snap) {
   // file-only vscode.open that openPath uses. Distinct selector + message
   // type so the extension can branch on intent without sniffing the path.
   for (const el of root.querySelectorAll('.wt-link')) {
-    el.addEventListener('click', (e) => {
+    if (bindOnce(el, 'wt')) el.addEventListener('click', (e) => {
       e.preventDefault();
       vscode.postMessage({ type: 'openWorktree', path: el.getAttribute('data-worktree-path') });
     });
   }
-  for (const el of root.querySelectorAll('[data-pr-open]')) {
-    el.addEventListener('click', () => {
-      const url = el.getAttribute('data-pr-open');
-      viewState.prOpen = viewState.prOpen === url ? '' : url;
-      vscode.setState(viewState);
-      render(lastSnapshot);
-    });
-  }
   for (const el of root.querySelectorAll('[data-related]')) {
-    el.addEventListener('click', () => vscode.postMessage({ type: 'selectRelated', sessionId: el.getAttribute('data-related'), host: el.getAttribute('data-related-host') || undefined }));
+    if (bindOnce(el, 'related')) el.addEventListener('click', () => vscode.postMessage({ type: 'selectRelated', sessionId: el.getAttribute('data-related'), host: el.getAttribute('data-related-host') || undefined }));
   }
   for (const el of root.querySelectorAll('[data-share]')) {
-    el.addEventListener('click', (e) => { e.stopPropagation(); vscode.postMessage({ type: 'shareArtifact', path: el.getAttribute('data-share') }); });
+    if (bindOnce(el, 'share')) el.addEventListener('click', (e) => { e.stopPropagation(); vscode.postMessage({ type: 'shareArtifact', path: el.getAttribute('data-share') }); });
   }
-  const prChecks = root.querySelector('[data-pr-checks]');
-  if (prChecks) prChecks.addEventListener('click', () => {
-    const url = prChecks.getAttribute('data-pr-checks');
-    viewState.prChecksOpen = viewState.prChecksOpen === url ? '' : url;
-    vscode.setState(viewState);
-    render(lastSnapshot);
-    // The card re-renders; keep the keyboard on the bar that was just toggled.
-    const again = root.querySelector('[data-pr-checks]');
-    if (again) again.focus();
-  });
+  for (const el of root.querySelectorAll('[data-ticket]')) {
+    if (bindOnce(el, 'ticket')) el.addEventListener('click', () => vscode.postMessage({ type: 'openTicket', id: el.getAttribute('data-ticket') }));
+  }
+  for (const el of root.querySelectorAll('[data-nav]')) {
+    if (bindOnce(el, 'nav')) el.addEventListener('click', () => vscode.postMessage({ type: 'nav', dir: el.getAttribute('data-nav') }));
+  }
   for (const el of root.querySelectorAll('[data-pr-action]')) {
-    el.addEventListener('click', () => vscode.postMessage({ type: 'prAction', action: el.getAttribute('data-pr-action') }));
+    if (bindOnce(el, 'pr')) el.addEventListener('click', () => vscode.postMessage({ type: 'prAction', action: el.getAttribute('data-pr-action') }));
   }
   for (const el of root.querySelectorAll('[data-scm]')) {
-    el.addEventListener('click', (e) => {
+    if (bindOnce(el, 'scm')) el.addEventListener('click', (e) => {
       e.preventDefault();
       vscode.postMessage({ type: 'openSourceControl' });
     });
   }
   for (const el of root.querySelectorAll('[data-action]')) {
-    el.addEventListener('click', () => {
+    if (bindOnce(el, 'action')) el.addEventListener('click', () => {
       vscode.postMessage({
         type: 'runQuickAction',
         action: el.getAttribute('data-action'),
@@ -1871,25 +1925,81 @@ function render(snap) {
       });
     });
   }
-  const reply = root.querySelector('#reply-input');
-  if (reply) {
-    reply.addEventListener('keydown', (e) => {
-      // Enter sends; Shift+Enter is a newline.
-      if (e.key !== 'Enter' || e.shiftKey) return;
-      e.preventDefault();
-      const text = reply.value.trim();
-      if (!text) return;
-      vscode.postMessage({
-        type: 'replyToSession',
-        text: text,
-        sessionId: lastSnapshot && lastSnapshot.fullSessionId,
-        terminalId: lastSnapshot && lastSnapshot.terminalId,
-      });
-      reply.value = '';
-    });
+}
+
+// The reply rail: type, press Enter, and the host injects it into the session.
+// The mic dictates into the box: click to talk, click again to stop; the words
+// land in the box to edit before Enter sends them.
+function renderReplyBox() {
+  return (
+    '<div class="reply-box" hidden>' +
+      '<textarea id="reply-input" rows="1" placeholder="Reply to this session… (Enter to send)"></textarea>' +
+      '<div class="dictation" hidden><span class="dict-dot"></span><span class="dict-wave">' +
+        '<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="dict-t"></span></div>' +
+      '<button type="button" class="reply-mic" id="reply-mic" title="Dictate: click to talk, click again to stop" aria-label="Dictate" aria-pressed="false">' + MIC_ICON + '</button>' +
+      '<div class="reply-err" id="reply-err" hidden></div>' +
+    '</div>'
+  );
+}
+
+function syncReplyBox(s) {
+  const box = root.querySelector('.reply-box');
+  const input = root.querySelector('#reply-input');
+  if (!box || !input) return;
+  const id = s.fullSessionId || '';
+  if (id !== replySession) {
+    replyDrafts[replySession] = input.value;
+    input.value = replyDrafts[id] || '';
+    replySession = id;
+    showReplyError('');
   }
+  box.hidden = !id;
+}
+
+// The mic's state, as the host reports it. Listening shows a moving wave (CSS, no
+// timer: the sidebar keeps none); the words land in the box when transcribed.
+function setDictation(state, text) {
+  const box = root.querySelector('.reply-box');
+  if (!box) return;
+  const mic = box.querySelector('#reply-mic');
+  box.classList.toggle('listening', state === 'listening');
+  box.classList.toggle('transcribing', state === 'transcribing');
+  mic.setAttribute('aria-pressed', String(state === 'listening'));
+  mic.disabled = state === 'transcribing';
+  box.querySelector('.dictation').hidden = state === 'idle';
+  box.querySelector('.dict-t').textContent = state === 'transcribing' ? 'Transcribing…' : 'Listening · click the mic to stop';
+  if (text) {
+    const input = box.querySelector('#reply-input');
+    input.value = input.value ? input.value.replace(/\\s+$/, '') + ' ' + text : text;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function bindReplyBox() {
+  const reply = root.querySelector('#reply-input');
+  reply.addEventListener('keydown', (e) => {
+    // Enter sends; Shift+Enter is a newline.
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    const text = reply.value.trim();
+    if (!text) return;
+    vscode.postMessage({
+      type: 'replyToSession',
+      text: text,
+      sessionId: lastSnapshot && lastSnapshot.fullSessionId,
+      terminalId: lastSnapshot && lastSnapshot.terminalId,
+    });
+    reply.value = '';
+    replyDrafts[replySession] = '';
+  });
+  const mic = root.querySelector('#reply-mic');
+  mic.addEventListener('click', () => {
+    showReplyError('');
+    vscode.postMessage({ type: 'dictate', on: mic.getAttribute('aria-pressed') !== 'true' });
+  });
   const btn = root.querySelector('#refresh-btn');
-  if (btn) btn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+  btn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
 }
 
 // The host answers a reply with its outcome; show a failure inline (never a
@@ -1912,6 +2022,14 @@ window.addEventListener('message', (e) => {
     if (applyTimelineFilter(msg, lastSnapshot)) render(lastSnapshot);
   }
   else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
+  else if (msg && msg.type === 'dictation') {
+    setDictation(msg.state, msg.text);
+    if (msg.error) showReplyError(msg.error);
+  }
+  else if (msg && msg.type === 'artifactBusy') {
+    if (msg.busy) busyArtifacts.add(msg.path); else busyArtifacts.delete(msg.path);
+    if (lastSnapshot) render(lastSnapshot);
+  }
 });
 
 // The panel keeps retainContextWhenHidden so quick tab switches preserve scroll
@@ -2060,6 +2178,7 @@ export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanel
   provider.context = context;
   activeProvider = provider;
   context.subscriptions.push({ dispose: () => { if (activeProvider === provider) activeProvider = undefined; } });
+  context.subscriptions.push({ dispose: () => dictation.cancel() });
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(AGENT_PANEL_VIEW_ID, provider, {

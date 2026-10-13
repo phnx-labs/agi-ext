@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import {
   parsePrs, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
-  sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS,
+  sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
   type SessionHere, type SessionLike, type SessionListPrefs,
 } from './projectPanel'
 
@@ -16,7 +16,39 @@ test('detection: a matched workspace yields name + Linear name; no match is null
 
 test('project list keeps projects without a Linear binding', () => {
   expect(parseProjectList('[{"name":"agi","linear":{"name":"AGI"}},{"name":"wispr"}]'))
-    .toEqual([{ name: 'agi', linearName: 'AGI' }, { name: 'wispr', linearName: null }])
+    .toEqual([{ name: 'agi', linearName: 'AGI', repos: [] }, { name: 'wispr', linearName: null, repos: [] }])
+})
+
+test('the project menu offers the projects with a repository inside the window folder', () => {
+  const all = parseProjectList(JSON.stringify([
+    { name: 'agi', linear: { name: 'AGI' }, repos: [{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }, { slug: 'phnx-labs/.agents-system', path: '~/.agents/.system' }] },
+    { name: 'rush', repos: [{ slug: 'phnx-labs/rush', path: '/work/rush' }] },
+    { name: 'site', repos: [{ slug: 'me/site', path: '~/src/gh-other/site' }] },
+  ]))
+  expect(all[0]!.repos).toEqual([{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }, { slug: 'phnx-labs/.agents-system', path: '~/.agents/.system' }])
+  expect(projectsInFolder(all, '/home/me/src/gh', '/home/me').projects).toEqual([{ name: 'agi', repos: ['agents-cli', '.agents-system'] }])
+  expect(projectsInFolder(all, '/work/rush', '/home/me').projects.map((p) => p.name)).toEqual(['rush'])
+  expect(displayHome('/home/me/src/gh', '/home/me')).toBe('~/src/gh')
+})
+
+test('an ended card says how long it ran and when; durations read in minutes, hours and days', () => {
+  expect(ranFor(47 * 60_000)).toBe('47m')
+  expect(ranFor((13 * 60 + 8) * 60_000)).toBe('13h 8m')
+  expect(ranFor(51 * 3_600_000)).toBe('2d 3h')
+  const now = new Date(2026, 9, 13, 9, 0).getTime()
+  expect(ranSpan(new Date(2026, 9, 12, 18, 50).getTime(), new Date(2026, 9, 13, 7, 56).getTime(), now)).toBe('yesterday 6:50 PM → today 7:56 AM')
+  expect(ranSpan(new Date(2026, 9, 11, 4, 20).getTime(), new Date(2026, 9, 11, 12, 32).getTime(), now)).toBe('Oct 11 · 4:20 AM → 12:32 PM')
+})
+
+test('Review while repositories answer: each finished one draws, the rest say they are being read', () => {
+  const done = new Map([['me/a', { slug: 'me/a', error: null, branch: null, release: null, open: [{ number: 7, title: 'Fix', url: 'https://github.com/me/a/pull/7', isDraft: false, ciState: 'SUCCESS', author: 'me', avatar: null, date: '2026-10-12T00:00:00Z' }], merged: [] }]])
+  const html = renderPrsProgress(['me/a', 'me/b'], done, Date.parse('2026-10-13T00:00:00Z'))
+  expect(html).toContain('Reading b…')
+  expect(html).toContain('>Fix<')
+  done.set('me/b', { slug: 'me/b', error: null, branch: null, release: null, open: [], merged: [] })
+  const all = renderPrsProgress(['me/a', 'me/b'], done, Date.parse('2026-10-13T00:00:00Z'))
+  expect(all).not.toContain('Reading')
+  expect(all).toContain('No open or recent PRs in b.')
 })
 
 const issue = (id: string, type: string, name: string, priority: number, extra: object = {}) =>

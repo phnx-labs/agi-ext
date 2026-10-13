@@ -24,13 +24,17 @@ import {
   parseProjectList,
   parseTickets,
   projectSessions,
+  projectsInFolder,
+  displayHome,
   renderPrs,
+  renderPrsProgress,
   renderSessions,
   renderTickets,
   readSessionPrefs,
   sessionCount,
   sessionMade,
   type ProjectRef,
+  type PrsModel,
   type SessionHere,
   type SessionLike,
   type SessionListPrefs,
@@ -47,6 +51,8 @@ import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
 import { buildIconPathFromUri } from './theme.vscode';
+import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
+import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 
 const execFileAsync = promisify(execFile);
 
@@ -77,7 +83,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown;
 }
 
 interface TabState {
@@ -112,6 +118,9 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
       else if (msg.type === 'open') openExternalUrl(msg.url);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
+      else if (msg.type === 'projects') void this.listProjects();
+      else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
+      else if (msg.type === 'pickProject' && typeof msg.name === 'string') void this.controller.pickByName(msg.name).catch((e) => { void vscode.window.showErrorMessage(`Could not switch project: ${errorText(e)}`); });
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host);
       else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
@@ -188,11 +197,14 @@ class ProjectView implements vscode.WebviewViewProvider {
     }
     if (gen !== state.generation) return;
     view.description = project?.name;
+    void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
     if (!project) {
       this.post(tab, '<div class="empty">No agents project contains this workspace. <a href="#" data-pick>Pick a project</a></div>');
       return;
     }
     if (tab === 'sessions') {
+      // Ticket tiles show titles from the Issues read; Sessions shares it, once per FRESH_MS.
+      this.controller.warmTicketFaces(project);
       const { html, count } = this.controller.sessions(project, view.webview);
       void view.webview.postMessage({ type: 'count', tab: 'sessions', n: count.shown, asks: count.asks });
       this.post(tab, html);
@@ -205,7 +217,9 @@ class ProjectView implements vscode.WebviewViewProvider {
     let html: string;
     let ok = true;
     try {
-      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket) : await this.controller.render(tab, project, force);
+      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket)
+        : tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
+          : await this.controller.render(tab, project, force);
     } catch (e) {
       ok = false;
       html = `<div class="err">${escapeHtml(errorText(e))}</div>`;
@@ -221,6 +235,25 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   redrawSessions(): Promise<void> {
     return this.load('sessions', false);
+  }
+
+  /** The project menu: one `agents projects list` read when it opens. */
+  private async listProjects(): Promise<void> {
+    try {
+      const list = await this.controller.projectsHere();
+      void this.view?.webview.postMessage({ type: 'projectList', ...list });
+    } catch (e) {
+      void this.view?.webview.postMessage({ type: 'projectList', error: errorText(e) });
+    }
+  }
+
+  /** A ticket tile, here or in the session panel, opens the ticket in Issues. */
+  async openTicketTab(id: string): Promise<void> {
+    if (this.view) this.view.show(true);
+    else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+    await this.show('tickets');
+    void this.view?.webview.postMessage({ type: 'tab', tab: 'tickets' });
+    await this.openTicket(id);
   }
 
   /** A ticket row click opens its detail (one read); the back control returns to the list. */
@@ -335,6 +368,60 @@ class ProjectPanelController {
     return this.detected;
   }
 
+  /** Whether the shown project is one the user picked, rather than found from the folder. */
+  picked(): boolean {
+    return !!this.context.workspaceState.get<ProjectRef>(PICKED_PROJECT_KEY);
+  }
+
+  private async projectList(): Promise<ProjectRef[]> {
+    const { stdout } = await runAgentsArgs(['projects', 'list', '--json'], { timeout: 30_000 });
+    return parseProjectList(stdout);
+  }
+
+  /** The projects with a repository inside this window's folder, for the panel's project menu. */
+  async projectsHere(): Promise<{ folder: string; current: string; projects: { name: string; repos: string[] }[] }> {
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const [all, current] = await Promise.all([this.projectList(), this.project()]);
+    return { folder: displayHome(folder), current: current?.name ?? '', ...projectsInFolder(all, folder, os.homedir()) };
+  }
+
+  /** Show this project here; remembered for the workspace, as the quick pick does. */
+  async pickByName(name: string): Promise<void> {
+    const p = (await this.projectList()).find((x) => x.name === name);
+    if (!p) throw new Error(`No project named ${name}`);
+    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: p.name, linearName: p.linearName });
+    this.refresh(true);
+  }
+
+  /** Read the Issues list for ticket tiles when it is not fresh; never throws. */
+  warmTicketFaces(p: ProjectRef): void {
+    if (!p.linearName || !resolveLinearBin()) return;
+    this.ticketGroups(p, false).catch(() => undefined);
+  }
+
+  /** Open PRs per repository, drawn as each repository answers. */
+  async reviewByRepo(p: ProjectRef, force: boolean, partial: (html: string) => void): Promise<string> {
+    const repos = (await this.projectList()).find((x) => x.name === p.name)?.repos ?? [];
+    if (repos.length < 2) return this.render('prs', p, force);
+    const done = new Map<string, PrsModel['repos'][number]>();
+    const draw = () => renderPrsProgress(repos.map((r) => r.slug), done, Date.now());
+    partial(draw());
+    await Promise.all(repos.map(async (r) => {
+      let stdout: string;
+      try {
+        ({ stdout } = await runAgentsArgs(['projects', 'prs', 'list', p.name, '--json', '--repo', r.slug], { timeout: 60_000 }));
+      } catch (e) {
+        const out = (e as { stdout?: string }).stdout;
+        if (!out || !out.trim().startsWith('{')) { done.set(r.slug, { slug: r.slug, error: errorText(e).split('\n')[0] ?? 'failed', branch: null, release: null, open: [], merged: [] }); partial(draw()); return; }
+        stdout = out;
+      }
+      for (const repo of parsePrs(stdout).repos) done.set(r.slug, repo);
+      if (!done.has(r.slug)) done.set(r.slug, { slug: r.slug, error: null, branch: null, release: null, open: [], merged: [] });
+      partial(draw());
+    }));
+    return draw();
+  }
+
   private async detect(): Promise<ProjectRef | null> {
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!folder) return null;
@@ -350,7 +437,9 @@ class ProjectPanelController {
       const bin = resolveLinearBin();
       if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
       const { stdout } = await execFileAsync(bin, ['tasks', '--project', p.linearName, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
-      return parseTickets(stdout);
+      const parsed = parseTickets(stdout);
+      if (rememberTicketGroups(parsed)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
+      return parsed;
     })();
     this.tickets = { project: p.name, at: Date.now(), groups };
     groups.catch(() => { if (this.tickets?.groups === groups) this.tickets = undefined; });
@@ -399,6 +488,7 @@ class ProjectPanelController {
     const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
     const t = parseTicketDetail(stdout);
     this.shownTicket = t;
+    if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     return renderTicketDetail(t, this.defaultAgent().name);
   }
 
@@ -639,6 +729,8 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('agents.project.pick', () => controller.pick().catch((e) => {
       void vscode.window.showErrorMessage(`Could not list projects: ${errorText(e)}`);
     })),
+    // Internal: the session panel's ticket tile opens the ticket here.
+    vscode.commands.registerCommand('agents.project.openTicket', (id: unknown) => typeof id === 'string' && id ? controller.view.openTicketTab(id) : undefined),
   );
 }
 
@@ -764,6 +856,33 @@ export function shell(cspSource: string, logoCss = ''): string {
   .shead .today.on { border-color: var(--r-selected-edge); background: var(--r-selected); color: var(--r-text); }
   .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
   /* Goals: two quiet lines above the tabs, never a block. */
+  .proj { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; flex: none; min-width: 0; }
+  .proj[hidden] { display: none; }
+  .pp { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); border-radius: 6px; padding: 2px 7px; font: inherit; font-size: 11.5px; color: var(--r-text); cursor: pointer; flex: none; }
+  .pp:hover { background: var(--r-hover); }
+  .pp .ti { width: 12px; height: 12px; }
+  .pp b { font-weight: 600; }
+  .pp .car { color: var(--r-faint); font-size: 9px; }
+  .pwhy { font-size: 11px; color: var(--r-faint); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pmenu { position: absolute; z-index: 30; top: 100%; left: 8px; right: 8px; margin-top: 4px; background: var(--vscode-menu-background, var(--r-glass)); border: 1px solid var(--r-edge); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
+  .pmenu[hidden] { display: none; }
+  .pms { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); padding: 6px 8px 4px; }
+  .pms.err { text-transform: none; letter-spacing: 0; color: var(--r-bad); }
+  .pmenu button { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; text-align: left; font: inherit; font-size: 12px; color: var(--r-text); padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+  .pmenu button:hover { background: var(--r-hover); }
+  .pmenu .ck { width: 12px; flex: none; color: var(--r-text-2); }
+  .pmenu .pn { display: flex; flex-direction: column; min-width: 0; }
+  .pmenu .pn small { color: var(--r-caption); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pmenu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 0; }
+  .tkt { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 7px 9px; border: 1px solid var(--r-edge); border-radius: 8px; background: var(--r-glass); text-decoration: none; color: var(--r-text); max-width: 280px; }
+  .tkt:hover { border-color: var(--r-caption); background: var(--r-hover); }
+  .tkh { display: flex; align-items: center; gap: 5px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .tkh .ic { width: 12px; height: 12px; }
+  .tks { margin-left: auto; font-family: var(--r-sans, inherit); font-size: 10.5px; color: var(--r-caption); }
+  .tkx { font-size: 11.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tkm { font-size: 10.5px; color: var(--r-caption); }
+  .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
+  .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
   .goals { padding: 6px 10px 4px; flex: none; }
   .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
   .goals a:hover .gtx { color: var(--r-text); }
@@ -848,6 +967,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .made { display: grid; gap: 5px; padding: 6px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-well); }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 170px; padding: 1px 6px 1px 4px; border-radius: 5px; border: 1px solid var(--r-edge); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.chip { text-decoration: none; cursor: pointer; } a.chip:hover { border-color: var(--r-caption); color: var(--r-text); }
   .chip.pr-ok { color: var(--r-ok); } .chip.pr-bad { color: var(--r-bad); } .chip.pr-run { color: var(--r-warn); }
   .folder { display: flex; gap: 6px; align-items: flex-start; min-width: 0; color: var(--r-text-2); font-size: 11.5px; } .folder .ic { margin-top: 2px; color: var(--r-faint); }
   .folder .fx { min-width: 0; display: grid; } .folder .fx span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .folder .fp { font-size: 10.5px; color: var(--r-faint); }
@@ -906,6 +1026,11 @@ export function shell(cspSource: string, logoCss = ''): string {
 </style>
 </head>
 <body>
+<div class="proj" hidden>
+  <button class="pp" data-proj-menu aria-haspopup="menu" aria-expanded="false" title="Show another project"><svg class="ti" viewBox="0 0 16 16"><path d="M2 4.5h4l1.2 1.3H14v6.7H2z"/></svg><b class="ppn"></b><span class="car">▾</span></button>
+  <span class="pwhy"></span>
+  <div class="pmenu" role="menu" hidden></div>
+</div>
 <div class="goals" hidden></div>
 <div class="tabs" role="tablist" aria-label="Project">
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
@@ -957,6 +1082,20 @@ export function shell(cspSource: string, logoCss = ''): string {
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
       if (m.tab === 'sessions') syncBulk();
       document.body.classList.remove('loading');
+    }
+    else if (m.type === 'project') {
+      const row = document.querySelector('.proj');
+      row.hidden = !m.name;
+      row.querySelector('.ppn').textContent = m.name;
+      row.querySelector('.pwhy').textContent = m.picked ? 'picked for this window' : 'found from this folder';
+    }
+    else if (m.type === 'projectList') {
+      const pmenu = document.querySelector('.pmenu');
+      const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      if (m.error) { pmenu.innerHTML = '<div class="pms err">' + esc(m.error) + '</div>'; return; }
+      pmenu.innerHTML = '<div class="pms">' + (m.projects.length ? 'Projects in ' + esc(m.folder) : 'No project has a repository in ' + esc(m.folder)) + '</div>' +
+        m.projects.map((p) => '<button role="menuitemradio" aria-checked="' + (p.name === m.current) + '" data-proj-pick="' + esc(p.name) + '"><span class="ck">' + (p.name === m.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(p.name) + '</b><small>' + esc(p.repos.join(' · ')) + '</small></span></button>').join('') +
+        '<hr><button data-proj-all><span class="ck"></span>All projects…</button>';
     }
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
@@ -1011,6 +1150,22 @@ export function shell(cspSource: string, logoCss = ''): string {
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
+    // The project button: its menu lists the projects in this folder (one read when it opens).
+    const pmenu = document.querySelector('.pmenu');
+    if (e.target.closest('[data-proj-menu]')) {
+      const opening = pmenu.hidden;
+      pmenu.hidden = !opening;
+      document.querySelector('[data-proj-menu]').setAttribute('aria-expanded', String(opening));
+      if (opening) { pmenu.innerHTML = '<div class="pms">Reading projects…</div>'; vscode.postMessage({ type: 'projects' }); }
+      return;
+    }
+    const pick = e.target.closest('[data-proj-pick]');
+    if (pick) { pmenu.hidden = true; vscode.postMessage({ type: 'pickProject', name: pick.dataset.projPick }); return; }
+    if (e.target.closest('[data-proj-all]')) { pmenu.hidden = true; vscode.postMessage({ type: 'pick' }); return; }
+    if (!pmenu.hidden && !e.target.closest('.pmenu')) { pmenu.hidden = true; document.querySelector('[data-proj-menu]').setAttribute('aria-expanded', 'false'); }
+    // A ticket tile or chip opens the ticket in Issues, with its comments.
+    const tk = e.target.closest('[data-open-ticket]');
+    if (tk) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
     const merge = e.target.closest('[data-merge-repo]');
     if (merge) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber) }); return; }
     const goal = e.target.closest('.goals [data-url]');
