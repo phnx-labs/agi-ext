@@ -19,11 +19,19 @@ type Post = (u: DictationUpdate) => void;
 
 const lastLine = (s: string) => s.trim().split('\n').filter(Boolean).pop() ?? '';
 
+interface Recording { child: ChildProcess; file: string; stderr: string; exited: Promise<number | null>; post: Post; phase: 'recording' | 'transcribing' }
+
 class Dictation {
-  private rec: { child: ChildProcess; file: string; stderr: string; exited: Promise<number | null>; post: Post } | undefined;
+  private rec: Recording | undefined;
+
+  /** The mic's state, for a webview that was rebuilt mid-recording. */
+  state(): DictationUpdate['state'] {
+    return !this.rec ? 'idle' : this.rec.phase === 'recording' ? 'listening' : 'transcribing';
+  }
 
   async start(post: Post): Promise<void> {
-    if (this.rec) return;
+    // One recording at a time; a second start (a rebuilt webview) re-syncs it instead.
+    if (this.rec) { this.rec.post = post; post({ state: this.state() }); return; }
     const fail = (error: string) => post({ state: 'idle', error });
     const ffmpeg = resolveExecutable('ffmpeg');
     if (!ffmpeg) return fail('Dictation needs ffmpeg. Install it with: brew install ffmpeg');
@@ -31,29 +39,37 @@ class Dictation {
     const args = recordArgs(process.platform, file);
     if (!args) return fail(`Dictation does not support ${process.platform} yet.`);
     const child = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] });
-    const rec = { child, file, stderr: '', exited: new Promise<number | null>((resolve) => { child.on('exit', resolve); child.on('error', () => resolve(-1)); }), post };
+    child.stdin?.on('error', () => undefined);
+    const rec: Recording = { child, file, stderr: '', exited: new Promise<number | null>((resolve) => { child.on('exit', resolve); child.on('error', () => resolve(-1)); }), post, phase: 'recording' };
     child.stderr?.on('data', (d: Buffer) => { rec.stderr += d.toString(); });
     this.rec = rec;
     post({ state: 'listening' });
-    // ffmpeg that cannot open the microphone exits at once; say why.
     void rec.exited.then((code) => {
-      if (this.rec !== rec) return;
+      if (this.rec !== rec || rec.phase !== 'recording') return;
+      // The recording reached its cap: transcribe what it has.
+      if (code === 0) { void this.finish(rec); return; }
+      // ffmpeg that cannot open the microphone exits at once; say why.
       this.rec = undefined;
       fs.promises.rm(file, { force: true }).catch(() => undefined);
-      post({ state: 'idle', error: `The microphone could not be recorded (ffmpeg exited ${code}): ${lastLine(rec.stderr) || 'no reason given'}. On macOS, allow the editor in System Settings → Privacy & Security → Microphone.` });
+      rec.post({ state: 'idle', error: `The microphone could not be recorded (ffmpeg exited ${code}): ${lastLine(rec.stderr) || 'no reason given'}. On macOS, allow the editor in System Settings → Privacy & Security → Microphone.` });
     });
   }
 
   async stop(): Promise<void> {
     const rec = this.rec;
-    if (!rec) return;
-    this.rec = undefined;
+    if (!rec || rec.phase !== 'recording') return;
+    rec.child.stdin?.end('q');
+    const timer = setTimeout(() => rec.child.kill('SIGINT'), 5000);
+    await this.finish(rec);
+    clearTimeout(timer);
+  }
+
+  private async finish(rec: Recording): Promise<void> {
+    if (rec.phase !== 'recording') return;
+    rec.phase = 'transcribing';
     rec.post({ state: 'transcribing' });
     try {
-      rec.child.stdin?.end('q');
-      const timer = setTimeout(() => rec.child.kill('SIGINT'), 5000);
       await rec.exited;
-      clearTimeout(timer);
       const words = await this.transcribe(rec.file);
       rec.post(words
         ? { state: 'idle', text: words }
@@ -62,6 +78,7 @@ class Dictation {
       const err = e as { stderr?: string; message?: string };
       rec.post({ state: 'idle', error: `Transcription failed: ${lastLine(err.stderr ?? '') || err.message || String(e)}` });
     } finally {
+      if (this.rec === rec) this.rec = undefined;
       fs.promises.rm(rec.file, { force: true }).catch(() => undefined);
     }
   }
@@ -71,6 +88,7 @@ class Dictation {
     const rec = this.rec;
     if (!rec) return;
     this.rec = undefined;
+    rec.phase = 'transcribing';
     rec.child.kill('SIGINT');
     fs.promises.rm(rec.file, { force: true }).catch(() => undefined);
   }
