@@ -81,7 +81,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <linear> --json`)
   also runs when Sessions shows, under the same once-a-minute cache. A tile never reads Linear.
   A seventh: the Project panel's project menu is one `agents projects list --json` read when
-  it opens; Review reads `agents projects prs list <name> --json --repo <r>` per repository in
+  it opens (the same list, cached a minute in `src/vscode/projectRegistry.vscode.ts`, also
+  feeds the repository-path stopgap when Sessions or the resume picker first draws); Review reads `agents projects prs list <name> --json --repo <r>` per repository in
   parallel, drawn as each answers.
   The reply box's mic (and the Lead's, which reuses it) is the one place the extension runs
   tools that are not the CLI: on the click, `ffmpeg` records the default microphone and `whisper-cli` transcribes on this machine
@@ -89,8 +90,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
   An eighth: ⌘K's artifact index (`src/vscode/searchPalette.vscode.ts`) runs
-  `artifacts list --json`, reads the rendered HTML beside each source (title and
-  `agents://session/<id>`, re-read only on a new mtime) and `sessions artifacts <id> --json`
+  `artifacts list --json`, reads the first 512 KB of the rendered HTML beside each source
+  (title and `agents://session/<id>`; re-read only on a new mtime) and `sessions artifacts <id> --json`
   for this machine's newest sessions, in the background when the picker opens, at most
   once a minute; the picker never waits on it.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
@@ -133,7 +134,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
   `src/core/projectPanel.ts`); the extension never guesses a project from a cwd. One stopgap
   until agents-cli aliases ship: a row whose checkout is one of the project's own repository
-  paths (`projectRepoPaths`) is listed too. Delete it when the feed resolves old names.
+  paths is listed too, only when its `confirmedProject` is empty or no registered project's
+  name (`projectFallback`); a session another live project claims stays there. The Project
+  panel and the resume picker apply the same rule. Delete it when the feed resolves old names.
 - One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
   and exec path for `agents` and the standalone `sessions`/`secrets` it installs
   (`resolveAgentsBin`, `runCliArgs`, `runAgents`, `src/core/agentsBin.ts`).
@@ -195,5 +198,6 @@ editor tab); read what each protects first.
 - `AGENTS.md` is canonical; `CLAUDE.md` is a symlink to it. Edit only `AGENTS.md`.
 - Worktree under `.agents/worktrees/<slug>/` + PR for every change; never commit to `main`.
 - No stubs, no fallbacks, no second scheduler, no mocks beyond `vscodeDouble`.
+  A DOM implementation (happy-dom) for running real webview scripts in tests is not a mock.
 - Every user-visible change updates `CHANGELOG.md`; a behavior change updates `docs/PRD.md`
   or `docs/ARCH.md` in the same PR, then `docs/render.sh`.

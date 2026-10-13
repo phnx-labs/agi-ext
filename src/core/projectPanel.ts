@@ -301,16 +301,35 @@ export function projectRepoPaths(p: Pick<ProjectRef, 'root' | 'repos'>): string[
   return [...new Set([p.root ?? '', ...(p.repos ?? []).map((r) => r.path)].filter(Boolean).map(homeless))];
 }
 
+/** What the repository-path stopgap needs: the project's checkouts, and every
+ *  registered project name (null until `agents projects list` answered). */
+export interface ProjectFallback {
+  repoPaths: string[];
+  registered: ReadonlySet<string> | null;
+}
+
+/** The fallback for one project from the registry (`agents projects list`) and,
+ *  when the folder was detected, its `root`. */
+export function projectFallback(p: Pick<ProjectRef, 'name' | 'root' | 'repos'>, registry: readonly ProjectRef[] | null): ProjectFallback {
+  const listed = registry?.find((x) => x.name.toLowerCase() === p.name.toLowerCase());
+  return {
+    repoPaths: projectRepoPaths({ root: p.root, repos: [...(p.repos ?? []), ...(listed?.repos ?? [])] }),
+    registered: registry ? new Set(registry.map((x) => x.name.toLowerCase())) : null,
+  };
+}
+
 /** The project's sessions, newest first: the CLI's own `confirmedProject`, and
- *  until agents-cli resolves a project's old names, a session whose checkout is one
- *  of the project's repositories though the CLI filed it under another name
- *  (a session filed under a renamed project's old name). */
-export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'> & { cwd?: string }>(rows: T[], project: string, repoPaths: string[] = []): T[] {
+ *  until agents-cli resolves a project's old names, a session whose checkout is
+ *  one of the project's repositories while the CLI filed it under no project or
+ *  under a name no registered project has (a renamed project's old name). A
+ *  session another live project claims stays there, even in a shared repository. */
+export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'> & { cwd?: string }>(rows: T[], project: string, fallback?: ProjectFallback): T[] {
   const want = project.toLowerCase();
-  const repos = new Set(repoPaths.map(homeless));
-  const inRepo = (r: T) => !!r.cwd && repos.has(checkoutOf(r.cwd));
+  const repos = new Set((fallback?.repoPaths ?? []).map(homeless));
+  const orphan = (r: T) => { const c = (r.confirmedProject || '').toLowerCase(); return !c || (!!fallback?.registered && !fallback.registered.has(c)); };
+  const inRepo = (r: T) => repos.size > 0 && !!r.cwd && orphan(r) && repos.has(checkoutOf(r.cwd));
   return rows
-    .filter((r) => (r.confirmedProject || '').toLowerCase() === want || (repos.size > 0 && inRepo(r)))
+    .filter((r) => (r.confirmedProject || '').toLowerCase() === want || inRepo(r))
     .sort((a, b) => b.lastActivityMs - a.lastActivityMs);
 }
 

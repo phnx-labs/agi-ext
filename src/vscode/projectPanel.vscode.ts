@@ -21,10 +21,9 @@ import {
   preferLive,
   parsePrs,
   parseProjectDetection,
-  parseProjectList,
   parseTickets,
   projectSessions,
-  projectRepoPaths,
+  projectFallback,
   projectsInFolder,
   displayHome,
   renderPrs,
@@ -47,6 +46,7 @@ import {
   type TicketGroup,
 } from '../core/projectPanel';
 import { SESSION_STATE_WORD, sessionStateOf } from '../shared/sessionState';
+import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
@@ -402,9 +402,9 @@ class ProjectPanelController {
     return !!this.context.workspaceState.get<ProjectRef>(PICKED_PROJECT_KEY);
   }
 
-  private async projectList(): Promise<ProjectRef[]> {
-    const { stdout } = await runAgentsArgs(['projects', 'list', '--json'], { timeout: 30_000 });
-    return parseProjectList(stdout);
+  /** The project menu reads the list fresh each time it opens; the read also refreshes the shared registry. */
+  private projectList(): Promise<ProjectRef[]> {
+    return readRegistry(true);
   }
 
   /** The projects with a repository inside this window's folder, for the panel's project menu. */
@@ -476,7 +476,8 @@ class ProjectPanelController {
       if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
       const { stdout } = await execFileAsync(bin, ['tasks', '--project', p.linearName, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
       const parsed = parseTickets(stdout);
-      this.ticketsSeen = parsed;
+      // A read that lands after a project switch is not the shown project's.
+      if (this.tickets?.project === p.name) this.ticketsSeen = parsed;
       if (rememberTicketGroups(parsed)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
       return parsed;
     })();
@@ -617,7 +618,10 @@ class ProjectPanelController {
   /** The project's sessions: the CLI's own project, plus (until agents-cli maps a
    *  project's old names) a session whose checkout is one of its repositories. */
   private projectRows(p: ProjectRef): SessionLike[] {
-    return projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name, projectRepoPaths(p));
+    const registry = registrySnapshot();
+    // The registry answers once; the list redraws then. Until it has, only rows the CLI filed under no project fall back.
+    if (!registry) void readRegistry().then(() => this.view.redrawSessions(), () => undefined);
+    return projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name, projectFallback(p, registry));
   }
 
   private presented(): RemoteSession[] {
@@ -801,8 +805,7 @@ class ProjectPanelController {
   }
 
   async pick(): Promise<void> {
-    const { stdout } = await runAgentsArgs(['projects', 'list', '--json'], { timeout: 30_000 });
-    const projects = parseProjectList(stdout);
+    const projects = await readRegistry(true);
     const current = await this.project();
     const choice = await vscode.window.showQuickPick(
       projects.map((p) => ({ label: p.name, description: p.linearName ?? 'no Linear project', picked: p.name === current?.name, project: p })),
@@ -816,6 +819,8 @@ class ProjectPanelController {
   refresh(projectChanged = false): void {
     this.tickets = undefined;
     this.detected = undefined;
+    // ⌘K's Tickets and Pull requests are the shown project's; a switch must not keep the last one's.
+    if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; }
     this.view.refresh(projectChanged);
   }
 }

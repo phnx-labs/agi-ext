@@ -6,7 +6,8 @@
 import * as os from 'os';
 import * as vscode from 'vscode';
 import { runAgentsArgs } from '../core/agentsBin';
-import { parseProjectDetection } from '../core/projectPanel';
+import { parseProjectDetection, projectFallback, type ProjectFallback, type ProjectRef } from '../core/projectPanel';
+import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { pickRow, resumeItems, resumeNotice, type ResumeAnswer, type ResumeItem } from '../core/sessionPicker';
 import { silentNote } from '../core/streamWait';
@@ -53,14 +54,14 @@ export function notifyResumePickerUpdate(): void {
 
 /** Each workspace folder's agents project, found once per folder per window (the
  *  CLI's `projects status --path`, the Project sidebar's detection). */
-const folderProjects = new Map<string, Promise<string | null>>();
+const folderProjects = new Map<string, Promise<ProjectRef | null>>();
 let watchingFolders = false;
 
-function folderProject(folder: string): Promise<string | null> {
+function folderProject(folder: string): Promise<ProjectRef | null> {
   let found = folderProjects.get(folder);
   if (!found) {
     found = runAgentsArgs(['projects', 'status', '--path', folder, '--json'], { timeout: 30_000 })
-      .then(({ stdout }) => parseProjectDetection(stdout)?.name ?? null);
+      .then(({ stdout }) => parseProjectDetection(stdout));
     folderProjects.set(folder, found);
     // Keep only a found project; a failure or "no project" is asked again next time.
     found.then((name) => { if (!name) folderProjects.delete(folder); }, () => folderProjects.delete(folder));
@@ -76,8 +77,19 @@ async function windowProjects(): Promise<string[]> {
     vscode.workspace.onDidChangeWorkspaceFolders(() => folderProjects.clear());
   }
   const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
-  const names = await Promise.all(folders.map(folderProject));
-  return [...new Set(names.filter((n): n is string => !!n))];
+  // The registry rides along (cached a minute) for the repository-path stopgap; a failed read only drops the stopgap.
+  const [found] = await Promise.all([Promise.all(folders.map(folderProject)), readRegistry().catch(() => null)]);
+  for (const p of found) if (p) detectedRefs.set(p.name, p);
+  return [...new Set(found.flatMap((p) => (p ? [p.name] : [])))];
+}
+
+/** Each detected project's root, for the same repository-path stopgap the Project panel uses. */
+const detectedRefs = new Map<string, ProjectRef>();
+
+/** Per project: its checkouts and the registered names (`projectFallback`). */
+function windowFallback(names: readonly string[]): Map<string, ProjectFallback> {
+  const registry = registrySnapshot();
+  return new Map(names.map((n) => [n, projectFallback(detectedRefs.get(n) ?? { name: n }, registry)]));
 }
 
 /** `Agents: Resume Session…`: this window's projects' sessions on every machine.
@@ -100,6 +112,7 @@ export async function showResumePicker(deps: { projects(): Promise<string[]> } =
   const draw = () => {
     if (closed || !projects) return;
     const items = resumeItems(sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), projects, {
+      fallback: windowFallback(projects),
       localHost: LOCAL_LABEL,
       localName: LOCAL_NAME,
       isOpen: (id) => !!terminals.getBySessionId(id),

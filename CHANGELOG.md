@@ -36,15 +36,18 @@ From the owner's recording of 2026-10-13 and the round 16 design:
   Copy) and account in a ⋯ menu on the card. ⚡ marks fast mode and ◆ high, xhigh or max effort when
   the CLI reports them.
 - Sessions the CLI files under a project's old name show again: until agents-cli maps old
-  names, the Project panel also lists a session working in one of the project's repositories,
-  and its ⋯ menu says what the CLI called it.
+  names, the Project panel and Resume Session also list a session working in one of the
+  project's repositories when the CLI gave it no project or a name no project has; a session
+  of another project in the same repository stays with that project. Its ⋯ menu says what
+  the CLI called it.
 - Card thumbnails no longer flash on a refresh: they load once as a small cached copy in a
   fixed box, and a card that did not change is left alone.
 - ⌘K finds artifacts. It now has sections: Artifacts (by the page's real title, "made by
   <session> on <machine>"), Sessions, Tickets and Pull requests. Enter goes to the session,
-  an artifact's included; its ↗ button opens the page. Exact ids rank first, then titles that
-  start with what you typed, then titles with every word, newest first. The artifact list
-  refreshes in the background, so the picker opens at once.
+  an artifact's included; its ↗ button opens the page. With nothing typed, the sections show
+  as headings, newest first; once you type, VS Code's own matching orders the rows (each row
+  names its kind). The artifact list refreshes in the background, so the picker opens at
+  once, and a page is read only for its first 512 KB.
 - ⌘K offers "Ask the Lead: “…”" for a sentence of two or more words when the Lead is
   installed; it hands your words to the Lead.
 

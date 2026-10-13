@@ -8,7 +8,7 @@
 // A row is usable with only its id, title, machine and last activity: a field the
 // row does not carry is left out, never filled in.
 
-import { preferLive, projectSessions, type SessionLike } from './projectPanel';
+import { preferLive, projectSessions, type ProjectFallback, type SessionLike } from './projectPanel';
 import type { SpawnAckStatus } from './spawn';
 import { agentWords, firstLineOf, firstText, latestUserText } from '../shared/sessionText';
 
@@ -21,6 +21,8 @@ export interface PickerRow {
   topic?: string;
   lastActivityMs: number;
   confirmedProject: string | null;
+  /** Where it runs, for the repository-path stopgap (`projectSessions`). */
+  cwd?: string;
   state?: string;
   phase?: SessionLike['phase'];
   liveStatus?: string;
@@ -52,10 +54,11 @@ export interface ResumeItem {
 export function resumeItems(
   rows: PickerRow[],
   projects: readonly string[],
-  opts: { localHost: string; localName: string; isOpen(sessionId: string): boolean },
+  opts: { localHost: string; localName: string; isOpen(sessionId: string): boolean; fallback?: ReadonlyMap<string, ProjectFallback> },
 ): ResumeItem[] {
   const live = preferLive(rows);
-  const scoped = projects.flatMap((project) => projectSessions(live, project)).sort((a, b) => b.lastActivityMs - a.lastActivityMs);
+  // The same repository-path stopgap as the Project panel, so both list the same sessions.
+  const scoped = [...new Map(projects.flatMap((project) => projectSessions(live, project, opts.fallback?.get(project))).map((r) => [`${r.sessionId}@${r.host}`, r])).values()].sort((a, b) => b.lastActivityMs - a.lastActivityMs);
   return scoped.map((r) => ({
     sessionId: r.sessionId,
     host: r.host,

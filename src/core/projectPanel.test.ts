@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
   parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
+  activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
   DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
   type SessionHere, type SessionLike, type SessionListPrefs,
@@ -475,9 +475,28 @@ test('until the CLI maps old project names, a session in one of the project\'s r
   const mine = row({ sessionId: 'r', confirmedProject: 'rush', lastActivityMs: 1 })
   const repos = projectRepoPaths({ root: '~/src/agents', repos: [{ slug: 'o/site', path: '/Users/me/src/site' }] })
   expect(repos).toEqual(['~/src/agents', '~/src/site'])
-  expect(projectSessions([misc, wt, other, mine], 'rush', repos).map((r) => r.sessionId)).toEqual(['b062745e', 'wt', 'r'])
+  const registered = new Set(['rush', 'agi'])
+  expect(projectSessions([misc, wt, other, mine], 'rush', { repoPaths: repos, registered }).map((r) => r.sessionId)).toEqual(['b062745e', 'wt', 'r'])
   // Without repository paths, only the CLI's word counts, as before.
   expect(projectSessions([misc, mine], 'rush').map((r) => r.sessionId)).toEqual(['r'])
   const html = renderSessionCard(misc, sessionPlace(misc, HERE), NOW, { selected: false, pinned: false, here: HERE, thumbs: [], made: null, project: 'rush' })
   expect(html).toContain('<dt>Project</dt><dd>rush (the CLI said prix)</dd>')
+})
+
+test('two live projects sharing a repository keep their own sessions; only an unregistered or missing project falls back', () => {
+  // Both rush and agi are checked out at ~/src/agents.
+  const registry = [{ name: 'rush', linearName: null, repos: [{ slug: 'o/agents', path: '~/src/agents' }] }, { name: 'agi', linearName: null, repos: [{ slug: 'o/agents', path: '/Users/me/src/agents' }] }]
+  const rows = [
+    row({ sessionId: 'rush-own', confirmedProject: 'rush', cwd: '/Users/me/src/agents', lastActivityMs: 5 }),
+    row({ sessionId: 'agi-own', confirmedProject: 'agi', cwd: '/Users/me/src/agents', lastActivityMs: 4 }),
+    row({ sessionId: 'old-name', confirmedProject: 'prix', cwd: '/Users/me/src/agents', lastActivityMs: 3 }),
+    row({ sessionId: 'none', confirmedProject: null, cwd: '/home/me/src/agents/.agents/worktrees/w', lastActivityMs: 2 }),
+  ]
+  const ids = (name: string, reg: typeof registry | null) => projectSessions(rows, name, projectFallback({ name }, reg)).map((r) => r.sessionId)
+  expect(ids('rush', registry)).toEqual(['rush-own', 'old-name', 'none'])
+  expect(ids('agi', registry)).toEqual(['agi-own', 'old-name', 'none'])
+  // Before the registry answers, only a session with no project falls back.
+  expect(projectSessions(rows, 'rush', projectFallback({ name: 'rush', root: '~/src/agents' }, null)).map((r) => r.sessionId)).toEqual(['rush-own', 'none'])
+  // The detected root counts as a checkout too.
+  expect(projectFallback({ name: 'x', root: '~/src/x' }, []).repoPaths).toEqual(['~/src/x'])
 })

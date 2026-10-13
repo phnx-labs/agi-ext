@@ -43,3 +43,37 @@ test('nothing found says so, with the index error when the CLI failed', () => {
   expect(items[0]!.label).toBe('Nothing matches “zzz”');
   expect(items[0]!.description).toBe('artifacts: artifacts not found');
 });
+
+test('the artifact index reads a page prefix only, re-reads only on a new mtime, and indexes pages larger than the prefix', async () => {
+  const fs = await import('fs');
+  const os = await import('os');
+  const path = await import('path');
+  const { ArtifactIndex, PAGE_PREFIX_BYTES } = await import('./searchPalette.vscode');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-index-'));
+  try {
+    const small = path.join(dir, 'small.md');
+    const big = path.join(dir, 'big.md');
+    fs.writeFileSync(path.join(dir, 'small.html'), '<title>AGI | Small plan</title><a href="agents://session/a26860ac">a</a>');
+    // 1.5 MB: the title and link near the top, then far more than the prefix. A link past the prefix is never seen.
+    fs.writeFileSync(path.join(dir, 'big.html'), '<title>AGI | Big report</title><a href="agents://session/b1111111">b</a>' + 'x'.repeat(PAGE_PREFIX_BYTES * 3) + '<a href="agents://session/c2222222">late</a>');
+    const list = JSON.stringify({ artifacts: [{ id: '1', sourcePath: small, title: '', updatedAt: '2026-10-13T00:00:00Z' }, { id: '2', sourcePath: big, title: '', updatedAt: '2026-10-13T00:00:00Z' }] });
+    const calls: string[] = [];
+    const idx = new ArtifactIndex(async (tool, args) => { calls.push(`${tool} ${args.join(' ')}`); return { stdout: tool === 'artifacts' ? list : '[]' }; });
+    await idx.refresh([]);
+    expect(idx.error).toBeUndefined();
+    const arts = idx.artifacts([]);
+    expect(arts.map((a) => [a.title, a.sessionId])).toEqual([['Small plan', 'a26860ac'], ['Big report', 'b1111111']]);
+    expect(idx.reads).toBe(2);
+    // Unchanged pages are not read again.
+    await idx.refresh([], true);
+    expect(idx.reads).toBe(2);
+    // A new mtime is.
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(path.join(dir, 'small.html'), later, later);
+    await idx.refresh([], true);
+    expect(idx.reads).toBe(3);
+    expect(calls.filter((c) => c === 'artifacts list --json').length).toBe(3);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
