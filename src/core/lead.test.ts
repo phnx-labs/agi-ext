@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   LeadClient, ageText, answerLines, applyLeadEvent, linkify, newTurn, parseLeadHistory, parseLeadLine,
-  parseLeadStatus, parseSurface, readSurface, summaryOf, uniqueRefs, watchSurface, writeSurface,
+  isWebUrl, nextSurface, parseLeadStatus, parseSurface, readSurface, readSurfaceFile, summaryOf, uniqueRefs, watchSurface, writeSurface,
   type LeadEvent, type LeadRef,
 } from './lead';
 
@@ -103,6 +103,14 @@ describe('linkify', () => {
     expect(segs.map((s) => s.text).join('')).toBe('See #12 and abc#3607.');
   });
 
+  test('names that look like ids stay text unless the turn named one with that prefix', () => {
+    const text = 'UTF-8, SHA-256, GPT-4 and HTTP-2 are fine; PHNX-12 is next.';
+    expect(linkify(text, []).every((s) => s.kind === 'text')).toBe(true);
+    const linked = linkify(text, refs).filter((s) => s.kind === 'ref').map((s) => s.text);
+    expect(linked).toEqual(['PHNX-12']);
+    expect(linkify('ENG-7 and ENG-8', [], ['ENG']).filter((s) => s.kind === 'ref').map((s) => s.text)).toEqual(['ENG-7', 'ENG-8']);
+  });
+
   test('round-trips the text exactly', () => {
     const text = 'PHNX-4365PHNX-1 #3607 E2B Pro upgradeE2B Pro upgrade';
     expect(linkify(text, refs).map((s) => s.text).join('')).toBe(text);
@@ -145,7 +153,62 @@ test('parseLeadStatus reads one project, from an object or a list', () => {
   expect(parseLeadStatus('nope', 'rush')).toBeNull();
 });
 
+test('refs keep only http(s) urls and owner/repo PRs', () => {
+  expect(isWebUrl('https://linear.app/x')).toBe(true);
+  for (const u of ['mailto:a@b.c', 'command:workbench.action.reloadWindow', 'file:///etc/passwd', 'javascript:alert(1)', 'nope']) expect(isWebUrl(u)).toBe(false);
+  const e = parseLeadLine('{"type":"done","turn":"t","text":"x","refs":[{"kind":"ticket","id":"A-1","url":"command:x"},{"kind":"pr","repo":"../evil","number":1}]}');
+  expect(e && e.type === 'done' && e.refs).toEqual([{ kind: 'ticket', id: 'A-1' }]);
+});
+
 describe('the surface switch', () => {
+  test('a malformed file keeps the last known surface; no file means docked', () => {
+    expect(nextSurface('invalid', 'bubble')).toBe('bubble');
+    expect(nextSurface('absent', 'bubble')).toBe('docked');
+    expect(nextSurface('docked', 'bubble')).toBe('docked');
+  });
+
+  test('the watcher keeps the last value through a malformed write', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-surface-'));
+    try {
+      writeSurface('bubble', home);
+      const seen: string[] = [];
+      const w = watchSurface((s) => seen.push(s), home, { absentPollMs: 30 });
+      const file = path.join(home, '.agents', 'lead', 'surface.json');
+      fs.writeFileSync(file, '{"surface":"bub');
+      expect(readSurfaceFile(home)).toBe('invalid');
+      await Bun.sleep(150);
+      expect(seen).toEqual([]);
+      fs.writeFileSync(file, '{"surface":"docked"}');
+      for (let i = 0; i < 50 && !seen.length; i++) await Bun.sleep(20);
+      expect(seen).toEqual(['docked']);
+      w.dispose();
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a missing folder is not created; the watcher notices when it appears, and after it is removed and recreated', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-surface-'));
+    try {
+      const seen: string[] = [];
+      const w = watchSurface((s) => seen.push(s), home, { absentPollMs: 30, rearmMs: 30 });
+      await Bun.sleep(80);
+      expect(fs.existsSync(path.join(home, '.agents', 'lead'))).toBe(false);
+      writeSurface('bubble', home);
+      for (let i = 0; i < 100 && !seen.length; i++) await Bun.sleep(20);
+      expect(seen).toEqual(['bubble']);
+      fs.rmSync(path.join(home, '.agents', 'lead'), { recursive: true, force: true });
+      for (let i = 0; i < 100 && seen.length < 2; i++) await Bun.sleep(20);
+      expect(seen).toEqual(['bubble', 'docked']);
+      writeSurface('bubble', home);
+      for (let i = 0; i < 100 && seen.length < 3; i++) await Bun.sleep(20);
+      expect(seen).toEqual(['bubble', 'docked', 'bubble']);
+      w.dispose();
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test('parseSurface accepts only the two surfaces', () => {
     expect(parseSurface('{"surface":"bubble"}')).toBe('bubble');
     expect(parseSurface('{"surface":"docked"}')).toBe('docked');
@@ -158,11 +221,11 @@ describe('the surface switch', () => {
     try {
       expect(readSurface(home)).toBe('docked');
       const seen: string[] = [];
-      const w = watchSurface((s) => seen.push(s), home);
+      const w = watchSurface((s) => seen.push(s), home, { absentPollMs: 30 });
       writeSurface('bubble', home);
       expect(JSON.parse(fs.readFileSync(path.join(home, '.agents', 'lead', 'surface.json'), 'utf8'))).toEqual({ surface: 'bubble' });
       expect(readSurface(home)).toBe('bubble');
-      for (let i = 0; i < 50 && !seen.length; i++) await Bun.sleep(20);
+      for (let i = 0; i < 100 && !seen.length; i++) await Bun.sleep(20);
       expect(seen).toEqual(['bubble']);
       // Another client docks it again.
       fs.writeFileSync(path.join(home, '.agents', 'lead', 'surface.json'), '{"surface":"docked"}');
@@ -243,6 +306,68 @@ describe('LeadClient against the fake `agents lead`', () => {
     const s = await client.status('rush');
     expect(s?.session).toBe('lead-sess-1');
     expect(s?.memory).toEqual(['Text only, no speech.', 'Stop needs a click.']);
+  });
+
+  test('a line split across stdout chunks is parsed once whole', async () => {
+    await withEnv({ LEAD_STUB_MODE: 'chunked' }, async () => {
+      const turn = await new LeadClient({ resolveBin: stubBin }).ask('rush', 'hi');
+      expect(turn.error).toBeUndefined();
+      expect(turn.text).toBe('Split PHNX-1 line.');
+      expect(turn.refs).toEqual([{ kind: 'ticket', id: 'PHNX-1' }]);
+    });
+  });
+
+  test('a child killed by a signal ends the turn and names the signal', async () => {
+    const pidFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lead-pid-')), 'pid');
+    await withEnv({ LEAD_STUB_MODE: 'hang', LEAD_STUB_PID: pidFile }, async () => {
+      const client = new LeadClient({ resolveBin: stubBin });
+      const asked = client.ask('rush', 'hi');
+      for (let i = 0; i < 100 && !client.snapshot().current?.turn; i++) await Bun.sleep(20);
+      process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL');
+      const turn = await asked;
+      expect(turn.finished).toBe(true);
+      expect(turn.error).toContain('SIGKILL');
+    });
+  });
+
+  test('a silent child is killed after the idle timeout', async () => {
+    await withEnv({ LEAD_STUB_MODE: 'hang' }, async () => {
+      const t0 = Date.now();
+      const turn = await new LeadClient({ resolveBin: stubBin, idleMs: 200 }).ask('rush', 'hi');
+      expect(turn.error).toContain('printed nothing');
+      expect(Date.now() - t0).toBeLessThan(5000);
+    });
+  });
+
+  test('the overall cap stops a turn that keeps running', async () => {
+    await withEnv({ LEAD_STUB_MODE: 'hang' }, async () => {
+      const turn = await new LeadClient({ resolveBin: stubBin, maxMs: 200 }).ask('rush', 'hi');
+      expect(turn.error).toContain('ran past');
+    });
+  });
+
+  test('dispose SIGTERMs an unfinished child', async () => {
+    const pidFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lead-pid-')), 'pid');
+    await withEnv({ LEAD_STUB_MODE: 'hang', LEAD_STUB_PID: pidFile }, async () => {
+      const client = new LeadClient({ resolveBin: stubBin });
+      const asked = client.ask('rush', 'hi');
+      for (let i = 0; i < 100 && !client.snapshot().current?.turn; i++) await Bun.sleep(20);
+      const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+      client.dispose();
+      const turn = await asked;
+      expect(turn.error).toContain('window closed');
+      expect(() => process.kill(pid, 0)).toThrow();
+    });
+  });
+
+  test('hasOpenConfirm knows only open rows of known turns', async () => {
+    const client = new LeadClient({ resolveBin: stubBin });
+    expect(client.hasOpenConfirm('c_9')).toBe(false);
+    await client.ask('rush', 'stop it');
+    expect(client.hasOpenConfirm('c_9')).toBe(true);
+    expect(client.hasOpenConfirm('c_forged')).toBe(false);
+    await client.confirm('c_9');
+    expect(client.hasOpenConfirm('c_9')).toBe(false);
   });
 
   test('a second ask while busy is refused', async () => {

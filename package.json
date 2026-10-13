@@ -84,7 +84,11 @@
     ],
     "configurationDefaults": {
       "terminal.integrated.confirmOnKill": "panel",
-      "terminal.integrated.enablePersistentSessions": false
+      "terminal.integrated.enablePersistentSessions": false,
+      "terminal.integrated.commandsToSkipShell": [
+        "agents.lead.ask",
+        "agents.lead.talk"
+      ]
     },
     "viewsContainers": {
       "activitybar": [

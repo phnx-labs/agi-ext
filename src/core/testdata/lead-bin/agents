@@ -4,11 +4,15 @@
 // error paths run against a process, not an in-memory emitter.
 //
 //   LEAD_STUB_LOG=<file>   append each argv (JSON, one line) for assertions
+//   LEAD_STUB_PID=<file>   write this process's pid there
 //   LEAD_STUB_MODE=crash   print a turn, then exit 3 with a stderr line and no done
 //   LEAD_STUB_MODE=nolead  behave like a CLI without the `lead` noun
+//   LEAD_STUB_MODE=chunked write the done line in two chunks, 150 ms apart
+//   LEAD_STUB_MODE=hang    print a turn, then nothing, until killed
 const fs = require('fs');
 const argv = process.argv.slice(2);
 if (process.env.LEAD_STUB_LOG) fs.appendFileSync(process.env.LEAD_STUB_LOG, JSON.stringify(argv) + '\n');
+if (process.env.LEAD_STUB_PID) fs.writeFileSync(process.env.LEAD_STUB_PID, String(process.pid));
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
 const mode = process.env.LEAD_STUB_MODE || '';
 if (argv[0] !== 'lead' || mode === 'nolead') { process.stderr.write(`error: unknown command '${argv[0]}'\n`); process.exit(1); }
@@ -20,6 +24,13 @@ if (verb === 'ask') {
   const text = argv.slice(argv.indexOf('--') + 1).join(' ');
   out({ type: 'turn', turn: 't_1', project, session: 'lead-sess-1', engine: 'warm' });
   if (mode === 'crash') { process.stderr.write('lead host socket closed\n'); process.exit(3); }
+  if (mode === 'hang') { setInterval(() => undefined, 1 << 30); return; }
+  if (mode === 'chunked') {
+    const line = JSON.stringify({ type: 'done', turn: 't_1', text: 'Split PHNX-1 line.', summary: 'Split PHNX-1 line.', refs: [{ kind: 'ticket', id: 'PHNX-1' }] }) + '\n';
+    process.stdout.write(line.slice(0, 25));
+    setTimeout(() => process.stdout.write(line.slice(25)), 150);
+    return;
+  }
   out({ type: 'status', state: 'thinking' });
   out({ type: 'tool', id: 'u1', label: 'agents ps', cmd: 'agents ps --json', state: 'run' });
   out({ type: 'tool', id: 'u1', label: 'agents ps', state: 'ok', secs: 1.24 });

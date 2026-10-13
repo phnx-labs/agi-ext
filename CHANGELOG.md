@@ -8,12 +8,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 The Lead, docked (round 16):
 
-- ⌥Space opens the Lead at the top of the window: VS Code's quick input titled "Lead · <project>
-  · <state>". Type and press Enter, or press ⌥Space again (or the mic) to talk through the reply
+- ⌥Space opens the Lead at the top of the window, from the editor, the sidebars or an agent's
+  terminal: VS Code's quick input titled "Lead · <project> · <state>". Type and press Enter, or press ⌥Space again (or the mic) to talk through the reply
   box's dictation. It shows the current turn: each tool with a spinner, then a check; the answer;
   then one row per ticket, PR and session it named, with the Linear and GitHub marks. A ticket
   opens in Issues (or Linear), a PR on GitHub, a session in its tab. Stop and kill arrive as a
-  Confirm row. Esc closes it and the Lead keeps working.
+  Confirm row. Esc closes it and the Lead keeps working; Esc while talking sends nothing.
 - The status bar shows "✳ Lead · <last summary> · <age>", spinning while the Lead works. Click it
   for the Lead tab: the whole conversation with linked ids, tool receipts and Confirm buttons, and
   beside it the Lead's session, engine, brief, memory and allowed tools.

@@ -36,10 +36,16 @@ const str = (v: unknown): v is string => typeof v === 'string';
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
+/** A ref's url opens only as a web page: http(s), nothing else. */
+export function isWebUrl(v: unknown): v is string {
+  if (!str(v)) return false;
+  try { const u = new URL(v); return u.protocol === 'https:' || u.protocol === 'http:'; } catch { return false; }
+}
+
 export function parseLeadRef(v: unknown): LeadRef | null {
   if (!obj(v)) return null;
-  if (v.kind === 'ticket' && str(v.id) && v.id) return { kind: 'ticket', id: v.id, ...(str(v.url) ? { url: v.url } : {}) };
-  if (v.kind === 'pr' && str(v.repo) && num(v.number)) return { kind: 'pr', repo: v.repo, number: v.number, ...(str(v.url) ? { url: v.url } : {}) };
+  if (v.kind === 'ticket' && str(v.id) && v.id) return { kind: 'ticket', id: v.id, ...(isWebUrl(v.url) ? { url: v.url } : {}) };
+  if (v.kind === 'pr' && str(v.repo) && /^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(v.repo) && num(v.number)) return { kind: 'pr', repo: v.repo, number: v.number, ...(isWebUrl(v.url) ? { url: v.url } : {}) };
   if (v.kind === 'session' && str(v.id) && v.id) {
     return { kind: 'session', id: v.id, ...(str(v.title) ? { title: v.title } : {}), ...(str(v.host) ? { host: v.host } : {}) };
   }
@@ -161,18 +167,21 @@ const TICKET_RE = /\b[A-Z][A-Z0-9]{1,9}-\d{1,6}\b/g;
 const PR_RE = /(^|[\s(\[,;:])#(\d{1,6})\b/g;
 
 /**
- * Split the Lead's plain text into text and links. A ticket id links whether or
- * not the turn named it in `refs` (the Issues view opens any id); a PR number links
- * only to a PR in `refs`, since `#3607` alone does not say which repository; a
- * session links where its title (from `refs`) appears verbatim.
+ * Split the Lead's plain text into text and links. A ticket id links when the turn
+ * named it in `refs`, or when it carries the prefix of a ticket the turn named
+ * (PHNX-9 beside PHNX-4365) or one of `knownPrefixes`; so UTF-8, SHA-256 or GPT-4
+ * stay text. A PR number links only to a PR in `refs`, since `#3607` alone does not
+ * say which repository; a session links where its title (from `refs`) appears verbatim.
  */
-export function linkify(text: string, refs: readonly LeadRef[]): LeadSegment[] {
+export function linkify(text: string, refs: readonly LeadRef[], knownPrefixes: readonly string[] = []): LeadSegment[] {
   type Hit = { start: number; end: number; ref: LeadRef };
   const hits: Hit[] = [];
+  const tickets = refs.filter((r): r is Extract<LeadRef, { kind: 'ticket' }> => r.kind === 'ticket');
+  const prefixes = new Set([...knownPrefixes, ...tickets.map((r) => r.id.replace(/-\d+$/, ''))]);
   for (const m of text.matchAll(TICKET_RE)) {
     const id = m[0];
-    const ref = refs.find((r): r is Extract<LeadRef, { kind: 'ticket' }> => r.kind === 'ticket' && r.id === id) ?? { kind: 'ticket' as const, id };
-    hits.push({ start: m.index!, end: m.index! + id.length, ref });
+    const ref = tickets.find((r) => r.id === id) ?? (prefixes.has(id.replace(/-\d+$/, '')) ? { kind: 'ticket' as const, id } : undefined);
+    if (ref) hits.push({ start: m.index!, end: m.index! + id.length, ref });
   }
   for (const m of text.matchAll(PR_RE)) {
     const n = Number(m[2]);
@@ -217,7 +226,7 @@ export function refDescription(r: LeadRef): string {
 }
 
 /** Ticket ids, PR numbers or session ids are the identity; one row per ref. */
-function refKey(r: LeadRef): string {
+export function refKey(r: LeadRef): string {
   return r.kind === 'ticket' ? `t:${r.id}` : r.kind === 'pr' ? `p:${r.repo}#${r.number}` : `s:${r.id}`;
 }
 
@@ -349,12 +358,26 @@ export function parseSurface(text: string): LeadSurface | null {
   } catch { return null; }
 }
 
+/** What the file says: a surface, `absent` (no file, or no folder), or `invalid` (unreadable or malformed). */
+export function readSurfaceFile(home: string = os.homedir()): LeadSurface | 'absent' | 'invalid' {
+  let text: string;
+  try { text = fs.readFileSync(surfacePath(home), 'utf8'); } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT' || (e as NodeJS.ErrnoException).code === 'ENOTDIR' ? 'absent' : 'invalid';
+  }
+  return parseSurface(text) ?? 'invalid';
+}
+
 /**
- * The surface on this machine. FastWispr writes "bubble" when its Lead mode is on;
- * with no file (or one this client cannot read) the extension is the Lead's surface.
+ * The next surface given what was last known: FastWispr writes "bubble" when its
+ * Lead mode is on; no file means the extension is the Lead's surface; a file
+ * caught half-written or malformed keeps the last known value.
  */
+export function nextSurface(read: LeadSurface | 'absent' | 'invalid', last: LeadSurface): LeadSurface {
+  return read === 'absent' ? 'docked' : read === 'invalid' ? last : read;
+}
+
 export function readSurface(home: string = os.homedir()): LeadSurface {
-  try { return parseSurface(fs.readFileSync(surfacePath(home), 'utf8')) ?? 'docked'; } catch { return 'docked'; }
+  return nextSurface(readSurfaceFile(home), 'docked');
 }
 
 /** Write the switch atomically, so the other client never reads half a file. */
@@ -366,15 +389,42 @@ export function writeSurface(surface: LeadSurface, home: string = os.homedir()):
   fs.renameSync(tmp, file);
 }
 
-/** Watch the switch: `onChange` gets the surface each time it differs from the last one seen. */
-export function watchSurface(onChange: (s: LeadSurface) => void, home: string = os.homedir()): { dispose(): void } {
+/**
+ * Watch the switch without creating anything: `onChange` gets the surface each
+ * time it differs from the last one seen. While ~/.agents/lead is absent it stats
+ * the folder every `absentPollMs` (cheap, and only until it appears); a watcher
+ * that errors, or whose folder is removed or renamed, is re-armed.
+ */
+export function watchSurface(onChange: (s: LeadSurface) => void, home: string = os.homedir(), opts: { absentPollMs?: number; rearmMs?: number } = {}): { dispose(): void } {
   const dir = leadDir(home);
-  fs.mkdirSync(dir, { recursive: true });
+  const absentPollMs = opts.absentPollMs ?? 10_000;
+  const rearmMs = opts.rearmMs ?? 1_000;
   let last = readSurface(home);
-  const check = () => { const now = readSurface(home); if (now !== last) { last = now; onChange(now); } };
-  const watcher = fs.watch(dir, (_event, name) => { if (!name || String(name).startsWith('surface.json')) check(); });
-  watcher.on('error', () => undefined);
-  return { dispose: () => watcher.close() };
+  let watcher: fs.FSWatcher | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  const check = () => { const now = nextSurface(readSurfaceFile(home), last); if (now !== last) { last = now; onChange(now); } };
+  const later = (ms: number) => { if (!disposed) { timer = setTimeout(arm, ms); timer.unref?.(); } };
+  const close = () => { watcher?.close(); watcher = undefined; };
+  function arm(): void {
+    timer = undefined;
+    if (disposed) return;
+    close();
+    if (!fs.existsSync(dir)) { check(); later(absentPollMs); return; }
+    try {
+      watcher = fs.watch(dir, (event, name) => {
+        if (event === 'rename' && !fs.existsSync(dir)) { close(); check(); later(rearmMs); return; }
+        if (!name || String(name).startsWith('surface.json')) check();
+      });
+      watcher.on('error', () => { close(); later(rearmMs); });
+    } catch {
+      later(rearmMs);
+      return;
+    }
+    check();
+  }
+  arm();
+  return { dispose: () => { disposed = true; if (timer) clearTimeout(timer); close(); } };
 }
 
 // ── The process boundary ──
@@ -383,9 +433,16 @@ export interface LeadRunOptions {
   /** The `agents` binary; the shared resolver by default. Tests pass the stub. */
   resolveBin?: () => Promise<string>;
   cwd?: string;
+  /** End a turn that prints nothing for this long (default 120 s). */
+  idleMs?: number;
+  /** End a turn that runs longer than this, output or not (default 15 min). */
+  maxMs?: number;
 }
 
-export interface LeadRun { child: ChildProcess; exited: Promise<number | null> }
+export interface LeadRun { child: ChildProcess; exited: Promise<number | null>; kill(reason: string): void }
+
+const LEAD_IDLE_MS = 120_000;
+const LEAD_MAX_MS = 15 * 60_000;
 
 function spawnLead(bin: string, args: string[], cwd: string | undefined): ChildProcess {
   return spawn(bin, ['lead', ...args], {
@@ -401,19 +458,35 @@ function upgradeHint(why: string): string {
   return /unknown command|no such command|invalid choice|unknown subcommand/i.test(why) ? `This agents CLI has no \`agents lead\`. Upgrade agents-cli. (${why})` : why;
 }
 
+const secsText = (ms: number) => ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`;
+
 /**
  * Spawn one `agents lead <args>` and hand each contract event to `onEvent`. A
  * process that ends without `done` or `error` is reported as an `error` event
- * carrying its stderr, so a turn never hangs on a crashed CLI.
+ * carrying its stderr; one silent for `idleMs`, or running past `maxMs`, is
+ * killed and reported the same way, so a turn never hangs.
  */
 async function runLeadStream(args: string[], onEvent: (e: LeadEvent) => void, opts: LeadRunOptions = {}): Promise<LeadRun> {
   const bin = await (opts.resolveBin ?? resolveAgentsBin)();
   const child = spawnLead(bin, args, opts.cwd);
+  const idleMs = opts.idleMs ?? LEAD_IDLE_MS;
   let ended = false;
   let stderr = '';
-  child.stderr?.on('data', (d: Buffer) => { stderr = (stderr + d.toString()).slice(-4000); });
+  let killedFor: string | undefined;
+  const kill = (reason: string) => {
+    if (killedFor || child.exitCode !== null || child.signalCode !== null) return;
+    killedFor = reason;
+    child.kill('SIGTERM');
+  };
+  let idle = setTimeout(() => kill(`The Lead printed nothing for ${secsText(idleMs)}; this turn was stopped.`), idleMs);
+  const cap = setTimeout(() => kill(`The turn ran past ${secsText(opts.maxMs ?? LEAD_MAX_MS)}; it was stopped.`), opts.maxMs ?? LEAD_MAX_MS);
+  const touch = () => { clearTimeout(idle); idle = setTimeout(() => kill(`The Lead printed nothing for ${secsText(idleMs)}; this turn was stopped.`), idleMs); };
+  child.stdout?.on('data', touch);
+  child.stderr?.on('data', (d: Buffer) => { touch(); stderr = (stderr + d.toString()).slice(-4000); });
+  // readline joins a line split across chunks before it is parsed.
   const rl = createInterface({ input: child.stdout! });
   rl.on('line', (line) => {
+    if (ended) return;
     const e = parseLeadLine(line);
     if (!e) return;
     if (e.type === 'done' || e.type === 'error') ended = true;
@@ -423,16 +496,20 @@ async function runLeadStream(args: string[], onEvent: (e: LeadEvent) => void, op
   const exited = new Promise<number | null>((resolve) => {
     let spawnError: Error | undefined;
     child.on('error', (err) => { spawnError = err; });
-    child.on('close', async (code) => {
+    child.on('close', async (code, signal) => {
+      clearTimeout(idle);
+      clearTimeout(cap);
       await lineDone;
       if (!ended) {
+        ended = true;
         const last = stderr.trim().split('\n').filter(Boolean).pop();
-        onEvent({ type: 'error', message: upgradeHint(spawnError?.message || last || `agents lead ${args[0]} exited ${code ?? 'on a signal'} without an answer`) });
+        const why = killedFor ?? spawnError?.message ?? last ?? `agents lead ${args[0]} ${signal ? `was killed (${signal})` : `exited ${code}`} without an answer`;
+        onEvent({ type: 'error', message: upgradeHint(why) });
       }
       resolve(spawnError ? -1 : code);
     });
   });
-  return { child, exited };
+  return { child, exited, kill };
 }
 
 /** `agents lead <args>` that prints one JSON document (history, status). */
@@ -551,9 +628,14 @@ export class LeadClient {
     return runLeadJson(['status', '--project', project, '--json'], this.opts).then((out) => parseLeadStatus(out, project));
   }
 
-  /** Window teardown: drop the stream reader. The turn itself runs on in agents-cli. */
+  /** Window teardown: SIGTERM an unfinished `ask`/`confirm` child. The Lead's own process is agents-cli's and runs on. */
   dispose(): void {
-    this.running?.child.stdout?.destroy();
     this.listeners.clear();
+    this.running?.kill('The window closed while the Lead was answering.');
+  }
+
+  /** True when `token` is an open Confirm row of a turn this client knows. */
+  hasOpenConfirm(token: string): boolean {
+    return [this.current, ...this.finished].some((t) => t?.confirms.some((c) => c.token === token && c.state === 'open'));
   }
 }

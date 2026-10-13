@@ -6,9 +6,10 @@
 
 import * as vscode from 'vscode';
 import {
-  linkify, parseLeadRef, uniqueRefs,
+  linkify, parseLeadRef, refKey, uniqueRefs,
   type LeadClient, type LeadHistoryTurn, type LeadRef, type LeadSegment, type LeadStatus, type LeadSurface, type LeadTurn,
 } from '../core/lead';
+import { getNonce } from './htmlReader';
 
 export interface LeadTabDeps {
   project(): Promise<string | undefined>;
@@ -64,22 +65,34 @@ export class LeadTab {
   private loadError: string | undefined;
   private loading = false;
   private project: string | undefined;
+  /** Every ref the page was given, by identity; the only refs a click may open. */
+  private shownRefs = new Map<string, LeadRef>();
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly client: LeadClient, private readonly deps: LeadTabDeps) {}
 
+  /** Open or bring forward the tab. The panel exists before anything is awaited, so two quick opens make one tab. */
   async show(): Promise<void> {
-    const project = await this.deps.project();
-    if (this.panel) { this.panel.reveal(); if (project !== this.project) { this.project = project; void this.load(); } return; }
-    this.project = project;
-    const panel = vscode.window.createWebviewPanel('agents.lead', `✳ Lead · ${project ?? 'no project'}`, vscode.ViewColumn.Active, {
+    if (this.panel) {
+      this.panel.reveal();
+      const project = await this.deps.project();
+      if (project !== this.project) { this.project = project; void this.load(); }
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel('agents.lead', '✳ Lead', vscode.ViewColumn.Active, {
       enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'assets')],
     });
     this.panel = panel;
     panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'claude.png');
     const assets = (f: string) => panel.webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'assets', f)).toString();
-    panel.webview.html = leadTabHtml(panel.webview.cspSource, nonce(), { linear: assets('linear.svg'), github: assets('github.png'), session: assets('claude.png') });
-    panel.onDidDispose(() => { if (this.panel === panel) this.panel = undefined; }, null, this.context.subscriptions);
-    panel.webview.onDidReceiveMessage((m: unknown) => this.onMessage(m), null, this.context.subscriptions);
+    panel.webview.html = leadTabHtml(panel.webview.cspSource, getNonce(), { linear: assets('linear.svg'), github: assets('github.png'), session: assets('claude.png') });
+    const disposables: vscode.Disposable[] = [];
+    panel.webview.onDidReceiveMessage((m: unknown) => this.onMessage(m), null, disposables);
+    panel.onDidDispose(() => {
+      if (this.panel === panel) this.panel = undefined;
+      for (const d of disposables.splice(0)) d.dispose();
+    }, null, disposables);
+    this.project = await this.deps.project();
+    if (this.panel !== panel) return;
     void this.load();
   }
 
@@ -88,8 +101,12 @@ export class LeadTab {
     const msg = m as Record<string, unknown>;
     if (msg.type === 'ready') this.update();
     else if (msg.type === 'ask' && typeof msg.text === 'string' && msg.text.trim()) void this.deps.ask(msg.text.trim());
-    else if (msg.type === 'confirm' && typeof msg.token === 'string') void this.deps.confirm(msg.token);
-    else if (msg.type === 'ref') { const r = parseLeadRef(msg.ref); if (r) void this.deps.openRef(r, msg.external === true); }
+    // A token or ref from the page is honored only if the Lead gave it to us.
+    else if (msg.type === 'confirm' && typeof msg.token === 'string' && this.client.hasOpenConfirm(msg.token)) void this.deps.confirm(msg.token);
+    else if (msg.type === 'ref') {
+      const r = parseLeadRef(msg.ref);
+      if (r && this.shownRefs.has(refKey(r))) void this.deps.openRef(this.shownRefs.get(refKey(r))!, msg.external === true);
+    }
     else if (msg.type === 'talk') void this.deps.talk();
     else if (msg.type === 'refresh') void this.load();
     else if (msg.type === 'surface' && (msg.surface === 'bubble' || msg.surface === 'docked')) this.deps.setSurface(msg.surface);
@@ -119,11 +136,13 @@ export class LeadTab {
     if (!panel) return;
     const snap = this.client.snapshot();
     const live = [...snap.turns, ...(snap.current ? [snap.current] : [])];
+    const turns = mergeTurns(this.history, live);
+    this.shownRefs = new Map(turns.flatMap((t) => [...t.refs, ...t.segments.flatMap((x) => x.kind === 'ref' ? [x.ref] : [])]).map((r) => [refKey(r), r]));
     panel.title = `✳ Lead · ${this.project ?? 'no project'}`;
     void panel.webview.postMessage({
       type: 'state',
       project: this.project ?? '',
-      turns: mergeTurns(this.history, live),
+      turns,
       busy: snap.busy,
       mic: this.deps.mic(),
       surface: this.deps.surface(),
@@ -141,13 +160,6 @@ export class LeadTab {
       },
     });
   }
-}
-
-function nonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let s = '';
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
 }
 
 /** The tab's document; exported for the script syntax test. Every string from the Lead goes in as text, never HTML. */

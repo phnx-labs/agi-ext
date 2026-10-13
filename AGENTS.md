@@ -106,10 +106,14 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
 - The Lead is agents-cli's process; the extension is a thin client (`src/core/lead.ts`,
   `src/vscode/lead.vscode.ts`, `src/vscode/leadTab.vscode.ts`). Ask and Confirm are each one
-  `agents lead ask|confirm --json` child, one turn at a time per window; Esc never stops a turn.
+  `agents lead ask|confirm --json` child, one turn at a time per window, killed after 120 s
+  of silence or 15 min, or when the window closes; Esc never stops a turn.
   The Lead tab reads `agents lead history|status --json` when it opens and on Refresh, never
   on a timer. `~/.agents/lead/surface.json` is shared with FastWispr: while it says
-  `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding). Tests run
+  `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding); the extension
+  never creates `~/.agents/lead` just to watch it. A held ⌥Space is one press (`PressGate`),
+  and the Lead's mic never takes over the reply box's recording (`LeadMic`,
+  `src/core/leadInput.ts`). Tests run
   against the fake CLI in `src/core/testdata/lead-bin/agents`.
 - Closing a tab sends `agents ps stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.

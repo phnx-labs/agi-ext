@@ -10,10 +10,10 @@
 
 import * as vscode from 'vscode';
 import {
-  LeadClient, ageText, answerLines, readSurface, refDescription, refLabel, uniqueRefs, watchSurface, writeSurface,
+  LeadClient, ageText, isWebUrl, answerLines, readSurface, refDescription, refLabel, uniqueRefs, watchSurface, writeSurface,
   type LeadRef, type LeadSnapshot, type LeadSurface, type LeadTurn,
 } from '../core/lead';
-import { isAllowedExternalUrl } from '../core/webviewSecurity';
+import { LeadMic, PressGate, type MicOrigin } from '../core/leadInput';
 import { dictation } from './dictation.vscode';
 import { LeadTab } from './leadTab.vscode';
 
@@ -27,13 +27,13 @@ const IN_LINEAR: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('lin
 
 /** A PR's page: its url from the Lead, else github.com/<repo>/pull/<n>. */
 function prUrl(r: Extract<LeadRef, { kind: 'pr' }>): string {
-  return r.url && isAllowedExternalUrl(r.url) ? r.url : `https://github.com/${r.repo}/pull/${r.number}`;
+  return r.url && isWebUrl(r.url) ? r.url : `https://github.com/${r.repo}/pull/${r.number}`;
 }
 
 /** Open a ref: a ticket in Issues, a PR on GitHub, a session in its tab (or resumed). */
 async function openLeadRef(r: LeadRef, external = false): Promise<void> {
   if (r.kind === 'ticket') {
-    if (external && r.url && isAllowedExternalUrl(r.url)) { await vscode.env.openExternal(vscode.Uri.parse(r.url)); return; }
+    if (external && r.url && isWebUrl(r.url)) { await vscode.env.openExternal(vscode.Uri.parse(r.url)); return; }
     await vscode.commands.executeCommand('agents.project.openTicket', r.id);
     return;
   }
@@ -46,6 +46,9 @@ function refIcon(ext: vscode.Uri, r: LeadRef): vscode.Uri {
   return vscode.Uri.joinPath(ext, 'assets', r.kind === 'ticket' ? 'linear.svg' : r.kind === 'pr' ? 'github.png' : 'claude.png');
 }
 
+/** A row's identity: what it shows and whether it has a button. */
+const rowKey = (r: Row): string => [r.kind ?? 0, r.label, r.description ?? '', r.buttons?.length ?? 0, r.confirm ?? ''].join('\u0001');
+
 const toolRow = (t: LeadTurn['tools'][number]): Row => ({
   label: `${t.state === 'run' ? '$(sync~spin)' : t.state === 'ok' ? '$(check)' : '$(error)'} ${t.label}`,
   description: t.state === 'run' ? (t.cmd ?? '') : t.secs !== undefined ? `${t.secs < 0.05 ? '<0.05' : t.secs.toFixed(2)} s` : t.state === 'fail' ? 'failed' : '',
@@ -56,10 +59,15 @@ class LeadController {
   readonly client = new LeadClient();
   private readonly status: vscode.StatusBarItem;
   private qp: vscode.QuickPick<Row> | undefined;
+  private overlaySig = '';
   private surface: LeadSurface = readSurface();
-  private mic: 'idle' | 'listening' | 'transcribing' = 'idle';
-  private micStartedAt = 0;
-  private micToggledAt = 0;
+  /** ⌥Space arrives as a stream of repeats while held; one press is one gesture. */
+  private readonly keys = new PressGate();
+  private readonly mic = new LeadMic(dictation, {
+    text: (text, secs) => { void this.send(text, secs); },
+    error: (message) => { void vscode.window.showErrorMessage(message); },
+    change: () => this.render(this.client.snapshot()),
+  });
   private project: string | undefined;
   private tab: LeadTab;
 
@@ -71,8 +79,8 @@ class LeadController {
       project: () => this.resolveProject(),
       openRef: (r, external) => openLeadRef(r, external),
       ask: (text) => this.send(text),
-      talk: () => this.talk(),
-      mic: () => this.mic,
+      talk: () => this.toggleMic('tab'),
+      mic: () => this.mic.state,
       confirm: (token) => this.confirm(token),
       setSurface: (s) => this.setSurface(s),
       surface: () => this.surface,
@@ -104,8 +112,11 @@ class LeadController {
 
   // ── Commands ──
 
-  /** `agents.lead.ask [text]`: open the overlay, and send `text` when given (the Cmd+K row). */
+  /** `agents.lead.ask [text]`: open the overlay, and send `text` when given (for a caller such as a search row). */
   async ask(text?: unknown): Promise<void> {
+    const sending = typeof text === 'string' && text.trim();
+    // Without text this is the key (or the palette): a held ⌥Space opens the overlay once.
+    if (!sending && !this.keys.press(Date.now())) return;
     const project = await this.resolveProject();
     if (!project) {
       void vscode.window.showWarningMessage('The Lead works per project. Pick one in the Project panel first.', 'Switch Project')
@@ -116,22 +127,15 @@ class LeadController {
     if (typeof text === 'string' && text.trim()) await this.send(text.trim());
   }
 
+  /** `agents.lead.talk`: ⌥Space while the overlay is open. A held key is one press. */
   async talk(): Promise<void> {
-    // A held key repeats; one toggle per press.
-    if (Date.now() - this.micToggledAt < 600) return;
-    this.micToggledAt = Date.now();
-    if (this.mic === 'listening') { await dictation.stop(); return; }
-    if (this.mic === 'transcribing' || this.client.busy) return;
-    this.micStartedAt = Date.now();
-    await dictation.start((u) => {
-      this.mic = u.state;
-      if (u.state === 'idle') {
-        const secs = (Date.now() - this.micStartedAt) / 1000;
-        if (u.text) void this.send(u.text, secs);
-        else if (u.error) void vscode.window.showErrorMessage(u.error);
-      }
-      this.render(this.client.snapshot());
-    });
+    if (!this.keys.press(Date.now())) return;
+    await this.toggleMic('overlay');
+  }
+
+  async toggleMic(origin: MicOrigin): Promise<void> {
+    if (this.mic.state === 'idle' && this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working on the last turn.'); return; }
+    await this.mic.toggle(origin);
   }
 
   async openTab(): Promise<void> {
@@ -177,7 +181,7 @@ class LeadController {
     qp.placeholder = 'Ask or tell the Lead… (⌥Space again to talk)';
     qp.onDidChangeValue(() => this.renderOverlay(this.client.snapshot()));
     qp.onDidTriggerButton((b) => {
-      if (b === OPEN_TAB) { qp.hide(); void this.openTab(); } else void this.talk();
+      if (b === OPEN_TAB) { qp.hide(); void this.openTab(); } else void this.toggleMic('overlay');
     });
     qp.onDidTriggerItemButton(({ item, button }) => {
       if (button === CONFIRM && item.confirm) void this.confirm(item.confirm);
@@ -190,10 +194,11 @@ class LeadController {
     });
     // Esc closes the overlay; the turn runs on and lands in the status bar.
     qp.onDidHide(() => {
-      if (this.mic === 'listening') void dictation.stop();
+      // Esc while talking drops the recording: nothing is sent.
+      this.mic.cancel('overlay');
       void vscode.commands.executeCommand('setContext', 'agents.lead.overlayOpen', false);
       qp.dispose();
-      if (this.qp === qp) this.qp = undefined;
+      if (this.qp === qp) { this.qp = undefined; this.overlaySig = ''; }
     });
     this.project = project;
     this.renderOverlay(this.client.snapshot());
@@ -202,15 +207,15 @@ class LeadController {
   }
 
   private stateWord(s: LeadSnapshot): string {
-    return this.mic === 'listening' ? 'listening' : this.mic === 'transcribing' ? 'transcribing' : s.busy ? 'busy' : s.engine ?? 'ready';
+    return this.mic.state === 'listening' ? 'listening' : this.mic.state === 'transcribing' ? 'transcribing' : s.busy ? 'busy' : s.engine ?? 'ready';
   }
 
   private renderOverlay(s: LeadSnapshot): void {
     const qp = this.qp;
     if (!qp) return;
     qp.title = `Lead · ${this.project ?? s.project ?? 'no project'} · ${this.stateWord(s)}`;
-    qp.busy = s.busy || this.mic === 'transcribing';
-    qp.buttons = [this.mic === 'listening' ? MIC_ON : MIC, OPEN_TAB];
+    qp.busy = s.busy || this.mic.state === 'transcribing';
+    qp.buttons = [this.mic.state === 'listening' ? MIC_ON : MIC, OPEN_TAB];
     qp.enabled = true;
     const rows: Row[] = [];
     const typed = qp.value.trim();
@@ -221,7 +226,15 @@ class LeadController {
     }
     const t = s.current;
     if (t) rows.push(...this.turnRows(t));
+    // A stream event that changes nothing visible must not move the selection; one that
+    // does keeps the row you were on when it is still there.
+    const sig = rows.map(rowKey).join('\u0002');
+    if (sig === this.overlaySig) return;
+    this.overlaySig = sig;
+    const active = qp.activeItems[0] ? rowKey(qp.activeItems[0]) : undefined;
     qp.items = rows;
+    const keep = active !== undefined ? rows.find((r) => rowKey(r) === active) : undefined;
+    if (keep) qp.activeItems = [keep];
   }
 
   private turnRows(t: LeadTurn): Row[] {
@@ -275,7 +288,7 @@ class LeadController {
 
   private renderStatus(s: LeadSnapshot): void {
     const bubble = this.surface === 'bubble';
-    const listening = this.mic === 'listening';
+    const listening = this.mic.state === 'listening';
     this.status.text = listening ? '$(mic-filled) Lead · listening…'
       : s.busy ? '$(sync~spin) Lead · working…'
         : s.last ? `✳ Lead · ${s.last.summary} · ${ageText(Date.now() - s.last.at)}`

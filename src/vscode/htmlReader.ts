@@ -165,7 +165,8 @@ export function escapeForTemplateLiteral(html: string): string {
     .replace(/<\/script/gi, '<\\/script');
 }
 
-function getNonce(): string {
+/** A per-render nonce for a webview's script-src. */
+export function getNonce(): string {
   let text = '';
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   for (let i = 0; i < 32; i++) {
