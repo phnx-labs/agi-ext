@@ -4,6 +4,38 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.399] - 2026-10-13
+
+From the owner's video reviews of 0.9.398 and the round 14 and 15 prototypes (2026-10-12):
+
+- The Sessions list holds still. An update patches the list in place instead of rebuilding it,
+  so the Your move chip no longer blinks and a hovered card no longer flickers.
+- A card always shows the same preview and never grows on hover: the question in an amber box
+  (click it to read all of it), else the agent's latest words, up to three image previews, and
+  chips with the GitHub and Linear marks. Hover only shows its icons.
+- A question shows how long it has waited, ticking every second ("12s", "5m 02s", "18h 4m"),
+  from the CLI's attention time. A question that just arrived makes its card glow three times;
+  after that its dot rings slowly. Your move lists the longest wait first.
+- Clicking a card brings its tab to the front when the tab is in this window (and still shows
+  it in the session sidebar); it never resumes a session you closed. Switching tabs moves the
+  list's selection to the card for the tab in front.
+- ⌘K in the Agents views or an agent tab (macOS; Ctrl+K in the Agents views elsewhere) opens Agents: Search Sessions: type part of a title,
+  ticket, PR, model or machine and Enter takes you to it. Detach and attach moved from
+  ⌘K ⌘B / ⌘K ⌘A to ⌘⇧⌥D / ⌘⇧⌥A.
+- Titles skip the note Claude Code inserts when another session writes in ("Another Claude
+  session sent a message: …"), sub-agent hand-backs and bare slash commands.
+- The Sessions header drops its "N tabs · N live · N your move" line; the tab already says it.
+- Review: the author's face is on the left and the PR's state is the rightmost control: Merge
+  when checks pass, a ring while they run, "✕ 2" for failing checks, Draft. Merge is one click
+  with the method you pick once in Settings (squash by default), after a five-second
+  "Undo · 5" (leaving Review cancels it). It merges only the commit the list showed. A ⇅ menu groups by status across repositories (the default), repository, author
+  or none, and shows or hides drafts (hidden by default) and recently merged PRs.
+- Issues: a ticket names who it is delegated to and lists the sessions already on it, with
+  Open. Start launches the delegated agent (else your default) and says it opens a new tab.
+- The session sidebar: "Running 17m" with a dot that pulses while the agent is active (the time
+  is its tooltip); the account moved to the ⋯ menu. Steps show 8 by default, in larger type,
+  with a Show 4 / 8 / 16 / all choice. Its Merge uses the Settings method when you chose one.
+
 ## [0.9.398] - 2026-10-13
 
 From the owner's video review of 0.9.397 (2026-10-12):

@@ -64,3 +64,36 @@ test('merge flow: a head that moved during the dialog, or a non-admin, never get
     expect(h.shown[0]).toContain('cannot be merged from here');
   }
 });
+
+test('one-click merge: your method when allowed, else one the repo allows; only the head you saw; admin-only goes to the menu', async () => {
+  const { mergeNow } = await import('./prMerge.vscode');
+  {
+    const h = harness({ reads: [read()] });
+    expect(await mergeNow('p', 'o/r', 7, 'rebase', 'abcdef1234567', h.deps)).toBe(true);
+    expect(h.calls.find((c) => c[2] === 'merge')).toEqual(['projects', 'prs', 'merge', 'p', '--repo', 'o/r', '--number', '7', '--sha', 'abcdef1234567', '--method', 'rebase']);
+  }
+  {
+    const h = harness({ reads: [read({}, { viewerIsAdmin: false, adminBypass: false, methods: ['squash'] })] });
+    expect(await mergeNow('p', 'o/r', 7, 'rebase', undefined, h.deps)).toBe(true);
+    expect(h.calls.find((c) => c[2] === 'merge')?.slice(-2)).toEqual(['--method', 'squash']);
+    expect(h.shown.join(' ')).toContain('does not allow rebase');
+  }
+  {
+    // A push since the list was read: nothing merges, and it says why.
+    const h = harness({ reads: [read({ headSha: 'fedcba7654321' })] });
+    expect(await mergeNow('p', 'o/r', 7, 'squash', 'abcdef1234567', h.deps)).toBe(false);
+    expect(h.calls.filter((c) => c[2] === 'merge')).toHaveLength(0);
+    expect(h.shown[0]).toContain('a new commit (fedcba7) was pushed');
+  }
+  {
+    const h = harness({ reads: [read({ mergeableState: 'blocked' }, { viewerIsAdmin: false, adminBypass: false })] });
+    expect(await mergeNow('p', 'o/r', 7, 'squash', undefined, h.deps)).toBe(false);
+    expect(h.shown[0]).toContain('branch protection blocks it');
+  }
+  {
+    // Only an admin merge would land it: the menu and its own warning take over.
+    const h = harness({ reads: [read({ mergeableState: 'blocked' }), read({ mergeableState: 'blocked' })], pick: () => undefined });
+    expect(await mergeNow('p', 'o/r', 7, 'squash', undefined, h.deps)).toBe(false);
+    expect(h.calls.filter((c) => c[2] === 'merge')).toHaveLength(0);
+  }
+});

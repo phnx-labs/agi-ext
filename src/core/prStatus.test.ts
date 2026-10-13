@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { canOfferMerge, normalizePrStatus, parsePrForMerge, prAction, prRepo, rowMergeChoices } from './prStatus';
+import { canOfferMerge, normalizePrStatus, oneClickMerge, parsePrForMerge, prAction, prRepo, rowMergeChoices } from './prStatus';
 
 // The shape the feed puts on a row's `pr` today (agents-cli 1.22.122: gh's own
 // words), plus the head commit, title and per-check items a newer CLI adds.
@@ -74,4 +74,17 @@ test('merge from a PR row: one read gives the head and mergeability; methods whe
   expect(rowMergeChoices({ ...pr!, isDraft: true })).toEqual([]);
   expect(rowMergeChoices({ ...pr!, ciState: 'failure' }).map((c) => c.admin)).toEqual([true]);
   expect(parsePrForMerge(ONE_PR, 'phnx-labs/agi-ext', 1)).toBeUndefined();
+});
+
+test('one-click Merge uses your method when the repository allows it, else one it allows; never an admin merge', () => {
+  const pr = parsePrForMerge(ONE_PR, 'phnx-labs/agi-ext', 137)!;
+  expect(pr.methods).toEqual([]);
+  expect(oneClickMerge(pr, 'rebase')?.method).toBe('rebase');
+  const squashOnly = { ...pr, methods: ['squash' as const] };
+  expect(oneClickMerge(squashOnly, 'rebase')?.method).toBe('squash');
+  expect(oneClickMerge({ ...pr, mergeableState: 'blocked' }, 'squash')).toBeUndefined();
+  expect(oneClickMerge(undefined, 'squash')).toBeUndefined();
+  const withMethods = JSON.parse(ONE_PR);
+  withMethods.repositories[0].merge.methods = ['rebase', 'merge', 'bogus'];
+  expect(parsePrForMerge(JSON.stringify(withMethods), 'phnx-labs/agi-ext', 137)!.methods).toEqual(['rebase', 'merge']);
 });

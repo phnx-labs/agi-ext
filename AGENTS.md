@@ -72,10 +72,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
   A fourth: the Project panel's goal lines are one `linear goals --json` read when the panel
   shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never per tab or per click.
-  A fifth: merging a PR (the sidebar's Merge ▾ or a Project panel PR row) reads that one PR
-  (`agents projects prs <name> --json --repo R --number N`) on the click, and again after the
-  dialog, for its head commit and whether you may bypass protection (`mergeWithMenu`,
-  `src/vscode/prMerge.vscode.ts`); `--admin` only after its own warning dialog.
+  A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
+  --number N`) on the click for its head commit and whether you may bypass protection
+  (`src/vscode/prMerge.vscode.ts`). A Review row's Merge is one click with the Settings
+  method after an in-page "Undo · 5" (`mergeNow`), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
+  dialog (`mergeWithMenu`); `--admin` only after its own warning dialog.
   A sixth: ticket tiles show the title and state a Linear read in this window already returned
   (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <linear> --json`)
   also runs when Sessions shows, under the same once-a-minute cache. A tile never reads Linear.
@@ -87,12 +88,13 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/dictation.vscode.ts`); nothing is sent anywhere.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
-- The Active Session sidebar patches its card in place on every update (`patchChildren`,
-  `src/shared/sessionCards.ts`) and builds the reply box once; reassigning `root.innerHTML`
+- Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
+  in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once; reassigning `root.innerHTML`
   per update made it jitter and erased what the owner was typing. A reused node keeps its
   listeners, so bindings go through `bindOnce` and read their data-* values on click.
 - The Active Session sidebar is the one preview: a Project panel session click sets its
-  subject (`setAgentPanelSubjectFromProject`) and spawns nothing. No per-selection fetch.
+  subject (`setAgentPanelSubjectFromProject`), brings the session's tab forward only when that
+  tab is in this window, and spawns or resumes nothing. No per-selection fetch.
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`) and
   `harnessLaunchRegistrations` (`src/core/launchTarget.ts`): `--cwd` is the exact open
   workspace, emitted once for every variant except Pick Project, which emits `--project`;
@@ -121,10 +123,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 The owner runs hundreds of sessions and catches up by glancing. Every surface answers "what is
 going on, where, and what came out of it" in one look; text explains only what a picture can't.
 
-- **Glance, then detail.** At rest a session is compact: title, a status pill, where it runs,
-  the agent's latest line, a strip of outputs. Hover or select expands to the full card (your
-  ask with its images, the agent's words, everything it made). Never "clean up" by deleting
-  that rich content; fold it behind hover instead.
+- **Glance, then detail, with nothing moving.** A card always shows the same preview: title,
+  a status pill (a question's wait ticking in it), where it runs, the question or the agent's
+  latest words in two lines, previews of images, and chips with each service's own mark.
+  Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
+  The question opens to its full text on a click on it. Everything else a session made lives
+  in the Active Session sidebar.
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and
   tickets, a dot-plus-word pill for state (color is never the only signal).
@@ -135,13 +139,15 @@ going on, where, and what came out of it" in one look; text explains only what a
   drop shadows (shadows are for menus, popovers and the floating reply, which sits over the
   panel). Hover shifts tone in place; nothing lifts.
   Gaps inside a card are at most half the gap between cards.
-- **Motion only for liveness.** The Working dot breathes; everything stops under
-  `prefers-reduced-motion`.
+- **Motion only for liveness and arrival.** The Working dot breathes, a question's dot rings
+  slowly, and a question that just arrived glows three times; everything stops under
+  `prefers-reduced-motion`. Nothing flashes for as long as it waits.
 - **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu. Group headers carry
   the icon, a count and one dot per state, so a folded group still says what is inside.
   Your move (asks · idle) is pinned above every grouping, a question first.
-- **A click selects; it never navigates.** Going somewhere or changing something is an explicit
-  icon: focus (↗), resume (▶), close (×). The list manages the user's tabs: × closes the tab
+- **A click selects and brings its tab forward; it never resumes.** A card click shows the
+  session and fronts its tab when the tab is in this window; switching tabs moves the
+  selection back. Anything else is an explicit icon: focus (↗), resume (▶), close (×). The list manages the user's tabs: × closes the tab
   (with Undo; it asks first only when the agent is working or waiting), multi-select closes
   several.
 - **Prototype first, with real data.** A visual change starts as a prototype built from the

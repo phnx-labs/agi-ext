@@ -3,6 +3,7 @@ import {
   parsePrs, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
+  DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
   type SessionHere, type SessionLike, type SessionListPrefs,
 } from './projectPanel'
 
@@ -40,15 +41,16 @@ test('an ended card says how long it ran and when; durations read in minutes, ho
   expect(ranSpan(new Date(2026, 9, 11, 4, 20).getTime(), new Date(2026, 9, 11, 12, 32).getTime(), now)).toBe('Oct 11 · 4:20 AM → 12:32 PM')
 })
 
+const OPTS = { prefs: DEFAULT_REVIEW_PREFS, mergeWith: 'squash' }
+
 test('Review while repositories answer: each finished one draws, the rest say they are being read', () => {
-  const done = new Map([['me/a', { slug: 'me/a', error: null, branch: null, release: null, open: [{ number: 7, title: 'Fix', url: 'https://github.com/me/a/pull/7', isDraft: false, ciState: 'SUCCESS', author: 'me', avatar: null, date: '2026-10-12T00:00:00Z' }], merged: [] }]])
-  const html = renderPrsProgress(['me/a', 'me/b'], done, Date.parse('2026-10-13T00:00:00Z'))
+  const done = new Map([['me/a', { slug: 'me/a', error: null, branch: null, release: null, open: [{ number: 7, title: 'Fix', url: 'https://github.com/me/a/pull/7', isDraft: false, ciState: 'SUCCESS', author: 'me', avatar: null, date: '2026-10-12T00:00:00Z', failing: 0 }], merged: [] }]])
+  const html = renderPrsProgress(['me/a', 'me/b'], done, Date.parse('2026-10-13T00:00:00Z'), OPTS)
   expect(html).toContain('Reading b…')
   expect(html).toContain('>Fix<')
   done.set('me/b', { slug: 'me/b', error: null, branch: null, release: null, open: [], merged: [] })
-  const all = renderPrsProgress(['me/a', 'me/b'], done, Date.parse('2026-10-13T00:00:00Z'))
+  const all = renderPrsProgress(['me/a', 'me/b'], done, Date.parse('2026-10-13T00:00:00Z'), OPTS)
   expect(all).not.toContain('Reading')
-  expect(all).toContain('No open or recent PRs in b.')
 })
 
 const issue = (id: string, type: string, name: string, priority: number, extra: object = {}) =>
@@ -77,7 +79,7 @@ test('tickets render escapes titles from the tracker', () => {
   expect(html).toContain('&lt;img')
 })
 
-test('prs: repos with open PRs first, a failed repo shows its error, partial is announced, state is a ring', () => {
+test('prs: repos with open PRs first, a failed repo shows its error, partial is announced, drafts and merges show on request', () => {
   const now = Date.parse('2026-10-09T00:00:00Z')
   const model = parsePrs(JSON.stringify({ partial: true, repositories: [
     { slug: 'o/quiet', pullRequests: [], recentlyMerged: [] },
@@ -88,25 +90,56 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   ] }))
   expect(model.repos[0].slug).toBe('o/busy')
   expect(model.repos[0].merged).toHaveLength(5)
-  const html = renderPrs(model, now)
+  const html = renderPrs(model, now, OPTS)
   expect(html).toContain('this list is incomplete')
-  expect(html).toContain('Could not read: HTTP 502')
-  expect(html).toContain('aria-label="Draft"')
-  expect(html).toContain('#7 · 24h</span>')
-  // The author as a face: a colored initial when the row carries no GitHub avatar.
-  expect(html).toContain('<span class="iav av')
-  expect(html).not.toContain('o/quiet')
-  expect(html).toContain('<details open><summary>merged <span class="n">5</span>')
+  expect(html).toContain('o/broken: could not read: HTTP 502')
+  // Drafts are hidden by default and counted in the header.
+  expect(html).toContain('0 open · 1 draft hidden')
+  expect(html).not.toContain('feat: x')
+  const all = renderPrs(model, now, { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true, showMerged: true } })
+  expect(all).toContain('class="rs draft">Draft<')
+  expect(all).toContain('#7 · busy · 24h</span>')
+  // The author as a face on the left: a colored initial when the row carries no GitHub avatar.
+  expect(all).toMatch(/<li class="prli"><span class="iav av\d"/)
+  expect(all).toContain('Recently merged</span><span class="n">5</span>')
 })
 
-test('prs: an open, ready PR row carries a merge button; a draft does not', () => {
+test('prs: a ready PR is one Merge button at the right; failing checks are counted; a draft never merges', () => {
   const model = parsePrs(JSON.stringify({ repositories: [{ slug: 'o/busy', pullRequests: [
     { number: 7, title: 'draft', url: 'https://github.com/o/busy/pull/7', isDraft: true, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
     { number: 8, title: 'ready', url: 'https://github.com/o/busy/pull/8', isDraft: false, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+    { number: 9, title: 'red', url: 'https://github.com/o/busy/pull/9', isDraft: false, ciState: 'FAILURE', failingChecks: [{ name: 'a' }, { name: 'b' }], author: { login: 'codex1' }, createdAt: '2026-10-08T00:00:00Z' },
   ], recentlyMerged: [] }] }))
-  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'))
-  expect(html).toContain('data-merge-repo="o/busy" data-merge-number="8"')
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'rebase' })
+  expect(html).toContain('<button class="rs merge" data-merge-repo="o/busy" data-merge-number="8" title="Merge #8 with rebase (change in Settings)">Merge</button></li>')
   expect(html).not.toContain('data-merge-number="7"')
+  expect(html).toContain('<span class="rs fail" title="2 checks failing">✕ 2</span>')
+  // Status grouping puts ready ones first; an agent author shows as its harness logo.
+  expect(html.indexOf('Ready to merge')).toBeLessThan(html.indexOf('Failing'))
+  expect(html).toContain('title="Delegated to codex1"')
+})
+
+test('Review preferences: unknown values fall back, one change at a time', () => {
+  expect(readReviewPrefs({ group: 'x', showDrafts: 'yes' })).toEqual(DEFAULT_REVIEW_PREFS)
+  expect(applyReviewPref(DEFAULT_REVIEW_PREFS, 'group', 'author')).toEqual({ ...DEFAULT_REVIEW_PREFS, group: 'author' })
+  expect(applyReviewPref(DEFAULT_REVIEW_PREFS, 'showDrafts', 'true')).toMatchObject({ showDrafts: true })
+  expect(applyReviewPref(DEFAULT_REVIEW_PREFS, 'group', 'nope')).toBeNull()
+})
+
+test('titles skip the note another session inserts, hand-backs and bare commands', () => {
+  expect(cleanTitle('Another Claude session sent a message: <agent-message from="a1">Merge 3867, then the blog imagery PRs</agent-message>')).toBe('Merge 3867, then the blog imagery PRs')
+  expect(cleanTitle('Another Claude session sent a message: …')).toBe('')
+  expect(cleanTitle('[Subagent hand-back] The text below is the final report')).toBe('')
+  expect(cleanTitle('/compact')).toBe('')
+  expect(sessionTitle({ title: 'Another Claude session sent a message: …', topic: '/compact', label: 'Rush API observability', request: undefined })).toBe('Rush API observability')
+  expect(sessionTitle({ title: '', topic: '', label: '', request: undefined })).toBe('Untitled')
+})
+
+test('a wait reads in seconds, then minutes and seconds, hours, days', () => {
+  expect(waitFor(12_000)).toBe('12s')
+  expect(waitFor(5 * 60_000 + 2_000)).toBe('5m 02s')
+  expect(waitFor((18 * 60 + 4) * 60_000)).toBe('18h 4m')
+  expect(waitFor(51 * 3_600_000)).toBe('2d 3h')
 })
 
 const row = (o: Partial<SessionLike>): SessionLike => ({
@@ -150,28 +183,30 @@ test('a session lives where its tab is: this window, another window by its works
   expect(place({ host: 'yosemite-m6', context: 'terminal', presence: 'attached', observers: [{ device: 'mac-mini', viewingIn: 'VSCodium tab 2', workspaceDir: '/x/agents-cli' }] }).kind).toBe('terminal')
 })
 
-test('a card at rest is one line plus a strip; the full card keeps your ask, the agent, and what it made', () => {
+test('a card shows one fixed preview: the agent latest words, previews of images, and chips with each service mark', () => {
   const s = row({
     title: 'Health', phase: 'idle', liveStatus: 'idle', request: { headline: 'Dude, no, no, dude.' }, tabHere: true, tabIndex: 3, host: 'yosemite-m6',
     timeline: { steps: [{ text: 'older' }, { text: 'Your trusted publisher is set up correctly.' }] }, lastResponse: 'stale reply',
-    lastActivityMs: NOW - 22 * 60000, prStatus: { number: 3855, checks: 'passing', isDraft: false },
+    lastActivityMs: NOW - 22 * 60000, prStatus: { number: 3855, checks: 'passing', isDraft: false }, ticket: 'PHNX-9',
   })
   const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
-  expect(html).toContain('class="ttl">Health<')
+  expect(html).toContain('class="ttl" title="Health">Health<')
   expect(html).toContain('class="pill st-yours"><i></i>Your move · idle<')
   expect(html).toContain('class="where">m6 · tab 3<')
-  expect(html).toContain('class="cline">Your trusted publisher is set up correctly.<')
+  expect(html).toContain('class="line said">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
-  expect(html).toContain('PR #3855: ready to merge')
-  expect(html).toContain('<div class="lab">You</div><div class="line">Dude, no, no, dude.<')
-  expect(html).toContain('<i>attached</i>')
-  expect(html).toContain('<div class="lab">Made</div>')
-  expect(html).toContain('agi-cli #3886')
-  expect(html).toContain('<b>covers/</b>')
+  // No hidden full card: hover changes nothing but the icons.
+  expect(html).not.toContain('class="full"')
+  expect(html).toContain('title="Attached by you: in.png"')
   expect(html).toContain('title="Made by the agent: a.png"')
+  expect(html).toContain('aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58')
+  expect(html).toContain('agi-cli #3886')
+  expect(html).toContain('data-open-ticket="PHNX-9"')
+  expect(html).toContain('fill="#5E6AD2"')
   expect(html).toContain('data-act="focus"')
   expect(html).toContain('data-act="close"')
+  expect(html).toContain('data-here="1"')
   expect(html).toContain('card st-yours sel')
   expect(html).toContain('>22m<')
   expect(card(row({ lastResponse: 'I filed [PHNX-4324](https://linear.app/x/issue/PHNX-43' }))).toContain('I filed PHNX-4324<')
@@ -190,10 +225,24 @@ test('what a card offers follows where it lives: close a tab here, hide one with
   expect(card(row({ phase: 'done', liveStatus: 'closed', tabHere: true, resumable: false }))).not.toContain('data-act="resume"')
 })
 
-test('a pending question shows as what the agent is waiting on, in the compact line too', () => {
+test('a pending question shows in the card, opens on a click, and says how long it has waited', () => {
   const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', question: { text: 'Run the restart on m2?' } }))
-  expect(ask).toContain('class="cline">Run the restart on m2?<')
-  expect(ask).toContain('Agent · waiting on you</div><div class="ask">Run the restart on m2?<')
+  expect(ask).toContain('<div class="ask" data-expand title="Show the whole question"><span class="q">Run the restart on m2?</span><span class="exp">more</span></div>')
+  const opened = new Date(NOW - 12_000).toISOString()
+  const fresh = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: opened } }))
+  expect(fresh).toContain(`Your move · asks · <span class="wait" data-since="${NOW - 12_000}">12s</span>`)
+  expect(fresh).toContain('card st-asks fresh')
+  const old = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: new Date(NOW - 3_600_000).toISOString() } }))
+  expect(old).not.toContain(' fresh')
+})
+
+test('the longest-waiting question leads Your move', () => {
+  const at = (ms: number) => new Date(NOW - ms).toISOString()
+  const html = renderSessions([
+    row({ sessionId: 'new', phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: at(60_000) } }),
+    row({ sessionId: 'old', phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: at(3_600_000) } }),
+  ], NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  expect(html.indexOf('data-session="old"')).toBeLessThan(html.indexOf('data-session="new"'))
 })
 
 test('your move is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
@@ -214,7 +263,9 @@ test('your move is pinned above every grouping; group by app orders this window,
   expect(html).toContain('<b>agents-cli</b>')
   expect(html).toContain('src="vscode-resource:/assets/apps/ghostty.png"')
   expect(html).toContain('data-act="close-all"')
-  expect(html).toContain('2 tabs · 5 live · 1 your move')
+  // The header carries only its controls; the tab already counts.
+  expect(html).not.toContain('your move</span>')
+  expect(html).toContain('data-search')
   expect(html.match(/data-group=/g)?.length).toBe(5)
 })
 
@@ -278,7 +329,7 @@ test('stored preferences keep only values this version knows; older ones get End
 
 test('a card leads with its harness logo and ends its meta line with the model the CLI reported', () => {
   const html = card(row({ agentType: 'claude', model: 'claude-opus-5-5' }))
-  expect(html).toContain('<div class="top"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i><span class="ttl">')
+  expect(html).toContain('<div class="top"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i><span class="ttl" title="T">')
   expect(html).toMatch(/<span class="where">[^<]*<\/span><span class="mdl" title="claude-opus-5-5">opus-5-5<\/span><\/div>/)
   const bare = card(row({ agentType: 'amp' }))
   expect(bare).not.toContain('class="hx')
@@ -346,8 +397,8 @@ test("today's goal: its sessions carry ☀, the header counts them, and the togg
 
 test('prs: the author shows as their GitHub avatar, only from avatars.githubusercontent.com', () => {
   const pr = (avatarUrl: string) => parsePrs(JSON.stringify({ repositories: [{ slug: 'o/r', pullRequests: [{ number: 9, title: 't', url: 'https://github.com/o/r/pull/9', isDraft: false, ciState: 'SUCCESS', author: { login: 'muqsitnawaz', avatarUrl }, createdAt: '2026-10-08T00:00:00Z' }], recentlyMerged: [] }] }))
-  expect(renderPrs(pr('https://avatars.githubusercontent.com/u/13007401?v=4'), Date.parse('2026-10-09T00:00:00Z'))).toContain('<img class="pav" src="https://avatars.githubusercontent.com/u/13007401?v=4" alt="muqsitnawaz"')
-  expect(renderPrs(pr('https://evil.example/x.png'), Date.parse('2026-10-09T00:00:00Z'))).not.toContain('evil.example')
+  expect(renderPrs(pr('https://avatars.githubusercontent.com/u/13007401?v=4'), Date.parse('2026-10-09T00:00:00Z'), OPTS)).toContain('<img class="pav" src="https://avatars.githubusercontent.com/u/13007401?v=4" alt="muqsitnawaz"')
+  expect(renderPrs(pr('https://evil.example/x.png'), Date.parse('2026-10-09T00:00:00Z'), OPTS)).not.toContain('evil.example')
 })
 
 test('a session whose agent posted blocked is pinned first, as Your move · blocked', () => {

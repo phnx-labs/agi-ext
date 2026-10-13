@@ -57,9 +57,9 @@ const NAMES = [
   'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderUpdate', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderRangeLane', 'renderNav',
   'prVerdict', 'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
-  'artifactKind',
+  'artifactKind', 'timelineShown',
 ];
-const CONSTS = ['RELATED_DOT', 'APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'MIC_ICON', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
+const CONSTS = ['RELATED_DOT', 'APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'STEP_CHOICES', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'MIC_ICON', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -211,15 +211,19 @@ test('renderRequestCard shows a slash command as a command, else falls back to t
   expect(cards.renderRequestCard({})).toBe('');
 });
 
-test('renderTimelineCard shows the newest 3 steps, the now-line and the earlier fold, styling each step by who wrote it', () => {
+test('renderTimelineCard shows the newest 8 steps by default, the now-line and the earlier fold, styling each step by who wrote it', () => {
   const html = cards.renderTimelineCard(snapshotFor('c9d700d5'));
   expect(html).toContain('167 tools');
   expect(html).toContain('4 failed');
   // The live step carries the now-line and the harness's own tool label.
   expect(html).toContain('step src-narration live');
   expect(html).toContain('▶ Re-render the plan, copy it to zion');
-  // 8 steps ride the row: 3 shown, 5 behind "more"; everything older is one counter.
-  expect(html).toContain('5 more');
+  // 8 steps ride the row and all 8 show by default; the viewer can pick 4, 16 or all.
+  expect(html).not.toContain(' more</button>');
+  expect(html).toContain('<option value="8" selected>8</option>');
+  viewState.stepsShown = '4';
+  expect(cards.renderTimelineCard(snapshotFor('c9d700d5'))).toContain('4 more</button>');
+  delete viewState.stepsShown;
   expect(html).toContain('47 earlier steps');
   expect(html).toContain('artifact rendered');
   const steps = cards.renderTimelineCard({
@@ -659,13 +663,18 @@ test('Files folds single-child folders into one row and keeps a flat List view',
   delete viewState.filesView;
 });
 
-test('the state line says the shared state word: running time, or how long it ran, and last activity', () => {
+test('the state line says the shared state word and running time; a live agent pulses its dot, the last activity is the tooltip', () => {
   const day = 26 * 3600_000;
   const running = cards.renderSessionStats({ state: { key: 'working', word: 'Working' }, durationMs: day, lastActivityMs: Date.now() - 2 * 60_000 });
   expect(running).toContain('state-running');
-  expect(running).toContain('Working <b>1d 2h</b> · active <b>2 min ago</b>');
+  expect(running).toContain('Working <b>1d 2h</b></span>');
+  expect(running).toContain('title="Active 2 min ago"');
+  expect(running).not.toContain(' live');
+  const live = cards.renderSessionStats({ state: { key: 'working', word: 'Working' }, durationMs: day, lastActivityMs: Date.now() - 10_000, accountLabel: 'trp', agentType: 'claude' });
+  expect(live).toContain('session-stats state-running live');
+  expect(live).not.toContain('claude#trp');
   const idle = cards.renderSessionStats({ state: { key: 'yours', word: 'Your turn' }, durationMs: day, lastActivityMs: Date.now() - 3 * 3600_000 });
-  expect(idle).toContain('Your turn · ran <b>1d 2h</b> · active <b>3 hours ago</b>');
+  expect(idle).toContain('Your turn · ran <b>1d 2h</b></span>');
   const asks = cards.renderSessionStats({ state: { key: 'asks', word: 'Needs you' }, durationMs: 60_000 });
   expect(asks).toContain('state-waiting');
   expect(asks).toContain('Needs you');

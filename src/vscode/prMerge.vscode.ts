@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { runAgentsArgs } from '../core/agentsBin';
-import { parsePrForMerge, rowMergeChoices, type PrForMerge } from '../core/prStatus';
+import { oneClickMerge, parsePrForMerge, rowMergeChoices, type PrForMerge } from '../core/prStatus';
+import type { MergeMethod } from '../core/settings';
 
 // One merge flow for every surface (the session sidebar's Merge ▾ and a Project
 // panel PR row): read that one PR for its head commit, mergeability and whether
@@ -51,5 +52,32 @@ export async function mergeWithMenu(project: string, repo: string, number: numbe
   }
   await run(['projects', 'prs', 'merge', project, '--repo', repo, '--number', String(number), '--sha', pr.headSha, '--method', c.method, ...(c.admin ? ['--admin'] : [])], { timeout: 60_000 });
   void ui.showInformationMessage(`Merged ${repo}#${number}${c.admin ? ' as admin' : ''}.`);
+  return true;
+}
+
+const METHOD_WORDS: Record<MergeMethod, string> = { squash: 'squashed', rebase: 'rebased', merge: 'with a merge commit' };
+
+/** The Review row's one click (the row already counted down its Undo): read the PR,
+ *  merge it at the head that read returned with your Settings method, or one the
+ *  repository allows. A PR only an admin merge can land goes through mergeWithMenu,
+ *  which keeps its own warning. True when it merged. Throws the CLI's error. */
+export async function mergeNow(project: string, repo: string, number: number, preferred: MergeMethod, seenSha: string | undefined, deps: MergeDeps = { run: runAgentsArgs, ui: vscode.window }): Promise<boolean> {
+  const { run, ui } = deps;
+  const { stdout } = await run(['projects', 'prs', project, '--json', '--repo', repo, '--number', String(number)], { timeout: 60_000 });
+  const pr = parsePrForMerge(stdout, repo, number);
+  const c = oneClickMerge(pr, preferred);
+  if (!pr || !pr.headSha || !c) {
+    if (rowMergeChoices(pr).some((x) => x.admin)) return mergeWithMenu(project, repo, number, deps);
+    const why = pr?.isDraft ? 'it is a draft' : pr?.mergeableState === 'dirty' ? 'it has conflicts' : pr?.ciState === 'failure' ? 'a check is failing' : pr?.mergeableState === 'blocked' ? 'branch protection blocks it (a review or check is required)' : pr?.mergeableState === 'behind' ? 'its branch is behind the base' : pr ? `GitHub reports it as ${pr.mergeableState || 'not mergeable'}` : 'it was not found';
+    void ui.showWarningMessage(`${repo}#${number} cannot be merged from here: ${why}.`);
+    return false;
+  }
+  // Land only the commit the list showed: a push since then means you have not seen it.
+  if (seenSha && seenSha !== pr.headSha) {
+    void ui.showWarningMessage(`Did not merge ${repo}#${number}: a new commit (${pr.headSha.slice(0, 7)}) was pushed since the list was read. Look at it, then Merge again.`);
+    return false;
+  }
+  await run(['projects', 'prs', 'merge', project, '--repo', repo, '--number', String(number), '--sha', pr.headSha, '--method', c.method], { timeout: 60_000 });
+  void ui.showInformationMessage(`Merged ${repo}#${number} ${METHOD_WORDS[c.method]}${c.method !== preferred ? ` (the repository does not allow ${preferred})` : ''}.`);
   return true;
 }

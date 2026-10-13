@@ -5,7 +5,7 @@
 import { escapeHtml } from './projectPanel';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
-import { DEFAULT_NOTIFICATION_SETTINGS, getQuickLaunchSlot, type AgentSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+import { DEFAULT_NOTIFICATION_SETTINGS, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'showLabelsInTitles', label: 'Labels in titles', sub: 'The tab title shows the session label' },
@@ -42,6 +42,9 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   }
   if (key === 'notifications.style' && (value === 'native' || value === 'vscode')) {
     return { ...settings, notifications: { ...notifications(settings), style: value } };
+  }
+  if (key === 'mergeMethod' && typeof value === 'string' && (MERGE_METHODS as readonly string[]).includes(value)) {
+    return { ...settings, mergeMethod: value as AgentSettings['mergeMethod'] };
   }
   if (group === 'quickLaunch' && (SLOTS as string[]).includes(field) && typeof value === 'string') {
     const slots = { ...(settings.quickLaunch?.slots ?? {}) };
@@ -87,6 +90,8 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   <div class="krow"><span></span><span>Default agent <small>tickets, splits</small></span>${picker('defaultAgent', byTitle, m.defaultAgentTitle, 'Default agent')}</div>
   <div class="krow">${kbd('B')}<span>Second agent</span>${picker('secondaryAgent', byTitle, m.secondaryAgentTitle, 'Second agent')}</div>
   ${SLOTS.map(slot).join('')}
+  <div class="sh">Pull requests</div>
+  <label class="srow"><span><b>Merge with</b><small>One click on Merge uses this; a repository that does not allow it uses one it allows</small></span>${picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with')}</label>
   <div class="sh">Reader and alerts</div>
   ${toggle('editor.markdownViewerEnabled', 'Open .md and .html in Reader', 'The Reader editor for Markdown and HTML', s.editor?.markdownViewerEnabled ?? true)}
   ${toggle('notifications.enabled', 'Approval alerts', 'Notify when a session in this window needs you', alerts.enabled)}

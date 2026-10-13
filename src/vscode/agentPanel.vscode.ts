@@ -64,9 +64,12 @@ import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 import { runAgents, runCliArgs } from '../core/agentsBin';
 import { canOfferMerge, prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
+import { cleanTitle } from '../core/projectPanel';
 import { mergeWithMenu } from './prMerge.vscode';
+import { getSettings } from './agentSettings.vscode';
+import { validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
-import { SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
+import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
 import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
@@ -637,9 +640,11 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
     const head = pr.headSha.slice(0, 7);
+    // The Settings method when you chose one; otherwise the CLI picks the first the repository allows.
+    const method = this.context ? validMergeMethod(getSettings(this.context).mergeMethod) : undefined;
     const label = requested === 'merge' ? 'Merge' : 'Turn on auto-merge';
     const ask = requested === 'merge'
-      ? `Merge ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}?`
+      ? `Merge ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}${method ? ` (${method === 'merge' ? 'merge commit' : method})` : ''}?`
       : `Merge ${repo}#${pr.number} by itself once its required checks pass? Pinned to ${head}; GitHub refuses if the branch moves.`;
     if (await vscode.window.showWarningMessage(ask, { modal: true }, label) !== label) return;
     // The row may have moved while the dialog was open (a check went red, changes
@@ -652,7 +657,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      await runAgents(`projects prs ${requested} ${shellQuote(project)} --repo ${shellQuote(repo)} --number ${pr.number} --sha ${shellQuote(pr.headSha)}`, { timeout: 60_000 });
+      await runAgents(`projects prs ${requested} ${shellQuote(project)} --repo ${shellQuote(repo)} --number ${pr.number} --sha ${shellQuote(pr.headSha)}${requested === 'merge' && method ? ` --method ${method}` : ''}`, { timeout: 60_000 });
       void vscode.window.showInformationMessage(requested === 'merge' ? `Merged ${repo}#${pr.number}.` : `Auto-merge is on for ${repo}#${pr.number}.`);
     } catch (err) {
       const message = err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err);
@@ -1010,7 +1015,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (card.plan) snapshot.plan = card.plan;
         snapshot.attachments = live.attachments;
         const remoteDevice = remoteDeviceArg(live.host);
-        snapshot.sessionTitle = live.title || live.label || undefined;
+        // The same title as the Project panel's card: an inserted note or a bare command is skipped.
+        snapshot.sessionTitle = cleanTitle(live.title || '') || cleanTitle(live.label || '') || undefined;
         snapshot.related = relatedSessions(live, sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), Date.now());
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
@@ -1137,6 +1143,7 @@ const vscode = acquireVsCodeApi();
 const viewState = vscode.getState() || {};
 const root = document.getElementById('root');
 
+${PATCH_SCRIPT}
 ${SESSION_CARDS_SCRIPT}
 function compactTokens(value) {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -1287,12 +1294,11 @@ function renderSessionStats(s) {
   if (!age && !s.lastActivityMs) return '';
   const st = s.blocked ? { cls: 'failed', word: 'Your move · blocked' } : sessionState(s);
   const ran = age ? (st.cls === 'running' ? ' <b>' + esc(age) + '</b>' : ' · ran <b>' + esc(age) + '</b>') : '';
-  const active = s.lastActivityMs ? ' · active <b>' + esc(relTime(s.lastActivityMs)) + '</b>' : '';
-  // The account the session runs on, quiet at the end of the line (agents accounts list).
-  const account = s.accountLabel || s.account
-    ? '<span class="stats-account" title="' + esc('Account ' + (s.account || s.accountLabel)) + '">' + esc((s.agentType ? s.agentType + '#' : '') + (s.accountLabel ?? s.account)) + '</span>'
-    : '';
-  return '<div class="session-stats state-' + st.cls + '"><span class="state-dot"></span><span class="stats-text">' + esc(st.word) + ran + active + '</span>' + account + '</div>' +
+  // A dot that pulses says "active just now" (owner video, 2026-10-12 8:15 PM); the exact
+  // time is its tooltip. The account lives in the ⋯ menu.
+  const live = st.cls === 'running' && s.lastActivityMs && Date.now() - s.lastActivityMs < 90000;
+  const when = s.lastActivityMs ? 'Active ' + relTime(s.lastActivityMs) : '';
+  return '<div class="session-stats state-' + st.cls + (live ? ' live' : '') + '" title="' + esc(when) + '"><span class="state-dot"></span><span class="stats-text">' + esc(st.word) + ran + '</span></div>' +
     renderIdleWarning(s);
 }
 

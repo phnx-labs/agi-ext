@@ -9,6 +9,8 @@ export interface TicketDetail {
   url: string;
   state: string;
   assignee: string | null;
+  /** The agent Linear delegates the ticket to ("Claude", "codex1"), when one is. */
+  delegate: string | null;
   milestone: string | null;
   description: string;
   comments: { author: string; date: string; body: string }[];
@@ -33,6 +35,7 @@ export function parseTicketDetail(raw: string): TicketDetail {
     url: str(d.url) ?? '',
     state: str(rec(d.state)?.name) ?? '(no state)',
     assignee: str(rec(d.assignee)?.name),
+    delegate: str(rec(d.delegate)?.name),
     milestone: str(rec(d.projectMilestone)?.name),
     description: str(d.description) ?? '',
     comments: (Array.isArray(nodes) ? nodes : []).map((c) => {
@@ -89,16 +92,29 @@ function miniMarkdown(text: string): string {
   return out.join('');
 }
 
-export function renderTicketDetail(t: TicketDetail, defaultAgent: string): string {
+/** A session already on the ticket, as the detail lists it. */
+export interface TicketSession { sessionId: string; host: string; title: string; state: string; where: string }
+
+/** What Start runs: the delegated agent when it is one this version launches, else your default. */
+export interface TicketStart { agentName: string; delegated: boolean }
+
+export function renderTicketDetail(t: TicketDetail, start: TicketStart, onIt: TicketSession[] = []): string {
   const shown = t.comments.slice(-COMMENTS_SHOWN);
   const clip = (b: string) => (b.length > COMMENT_CHARS ? `${b.slice(0, COMMENT_CHARS)}…` : b);
   const id = escapeHtml(t.identifier);
+  const who = t.delegate ? `Delegated to <b>${escapeHtml(t.delegate)}</b> · ${escapeHtml(t.assignee ? `assigned to ${t.assignee}` : 'unassigned')}` : escapeHtml(t.assignee ? `Not delegated · assigned to ${t.assignee}` : 'Not delegated · unassigned');
+  const startBtn = (primary: boolean, words: string) => `<button class="${primary ? 'primary' : 'link'}" data-start>${words}</button>`;
+  // A ticket already being worked shows its sessions first; starting another is the quiet option.
+  const work = onIt.length
+    ? `<div class="sh">On it now</div><div class="onit">${onIt.map((s) => `<div class="ons"><span class="onm"><b>${escapeHtml(s.title)}</b><small>${escapeHtml(s.state)} · ${escapeHtml(s.where)}</small></span><button class="primary" data-open-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}">Open</button></div>`).join('')}</div>
+      <div class="hint">Another agent on it? ${startBtn(false, `Start ${escapeHtml(start.agentName)} in a new tab`)}</div>`
+    : `${startBtn(true, `▶ Start ${escapeHtml(start.agentName)} in a new tab`)}<span class="hint">Opens an agent tab in this window with the ticket as its first message${start.delegated ? `; ${escapeHtml(start.agentName)} is the agent Linear delegates it to` : `, using your default agent`}.</span>`;
   return `<div class="tdetail" data-ticket="${id}">
   <button class="back" data-back>‹ Tickets</button>
   <div class="th1"><span class="tid">${id}</span><span class="tstate"><i></i>${escapeHtml(t.state)}</span></div>
   <h3>${escapeHtml(t.title)}</h3>
-  <div class="tmeta">${escapeHtml(t.assignee ?? 'Unassigned')} · ${escapeHtml(t.milestone ?? 'No milestone')}${t.url ? ` · <a href="#" data-url="${escapeHtml(t.url)}">Open in Linear ↗</a>` : ''}</div>
-  <div class="dispatch"><button class="primary" data-start>▶ Start an agent on this ticket</button><span class="hint">Runs ${escapeHtml(defaultAgent)}, your default agent, in a new tab here with the ticket as its task.</span></div>
+  <div class="tmeta">${escapeHtml(t.milestone ?? 'No milestone')}${t.url ? ` · <a href="#" data-url="${escapeHtml(t.url)}">Open in Linear ↗</a>` : ''}</div>
+  <div class="dispatch"><div class="dwho">${who}</div>${work}</div>
   <details open><summary>Description</summary><div class="tbody">${t.description ? miniMarkdown(t.description) : '<p class="none">No description.</p>'}</div></details>
   <details open><summary>Comments <span class="n">${t.comments.length}</span></summary>
     ${t.comments.length > shown.length ? `<div class="older">${t.comments.length - shown.length} older in Linear</div>` : ''}

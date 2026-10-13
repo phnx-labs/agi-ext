@@ -89,7 +89,7 @@ export function prAction(pr: RemotePrStatus | undefined): PrAction {
   return { kind: 'none', reason: 'GitHub is still computing mergeability' };
 }
 
-type MergeMethod = 'squash' | 'rebase' | 'merge';
+import type { MergeMethod } from './settings';
 
 /** One choice in the Merge ▾ menu: a method, or an admin merge that bypasses
  *  branch protection (offered only when you may). */
@@ -105,10 +105,12 @@ export function canOfferMerge(pr: RemotePrStatus | undefined): boolean {
  *  merge from the Project panel's PR list (the list itself carries no head commit). */
 export interface PrForMerge {
   headSha?: string; isDraft: boolean; state: string; mergeableState: string; reviewDecision: string; ciState: string; viewerIsAdmin: boolean; adminBypass: boolean;
+  /** The methods the repository allows, as GitHub reports them; empty when the CLI did not say. */
+  methods: MergeMethod[];
 }
 
 export function parsePrForMerge(stdout: string, repo: string, number: number): PrForMerge | undefined {
-  const env = JSON.parse(stdout) as { repositories?: { slug?: string; merge?: { viewerIsAdmin?: unknown; adminBypass?: unknown }; pullRequests?: Record<string, unknown>[] }[] };
+  const env = JSON.parse(stdout) as { repositories?: { slug?: string; merge?: { viewerIsAdmin?: unknown; adminBypass?: unknown; methods?: unknown }; pullRequests?: Record<string, unknown>[] }[] };
   const r = (env.repositories ?? []).find((x) => x.slug === repo);
   const p = (r?.pullRequests ?? []).find((x) => x.number === number);
   if (!r || !p) return undefined;
@@ -123,7 +125,17 @@ export function parsePrForMerge(stdout: string, repo: string, number: number): P
     ciState: s(p.ciState).toLowerCase(),
     viewerIsAdmin: r.merge?.viewerIsAdmin === true,
     adminBypass: r.merge?.adminBypass === true,
+    methods: Array.isArray(r.merge?.methods) ? (r.merge!.methods as unknown[]).filter((m): m is MergeMethod => m === 'squash' || m === 'rebase' || m === 'merge') : [],
   };
+}
+
+/** The one-click Merge: your chosen method when GitHub would merge the PR that way and
+ *  the repository allows it, else the first method it allows; undefined when only an
+ *  admin merge (or nothing) is possible. */
+export function oneClickMerge(pr: PrForMerge | undefined, preferred: MergeMethod): MergeChoice | undefined {
+  const open = rowMergeChoices(pr).filter((c) => !c.admin);
+  const allowed = pr && pr.methods.length ? open.filter((c) => pr.methods.includes(c.method)) : open;
+  return allowed.find((c) => c.method === preferred) ?? allowed[0];
 }
 
 /** The Merge menu for a PR list row: the three methods when GitHub would merge it,

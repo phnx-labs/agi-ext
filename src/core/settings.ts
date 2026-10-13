@@ -114,6 +114,16 @@ export interface AgentSettings {
   editor: EditorPreferences;
   display: DisplayPreferences;
   notifications?: NotificationSettings;
+  /** How every Merge button merges (Review rows, the session sidebar); squash when unset. */
+  mergeMethod?: MergeMethod;
+}
+
+export type MergeMethod = 'squash' | 'rebase' | 'merge';
+export const MERGE_METHODS: readonly MergeMethod[] = ['squash', 'rebase', 'merge'];
+
+/** The stored method when it is one of the three; a hand-edited value reads as unset. */
+export function validMergeMethod(v: unknown): MergeMethod | undefined {
+  return (MERGE_METHODS as readonly unknown[]).includes(v) ? (v as MergeMethod) : undefined;
 }
 
 interface EditorPreferences {
