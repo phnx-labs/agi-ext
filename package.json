@@ -820,9 +820,13 @@
       },
       {
         "command": "agents.searchSessions",
-        "key": "ctrl+k",
         "mac": "cmd+k",
         "when": "focusedView == agentsProject.panel || focusedView == agentsPanel.terminal || terminalFocus && agents.activeIsAgent"
+      },
+      {
+        "command": "agents.searchSessions",
+        "key": "ctrl+k",
+        "when": "!isMac && (focusedView == agentsProject.panel || focusedView == agentsPanel.terminal)"
       },
       {
         "command": "agents.newAgent",

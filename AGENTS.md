@@ -75,7 +75,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
   --number N`) on the click for its head commit and whether you may bypass protection
   (`src/vscode/prMerge.vscode.ts`). A Review row's Merge is one click with the Settings
-  method after an in-page "Undo · 5" (`mergeNow`); the sidebar's Merge ▾ reads again after its
+  method after an in-page "Undo · 5" (`mergeNow`), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
   dialog (`mergeWithMenu`); `--admin` only after its own warning dialog.
   A sixth: ticket tiles show the title and state a Linear read in this window already returned
   (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <linear> --json`)

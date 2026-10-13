@@ -48,6 +48,8 @@ interface PrRow {
   date: string;
   /** How many required checks fail (the CLI's failingChecks). */
   failing: number;
+  /** The head commit the list read, so Merge lands only what you saw. */
+  headSha: string | null;
 }
 
 interface RepoPrs {
@@ -170,6 +172,7 @@ function prRow(p: unknown, dateKey: 'createdAt' | 'mergedAt'): PrRow {
     avatar: /^https:\/\/avatars\.githubusercontent\.com\//.test(str(author.avatarUrl) ?? '') ? str(author.avatarUrl) : null,
     date: str(d[dateKey]) ?? '',
     failing: Array.isArray(d.failingChecks) ? d.failingChecks.length : 0,
+    headSha: /^[0-9a-f]{7,40}$/i.test(str(d.headSha) ?? '') ? str(d.headSha) : null,
   };
 }
 
@@ -816,7 +819,7 @@ function prState(p: PrRow): PrState {
  *  pass, else the checks in a word or two (owner, 2026-10-12 9:00 PM). */
 function prStatusCell(p: PrRow, slug: string, mergeWith: string): string {
   const st = prState(p);
-  if (st === 'ready') return `<button class="rs merge" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}" title="Merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)">Merge</button>`;
+  if (st === 'ready') return `<button class="rs merge" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}"${p.headSha ? ` data-merge-sha="${escapeHtml(p.headSha)}"` : ''} title="Merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)">Merge</button>`;
   if (st === 'failing') return `<span class="rs fail" title="${p.failing ? `${p.failing} check${p.failing === 1 ? '' : 's'} failing` : 'Checks failing'}">✕${p.failing ? ` ${p.failing}` : ''}</span>`;
   if (st === 'running') return `<span class="rs run" title="Checks running">${ring(p.ciState, false)}</span>`;
   return '<span class="rs draft">Draft</span>';

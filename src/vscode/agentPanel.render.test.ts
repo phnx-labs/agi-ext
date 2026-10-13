@@ -843,7 +843,7 @@ test('a merge runs one pinned CLI verb, only after the modal confirms and only i
   expect(calls).toEqual([]);
   answer = 'Merge';
   await host.runPrAction('merge');
-  expect(calls).toEqual(["projects prs merge 'agi-ui' --repo 'phnx-labs/agi-ext' --number 103 --sha '358a1fbc2e' --method squash"]);
+  expect(calls).toEqual(["projects prs merge 'agi-ui' --repo 'phnx-labs/agi-ext' --number 103 --sha '358a1fbc2e'"]);
   expect(asked.at(-1)?.[1]).toEqual({ modal: true });
   expect(String(asked.at(-1)?.[0])).toContain('at 358a1fb?');
 

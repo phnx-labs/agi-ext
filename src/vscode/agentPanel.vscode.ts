@@ -67,6 +67,7 @@ import { canOfferMerge, prAction, prRepo, type PrAction, type RemotePrStatus } f
 import { cleanTitle } from '../core/projectPanel';
 import { mergeWithMenu } from './prMerge.vscode';
 import { getSettings } from './agentSettings.vscode';
+import { validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
 import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
@@ -639,9 +640,11 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
     const head = pr.headSha.slice(0, 7);
+    // The Settings method when you chose one; otherwise the CLI picks the first the repository allows.
+    const method = this.context ? validMergeMethod(getSettings(this.context).mergeMethod) : undefined;
     const label = requested === 'merge' ? 'Merge' : 'Turn on auto-merge';
     const ask = requested === 'merge'
-      ? `Merge ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}?`
+      ? `Merge ${repo}#${pr.number}${pr.title ? ` "${pr.title}"` : ''} at ${head}${method ? ` (${method === 'merge' ? 'merge commit' : method})` : ''}?`
       : `Merge ${repo}#${pr.number} by itself once its required checks pass? Pinned to ${head}; GitHub refuses if the branch moves.`;
     if (await vscode.window.showWarningMessage(ask, { modal: true }, label) !== label) return;
     // The row may have moved while the dialog was open (a check went red, changes
@@ -654,7 +657,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      await runAgents(`projects prs ${requested} ${shellQuote(project)} --repo ${shellQuote(repo)} --number ${pr.number} --sha ${shellQuote(pr.headSha)}${requested === 'merge' ? ` --method ${(this.context ? getSettings(this.context).mergeMethod : undefined) ?? 'squash'}` : ''}`, { timeout: 60_000 });
+      await runAgents(`projects prs ${requested} ${shellQuote(project)} --repo ${shellQuote(repo)} --number ${pr.number} --sha ${shellQuote(pr.headSha)}${requested === 'merge' && method ? ` --method ${method}` : ''}`, { timeout: 60_000 });
       void vscode.window.showInformationMessage(requested === 'merge' ? `Merged ${repo}#${pr.number}.` : `Auto-merge is on for ${repo}#${pr.number}.`);
     } catch (err) {
       const message = err instanceof Error ? err.message.split('\n').slice(0, 3).join(' ') : String(err);

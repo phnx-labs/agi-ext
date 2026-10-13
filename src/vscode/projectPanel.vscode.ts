@@ -54,6 +54,7 @@ import { openExternalUrl } from './webviewSecurity';
 import { PATCH_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
+import { validMergeMethod } from '../core/settings';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
 import { buildIconPathFromUri } from './theme.vscode';
@@ -90,7 +91,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown;
 }
 
 interface TabState {
@@ -146,7 +147,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
-      else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number);
+      else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number, typeof msg.sha === 'string' ? msg.sha : undefined);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
         // Redraw either way, so a write that failed shows the stored value again.
         void this.controller.setSetting(msg.key, msg.value)
@@ -317,21 +318,22 @@ class ProjectView implements vscode.WebviewViewProvider {
     void this.loadGoals(true);
   }
 
-  private merging = false;
+  private merging: Promise<void> = Promise.resolve();
 
   /** Merge from a PR row: one read of that PR (the list has no head commit), a
    *  method or admin merge from the menu, a dialog, then one pinned merge. */
-  private async mergeRow(repo: string, number: number): Promise<void> {
-    if (this.merging) return;
-    this.merging = true;
-    try {
-      const merged = await this.controller.mergeFromRow(repo, number);
-      if (merged) await this.load('prs', true);
-    } catch (e) {
-      void vscode.window.showErrorMessage(`Merge failed: ${errorText(e).split('\n').slice(0, 3).join(' ')}`);
-    } finally {
-      this.merging = false;
-    }
+  private async mergeRow(repo: string, number: number, sha: string | undefined): Promise<void> {
+    // Merges run one after another, never dropped; Review is reread after each,
+    // merged or not, so a row never stays on "Merging…".
+    this.merging = this.merging.then(async () => {
+      try {
+        await this.controller.mergeFromRow(repo, number, sha);
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Merge failed: ${errorText(e).split('\n').slice(0, 3).join(' ')}`);
+      }
+      await this.load('prs', true);
+    });
+    await this.merging;
   }
 
   private goalsAt = 0;
@@ -511,9 +513,9 @@ class ProjectPanelController {
   }
 
   /** Merge one PR from the list through the shared flow (read, pick, confirm, merge). */
-  async mergeFromRow(repo: string, number: number): Promise<boolean> {
+  async mergeFromRow(repo: string, number: number, sha: string | undefined): Promise<boolean> {
     const project = await this.project();
-    return project ? mergeNow(project.name, repo, number, getSettings(this.context).mergeMethod ?? 'squash') : false;
+    return project ? mergeNow(project.name, repo, number, validMergeMethod(getSettings(this.context).mergeMethod) ?? 'squash', sha) : false;
   }
 
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
@@ -554,7 +556,7 @@ class ProjectPanelController {
   /** Start runs the agent Linear delegates the ticket to when this version launches it
    *  ("Claude", "codex1" → Codex), else your default agent. */
   private ticketAgent(t: TicketDetail): (typeof PICKABLE_AGENTS)[number] & { delegated: boolean } {
-    const d = (t.delegate ?? '').toLowerCase().replace(/\d+$/, '');
+    const d = (t.delegate ?? '').toLowerCase().replace(/\[bot\]$/, '').replace(/^app\//, '').replace(/\d+$/, '');
     const hit = d ? PICKABLE_AGENTS.find((a) => a.key === d || a.name.toLowerCase() === d) : undefined;
     return hit ? { ...hit, delegated: true } : { ...this.defaultAgent(), delegated: false };
   }
@@ -1194,8 +1196,15 @@ ${PATCH_SCRIPT}
   function select(tab) {
     tabs.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   }
+  // Leaving Review cancels a Merge still counting down: its Undo would no longer be on screen.
+  function cancelMerges() {
+    for (const t of mergeTimers.values()) clearInterval(t);
+    const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
+    return n;
+  }
   function choose(tab) {
     if (tab === current) return;
+    if (current === 'prs' && cancelMerges()) toast('Merge cancelled: you left Review before it started.');
     scroll[current] = main.scrollTop;
     current = tab;
     select(tab);
@@ -1231,6 +1240,7 @@ ${PATCH_SCRIPT}
       document.body.classList.remove('loading');
     }
     else if (m.type === 'project') {
+      cancelMerges();
       const row = document.querySelector('.proj');
       row.hidden = !m.name;
       row.querySelector('.ppn').textContent = m.name;
@@ -1330,7 +1340,7 @@ ${PATCH_SCRIPT}
         if (left > 0) { pendingMerge.set(key, left); drawUndo(key, left); return; }
         clearInterval(timer); pendingMerge.delete(key); mergeTimers.delete(key);
         const b = mergeBtn(key); if (b) { b.textContent = 'Merging…'; b.disabled = true; }
-        vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber) });
+        vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber), sha: merge.dataset.mergeSha });
       }, 1000);
       mergeTimers.set(key, timer);
       return;

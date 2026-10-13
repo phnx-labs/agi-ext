@@ -19,7 +19,7 @@ From the owner's video reviews of 0.9.398 and the round 14 and 15 prototypes (20
 - Clicking a card brings its tab to the front when the tab is in this window (and still shows
   it in the session sidebar); it never resumes a session you closed. Switching tabs moves the
   list's selection to the card for the tab in front.
-- ⌘K in the Agents views or an agent tab opens Agents: Search Sessions: type part of a title,
+- ⌘K in the Agents views or an agent tab (macOS; Ctrl+K in the Agents views elsewhere) opens Agents: Search Sessions: type part of a title,
   ticket, PR, model or machine and Enter takes you to it. Detach and attach moved from
   ⌘K ⌘B / ⌘K ⌘A to ⌘⇧⌥D / ⌘⇧⌥A.
 - Titles skip the note Claude Code inserts when another session writes in ("Another Claude
@@ -28,13 +28,13 @@ From the owner's video reviews of 0.9.398 and the round 14 and 15 prototypes (20
 - Review: the author's face is on the left and the PR's state is the rightmost control: Merge
   when checks pass, a ring while they run, "✕ 2" for failing checks, Draft. Merge is one click
   with the method you pick once in Settings (squash by default), after a five-second
-  "Undo · 5". A ⇅ menu groups by status across repositories (the default), repository, author
+  "Undo · 5" (leaving Review cancels it). It merges only the commit the list showed. A ⇅ menu groups by status across repositories (the default), repository, author
   or none, and shows or hides drafts (hidden by default) and recently merged PRs.
 - Issues: a ticket names who it is delegated to and lists the sessions already on it, with
   Open. Start launches the delegated agent (else your default) and says it opens a new tab.
 - The session sidebar: "Running 17m" with a dot that pulses while the agent is active (the time
   is its tooltip); the account moved to the ⋯ menu. Steps show 8 by default, in larger type,
-  with a Show 4 / 8 / 16 / all choice. Its Merge uses the Settings method too.
+  with a Show 4 / 8 / 16 / all choice. Its Merge uses the Settings method when you chose one.
 
 ## [0.9.398] - 2026-10-13
 

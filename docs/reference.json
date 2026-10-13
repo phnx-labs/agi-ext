@@ -5,7 +5,7 @@
   "counts": {
     "commands": 115,
     "settings": 8,
-    "keybindings": 45,
+    "keybindings": 46,
     "menuItems": 13,
     "views": 2,
     "viewContainers": 2,
@@ -680,9 +680,13 @@
       },
       {
         "command": "agents.searchSessions",
-        "key": "ctrl+k",
         "mac": "cmd+k",
         "when": "focusedView == agentsProject.panel || focusedView == agentsPanel.terminal || terminalFocus && agents.activeIsAgent"
+      },
+      {
+        "command": "agents.searchSessions",
+        "key": "ctrl+k",
+        "when": "!isMac && (focusedView == agentsProject.panel || focusedView == agentsPanel.terminal)"
       },
       {
         "command": "agents.newAgent",
