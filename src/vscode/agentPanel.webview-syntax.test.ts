@@ -126,20 +126,25 @@ test('local deliverables stay local for the normalized this-mac label (PHNX-3574
 
 test('Active Session render is one card: request, then what it made, then the feed it filters', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'agentPanel.vscode.ts'), 'utf8');
-  const renderStart = src.indexOf('root.innerHTML = (', src.indexOf('function render(snap)'));
-  const renderEnd = src.indexOf("'<div class=\"footer\"", renderStart);
+  const fn = src.indexOf('function render(snap)');
+  const renderStart = src.indexOf('patchChildren(body,', fn);
+  const renderEnd = src.indexOf('bindPanel();', renderStart);
   const renderOrder = src.slice(renderStart, renderEnd);
 
   // One card (owner, 2026-10-12): who and how it stands, the goal, an open ask,
-  // what you asked, what it made (the PR opens inside the Made row), then the strip
-  // and the feed it filters (files, subagents and the checklist are feed chips);
-  // the reply floats last.
-  const order = ['renderTerminalCard', 'renderSessionStats', 'renderGoalCard', 'renderNeedsYou',
-    'renderRequestCard', 'renderMadeShelf', 'renderRelated', 'renderTimelineCard', 'renderReplyBox'];
-  expect(renderOrder.indexOf(order[0]!)).toBeGreaterThan(-1);
+  // what you asked, what it made, then the strip and the feed it filters (files,
+  // subagents and the checklist are feed chips).
+  const order = ['renderNav', 'renderTerminalCard', 'renderSessionStats', 'renderGoalCard', 'renderNeedsYou',
+    'renderRequestCard', 'renderMadeShelf', 'renderRelated', 'renderTimelineCard'];
+  expect(renderStart).toBeGreaterThan(-1);
   for (let i = 1; i < order.length; i++) {
+    expect(renderOrder.indexOf(order[i - 1])).toBeGreaterThan(-1);
     expect(renderOrder.indexOf(order[i - 1])).toBeLessThan(renderOrder.indexOf(order[i]));
   }
+  // The reply box is built once beside the patched card, never inside it, so an
+  // update cannot take the caret or a draft (owner video, 2026-10-12).
+  expect(renderOrder).not.toContain('renderReplyBox');
+  expect(src.slice(fn, renderStart)).toContain("'<div id=\"panel-body\"></div>' + renderReplyBox()");
 });
 
 test('the stylesheet keeps the button reset: no selector list dangles into the next rule', () => {

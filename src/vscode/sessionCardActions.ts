@@ -43,9 +43,28 @@ async function localArtifactUri(filePath: string, sessionHost: string | undefine
     );
     return vscode.Uri.file(local);
   } catch (err) {
-    void vscode.window.showErrorMessage(`Could not fetch ${filePath} from ${device}: ${(err as Error).message.split('\n')[0]}`);
+    void vscode.window.showErrorMessage(artifactCopyError(filePath, device, err));
     return undefined;
   }
+}
+
+/**
+ * Why a remote artifact did not copy, in full: the remote command's own last
+ * line, not "Command failed". A file that is gone says so, and one that lived in
+ * a removed agent worktree names it, since that is where merged work ends up
+ * missing (owner video, 2026-10-12: a HEALTH.md written in a since-removed worktree).
+ */
+export function artifactCopyError(filePath: string, device: string, err: unknown): string {
+  const e = err as { stderr?: string; message?: string };
+  const lines = (e.stderr ?? '').trim().split('\n').map((l) => l.trim()).filter(Boolean);
+  const reason = lines[lines.length - 1] || (e.message ?? String(err)).split('\n')[0];
+  if (/No such file or directory/i.test(reason)) {
+    const wt = filePath.match(/^(.*)\/\.agents\/worktrees\/([^/]+)\/(.+)$/);
+    return wt
+      ? `${path.basename(filePath)} is gone from ${device}: it was in the worktree ${wt[2]}, which was removed. If that work merged, the file is in the repo at ${wt[1]}/${wt[3]}.`
+      : `${path.basename(filePath)} is no longer on ${device} at ${filePath}.`;
+  }
+  return `Could not copy ${filePath} from ${device}: ${reason}`;
 }
 
 /** A plan or report opens as an editor tab in the Agents Reader; anything else opens normally. */

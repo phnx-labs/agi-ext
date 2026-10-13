@@ -76,8 +76,21 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`agents projects prs <name> --json --repo R --number N`) on the click, and again after the
   dialog, for its head commit and whether you may bypass protection (`mergeWithMenu`,
   `src/vscode/prMerge.vscode.ts`); `--admin` only after its own warning dialog.
+  A sixth: ticket tiles show the title and state a Linear read in this window already returned
+  (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <linear> --json`)
+  also runs when Sessions shows, under the same once-a-minute cache. A tile never reads Linear.
+  A seventh: the Project panel's project menu is one `agents projects list --json` read when
+  it opens; Review reads `agents projects prs list <name> --json --repo <r>` per repository in
+  parallel, drawn as each answers.
+  The reply box's mic is the one place the extension runs tools that are not the CLI: on the
+  click, `ffmpeg` records the default microphone and `whisper-cli` transcribes on this machine
+  (`src/vscode/dictation.vscode.ts`); nothing is sent anywhere.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
+- The Active Session sidebar patches its card in place on every update (`patchChildren`,
+  `src/shared/sessionCards.ts`) and builds the reply box once; reassigning `root.innerHTML`
+  per update made it jitter and erased what the owner was typing. A reused node keeps its
+  listeners, so bindings go through `bindOnce` and read their data-* values on click.
 - The Active Session sidebar is the one preview: a Project panel session click sets its
   subject (`setAgentPanelSubjectFromProject`) and spawns nothing. No per-selection fetch.
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`) and

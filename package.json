@@ -715,6 +715,11 @@
           ],
           "default": "auto",
           "description": "Where the per-harness \"Agents: New <Harness>\" commands run. Device choice stays with the CLI: 'auto' emits --device auto, which draws from the fleet's worker pool (agents devices role). The (Pick Host), (Auto), (Pick Project), (Pick Account), and (Local) command variants are unaffected."
+        },
+        "agents.dictation.model": {
+          "type": "string",
+          "default": "~/.cache/whisper-models/ggml-large-v3-turbo.bin",
+          "markdownDescription": "The whisper.cpp model the reply box's mic transcribes with, on this machine. Needs `ffmpeg` and `whisper-cli` (`brew install ffmpeg whisper-cpp`)."
         }
       }
     },

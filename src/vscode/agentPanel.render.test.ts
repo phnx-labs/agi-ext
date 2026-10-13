@@ -55,11 +55,11 @@ const NAMES = [
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
   'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderUpdate', 'artifactItems',
-  'fileRow', 'fileTree', 'renderSubagentRow', 'renderPullRequestCard', 'renderRangeLane',
-  'prVerdict', 'prCheckSegments', 'prJustReady', 'prRing', 'prReviewGlyph', 'prMergeGlyph',
+  'fileRow', 'fileTree', 'renderSubagentRow', 'renderRangeLane', 'renderNav',
+  'prVerdict', 'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind',
 ];
-const CONSTS = ['RELATED_DOT', 'APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'PR_CHECK_MARK', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
+const CONSTS = ['RELATED_DOT', 'APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'TIMELINE_SHOWN', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'MIC_ICON', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
@@ -72,22 +72,21 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, renderBlocked, currentRange,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
-  renderPullRequestCard, prVerdict, prCheckSegments, prJustReady,
+  prVerdict, prCheckSegments, renderNav,
 }; })()`) as {
-  renderMadeShelf: (s: unknown, justReady?: boolean) => string;
+  renderMadeShelf: (s: unknown) => string;
   renderRelated: (s: unknown) => string;
   renderBlocked: (s: unknown) => string;
   currentRange: (s: unknown) => { startMs: number; endMs: number } | null;
-  renderPullRequestCard: (s: unknown, justReady?: boolean) => string;
-  prVerdict: (pr: unknown) => { ring: string; word: string; tone: string };
+  renderNav: (s: unknown) => string;
+  prVerdict: (pr: unknown) => { word: string; tone: string };
   prCheckSegments: (pr: unknown) => { segments: { state: string; name: string }[]; passed: number; running: number; failed: number; counted: number };
-  prJustReady: (prev: string | undefined, pr: unknown) => boolean;
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
   renderRequestCard: (s: unknown) => string;
   renderTimelineCard: (s: unknown) => string;
   renderFilesCard: (s: unknown) => string;
-  renderReplyBox: (s: unknown) => string;
+  renderReplyBox: () => string;
   renderTerminalCard: (s: unknown) => string;
   renderNeedsYou: (s: unknown) => string;
   renderSessionStats: (s: unknown) => string;
@@ -334,8 +333,11 @@ test('the session header: the title and three quick icons; model, account and ho
     const fleet = cards.renderTerminalCard({ fullSessionId: 's1', subjectSource: 'project', hasTerminal: false });
     expect(fleet).toContain('following the Project panel selection');
 
-    expect(cards.renderReplyBox({ fullSessionId: 's1' })).toContain('Reply to this session…');
-    expect(cards.renderReplyBox({})).toBe('');
+    // The reply box is built once (hidden until a session is the subject), with the mic.
+    const reply = cards.renderReplyBox();
+    expect(reply).toContain('Reply to this session…');
+    expect(reply).toContain('<div class="reply-box" hidden>');
+    expect(reply).toContain('id="reply-mic"');
   }
   {
     const header = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CL-test', fullSessionId: 'session-full', sessionChunk: 'session', agentType: 'claude', version: '2.1.280', account: 'muqsit@getrush.ai', accountLabel: 'gmail', cwd: '/repo', git: { branch: 'feature' }, sessionHost: 'peer' });
@@ -388,12 +390,13 @@ test('the session header: the title and three quick icons; model, account and ho
 });
 
 
-test('Made: one sideways row — the PR leads with its state, then other PRs and the ticket, then files newest first; a range dims, a local page can be shared', () => {
+test('Made: one sideways row — the PR with its checks opens GitHub, then other PRs and the ticket tile, then files newest first; a range dims, a local page can be shared', () => {
   for (const key of Object.keys(viewState)) delete viewState[key];
   const snap = {
     fullSessionId: 'made', sessionLocal: true,
-    linearIssue: 'PHNX-4248',
-    prStatus: normalizePrStatus({ url: 'https://github.com/phnx-labs/agi-ext/pull/103', number: 103, title: 'Sidebar one card', state: 'MERGED', isDraft: false, mergeable: 'MERGEABLE', checks: 'passing' }),
+    ticket: { id: 'PHNX-4248', title: 'One card sidebar', state: 'In Progress' },
+    prStatus: normalizePrStatus({ url: 'https://github.com/phnx-labs/agi-ext/pull/103', number: 103, title: 'Sidebar one card', state: 'MERGED', isDraft: false, mergeable: 'MERGEABLE', checks: 'passing',
+      checkItems: Array.from({ length: 6 }, (_, i) => ({ name: 'c' + i, state: 'passed' })) }),
     pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }],
     artifacts: [
       { path: '/u/Downloads/Old/a.png', display: '~/Downloads/Old/a.png', basename: 'a.png', bucket: 'docs', editedAtMs: 1_000, uri: 'vscode-resource:/a.png' },
@@ -409,6 +412,17 @@ test('Made: one sideways row — the PR leads with its state, then other PRs and
   // PR first (its state word), then the other PR, the ticket, then files newest first.
   expect(html).toContain('<b>#103</b><span class="mk-st pr-tone-ok">Merged</span>');
   expect([at('#103'), at('#3716'), at('PHNX-4248'), at('index.html'), at('Launch hero'), at('a.png')]).toEqual([at('#103'), at('#3716'), at('PHNX-4248'), at('index.html'), at('Launch hero'), at('a.png')].sort((x, y) => x - y));
+  // The PR tile shows how many checks pass and opens the PR on GitHub; no card unfolds (owner video, 2026-10-12).
+  expect(html).toContain('class="mk mk-pr" data-url="https://github.com/phnx-labs/agi-ext/pull/103"');
+  expect(html).toContain('<span class="pr-frac pr-tone-ok">6/6</span>');
+  expect(html).toContain('title="6 of 6 checks passed"');
+  expect(html).not.toContain('data-pr-open');
+  expect(html).not.toContain('pr-card');
+  // The ticket is a tile with its title and state, and opens the ticket to read.
+  expect(html).toContain('data-ticket="PHNX-4248"');
+  expect(html).toContain('<span class="mk-st tk-st">In Progress</span>');
+  expect(html).toContain('<span class="mk-t">One card sidebar</span>');
+  expect(cards.renderMadeShelf({ ticket: { id: 'PHNX-1' } })).toContain('<span class="mk-t">Linear ticket</span>');
   // An image previews; a page shows its type mark and can be shared from this machine.
   expect(html).toContain('<img data-thumb="vscode-resource:/hero.jpg"');
   expect(html).toContain('data-share="/u/Downloads/New/index.html"');
@@ -418,11 +432,18 @@ test('Made: one sideways row — the PR leads with its state, then other PRs and
   viewState.timelineRange = { made: [2_500, 4_000] };
   const ranged = cards.renderMadeShelf(snap);
   expect((ranged.match(/mk mk-file out/g) || []).length).toBe(2);
-  // The PR card opens under the row on a click (remembered), and nothing renders without outputs.
-  viewState.prOpen = 'https://github.com/phnx-labs/agi-ext/pull/103';
-  expect(cards.renderMadeShelf(snap)).toContain('class="card pr-card');
   expect(cards.renderMadeShelf({})).toBe('');
   for (const key of Object.keys(viewState)) delete viewState[key];
+});
+
+test('back and forward name where they lead, and are absent with no trail', () => {
+  expect(cards.renderNav({})).toBe('');
+  const both = cards.renderNav({ nav: { back: '! git pull (Branch)', fwd: 'Carousel' } });
+  expect(both).toContain('data-nav="back" title="Back to ! git pull (Branch)"');
+  expect(both).toContain('data-nav="fwd" title="Forward to Carousel"');
+  expect(both).toContain('class="nav-crumb" data-nav="back"');
+  const backOnly = cards.renderNav({ nav: { back: 'A' } });
+  expect(backOnly).toContain('data-nav="fwd" disabled');
 });
 
 test('pencil message reaches the host command and reports command failures', async () => {
@@ -564,9 +585,15 @@ test('plans open in the Agents Reader and the heavy filters run one CLI call for
   host.snapshot.sessionHost = undefined;
   cli = timelineCli;
 
+  expect(calls).toEqual([]);
+  // Each open says the tile is busy while it copies, then clears it.
+  expect(posted.filter((m: { type: string }) => m.type === 'artifactBusy').slice(-2)).toEqual([
+    { type: 'artifactBusy', path: '/home/u/report.html', busy: true },
+    { type: 'artifactBusy', path: '/home/u/report.html', busy: false },
+  ]);
+  posted.splice(0, posted.length);
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'assistant', sessionId: 'old-subject' });
   await host.handleMessage({ type: 'loadTimelineFilter', role: 'rm -rf', sessionId: 's-1' });
-  expect(calls).toEqual([]);
   expect(posted).toEqual([
     expect.objectContaining({ type: 'timelineFilter', role: 'assistant', sessionId: 'old-subject', error: 'Session changed before the filter loaded.' }),
     expect.objectContaining({ type: 'timelineFilter', role: 'rm -rf', sessionId: 's-1', error: 'That filter is not available.' }),
@@ -722,69 +749,43 @@ const prRow = (extra: object = {}) => {
   return { prStatus, prAction: prAction(prStatus), prRepo: prRepo(PR_URL) };
 };
 
-test('the PR card: a ring, one word and an icon strip; the verdict, check segments and just-ready edge (PHNX-4289)', () => {
+test('the PR in the ⋯ menu: its glyphs and at most one merge action, with the reason when there is none (PHNX-4289)', () => {
   {
     for (const key of Object.keys(viewState)) delete viewState[key];
-    // Today's row (agents-cli 1.22.122): status, but no head commit, so no merge button and the reason why.
-    const today = cards.renderPullRequestCard({ ...prRow(), git: { branch: 'agents/phnx-4289' } });
-    expect(today).toContain('<span class="pr-repo">phnx-labs/agi-ext</span>');
-    expect(today).toContain('#103');
-    // Checks pass but a review is required: green ring, and the word says what is left.
-    expect(today).toContain('class="pr-ring ok" role="img" aria-label="Needs review"');
-    expect(today).toContain('<span class="pr-word pr-tone-warn">Needs review</span>');
-    expect(today).toContain('⎇ agents/phnx-4289');
-    // The words live on the icons, not in text chips.
+    const menu = (row: object) => cards.renderTerminalCard({ fullSessionId: 's', hasTerminal: true, ...row });
+    // No head commit on the row: no merge button, and the reason why.
+    const today = menu(prRow());
+    expect(today).toContain('menu-k">PR');
     expect(today).toContain('title="Review required" aria-label="Review required"');
     expect(today).toContain('title="No conflicts" aria-label="No conflicts"');
-    expect(today).not.toContain('checks passing · review required');
     expect(today).not.toContain('data-pr-action');
     expect(today).toContain('needs a newer agents CLI');
-    expect(today).toContain('data-url="' + PR_URL + '">Open on GitHub ↗');
-    expect(today).not.toContain('just-ready');
-
-    const ready = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', title: 'Compact header', reviewDecision: 'APPROVED', checkItems: [{ name: 'test', state: 'passed', url: 'https://github.com/x/runs/1' }, { name: 'lint', state: 'passed' }, { name: 'docs', state: 'skipped' }] }), true);
-    expect(ready).toContain('#103 Compact header');
-    expect(ready).toContain('<span class="pr-frac">2/2</span>');
-    expect(ready).toContain('title="2 of 2 checks passed"');
-    expect(ready).toContain('title="Approved"');
+    const ready = menu(prRow({ headSha: '358a1fb', reviewDecision: 'APPROVED' }));
     expect(ready).toContain('class="action-btn primary" data-pr-action="merge">Merge<');
-    expect(ready).toContain('class="card pr-card just-ready"');
-    // The check list folds under the bar until the bar is clicked.
-    expect(ready).toContain(`data-pr-checks="${PR_URL}" aria-expanded="false"`);
-    expect(ready).not.toContain('class="pr-checks"');
-    // The fold belongs to one PR: opening it here does not open the next session's PR.
-    viewState.prChecksOpen = 'https://github.com/other/repo/pull/1';
-    expect(cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checkItems: [{ name: 'test', state: 'passed' }] }))).not.toContain('class="pr-checks"');
-    viewState.prChecksOpen = PR_URL;
-    const open = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checkItems: [{ name: 'test', state: 'passed', url: 'https://github.com/x/runs/1' }, { name: 'docs', state: 'skipped' }] }));
-    expect(open).toContain(`data-pr-checks="${PR_URL}" aria-expanded="true"`);
-    expect(open).toContain('<span class="pr-check-name">test</span><button type="button" class="pr-run" data-url="https://github.com/x/runs/1"');
-    delete viewState.prChecksOpen;
-
-    const green = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'pending', checkItems: [{ name: 'test', state: 'passed' }, { name: 'e2e', state: 'running' }] }));
+    expect(ready).toContain('title="Approved"');
+    const green = menu(prRow({ headSha: '358a1fb', checks: 'pending' }));
     expect(green).toContain('data-pr-action="automerge"');
-    expect(green).toContain('class="pr-ring running"');
-    expect(green).toContain('>Checks running<');
-    expect(green).toContain('title="1 of 2 checks passed, 1 running"');
     expect(green).not.toContain('action-btn primary');
-
-    const failing = cards.renderPullRequestCard(prRow({ headSha: '358a1fb', checks: 'failing', mergeable: 'CONFLICTING', reviewDecision: 'CHANGES_REQUESTED' }));
+    const failing = menu(prRow({ headSha: '358a1fb', checks: 'failing', mergeable: 'CONFLICTING', reviewDecision: 'CHANGES_REQUESTED' }));
     expect(failing).not.toContain('data-pr-action');
-    expect(failing).toContain('class="pr-ring bad"');
-    expect(failing).toContain('>Failing<');
     expect(failing).toContain('class="pr-glyph bad" role="img" title="Changes requested"');
     expect(failing).toContain('class="pr-glyph bad" role="img" title="Has conflicts"');
-    expect(cards.renderPullRequestCard({})).toBe('');
+    expect(menu({})).not.toContain('menu-k">PR');
+    // The tile's words for a PR still checking.
+    const tile = cards.renderMadeShelf(prRow({ headSha: '358a1fb', checks: 'pending', checkItems: [{ name: 'test', state: 'passed' }, { name: 'e2e', state: 'running' }] }));
+    expect(tile).toContain('>Checks running<');
+    expect(tile).toContain('title="1 of 2 checks passed, 1 running"');
+    expect(tile).toContain('<span class="pr-frac pr-tone-warn">1/2</span>');
   }
   {
     const pr = (extra: object = {}) => normalizePrStatus({ url: PR_URL, number: 103, state: 'OPEN', isDraft: false, ...extra });
     expect(cards.prVerdict(pr({ state: 'MERGED' })).word).toBe('Merged');
-    expect(cards.prVerdict(pr({ isDraft: true, checks: 'pending' }))).toEqual({ ring: 'draft', word: 'Draft', tone: 'idle' });
+    expect(cards.prVerdict(pr({ isDraft: true, checks: 'pending' }))).toEqual({ word: 'Draft', tone: 'idle' });
     expect(cards.prVerdict(pr({ isDraft: true, checks: 'failing' })).word).toBe('Failing');
-    expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'CONFLICTING' })).ring).toBe('bad');
-    expect(cards.prVerdict(pr({ checks: 'pending' })).ring).toBe('running');
+    expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'CONFLICTING' })).word).toBe('Conflicts');
+    expect(cards.prVerdict(pr({ checks: 'pending' })).word).toBe('Checks running');
     expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE' })).word).toBe('Ready');
-    expect(cards.prVerdict(pr()).ring).toBe('none');
+    expect(cards.prVerdict(pr()).word).toBe('Open');
 
     // One segment per check, greens first, skipped out of the fraction.
     const bar = cards.prCheckSegments(pr({ checkItems: [
@@ -799,17 +800,10 @@ test('the PR card: a ring, one word and an icon strip; the verdict, check segmen
     expect(rolled.counted).toBe(0);
     expect(cards.prCheckSegments(pr()).segments).toEqual([]);
 
-    const passing = pr({ checks: 'passing' });
-    expect(cards.prJustReady('pending', passing)).toBe(true);
-    expect(cards.prJustReady('', passing)).toBe(true);
-    expect(cards.prJustReady(undefined, passing)).toBe(false);
-    expect(cards.prJustReady('passing', passing)).toBe(false);
-    expect(cards.prJustReady('pending', pr({ checks: 'failing' }))).toBe(false);
-    expect(cards.prJustReady('pending', pr({ checks: 'passing', state: 'MERGED' }))).toBe(false);
   }
   {
     const base = { url: 'u', number: 1, isDraft: false, checkItems: [], checks: 'passing' };
-    expect(cards.prVerdict({ ...base, mergeable: 'mergeable', review: 'review_required' })).toEqual({ ring: 'ok', word: 'Needs review', tone: 'warn' });
+    expect(cards.prVerdict({ ...base, mergeable: 'mergeable', review: 'review_required' })).toEqual({ word: 'Needs review', tone: 'warn' });
     expect(cards.prVerdict({ ...base, mergeable: 'unknown' }).word).toBe('Checks passed');
   }
 });

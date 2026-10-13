@@ -4,6 +4,37 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.398] - 2026-10-13
+
+From the owner's video review of 0.9.397 (2026-10-12):
+
+- The Active Session sidebar holds still while the agent works. A stream update now patches
+  the card in place instead of rebuilding it, so it no longer jitters, hover and a scrolled
+  Made row stay put, and the reply box keeps its caret and what you typed. A draft belongs to
+  its session and comes back when you return to it.
+- The reply box has a mic. Click to talk, click again to stop; the words land in the box to
+  edit before Enter sends them. It records the default microphone with `ffmpeg` and
+  transcribes on this machine with whisper.cpp's `whisper-cli`
+  (`brew install ffmpeg whisper-cpp`); the model is the `agents.dictation.model` setting,
+  `~/.cache/whisper-models/ggml-large-v3-turbo.bin` by default. On macOS the first use asks
+  for microphone access.
+- ‹ › at the top of the sidebar go back and forward through the sessions it showed, and name
+  where Back leads. A Project panel card, a Related chip or a tab switch all leave a stop.
+- The PR tile in Made shows its checks as a bar and a count (6/6) and opens the PR on GitHub.
+  The PR card that unfolded under the row is gone; Merge and Merge ▾ are in the ⋯ menu.
+- The ticket is a tile in Made and on Project panel cards, with its title and state once this
+  window has read them (the Issues list, read when Sessions shows at most once a minute, or a
+  ticket you opened). Clicking it opens the ticket in Issues, with its comments.
+- A file that cannot be copied from the session's machine says why in full. A file written in
+  an agent worktree that has since been removed names that worktree and where the merged copy
+  is. The tile shows that the file is opening while it copies.
+- The Project panel shows which project it is on, above the goals, and whether it was found
+  from the folder or picked. Its menu lists the projects with a repository in this window's
+  folder; picking one is remembered for the window.
+- Review fills in per repository as each one answers, instead of waiting for all of them.
+- An Ended card says how long the session ran ("Ended · ran 13h 8m"), and opened, when
+  ("yesterday 6:50 PM → today 7:56 AM").
+
 ## [0.9.397] - 2026-10-12
 
 - The Active Session sidebar is one card (owner review, 2026-10-12). The title carries three
