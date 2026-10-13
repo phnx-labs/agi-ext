@@ -512,8 +512,10 @@ function queueThumb(uri) {
 // turns the live children into the new markup in place: an unchanged node stays
 // the same node. A node is reused only when its tag, id, class and data-*
 // attribute names match, so a reused node keeps the handler it was bound with;
-// every handler reads its data-* values when clicked. A fold keeps the open
-// state the viewer gave it, and a thumbnail keeps the src the observer filled.
+// every handler reads its data-* values when clicked. Children pair by position,
+// so a fold is keyed by its summary: a fold the viewer opened keeps its open
+// state, and rows inserted above it never hand that state to another row. A
+// thumbnail keeps the src the observer filled only while it shows the same image.
 function nodeSig(n) {
   if (n.nodeType !== 1) return String(n.nodeType);
   const names = [];
@@ -521,11 +523,13 @@ function nodeSig(n) {
     if (a.name === 'class' || a.name === 'id') names.push(a.name + '=' + a.value);
     else if (a.name.indexOf('data-') === 0) names.push(a.name);
   }
-  return n.nodeName + '|' + names.sort().join(',');
+  const summary = n.nodeName === 'DETAILS' && n.firstElementChild && n.firstElementChild.nodeName === 'SUMMARY' ? '|' + n.firstElementChild.textContent : '';
+  return n.nodeName + '|' + names.sort().join(',') + summary;
 }
 
 function patchAttrs(live, next) {
-  const kept = (name) => (name === 'open' && live.nodeName === 'DETAILS') || (name === 'src' && live.hasAttribute('data-thumb'));
+  const sameImage = live.hasAttribute('data-thumb') && live.getAttribute('data-thumb') === next.getAttribute('data-thumb');
+  const kept = (name) => (name === 'open' && live.nodeName === 'DETAILS') || (name === 'src' && sameImage);
   for (const a of Array.from(live.attributes)) if (!next.hasAttribute(a.name) && !kept(a.name)) live.removeAttribute(a.name);
   for (const a of Array.from(next.attributes)) if (!kept(a.name) && live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
 }

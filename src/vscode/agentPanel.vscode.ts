@@ -257,16 +257,21 @@ function currentStop(): TrailStop | undefined {
 function moveSubject(next: PanelSubject): void {
   const here = currentStop();
   panelSubject = next;
-  if (!here || subjectKey(here.subject) === subjectKey(next)) return;
+  if (here && subjectKey(here.subject) === subjectKey(next)) return;
+  trail.fwd = [];
+  if (!here) return;
   trail.back.push(here);
   if (trail.back.length > TRAIL_MAX) trail.back.shift();
-  trail.fwd = [];
 }
 
-/** Step Back or Forward; false when that way is empty. */
+/** A terminal stop whose tab closed cannot be shown again; a session stop always can. */
+const stopAlive = (stop: TrailStop) => stop.subject.source !== 'terminal' || !!(stop.subject.terminalId && terminals.getById(stop.subject.terminalId)?.agentConfig);
+
+/** Step Back or Forward, past stops that can no longer be shown; false when that way is empty. */
 function stepTrail(dir: 'back' | 'fwd'): boolean {
   const from = dir === 'back' ? trail.back : trail.fwd;
   const to = dir === 'back' ? trail.fwd : trail.back;
+  while (from.length && !stopAlive(from[from.length - 1]!)) from.pop();
   const stop = from.pop();
   if (!stop) return false;
   const here = currentStop();
@@ -276,8 +281,9 @@ function stepTrail(dir: 'back' | 'fwd'): boolean {
 }
 
 function trailTitles(): { back?: string; fwd?: string } {
-  const back = trail.back[trail.back.length - 1]?.title;
-  const fwd = trail.fwd[trail.fwd.length - 1]?.title;
+  const top = (stops: TrailStop[]) => [...stops].reverse().find(stopAlive)?.title;
+  const back = top(trail.back);
+  const fwd = top(trail.fwd);
   return { ...(back ? { back } : {}), ...(fwd ? { fwd } : {}) };
 }
 
@@ -544,6 +550,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       case 'openTicket':
         // The ticket opens in the Project panel's Issues tab: one read, with comments.
         if (typeof msg.id === 'string' && msg.id) void vscode.commands.executeCommand('agents.project.openTicket', msg.id);
+        return;
+      case 'dictationState':
+        this.view?.webview.postMessage({ type: 'dictation', state: dictation.state() });
         return;
       case 'dictate':
         if (msg.on === true) void dictation.start((update) => this.view?.webview.postMessage({ type: 'dictation', ...update }));
@@ -1808,6 +1817,10 @@ function render(snap) {
   // The empty state is about having NO SUBJECT — not about having no terminal.
   // A session picked in the Project panel renders here with no local tab at all.
   if (!snap || !snap.hasSubject) {
+    // Put the draft away: the reply box is rebuilt when a session comes back.
+    const input = root.querySelector('#reply-input');
+    if (input) replyDrafts[replySession] = input.value;
+    replySession = '';
     root.innerHTML = (
       '<div class="empty">No session selected.<br><br>' +
       'Click an agent tab in the editor, open one with <b>Cmd+Shift+A</b>, ' +
@@ -1821,6 +1834,8 @@ function render(snap) {
       '<div class="footer"><button id="refresh-btn">Refresh</button></div>';
     body = root.querySelector('#panel-body');
     bindReplyBox();
+    // A rebuilt box asks whether a recording is still running.
+    vscode.postMessage({ type: 'dictationState' });
   }
   syncReplyBox(snap);
   // One card, top to bottom (owner, 2026-10-12): the title with quick icons, the
@@ -1958,9 +1973,14 @@ function syncReplyBox(s) {
 
 // The mic's state, as the host reports it. Listening shows a moving wave (CSS, no
 // timer: the sidebar keeps none); the words land in the box when transcribed.
+// The session the words were spoken for: they land in its draft even if the
+// subject changed while transcribing.
+let dictationSession = '';
+
 function setDictation(state, text) {
   const box = root.querySelector('.reply-box');
   if (!box) return;
+  if (state === 'listening' && !box.classList.contains('listening')) dictationSession = replySession;
   const mic = box.querySelector('#reply-mic');
   box.classList.toggle('listening', state === 'listening');
   box.classList.toggle('transcribing', state === 'transcribing');
@@ -1969,10 +1989,15 @@ function setDictation(state, text) {
   box.querySelector('.dictation').hidden = state === 'idle';
   box.querySelector('.dict-t').textContent = state === 'transcribing' ? 'Transcribing…' : 'Listening · click the mic to stop';
   if (text) {
+    const join = (draft) => draft ? draft.replace(/\\s+$/, '') + ' ' + text : text;
     const input = box.querySelector('#reply-input');
-    input.value = input.value ? input.value.replace(/\\s+$/, '') + ' ' + text : text;
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
+    if (dictationSession && dictationSession !== replySession) {
+      replyDrafts[dictationSession] = join(replyDrafts[dictationSession] || '');
+    } else {
+      input.value = join(input.value);
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
   }
 }
 

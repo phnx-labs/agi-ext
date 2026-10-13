@@ -251,9 +251,16 @@ class ProjectView implements vscode.WebviewViewProvider {
   async openTicketTab(id: string): Promise<void> {
     if (this.view) this.view.show(true);
     else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
-    await this.show('tickets');
+    // Straight to the ticket: the Issues list is not read first.
+    this.ticket = id;
+    if (this.active !== 'tickets') {
+      this.active = 'tickets';
+      void this.context.workspaceState.update(TAB_KEY, 'tickets');
+      this.syncDemand();
+    }
     void this.view?.webview.postMessage({ type: 'tab', tab: 'tickets' });
-    await this.openTicket(id);
+    this.post('tickets', '<div class="empty">Loading…</div>');
+    await this.load('tickets', true);
   }
 
   /** A ticket row click opens its detail (one read); the back control returns to the list. */
@@ -393,9 +400,12 @@ class ProjectPanelController {
     this.refresh(true);
   }
 
-  /** Read the Issues list for ticket tiles when it is not fresh; never throws. */
+  private facesTriedAt = 0;
+
+  /** Read the Issues list for ticket tiles at most once per FRESH_MS, failed or not; never throws. */
   warmTicketFaces(p: ProjectRef): void {
-    if (!p.linearName || !resolveLinearBin()) return;
+    if (!p.linearName || !resolveLinearBin() || Date.now() - this.facesTriedAt < FRESH_MS) return;
+    this.facesTriedAt = Date.now();
     this.ticketGroups(p, false).catch(() => undefined);
   }
 
@@ -415,7 +425,11 @@ class ProjectPanelController {
         if (!out || !out.trim().startsWith('{')) { done.set(r.slug, { slug: r.slug, error: errorText(e).split('\n')[0] ?? 'failed', branch: null, release: null, open: [], merged: [] }); partial(draw()); return; }
         stdout = out;
       }
-      for (const repo of parsePrs(stdout).repos) done.set(r.slug, repo);
+      try {
+        for (const repo of parsePrs(stdout).repos) done.set(r.slug, repo);
+      } catch (e) {
+        done.set(r.slug, { slug: r.slug, error: errorText(e), branch: null, release: null, open: [], merged: [] });
+      }
       if (!done.has(r.slug)) done.set(r.slug, { slug: r.slug, error: null, branch: null, release: null, open: [], merged: [] });
       partial(draw());
     }));
