@@ -1169,6 +1169,7 @@ ${PATCH_SCRIPT}
   const opened = new Set();
   const pendingMerge = new Map();
   const mergeTimers = new Map();
+  let shownProject;
   function waitWords(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
     if (s < 60) return s + 's';
@@ -1240,7 +1241,9 @@ ${PATCH_SCRIPT}
       document.body.classList.remove('loading');
     }
     else if (m.type === 'project') {
-      cancelMerges();
+      // Only a different project cancels a merge still counting down; every load re-sends the name.
+      if (shownProject !== undefined && m.name !== shownProject && cancelMerges()) toast('Merge cancelled: the project changed before it started.');
+      shownProject = m.name;
       const row = document.querySelector('.proj');
       row.hidden = !m.name;
       row.querySelector('.ppn').textContent = m.name;
