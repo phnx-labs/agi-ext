@@ -79,3 +79,21 @@ describe('agent session editor-tab routing', () => {
     expect(recovery).toContain('buildRecoveryResumeCommand(opts.sessionId, device)');
   });
 });
+
+describe('new-agent workspace routing', () => {
+  test('ordinary launch paths never infer a project from the workspace cwd', () => {
+    const launchAgent = extensionSource.slice(
+      extensionSource.indexOf('async function launchAgent'),
+      extensionSource.indexOf('async function sendCommandWhenReady'),
+    );
+    const openSingleAgent = extensionSource.slice(
+      extensionSource.indexOf('async function openSingleAgent'),
+      extensionSource.indexOf('async function spawnCommandTerminal'),
+    );
+
+    expect(extensionSource).not.toContain('resolveProjectForCwd');
+    expect(launchAgent).toContain('const projectSlug = pickedProjectSlug;');
+    expect(openSingleAgent).toContain('cwd: targetHost ? cwd : undefined');
+    expect(openSingleAgent).not.toMatch(/project:\s*projectSlug/);
+  });
+});

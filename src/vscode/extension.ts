@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, modeFlagForAgent, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
-import { resolveProjectForCwd, readManagedProjects } from '../core/managedProjects';
+import { readManagedProjects } from '../core/managedProjects';
 import { parseSpawnRequest, resolveSpawnSurface, SpawnRequest } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
@@ -520,11 +520,12 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   const defaultModel = builtIn
     ? settings.getDefaultModel(context, builtIn.key as Parameters<typeof settings.getDefaultModel>[1])
     : undefined;
-  // `--project` owns the working directory end-to-end, so it and cwd are
-  // mutually exclusive (buildAgentLaunchCommand throws if both are passed). A
-  // (Pick Project) launch supplies the slug explicitly and overrides the
-  // cwd-derived match — the user chose where to land, not where the window is.
-  const projectSlug = pickedProjectSlug ?? (cwd ? await resolveProjectForCwd(cwd) : undefined);
+  // `--project` owns the working directory end-to-end, so only an explicit
+  // (Pick Project) choice may supply it. `projects view <cwd>` is a containment
+  // attribution lookup, not a launch decision: at a shared monorepo root more
+  // than one child project can match, and converting that result to --project
+  // discards the exact workspace cwd and lands in the child's defaultPath.
+  const projectSlug = pickedProjectSlug;
   // "Local" must cover BOTH an explicit `local: true` (the per-harness New X
   // commands) and a Pick Host prompt the user answered with "This Mac", which
   // returns no host. Passing plain `opts.local` there leaves it undefined, the
@@ -1994,11 +1995,6 @@ async function openSingleAgent(
   const terminalId = terminals.nextId(agentConfig.prefix);
   const cwd = workspaceFolder;
 
-  // If the workspace folder is a bound directory of a defined project, let the
-  // CLI resolve `--project <slug>` to a cwd itself (locally or on `host`)
-  // instead of Factory computing/forwarding one by hand.
-  const projectSlug = await resolveProjectForCwd(workspaceFolder);
-
   let sessionId: string | null = null;
 
   // Track OpenCode sessions before spawn to detect new one
@@ -2047,8 +2043,10 @@ async function openSingleAgent(
       {
         host: targetHost,
         local: !targetHost,
-        cwd: projectSlug ? undefined : (targetHost ? cwd : undefined),
-        project: projectSlug,
+        // Ordinary launches preserve the exact workspace. Choosing a managed
+        // project's defaultPath is reserved for the explicit Pick Project flow
+        // in launchAgent; this legacy launch path has no project picker.
+        cwd: targetHost ? cwd : undefined,
       },
     );
   }
