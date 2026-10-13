@@ -9,7 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { extractLinearTicketId } from './utils';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, SESSION_STATE_WORD, attentionRank, ballOf, moveRank, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, attentionRank, ballOf, moveRank, pendingCounts, pendingLines, pendingWords, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { resolveProject } from '../shared/project';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
@@ -19,6 +20,8 @@ export interface ProjectRef {
   linearName: string | null;
   /** Its repositories and where each is checked out; only `agents projects list` carries them. */
   repos?: { slug: string; path: string }[];
+  /** The checkout the window's folder resolved to (`agents projects status --path`'s `root`). */
+  root?: string;
 }
 
 interface Ticket {
@@ -85,7 +88,8 @@ export function parseProjectDetection(raw: string): ProjectRef | null {
   const name = str(d.name);
   if (!name) return null;
   const linear = d.linear && typeof d.linear === 'object' ? (d.linear as Json) : null;
-  return { name, linearName: str(linear?.name) };
+  const root = str(d.root);
+  return { name, linearName: str(linear?.name), ...(root ? { root } : {}) };
 }
 
 /** `agents projects list --json`. */
@@ -243,6 +247,14 @@ export interface SessionLike {
   resumable?: boolean;
   lastActivityMs: number;
   confirmedProject: string | null;
+  /** Where the agent runs; the card names its repository only when it is not this window's. */
+  cwd?: string;
+  /** Background work still running (CLI `pending`); idle plus pending is Waiting. */
+  pending?: SessionPending;
+  effort?: string;
+  fast?: boolean;
+  /** The account it runs on, when the stream names one. */
+  account?: string;
 }
 
 /** An image the user pasted into the session's request, resolved on this machine. */
@@ -273,12 +285,40 @@ export function preferLive<T extends { sessionId: string; phase?: string; liveSt
   return rows.filter((r) => best.get(r.sessionId) === r);
 }
 
-/** The project's sessions, newest first. */
-export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'>>(rows: T[], project: string): T[] {
+/** A path with the home folder written as `~`, so a session on another machine
+ *  (`/Users/x/src/a`) compares with this one (`/home/x/src/a`). */
+function homeless(p: string): string {
+  return p.replace(/\/+$/, '').replace(/^(?:\/Users\/[^/]+|\/home\/[^/]+|~)(?=\/|$)/, '~');
+}
+
+/** The checkout a cwd belongs to: a worktree folds to the repository holding it. */
+function checkoutOf(cwd: string): string {
+  return homeless(cwd).replace(/\/\.(?:agents|claude)\/worktrees\/.*$/, '');
+}
+
+/** The repository paths a project is checked out at, as `~/…` paths. */
+export function projectRepoPaths(p: Pick<ProjectRef, 'root' | 'repos'>): string[] {
+  return [...new Set([p.root ?? '', ...(p.repos ?? []).map((r) => r.path)].filter(Boolean).map(homeless))];
+}
+
+/** The project's sessions, newest first: the CLI's own `confirmedProject`, and
+ *  until agents-cli resolves a project's old names, a session whose checkout is one
+ *  of the project's repositories though the CLI filed it under another name
+ *  (a session filed under a renamed project's old name). */
+export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'> & { cwd?: string }>(rows: T[], project: string, repoPaths: string[] = []): T[] {
   const want = project.toLowerCase();
+  const repos = new Set(repoPaths.map(homeless));
+  const inRepo = (r: T) => !!r.cwd && repos.has(checkoutOf(r.cwd));
   return rows
-    .filter((r) => (r.confirmedProject || '').toLowerCase() === want)
+    .filter((r) => (r.confirmedProject || '').toLowerCase() === want || (repos.size > 0 && inRepo(r)))
     .sort((a, b) => b.lastActivityMs - a.lastActivityMs);
+}
+
+/** A string's FNV-1a hash in base 36: a card carries it so an unchanged card is not re-patched. */
+function fieldsHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
 }
 
 function relAge(ms: number, now: number): string {
@@ -502,6 +542,8 @@ export interface SessionListOptions {
   blockedIds?: ReadonlySet<string>;
   /** The shortcut the search icon names ("⌘K", "Ctrl+K"). */
   searchKey?: string;
+  /** The project shown, so a card filed under another name says so in its ⋯ menu. */
+  project?: string;
 }
 
 const ACT_ICON = {
@@ -604,15 +646,41 @@ function askedAt(s: SessionLike): number {
 /** A question shows its attention glow for this long after it arrives. */
 const FRESH_MS = 20_000;
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean }): string {
+/** A thumbnail's markup: no `src` until the webview's cache holds a 480 px copy
+ *  (`THUMB_SCRIPT`, `src/shared/sessionCards.ts`), so a redraw never decodes the
+ *  full render again. An SVG is drawn directly. */
+function thumbImg(uri: string, path: string, alt: string): string {
+  const size = 'width="54" height="34"';
+  return /\.svg$/i.test(path)
+    ? `<img src="${escapeHtml(uri)}" ${size} alt="${escapeHtml(alt)}">`
+    : `<img data-thumb="${escapeHtml(uri)}" ${size} alt="${escapeHtml(alt)}">`;
+}
+
+/** The card's ⋯ menu: what used to crowd its meta row (tab, model, folder, session
+ *  id, account), each on its own line. */
+function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string; here: SessionHere }): string {
+  const tab = place.where.match(/tab \d+/)?.[0];
+  const rows: [string, string][] = [
+    ['Tab', s.tabHere ? (tab ? `${tab} in this window` : 'in this window') : tab ? `${tab} in ${place.name}` : 'none'],
+    ['Model', [s.model, s.effort ? `${s.effort} effort` : '', s.fast ? 'fast' : ''].filter(Boolean).join(' · ') || 'not reported'],
+    ['Machine', place.device === opts.here.device ? `${place.device} (this one)` : place.device],
+    ...(s.cwd ? [['Folder', displayHome(s.cwd)] as [string, string]] : []),
+    ['Session', s.sessionId],
+    ...(s.account ? [['Account', s.account] as [string, string]] : []),
+    ...(opts.project && s.confirmedProject && s.confirmedProject.toLowerCase() !== opts.project.toLowerCase()
+      ? [['Project', `${opts.project} (the CLI said ${s.confirmedProject})`] as [string, string]] : []),
+  ];
+  return `<details class="cmore"><summary class="act" title="Details" aria-label="Details">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button></div></details>`;
+}
+
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string }): string {
   const state = sessionStateOf(s);
   const title = sessionTitle(s);
   const question = state === 'asks' ? plain(s.question?.text || s.attention?.question?.text || '') : '';
   const said = agentLine(s);
   const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
   const made = opts.made;
-  const where = opts.pinned && (place.kind === 'here' || place.kind === 'window') ? `${place.name} · ${place.where}` : opts.pinned && place.kind === 'ghostty' ? 'Ghostty' : place.where;
-  const busy = state === 'working' || state === 'asks';
+  const busy = state === 'working' || state === 'waiting' || state === 'asks';
   const hasTab = place.kind === 'here' || place.kind === 'leftover';
   const go = state === 'ended'
     ? (s.resumable === false ? '' : `<button class="act" data-act="resume" title="Resume the agent${hasTab ? ' in its tab' : ''}">${glyph('resume')}</button>`)
@@ -627,29 +695,46 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const ran = state === 'ended' && s.startedAtMs && s.lastActivityMs > s.startedAtMs ? s.lastActivityMs - s.startedAtMs : 0;
   const folders = made?.folders ?? [];
   // Previews always show: what you attached, then images the agent made, three at most.
-  const attached = opts.thumbs.slice(0, 3).map((t) => `<a class="th in" href="#" data-path="${escapeHtml(t.path)}" title="Attached by you: ${escapeHtml(t.label)}"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}"></a>`);
-  const madeImages = folders.flatMap((f) => f.images).slice(0, 3 - attached.length).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="Made by the agent: ${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`);
+  // Each goes through the webview's 480 px cache, in a fixed box, so a redraw never flickers.
+  const attached = opts.thumbs.slice(0, 3).map((t) => `<a class="th in" href="#" data-path="${escapeHtml(t.path)}" title="Attached by you: ${escapeHtml(t.label)}">${thumbImg(t.uri, t.path, t.label)}</a>`);
+  const madeImages = folders.flatMap((f) => f.images).slice(0, 3 - attached.length).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="Made by the agent: ${escapeHtml(i.name)}">${thumbImg(i.uri, i.path, i.name)}</a>`);
   const thumbs = [...attached, ...madeImages];
   const folderChip = folders.length ? `<a class="chip" href="#" data-artifact="${escapeHtml((folders[0].files[0] ?? folders[0].images[0]).path)}" title="${escapeHtml(folders.map((f) => f.display).join('\n'))}">${glyph('folder')}${folders.length}</a>` : '';
   const chips = [prs, ticketChip, folderChip].join('');
   const asked = askedAt(s);
   const waited = state === 'asks' && Number.isFinite(asked) ? Math.max(0, now - asked) : -1;
+  // Waiting names its work on hover; its chips count each kind (⑂ subagents, ▸ shells, ◉ monitors).
+  const pendHover = pendingLines(s.pending, now).join('\n');
+  const counts = pendingCounts(s.pending);
+  const pendChips = state !== 'ended' && counts.total
+    ? PENDING_KINDS.filter((k) => counts[k.key]).map((k) => `<span class="pc" title="${escapeHtml(pendHover)}">${k.mark} ${counts[k.key]}</span>`).join('')
+    : '';
   const word = opts.blocked ? 'Your move · blocked' : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
-  const pill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"><i></i>${escapeHtml(word)}${waited >= 0 ? ` · <span class="wait" data-since="${asked}">${waitFor(waited)}</span>` : ''}</span>`;
+  const pillTitle = state === 'waiting' ? ` title="${escapeHtml(`Waiting on its own work: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
+  const pill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}${waited >= 0 ? ` · <span class="wait" data-since="${asked}">${waitFor(waited)}</span>` : ''}</span>`;
+  // The repository only when it is not the one this window has open.
+  const repo = s.cwd ? resolveProject(s.cwd) : '';
+  const ours = new Set([opts.here.workspace, ...(opts.here.folders ?? [])].map((f) => f.toLowerCase()));
+  const repoTag = repo && !ours.has(repo.toLowerCase()) ? `<span class="repo" title="${escapeHtml(displayHome(s.cwd!))}">${escapeHtml(repo)}</span>` : '';
+  const fx = `${s.fast ? '<span class="fast" title="Fast mode">⚡</span>' : ''}${s.effort === 'high' || s.effort === 'xhigh' || s.effort === 'max' ? `<span class="hi" title="${escapeHtml(s.effort)} reasoning effort">◆</span>` : ''}`;
   const preview = question
     ? `<div class="ask" data-expand title="Show the whole question"><span class="q">${escapeHtml(question)}</span><span class="exp">more</span></div>`
     : said ? `<div class="line said">${escapeHtml(said)}</div>`
       : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '';
-  return `<div class="card st-${state}${opts.selected ? ' sel' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}">
-    <div class="top">${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
-    <div class="meta">${pill}<span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
+  const body = `
+    <div class="top">${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${cardMenu(s, place, opts)}${go}${x}</span></div>
+    <div class="meta">${pill}${pendChips}${repoTag}</div>
     ${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
-    ${thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${chips ? `<div class="cstrip">${chips}</div>` : ''}
-  </div>`;
+    ${thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}<div class="cbot">${chips ? `<div class="cstrip">${chips}</div>` : ''}<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span></div>
+  `;
+  const cls = `card st-${state}${opts.selected ? ' sel' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
+  const attrs = `tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
+  // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
+  return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
 }
 
 const PLACE_ORDER: Record<PlaceKind, number> = { here: 0, window: 1, ghostty: 2, terminal: 3, background: 4, leftover: 5, ended: 6 };
-const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', yours: 'yours', unknown: 'unknown', ended: 'ended' };
+const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', waiting: 'waiting', yours: 'yours', unknown: 'unknown', ended: 'ended' };
 
 /** What the list keeps after the viewer's Show choices and hidden sessions. */
 function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionListPrefs): { row: SessionLike; place: SessionPlace }[] {
@@ -696,7 +781,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     .sort((a, b) => rank(a.row) - rank(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)) || waitedSince(a.row) - waitedSince(b.row));
   const rest = all.filter(({ row }) => !isMine(row));
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row),
+    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project,
   });
   // The tab already shows the count and the Your move dot, so the header carries only its controls.
   const head = `<div class="shead"><span class="label">Sessions</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;

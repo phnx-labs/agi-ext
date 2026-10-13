@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import {
   parsePrs, parseProjectDetection, parseProjectList, parseTickets,
-  activityLine, backgroundKind, preferLive, projectSessions, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
+  activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
   DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
   type SessionHere, type SessionLike, type SessionListPrefs,
@@ -11,7 +11,7 @@ import {
 
 test('detection: a matched workspace yields name + Linear name; no match is null', () => {
   expect(parseProjectDetection('{"name":"agi","linear":{"name":"AGI","projectId":"x"},"root":"~/src/a"}'))
-    .toEqual({ name: 'agi', linearName: 'AGI' })
+    .toEqual({ name: 'agi', linearName: 'AGI', root: '~/src/a' })
   expect(parseProjectDetection('{"name":null,"linear":null,"root":null}')).toBeNull()
 })
 
@@ -193,7 +193,10 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl" title="Health">Health<')
   expect(html).toContain('class="pill st-yours"><i></i>Your move · idle<')
-  expect(html).toContain('class="where">m6 · tab 3<')
+  // The tab and machine moved: the machine sits dimmed at the bottom right, the tab in ⋯.
+  expect(html).not.toContain('class="where"')
+  expect(html).toContain('<span class="hst" title="Machine">m6</span></div>')
+  expect(html).toContain('<dt>Tab</dt><dd>tab 3 in this window</dd>')
   expect(html).toContain('class="line said">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
   // No hidden full card: hover changes nothing but the icons.
@@ -327,13 +330,14 @@ test('stored preferences keep only values this version knows; older ones get End
   expect(readSessionPrefs({ showEnded: false, folded: [], v: 2 })).toMatchObject({ showEnded: false, folded: [] })
 })
 
-test('a card leads with its harness logo and ends its meta line with the model the CLI reported', () => {
+test('a card leads with its harness logo; the model the CLI reported lives in its ⋯ menu', () => {
   const html = card(row({ agentType: 'claude', model: 'claude-opus-5-5' }))
   expect(html).toContain('<div class="top"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i><span class="ttl" title="T">')
-  expect(html).toMatch(/<span class="where">[^<]*<\/span><span class="mdl" title="claude-opus-5-5">opus-5-5<\/span><\/div>/)
+  expect(html).not.toContain('class="mdl"')
+  expect(html).toContain('<dt>Model</dt><dd>claude-opus-5-5</dd>')
   const bare = card(row({ agentType: 'amp' }))
   expect(bare).not.toContain('class="hx')
-  expect(bare).not.toContain('class="mdl"')
+  expect(bare).toContain('<dt>Model</dt><dd>not reported</dd>')
 })
 
 test('your move leads with a question, then an idle turn; a crashed process is Ended', () => {
@@ -410,4 +414,70 @@ test('a session whose agent posted blocked is pinned first, as Your move · bloc
   expect(html.indexOf('data-session="session_stuck"')).toBeLessThan(html.indexOf('data-session="ask"'))
   expect(html).toContain('<span class="pill st-blocked"><i></i>Your move · blocked</span>')
   expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })).not.toContain('st-blocked')
+})
+
+const SHELL = { id: 'b1', description: 'Poll prod until the segment closes', startedAtMs: NOW - 6 * 60_000 }
+
+test('Waiting: an idle session with background work shows a blue pill, a chip per kind with the list on hover, and is not Your move', () => {
+  const waiting = row({ sessionId: 'w', phase: 'idle', liveStatus: 'idle', pending: { shells: [SHELL], subagents: [{ id: 'a', description: 'Watch reels' }] } })
+  const html = card(waiting)
+  expect(html).toContain('class="pill st-waiting" title="Waiting on its own work: 1 subagent, 1 shell')
+  expect(html).toContain('<i></i>Waiting</span>')
+  expect(html).toContain('>⑂ 1</span>')
+  expect(html).toContain('>▸ 1</span>')
+  expect(html).not.toContain('>◉')
+  expect(html).toContain('▸ Poll prod until the segment closes · 6m')
+  expect(html).toContain('data-busy="1"')
+  const idle = row({ sessionId: 'y', phase: 'idle', liveStatus: 'idle' })
+  expect(sessionCount([waiting, idle]).asks).toBe(1)
+  const list = renderSessions([waiting, idle], NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  const pinned = list.slice(list.indexOf('class="pinned"'), list.indexOf('<section'))
+  expect(pinned).toContain('data-session="y"')
+  expect(pinned).not.toContain('data-session="w"')
+  // An older CLI without the field: exactly today's card.
+  expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toContain('class="pill st-yours"><i></i>Your move · idle<')
+})
+
+test('a quieter card: the repository only when it is not this window\'s, the machine bottom right, ⚡ and ◆, details in ⋯', () => {
+  const ours = card(row({ cwd: '/Users/me/src/agents/.agents/worktrees/x', host: 'yosemite-m5' }))
+  expect(ours).not.toContain('class="repo"')
+  expect(ours).toContain('<span class="hst" title="Machine">m5</span>')
+  expect(card(row({ cwd: '/Users/me/src/agents-cli' }))).toContain('<span class="repo" title="/Users/me/src/agents-cli">agents-cli</span>')
+  const fx = card(row({ fast: true, effort: 'max', model: 'claude-opus-5-5', account: 'claude#work', cwd: '/home/me/src/agents' }))
+  expect(fx).toContain('<span class="fx"><span class="fast" title="Fast mode">⚡</span><span class="hi" title="max reasoning effort">◆</span></span>')
+  expect(fx).toContain('<dt>Model</dt><dd>claude-opus-5-5 · max effort · fast</dd>')
+  expect(fx).toContain('<dt>Account</dt><dd>claude#work</dd>')
+  expect(fx).toContain('<dt>Session</dt><dd>s</dd>')
+  expect(fx).toContain('<dt>Folder</dt><dd>/home/me/src/agents</dd>')
+  expect(fx).toContain('data-copy="s"')
+  expect(card(row({ effort: 'medium' }))).not.toContain('class="fx"')
+  expect(card(row({ effort: 'xhigh' }))).toContain('title="xhigh reasoning effort">◆')
+})
+
+test('card thumbnails go through the 480 px cache in a fixed box; the card carries a key and a fields hash', () => {
+  const s = row({ sessionId: 'k' })
+  const thumbs = [{ uri: 'vscode-resource:/big.png', path: '/h/.agents/.history/attachments/big.png', label: 'big.png' }, { uri: 'vscode-resource:/logo.svg', path: '/h/logo.svg', label: 'logo.svg' }]
+  const html = card(s, { thumbs })
+  expect(html).toContain('<img data-thumb="vscode-resource:/big.png" width="54" height="34" alt="big.png">')
+  expect(html).not.toContain('src="vscode-resource:/big.png"')
+  expect(html).toContain('<img src="vscode-resource:/logo.svg" width="54" height="34"')
+  expect(html).toContain('data-key="k@yosemite-m6"')
+  const hash = html.match(/data-h="([^"]+)"/)![1]
+  expect(card(s, { thumbs }).match(/data-h="([^"]+)"/)![1]).toBe(hash)
+  expect(card(row({ sessionId: 'k', lastResponse: 'other' }), { thumbs }).match(/data-h="([^"]+)"/)![1]).not.toBe(hash)
+})
+
+test('until the CLI maps old project names, a session in one of the project\'s repositories is shown, and its ⋯ says what the CLI said', () => {
+  // Misc b062745e: confirmedProject "prix" (the old name), cwd in the agents repo the rush project is checked out at.
+  const misc = row({ sessionId: 'b062745e', confirmedProject: 'prix', cwd: '/Users/me/src/agents', lastActivityMs: 3 })
+  const wt = row({ sessionId: 'wt', confirmedProject: 'prix', cwd: '/home/me/src/agents/.agents/worktrees/x', lastActivityMs: 2 })
+  const other = row({ sessionId: 'o', confirmedProject: 'prix', cwd: '/Users/me/src/elsewhere', lastActivityMs: 4 })
+  const mine = row({ sessionId: 'r', confirmedProject: 'rush', lastActivityMs: 1 })
+  const repos = projectRepoPaths({ root: '~/src/agents', repos: [{ slug: 'o/site', path: '/Users/me/src/site' }] })
+  expect(repos).toEqual(['~/src/agents', '~/src/site'])
+  expect(projectSessions([misc, wt, other, mine], 'rush', repos).map((r) => r.sessionId)).toEqual(['b062745e', 'wt', 'r'])
+  // Without repository paths, only the CLI's word counts, as before.
+  expect(projectSessions([misc, mine], 'rush').map((r) => r.sessionId)).toEqual(['r'])
+  const html = renderSessionCard(misc, sessionPlace(misc, HERE), NOW, { selected: false, pinned: false, here: HERE, thumbs: [], made: null, project: 'rush' })
+  expect(html).toContain('<dt>Project</dt><dd>rush (the CLI said prix)</dd>')
 })

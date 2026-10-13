@@ -4,12 +4,14 @@
 //
 //   status input_required / phase waiting, or an open ask  -> asks     (Your move · asks)
 //   idle: replied, or an open stall/failure on a live agent  -> yours    (Your move · idle)
+//   idle with background work still pending (subagents,
+//     background shells, monitors; the row's `pending`)        -> waiting  (Waiting)
 //   running                                                  -> working  (Running)
 //   closed, or the process is gone (orphaned, crashed,
 //     abandoned, failed): nothing about whether it succeeded -> ended    (Ended)
 //   unknown: alive, no transcript the CLI could read          -> unknown  (Running · no transcript)
 
-export type SessionStateKey = 'asks' | 'working' | 'yours' | 'ended' | 'unknown';
+export type SessionStateKey = 'asks' | 'working' | 'waiting' | 'yours' | 'ended' | 'unknown';
 
 export interface SessionStateFacts {
   phase?: string;
@@ -17,20 +19,82 @@ export interface SessionStateFacts {
   attention?: { kind?: string; state?: string } | null;
   /** An open attention item the caller only knows as present. */
   needsYou?: boolean;
+  /** Background work the turn left running (CLI row `pending`); absent on an older CLI. */
+  pending?: SessionPending | null;
+}
+
+/** One piece of background work still running, as the CLI names it. */
+export interface PendingItem {
+  id: string;
+  description: string;
+  startedAtMs?: number;
+}
+
+/** The CLI row's `pending`: only work running now. `subAgentCount` is cumulative
+ *  and never says whether anything is still running. */
+export interface SessionPending {
+  subagents?: PendingItem[];
+  shells?: PendingItem[];
+  monitors?: PendingItem[];
+}
+
+/** The three kinds, in the order the chips and the list show them, with their marks. */
+export const PENDING_KINDS = [
+  { key: 'subagents', mark: '⑂', one: 'subagent', many: 'subagents' },
+  { key: 'shells', mark: '▸', one: 'shell', many: 'shells' },
+  { key: 'monitors', mark: '◉', one: 'monitor', many: 'monitors' },
+] as const;
+
+/** How many of each kind are pending; all zero when the field is absent. */
+export function pendingCounts(p: SessionPending | null | undefined): { subagents: number; shells: number; monitors: number; total: number } {
+  const n = (xs: unknown) => (Array.isArray(xs) ? xs.length : 0);
+  const subagents = n(p?.subagents);
+  const shells = n(p?.shells);
+  const monitors = n(p?.monitors);
+  return { subagents, shells, monitors, total: subagents + shells + monitors };
+}
+
+/** "1 shell, 3 subagents": what a Waiting session waits on, in words. */
+export function pendingWords(p: SessionPending | null | undefined): string {
+  const c = pendingCounts(p);
+  return PENDING_KINDS.filter((k) => c[k.key]).map((k) => `${c[k.key]} ${c[k.key] === 1 ? k.one : k.many}`).join(', ');
+}
+
+/** One line per pending item ("▸ Poll prod until the run closes · 6m"), for a hover. */
+export function pendingLines(p: SessionPending | null | undefined, now: number): string[] {
+  const lines: string[] = [];
+  for (const k of PENDING_KINDS) {
+    for (const it of p?.[k.key] ?? []) {
+      const age = it.startedAtMs ? ` · ${agoWords(now - it.startedAtMs)}` : '';
+      lines.push(`${k.mark} ${it.description || it.id}${age}`);
+    }
+  }
+  return lines;
+}
+
+/** "45s", "6m", "2h", "3d": how long ago, in the fewest characters. */
+export function agoWords(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
 
 // On screen they collapse to three, by who has the ball (owner, 2026-10-12:
 // "how is Needs you different from idle, or from Your turn?"):
 //   Your move — the agent does nothing until you act; a tag says why
 //               (asks · idle), a question first
-//   Running   — the agent is working (or alive with no readable transcript)
+//   Running   — the agent is working (or alive with no readable transcript), or
+//               its turn ended but it waits on its own background work (Waiting)
 //   Ended     — the process exited
 export type SessionBall = 'move' | 'running' | 'ended';
 
 export const BALL_WORD: Record<SessionBall, string> = { move: 'Your move', running: 'Running', ended: 'Ended' };
 
 export function ballOf(key: SessionStateKey): SessionBall {
-  if (key === 'working' || key === 'unknown') return 'running';
+  if (key === 'working' || key === 'waiting' || key === 'unknown') return 'running';
   if (key === 'ended') return 'ended';
   return 'move';
 }
@@ -47,6 +111,7 @@ export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
   asks: 'Your move · asks',
   yours: 'Your move · idle',
   working: 'Running',
+  waiting: 'Waiting',
   unknown: 'Running · no transcript',
   ended: 'Ended',
 };
@@ -64,6 +129,11 @@ export function sessionStateOf(s: SessionStateFacts): SessionStateKey {
   if (open === 'stall' || open === 'failure') return 'yours';
   if (s.phase === 'running') return 'working';
   if (status === 'unknown') return 'unknown';
+  // Idle, but a subagent, background shell or monitor it started still runs: the
+  // agent has the ball (agents-cli feed `pending`; absent means exactly as before).
+  // An absent `pending` is unknown (an older CLI on a peer) and reads as before.
+  const idle = status === 'idle' || (!status && s.phase === 'idle');
+  if (idle && pendingCounts(s.pending).total > 0) return 'waiting';
   return 'yours';
 }
 

@@ -24,6 +24,7 @@ import {
   parseProjectList,
   parseTickets,
   projectSessions,
+  projectRepoPaths,
   projectsInFolder,
   displayHome,
   renderPrs,
@@ -46,12 +47,13 @@ import {
   type TicketGroup,
 } from '../core/projectPanel';
 import { SESSION_STATE_WORD, sessionStateOf } from '../shared/sessionState';
+import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
-import { PATCH_SCRIPT } from '../shared/sessionCards';
+import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
 import { validMergeMethod } from '../core/settings';
@@ -133,6 +135,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true);
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
+      else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
       else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') void this.controller.openArtifact(msg.sessionId, host, msg.path);
       else if (msg.type === 'close') void this.controller.closeSessions(targets);
@@ -372,6 +375,8 @@ class ProjectPanelController {
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
   /** The detail last drawn, so Start names the ticket the user is looking at. */
   private shownTicket: TicketDetail | undefined;
+  /** The last Issues read that answered, for ⌘K's Tickets section. */
+  private ticketsSeen: TicketGroup[] = [];
   readonly view: ProjectView;
 
   constructor(private readonly context: vscode.ExtensionContext) {
@@ -471,6 +476,7 @@ class ProjectPanelController {
       if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
       const { stdout } = await execFileAsync(bin, ['tasks', '--project', p.linearName, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
       const parsed = parseTickets(stdout);
+      this.ticketsSeen = parsed;
       if (rememberTicketGroups(parsed)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
       return parsed;
     })();
@@ -542,7 +548,7 @@ class ProjectPanelController {
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     const agent = this.ticketAgent(t);
     const project = await this.project().catch(() => null);
-    const rows = project ? projectSessions(preferLive(this.presented()) as unknown as SessionLike[], project.name) : (preferLive(this.presented()) as unknown as SessionLike[]);
+    const rows = project ? this.projectRows(project) : (preferLive(this.presented()) as unknown as SessionLike[]);
     const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
     }));
@@ -608,6 +614,12 @@ class ProjectPanelController {
     if (key.startsWith('display.')) await maybeUpdateTerminalTitles(previous, next);
   }
 
+  /** The project's sessions: the CLI's own project, plus (until agents-cli maps a
+   *  project's old names) a session whose checkout is one of its repositories. */
+  private projectRows(p: ProjectRef): SessionLike[] {
+    return projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name, projectRepoPaths(p));
+  }
+
   private presented(): RemoteSession[] {
     return sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL);
   }
@@ -665,7 +677,7 @@ class ProjectPanelController {
     if (!project) return;
     let closed = 0;
     // Only sessions the CLI says ended: a live agent whose process probe missed keeps its tab.
-    for (const r of projectSessions(preferLive(this.presented()) as unknown as SessionLike[], project.name)) {
+    for (const r of this.projectRows(project)) {
       if (sessionStateOf(r) !== 'ended') continue;
       const { live, dead } = await terminals.sessionTabs(r.sessionId);
       if (!live && dead.length) { terminals.closeTabs(dead); closed += dead.length; }
@@ -696,10 +708,11 @@ class ProjectPanelController {
   sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
     const tabGroups: TabView[][] = vscode.window.tabGroups.all.map((g) => g.tabs.map((tab) => ({ label: tab.label, isTerminal: tab.input instanceof vscode.TabInputTerminal })));
-    const rows = projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name)
+    const rows = this.projectRows(p)
       .map((r) => {
         const tab = terminals.getBySessionId(r.sessionId);
-        return { ...r, tabHere: !!tab, tabIndex: tab ? resolveTabIndex(tabGroups, tab.terminal.name) : undefined };
+        const who = sessionPresentationStore.liveSession(r.sessionId);
+        return { ...r, tabHere: !!tab, tabIndex: tab ? resolveTabIndex(tabGroups, tab.terminal.name) : undefined, account: who?.accountLabel ?? who?.account ?? undefined };
       });
     const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
     const previewUri = (f: string) => webview.asWebviewUri(vscode.Uri.file(f)).toString();
@@ -719,7 +732,7 @@ class ProjectPanelController {
     const count = sessionCount(rows, here, prefs);
     const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
     const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
@@ -732,28 +745,39 @@ class ProjectPanelController {
     terminals.getBySessionId(sessionId)?.terminal.show(false);
   }
 
-  /** ⌘K: every session this window knows, questions first; Enter shows the pick and
-   *  brings its tab forward when it has one here. A pick with no tab is shown, never resumed. */
-  async searchSessions(): Promise<void> {
-    const rows = preferLive(this.presented()) as unknown as SessionLike[];
-    const now = Date.now();
-    const order = (r: SessionLike) => ({ asks: 0, yours: 1, working: 2, unknown: 3, ended: 4 } as Record<string, number>)[sessionStateOf(r)] ?? 3;
-    const items = [...rows].sort((a, b) => order(a) - order(b) || b.lastActivityMs - a.lastActivityMs).map((r) => {
-      const st = sessionStateOf(r);
-      const tab = terminals.getBySessionId(r.sessionId);
+  /** ⌘K: artifacts, sessions, tickets and PRs this window already holds, plus
+   *  the Lead (src/vscode/searchPalette.vscode.ts). Enter shows the session (an
+   *  artifact's maker included) and brings its tab forward when it has one here;
+   *  nothing is resumed. Tickets and PRs are what the panel already read. */
+  searchSessions(): void {
+    const rows = preferLive(this.presented());
+    const sessions: PaletteSession[] = rows.map((r) => {
+      const like = r as unknown as SessionLike;
+      const state = sessionStateOf(like);
       const opened = r.attention?.state === 'open' && r.attention.openedAt ? Date.parse(r.attention.openedAt) : NaN;
+      const tab = terminals.getBySessionId(r.sessionId);
       return {
-        label: sessionTitle(r),
-        description: [SESSION_STATE_WORD[st] + (st === 'asks' && Number.isFinite(opened) ? ` · ${waitFor(now - opened)}` : ''), tab ? 'tab here' : r.host || 'this machine'].join(' · '),
-        detail: [r.ticket, r.prStatus ? `#${r.prStatus.number}` : '', r.model].filter(Boolean).join(' · ') || undefined,
-        row: r,
+        sessionId: r.sessionId,
+        host: r.host,
+        title: sessionTitle(like),
+        text: [[r.ticket, r.prStatus ? `#${r.prStatus.number}` : '', r.branch, r.model, tab ? 'tab here' : ''].filter(Boolean).join(' · '), r.request?.headline ?? r.topic].filter(Boolean).join('\n'),
+        cwd: r.cwd,
+        worktreePath: r.worktreePath,
+        lastActivityMs: r.lastActivityMs,
+        state,
+        stateWords: paletteStateWords(like) + (state === 'asks' && Number.isFinite(opened) ? ` · ${waitFor(Date.now() - opened)}` : ''),
+        local: !remoteDeviceArg(r.host),
       };
     });
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Search sessions by title, ticket, PR, model or machine', matchOnDescription: true, matchOnDetail: true });
-    if (!pick) return;
-    const host = pick.row.host;
-    this.select(pick.row.sessionId, host, true);
-    this.view.reveal(pick.row.sessionId);
+    const tickets = this.ticketsSeen.flatMap((g) => g.tickets.map((t) => ({ identifier: t.identifier, title: t.title, state: g.state, delegate: t.delegate, assignee: t.assignee })));
+    const prs = [...(this.reviewSeen?.done.values() ?? [])].flatMap((r) => r.open.map((p) => ({ repo: r.slug, number: p.number, title: p.title, url: p.url, author: p.author, date: p.date, ciState: p.ciState, isDraft: p.isDraft })));
+    openSearchPalette({
+      sessions,
+      tickets,
+      prs,
+      goToSession: (sessionId, host) => { this.select(sessionId, host, true); this.view.reveal(sessionId); },
+      openTicket: (id) => { void this.view.openTicketTab(id); },
+    });
   }
 
   /** The focus and resume icons: its tab comes to the front, else the live agent
@@ -860,7 +884,7 @@ export function shell(cspSource: string, logoCss = ''): string {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
+  content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
 <style>
   /* Rush register, as in the Active Terminal panel. This block is the only one
      with color literals; dark editor = Altitude, light = Day, high contrast keeps
@@ -870,7 +894,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-glass: rgba(255,255,255,0.05); --r-hover: rgba(255,255,255,0.08); --r-edge: rgba(255,255,255,0.12);
     --r-well: rgba(0,0,0,0.35); --r-sky: rgba(86,104,150,0.16);
     --r-ok: #86efac; --r-ok-tint: rgba(34,197,94,0.16); --r-warn: #fcd34d; --r-warn-tint: rgba(245,158,11,0.14);
-    --r-bad: #fca5a5; --r-bad-tint: rgba(239,68,68,0.12); --r-info: #a5b4fc;
+    --r-bad: #fca5a5; --r-bad-tint: rgba(239,68,68,0.12); --r-info: #a5b4fc; --r-wait: #93c5fd;
     --r-doing: #4ade80; --r-review: #bef264; --r-todo: #71717a; --r-backlog: #3f3f46; --r-gold: #D4B872;
     --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
@@ -879,7 +903,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-glass: rgba(251,248,242,0.70); --r-hover: rgba(20,24,41,0.06); --r-edge: #DCD2C3;
     --r-well: rgba(20,24,41,0.06); --r-sky: rgba(184,204,220,0.30);
     --r-ok: #15803d; --r-ok-tint: rgba(22,163,74,0.12); --r-warn: #b45309; --r-warn-tint: rgba(217,119,6,0.12);
-    --r-bad: #b91c1c; --r-bad-tint: rgba(220,38,38,0.08); --r-info: #4f46e5;
+    --r-bad: #b91c1c; --r-bad-tint: rgba(220,38,38,0.08); --r-info: #4f46e5; --r-wait: #1D5FA8;
     --r-doing: #15803d; --r-review: #65a30d; --r-todo: #a8a29e; --r-backlog: #d6d3d1; --r-gold: #A8884A;
     --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
@@ -887,7 +911,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     --r-text: var(--vscode-foreground); --r-text-2: var(--vscode-foreground); --r-caption: var(--vscode-descriptionForeground); --r-faint: var(--vscode-descriptionForeground);
     --r-glass: transparent; --r-hover: var(--vscode-list-hoverBackground); --r-edge: var(--vscode-contrastBorder); --r-well: transparent; --r-sky: transparent;
     --r-ok: var(--vscode-testing-iconPassed); --r-ok-tint: transparent; --r-warn: var(--vscode-editorWarning-foreground); --r-warn-tint: transparent;
-    --r-bad: var(--vscode-errorForeground); --r-bad-tint: transparent; --r-info: var(--vscode-textLink-foreground);
+    --r-bad: var(--vscode-errorForeground); --r-bad-tint: transparent; --r-info: var(--vscode-textLink-foreground); --r-wait: var(--vscode-charts-blue);
     --r-doing: var(--vscode-testing-iconPassed); --r-review: var(--vscode-testing-iconPassed); --r-todo: var(--vscode-descriptionForeground); --r-backlog: var(--vscode-contrastBorder); --r-gold: var(--vscode-focusBorder);
     --r-av0: transparent; --r-av1: transparent; --r-av2: transparent; --r-av3: transparent; --r-av4: transparent; --r-av5: transparent; --r-on-av: var(--vscode-foreground);
   }
@@ -1056,6 +1080,21 @@ export function shell(cspSource: string, logoCss = ''): string {
   .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-asks { background: var(--r-warn) !important; }
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-working { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
   .pill.st-yours i, .d-yours { background: var(--r-gold) !important; }
+  /* Waiting on its own work: a blue dot that breathes slowly, and a chip per kind. */
+  .st-waiting.pill { color: var(--r-wait); border-color: color-mix(in srgb, var(--r-wait) 45%, transparent); } .pill.st-waiting i, .d-waiting { background: var(--r-wait) !important; }
+  .st-waiting.pill i { animation: waitbreathe 2.2s ease-in-out infinite; }
+  @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+  .pc { display: inline-flex; align-items: center; gap: 3px; flex: none; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); color: var(--r-wait); border-radius: 4px; padding: 0 4px; font-family: var(--vscode-editor-font-family); font-size: 10.5px; line-height: 15px; cursor: default; }
+  .meta .repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
+  .fx { display: inline-flex; gap: 2px; flex: none; } .fx span { font-size: 10.5px; line-height: 1; padding: 2px 3px; border-radius: 4px; background: var(--r-well); }
+  .fx .fast { color: var(--r-warn); } .fx .hi { color: var(--r-info); }
+  .cbot { display: flex; align-items: flex-end; gap: 6px; margin-top: 6px; min-width: 0; } .card .cbot .cstrip { margin-top: 0; flex: 1; min-width: 0; }
+  .cbot .hst { margin-left: auto; flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); opacity: .8; }
+  .cmore { position: relative; } .cmore > summary { list-style: none; font-size: 13px; line-height: 18px; text-align: center; } .cmore > summary::-webkit-details-marker { display: none; }
+  .card:has(.cmore[open]) .acts { display: flex; } .card:has(.cmore[open]) .age { display: none; }
+  .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
+  .cmenu dl { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 3px 8px; margin: 0; font-size: 11px; } .cmenu dt { color: var(--r-faint); } .cmenu dd { margin: 0; overflow-wrap: anywhere; }
+  .cmenu button { display: block; width: 100%; margin-top: 6px; padding: 3px 4px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-hover); }
   .pill.st-blocked { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-blocked i { background: var(--r-bad) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
@@ -1091,7 +1130,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .folder:hover b { text-decoration: underline; }
   .thumbs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
   .th { position: relative; height: 40px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); display: block; flex: none; }
-  .th { width: 64px; } .card .th { width: 54px; height: 34px; } .th.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
+  .th { width: 64px; } .card .th { width: 54px; height: 34px; aspect-ratio: 54 / 34; contain: strict; background: var(--r-well); } .th.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
   .th i { position: absolute; left: 3px; bottom: 3px; font-style: normal; font-size: 9px; background: rgba(0,0,0,.62); color: #fff; border-radius: 3px; padding: 0 3px; }
   .th b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; }
   .more { font-size: 10.5px; border: 1px solid var(--r-edge); border-radius: 5px; padding: 0 6px; color: var(--r-caption); }
@@ -1106,7 +1145,6 @@ export function shell(cspSource: string, logoCss = ''): string {
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
   .card .top .hx { display: inline-block; width: 14px; height: 14px; border-radius: 3px; flex: none; background-position: center; background-size: contain; background-repeat: no-repeat; }
   ${logoCss}
-  .meta .mdl { margin-left: auto; flex: none; font-family: var(--vscode-editor-font-family); font-size: 10px; color: var(--r-faint); border: 1px solid var(--r-edge); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
   .tab[data-tab="settings"] { margin-left: auto; }
   /* Ticket detail and Settings (PHNX-4329). */
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; font: inherit; font-weight: 600; align-self: flex-start; }
@@ -1145,7 +1183,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .settings select { font: inherit; font-size: 11px; color: var(--vscode-dropdown-foreground, var(--r-text)); border: 1px solid var(--vscode-dropdown-border, var(--r-edge)); border-radius: 4px; background: var(--vscode-dropdown-background, var(--r-glass)); padding: 2px; }
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
-  @media (prefers-reduced-motion: reduce) { .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1166,6 +1204,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
 ${PATCH_SCRIPT}
+${THUMB_SCRIPT}
   // Questions the viewer opened, and Merge clicks still in their Undo window; both
   // survive a redraw of the list.
   const opened = new Set();
@@ -1223,7 +1262,9 @@ ${PATCH_SCRIPT}
     else if (m.type === 'html' && m.tab === current) {
       // A redraw of the same tab keeps what the viewer opened and where they scrolled.
       const same = main.dataset.tab === m.tab;
-      const open = new Set(same ? [...main.querySelectorAll('details')].filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
+      // A card's ⋯ menu keeps its own open state through the patch; only folds are matched by their summary.
+      const folds = () => [...main.querySelectorAll('details:not(.cmore)')];
+      const open = new Set(same ? folds().filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
@@ -1235,7 +1276,8 @@ ${PATCH_SCRIPT}
       for (const [id, box] of keepConfirm) main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')?.appendChild(box);
       if (menuOpen) { main.querySelector('.menu').hidden = false; main.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
       main.dataset.tab = m.tab;
-      if (same) main.querySelectorAll('details').forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
+      if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
+      observeThumbs(main);
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
       if (m.tab === 'sessions') syncBulk();
@@ -1310,10 +1352,18 @@ ${PATCH_SCRIPT}
     const box = document.createElement('div');
     box.className = 'confirm';
     box.innerHTML = '<div></div><div class="cb"><button class="danger" data-confirm="yes">Close tab</button><button data-confirm="no">Keep</button></div>';
-    box.firstChild.textContent = 'The agent is ' + (card.classList.contains('st-working') ? 'working' : 'waiting on you') + '. Closing the tab ends its process; the session stays resumable.';
+    box.firstChild.textContent = 'The agent is ' + (card.classList.contains('st-working') ? 'working' : card.classList.contains('st-waiting') ? 'waiting on its own background work' : 'waiting on you') + '. Closing the tab ends its process; the session stays resumable.';
     card.appendChild(box);
   }
   document.addEventListener('click', (e) => {
+    // A card's ⋯ menu: its summary toggles it; a click anywhere else closes it.
+    main.querySelectorAll('.cmore[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+    const more = e.target.closest('.cmore');
+    if (more) {
+      const copy = e.target.closest('[data-copy]');
+      if (copy) { vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); more.open = false; }
+      return;
+    }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
     // The project button: its menu lists the projects in this folder (one read when it opens).
@@ -1444,7 +1494,7 @@ ${PATCH_SCRIPT}
       next.focus(); choose(next.dataset.tab); return;
     }
     if (e.key === 'Escape') { const m = main.querySelector('.menu'); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
-    if (e.target.closest && e.target.closest('a, button')) return;
+    if (e.target.closest && e.target.closest('a, button, summary')) return;
     const gh = e.target.closest && e.target.closest('.gh');
     if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }
     const card = e.target.closest && e.target.closest('.card[data-session]');

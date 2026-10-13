@@ -69,9 +69,9 @@ import { mergeWithMenu } from './prMerge.vscode';
 import { getSettings } from './agentSettings.vscode';
 import { validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
-import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
+import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
-import { SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { SESSION_STATE_WORD, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
@@ -181,6 +181,8 @@ interface PanelSnapshot {
   activityHistogram?: RemoteActivity;
   userTurns?: RemoteUserTurn[];
   subagents?: RemoteSubagent[];
+  /** Background work the session still runs (CLI `pending`): the Waiting list. */
+  pending?: SessionPending;
   // Local image attachments the webview may load (inside the CLI's attachment cache).
   imageThumbs?: { path: string; label: string; uri: string }[];
   // Who asked: the owner's name and the Gravatar artifacts-cli also uses.
@@ -1036,6 +1038,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.updates = sessionUpdates(sessionPresentationStore.activityEvents(), live.sessionId);
         snapshot.blocked = blockedUpdate(snapshot.updates, live.userTurns?.length ? live.userTurns[live.userTurns.length - 1]!.atMs : undefined);
         snapshot.subagents = live.subagents;
+        snapshot.pending = live.pending;
         if (live.subagents) snapshot.subAgentCount = live.subagents.length;
         const webview = this.view?.webview;
         if (live.owner && live.owner.includes('@')) {
@@ -1144,6 +1147,7 @@ const viewState = vscode.getState() || {};
 const root = document.getElementById('root');
 
 ${PATCH_SCRIPT}
+${THUMB_SCRIPT}
 ${SESSION_CARDS_SCRIPT}
 function compactTokens(value) {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -1283,8 +1287,9 @@ function renderNeedsYou(s) {
 // sidebar and the Project panel say the same thing for the same row.
 function sessionState(s) {
   const st = s.state || { key: 'unknown', word: 'Unknown' };
-  // Your move reads amber (a question or an idle turn), Running green, Ended quiet.
-  const cls = st.key === 'asks' || st.key === 'yours' ? 'waiting' : st.key === 'working' || st.key === 'unknown' ? 'running' : 'idle';
+  // Your move reads amber (a question or an idle turn), Running green, Waiting on
+  // its own background work blue, Ended quiet.
+  const cls = st.key === 'asks' || st.key === 'yours' ? 'waiting' : st.key === 'working' || st.key === 'unknown' ? 'running' : st.key === 'waiting' ? 'pending' : 'idle';
   return { cls, word: st.word };
 }
 
@@ -1591,12 +1596,31 @@ function renderBlocked(s) {
     (s.hasTerminal ? '<button type="button" class="ny-btn" data-action="focusSubject">Open tab</button>' : '') + '</div></div>';
 }
 
+// ── Waiting on its own work ────────────────────────────────────────────────
+// The turn ended but a subagent, background shell or monitor it started still
+// runs (the feed's pending): each one with how long it has run. Nothing shows
+// when nothing is pending or the session ended.
+const PENDING_MARKS = [['subagents', '⑂', 'Subagent'], ['shells', '▸', 'Background shell'], ['monitors', '◉', 'Monitor']];
+function renderPending(s) {
+  const p = s.pending;
+  if (!p || (s.state && s.state.key === 'ended')) return '';
+  const rows = [];
+  for (const [key, mark, kind] of PENDING_MARKS) {
+    for (const it of p[key] || []) {
+      rows.push('<li title="' + esc(kind) + '"><span class="pend-m">' + mark + '</span><span class="pend-d">' + esc(it.description || it.id) + '</span>' +
+        (it.startedAtMs ? '<span class="pend-t">' + esc(compactDuration(Date.now() - it.startedAtMs)) + '</span>' : '') + '</li>');
+    }
+  }
+  if (!rows.length) return '';
+  return '<div class="pend-list" role="status"><div class="pend-k">Waiting on its own work</div><ul>' + rows.join('') + '</ul></div>';
+}
+
 // ── Related ─────────────────────────────────────────────────────────────────
 // One line of chips under Made: other sessions on the same ticket, PR or branch,
 // or with a similar request (relatedSessions, from the rows already in memory).
 // Each chip carries its state dot and, in its tooltip, why it is related; a click
 // makes it the subject.
-const RELATED_DOT = { asks: 'waiting', yours: 'waiting', working: 'running', unknown: 'running', ended: 'idle' };
+const RELATED_DOT = { asks: 'waiting', yours: 'waiting', working: 'running', waiting: 'pending', unknown: 'running', ended: 'idle' };
 
 function renderRelated(s) {
   const rel = s.related || [];
@@ -1856,6 +1880,7 @@ function render(snap) {
       renderGoalCard(snap) +
       renderBlocked(snap) +
       renderNeedsYou(snap) +
+      renderPending(snap) +
       renderRequestCard(snap) +
       renderMadeShelf(snap) +
       renderRelated(snap) +

@@ -737,3 +737,20 @@ describe('isDerivedSessionName', () => {
     expect(isDerivedSessionName('agents-cli-55', '')).toBe(false);
   });
 });
+
+describe('feed pending, effort and fast (agents-cli round 16 fields)', () => {
+  const base: RawActiveSession = { sessionId: '2bfd9583', status: 'idle', cwd: '/home/me/src/agents' };
+  test('pending keeps the running work with ids; an empty or absent field stays absent', () => {
+    const s = normalizeActiveSession({ ...base, pending: { subagents: [], shells: [{ id: 'b1', description: 'Poll prod', startedAtMs: 5 }, { description: 'no id' }], monitors: 'junk' } }, 'zion', 0);
+    expect(s.pending).toEqual({ shells: [{ id: 'b1', description: 'Poll prod', startedAtMs: 5 }] });
+    expect(normalizeActiveSession({ ...base, pending: { subagents: [], shells: [], monitors: [] } }, 'zion', 0).pending).toBeUndefined();
+    expect(normalizeActiveSession(base, 'zion', 0).pending).toBeUndefined();
+  });
+  test('effort and fast ride along only when the CLI knows them', () => {
+    expect(normalizeActiveSession({ ...base, effort: 'high', fast: true }, 'zion', 0)).toMatchObject({ effort: 'high', fast: true });
+    expect(normalizeActiveSession({ ...base, effort: 'xhigh' }, 'zion', 0).effort).toBe('xhigh');
+    const bare = normalizeActiveSession({ ...base, effort: 'turbo', fast: 'yes' }, 'zion', 0);
+    expect(bare.effort).toBeUndefined();
+    expect(bare.fast).toBeUndefined();
+  });
+});

@@ -88,10 +88,19 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/dictation.vscode.ts`); nothing is sent anywhere.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
+  An eighth: ⌘K's artifact index (`src/vscode/searchPalette.vscode.ts`) runs
+  `artifacts list --json`, reads the rendered HTML beside each source (title and
+  `agents://session/<id>`, re-read only on a new mtime) and `sessions artifacts <id> --json`
+  for this machine's newest sessions, in the background when the picker opens, at most
+  once a minute; the picker never waits on it.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once; reassigning `root.innerHTML`
   per update made it jitter and erased what the owner was typing. A reused node keeps its
   listeners, so bindings go through `bindOnce` and read their data-* values on click.
+  A card carries `data-key` (pairs it with its own node) and `data-h` (an unchanged hash is
+  not patched); every thumbnail is `<img data-thumb>` filled from `THUMB_SCRIPT`'s 480 px
+  cache, never a full-size `src` (the flicker in the 2026-10-13 video;
+  `sessionCards.patch.test.ts` runs the real patch in happy-dom).
 - The Active Session sidebar is the one preview: a Project panel session click sets its
   subject (`setAgentPanelSubjectFromProject`), brings the session's tab forward only when that
   tab is in this window, and spawns or resumes nothing. No per-selection fetch.
@@ -118,9 +127,13 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - Closing a tab sends `agents ps stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.
 - Needs-you order is `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts`;
-  a stall is a CLI signal, `FloorPhase` has no `stalled` member.
+  a stall is a CLI signal, `FloorPhase` has no `stalled` member. Idle plus a non-empty
+  feed `pending` is Waiting (the agent's ball, never Your move); `subAgentCount` is
+  cumulative and never decides liveness.
 - Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
-  `src/core/projectPanel.ts`); the extension never guesses a project from a cwd.
+  `src/core/projectPanel.ts`); the extension never guesses a project from a cwd. One stopgap
+  until agents-cli aliases ship: a row whose checkout is one of the project's own repository
+  paths (`projectRepoPaths`) is listed too. Delete it when the feed resolves old names.
 - One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
   and exec path for `agents` and the standalone `sessions`/`secrets` it installs
   (`resolveAgentsBin`, `runCliArgs`, `runAgents`, `src/core/agentsBin.ts`).
