@@ -3,10 +3,10 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 115,
+    "commands": 120,
     "settings": 8,
-    "keybindings": 46,
-    "menuItems": 13,
+    "keybindings": 48,
+    "menuItems": 16,
     "views": 2,
     "viewContainers": 2,
     "customEditors": 2,
@@ -554,6 +554,34 @@
         "title": "Switch Project",
         "category": "Agents: Project",
         "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "agents.lead.ask",
+        "title": "Ask the Lead",
+        "category": "Lead",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agents.lead.open",
+        "title": "Open the Conversation",
+        "category": "Lead",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "agents.lead.dock",
+        "title": "Dock into VSCodium",
+        "category": "Lead"
+      },
+      {
+        "command": "agents.lead.float",
+        "title": "Float as a bubble",
+        "category": "Lead"
+      },
+      {
+        "command": "agents.lead.talk",
+        "title": "Talk (start or stop the microphone)",
+        "category": "Lead",
+        "icon": "$(mic)"
       }
     ],
     "configuration": {
@@ -893,6 +921,18 @@
         "command": "agents.quickLaunch9PickHost",
         "key": "ctrl+alt+shift+9",
         "mac": "cmd+alt+shift+9"
+      },
+      {
+        "command": "agents.lead.ask",
+        "key": "alt+space",
+        "mac": "alt+space",
+        "when": "!agents.lead.bubble && !agents.lead.overlayOpen"
+      },
+      {
+        "command": "agents.lead.talk",
+        "key": "alt+space",
+        "mac": "alt+space",
+        "when": "agents.lead.overlayOpen"
       }
     ],
     "menus": {
@@ -954,6 +994,18 @@
           "command": "agents.disableReader",
           "when": "agents.readerEnabled",
           "group": "navigation@6"
+        },
+        {
+          "command": "agents.lead.dock",
+          "when": "agents.lead.bubble"
+        },
+        {
+          "command": "agents.lead.float",
+          "when": "!agents.lead.bubble"
+        },
+        {
+          "command": "agents.lead.talk",
+          "when": "agents.lead.overlayOpen"
         }
       ],
       "view/title": [

@@ -4,6 +4,25 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.400] - 2026-10-13
+
+The Lead, docked (round 16):
+
+- ⌥Space opens the Lead at the top of the window: VS Code's quick input titled "Lead · <project>
+  · <state>". Type and press Enter, or press ⌥Space again (or the mic) to talk through the reply
+  box's dictation. It shows the current turn: each tool with a spinner, then a check; the answer;
+  then one row per ticket, PR and session it named, with the Linear and GitHub marks. A ticket
+  opens in Issues (or Linear), a PR on GitHub, a session in its tab. Stop and kill arrive as a
+  Confirm row. Esc closes it and the Lead keeps working.
+- The status bar shows "✳ Lead · <last summary> · <age>", spinning while the Lead works. Click it
+  for the Lead tab: the whole conversation with linked ids, tool receipts and Confirm buttons, and
+  beside it the Lead's session, engine, brief, memory and allowed tools.
+  `vscode://swarmify.swarm-ext/lead` opens the same tab.
+- "Lead: Float as a bubble" (also in the status bar's hover) hands ⌥Space to FastWispr's bubble
+  through `~/.agents/lead/surface.json`; "Lead: Dock into VSCodium" takes it back. The status bar
+  and the tab stay either way.
+- Needs agents-cli with `agents lead`; an older CLI says to upgrade.
+
 ## [0.9.399] - 2026-10-13
 
 From the owner's video reviews of 0.9.398 and the round 14 and 15 prototypes (2026-10-12):

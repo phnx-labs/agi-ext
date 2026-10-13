@@ -831,6 +831,8 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
       void controller.redrawSessions().then(() => controller.view.reveal(id));
     }),
     vscode.commands.registerCommand('agents.project.openTicket', (id: unknown) => typeof id === 'string' && id ? controller.view.openTicketTab(id) : undefined),
+    // Internal: the Lead talks to the project this panel shows (src/vscode/lead.vscode.ts).
+    vscode.commands.registerCommand('agents.project.current', async () => (await controller.project())?.name),
   );
 }
 

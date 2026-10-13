@@ -232,6 +232,18 @@ Above its tabs, the Project panel shows two quiet lines from one `linear goals -
 
 What should happen: a slow read paints "Loading…" in its own view and never blocks the others; a failed read shows the CLI's error in that view; a project with no Linear project says how to link one.
 
+## Talk to the project's Lead
+
+You want to ask "what is waiting on me?" or say "put Claude on PHNX-4365" without finding the right session first. The Lead is one long-lived headless Claude per project that agents-cli runs (`agents lead …`); it answers from the fleet CLIs' output and dispatches agents. The extension is one of its thin clients, the docked one.
+
+⌥Space opens VS Code's own quick input at the top center, titled "Lead · <project> · <state>" (busy, with the busy bar, while the Lead works). Type and press Enter (the first row reads "Ask the Lead: “…”"), or press ⌥Space again (or the mic button) to talk: the reply box's dictation records on this machine and the words are sent when you stop. The rows are the current turn only: one per tool the Lead runs, a spinner while it runs and a check when done; the answer, one row per sentence (Enter opens the Lead tab); then one row per ticket, PR and session it named, with the Linear mark, the GitHub mark or the agent's icon. A ticket opens in Issues (its row's button opens Linear), a PR on GitHub, a session in its tab or resumed through the same path as the focus icon. Anything destructive arrives as a Confirm row whose ✓ button (or Enter) runs `agents lead confirm <token>`. Esc closes the overlay; the turn keeps running, and its summary lands in the status bar. Agents: Search Sessions' "Ask the Lead" row calls `agents.lead.ask` with what you typed.
+
+The status bar shows "✳ Lead · <last summary> · <age>", a spinner while a turn runs. Clicking it opens the Lead tab, "✳ Lead · <project>": the history (`agents lead history --project <p> --json`) plus this window's live turns, with ticket ids, PR numbers and session titles as links, tool receipts and Confirm buttons; beside it the Lead's session id, engine, model, the brief it started with, its memory and the tools it may run (`agents lead status --project <p> --json`). Both are read when the tab opens and on Refresh, never on a timer. `vscode://swarmify.swarm-ext/lead` opens the same tab, so FastWispr's bubble can hand over to it.
+
+The status bar's hover offers Float as a bubble (also the command "Lead: Float as a bubble"; VS Code gives extensions no right-click menu on a status-bar item). It writes `~/.agents/lead/surface.json` `{"surface":"bubble"}`, which both clients watch: while it says bubble, ⌥Space belongs to FastWispr and the extension keeps only the status-bar item and the tab; "Lead: Dock into VSCodium" writes `"docked"` and takes the key back. With no file, the extension is docked.
+
+What should happen: one turn at a time per window; a second ask while one runs is refused with a note. A CLI that dies mid-turn ends the turn with its stderr; a CLI without `agents lead` is an upgrade error. The extension never starts, keeps or stops the Lead's process.
+
 ## Answer an agent that needs you
 
 Some agent, on some machine, is waiting on you. You want to see exactly what it asked and answer it from the editor.

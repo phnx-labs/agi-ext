@@ -936,6 +936,10 @@ export async function activate(context: vscode.ExtensionContext) {
   const { registerProjectPanel } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
   registerProjectPanel(context);
 
+  // The Lead, docked: ⌥Space overlay, status-bar last update, the Lead tab.
+  const { registerLead } = require('./lead.vscode') as typeof import('./lead.vscode');
+  registerLead(context);
+
   // Create status bar item for showing active terminal status bar label
   agentStatusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
@@ -1056,7 +1060,10 @@ export async function activate(context: vscode.ExtensionContext) {
       async handleUri(uri: vscode.Uri) {
         const params = new URLSearchParams(uri.query);
 
-        if (uri.path === '/focus') {
+        if (uri.path === '/lead') {
+          // vscode://swarmify.swarm-ext/lead: the Lead tab (FastWispr's "Open conversation").
+          await vscode.commands.executeCommand('agents.lead.open');
+        } else if (uri.path === '/focus') {
           const terminalId = params.get('terminalId');
           const entry = terminalId ? terminals.getById(terminalId) : undefined;
           if (entry) {
