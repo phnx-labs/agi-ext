@@ -112,8 +112,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   on a timer. `~/.agents/lead/surface.json` is shared with FastWispr: while it says
   `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding); the extension
   never creates `~/.agents/lead` just to watch it. A held ⌥Space is one press (`PressGate`),
-  and the Lead's mic never takes over the reply box's recording (`LeadMic`,
-  `src/core/leadInput.ts`). Tests run
+  and the Lead's mic never takes over the reply box's recording (`nextMic`,
+  a pure transition in `src/core/leadInput.ts`). Tests run
   against the fake CLI in `src/core/testdata/lead-bin/agents`.
 - Closing a tab sends `agents ps stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.

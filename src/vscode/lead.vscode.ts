@@ -13,7 +13,7 @@ import {
   LeadClient, ageText, isWebUrl, answerLines, readSurface, refDescription, refLabel, uniqueRefs, watchSurface, writeSurface,
   type LeadRef, type LeadSnapshot, type LeadSurface, type LeadTurn,
 } from '../core/lead';
-import { LeadMic, PressGate, type MicOrigin } from '../core/leadInput';
+import { MIC_IDLE, PressGate, nextMic, type MicEvent, type MicMachine, type MicOrigin, type MicUpdate } from '../core/leadInput';
 import { dictation } from './dictation.vscode';
 import { LeadTab } from './leadTab.vscode';
 
@@ -63,11 +63,9 @@ class LeadController {
   private surface: LeadSurface = readSurface();
   /** ⌥Space arrives as a stream of repeats while held; one press is one gesture. */
   private readonly keys = new PressGate();
-  private readonly mic = new LeadMic(dictation, {
-    text: (text, secs) => { void this.send(text, secs); },
-    error: (message) => { void vscode.window.showErrorMessage(message); },
-    change: () => this.render(this.client.snapshot()),
-  });
+  /** The Lead's mic as a pure machine (`nextMic`); `dispatch` performs its effects on the shared dictation. */
+  private mic: MicMachine = MIC_IDLE;
+  private readonly posts = new Map<number, (u: MicUpdate) => void>();
   private project: string | undefined;
   private tab: LeadTab;
 
@@ -80,7 +78,7 @@ class LeadController {
       openRef: (r, external) => openLeadRef(r, external),
       ask: (text) => this.send(text),
       talk: () => this.toggleMic('tab'),
-      mic: () => this.mic.state,
+      mic: () => this.mic.phase,
       confirm: (token) => this.confirm(token),
       setSurface: (s) => this.setSurface(s),
       surface: () => this.surface,
@@ -134,8 +132,28 @@ class LeadController {
   }
 
   async toggleMic(origin: MicOrigin): Promise<void> {
-    if (this.mic.state === 'idle' && this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working on the last turn.'); return; }
-    await this.mic.toggle(origin);
+    if (this.mic.phase === 'idle' && this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working on the last turn.'); return; }
+    // Busy with someone else's recording: the reply box's (ours is `active`).
+    await this.dispatch({ kind: 'toggle', origin, now: Date.now(), recorderBusy: this.mic.active === undefined && dictation.state() !== 'idle' });
+  }
+
+  private async dispatch(e: MicEvent): Promise<void> {
+    const { state, effects } = nextMic(this.mic, e);
+    this.mic = state;
+    for (const fx of effects) {
+      if (fx.kind === 'start') {
+        const id = fx.id;
+        const post = (u: MicUpdate) => { void this.dispatch({ kind: 'update', id, update: u, now: Date.now() }); };
+        this.posts.set(id, post);
+        await dictation.start(post);
+      } else if (fx.kind === 'stop') await dictation.stop();
+      else if (fx.kind === 'cancel') { const post = this.posts.get(fx.id); if (post) dictation.cancelFor(post); }
+      else if (fx.kind === 'send') void this.send(fx.text, fx.secs);
+      else if (fx.kind === 'error') void vscode.window.showErrorMessage(fx.message);
+    }
+    // A finished or dropped recording's post is no longer needed.
+    for (const id of [...this.posts.keys()]) if (id !== this.mic.active) this.posts.delete(id);
+    this.render(this.client.snapshot());
   }
 
   async openTab(): Promise<void> {
@@ -195,7 +213,7 @@ class LeadController {
     // Esc closes the overlay; the turn runs on and lands in the status bar.
     qp.onDidHide(() => {
       // Esc while talking drops the recording: nothing is sent.
-      this.mic.cancel('overlay');
+      void this.dispatch({ kind: 'cancel', origin: 'overlay' });
       void vscode.commands.executeCommand('setContext', 'agents.lead.overlayOpen', false);
       qp.dispose();
       if (this.qp === qp) { this.qp = undefined; this.overlaySig = ''; }
@@ -207,15 +225,15 @@ class LeadController {
   }
 
   private stateWord(s: LeadSnapshot): string {
-    return this.mic.state === 'listening' ? 'listening' : this.mic.state === 'transcribing' ? 'transcribing' : s.busy ? 'busy' : s.engine ?? 'ready';
+    return this.mic.phase === 'listening' ? 'listening' : this.mic.phase === 'transcribing' ? 'transcribing' : s.busy ? 'busy' : s.engine ?? 'ready';
   }
 
   private renderOverlay(s: LeadSnapshot): void {
     const qp = this.qp;
     if (!qp) return;
     qp.title = `Lead · ${this.project ?? s.project ?? 'no project'} · ${this.stateWord(s)}`;
-    qp.busy = s.busy || this.mic.state === 'transcribing';
-    qp.buttons = [this.mic.state === 'listening' ? MIC_ON : MIC, OPEN_TAB];
+    qp.busy = s.busy || this.mic.phase === 'transcribing';
+    qp.buttons = [this.mic.phase === 'listening' ? MIC_ON : MIC, OPEN_TAB];
     qp.enabled = true;
     const rows: Row[] = [];
     const typed = qp.value.trim();
@@ -288,7 +306,7 @@ class LeadController {
 
   private renderStatus(s: LeadSnapshot): void {
     const bubble = this.surface === 'bubble';
-    const listening = this.mic.state === 'listening';
+    const listening = this.mic.phase === 'listening';
     this.status.text = listening ? '$(mic-filled) Lead · listening…'
       : s.busy ? '$(sync~spin) Lead · working…'
         : s.last ? `✳ Lead · ${s.last.summary} · ${ageText(Date.now() - s.last.at)}`

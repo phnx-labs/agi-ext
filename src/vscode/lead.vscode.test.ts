@@ -21,6 +21,6 @@ test('the Lead commands skip the integrated terminal shell', () => {
 test('Esc while talking cancels the Lead recording instead of stopping (and sending) it', () => {
   const src = fs.readFileSync(path.join(import.meta.dir, 'lead.vscode.ts'), 'utf8');
   const hide = src.slice(src.indexOf('qp.onDidHide('), src.indexOf('qp.onDidHide(') + 400);
-  expect(hide).toContain("this.mic.cancel('overlay')");
+  expect(hide).toContain("kind: 'cancel', origin: 'overlay'");
   expect(hide).not.toContain('dictation.stop');
 });

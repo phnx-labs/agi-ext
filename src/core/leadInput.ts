@@ -1,7 +1,8 @@
-// The Lead's two inputs that need care, without vscode: the ⌥Space key, which
-// VS Code delivers as a stream of repeats while held (there is no key-up), and the
-// microphone, which is shared with the reply box. src/vscode/lead.vscode.ts wires
-// them to the keybinding and to src/vscode/dictation.vscode.ts.
+// The Lead's two inputs that need care, as pure logic: the ⌥Space key, which VS
+// Code delivers as a stream of repeats while held (there is no key-up), and the
+// microphone, which is shared with the reply box. src/vscode/lead.vscode.ts feeds
+// them timestamps and recorder updates and performs the mic's effects on
+// src/vscode/dictation.vscode.ts.
 
 /**
  * One physical press of a key, from a stream of command invocations. Every
@@ -27,69 +28,59 @@ export class PressGate {
   }
 }
 
-export type MicState = 'idle' | 'listening' | 'transcribing';
-interface MicUpdate { state: MicState; text?: string; error?: string }
-export type MicPost = (u: MicUpdate) => void;
-
-/** The shared recorder (the reply box's dictation), as the Lead sees it. */
-export interface Recorder {
-  state(): MicState;
-  start(post: MicPost): Promise<void>;
-  stop(): Promise<void>;
-  /** End the recording `post` owns without transcribing; leave anyone else's alone. */
-  cancelFor(post: MicPost): void;
-}
-
+type MicState = 'idle' | 'listening' | 'transcribing';
+export interface MicUpdate { state: MicState; text?: string; error?: string }
 export type MicOrigin = 'overlay' | 'tab';
 
 /**
- * The Lead's use of the microphone. Toggle starts or stops-and-sends; cancel
- * drops the recording (and any transcription still running) so nothing is sent.
- * Each recording has its own `post`, so a late result from a cancelled one is
- * ignored, and the reply box's recording is never touched.
+ * The Lead's use of the shared microphone (the reply box's dictation), as a pure
+ * transition: `nextMic(state, event)` returns the next state and the effects the
+ * vscode layer performs against the real recorder. Each recording has an id, so a
+ * late update from a cancelled one is dropped, and the Lead never starts while the
+ * reply box is recording.
  */
-export class LeadMic {
-  state: MicState = 'idle';
-  private post: MicPost | undefined;
-  private origin: MicOrigin | undefined;
+export interface MicMachine {
+  phase: MicState;
+  /** The id of the Lead's recording in progress, if any. */
+  active?: number;
+  origin?: MicOrigin;
+  startedAt: number;
+  nextId: number;
+}
 
-  constructor(
-    private readonly rec: Recorder,
-    private readonly on: { text(text: string, secs: number): void; error(message: string): void; change(): void },
-    private readonly now: () => number = Date.now,
-  ) {}
+export type MicEvent =
+  /** The mic button or ⌥Space; `recorderBusy` is true when the recorder is busy with someone else's recording. */
+  | { kind: 'toggle'; origin: MicOrigin; now: number; recorderBusy: boolean }
+  /** Esc (from `origin`), or teardown (any origin). */
+  | { kind: 'cancel'; origin?: MicOrigin }
+  /** What the recorder said about recording `id`. */
+  | { kind: 'update'; id: number; update: MicUpdate; now: number };
 
-  async toggle(origin: MicOrigin): Promise<'started' | 'stopped' | 'ignored' | 'busy'> {
-    if (this.post && this.state === 'listening') { await this.rec.stop(); return 'stopped'; }
-    if (this.post) return 'ignored';
-    if (this.rec.state() !== 'idle') { this.on.error('The microphone is recording for the reply box; stop that first.'); return 'busy'; }
-    const startedAt = this.now();
-    const post: MicPost = (u) => {
-      if (this.post !== post) return;
-      this.state = u.state;
-      if (u.state === 'idle') {
-        this.post = undefined;
-        this.origin = undefined;
-        if (u.text) this.on.text(u.text, (this.now() - startedAt) / 1000);
-        else if (u.error) this.on.error(u.error);
-      }
-      this.on.change();
-    };
-    this.post = post;
-    this.origin = origin;
-    await this.rec.start(post);
-    return 'started';
-  }
+export type MicEffect =
+  | { kind: 'start'; id: number }
+  | { kind: 'stop' }
+  | { kind: 'cancel'; id: number }
+  | { kind: 'send'; text: string; secs: number }
+  | { kind: 'error'; message: string }
+  | { kind: 'drop' };
 
-  /** Drop the Lead's recording started from `origin` (any, when omitted); true when one was dropped. */
-  cancel(origin?: MicOrigin): boolean {
-    const post = this.post;
-    if (!post || (origin && this.origin !== origin)) return false;
-    this.post = undefined;
-    this.origin = undefined;
-    this.state = 'idle';
-    this.rec.cancelFor(post);
-    this.on.change();
-    return true;
+export const MIC_IDLE: MicMachine = { phase: 'idle', startedAt: 0, nextId: 1 };
+
+export function nextMic(s: MicMachine, e: MicEvent): { state: MicMachine; effects: MicEffect[] } {
+  switch (e.kind) {
+    case 'toggle':
+      if (s.active !== undefined) return s.phase === 'listening' ? { state: s, effects: [{ kind: 'stop' }] } : { state: s, effects: [] };
+      if (e.recorderBusy) return { state: s, effects: [{ kind: 'error', message: 'The microphone is recording for the reply box; stop that first.' }] };
+      return { state: { phase: 'listening', active: s.nextId, origin: e.origin, startedAt: e.now, nextId: s.nextId + 1 }, effects: [{ kind: 'start', id: s.nextId }] };
+    case 'cancel':
+      if (s.active === undefined || (e.origin && e.origin !== s.origin)) return { state: s, effects: [] };
+      return { state: { phase: 'idle', startedAt: 0, nextId: s.nextId }, effects: [{ kind: 'cancel', id: s.active }] };
+    case 'update': {
+      if (e.id !== s.active) return { state: s, effects: [{ kind: 'drop' }] };
+      if (e.update.state !== 'idle') return { state: { ...s, phase: e.update.state }, effects: [] };
+      const idle: MicMachine = { phase: 'idle', startedAt: 0, nextId: s.nextId };
+      if (e.update.text) return { state: idle, effects: [{ kind: 'send', text: e.update.text, secs: (e.now - s.startedAt) / 1000 }] };
+      return { state: idle, effects: e.update.error ? [{ kind: 'error', message: e.update.error }] : [] };
+    }
   }
 }
