@@ -46,6 +46,8 @@ interface PrRow {
   /** The author's GitHub avatar, when the CLI carries it. */
   avatar: string | null;
   date: string;
+  /** How many required checks fail (the CLI's failingChecks). */
+  failing: number;
 }
 
 interface RepoPrs {
@@ -167,6 +169,7 @@ function prRow(p: unknown, dateKey: 'createdAt' | 'mergedAt'): PrRow {
     author: str(author.login) ?? '?',
     avatar: /^https:\/\/avatars\.githubusercontent\.com\//.test(str(author.avatarUrl) ?? '') ? str(author.avatarUrl) : null,
     date: str(d[dateKey]) ?? '',
+    failing: Array.isArray(d.failingChecks) ? d.failingChecks.length : 0,
   };
 }
 
@@ -207,7 +210,7 @@ export interface SessionLike {
   model?: string;
   phase: 'running' | 'idle' | 'waiting' | 'failed' | 'done';
   liveStatus: string;
-  attention?: { kind: string; state: string; question?: { text?: string } };
+  attention?: { kind: string; state: string; openedAt?: string; question?: { text?: string } };
   question?: { text?: string } | null;
   request?: { headline?: string; attachments?: { kind: string; name: string }[] };
   timeline?: { steps: { text: string }[] };
@@ -304,10 +307,15 @@ function icon(name: string, title: string): string {
   return `<svg class="ic" viewBox="0 0 16 16" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title>${ICON[name]}</svg>`;
 }
 
+/** Where a chip points, as that service's own mark: GitHub for pull requests, Linear for
+ *  tickets (the tracker the Issues tab reads). */
+const GITHUB_MARK = '<svg class="ic mark" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
+const LINEAR_MARK = '<svg class="ic mark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.2" fill="#5E6AD2" stroke="none"/><path d="M2.2 9.6l4.2 4.2M1.6 7l7.4 7.4M2.6 4.6l8.8 8.8M4.4 2.8l8.8 8.8" stroke="#fff" stroke-width="1.05"/></svg>';
+
 function prMini(pr: NonNullable<SessionLike['prStatus']>): string {
   const tone = pr.state === 'merged' ? 'ok' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ok' : pr.checks === 'failing' ? 'bad' : 'run';
   const words = pr.state === 'merged' ? 'merged' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ready to merge' : pr.checks === 'failing' ? 'checks failing' : 'checks running';
-  return `<span class="chip pr-${tone}" title="PR #${pr.number}: ${words}">${icon('pr', `PR #${pr.number}: ${words}`)}#${pr.number}</span>`;
+  return `<span class="chip pr-${tone}" title="PR #${pr.number}: ${words}">${GITHUB_MARK}#${pr.number}</span>`;
 }
 
 /** A live tool call reads as what it runs, not as a "Tool: args" label: a shell
@@ -390,7 +398,7 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
 }
 
 /** Whether a session works on a ticket: its id in the title, topic, label or latest reply. */
-function onTicket(s: Pick<SessionLike, 'title' | 'topic' | 'label'> & { lastResponse?: string }, id: string | undefined): boolean {
+export function onTicket(s: Pick<SessionLike, 'title' | 'topic' | 'label'> & { lastResponse?: string }, id: string | undefined): boolean {
   if (!id) return false;
   return [s.title, s.topic, s.label, s.lastResponse].some((t) => extractLinearTicketId(t || '') === id || (t || '').includes(id));
 }
@@ -489,6 +497,8 @@ export interface SessionListOptions {
   /** Sessions whose agent posted that it is blocked and you have not written since
    *  (status.blocked on the stream, `blockedSessions`); ids without a `session_` prefix. */
   blockedIds?: ReadonlySet<string>;
+  /** The shortcut the search icon names ("⌘K", "Ctrl+K"). */
+  searchKey?: string;
 }
 
 const ACT_ICON = {
@@ -497,6 +507,7 @@ const ACT_ICON = {
   close: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
   hide: '<path d="M2.5 8S4.5 4.5 8 4.5 13.5 8 13.5 8 11.5 11.5 8 11.5 2.5 8 2.5 8z"/><path d="M3.5 12.5l9-9"/>',
   sort: '<path d="M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2"/>',
+  search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>',
   folder: '<path d="M2 4.5h4l1.2 1.3H14v6.7H2z"/>',
   terminal: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/>',
   cloud: '<path d="M4.5 12h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.5 2.75 2.75 0 0 0 4.5 12z"/>',
@@ -526,12 +537,6 @@ function harnessLogo(agentType: string | undefined): string {
   return `<i class="hx hx-${key}" role="img" aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}"></i>`;
 }
 
-/** The one line a compact card shows: what it asks you, else the agent's latest words. */
-function cardLine(s: SessionLike, state: SessionStateKey): string {
-  if (state === 'asks') return plain(s.question?.text || s.attention?.question?.text || '') || agentLine(s);
-  return agentLine(s) || (s.request?.headline ? plain(s.request.headline) : '');
-}
-
 /** How long a session ran: "47m", "13h 8m", "2d 3h". */
 export function ranFor(ms: number): string {
   const m = Math.max(1, Math.round(ms / 60_000));
@@ -555,22 +560,53 @@ export function ranSpan(start: number, end: number, now: number): string {
     : `${dayWord(start)} ${clock(start)} → ${dayWord(end)} ${clock(end)}`;
 }
 
-/** The ticket as a tile you open to read; the title and state come from a Linear read this window made. */
-function ticketTile(id: string): string {
-  const f = ticketFace(id);
-  return `<a class="tkt" href="#" data-open-ticket="${escapeHtml(id)}" title="Read ${escapeHtml(id)}">` +
-    `<span class="tkh">${icon('ticket', id)}<b>${escapeHtml(id)}</b>${f.state ? `<span class="tks">${escapeHtml(f.state)}</span>` : ''}</span>` +
-    `<span class="tkx">${escapeHtml(f.title ?? 'Linear ticket')}</span><span class="tkm">Read ›</span></a>`;
+/** Claude Code puts a note in as the first user turn when another session writes in
+ *  ("Another Claude session sent a message: <agent-message …>"); a bare slash command
+ *  or a sub-agent's hand-back says nothing about the work either. */
+const INJECTED_NOTE = /^another \w+ session sent a message:?\s*/i;
+
+/** A title candidate as words, or '' when it is an inserted note or a bare command. */
+export function cleanTitle(raw: string): string {
+  if (/^\s*<(task-notification|system-reminder)/i.test(raw)) return '';
+  const t = plain(raw.replace(/<\/?agent-message[^>]*>/gi, ' ').replace(INJECTED_NOTE, '')).replace(/^[…. ]+$/, '');
+  if (/^\[subagent hand-back\]/i.test(t) || /^\/[\w:-]+$/.test(t)) return '';
+  return t;
 }
+
+/** The card title: the CLI's title, the topic, your label, then the request, each
+ *  skipped while it is only an inserted note (owner video, 2026-10-12 8:15 PM). */
+export function sessionTitle(s: Pick<SessionLike, 'title' | 'topic' | 'label' | 'request'>): string {
+  for (const c of [s.title, s.topic, s.label, s.request?.headline]) {
+    const t = cleanTitle(c ?? '');
+    if (t) return t;
+  }
+  return 'Untitled';
+}
+
+/** How long a question has waited: "12s", "5m 02s", "18h 4m", "2d 3h". The list's
+ *  script ticks the same words each second. */
+export function waitFor(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+  const h = Math.floor(s / 3600);
+  return h < 24 ? `${h}h ${Math.floor((s % 3600) / 60)}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/** When the open question was asked, from the CLI's attention item; NaN when none. */
+function askedAt(s: SessionLike): number {
+  return s.attention?.state === 'open' && s.attention.openedAt ? Date.parse(s.attention.openedAt) : NaN;
+}
+
+/** A question shows its attention glow for this long after it arrives. */
+const FRESH_MS = 20_000;
 
 export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean }): string {
   const state = sessionStateOf(s);
-  const title = plain(s.title || s.topic || s.label || s.request?.headline || 'Untitled');
-  const asked = s.request?.headline ? plain(s.request.headline) : '';
+  const title = sessionTitle(s);
   const question = state === 'asks' ? plain(s.question?.text || s.attention?.question?.text || '') : '';
   const said = agentLine(s);
   const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
-  const line = cardLine(s, state);
   const made = opts.made;
   const where = opts.pinned && (place.kind === 'here' || place.kind === 'window') ? `${place.name} · ${place.where}` : opts.pinned && place.kind === 'ghostty' ? 'Ghostty' : place.where;
   const busy = state === 'working' || state === 'asks';
@@ -581,34 +617,31 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const x = hasTab
     ? `<button class="act x" data-act="close" title="Close the tab">${glyph('close')}</button>`
     : `<button class="act x" data-act="hide" title="Hide until it does something new">${glyph('hide')}</button>`;
-  const prChip = s.prStatus ? prMini(s.prStatus) : '';
   const ticketId = made?.ticket ?? s.ticket ?? '';
-  const ticketChip = ticketId ? `<a class="chip" href="#" data-open-ticket="${escapeHtml(ticketId)}">${icon('ticket', ticketId)}${escapeHtml(ticketId)}</a>` : '';
+  const ticket = ticketId ? ticketFace(ticketId) : null;
+  const ticketChip = ticketId ? `<a class="chip" href="#" data-open-ticket="${escapeHtml(ticketId)}" title="${escapeHtml(ticket?.title ? `${ticketId}: ${ticket.title}` : `Read ${ticketId}`)}">${LINEAR_MARK}${escapeHtml(ticketId)}</a>` : '';
+  const prs = made?.prs.length ? made.prs.map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`).join('') : s.prStatus ? prMini(s.prStatus) : '';
   const ran = state === 'ended' && s.startedAtMs && s.lastActivityMs > s.startedAtMs ? s.lastActivityMs - s.startedAtMs : 0;
   const folders = made?.folders ?? [];
-  const outImages = folders.flatMap((f) => f.images);
-  const tiny = [
-    ...opts.thumbs.slice(0, 1).map((t) => `<img class="tiny in" src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}" title="Attached by you">`),
-    ...outImages.slice(0, 2).map((i) => `<img class="tiny" src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}" title="Made by the agent: ${escapeHtml(i.name)}">`),
-  ].join('');
-  const strip = [prChip, ticketChip, folders.length ? `<span class="chip" title="${folders.length} artifact folder${folders.length > 1 ? 's' : ''}">${glyph('folder')}${folders.length}</span>` : '', tiny].join('');
-  const shown = opts.thumbs.slice(0, 3);
-  const more = opts.thumbs.length - shown.length;
-  const prs = made?.prs.length ? made.prs.map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}">${icon('pr', p.label)}${escapeHtml(p.label)}</a>`).join('') : prChip;
-  const madeBlock = (prs || ticketId || folders.length) ? `<div class="lab">Made</div><div class="made">${prs ? `<div class="chips">${prs}</div>` : ''}${ticketId ? ticketTile(ticketId) : ''}${folders.slice(0, 4).map((f) => `
-      <a class="folder" href="#" data-artifact="${escapeHtml((f.files[0] ?? f.images[0]).path)}" title="${escapeHtml(f.display)}">${glyph('folder')}<span class="fx"><span><b>${escapeHtml(f.name)}/</b> · ${escapeHtml([...f.files, ...f.images].slice(0, 3).map((x) => x.name).join(', '))}${f.files.length + f.images.length > 3 ? ' …' : ''}</span><span class="fp">${escapeHtml(f.display)}</span></span></a>${f.images.length ? `<span class="thumbs">${f.images.slice(0, 3).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`).join('')}${f.images.length > 3 ? `<span class="more">+${f.images.length - 3}</span>` : ''}</span>` : ''}`).join('')}</div>` : '';
-  return `<div class="card st-${state}${opts.selected ? ' sel' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-title="${escapeHtml(title)}">
-    <div class="top">${harnessLogo(s.agentType)}<span class="ttl">${escapeHtml(title)}</span>${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
-    <div class="meta">${opts.blocked ? '<span class="pill st-blocked"><i></i>Your move · blocked</span>' : `<span class="pill st-${state}"><i></i>${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}</span>`}<span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
-    <div class="compact">${line ? `<div class="cline">${escapeHtml(line)}</div>` : ''}${strip ? `<div class="cstrip">${strip}</div>` : ''}</div>
-    <div class="full">
-      ${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
-      ${asked && asked !== title ? `<div class="lab">You</div><div class="line">${escapeHtml(asked)}</div>` : ''}
-      ${shown.length ? `${asked && asked !== title ? '' : '<div class="lab">You</div>'}<span class="thumbs">${shown.map((t, i) => `<a class="th in" href="#" data-path="${escapeHtml(t.path)}" title="Attached by you: ${escapeHtml(t.label)}"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}"><i>attached</i>${i === shown.length - 1 && more > 0 ? `<b>+${more}</b>` : ''}</a>`).join('')}</span>` : ''}
-      ${question ? `<div class="lab">Agent · waiting on you</div><div class="ask">${escapeHtml(question)}</div>` : said ? `<div class="lab">Agent</div><div class="line said">${escapeHtml(said)}</div>` : ''}
-      ${live ? `<div class="line live">${activityLine(live)}</div>` : ''}
-      ${madeBlock}
-    </div>
+  // Previews always show: what you attached, then images the agent made, three at most.
+  const attached = opts.thumbs.slice(0, 3).map((t) => `<a class="th in" href="#" data-path="${escapeHtml(t.path)}" title="Attached by you: ${escapeHtml(t.label)}"><img src="${escapeHtml(t.uri)}" alt="${escapeHtml(t.label)}"></a>`);
+  const madeImages = folders.flatMap((f) => f.images).slice(0, 3 - attached.length).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="Made by the agent: ${escapeHtml(i.name)}"><img src="${escapeHtml(i.uri)}" alt="${escapeHtml(i.name)}"></a>`);
+  const thumbs = [...attached, ...madeImages];
+  const folderChip = folders.length ? `<a class="chip" href="#" data-artifact="${escapeHtml((folders[0].files[0] ?? folders[0].images[0]).path)}" title="${escapeHtml(folders.map((f) => f.display).join('\n'))}">${glyph('folder')}${folders.length}</a>` : '';
+  const chips = [prs, ticketChip, folderChip].join('');
+  const asked = askedAt(s);
+  const waited = state === 'asks' && Number.isFinite(asked) ? Math.max(0, now - asked) : -1;
+  const word = opts.blocked ? 'Your move · blocked' : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
+  const pill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"><i></i>${escapeHtml(word)}${waited >= 0 ? ` · <span class="wait" data-since="${asked}">${waitFor(waited)}</span>` : ''}</span>`;
+  const preview = question
+    ? `<div class="ask" data-expand title="Show the whole question"><span class="q">${escapeHtml(question)}</span><span class="exp">more</span></div>`
+    : said ? `<div class="line said">${escapeHtml(said)}</div>`
+      : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '';
+  return `<div class="card st-${state}${opts.selected ? ' sel' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}">
+    <div class="top">${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${go}${x}</span></div>
+    <div class="meta">${pill}<span class="where">${escapeHtml(where)}</span>${s.model ? `<span class="mdl" title="${escapeHtml(s.model)}">${escapeHtml(s.model.replace(/^claude-/, ''))}</span>` : ''}</div>
+    ${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
+    ${thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${chips ? `<div class="cstrip">${chips}</div>` : ''}
   </div>`;
 }
 
@@ -651,17 +684,19 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const all = prefs.todayOnly && opts.todayId ? visible.filter(({ row }) => today(row)) : visible;
   const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
   const blocked = (r: SessionLike) => !!opts.blockedIds?.has(r.sessionId.replace(/^session_/, ''));
+  // Among questions, the one waiting longest comes first.
+  const waitedSince = (r: SessionLike) => { const t = askedAt(r); return Number.isFinite(t) ? t : Infinity; };
   const isMine = (r: SessionLike) => blocked(r) || ballOf(sessionStateOf(r)) === 'move';
   // Blocked first (the agent said it cannot go on), then a question, then an idle turn.
   const rank = (r: SessionLike) => (blocked(r) ? -1 : moveRank(sessionStateOf(r)));
   const mine = sortRows(all.filter(({ row }) => isMine(row)), prefs.sort)
-    .sort((a, b) => rank(a.row) - rank(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
+    .sort((a, b) => rank(a.row) - rank(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)) || waitedSince(a.row) - waitedSince(b.row));
   const rest = all.filter(({ row }) => !isMine(row));
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row),
   });
-  const c = sessionCount(rows, here, prefs);
-  const head = `<div class="shead"><span class="label">Sessions</span><span class="sum">${c.tabs} tab${c.tabs === 1 ? '' : 's'} · ${c.shown} live · ${c.asks} your move</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  // The tab already shows the count and the Your move dot, so the header carries only its controls.
+  const head = `<div class="shead"><span class="label">Sessions</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   const pinned = mine.length ? `<div class="pinned"><div class="ph">${BALL_WORD.move} <span class="n">${mine.length}</span></div>${mine.map((x) => card(x, true)).join('')}</div>` : '';
@@ -719,7 +754,7 @@ function priorityBars(p: number): string {
  *  Linear delegates to (claude, codex1, grok…) as its harness logo. */
 function personAvatar(name: string | null): string {
   if (!name) return '';
-  const key = name.toLowerCase().replace(/\d+$/, '');
+  const key = name.toLowerCase().replace(/\[bot\]$/, '').replace(/^app\//, '').replace(/\d+$/, '');
   const logo = harnessLogo(key);
   if (logo) return `<span class="iav agent" title="Delegated to ${escapeHtml(name)}">${logo}</span>`;
   let h = 0;
@@ -742,30 +777,105 @@ function ring(state: string | null, draft: boolean): string {
   return `<span class="ring r-${tone}" role="img" aria-label="${words}" title="${words}"><svg viewBox="0 0 18 18"><circle class="trk" cx="9" cy="9" r="7"/><circle class="arc" cx="9" cy="9" r="7"/>${tone === 'ok' ? '<path class="chk" d="M5.8 9.2l2.2 2.2 4.2-4.6"/>' : ''}</svg></span>`;
 }
 
-/** Review while repositories answer one by one: each finished one draws its PRs, the rest say they are being read. */
-export function renderPrsProgress(slugs: string[], done: Map<string, PrsModel['repos'][number]>, now: number): string {
-  const ready = slugs.flatMap((s) => { const r = done.get(s); return r ? [r] : []; });
-  const waiting = slugs.filter((s) => !done.has(s));
-  const body = ready.length ? renderPrs({ repos: ready, partial: false }, now) : '';
-  const quiet = ready.filter((r) => !r.error && r.open.length === 0 && r.merged.length === 0).map((r) => r.slug.split('/').pop());
-  return (waiting.length ? `<div class="reading">Reading ${waiting.map((w) => escapeHtml(w.split('/').pop() ?? w)).join(', ')}…</div>` : '') +
-    body +
-    (quiet.length ? `<div class="quiet">No open or recent PRs in ${quiet.map((q) => escapeHtml(q ?? '')).join(', ')}.</div>` : '') +
-    (!waiting.length && !body && !quiet.length ? '<div class="empty">No pull requests.</div>' : '');
+type ReviewGroup = 'status' | 'repo' | 'author' | 'none';
+
+/** The Review tab's ⇅ choices: grouping, and whether drafts and recent merges show. */
+export interface ReviewPrefs { group: ReviewGroup; showDrafts: boolean; showMerged: boolean }
+
+export const DEFAULT_REVIEW_PREFS: ReviewPrefs = { group: 'status', showDrafts: false, showMerged: false };
+
+export function readReviewPrefs(v: unknown): ReviewPrefs {
+  const o = v && typeof v === 'object' ? (v as Partial<ReviewPrefs>) : {};
+  return {
+    group: o.group === 'status' || o.group === 'repo' || o.group === 'author' || o.group === 'none' ? o.group : DEFAULT_REVIEW_PREFS.group,
+    showDrafts: typeof o.showDrafts === 'boolean' ? o.showDrafts : DEFAULT_REVIEW_PREFS.showDrafts,
+    showMerged: typeof o.showMerged === 'boolean' ? o.showMerged : DEFAULT_REVIEW_PREFS.showMerged,
+  };
 }
 
-export function renderPrs(m: PrsModel, now: number): string {
-  if (m.repos.length === 0) return '<div class="empty">This project has no attached repositories.</div>';
-  const age = (iso: string) => relAge(Date.parse(iso), now);
+/** One ⇅ change applied; null for a key or value it does not know. */
+export function applyReviewPref(p: ReviewPrefs, key: string, value: string): ReviewPrefs | null {
+  if (key === 'group' && (value === 'status' || value === 'repo' || value === 'author' || value === 'none')) return { ...p, group: value };
+  if ((key === 'showDrafts' || key === 'showMerged') && (value === 'true' || value === 'false')) return { ...p, [key]: value === 'true' };
+  return null;
+}
+
+interface ReviewOptions { prefs: ReviewPrefs; mergeWith: string }
+
+const METHOD_WORD: Record<string, string> = { squash: 'squash', rebase: 'rebase', merge: 'a merge commit' };
+
+type PrState = 'ready' | 'running' | 'failing' | 'draft';
+function prState(p: PrRow): PrState {
+  if (p.isDraft) return 'draft';
+  if (p.ciState === 'FAILURE' || p.ciState === 'ERROR') return 'failing';
+  if (p.ciState && p.ciState !== 'SUCCESS') return 'running';
+  return 'ready';
+}
+
+/** The PR's state as its rightmost control: Merge (one click, then Undo) when checks
+ *  pass, else the checks in a word or two (owner, 2026-10-12 9:00 PM). */
+function prStatusCell(p: PrRow, slug: string, mergeWith: string): string {
+  const st = prState(p);
+  if (st === 'ready') return `<button class="rs merge" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}" title="Merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)">Merge</button>`;
+  if (st === 'failing') return `<span class="rs fail" title="${p.failing ? `${p.failing} check${p.failing === 1 ? '' : 's'} failing` : 'Checks failing'}">✕${p.failing ? ` ${p.failing}` : ''}</span>`;
+  if (st === 'running') return `<span class="rs run" title="Checks running">${ring(p.ciState, false)}</span>`;
+  return '<span class="rs draft">Draft</span>';
+}
+
+function prFace(p: PrRow): string {
+  return p.avatar ? `<img class="pav" src="${escapeHtml(p.avatar)}" alt="${escapeHtml(p.author)}" title="${escapeHtml(p.author)}">` : personAvatar(p.author) || '<span class="iav av0">?</span>';
+}
+
+function prLine(p: PrRow, slug: string, now: number, mergeWith: string, showRepo: boolean): string {
+  const age = relAge(Date.parse(p.date), now);
+  return `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prStatusCell(p, slug, mergeWith)}</li>`;
+}
+
+function reviewMenu(p: ReviewPrefs): string {
+  const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-rpref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
+  return `<div class="menu" role="menu" hidden>
+    <div class="sec">Group</div>${item(p.group === 'status', 'Status, ready first', 'group', 'status')}${item(p.group === 'repo', 'Repository', 'group', 'repo')}${item(p.group === 'author', 'Author', 'group', 'author')}${item(p.group === 'none', 'None', 'group', 'none')}<hr>
+    <div class="sec">Show</div>${item(p.showDrafts, 'Drafts', 'showDrafts', String(!p.showDrafts))}${item(p.showMerged, 'Recently merged', 'showMerged', String(!p.showMerged))}
+  </div>`;
+}
+
+/** Review while repositories answer one by one: each finished one draws its PRs, the rest say they are being read. */
+export function renderPrsProgress(slugs: string[], done: Map<string, PrsModel['repos'][number]>, now: number, opts: ReviewOptions): string {
+  const ready = slugs.flatMap((s) => { const r = done.get(s); return r ? [r] : []; });
+  const waiting = slugs.filter((s) => !done.has(s));
+  const body = renderPrs({ repos: ready, partial: false }, now, opts, waiting);
+  return body;
+}
+
+export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading: string[] = []): string {
+  const { prefs, mergeWith } = opts;
+  const all = m.repos.flatMap((r) => r.open.map((p) => ({ p, slug: r.slug })));
+  const shown = all.filter(({ p }) => prefs.showDrafts || !p.isDraft);
+  const hidden = all.length - shown.length;
+  const head = `<div class="shead"><span class="label">Review</span><span class="sum">${shown.length} open${hidden ? ` · ${hidden} draft${hidden === 1 ? '' : 's'} hidden` : ''}</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Group and show" aria-label="Group and show">${glyph('sort')}</button>${reviewMenu(prefs)}</div>`;
   const partial = m.partial ? '<div class="warn">Some repositories could not be read; this list is incomplete.</div>' : '';
-  return partial + m.repos.map((r) => {
-    if (r.error) return `<section><div class="label">${escapeHtml(r.slug)}</div><div class="err">Could not read: ${escapeHtml(r.error)}</div></section>`;
-    if (r.open.length === 0 && r.merged.length === 0) return '';
-    const branch = r.branch ? `<span class="rmeta" title="${escapeHtml(r.branch.name)}: ${escapeHtml(r.branch.ciState ?? 'no CI')}">${ring(r.branch.ciState, false)}${escapeHtml(r.branch.name)}</span>` : '';
-    return `<section>
-      <div class="head"><span class="label">${escapeHtml(r.slug.split('/')[1] ?? r.slug)}</span>${branch}<span class="n">${r.open.length}</span></div>
-      <ul>${r.open.map((p) => `<li class="prli"><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, p.isDraft)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span>${p.avatar ? `<img class="pav" src="${escapeHtml(p.avatar)}" alt="${escapeHtml(p.author)}" title="${escapeHtml(p.author)}">` : personAvatar(p.author)}</a>${p.isDraft ? '' : `<button class="act merge" data-merge-repo="${escapeHtml(r.slug)}" data-merge-number="${p.number}" title="Merge #${p.number}: squash, rebase, merge commit, or admin merge">${glyph('merge')}</button>`}</li>`).join('')}</ul>
-      ${r.merged.length ? `<details open><summary>merged <span class="n">${r.merged.length}</span></summary><ul>${r.merged.map((p) => `<li><a class="prow" href="#" data-url="${escapeHtml(p.url)}">${ring(p.ciState, false)}<span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number} · ${age(p.date)}</span></span></a></li>`).join('')}</ul></details>` : ''}
-    </section>`;
-  }).join('');
+  const readingLine = reading.length ? `<div class="reading">Reading ${reading.map((w) => escapeHtml(w.split('/').pop() ?? w)).join(', ')}…</div>` : '';
+  const errors = m.repos.filter((r) => r.error).map((r) => `<div class="err">${escapeHtml(r.slug)}: could not read: ${escapeHtml(r.error!)}</div>`).join('');
+  if (!m.repos.length && !reading.length) return head + '<div class="empty">This project has no attached repositories.</div>';
+  const many = m.repos.length > 1;
+  const section = (name: string, items: { p: PrRow; slug: string }[], cls = '', extra = '', showRepo = many) =>
+    items.length ? `<section class="rgrp ${cls}"><div class="head"><span class="label">${escapeHtml(name)}</span>${extra}<span class="n">${items.length}</span></div><ul>${items.map(({ p, slug }) => prLine(p, slug, now, mergeWith, showRepo)).join('')}</ul></section>` : '';
+  let body = '';
+  if (prefs.group === 'status') {
+    const by = (st: PrState) => shown.filter(({ p }) => prState(p) === st);
+    body = section('Ready to merge', by('ready'), 'g-ready') + section('Checks running', by('running')) + section('Failing', by('failing'), 'g-fail') + section('Drafts', by('draft'));
+  } else if (prefs.group === 'repo') {
+    body = m.repos.filter((r) => !r.error).map((r) => {
+      const branch = r.branch ? `<span class="rmeta" title="${escapeHtml(r.branch.name)}: ${escapeHtml(r.branch.ciState ?? 'no CI')}">${ring(r.branch.ciState, false)}${escapeHtml(r.branch.name)}</span>` : '';
+      return section(r.slug.split('/')[1] ?? r.slug, shown.filter((x) => x.slug === r.slug), '', branch, false);
+    }).join('');
+  } else if (prefs.group === 'author') {
+    body = [...new Set(shown.map(({ p }) => p.author))].map((a) => section(a, shown.filter(({ p }) => p.author === a))).join('');
+  } else {
+    body = section('Open', shown);
+  }
+  const merged = prefs.showMerged ? m.repos.flatMap((r) => r.merged.map((p) => ({ p, slug: r.slug }))).sort((a, b) => Date.parse(b.p.date) - Date.parse(a.p.date)) : [];
+  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${relAge(Date.parse(p.date), now)}</span></span></a><span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
+  const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
+  return head + partial + readingLine + errors + body + none + mergedHtml + '<div class="toast" hidden></div>';
 }

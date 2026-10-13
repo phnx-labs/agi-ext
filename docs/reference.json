@@ -3,9 +3,9 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 114,
+    "commands": 115,
     "settings": 8,
-    "keybindings": 44,
+    "keybindings": 45,
     "menuItems": 13,
     "views": 2,
     "viewContainers": 2,
@@ -238,6 +238,10 @@
       {
         "command": "agents.reopenLastSession",
         "title": "Agents: Reopen Last Session"
+      },
+      {
+        "command": "agents.searchSessions",
+        "title": "Agents: Search Sessions"
       },
       {
         "command": "agents.detach",
@@ -665,14 +669,20 @@
       },
       {
         "command": "agents.detach",
-        "key": "ctrl+k ctrl+b",
-        "mac": "cmd+k cmd+b",
+        "key": "ctrl+shift+alt+d",
+        "mac": "cmd+shift+alt+d",
         "when": "terminalFocus"
       },
       {
         "command": "agents.attach",
-        "key": "ctrl+k ctrl+a",
-        "mac": "cmd+k cmd+a"
+        "key": "ctrl+shift+alt+a",
+        "mac": "cmd+shift+alt+a"
+      },
+      {
+        "command": "agents.searchSessions",
+        "key": "ctrl+k",
+        "mac": "cmd+k",
+        "when": "focusedView == agentsProject.panel || focusedView == agentsPanel.terminal || terminalFocus && agents.activeIsAgent"
       },
       {
         "command": "agents.newAgent",

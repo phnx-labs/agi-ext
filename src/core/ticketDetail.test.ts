@@ -10,7 +10,7 @@ const RAW = JSON.stringify({
 })
 
 test('ticket detail escapes everything the tracker sends and keeps only safe marks', () => {
-  const html = renderTicketDetail(parseTicketDetail(RAW), 'Claude')
+  const html = renderTicketDetail(parseTicketDetail(RAW), { agentName: 'Claude', delegated: false })
   expect(html).not.toMatch(/<script|<img|<b>bold|data-url="javascript/)
   expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
   expect(html).toContain('<h4>Outcome</h4><ul><li><b>one</b> <code>two</code> <a href="#" data-url="https://example.com/a?b=1&amp;c=2">doc</a>')
@@ -24,4 +24,19 @@ test('ticket detail escapes everything the tracker sends and keeps only safe mar
 
 test('a comment is one argv; text that starts with a dash stays the comment', () => {
   expect(commentArgv('PHNX-1', '--done please')).toEqual(['update', 'PHNX-1', '--comment=--done please'])
+})
+
+test('a delegated ticket names its agent; sessions already on it come first with Open, starting another is quiet', () => {
+  const t = parseTicketDetail(JSON.stringify({ ...JSON.parse(RAW), delegate: { name: 'Claude' } }))
+  expect(t.delegate).toBe('Claude')
+  const idle = renderTicketDetail(t, { agentName: 'Claude', delegated: true })
+  expect(idle).toContain('Delegated to <b>Claude</b> · assigned to Muqsit')
+  expect(idle).toContain('<button class="primary" data-start>▶ Start Claude in a new tab</button>')
+  expect(idle).toContain('Claude is the agent Linear delegates it to')
+  const busy = renderTicketDetail(t, { agentName: 'Claude', delegated: true }, [{ sessionId: 's1', host: 'yosemite-m6', title: 'Merge <3867>', state: 'Your move · asks', where: 'yosemite-m6' }])
+  expect(busy).toContain('On it now')
+  expect(busy).toContain('data-open-session="s1" data-host="yosemite-m6">Open</button>')
+  expect(busy).toContain('Merge &lt;3867&gt;')
+  expect(busy).toContain('<button class="link" data-start>Start Claude in a new tab</button>')
+  expect(busy).not.toContain('▶ Start')
 })

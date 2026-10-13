@@ -114,7 +114,12 @@ export interface AgentSettings {
   editor: EditorPreferences;
   display: DisplayPreferences;
   notifications?: NotificationSettings;
+  /** How every Merge button merges (Review rows, the session sidebar); squash when unset. */
+  mergeMethod?: MergeMethod;
 }
+
+export type MergeMethod = 'squash' | 'rebase' | 'merge';
+export const MERGE_METHODS: readonly MergeMethod[] = ['squash', 'rebase', 'merge'];
 
 interface EditorPreferences {
   markdownViewerEnabled: boolean;

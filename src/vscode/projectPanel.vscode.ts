@@ -7,7 +7,7 @@ import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
 import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { parseGoals, renderGoals } from '../core/goals';
-import { mergeWithMenu } from './prMerge.vscode';
+import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
@@ -31,6 +31,11 @@ import {
   renderSessions,
   renderTickets,
   readSessionPrefs,
+  readReviewPrefs,
+  waitFor,
+  onTicket,
+  sessionTitle,
+  applyReviewPref,
   sessionCount,
   sessionMade,
   type ProjectRef,
@@ -40,12 +45,13 @@ import {
   type SessionListPrefs,
   type TicketGroup,
 } from '../core/projectPanel';
-import { sessionStateOf } from '../shared/sessionState';
+import { SESSION_STATE_WORD, sessionStateOf } from '../shared/sessionState';
 import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
+import { PATCH_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
 import { BUILT_IN_AGENTS } from '../core/agents';
@@ -70,6 +76,7 @@ const execFileAsync = promisify(execFile);
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
 const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
+const REVIEW_PREFS_KEY = 'agents.projectPanel.reviewPrefs';
 const FRESH_MS = 60_000;
 
 type TabId = 'sessions' | 'tickets' | 'prs' | 'settings';
@@ -83,7 +90,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown;
 }
 
 interface TabState {
@@ -122,7 +129,9 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
       else if (msg.type === 'pickProject' && typeof msg.name === 'string') void this.controller.pickByName(msg.name).catch((e) => { void vscode.window.showErrorMessage(`Could not switch project: ${errorText(e)}`); });
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host);
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true);
+      else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
+      else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
       else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') void this.controller.openArtifact(msg.sessionId, host, msg.path);
       else if (msg.type === 'close') void this.controller.closeSessions(targets);
@@ -131,6 +140,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'unhide') void this.controller.hide(targets, false);
       else if (msg.type === 'closeAll') void this.controller.closeLeftoverTabs();
       else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
+      else if (msg.type === 'reviewPrefs' && typeof msg.key === 'string' && typeof msg.value === 'string') void this.controller.setReviewPref(msg.key, msg.value).then((html) => { if (html) this.post('prs', html); });
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
       else if (msg.type === 'ticket' && typeof msg.id === 'string') void this.openTicket(msg.id);
       else if (msg.type === 'ticketList') void this.openTicket(null);
@@ -235,6 +245,11 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   redrawSessions(): Promise<void> {
     return this.load('sessions', false);
+  }
+
+  /** Scroll the card for this session into view, once the list has it. */
+  reveal(sessionId: string): void {
+    if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId });
   }
 
   /** The project menu: one `agents projects list` read when it opens. */
@@ -414,7 +429,9 @@ class ProjectPanelController {
     const repos = (await this.projectList()).find((x) => x.name === p.name)?.repos ?? [];
     if (repos.length < 2) return this.render('prs', p, force);
     const done = new Map<string, PrsModel['repos'][number]>();
-    const draw = () => renderPrsProgress(repos.map((r) => r.slug), done, Date.now());
+    const slugs = repos.map((r) => r.slug);
+    this.reviewSeen = { slugs, done };
+    const draw = () => renderPrsProgress(slugs, done, Date.now(), this.reviewOptions());
     partial(draw());
     await Promise.all(repos.map(async (r) => {
       let stdout: string;
@@ -472,13 +489,31 @@ class ProjectPanelController {
       if (!out || !out.trim().startsWith('{')) throw e;
       stdout = out;
     }
-    return renderPrs(parsePrs(stdout), Date.now());
+    const model = parsePrs(stdout);
+    this.reviewSeen = { slugs: model.repos.map((r) => r.slug), done: new Map(model.repos.map((r) => [r.slug, r])) };
+    return renderPrs(model, Date.now(), this.reviewOptions());
+  }
+
+  /** The PRs last read, so a ⇅ change redraws Review without reading GitHub again. */
+  private reviewSeen: { slugs: string[]; done: Map<string, PrsModel['repos'][number]> } | undefined;
+
+  private reviewOptions() {
+    return { prefs: readReviewPrefs(this.context.workspaceState.get(REVIEW_PREFS_KEY)), mergeWith: getSettings(this.context).mergeMethod ?? 'squash' };
+  }
+
+  /** One Review ⇅ choice; the redrawn tab, or undefined when nothing was read yet. */
+  async setReviewPref(key: string, value: string): Promise<string | undefined> {
+    const next = applyReviewPref(readReviewPrefs(this.context.workspaceState.get(REVIEW_PREFS_KEY)), key, value);
+    if (!next) return undefined;
+    await this.context.workspaceState.update(REVIEW_PREFS_KEY, next);
+    const seen = this.reviewSeen;
+    return seen ? renderPrsProgress(seen.slugs, seen.done, Date.now(), this.reviewOptions()) : undefined;
   }
 
   /** Merge one PR from the list through the shared flow (read, pick, confirm, merge). */
   async mergeFromRow(repo: string, number: number): Promise<boolean> {
     const project = await this.project();
-    return project ? mergeWithMenu(project.name, repo, number) : false;
+    return project ? mergeNow(project.name, repo, number, getSettings(this.context).mergeMethod ?? 'squash') : false;
   }
 
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
@@ -503,11 +538,25 @@ class ProjectPanelController {
     const t = parseTicketDetail(stdout);
     this.shownTicket = t;
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
-    return renderTicketDetail(t, this.defaultAgent().name);
+    const agent = this.ticketAgent(t);
+    const project = await this.project().catch(() => null);
+    const rows = project ? projectSessions(preferLive(this.presented()) as unknown as SessionLike[], project.name) : (preferLive(this.presented()) as unknown as SessionLike[]);
+    const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
+      sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
+    }));
+    return renderTicketDetail(t, { agentName: agent.name, delegated: agent.delegated }, onIt);
   }
 
   async comment(id: string, text: string): Promise<void> {
     await execFileAsync(this.linear(), commentArgv(id, text), { timeout: 60_000 });
+  }
+
+  /** Start runs the agent Linear delegates the ticket to when this version launches it
+   *  ("Claude", "codex1" → Codex), else your default agent. */
+  private ticketAgent(t: TicketDetail): (typeof PICKABLE_AGENTS)[number] & { delegated: boolean } {
+    const d = (t.delegate ?? '').toLowerCase().replace(/\d+$/, '');
+    const hit = d ? PICKABLE_AGENTS.find((a) => a.key === d || a.name.toLowerCase() === d) : undefined;
+    return hit ? { ...hit, delegated: true } : { ...this.defaultAgent(), delegated: false };
   }
 
   private defaultAgent(): (typeof PICKABLE_AGENTS)[number] {
@@ -523,7 +572,7 @@ class ProjectPanelController {
     const t = this.shownTicket;
     if (!t || t.identifier !== id) return;
     try {
-      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.defaultAgent().key, prompt: ticketPrompt(t) });
+      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.ticketAgent(t).key, prompt: ticketPrompt(t) });
     } catch (e) {
       void vscode.window.showErrorMessage(`Could not start an agent on ${id}: ${errorText(e)}`);
     }
@@ -672,9 +721,37 @@ class ProjectPanelController {
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
-  select(sessionId: string, host: string | undefined): void {
+  /** A card click: the session panel shows it, and when its tab is in this window
+   *  that tab comes to the front (owner, 2026-10-12). Nothing is resumed or spawned. */
+  select(sessionId: string, host: string | undefined, focus = false): void {
     setAgentPanelSubjectFromProject(sessionId, host);
     void this.view.redrawSessions();
+    if (!focus || (host && remoteDeviceArg(host))) return;
+    terminals.getBySessionId(sessionId)?.terminal.show(false);
+  }
+
+  /** ⌘K: every session this window knows, questions first; Enter shows the pick and
+   *  brings its tab forward when it has one here. A pick with no tab is shown, never resumed. */
+  async searchSessions(): Promise<void> {
+    const rows = preferLive(this.presented()) as unknown as SessionLike[];
+    const now = Date.now();
+    const order = (r: SessionLike) => ({ asks: 0, yours: 1, working: 2, unknown: 3, ended: 4 } as Record<string, number>)[sessionStateOf(r)] ?? 3;
+    const items = [...rows].sort((a, b) => order(a) - order(b) || b.lastActivityMs - a.lastActivityMs).map((r) => {
+      const st = sessionStateOf(r);
+      const tab = terminals.getBySessionId(r.sessionId);
+      const opened = r.attention?.state === 'open' && r.attention.openedAt ? Date.parse(r.attention.openedAt) : NaN;
+      return {
+        label: sessionTitle(r),
+        description: [SESSION_STATE_WORD[st] + (st === 'asks' && Number.isFinite(opened) ? ` · ${waitFor(now - opened)}` : ''), tab ? 'tab here' : r.host || 'this machine'].join(' · '),
+        detail: [r.ticket, r.prStatus ? `#${r.prStatus.number}` : '', r.model].filter(Boolean).join(' · ') || undefined,
+        row: r,
+      };
+    });
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Search sessions by title, ticket, PR, model or machine', matchOnDescription: true, matchOnDetail: true });
+    if (!pick) return;
+    const host = pick.row.host;
+    this.select(pick.row.sessionId, host, true);
+    this.view.reveal(pick.row.sessionId);
   }
 
   /** The focus and resume icons: its tab comes to the front, else the live agent
@@ -744,6 +821,13 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
       void vscode.window.showErrorMessage(`Could not list projects: ${errorText(e)}`);
     })),
     // Internal: the session panel's ticket tile opens the ticket here.
+    vscode.commands.registerCommand('agents.searchSessions', () => controller.searchSessions()),
+    // The list follows the tab in front: switching tabs moves its selection (owner video, 2026-10-12).
+    vscode.window.onDidChangeActiveTerminal((t) => {
+      const id = t ? terminals.getByTerminal(t)?.sessionId : undefined;
+      if (!id) return;
+      void controller.redrawSessions().then(() => controller.view.reveal(id));
+    }),
     vscode.commands.registerCommand('agents.project.openTicket', (id: unknown) => typeof id === 'string' && id ? controller.view.openTicketTab(id) : undefined),
   );
 }
@@ -836,7 +920,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .trow, .prow { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; padding: 5px 4px; border-radius: 6px; }
   .prli { display: flex; align-items: center; gap: 4px; }
   /* People: GitHub avatars on PRs, colored initials (or the agent's logo) on issues. */
-  .pav { width: 18px; height: 18px; border-radius: 50%; flex: none; align-self: center; margin-left: auto; }
+  .pav { width: 18px; height: 18px; border-radius: 50%; flex: none; align-self: center; }
   .trow, .prow { align-items: center; }
   .who { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; flex: none; }
   .iav { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 8.5px; font-weight: 700; color: var(--r-on-av); flex: none; box-sizing: border-box; }
@@ -845,9 +929,14 @@ export function shell(cspSource: string, logoCss = ''): string {
   .iav.av3 { background: var(--r-av3); } .iav.av4 { background: var(--r-av4); } .iav.av5 { background: var(--r-av5); }
   .iav.agent { background: var(--r-glass); border: 1px solid var(--r-edge); }
   .iav.agent .hx { width: 12px; height: 12px; }
-  .prli .prow { flex: 1; min-width: 0; }
-  .prli .act.merge { flex: none; opacity: .55; }
-  .prli:hover .act.merge, .prli .act.merge:focus-visible { opacity: 1; }
+  .prli { gap: 6px; padding-left: 2px; }
+  .prli .prow { flex: 1; min-width: 0; display: block; padding: 5px 2px; }
+  /* A PR row: its author on the left, its state as the rightmost control (Merge when checks pass). */
+  .rs { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 8px; font: 600 11px var(--vscode-font-family); border: 1px solid transparent; white-space: nowrap; }
+  .rs.merge { background: var(--r-ok); color: var(--r-on-av); cursor: pointer; } .rs.merge:hover { filter: brightness(1.08); } .rs.merge:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .rs.undo { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; font-variant-numeric: tabular-nums; min-width: 62px; justify-content: center; }
+  .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
+  .rgrp .head { margin-bottom: 2px; } .rgrp.g-ready .label { color: var(--r-ok); } .rgrp.g-fail .label { color: var(--r-bad); }
   .trow:hover, .prow:hover { background: var(--r-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
   .ring { width: 14px; height: 14px; flex: none; margin-top: 1px; display: inline-block; }
@@ -947,7 +1036,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .card { display: block; min-width: 0; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--r-glass); color: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
   .card:hover, .card.sel, .card:focus-visible { background: var(--r-hover); border-color: var(--r-faint); outline: none; }
   .card.multi { border-color: var(--r-gold); }
-  .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; }
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
   .acts { display: none; gap: 2px; flex: none; }
@@ -966,18 +1055,28 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pill.st-blocked { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-blocked i { background: var(--r-bad) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
-  .compact { display: grid; gap: 4px; margin-top: 4px; }
-  .cline { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
-  .st-asks .cline { color: var(--r-text); }
+  /* A card always shows the same preview; hover only reveals its icons, so nothing moves. */
+  .card .ask, .card .line.said { margin-top: 5px; }
+  .card .cstrip, .card .thumbs { margin-top: 6px; }
   .cstrip { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
-  .tiny { height: 20px; width: 28px; object-fit: cover; border-radius: 3px; border: 1px solid var(--r-edge); display: block; } .tiny.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; }
-  .full { display: none; }
-  .card:hover .full, .card.sel .full, .card:focus-within .full { display: block; } .card:hover .compact, .card.sel .compact, .card:focus-within .compact { display: none; }
+  .pill .wait { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .pill.st-asks i { position: relative; overflow: visible; }
+  .pill.st-asks i::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--r-warn); opacity: 0; animation: askring 2.4s ease-out infinite; }
+  @keyframes askring { 0% { transform: scale(.4); opacity: .7; } 70%, 100% { transform: scale(1.5); opacity: 0; } }
+  /* A question that just arrived: the card glows three times, then rests. */
+  .card.fresh { animation: askglow 1.1s ease-in-out 3; }
+  @keyframes askglow { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 45% { background: var(--r-warn-tint); box-shadow: 0 0 0 2px var(--r-warn); } }
+  .card.flash { animation: flashsel .9s ease-out; }
+  @keyframes flashsel { 0% { box-shadow: 0 0 0 2px var(--r-gold); } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .ic.mark { width: 11px; height: 11px; }
   .lab { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); margin: 7px 0 2px; }
   .card .line { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   .card .line.said { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .card .line.live { color: var(--r-caption); margin-top: 3px; } .card .line .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; } .card .line .tool { font-weight: 600; font-size: 11px; }
-  .card .ask { padding: 6px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .ask { display: block; padding: 6px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; cursor: zoom-in; }
+  .card .ask .q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .ask .exp { display: block; text-align: right; font-size: 10.5px; font-weight: 600; color: var(--r-warn); margin-top: 1px; }
+  .card .ask.open { cursor: zoom-out; } .card .ask.open .q { display: block; }
   .made { display: grid; gap: 5px; padding: 6px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-well); }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 170px; padding: 1px 6px 1px 4px; border-radius: 5px; border: 1px solid var(--r-edge); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -988,7 +1087,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .folder:hover b { text-decoration: underline; }
   .thumbs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
   .th { position: relative; height: 40px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); display: block; flex: none; }
-  .th { width: 64px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
+  .th { width: 64px; } .card .th { width: 54px; height: 34px; } .th.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
   .th i { position: absolute; left: 3px; bottom: 3px; font-style: normal; font-size: 9px; background: rgba(0,0,0,.62); color: #fff; border-radius: 3px; padding: 0 3px; }
   .th b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; }
   .more { font-size: 10.5px; border: 1px solid var(--r-edge); border-radius: 5px; padding: 0 6px; color: var(--r-caption); }
@@ -1018,6 +1117,12 @@ export function shell(cspSource: string, logoCss = ''): string {
   .tdetail .tmeta a, .tdetail .tbody a, .tdetail .cbody a { color: var(--vscode-textLink-foreground); }
   .tdetail .dispatch { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--r-edge); border-radius: 8px; margin: 8px 0; }
   .tdetail .hint, .tdetail .older, .tdetail .none { color: var(--r-caption); font-size: 11px; }
+  .tdetail .dwho { font-size: 12px; } .tdetail .dispatch .sh { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); margin-top: 4px; }
+  .tdetail .onit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .tdetail .ons { display: flex; gap: 6px; align-items: center; min-width: 0; border: 1px solid var(--r-edge); border-radius: 7px; padding: 5px 7px; }
+  .tdetail .onm { flex: 1; min-width: 0; display: grid; } .tdetail .onm b { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tdetail .onm small { color: var(--r-caption); font-size: 10.5px; }
+  .tdetail .ons .primary { flex: none; }
+  .tdetail button.link { background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-decoration: underline; }
   .tdetail .tbody, .tdetail .cbody { font-size: 12px; line-height: 1.45; color: var(--r-text-2); overflow-wrap: anywhere; }
   .tdetail .tbody p, .tdetail .cbody p { margin: 4px 0; } .tdetail h4 { margin: 8px 0 2px; font-size: 12px; }
   .tdetail ul { list-style: disc; padding-left: 18px; margin: 4px 0; }
@@ -1036,7 +1141,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .settings select { font: inherit; font-size: 11px; color: var(--vscode-dropdown-foreground, var(--r-text)); border: 1px solid var(--vscode-dropdown-border, var(--r-edge)); border-radius: 4px; background: var(--vscode-dropdown-background, var(--r-glass)); padding: 2px; }
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
-  @media (prefers-reduced-motion: reduce) { .st-working.pill i, .ring .arc { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1056,6 +1161,33 @@ export function shell(cspSource: string, logoCss = ''): string {
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
+${PATCH_SCRIPT}
+  // Questions the viewer opened, and Merge clicks still in their Undo window; both
+  // survive a redraw of the list.
+  const opened = new Set();
+  const pendingMerge = new Map();
+  const mergeTimers = new Map();
+  function waitWords(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    const h = Math.floor(s / 3600);
+    return h < 24 ? h + 'h ' + Math.floor((s % 3600) / 60) + 'm' : Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+  }
+  // The wait on a question ticks every second; only these numbers change.
+  function tickWaits() { main.querySelectorAll('[data-since]').forEach((el) => { const t = Number(el.dataset.since); if (t) el.textContent = waitWords(Date.now() - t); }); }
+  setInterval(tickWaits, 1000);
+  function restoreLocal() {
+    main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
+    main.querySelectorAll('.card[data-session] .ask .exp').forEach((x) => { x.textContent = x.closest('.ask').classList.contains('open') ? 'less' : 'more'; });
+    for (const [key, left] of pendingMerge) drawUndo(key, left);
+    tickWaits();
+  }
+  function mergeBtn(key) { const [repo, num] = key.split('#'); return main.querySelector('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]'); }
+  function drawUndo(key, left) {
+    const b = mergeBtn(key); if (!b) return;
+    b.className = 'rs undo'; b.textContent = 'Undo · ' + left; b.title = 'Stop this merge';
+  }
   const tabs = [...document.querySelectorAll('.tab')];
   const scroll = {};
   let current = 'sessions';
@@ -1086,7 +1218,7 @@ export function shell(cspSource: string, logoCss = ''): string {
       const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
       const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => [c.closest('.card').dataset.session, c]) : [];
       const menuOpen = same && main.querySelector('.menu') && !main.querySelector('.menu').hidden;
-      main.innerHTML = m.html;
+      if (same) patchChildren(main, m.html); else main.innerHTML = m.html;
       if (keepToast) main.querySelector('.toast')?.replaceWith(keepToast);
       for (const [id, box] of keepConfirm) main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')?.appendChild(box);
       if (menuOpen) { main.querySelector('.menu').hidden = false; main.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
@@ -1095,6 +1227,7 @@ export function shell(cspSource: string, logoCss = ''): string {
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
       if (m.tab === 'sessions') syncBulk();
+      restoreLocal();
       document.body.classList.remove('loading');
     }
     else if (m.type === 'project') {
@@ -1115,6 +1248,10 @@ export function shell(cspSource: string, logoCss = ''): string {
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') { document.body.classList.remove('loading'); main.querySelectorAll('[data-comment]').forEach((b) => { b.disabled = false; }); }
     else if (m.type === 'notice') toast(m.text);
+    else if (m.type === 'reveal') {
+      const c = main.querySelector('.card[data-session="' + CSS.escape(m.sessionId) + '"]');
+      if (c) { c.scrollIntoView({ block: 'nearest' }); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
+    }
   });
   // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab
   // whose agent is working or waiting asks first; everything else offers Undo.
@@ -1181,7 +1318,30 @@ export function shell(cspSource: string, logoCss = ''): string {
     const tk = e.target.closest('[data-open-ticket]');
     if (tk) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
     const merge = e.target.closest('[data-merge-repo]');
-    if (merge) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber) }); return; }
+    if (merge) {
+      e.preventDefault(); e.stopPropagation();
+      const key = merge.dataset.mergeRepo + '#' + merge.dataset.mergeNumber;
+      // A second click inside the window is Undo: nothing was sent yet.
+      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); merge.className = 'rs merge'; merge.textContent = 'Merge'; merge.title = 'Merge #' + merge.dataset.mergeNumber; toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
+      let left = 5; pendingMerge.set(key, left); drawUndo(key, left);
+      const timer = setInterval(() => {
+        left -= 1;
+        if (!pendingMerge.has(key)) { clearInterval(timer); return; }
+        if (left > 0) { pendingMerge.set(key, left); drawUndo(key, left); return; }
+        clearInterval(timer); pendingMerge.delete(key); mergeTimers.delete(key);
+        const b = mergeBtn(key); if (b) { b.textContent = 'Merging…'; b.disabled = true; }
+        vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber) });
+      }, 1000);
+      mergeTimers.set(key, timer);
+      return;
+    }
+    const rpref = e.target.closest('[data-rpref]');
+    if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
+    if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
+    const os = e.target.closest('[data-open-session]');
+    if (os) { vscode.postMessage({ type: 'openSession', sessionId: os.dataset.openSession, host: os.dataset.host }); return; }
+    const ask = e.target.closest('.card .ask[data-expand]');
+    if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
     const goal = e.target.closest('.goals [data-url]');
     if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
     const menuBtn = e.target.closest('[data-menu]');
@@ -1234,7 +1394,7 @@ export function shell(cspSource: string, logoCss = ''): string {
     if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
-      vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host });
+      vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });
       return;
     }
     if (!a) return;

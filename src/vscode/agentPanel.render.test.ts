@@ -659,13 +659,18 @@ test('Files folds single-child folders into one row and keeps a flat List view',
   delete viewState.filesView;
 });
 
-test('the state line says the shared state word: running time, or how long it ran, and last activity', () => {
+test('the state line says the shared state word and running time; a live agent pulses its dot, the last activity is the tooltip', () => {
   const day = 26 * 3600_000;
   const running = cards.renderSessionStats({ state: { key: 'working', word: 'Working' }, durationMs: day, lastActivityMs: Date.now() - 2 * 60_000 });
   expect(running).toContain('state-running');
-  expect(running).toContain('Working <b>1d 2h</b> · active <b>2 min ago</b>');
+  expect(running).toContain('Working <b>1d 2h</b></span>');
+  expect(running).toContain('title="Active 2 min ago"');
+  expect(running).not.toContain(' live');
+  const live = cards.renderSessionStats({ state: { key: 'working', word: 'Working' }, durationMs: day, lastActivityMs: Date.now() - 10_000, accountLabel: 'trp', agentType: 'claude' });
+  expect(live).toContain('session-stats state-running live');
+  expect(live).not.toContain('claude#trp');
   const idle = cards.renderSessionStats({ state: { key: 'yours', word: 'Your turn' }, durationMs: day, lastActivityMs: Date.now() - 3 * 3600_000 });
-  expect(idle).toContain('Your turn · ran <b>1d 2h</b> · active <b>3 hours ago</b>');
+  expect(idle).toContain('Your turn · ran <b>1d 2h</b></span>');
   const asks = cards.renderSessionStats({ state: { key: 'asks', word: 'Needs you' }, durationMs: 60_000 });
   expect(asks).toContain('state-waiting');
   expect(asks).toContain('Needs you');

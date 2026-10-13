@@ -110,7 +110,14 @@ function renderStep(step) {
   );
 }
 
-const TIMELINE_SHOWN = 3;
+// How many steps show before "N more": 8 unless the viewer picked 4, 16 or all
+// (owner video, 2026-10-12: "we need to show more steps here, always by default,
+// maybe configurable").
+const STEP_CHOICES = ['4', '8', '16', 'all'];
+function timelineShown() {
+  const v = String(viewState.stepsShown || '8');
+  return v === 'all' ? Infinity : Number(v) || 8;
+}
 
 // One strip of tool activity across the whole session. A run of 3+ empty buckets
 // collapses into a labeled gap so a 17-hour session with 10 idle hours still
@@ -397,14 +404,18 @@ function renderTimelineCard(s) {
   // The agent's own status posts sit among its steps, newest first.
   const ups = (s.updates || []).filter((u) => inRange(range, u.atMs)).map((u) => ({ at: u.atMs, html: renderUpdate(u) }));
   const merged = visible.map((step) => ({ at: Date.parse(step.at) || 0, html: renderStep(step) })).concat(ups).sort((a, b) => b.at - a.at);
-  const shown = none + merged.slice(0, TIMELINE_SHOWN).map((x) => x.html).join('');
-  const rest = merged.slice(TIMELINE_SHOWN);
+  const n = timelineShown();
+  const shown = none + merged.slice(0, n).map((x) => x.html).join('');
+  const rest = merged.slice(n);
   // "N more" stays open across stream updates (it used to fold back on the next row).
   const key = (s.fullSessionId || '') + ':more';
   const more = rest.length
     ? (viewState.feedMore === key
         ? rest.map((x) => x.html).join('') + '<button type="button" class="timeline-more" data-feed-more="">Show less</button>'
         : '<button type="button" class="timeline-more" data-feed-more="' + esc(key) + '">' + rest.length + ' more</button>')
+    : '';
+  const pick = merged.length > 4
+    ? '<label class="steps-n">Show <select data-steps-shown aria-label="Steps shown">' + STEP_CHOICES.map((v) => '<option value="' + v + '"' + (String(viewState.stepsShown || '8') === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></label>'
     : '';
   const earlierBits = [];
   if (t.earlier.steps > 0) {
@@ -414,7 +425,7 @@ function renderTimelineCard(s) {
   }
   const earlier = earlierBits.length ? '<div class="timeline-earlier">▸ ' + esc(earlierBits.join(' · ')) + '</div>' : '';
   const partial = t.state === 'partial' ? '<div class="card-note" style="margin-top:6px">Partial: the transcript was capped this tick.</div>' : '';
-  return '<div class="feed">' + head + shown + more + earlier + partial + '</div>';
+  return '<div class="feed">' + head + shown + more + pick + earlier + partial + '</div>';
 }
 
 // ── Artifacts ───────────────────────────────────────────────────────────────
@@ -504,64 +515,6 @@ function queueThumb(uri) {
     const url = thumbCache.get(uri);
     for (const img of root.querySelectorAll('img[data-thumb]')) if (img.getAttribute('data-thumb') === uri) img.src = url;
   });
-}
-
-// Stream updates arrive several times a minute on a busy session. Replacing the
-// card's HTML on each one tore down every node: the panel jittered, hover ended
-// and a scrolled strip snapped back (owner video, 2026-10-12). patchChildren
-// turns the live children into the new markup in place: an unchanged node stays
-// the same node. A node is reused only when its tag, id, class and data-*
-// attribute names match, so a reused node keeps the handler it was bound with;
-// every handler reads its data-* values when clicked. Children pair by position,
-// so a fold is keyed by its summary: a fold the viewer opened keeps its open
-// state, and rows inserted above it never hand that state to another row. A
-// thumbnail keeps the src the observer filled only while it shows the same image.
-function nodeSig(n) {
-  if (n.nodeType !== 1) return String(n.nodeType);
-  const names = [];
-  for (const a of n.attributes) {
-    if (a.name === 'class' || a.name === 'id') names.push(a.name + '=' + a.value);
-    else if (a.name.indexOf('data-') === 0) names.push(a.name);
-  }
-  const summary = n.nodeName === 'DETAILS' && n.firstElementChild && n.firstElementChild.nodeName === 'SUMMARY' ? '|' + n.firstElementChild.textContent : '';
-  return n.nodeName + '|' + names.sort().join(',') + summary;
-}
-
-function patchAttrs(live, next) {
-  const sameImage = live.hasAttribute('data-thumb') && live.getAttribute('data-thumb') === next.getAttribute('data-thumb');
-  const kept = (name) => (name === 'open' && live.nodeName === 'DETAILS') || (name === 'src' && sameImage);
-  for (const a of Array.from(live.attributes)) if (!next.hasAttribute(a.name) && !kept(a.name)) live.removeAttribute(a.name);
-  for (const a of Array.from(next.attributes)) if (!kept(a.name) && live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
-}
-
-function patchNode(live, next) {
-  const was = Array.from(live.childNodes);
-  const now = Array.from(next.childNodes);
-  for (let i = 0; i < now.length; i++) {
-    const x = was[i];
-    const y = now[i];
-    if (!x) { live.appendChild(y); continue; }
-    if (nodeSig(x) !== nodeSig(y)) { live.replaceChild(y, x); continue; }
-    if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
-    if (x.isEqualNode(y)) continue;
-    patchAttrs(x, y);
-    patchNode(x, y);
-  }
-  for (let i = was.length - 1; i >= now.length; i--) live.removeChild(was[i]);
-}
-
-function patchChildren(live, html) {
-  const t = document.createElement('template');
-  t.innerHTML = html;
-  patchNode(live, t.content);
-}
-
-// A patched node keeps its listeners, so each binding runs once per node.
-function bindOnce(el, key) {
-  const mark = '__bound_' + key;
-  if (el[mark]) return false;
-  el[mark] = true;
-  return true;
 }
 
 // Wires the timeline and artifact cards rendered into root: their thumbnails,
@@ -659,6 +612,9 @@ function bindSessionCards() {
     });
   }
   bindSeekDrag();
+  for (const el of root.querySelectorAll('[data-steps-shown]')) {
+    if (bindOnce(el, 'steps')) el.addEventListener('change', () => { viewState.stepsShown = el.value; vscode.setState(viewState); render(lastSnapshot); });
+  }
   for (const el of root.querySelectorAll('[data-feed-more]')) {
     if (bindOnce(el, 'more')) el.addEventListener('click', () => { viewState.feedMore = el.getAttribute('data-feed-more'); vscode.setState(viewState); render(lastSnapshot); });
   }
@@ -1063,10 +1019,12 @@ ${fontFaces}  body {
     display: grid;
     grid-template-columns: 10px minmax(0, 1fr) auto;
     gap: 2px 8px;
-    padding: 3px 0;
-    font-size: 11.5px;
-    line-height: 1.4;
+    padding: 4px 0;
+    font-size: 13px;
+    line-height: 1.45;
   }
+  .steps-n { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--r-caption); margin: 4px 0; }
+  .steps-n select { font: inherit; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--r-edge); border-radius: 4px; }
   .step-mk {
     width: 6px;
     height: 6px;
@@ -1362,6 +1320,9 @@ ${fontFaces}  body {
   .state-running .state-dot { background: var(--r-ok); box-shadow: 0 0 0 3px var(--r-ok-tint); }
   .state-waiting .state-dot { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
   .state-failed .state-dot { background: var(--r-bad); }
+  .session-stats.live .state-dot { animation: livedot 2s ease-out infinite; }
+  @keyframes livedot { 0% { box-shadow: 0 0 0 0 var(--r-ok); } 100% { box-shadow: 0 0 0 6px transparent; } }
+  @media (prefers-reduced-motion: reduce) { .session-stats.live .state-dot { animation: none; } }
   /* Timeline phases: the strip dims outside the chosen stretch. */
   .seek-bar.out i { opacity: 0.22; }
   .tl-range { margin: -2px 0 8px; }
@@ -1495,7 +1456,6 @@ ${fontFaces}  body {
   .head-menu > summary.head-btn { top: 0; right: 0; width: 24px; height: 24px; line-height: 22px; font-size: 13px; }
   .session-stats { margin: 5px 0 0; }
   .stats-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stats-account { margin-left: auto; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--r-mono); font-size: 10.5px; color: var(--r-faint); }
   .session-stats.state-waiting { color: var(--r-warn); }
   .session-stats.state-waiting .stats-text::first-line { font-weight: 600; }
   /* A Running session gone quiet: revealed by its own delay, no timer. */
@@ -1604,3 +1564,66 @@ ${fontFaces}  body {
   .reply-box[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .reply-box:focus-within { transform: none; } }`;
 }
+
+// The in-place patch both sidebars use (the Active Session card and the Project
+// panel's lists). Plain webview JavaScript inlined into each nonce'd <script>;
+// written as it would be inside that template literal (no backticks).
+export const PATCH_SCRIPT = `
+// Stream updates arrive several times a minute on a busy session. Replacing the
+// card's HTML on each one tore down every node: the panel jittered, hover ended
+// and a scrolled strip snapped back (owner video, 2026-10-12). patchChildren
+// turns the live children into the new markup in place: an unchanged node stays
+// the same node. A node is reused only when its tag, id, class and data-*
+// attribute names match, so a reused node keeps the handler it was bound with;
+// every handler reads its data-* values when clicked. Children pair by position,
+// so a fold is keyed by its summary: a fold the viewer opened keeps its open
+// state, and rows inserted above it never hand that state to another row. A
+// thumbnail keeps the src the observer filled only while it shows the same image.
+function nodeSig(n) {
+  if (n.nodeType !== 1) return String(n.nodeType);
+  const names = [];
+  for (const a of n.attributes) {
+    if (a.name === 'class' || a.name === 'id') names.push(a.name + '=' + a.value);
+    else if (a.name.indexOf('data-') === 0) names.push(a.name);
+  }
+  const summary = n.nodeName === 'DETAILS' && n.firstElementChild && n.firstElementChild.nodeName === 'SUMMARY' ? '|' + n.firstElementChild.textContent : '';
+  return n.nodeName + '|' + names.sort().join(',') + summary;
+}
+
+function patchAttrs(live, next) {
+  const sameImage = live.hasAttribute('data-thumb') && live.getAttribute('data-thumb') === next.getAttribute('data-thumb');
+  const kept = (name) => (name === 'open' && live.nodeName === 'DETAILS') || (name === 'src' && sameImage);
+  for (const a of Array.from(live.attributes)) if (!next.hasAttribute(a.name) && !kept(a.name)) live.removeAttribute(a.name);
+  for (const a of Array.from(next.attributes)) if (!kept(a.name) && live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
+}
+
+function patchNode(live, next) {
+  const was = Array.from(live.childNodes);
+  const now = Array.from(next.childNodes);
+  for (let i = 0; i < now.length; i++) {
+    const x = was[i];
+    const y = now[i];
+    if (!x) { live.appendChild(y); continue; }
+    if (nodeSig(x) !== nodeSig(y)) { live.replaceChild(y, x); continue; }
+    if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
+    if (x.isEqualNode(y)) continue;
+    patchAttrs(x, y);
+    patchNode(x, y);
+  }
+  for (let i = was.length - 1; i >= now.length; i--) live.removeChild(was[i]);
+}
+
+function patchChildren(live, html) {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  patchNode(live, t.content);
+}
+
+// A patched node keeps its listeners, so each binding runs once per node.
+function bindOnce(el, key) {
+  const mark = '__bound_' + key;
+  if (el[mark]) return false;
+  el[mark] = true;
+  return true;
+}
+`;
