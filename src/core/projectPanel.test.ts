@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import {
-  parsePrs, parseProjectDetection, parseProjectList, parseTickets,
+  parsePrs, prFixPrompt, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
   DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
@@ -120,6 +120,35 @@ test('prs: a ready PR is one Merge button at the right; failing checks are count
   // Status grouping puts ready ones first; an agent author shows as its harness logo.
   expect(html.indexOf('Ready to merge')).toBeLessThan(html.indexOf('Failing'))
   expect(html).toContain('title="Delegated to codex1"')
+})
+
+test('prs: a failing or conflicting PR offers Fix, which starts an agent with the PR, its branch, what fails and where the code is', () => {
+  const model = parsePrs(JSON.stringify({ repositories: [{ slug: 'o/busy', pullRequests: [
+    { number: 9, title: 'red', url: 'https://github.com/o/busy/pull/9', isDraft: false, ciState: 'FAILURE', failingChecks: ['All tests pass', 'gitleaks'], headRefName: 'fix/red', baseRefName: 'main', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+    { number: 10, title: 'tangled', url: 'https://github.com/o/busy/pull/10', isDraft: false, ciState: 'SUCCESS', mergeable: false, mergeableState: 'dirty', headRefName: 'feat/t', baseRefName: 'main', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+    { number: 11, title: 'wip', url: 'https://github.com/o/busy/pull/11', isDraft: true, ciState: 'FAILURE', mergeable: false, mergeableState: 'dirty', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
+  ], recentlyMerged: [] }] }))
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'squash' })
+  expect(html).toContain('✕ 2</span><button class="rs fix" data-fix-repo="o/busy" data-fix-number="9" title="Start an agent in a new tab to fix #9&#39;s failing checks (All tests pass, gitleaks)">Fix</button>')
+  // A conflict never offers Merge; it gets its own group above Failing.
+  expect(html).toContain('<span class="rs fail" title="Conflicts with main">Conflicts</span><button class="rs fix" data-fix-repo="o/busy" data-fix-number="10"')
+  expect(html).not.toContain('data-merge-number="10"')
+  expect(html.indexOf('>Conflicts</span><span class="n">')).toBeLessThan(html.indexOf('>Failing</span>'))
+  // A draft is someone's work in progress: no Fix.
+  expect(html).not.toContain('data-fix-number="11"')
+
+  const [red, tangled] = model.repos[0].open
+  const fixRed = prFixPrompt(red, 'o/busy', '~/src/o/busy')
+  expect(fixRed).toStartWith('Fix o/busy#9: red\nhttps://github.com/o/busy/pull/9\n\nBranch fix/red into main.')
+  expect(fixRed).toContain('Failing checks: All tests pass, gitleaks.')
+  expect(fixRed).toContain('never skip, delete or weaken a test or check')
+  expect(fixRed).toContain('Work in a git worktree of o/busy (the checkout at ~/src/o/busy) on fix/red')
+  expect(fixRed).toContain('do not open a new PR and do not merge')
+  expect(fixRed).not.toContain('rebase')
+  const fixTangled = prFixPrompt(tangled, 'o/busy', null)
+  expect(fixTangled).toContain('rebase feat/t onto the latest origin/main, resolve every conflict')
+  expect(fixTangled).toContain('git push --force-with-lease')
+  expect(fixTangled).not.toContain('Failing checks')
 })
 
 test('Review preferences: unknown values fall back, one change at a time', () => {

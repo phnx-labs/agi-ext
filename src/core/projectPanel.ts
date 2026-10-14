@@ -54,6 +54,13 @@ interface PrRow {
   failing: number;
   /** The head commit the list read, so Merge lands only what you saw. */
   headSha: string | null;
+  /** Its branch and the branch it merges into, for Fix. */
+  head: string | null;
+  base: string | null;
+  /** The failing checks' names (the CLI's failingChecks). */
+  failingChecks: string[];
+  /** GitHub says it cannot merge cleanly into its base (`mergeable: false` / `dirty`). */
+  conflicting: boolean;
 }
 
 interface RepoPrs {
@@ -178,6 +185,11 @@ function prRow(p: unknown, dateKey: 'createdAt' | 'mergedAt'): PrRow {
     date: str(d[dateKey]) ?? '',
     failing: Array.isArray(d.failingChecks) ? d.failingChecks.length : 0,
     headSha: /^[0-9a-f]{7,40}$/i.test(str(d.headSha) ?? '') ? str(d.headSha) : null,
+    head: str(d.headRefName),
+    base: str(d.baseRefName),
+    // The CLI prints names; an older shape carried `{ name }`.
+    failingChecks: Array.isArray(d.failingChecks) ? d.failingChecks.flatMap((c) => { const n = typeof c === 'string' ? c : str((c as Json | null)?.name); return n ? [n] : []; }) : [],
+    conflicting: d.mergeable === false || (str(d.mergeableState) ?? '').toLowerCase() === 'dirty',
   };
 }
 
@@ -998,9 +1010,10 @@ interface ReviewOptions { prefs: ReviewPrefs; mergeWith: string }
 
 const METHOD_WORD: Record<string, string> = { squash: 'squash', rebase: 'rebase', merge: 'a merge commit' };
 
-type PrState = 'ready' | 'running' | 'failing' | 'draft';
+type PrState = 'ready' | 'running' | 'failing' | 'conflict' | 'draft';
 function prState(p: PrRow): PrState {
   if (p.isDraft) return 'draft';
+  if (p.conflicting) return 'conflict';
   if (p.ciState === 'FAILURE' || p.ciState === 'ERROR') return 'failing';
   if (p.ciState && p.ciState !== 'SUCCESS') return 'running';
   return 'ready';
@@ -1011,9 +1024,33 @@ function prState(p: PrRow): PrState {
 function prStatusCell(p: PrRow, slug: string, mergeWith: string): string {
   const st = prState(p);
   if (st === 'ready') return `<button class="rs merge" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}"${p.headSha ? ` data-merge-sha="${escapeHtml(p.headSha)}"` : ''} title="Merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)">Merge</button>`;
-  if (st === 'failing') return `<span class="rs fail" title="${p.failing ? `${p.failing} check${p.failing === 1 ? '' : 's'} failing` : 'Checks failing'}">✕${p.failing ? ` ${p.failing}` : ''}</span>`;
+  if (st === 'conflict') return `<span class="rs fail" title="Conflicts with ${escapeHtml(p.base ?? 'its base')}">Conflicts</span>${fixButton(p, slug, 'conflicts')}`;
+  if (st === 'failing') return `<span class="rs fail" title="${p.failing ? `${p.failing} check${p.failing === 1 ? '' : 's'} failing` : 'Checks failing'}">✕${p.failing ? ` ${p.failing}` : ''}</span>${fixButton(p, slug, 'checks')}`;
   if (st === 'running') return `<span class="rs run" title="Checks running">${ring(p.ciState, false)}</span>`;
   return '<span class="rs draft">Draft</span>';
+}
+
+/** Fix: start an agent tab on the PR with what to fix (`prFixPrompt`). */
+function fixButton(p: PrRow, slug: string, what: 'checks' | 'conflicts'): string {
+  const why = what === 'conflicts' ? `resolve #${p.number}'s conflicts with ${p.base ?? 'its base'}` : `fix #${p.number}'s failing checks${p.failingChecks.length ? ` (${p.failingChecks.join(', ')})` : ''}`;
+  return `<button class="rs fix" data-fix-repo="${escapeHtml(slug)}" data-fix-number="${p.number}" title="${escapeHtml(`Start an agent in a new tab to ${why}`)}">Fix</button>`;
+}
+
+/** The task a Fix agent gets: the PR, its branch, what is wrong, where the code is, and
+ *  the rules it works under (a worktree, push to the PR's own branch, report back). */
+export function prFixPrompt(p: Pick<PrRow, 'number' | 'title' | 'url' | 'head' | 'base' | 'failingChecks' | 'conflicting' | 'ciState'>, slug: string, checkout: string | null): string {
+  const branch = p.head ?? '(see the PR)';
+  const base = p.base ?? 'the default branch';
+  const failing = p.ciState === 'FAILURE' || p.ciState === 'ERROR' || p.failingChecks.length > 0;
+  const lines = [`Fix ${slug}#${p.number}: ${p.title}`, p.url, '', `Branch ${branch} into ${base}.`];
+  if (p.conflicting) lines.push(`It conflicts with ${base}: rebase ${branch} onto the latest origin/${base}, resolve every conflict keeping both sides' intent, and run the tests.`);
+  if (failing) lines.push(p.failingChecks.length ? `Failing checks: ${p.failingChecks.join(', ')}. Read each failing run's log (gh pr checks ${p.number} --repo ${slug}; gh run view <id> --log-failed), find the cause and fix it at the root; never skip, delete or weaken a test or check to turn it green.` : `Its checks fail. Read the failing runs' logs (gh pr checks ${p.number} --repo ${slug}), fix the cause, and never skip or weaken a check.`);
+  lines.push(
+    '',
+    `Work in a git worktree of ${slug}${checkout ? ` (the checkout at ${checkout})` : ''} on ${branch}, not in the main checkout. Commit to ${branch} and push it (${p.conflicting ? 'git push --force-with-lease after the rebase' : 'a plain push'}); do not open a new PR and do not merge.`,
+    `Done when the PR shows no conflicts and its checks are green: say what was wrong, what you changed, and the run that passed.`,
+  );
+  return lines.join('\n');
 }
 
 function prFace(p: PrRow): string {
@@ -1057,7 +1094,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   let body = '';
   if (prefs.group === 'status') {
     const by = (st: PrState) => shown.filter(({ p }) => prState(p) === st);
-    body = section('Ready to merge', by('ready'), 'g-ready') + section('Checks running', by('running')) + section('Failing', by('failing'), 'g-fail') + section('Drafts', by('draft'));
+    body = section('Ready to merge', by('ready'), 'g-ready') + section('Checks running', by('running')) + section('Conflicts', by('conflict'), 'g-fail') + section('Failing', by('failing'), 'g-fail') + section('Drafts', by('draft'));
   } else if (prefs.group === 'repo') {
     body = m.repos.filter((r) => !r.error).map((r) => {
       const branch = r.branch ? `<span class="rmeta" title="${escapeHtml(r.branch.name)}: ${escapeHtml(r.branch.ciState ?? 'no CI')}">${ring(r.branch.ciState, false)}${escapeHtml(r.branch.name)}</span>` : '';

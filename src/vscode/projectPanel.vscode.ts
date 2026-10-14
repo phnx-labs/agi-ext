@@ -27,6 +27,7 @@ import {
   projectsInFolder,
   displayHome,
   renderPrs,
+  prFixPrompt,
   renderPrsProgress,
   renderSessions,
   renderTickets,
@@ -152,6 +153,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
       else if (msg.type === 'answer' && typeof msg.key === 'string' && (typeof msg.choice === 'string' || typeof msg.text === 'string')) void this.answer(msg.key, typeof msg.choice === 'string' ? { choice: msg.choice } : { text: msg.text as string });
       else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number, typeof msg.sha === 'string' ? msg.sha : undefined);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
@@ -597,6 +599,21 @@ class ProjectPanelController {
     return agent;
   }
 
+  /** Fix a PR from Review: the default agent in a new tab here, through the same launch as
+   *  Start on a ticket, told the PR, its branch, what fails or conflicts and where the
+   *  repository is checked out. It uses the PR as the list read it; nothing is read again. */
+  async fixPr(slug: string, number: number): Promise<void> {
+    const p = this.reviewSeen?.done.get(slug)?.open.find((x) => x.number === number);
+    if (!p) return;
+    try {
+      const project = await this.project().catch(() => null);
+      const checkout = project ? (await readRegistry()).find((x) => x.name === project.name)?.repos?.find((r) => r.slug === slug)?.path || null : null;
+      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.defaultAgent().key, prompt: prFixPrompt(p, slug, checkout) });
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not start an agent on #${number}: ${errorText(e)}`);
+    }
+  }
+
   /** Start on a ticket: the default agent in a new tab here, through the same
    *  launch path as Agents: Spawn With Prompt. */
   async startOnTicket(id: string): Promise<void> {
@@ -1007,7 +1024,9 @@ export function shell(cspSource: string, logoCss = ''): string {
   .rs { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 8px; font: 600 11px var(--vscode-font-family); border: 1px solid transparent; white-space: nowrap; }
   .rs.merge { background: var(--r-ok); color: var(--r-on-av); cursor: pointer; } .rs.merge:hover { filter: brightness(1.08); } .rs.merge:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .rs.undo { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; font-variant-numeric: tabular-nums; min-width: 62px; justify-content: center; }
-  .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
+  .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); }
+  /* Fix: a quiet button beside the failure that starts an agent tab on the PR. */
+  .rs.fix { color: var(--r-text); background: transparent; border: 1px solid var(--r-edge); cursor: pointer; } .rs.fix:hover { background: var(--r-hover); } .rs.fix:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
   .rgrp .head { margin-bottom: 2px; } .rgrp.g-ready .label { color: var(--r-ok); } .rgrp.g-fail .label { color: var(--r-bad); }
   .trow:hover, .prow:hover { background: var(--r-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
@@ -1518,6 +1537,8 @@ ${THUMB_SCRIPT}
       mergeTimers.set(key, timer);
       return;
     }
+    const fix = e.target.closest('[data-fix-repo]');
+    if (fix) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); toast('Starting an agent on #' + fix.dataset.fixNumber + '…'); return; }
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
     if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
