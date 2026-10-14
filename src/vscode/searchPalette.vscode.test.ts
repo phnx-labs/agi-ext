@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'bun:test';
 import { vscodeDouble } from '../testing/vscodeDouble';
 
-mock.module('vscode', () => vscodeDouble());
+const executed: unknown[][] = [];
+mock.module('vscode', () => vscodeDouble({ commands: { executeCommand: async (...args: unknown[]) => { executed.push(args); } } }));
 
 // ⌘K's rows: sections in the approved order, an artifact that says who made it
 // and goes to that session on Enter, and the Lead row only for a sentence while
@@ -30,6 +31,9 @@ test('sections come in order: Artifacts, Sessions, Tickets, Pull requests, then 
   expect(went.pop()).toBe('a26860ac-1b2c@yosemite-m5');
   expect(items.find((i) => i.description?.startsWith('Session'))!.description).toBe('Session · Waiting on 1 shell · yosemite-m5');
   expect(items.at(-1)!.label).toBe('Ask the Lead: “mcp server”');
+  // The row hands the words to the Lead client's command (agents.lead.ask, registered by #140).
+  items.at(-1)!.go!();
+  expect(executed.at(-1)).toEqual(['agents.lead.ask', 'mcp server']);
 });
 
 test('the Lead row needs a sentence and the Lead command', () => {
