@@ -74,3 +74,14 @@ test('Other… opens a reply box; Enter holds the typed words like any answer', 
   expect(card.querySelector('.asend')!.textContent).toBe('Sending “Longest wait, but blocked agents first” in 5s · Undo');
   (card.querySelector('[data-ask-undo]') as unknown as HTMLElement).click();
 });
+
+test('an answer whose card leaves the list before its 5 s is not sent', async () => {
+  const before = sent.filter((m) => m.type === 'answer').length;
+  deliver({ type: 'html', tab: 'sessions', html: draw(null) });
+  (ask().querySelector('[data-choice="wait-until-morning"]') as unknown as HTMLElement).click();
+  const without = renderSessions(ROWS.filter((r: { sessionId: string }) => r.sessionId !== '9b1f0c2e-publish'), NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS });
+  deliver({ type: 'html', tab: 'sessions', html: without });
+  await sleep(5300);
+  expect(sent.filter((m) => m.type === 'answer').length).toBe(before);
+  expect(document.querySelector('.toast')!.textContent).toContain('Answer not sent: its card left the list before it went.');
+}, 15_000);
