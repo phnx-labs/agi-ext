@@ -1271,8 +1271,15 @@ ${THUMB_SCRIPT}
   function restoreLocal() {
     main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
     for (const [key, left] of pendingMerge) drawUndo(key, left);
-    // A sent answer is forgotten once its ask leaves the list.
-    for (const [key, p] of pendingAnswer) { if (p.state === 'sent' && !askEl(key)) pendingAnswer.delete(key); else drawAsk(key); }
+    // An ask that left the list takes its answer along: a sent one is forgotten, and
+    // one still counting down is stopped, since its Undo is no longer on screen.
+    let dropped = 0;
+    for (const [key, p] of pendingAnswer) {
+      if (askEl(key)) { drawAsk(key); continue; }
+      if (p.state === 'wait') { clearInterval(p.timer); dropped++; }
+      if (p.state === 'wait' || p.state === 'sent') pendingAnswer.delete(key);
+    }
+    if (dropped) toast('Answer not sent: its card left the list before it went.');
     for (const key of otherOpen) { if (askEl(key)) drawAsk(key); else otherOpen.delete(key); }
     tickWaits();
   }
@@ -1596,7 +1603,7 @@ ${THUMB_SCRIPT}
     const input = e.target.closest && e.target.closest('[data-ask-input]');
     if (input) {
       const key = input.closest('.ask').dataset.ask;
-      if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); const text = input.value.trim(); input.value = ''; answerAsk(key, text.length > 40 ? text.slice(0, 40) + '\u2026' : text, { text }); }
+      if (e.key === 'Enter' && !e.isComposing && input.value.trim()) { e.preventDefault(); const text = input.value.trim(); input.value = ''; answerAsk(key, text.length > 40 ? text.slice(0, 40) + '\u2026' : text, { text }); }
       else if (e.key === 'Escape') { otherOpen.delete(key); drawAsk(key); }
       return;
     }
