@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { AGENTS_HTML_READER } from '../core/editorAssociations';
+import { openLink } from './webviewSecurity';
 
 /**
  * Agents HTML Reader — sandboxed preview for self-contained HTML (artifacts-cli
@@ -45,7 +46,7 @@ export class AgentsHtmlReaderProvider implements vscode.CustomTextEditorProvider
     });
 
     const messageSub = webviewPanel.webview.onDidReceiveMessage((message: unknown) =>
-      routeReaderMessage(message, (href) => void vscode.env.openExternal(vscode.Uri.parse(href, true))));
+      routeReaderMessage(message, (href) => void openLink(href)));
 
     webviewPanel.onDidDispose(() => {
       changeSub.dispose();

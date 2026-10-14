@@ -27,6 +27,7 @@ import {
   projectsInFolder,
   displayHome,
   renderPrs,
+  prFixPrompt,
   renderPrsProgress,
   renderSessions,
   renderTickets,
@@ -54,7 +55,7 @@ import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './age
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
-import { openExternalUrl } from './webviewSecurity';
+import { openLink, openWebviewUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
@@ -95,7 +96,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown; field?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -128,7 +129,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
       if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
-      else if (msg.type === 'open') openExternalUrl(msg.url);
+      else if (msg.type === 'open') openWebviewUrl(msg.url, msg.external === true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'projects') void this.listProjects();
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
@@ -152,6 +153,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
       else if (msg.type === 'answer' && typeof msg.key === 'string' && (typeof msg.choice === 'string' || typeof msg.text === 'string')) void this.answer(msg.key, typeof msg.choice === 'string' ? { choice: msg.choice } : { text: msg.text as string });
       else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number, typeof msg.sha === 'string' ? msg.sha : undefined);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
@@ -200,7 +202,9 @@ class ProjectView implements vscode.WebviewViewProvider {
     await this.load(tab, false);
   }
 
-  async load(tab: TabId, force: boolean): Promise<void> {
+  /** `reveal`: this load answers a ticket click, so its Linear page opens as a tab once the card
+   *  is current; Refresh and a re-show never reopen it. */
+  async load(tab: TabId, force: boolean, reveal = false): Promise<void> {
     const state = this.tabs.get(tab)!;
     // A forced refresh on a hidden tab still has to reread when it is shown.
     if (force) { state.loadedAt = 0; state.generation++; }
@@ -242,9 +246,10 @@ class ProjectView implements vscode.WebviewViewProvider {
     else void view.webview.postMessage({ type: 'loading' });
     let html: string;
     let ok = true;
+    let ticket: TicketDetail | undefined;
     try {
-      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket)
-        : tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
+      if (tab === 'tickets' && this.ticket) ({ html, ticket } = await this.controller.ticketDetail(this.ticket));
+      else html = tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
           : await this.controller.render(tab, project, force);
     } catch (e) {
       ok = false;
@@ -256,7 +261,12 @@ class ProjectView implements vscode.WebviewViewProvider {
     state.loadedFor = project.name;
     // An error is not a fresh result: the next show reads again.
     state.loadedAt = ok ? Date.now() : 0;
+    // Only the current load's ticket becomes the shown one: a slower, superseded read never
+    // replaces it (Start and the Linear tab act on what the card shows).
+    if (ticket) this.controller.showTicket(ticket);
     this.post(tab, html);
+    // A ticket the user just opened shows its Linear page as an editor tab beside the card.
+    if (reveal && ticket?.url) void openLink(ticket.url);
   }
 
   redrawSessions(): Promise<void> {
@@ -291,7 +301,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     }
     void this.view?.webview.postMessage({ type: 'tab', tab: 'tickets' });
     this.post('tickets', '<div class="empty">Loading…</div>');
-    await this.load('tickets', true);
+    await this.load('tickets', true, true);
   }
 
   /** A ticket row click opens its detail (one read); the back control returns to the list. */
@@ -300,7 +310,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     const state = this.tabs.get('tickets')!;
     if (id) this.post('tickets', '<div class="empty">Loading…</div>');
     else state.loadedAt = 0;
-    await this.load('tickets', !!id);
+    await this.load('tickets', !!id, !!id);
   }
 
   private commenting = false;
@@ -593,10 +603,14 @@ class ProjectPanelController {
     return bin;
   }
 
-  async ticketDetail(id: string): Promise<string> {
+  /** The ticket the card shows; set by the load that drew it, after its generation check. */
+  showTicket(t: TicketDetail): void {
+    this.shownTicket = t;
+  }
+
+  async ticketDetail(id: string): Promise<{ html: string; ticket: TicketDetail }> {
     const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
     const t = parseTicketDetail(stdout);
-    this.shownTicket = t;
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     const agent = this.ticketAgent(t);
     const project = await this.project().catch(() => null);
@@ -604,7 +618,7 @@ class ProjectPanelController {
     const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
     }));
-    return renderTicketDetail(t, { agentName: agent.name, delegated: agent.delegated }, onIt);
+    return { html: renderTicketDetail(t, { agentName: agent.name, delegated: agent.delegated }, onIt), ticket: t };
   }
 
   async comment(id: string, text: string): Promise<void> {
@@ -624,6 +638,21 @@ class ProjectPanelController {
     const agent = PICKABLE_AGENTS.find((a) => a.title === title);
     if (!agent) throw new Error(`The default agent "${title}" is not one this version can launch. Pick one in Settings.`);
     return agent;
+  }
+
+  /** Fix a PR from Review: the default agent in a new tab here, through the same launch as
+   *  Start on a ticket, told the PR, its branch, what fails or conflicts and where the
+   *  repository is checked out. It uses the PR as the list read it; nothing is read again. */
+  async fixPr(slug: string, number: number): Promise<void> {
+    const p = this.reviewSeen?.done.get(slug)?.open.find((x) => x.number === number);
+    if (!p) return;
+    try {
+      const project = await this.project().catch(() => null);
+      const checkout = project ? (await readRegistry()).find((x) => x.name === project.name)?.repos?.find((r) => r.slug === slug)?.path || null : null;
+      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.defaultAgent().key, prompt: prFixPrompt(p, slug, checkout) });
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not start an agent on #${number}: ${errorText(e)}`);
+    }
   }
 
   /** Start on a ticket: the default agent in a new tab here, through the same
@@ -1028,11 +1057,18 @@ export function shell(cspSource: string, logoCss = ''): string {
   .iav.agent .hx { width: 12px; height: 12px; }
   .prli { gap: 6px; padding-left: 2px; }
   .prli .prow { flex: 1; min-width: 0; display: block; padding: 5px 2px; }
+  /* The row's ↗ (the Active Session header's open icon): shown on hover, opens the PR as a tab. */
+  .pro { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--r-caption); opacity: 0; }
+  .prli:hover .pro, .pro:focus-visible { opacity: 1; }
+  .pro:hover { background: var(--r-hover); color: var(--r-text); }
+  .pro svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   /* A PR row: its author on the left, its state as the rightmost control (Merge when checks pass). */
   .rs { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 8px; font: 600 11px var(--vscode-font-family); border: 1px solid transparent; white-space: nowrap; }
   .rs.merge { background: var(--r-ok); color: var(--r-on-av); cursor: pointer; } .rs.merge:hover { filter: brightness(1.08); } .rs.merge:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .rs.undo { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; font-variant-numeric: tabular-nums; min-width: 62px; justify-content: center; }
-  .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
+  .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); }
+  /* Fix: a quiet button beside the failure that starts an agent tab on the PR. */
+  .rs.fix { color: var(--r-text); background: transparent; border: 1px solid var(--r-edge); cursor: pointer; } .rs.fix:hover { background: var(--r-hover); } .rs.fix:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
   .rgrp .head { margin-bottom: 2px; } .rgrp.g-ready .label { color: var(--r-ok); } .rgrp.g-fail .label { color: var(--r-bad); }
   .trow:hover, .prow:hover { background: var(--r-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
@@ -1556,6 +1592,8 @@ ${THUMB_SCRIPT}
       mergeTimers.set(key, timer);
       return;
     }
+    const fix = e.target.closest('[data-fix-repo]');
+    if (fix) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); toast('Starting an agent on #' + fix.dataset.fixNumber + '…'); return; }
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
     if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
@@ -1574,7 +1612,7 @@ ${THUMB_SCRIPT}
     const ask = e.target.closest('.card .ask [data-expand]');
     if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
     const goal = e.target.closest('.goals [data-url]');
-    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
+    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = main.querySelector('.menu');
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
@@ -1622,7 +1660,7 @@ ${THUMB_SCRIPT}
     const art = e.target.closest('[data-artifact]');
     if (art && card) { e.preventDefault(); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
-    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url }); return; }
+    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });

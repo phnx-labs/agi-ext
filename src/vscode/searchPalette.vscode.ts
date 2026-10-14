@@ -34,6 +34,7 @@ import {
   type SearchTicket,
 } from '../core/searchIndex';
 import { agoWords, pendingWords, SESSION_STATE_WORD, sessionStateOf, type SessionStateKey } from '../shared/sessionState';
+import { openLink } from './webviewSecurity';
 
 const FRESH_MS = 60_000;
 /** Bytes of a rendered page read for its title and provenance link; both sit near
@@ -204,7 +205,7 @@ export function buildItems(query: string, src: PaletteSources, leadReady: boolea
     iconPath: new vscode.ThemeIcon(p.isDraft ? 'git-pull-request-draft' : 'git-pull-request'),
     description: `PR · #${p.number} · ${p.repo.split('/').pop()}${p.ciState === 'SUCCESS' ? ' · checks passed' : p.ciState === 'FAILURE' || p.ciState === 'ERROR' ? ' · checks failing' : ''}`,
     alwaysShow: true,
-    go: () => { void vscode.env.openExternal(vscode.Uri.parse(p.url)); },
+    go: () => { void openLink(p.url); },
   })));
   const q = query.trim();
   const ask = leadQuery(query);
