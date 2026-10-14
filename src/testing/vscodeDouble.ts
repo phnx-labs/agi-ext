@@ -42,6 +42,15 @@ const namespaceSurface = {
   window: {},
   workspace: {},
   TabInputTerminal: class {},
+  // A webview provider builds localResourceRoots from Uri at resolve time, so
+  // the export must exist in whichever double a suite run imports first.
+  Uri: {
+    file: (p: string) => ({ fsPath: p, path: p, toString: () => p }),
+    joinPath: (base: { fsPath?: string }, ...parts: string[]) => {
+      const p = [base?.fsPath ?? '', ...parts].join('/');
+      return { fsPath: p, path: p, toString: () => p };
+    },
+  },
 };
 
 /**
