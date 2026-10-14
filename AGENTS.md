@@ -116,6 +116,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   the `harness@` account picker never combines with `--strategy` or a pinned version; the
   extension never scores devices or accounts and never resolves a target through
   `agents projects view <cwd>`.
+- The front tab and every tab number come from `src/vscode/frontTab.vscode.ts`: both tab
+  events feed `onDidChangeFrontTab`, and a tab maps to its terminal by identity
+  (`assignTabs`, `src/core/tabIndex.ts`), never by label alone.
+- A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, card,
+  status bar and the Active Session sidebar. The extension generates no title and reports
+  none back to the CLI; Rename Session types Claude's own `/rename`.
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
@@ -172,7 +178,8 @@ going on, where, and what came out of it" in one look; text explains only what a
 - **Inputs are not outputs.** What the user attached is part of their message and is marked
   "attached". Artifacts are what the agent made: PRs, folders under `.agents/artifacts/`,
   plans, pages, rendered images. A count of edited files is neither.
-- **One card style.** Outlined 1 px hairline cards with even gaps; no colored side borders, no
+- **One card style.** Outlined 1 px hairline cards with even gaps; no colored side borders (the
+  one exception: the selected card's gold rail, so selection never looks like hover), no
   drop shadows (shadows are for menus, popovers and the floating reply, which sits over the
   panel). Hover shifts tone in place; nothing lifts.
   Gaps inside a card are at most half the gap between cards.
@@ -194,7 +201,7 @@ going on, where, and what came out of it" in one look; text explains only what a
 ## Known debt
 
 The thin-client violations still in the tree are listed with their fate in `docs/ARCH.md`
-("Findings"): `fetchRemoteSessionLabelSource`, `watchForPlan`,
+("Findings"): `watchForPlan`,
 `sessionParse.ts`, the transcript `fs.watch`, `readinessDetector.ts`. Touching one means
 deleting or shrinking it, never extending it.
 Five tests assert on source text (`autoLabelHydration`: stream rebind before the sidebars

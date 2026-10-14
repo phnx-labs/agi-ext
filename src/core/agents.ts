@@ -262,6 +262,9 @@ export function buildAgentLaunchCommand(
  *   start, the CLI rejects the invocation, the binary is missing). There is no
  *   session to rejoin, so the generic status line stays.
  *
+ * The line ends with the command's own status, so shell integration reports a
+ * failed launch as failed (the fork tab's "fork failed: …", PHNX-4387).
+ *
  * In every nonzero case the interactive shell is LEFT RUNNING so the text above
  * it stays on screen for the user to read (RUSH-2593: an `exec`-replaced process
  * died on a bad remote launch and the terminal closed before anyone could see
@@ -279,7 +282,7 @@ export function wrapNativeAgentCommand(command: string, isShell: boolean): strin
     `${command}; ec=$?; ` +
     `if [ "$ec" -eq 0 ]; then exit 0; ` +
     `elif [ "$ec" -eq 255 ] || [ "$ec" -eq 254 ]; then echo "${reconnectMsg}"; ` +
-    `else echo "${genericMsg}"; fi`
+    `else echo "${genericMsg}"; fi; (exit $ec)`
   );
 }
 

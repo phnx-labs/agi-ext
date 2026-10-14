@@ -425,6 +425,8 @@ export interface RemoteSession {
   topic: string;
   /** CLI-authored recap title. This is the row header, never the request body. */
   title: string;
+  /** What the session was started with ("/continue …"), when the CLI reports it. */
+  startedAs?: string;
   /** Model id of the latest assistant reply (e.g. `claude-opus-5-5`). Absent when unknown. */
   model?: string;
   /** Who the session runs for (the CLI's `owner`, an email); the sidebar shows their avatar on the request. */
@@ -508,6 +510,7 @@ export interface RawActiveSession {
   label?: string;
   topic?: string;
   title?: string;
+  startedAs?: string;
   model?: string;
   owner?: string;
   failures?: unknown;
@@ -1222,6 +1225,7 @@ export function normalizeActiveSession(
     lastActivityMs: typeof raw.lastActivityMs === 'number' ? raw.lastActivityMs : 0,
     topic: asStr(raw.topic) || asStr(raw.prompt) || asStr(raw.firstUserMessage) || asStr(raw.label),
     title: asStr(raw.title),
+    startedAs: asStr(raw.startedAs) || undefined,
     model: asStr(raw.model) || undefined,
     owner: asStr(raw.owner) || undefined,
     failures: normalizeFailures(raw.failures),
@@ -1257,88 +1261,6 @@ function normalizeObservers(value: unknown): RemoteObserver[] {
     if (!device) return [];
     return [{ device, viewingIn: asStr(e.viewingIn), workspaceDir: asStr(e.workspaceDir) }];
   });
-}
-
-/** The two label-bearing fields of one by-id session record. */
-export interface SessionLabelSource {
-  /** The session's persisted name, when it has a real one. */
-  label: string | null;
-  /** The session's first user message — the summarizer's input. */
-  topic: string | null;
-}
-
-/**
- * Pull the label inputs out of one by-id session read.
- *
- * A tab whose agent runs on another machine has no local transcript to read, so
- * this is the only way it can ever show anything but the bare agent prefix. The
- * CLI already resolves both fields on whichever host owns the session.
- *
- * **The payload has two shapes.** `agents ps preview <id> --json` (what the
- * extension runs) and a role-filtered `sessions <id> --json` wrap the record as
- * `{ session, … }`; a bare `sessions <id> --json [--host <h>]` answers with the
- * FLAT array of `SessionMeta` records (the same shape `fetchRecentForHost`
- * consumes). Both are handled; `sessionId` disambiguates when an array carries
- * more than one record.
- *
- * `label` is dropped when it is Claude's derived `<dirname>-<n>` placeholder —
- * that names the repo, not the work, and surfacing it would also stop the caller
- * from falling through to the summarizer (same rule as readClaudeSessionName).
- */
-export function parseSessionLabelSource(rawJson: string, sessionId?: string): SessionLabelSource | null {
-  let data: unknown;
-  try {
-    data = JSON.parse(rawJson);
-  } catch {
-    return null;
-  }
-  const record = pickSessionRecord(data, sessionId);
-  if (!record) return null;
-  const label = typeof record.label === 'string' && record.label.trim() ? record.label.trim() : null;
-  let topic = typeof record.topic === 'string' && record.topic.trim() ? record.topic.trim() : null;
-  // A transcript read is `{ session, events }` and the session object often
-  // has no topic/label (those live on the list/active shapes).
-  // The events array still has the first real user turn — use it so an
-  // offloaded tab can be labelled without a second query.
-  if (!topic) {
-    const events = !Array.isArray(data) && data && typeof data === 'object'
-      ? (data as { events?: unknown }).events
-      : record.events;
-    topic = topicFromUserEvents(events);
-  }
-  const cwd = typeof record.cwd === 'string' ? record.cwd : '';
-  return { label: label && isDerivedSessionName(label, cwd) ? null : label, topic };
-}
-
-/** First non-synthetic user message in a `sessions <id> --json` events array. */
-function topicFromUserEvents(events: unknown): string | null {
-  if (!Array.isArray(events)) return null;
-  for (const item of events) {
-    if (!item || typeof item !== 'object') continue;
-    const event = item as { type?: unknown; role?: unknown; content?: unknown; _synthetic?: unknown };
-    if (event.type !== 'message' || event.role !== 'user') continue;
-    if (event._synthetic === true) continue;
-    const content = typeof event.content === 'string' ? event.content.trim() : '';
-    if (!content) continue;
-    if (/^Base directory for this skill:/i.test(content)) continue;
-    return content;
-  }
-  return null;
-}
-
-/** The one session record out of either payload shape, or null when absent. */
-function pickSessionRecord(data: unknown, sessionId?: string): Record<string, unknown> | null {
-  if (Array.isArray(data)) {
-    const records = data.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object');
-    if (records.length === 0) return null;
-    // A by-id lookup normally returns exactly one row; match explicitly anyway so
-    // a wider payload can never label a tab from someone else's session.
-    if (sessionId) return records.find((r) => r.id === sessionId) ?? null;
-    return records.length === 1 ? (records[0] ?? null) : null;
-  }
-  if (!data || typeof data !== 'object') return null;
-  const session = (data as Record<string, unknown>).session;
-  return session && typeof session === 'object' ? (session as Record<string, unknown>) : null;
 }
 
 /**

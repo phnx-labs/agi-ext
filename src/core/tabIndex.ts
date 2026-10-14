@@ -1,41 +1,43 @@
-// Resolve which editor-tab index a terminal occupies — pure, no VS Code import.
+// Which editor tab holds which terminal, and its number — pure, no VS Code import.
 //
-// The extension publishes each agent terminal's editor-tab position so the CLI
-// can render "viewing in Codium tab N". VS Code's `vscode.window.tabGroups.all`
-// is the source: a tab whose `input instanceof vscode.TabInputTerminal` and
-// whose `label` matches the terminal name is that terminal's tab. Matching by
-// exact label mirrors findTerminalNameByTabLabel (core/utils.ts). This module
-// is the pure core so it can be unit-tested without an extension host.
+// VS Code's terminal tab (`TabInputTerminal`) carries no reference to its
+// terminal, and two terminals can share a name, so a label alone cannot tell
+// their tabs apart: that gave two tabs the same number (PHNX-4387). The window
+// learns a tab's terminal by identity when that tab is in front and
+// `activeTerminal` is the terminal showing in it (`src/vscode/frontTab.vscode.ts`);
+// this module honors those bindings first and gives each terminal one tab.
 
 /** A single editor tab, flattened from vscode.Tab for pure resolution. */
 export interface TabView {
-  /** The tab's display label (equals the terminal name for agent terminals). */
+  /** The tab's display label (the terminal name for terminal tabs). */
   label: string;
   /** True when the tab hosts a terminal (input instanceof TabInputTerminal). */
   isTerminal: boolean;
+  /** Index into the terminal list of the terminal this tab is known to hold. */
+  terminal?: number;
 }
 
 /**
- * Find the 1-based index of `terminalName`'s tab WITHIN ITS GROUP.
+ * Each terminal's 1-based tab position within its group, by terminal index;
+ * undefined for a terminal with no editor tab (a panel terminal).
  *
- * Groups are scanned in order; within a group we return the position (1-based)
- * of the first terminal tab whose label matches the terminal name exactly. The
- * index is group-relative because that is the addressable "tab N" a user sees
- * inside an editor group — VS Code has no global tab number. When two terminal
- * tabs share a label in the same group (ambiguous), the first wins, which is
- * exactly "use the tab's index within its group".
- *
- * Returns undefined when no terminal tab matches (e.g. a panel terminal, which
- * is not an editor tab, or a name that isn't open as a tab).
+ * A tab bound by identity takes its terminal first. Every other terminal tab
+ * takes the first terminal of the same name that holds no tab yet, so two
+ * tabs never share a terminal and a terminal never gets two numbers. The
+ * number is group-relative: VS Code has no global tab number.
  */
-export function resolveTabIndex(groups: TabView[][], terminalName: string): number | undefined {
-  if (!terminalName) return undefined;
-  for (const tabs of groups) {
-    for (let i = 0; i < tabs.length; i++) {
-      const tab = tabs[i];
-      if (tab.isTerminal && tab.label === terminalName) return i + 1;
-    }
-  }
-  return undefined;
+export function assignTabs(groups: TabView[][], names: string[]): (number | undefined)[] {
+  const out: (number | undefined)[] = names.map(() => undefined);
+  const taken = new Set<string>();
+  const claim = (t: number, g: number, i: number) => { out[t] = i + 1; taken.add(`${g}:${i}`); };
+  groups.forEach((tabs, g) => tabs.forEach((tab, i) => {
+    const t = tab.terminal;
+    if (tab.isTerminal && t !== undefined && t >= 0 && t < names.length && out[t] === undefined) claim(t, g, i);
+  }));
+  groups.forEach((tabs, g) => tabs.forEach((tab, i) => {
+    if (!tab.isTerminal || taken.has(`${g}:${i}`)) return;
+    const t = names.findIndex((n, k) => n === tab.label && out[k] === undefined);
+    if (t >= 0) claim(t, g, i);
+  }));
+  return out;
 }
-

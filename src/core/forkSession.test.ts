@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildAgentLaunchCommand } from './agents';
-import { buildForkSessionRequest, forkCommand } from './forkSession';
+import { buildAgentLaunchCommand, wrapNativeAgentCommand } from './agents';
+import { buildForkSessionRequest, forkCommand, forkFailed, forkTabLabel } from './forkSession';
 
 test('forkCommand is the bare fork verb here, and carries the device for another box', () => {
   expect(forkCommand('s1', undefined)).toBe("agents fork 's1'");
@@ -115,5 +115,20 @@ describe('buildForkSessionRequest with a picked device', () => {
       moved: false,
       prompt: '/continue session-3',
     });
+  });
+});
+
+describe('fork tab naming (PHNX-4387)', () => {
+  test('names the tab after its source before it starts, and says when it failed', () => {
+    expect(forkTabLabel('Fix fork across devices')).toBe('fork of Fix fork across devices');
+    expect(forkTabLabel('Fix fork across devices', true)).toBe('fork failed: Fix fork across devices');
+  });
+
+  test('only the fork verb ending with a known nonzero status is a failed fork', () => {
+    const line = wrapNativeAgentCommand(forkCommand('abc-123', 'yosemite-m5'), false);
+    expect(forkFailed(line, 1)).toBe(true);
+    expect(forkFailed(line, 0)).toBe(false);
+    expect(forkFailed(line, undefined)).toBe(false);
+    expect(forkFailed('git status', 1)).toBe(false);
   });
 });

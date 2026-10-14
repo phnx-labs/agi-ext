@@ -251,11 +251,7 @@
       },
       {
         "command": "agents.setTitle",
-        "title": "Agents: Label"
-      },
-      {
-        "command": "agents.relabelTerminal",
-        "title": "Agents: Re-label from Activity"
+        "title": "Agents: Rename Session"
       },
       {
         "command": "agents.clear",

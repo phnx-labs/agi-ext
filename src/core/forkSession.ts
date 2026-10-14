@@ -9,6 +9,17 @@ export function forkCommand(sessionId: string, host: string | undefined): string
   return parts.join(' ');
 }
 
+/** The fork tab's name before the fork has one of its own, and after it failed. */
+export function forkTabLabel(sourceTitle: string, failed = false): string {
+  return failed ? `fork failed: ${sourceTitle}` : `fork of ${sourceTitle}`;
+}
+
+/** Whether a finished shell command in a fork tab is the fork verb failing: its
+ *  status is known and nonzero (`wrapNativeAgentCommand` keeps it). */
+export function forkFailed(commandLine: string, exitCode: number | undefined): boolean {
+  return /(^|\s)agents fork\s/.test(commandLine) && exitCode !== undefined && exitCode !== 0;
+}
+
 export interface ForkSessionSource {
   sessionId?: string;
   agentKey?: string;
