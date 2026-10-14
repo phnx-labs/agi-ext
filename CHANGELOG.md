@@ -23,6 +23,8 @@ The sessions sidebar follows the front tab and shows one name (PHNX-4387):
   headless title generator, the first-five-words fallback and Agents: Re-label from Activity are
   removed) and no longer sends a tab's title back to the CLI as the session's label. When the
   CLI reports what a session was started with, the card shows it on a faint "started: …" line.
+  The title and "started: …" need an agents-cli release newer than 1.23.24; until then every
+  surface shows the CLI's label, else its topic or first request.
 - **Rename renames the session.** Agents: Label is now **Agents: Rename Session** (Cmd+Shift+L):
   it types Claude's `/rename` into the tab and keeps no name of its own; the new name arrives
   through the stream. Other harnesses have no rename the CLI reads, and the command says so.
@@ -30,7 +32,7 @@ The sessions sidebar follows the front tab and shows one name (PHNX-4387):
   "fork failed: <title>" when `agents fork` exits nonzero. An agent tab whose launch fails now
   leaves that status as the command's status, so the shell's prompt shows the failure too.
 
-## [0.9.402] - 2026-10-14
+Also in this release (documented as 0.9.402, which was never published):
 
 - **Settings > Devices** shows where `--device auto` places agents. Each device that may be placed
   on has a checkbox (in the pool or not, `agents devices enable|disable`), a star (preferred,
