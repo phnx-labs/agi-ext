@@ -4,6 +4,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.402] - 2026-10-14
+
+- **Settings > Devices** shows where `--device auto` places agents. Each device that may be placed
+  on has a checkbox (in the pool or not, `agents devices enable|disable`), a star (preferred,
+  ranked first), its free disk, free RAM and load, and agents-cli's reason when Auto skips it (off,
+  loaded, disk low, unreachable). Personal, desktop, non-worker and offline devices are one line
+  each. Needs agents-cli with `autoSkip` in `agents devices list --json`; an older one says to run
+  `agents upgrade`. Every other setting is unchanged.
+
 ## [0.9.401] - 2026-10-14
 
 Agent asks reach you (PHNX-4369), from the owner's recording of 2026-10-13, where 11 of 12

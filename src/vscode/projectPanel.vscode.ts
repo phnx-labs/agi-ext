@@ -57,7 +57,7 @@ import { openListedArtifact } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
-import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
+import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, validMergeMethod } from '../core/settings';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
@@ -95,7 +95,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown; field?: unknown;
 }
 
 interface TabState {
@@ -160,6 +160,9 @@ class ProjectView implements vscode.WebviewViewProvider {
           .catch((e) => { void vscode.window.showErrorMessage(`Could not save the setting: ${errorText(e)}`); })
           .finally(() => this.load('settings', true));
       }
+      else if (msg.type === 'device' && typeof msg.name === 'string' && (msg.field === 'enabled' || msg.field === 'preferred') && typeof msg.value === 'boolean') {
+        void this.setDevice(msg.name, msg.field, msg.value);
+      }
     });
     view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
     view.onDidDispose(() => {
@@ -201,7 +204,11 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (force) { state.loadedAt = 0; state.generation++; }
     const view = this.view;
     if (!view || !view.visible || tab !== this.active) return;
-    if (tab === 'settings') { this.post(tab, this.controller.settings()); return; }
+    if (tab === 'settings') {
+      this.post(tab, this.controller.settings(this.devices));
+      void this.loadDevices(force);
+      return;
+    }
     // An open ticket rereads only on Refresh; showing the tab again keeps what is drawn.
     if (tab === 'tickets' && this.ticket && !force) return;
     const gen = ++state.generation;
@@ -367,6 +374,33 @@ class ProjectView implements vscode.WebviewViewProvider {
     void this.view?.webview.postMessage({ type: 'goals', html });
     // Today's ticket marks its sessions with ☀; redraw the list when it changes.
     if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
+  }
+
+  private devices: DevicesState = null;
+  private devicesAt = 0;
+
+  /** The Devices section's one `agents devices list --json` read: when Settings shows
+   *  (at most once a minute), on Refresh, and after a checkbox or star. Never on a timer. */
+  private async loadDevices(force: boolean): Promise<void> {
+    if (!force && Date.now() - this.devicesAt < FRESH_MS) return;
+    this.devicesAt = Date.now();
+    try {
+      const { stdout } = await runAgentsArgs(['devices', 'list', '--json'], { timeout: 30_000 });
+      this.devices = { rows: parseSettingsDevices(stdout) };
+    } catch (e) {
+      this.devicesAt = 0;
+      this.devices = { error: `Devices could not be read: ${errorText(e).split('\n')[0] ?? ''}` };
+    }
+    if (this.active === 'settings') this.post('settings', this.controller.settings(this.devices));
+  }
+
+  private async setDevice(name: string, field: 'enabled' | 'preferred', on: boolean): Promise<void> {
+    try {
+      await runAgentsArgs(deviceSettingArgv(name, field, on), { timeout: 30_000 });
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not change ${name}: ${errorText(e).split('\n')[0] ?? ''}`);
+    }
+    await this.loadDevices(true);
   }
 
   private post(tab: TabId, html: string): void {
@@ -597,9 +631,10 @@ class ProjectPanelController {
     }
   }
 
-  settings(): string {
+  settings(devices: DevicesState): string {
     return renderPanelSettings({
       settings: getSettings(this.context),
+      devices,
       defaultAgentTitle: this.context.globalState.get<string>(DEFAULT_AGENT_KEY, PICKABLE_AGENTS[0].title),
       secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
       modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
@@ -1226,6 +1261,19 @@ export function shell(cspSource: string, logoCss = ''): string {
   .settings select { font: inherit; font-size: 11px; color: var(--vscode-dropdown-foreground, var(--r-text)); border: 1px solid var(--vscode-dropdown-border, var(--r-edge)); border-radius: 4px; background: var(--vscode-dropdown-background, var(--r-glass)); padding: 2px; }
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
+  .settings .shsub { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+  .settings .drow { display: grid; grid-template-columns: 16px minmax(0, 1fr) 22px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
+  .settings .drow input { margin: 0; }
+  .settings .dname { min-width: 0; } .settings .dname b { font-weight: 500; margin-right: 6px; }
+  .settings .dname small { font-variant-numeric: tabular-nums; }
+  .settings .drow.out b, .settings .drow.out small { opacity: .6; }
+  .settings .dskip { font-size: 10.5px; color: var(--r-bad); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; white-space: nowrap; }
+  .settings .dskip.quiet { color: var(--r-faint); }
+  .settings .dlow { color: var(--r-warn); } .settings .dfull { color: var(--r-bad); }
+  .settings .dstar { font: inherit; font-size: 15px; line-height: 1; background: none; border: none; color: var(--r-faint); cursor: pointer; padding: 2px; border-radius: 4px; }
+  .settings .dstar[aria-pressed="true"] { color: var(--r-gold); } .settings .dstar:hover { background: var(--r-hover); }
+  .settings .doff { color: var(--r-faint); font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
+  .settings .err { color: var(--r-bad); }
   @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
@@ -1581,6 +1629,15 @@ ${THUMB_SCRIPT}
   document.addEventListener('change', (e) => {
     const el = e.target.closest && e.target.closest('[data-setting]');
     if (el) vscode.postMessage({ type: 'setting', key: el.dataset.setting, value: el.type === 'checkbox' ? el.checked : el.value });
+    const dev = e.target.closest && e.target.closest('[data-device]');
+    if (dev) vscode.postMessage({ type: 'device', name: dev.dataset.device, field: 'enabled', value: dev.checked });
+  });
+  document.addEventListener('click', (e) => {
+    const star = e.target.closest && e.target.closest('[data-star]');
+    if (!star) return;
+    const on = star.getAttribute('aria-pressed') !== 'true';
+    star.setAttribute('aria-pressed', String(on)); star.textContent = on ? '★' : '☆';
+    vscode.postMessage({ type: 'device', name: star.dataset.star, field: 'preferred', value: on });
   });
   // Hovering a small image floats a larger one, saying whose it is.
   const reveal = document.createElement('div');

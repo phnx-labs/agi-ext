@@ -1,6 +1,7 @@
 // The Project panel's Settings tab: AGI EXT's own preferences, read from and written
-// to `agentSettings` (globalState) and the default/second agent titles. Nothing here
-// talks to the CLI; devices, accounts and projects live in `agents` and the AGI Menu.
+// to `agentSettings` (globalState) and the default/second agent titles, plus the
+// Devices section, which shows `agents devices list --json` and writes through
+// `agents devices`. The CLI decides placement; this only draws its verdict.
 
 import { escapeHtml } from './projectPanel';
 import { BUILT_IN_AGENTS } from './agents';
@@ -29,8 +30,124 @@ const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'
 export const PICKABLE_AGENTS = BUILT_IN_AGENTS.filter((a) => a.key !== 'shell')
   .map((a) => ({ key: a.key, title: a.title, name: CLI_AGENT_META[a.key as CliAgentId]?.name ?? a.key }));
 
+/** One row of `agents devices list --json`, as the Devices section draws it. */
+export interface SettingsDevice {
+  name: string;
+  role?: string;
+  description?: string;
+  enabled: boolean;
+  preferred: boolean;
+  /** The CLI's reason `--device auto` passes this device over, or null when it may pick it. */
+  autoSkip: string | null;
+  diskFreeBytes?: number;
+  memFreeBytes?: number;
+  memTotalBytes?: number;
+  loadPercent?: number;
+}
+
+/** The Devices section: rows once read, or the read's error. */
+export type DevicesState = { rows: SettingsDevice[] } | { error: string } | null;
+
+interface DeviceListEntry {
+  name: string;
+  role?: string;
+  description?: string;
+  autoSkip?: string | null;
+  config?: { autoLaunchEnabled?: boolean; autoLaunchPreferred?: boolean };
+  health?: { reachable?: boolean; diskFreeBytes?: number; memFreeBytes?: number; memTotalBytes?: number; loadPercent?: number };
+}
+
+export function parseSettingsDevices(stdout: string): SettingsDevice[] {
+  const parsed = JSON.parse(stdout) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('agents devices list --json: expected a JSON array');
+  const entries = parsed as DeviceListEntry[];
+  if (entries.some((d) => !('autoSkip' in d))) {
+    throw new Error('This agents-cli does not report placement reasons yet. Run `agents upgrade`.');
+  }
+  return entries.map((d) => {
+    const live = d.health?.reachable === true ? d.health : undefined;
+    return {
+      name: d.name,
+      role: d.role,
+      description: d.description,
+      enabled: d.config?.autoLaunchEnabled !== false,
+      preferred: d.config?.autoLaunchPreferred === true,
+      autoSkip: d.autoSkip ?? null,
+      diskFreeBytes: live?.diskFreeBytes,
+      memFreeBytes: live?.memFreeBytes,
+      memTotalBytes: live?.memTotalBytes,
+      loadPercent: live?.loadPercent,
+    };
+  });
+}
+
+/** The one `agents` argv a Devices checkbox or star runs. */
+export function deviceSettingArgv(name: string, field: 'enabled' | 'preferred', on: boolean): string[] {
+  if (field === 'enabled') return ['devices', on ? 'enable' : 'disable', name];
+  return on
+    ? ['devices', 'config', name, 'auto-launch.preferred', 'on']
+    : ['devices', 'config', name, 'auto-launch.preferred', '--unset'];
+}
+
+const SKIP_WORDS: Record<string, string> = {
+  off: 'off',
+  unreachable: 'unreachable',
+  loaded: 'loaded',
+  'disk-low': 'disk low',
+};
+
+/** Out of the pool by role, whatever its checkbox says: folded into one line, not drawn as a row. */
+const FIXED_SKIPS = new Set(['personal', 'desktop', 'not-a-worker']);
+
+function bytes(n: number | undefined): string {
+  if (n === undefined) return '—';
+  const g = n / 1024 ** 3;
+  if (g >= 1000) return `${(g / 1024).toFixed(1).replace(/\.0$/, '')}T`;
+  if (g < 1) return `${Math.round(n / 1024 ** 2)}M`;
+  return `${Math.round(g)}G`;
+}
+
+function deviceRow(d: SettingsDevice): string {
+  const skip = d.autoSkip === null ? '' : `<span class="dskip${d.autoSkip === 'off' ? ' quiet' : ''}">${escapeHtml(SKIP_WORDS[d.autoSkip] ?? d.autoSkip)}</span>`;
+  const disk = d.diskFreeBytes === undefined ? '' : `<span class="${d.autoSkip === 'disk-low' ? 'dfull' : d.diskFreeBytes < 50 * 1024 ** 3 ? 'dlow' : ''}">${bytes(d.diskFreeBytes)} free</span>`;
+  const stats = [
+    disk,
+    d.memTotalBytes === undefined ? '' : `${bytes(d.memFreeBytes)} of ${bytes(d.memTotalBytes)} RAM free`,
+    d.loadPercent === undefined ? '' : `load ${Math.round(d.loadPercent)}%`,
+    d.description ? escapeHtml(d.description) : '',
+  ].filter(Boolean).join(' · ');
+  const name = escapeHtml(d.name);
+  return `<div class="drow${d.autoSkip ? ' out' : ''}" data-key="${name}">`
+    + `<input type="checkbox" data-device="${name}"${d.enabled ? ' checked' : ''} aria-label="Let Auto place agents on ${name}">`
+    + `<span class="dname"><b>${name}</b>${skip}<small>${stats || '—'}</small></span>`
+    + `<button class="dstar" data-star="${name}" aria-pressed="${d.preferred}" title="${d.preferred ? 'Preferred: Auto ranks it first' : 'Prefer this device'}">${d.preferred ? '★' : '☆'}</button>`
+    + '</div>';
+}
+
+function renderDevicesSection(state: DevicesState): string {
+  const head = '<div class="sh">Devices <span class="shsub">where Auto places agents</span></div>';
+  if (state === null) return `${head}<p class="foot">Reading devices…</p>`;
+  if ('error' in state) return `${head}<p class="foot err">${escapeHtml(state.error)}</p>`;
+  const folded = (skip: string) => state.rows.filter((d) => d.autoSkip === skip).map((d) => escapeHtml(d.name)).sort();
+  const rank = (d: SettingsDevice) => (d.autoSkip === null ? (d.preferred ? 0 : 1) : 2);
+  const shown = state.rows
+    .filter((d) => d.autoSkip !== 'offline' && !(d.autoSkip && FIXED_SKIPS.has(d.autoSkip)))
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  const lines = [
+    ['Personal, never auto', folded('personal')],
+    ['Desktop, never auto', folded('desktop')],
+    ['Not workers', folded('not-a-worker')],
+    ['Offline', folded('offline')],
+  ].filter(([, names]) => names.length).map(([label, names]) => `<div class="doff">${label}: ${(names as string[]).join(', ')}</div>`);
+  return head
+    + shown.map(deviceRow).join('')
+    + lines.join('')
+    + '<p class="foot">Checked devices may be picked by <code>--device auto</code>; ★ ranks a device first. Both sync to every machine through <code>agents devices</code>.</p>';
+}
+
 export interface PanelSettingsModel {
   settings: AgentSettings;
+  devices: DevicesState;
   /** `agents.defaultAgentTitle` / `agents.secondaryAgentTitle` ("CC", "CX", …). */
   defaultAgentTitle: string;
   secondaryAgentTitle: string;
@@ -97,6 +214,7 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   ${CARD_ROWS.map((r) => `<label class="srow"><span><b>${escapeHtml(r.label)}</b><small>${escapeHtml(r.sub)}</small></span>${picker(`cards.${r.key}`, r.options, cards[r.key], r.label)}</label>`).join('')}
   <div class="sh">Reader</div>
   ${toggle('editor.markdownViewerEnabled', 'Open .md and .html in Reader', 'The Reader editor for Markdown and HTML', s.editor?.markdownViewerEnabled ?? true)}
-  <p class="foot">Banners for asks, with their reminders, come from the AGI Menu. Devices, accounts and projects live in the <code>agents</code> CLI and the AGI Menu.</p>
+  ${renderDevicesSection(m.devices)}
+  <p class="foot">Banners for asks, with their reminders, come from the AGI Menu. Accounts and projects live in the <code>agents</code> CLI and the AGI Menu.</p>
 </div>`;
 }
