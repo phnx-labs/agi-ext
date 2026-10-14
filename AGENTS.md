@@ -83,8 +83,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A seventh: the Project panel's project menu is one `agents projects list --json` read when
   it opens; Review reads `agents projects prs list <name> --json --repo <r>` per repository in
   parallel, drawn as each answers.
-  The reply box's mic is the one place the extension runs tools that are not the CLI: on the
-  click, `ffmpeg` records the default microphone and `whisper-cli` transcribes on this machine
+  The reply box's mic (and the Lead's, which reuses it) is the one place the extension runs
+  tools that are not the CLI: on the click, `ffmpeg` records the default microphone and `whisper-cli` transcribes on this machine
   (`src/vscode/dictation.vscode.ts`); nothing is sent anywhere.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
@@ -104,6 +104,17 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
+- The Lead is agents-cli's process; the extension is a thin client (`src/core/lead.ts`,
+  `src/vscode/lead.vscode.ts`, `src/vscode/leadTab.vscode.ts`). Ask and Confirm are each one
+  `agents lead ask|confirm --json` child, one turn at a time per window, killed after 120 s
+  of silence or 15 min, or when the window closes; Esc never stops a turn.
+  The Lead tab reads `agents lead history|status --json` when it opens and on Refresh, never
+  on a timer. `~/.agents/lead/surface.json` is shared with FastWispr: while it says
+  `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding); the extension
+  never creates `~/.agents/lead` just to watch it. A held ⌥Space is one press (`PressGate`),
+  and the Lead's mic never takes over the reply box's recording (`nextMic`,
+  a pure transition in `src/core/leadInput.ts`). Tests run
+  against the fake CLI in `src/core/testdata/lead-bin/agents`.
 - Closing a tab sends `agents ps stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.
 - Needs-you order is `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts`;

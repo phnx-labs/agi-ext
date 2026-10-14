@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+// A bounded test double for `agents lead … --json` (the round 16 Lead contract):
+// a real subprocess spawned over real pipes, so the client's parser, exit and
+// error paths run against a process, not an in-memory emitter.
+//
+//   LEAD_STUB_LOG=<file>   append each argv (JSON, one line) for assertions
+//   LEAD_STUB_PID=<file>   write this process's pid there
+//   LEAD_STUB_MODE=crash   print a turn, then exit 3 with a stderr line and no done
+//   LEAD_STUB_MODE=nolead  behave like a CLI without the `lead` noun
+//   LEAD_STUB_MODE=chunked write the done line in two chunks, 150 ms apart
+//   LEAD_STUB_MODE=hang    print a turn, then nothing, until killed
+const fs = require('fs');
+const argv = process.argv.slice(2);
+if (process.env.LEAD_STUB_LOG) fs.appendFileSync(process.env.LEAD_STUB_LOG, JSON.stringify(argv) + '\n');
+if (process.env.LEAD_STUB_PID) fs.writeFileSync(process.env.LEAD_STUB_PID, String(process.pid));
+const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+const mode = process.env.LEAD_STUB_MODE || '';
+if (argv[0] !== 'lead' || mode === 'nolead') { process.stderr.write(`error: unknown command '${argv[0]}'\n`); process.exit(1); }
+const verb = argv[1];
+const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+const project = flag('--project') || 'rush';
+
+if (verb === 'ask') {
+  const text = argv.slice(argv.indexOf('--') + 1).join(' ');
+  out({ type: 'turn', turn: 't_1', project, session: 'lead-sess-1', engine: 'warm' });
+  if (mode === 'crash') { process.stderr.write('lead host socket closed\n'); process.exit(3); }
+  if (mode === 'hang') { setInterval(() => undefined, 1 << 30); return; }
+  if (mode === 'chunked') {
+    const line = JSON.stringify({ type: 'done', turn: 't_1', text: 'Split PHNX-1 line.', summary: 'Split PHNX-1 line.', refs: [{ kind: 'ticket', id: 'PHNX-1' }] }) + '\n';
+    process.stdout.write(line.slice(0, 25));
+    setTimeout(() => process.stdout.write(line.slice(25)), 150);
+    return;
+  }
+  out({ type: 'status', state: 'thinking' });
+  out({ type: 'tool', id: 'u1', label: 'agents ps', cmd: 'agents ps --json', state: 'run' });
+  out({ type: 'tool', id: 'u1', label: 'agents ps', state: 'ok', secs: 1.24 });
+  process.stdout.write('not json, ignored\n');
+  out({ type: 'status', state: 'answering' });
+  const reply = `Two sessions wait on you: E2B Pro upgrade and PHNX-4365 (#3607). You asked: ${text}`;
+  out({ type: 'text', delta: reply.slice(0, 20) });
+  out({ type: 'text', delta: reply.slice(20) });
+  if (/stop/i.test(text)) out({ type: 'confirm', token: 'c_9', action: 'stop', sessionId: 'abc12345', label: 'Stop “E2B Pro upgrade”' });
+  out({
+    type: 'done', turn: 't_1', text: reply, summary: 'Two sessions wait on you.',
+    refs: [
+      { kind: 'ticket', id: 'PHNX-4365', url: 'https://linear.app/x/issue/PHNX-4365' },
+      { kind: 'pr', repo: 'phnx-labs/agents', number: 3607, url: 'https://github.com/phnx-labs/agents/pull/3607' },
+      { kind: 'session', id: 'abc12345', title: 'E2B Pro upgrade', host: 'm6' },
+    ],
+    timing: { boot: 0, model: 1.45, tools: 1.24 },
+  });
+} else if (verb === 'confirm') {
+  const token = argv[2];
+  if (token !== 'c_9') { out({ type: 'error', message: `confirm token ${token} expired` }); process.exit(1); }
+  out({ type: 'tool', id: 'u2', label: 'agents ps stop', cmd: 'agents ps stop abc12345', state: 'run' });
+  out({ type: 'tool', id: 'u2', label: 'agents ps stop', state: 'ok', secs: 0.6 });
+  out({ type: 'done', turn: 't_2', text: 'Stopped E2B Pro upgrade.', summary: 'Stopped E2B Pro upgrade.', refs: [{ kind: 'session', id: 'abc12345', title: 'E2B Pro upgrade' }] });
+} else if (verb === 'history') {
+  out({ turn: 't_0', at: '2026-10-13T08:00:00Z', ask: 'What is waiting?', text: 'PHNX-4371 is new.', summary: 'PHNX-4371 is new.', refs: [{ kind: 'ticket', id: 'PHNX-4371' }], tools: [{ label: 'linear', state: 'ok', secs: 0.7 }] });
+} else if (verb === 'status') {
+  out({ project, state: 'warm', session: 'lead-sess-1', engine: 'warm', model: 'sonnet', brief: ['Project rush', 'AGENTS.md digest'], memory: '- Text only, no speech.\n- Stop needs a click.', tools: ['agents ps · send · run · feed', 'linear'] });
+} else if (verb === 'stop') {
+  out({ project, stopped: true });
+} else {
+  process.stderr.write(`error: unknown lead verb ${verb}\n`); process.exit(1);
+}

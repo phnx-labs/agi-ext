@@ -83,6 +83,14 @@ class Dictation {
     }
   }
 
+  /** Drop the recording `post` owns (the Lead's, on Esc) without transcribing; anyone else's is left alone.
+   *  A transcription already running finishes, and its owner ignores the words. */
+  cancelFor(post: Post): void {
+    const rec = this.rec;
+    if (!rec || rec.post !== post || rec.phase !== 'recording') return;
+    this.cancel();
+  }
+
   /** The extension is going away: end a recording without transcribing it. */
   cancel(): void {
     const rec = this.rec;
