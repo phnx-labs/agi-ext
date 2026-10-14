@@ -40,3 +40,10 @@ test('a delegated ticket names its agent; sessions already on it come first with
   expect(busy).toContain('<button class="link" data-start>Start Claude in a new tab</button>')
   expect(busy).not.toContain('▶ Start')
 })
+
+test('the card keeps description and comments folded: the full ticket opens as its Linear page', () => {
+  const html = renderTicketDetail(parseTicketDetail(RAW), { agentName: 'Claude', delegated: false })
+  expect(html).toContain('<details><summary>Description</summary>')
+  expect(html).toContain('<details><summary>Comments <span class="n">4</span>')
+  expect(html).not.toContain('<details open>')
+})

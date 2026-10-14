@@ -384,6 +384,12 @@ function icon(name: string, title: string): string {
 
 /** Where a chip points, as that service's own mark: GitHub for pull requests, Linear for
  *  tickets (the tracker the Issues tab reads). */
+/** The ↗ the Active Session header uses to open a tab: on a PR row it opens the PR's GitHub
+ *  page as an editor tab (a ⌘ or ⌥ click, in the OS browser). */
+function prOpenIcon(p: { number: number; url: string }): string {
+  return `<a class="pro" href="#" data-url="${escapeHtml(p.url)}" title="Open #${p.number} in a tab (⌘-click: in your browser)" aria-label="Open #${p.number} in a tab"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/></svg></a>`;
+}
+
 const GITHUB_MARK = '<svg class="ic mark" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
 const LINEAR_MARK = '<svg class="ic mark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.2" fill="#5E6AD2" stroke="none"/><path d="M2.2 9.6l4.2 4.2M1.6 7l7.4 7.4M2.6 4.6l8.8 8.8M4.4 2.8l8.8 8.8" stroke="#fff" stroke-width="1.05"/></svg>';
 
@@ -1016,7 +1022,7 @@ function prFace(p: PrRow): string {
 
 function prLine(p: PrRow, slug: string, now: number, mergeWith: string, showRepo: boolean): string {
   const age = relAge(Date.parse(p.date), now);
-  return `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prStatusCell(p, slug, mergeWith)}</li>`;
+  return `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prOpenIcon(p)}${prStatusCell(p, slug, mergeWith)}</li>`;
 }
 
 function reviewMenu(p: ReviewPrefs): string {
@@ -1063,7 +1069,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
     body = section('Open', shown);
   }
   const merged = prefs.showMerged ? m.repos.flatMap((r) => r.merged.map((p) => ({ p, slug: r.slug }))).sort((a, b) => Date.parse(b.p.date) - Date.parse(a.p.date)) : [];
-  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${relAge(Date.parse(p.date), now)}</span></span></a><span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
+  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${relAge(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
   return head + partial + readingLine + errors + body + none + mergedHtml + '<div class="toast" hidden></div>';
 }

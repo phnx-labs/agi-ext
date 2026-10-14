@@ -54,7 +54,7 @@ import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './age
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
-import { openExternalUrl } from './webviewSecurity';
+import { openLink, openWebviewUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
@@ -95,7 +95,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -128,7 +128,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
       if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
-      else if (msg.type === 'open') openExternalUrl(msg.url);
+      else if (msg.type === 'open') openWebviewUrl(msg.url, msg.external === true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'projects') void this.listProjects();
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
@@ -248,6 +248,13 @@ class ProjectView implements vscode.WebviewViewProvider {
     // An error is not a fresh result: the next show reads again.
     state.loadedAt = ok ? Date.now() : 0;
     this.post(tab, html);
+    // A ticket the user just opened shows its Linear page as an editor tab beside the card;
+    // Refresh rereads the card without reopening the page.
+    if (tab === 'tickets' && ok && this.ticket && this.revealTicket === this.ticket) {
+      this.revealTicket = null;
+      const url = this.controller.ticketUrl(this.ticket);
+      if (url) void openLink(url);
+    }
   }
 
   redrawSessions(): Promise<void> {
@@ -271,6 +278,7 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   /** A ticket tile, here or in the session panel, opens the ticket in Issues. */
   async openTicketTab(id: string): Promise<void> {
+    this.revealTicket = id;
     if (this.view) this.view.show(true);
     else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     // Straight to the ticket: the Issues list is not read first.
@@ -288,6 +296,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   /** A ticket row click opens its detail (one read); the back control returns to the list. */
   async openTicket(id: string | null): Promise<void> {
     this.ticket = id;
+    this.revealTicket = id;
     const state = this.tabs.get('tickets')!;
     if (id) this.post('tickets', '<div class="empty">Loading…</div>');
     else state.loadedAt = 0;
@@ -295,6 +304,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   private commenting = false;
+  /** The ticket whose Linear page opens once its card has loaded. */
+  private revealTicket: string | null = null;
 
   private async comment(id: string, text: string): Promise<void> {
     // One `linear update` at a time: a second click must not post the comment twice.
@@ -550,6 +561,11 @@ class ProjectPanelController {
     const bin = resolveLinearBin();
     if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
     return bin;
+  }
+
+  /** The Linear page of the ticket the card shows, once its read returned. */
+  ticketUrl(id: string): string | undefined {
+    return this.shownTicket?.identifier === id && this.shownTicket.url ? this.shownTicket.url : undefined;
   }
 
   async ticketDetail(id: string): Promise<string> {
@@ -986,6 +1002,11 @@ export function shell(cspSource: string, logoCss = ''): string {
   .iav.agent .hx { width: 12px; height: 12px; }
   .prli { gap: 6px; padding-left: 2px; }
   .prli .prow { flex: 1; min-width: 0; display: block; padding: 5px 2px; }
+  /* The row's ↗ (the Active Session header's open icon): shown on hover, opens the PR as a tab. */
+  .pro { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--r-caption); opacity: 0; }
+  .prli:hover .pro, .pro:focus-visible { opacity: 1; }
+  .pro:hover { background: var(--r-hover); color: var(--r-text); }
+  .pro svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   /* A PR row: its author on the left, its state as the rightmost control (Merge when checks pass). */
   .rs { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 8px; font: 600 11px var(--vscode-font-family); border: 1px solid transparent; white-space: nowrap; }
   .rs.merge { background: var(--r-ok); color: var(--r-on-av); cursor: pointer; } .rs.merge:hover { filter: brightness(1.08); } .rs.merge:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -1519,7 +1540,7 @@ ${THUMB_SCRIPT}
     const ask = e.target.closest('.card .ask [data-expand]');
     if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
     const goal = e.target.closest('.goals [data-url]');
-    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
+    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = main.querySelector('.menu');
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
@@ -1567,7 +1588,7 @@ ${THUMB_SCRIPT}
     const art = e.target.closest('[data-artifact]');
     if (art && card) { e.preventDefault(); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
-    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url }); return; }
+    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });

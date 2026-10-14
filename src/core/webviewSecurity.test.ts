@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { isAllowedExternalUrl, isAllowedWebviewCommand } from './webviewSecurity';
+import { browserTabArgs, isAllowedExternalUrl, isAllowedWebviewCommand } from './webviewSecurity';
 import { isDeprecatedAgentKey } from './agents';
 
 describe('isAllowedExternalUrl', () => {
@@ -24,5 +24,20 @@ describe('isAllowedExternalUrl', () => {
     expect(isAllowedExternalUrl(null)).toBe(false);
     expect(isAllowedExternalUrl(42)).toBe(false);
     expect(isAllowedExternalUrl('not a url')).toBe(false);
+  });
+});
+
+describe('browserTabArgs', () => {
+  it('opens a web page as an editor tab that a second click reuses', () => {
+    const url = 'https://linear.app/getrush/issue/PHNX-4367/voice-dictation';
+    expect(browserTabArgs(url, 'editor')).toEqual({ url, reuseUrlFilter: url });
+    expect(browserTabArgs('http://localhost:5173/', 'editor')).toEqual({ url: 'http://localhost:5173/', reuseUrlFilter: 'http://localhost:5173/' });
+  });
+
+  it('leaves the editor for other schemes and when the link should open in the browser', () => {
+    expect(browserTabArgs('mailto:muqsit@trp.so', 'editor')).toBeNull();
+    expect(browserTabArgs('agents://session/abc', 'editor')).toBeNull();
+    expect(browserTabArgs('not a url', 'editor')).toBeNull();
+    expect(browserTabArgs('https://github.com/phnx-labs/agents/pull/3979', 'browser')).toBeNull();
   });
 });

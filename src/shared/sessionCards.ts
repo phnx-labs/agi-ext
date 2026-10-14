@@ -607,7 +607,8 @@ function bindSessionCards() {
   for (const el of root.querySelectorAll('[data-url]:not([data-action])')) {
     if (bindOnce(el, 'url')) el.addEventListener('click', (e) => {
       e.preventDefault();
-      vscode.postMessage({ type: 'openUrl', url: el.getAttribute('data-url') });
+      // ⌘ or ⌥ sends the link to the OS browser; a plain click opens it as an editor tab.
+      vscode.postMessage({ type: 'openUrl', url: el.getAttribute('data-url'), external: e.metaKey || e.altKey });
     });
   }
 }

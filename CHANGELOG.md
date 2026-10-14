@@ -4,6 +4,25 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.402] - 2026-10-14
+
+PRs and tickets open as editor tabs, from the owner's screenshot of 2026-10-13, where the whole
+ticket was squeezed into the sidebar and every link left VSCodium for another app:
+
+- A PR, a ticket's Linear page, a goal line and every other web link the extension shows open as
+  an editor tab in the editor's integrated browser, beside your agents, where you can review,
+  merge, comment and change status on the real site. A second click on the same page brings its
+  tab forward instead of opening another.
+- ⌘ or ⌥ click opens your default browser. The new `agents.links.openIn` setting (`editor` or
+  `browser`) sets the default; editors without the integrated browser keep opening your browser.
+- Clicking a ticket in Issues opens its Linear page as a tab and leaves a compact card in the
+  panel: state, title, who it is delegated to and Start. The description and comments are
+  folded.
+- Review rows carry the ↗ open icon from the Active Session header on hover.
+- Sign in to GitHub and Linear once in the integrated browser; it stays signed in across
+  workspaces. With the Linear desktop app installed, linear.app hands each link to the app; turn
+  off Preferences › Open in desktop app once in the tab (a per-browser preference).
+
 ## [0.9.401] - 2026-10-14
 
 Agent asks reach you (PHNX-4369), from the owner's recording of 2026-10-13, where 11 of 12

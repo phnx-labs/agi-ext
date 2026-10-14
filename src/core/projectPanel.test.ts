@@ -102,6 +102,9 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   // The author as a face on the left: a colored initial when the row carries no GitHub avatar.
   expect(all).toMatch(/<li class="prli"><span class="iav av\d"/)
   expect(all).toContain('Recently merged</span><span class="n">5</span>')
+  // Every row, open or merged, carries the ↗ that opens its GitHub page as a tab.
+  expect(all).toContain('<a class="pro" href="#" data-url="https://github.com/o/busy/pull/7" title="Open #7 in a tab (⌘-click: in your browser)"')
+  expect(all).toContain('data-url="https://github.com/o/busy/pull/0" title="Open #0 in a tab')
 })
 
 test('prs: a ready PR is one Merge button at the right; failing checks are counted; a draft never merges', () => {
