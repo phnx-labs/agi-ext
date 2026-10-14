@@ -158,10 +158,12 @@ class ProjectView implements vscode.WebviewViewProvider {
         // Redraw either way, so a write that failed shows the stored value again.
         void this.controller.setSetting(msg.key, msg.value)
           .catch((e) => { void vscode.window.showErrorMessage(`Could not save the setting: ${errorText(e)}`); })
-          .finally(() => this.load('settings', true));
+          .finally(() => this.post('settings', this.controller.settings(this.devices)));
       }
       else if (msg.type === 'device' && typeof msg.name === 'string' && (msg.field === 'enabled' || msg.field === 'preferred') && typeof msg.value === 'boolean') {
-        void this.setDevice(msg.name, msg.field, msg.value);
+        const name = msg.name;
+        // Only a device the CLI listed, so no page text can become a flag.
+        if (this.devices && 'rows' in this.devices && this.devices.rows.some((d) => d.name === name) && !name.startsWith('-')) void this.setDevice(name, msg.field, msg.value);
       }
     });
     view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
@@ -378,19 +380,24 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   private devices: DevicesState = null;
   private devicesAt = 0;
+  private devicesGen = 0;
 
   /** The Devices section's one `agents devices list --json` read: when Settings shows
    *  (at most once a minute), on Refresh, and after a checkbox or star. Never on a timer. */
   private async loadDevices(force: boolean): Promise<void> {
     if (!force && Date.now() - this.devicesAt < FRESH_MS) return;
     this.devicesAt = Date.now();
+    const gen = ++this.devicesGen;
+    let next: DevicesState;
     try {
       const { stdout } = await runAgentsArgs(['devices', 'list', '--json'], { timeout: 30_000 });
-      this.devices = { rows: parseSettingsDevices(stdout) };
+      next = { rows: parseSettingsDevices(stdout) };
     } catch (e) {
       this.devicesAt = 0;
-      this.devices = { error: `Devices could not be read: ${errorText(e).split('\n')[0] ?? ''}` };
+      next = { error: `Devices could not be read: ${errorText(e).split('\n')[0] ?? ''}` };
     }
+    if (gen !== this.devicesGen) return;
+    this.devices = next;
     if (this.active === 'settings') this.post('settings', this.controller.settings(this.devices));
   }
 
