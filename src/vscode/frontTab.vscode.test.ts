@@ -71,6 +71,37 @@ describe('front tab', () => {
     d.dispose();
   });
 
+  test('a tab event alone never hands the stale active terminal to a second tab with its name', () => {
+    const a = { name: 'CC' }, b = { name: 'CC' };
+    win.terminals = [a, b];
+    const ta = terminalTab('CC'), tb = terminalTab('CC');
+    group.tabs = [ta, tb];
+    const seen: unknown[] = [];
+    const d = onDidChangeFrontTab((t) => seen.push(t));
+    group.activeTab = ta; win.activeTerminal = a; emit('active');
+    // The user clicks tab B; only the tab event fires and activeTerminal still says A.
+    group.activeTab = tb; emit('tabs');
+    expect(seen).toEqual([a, b]);
+    expect(terminalTabNumbers().get(a)).toBe(1);
+    expect(terminalTabNumbers().get(b)).toBe(2);
+    d.dispose();
+  });
+
+  test('a file coming to the front does not move the selection; returning to the tab does', () => {
+    const a = { name: 'CC' };
+    win.terminals = [a];
+    const ta = terminalTab('CC'), file = { label: 'README.md', input: {} };
+    group.tabs = [ta, file];
+    win.activeTerminal = a;
+    const seen: unknown[] = [];
+    const d = onDidChangeFrontTab((t) => seen.push(t));
+    group.activeTab = ta; emit('tabs');
+    group.activeTab = file; emit('tabs');
+    group.activeTab = ta; emit('tabs');
+    expect(seen).toEqual([a, a]);
+    d.dispose();
+  });
+
   test('a tab that only changed its label does not move the selection back', () => {
     const a = { name: 'CC' };
     win.terminals = [a];

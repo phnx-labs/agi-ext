@@ -4274,7 +4274,6 @@ async function openForkTerminal(
     }),
     vscode.window.onDidCloseTerminal((t) => { if (t === terminal) watch.forEach((d) => d.dispose()); }),
   ];
-  context.subscriptions.push(...watch);
   // Stamp the host so the label poller / remote id resolution reads the sibling
   // from that box's active feed rather than looking it up locally.
   if (opts.forkHost) terminals.setHost(terminal, opts.forkHost);
