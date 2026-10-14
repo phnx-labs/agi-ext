@@ -22,6 +22,8 @@ The Lead, docked (round 16):
   through `~/.agents/lead/surface.json`; "Lead: Dock into VSCodium" takes it back. The status bar
   and the tab stay either way.
 - Needs agents-cli with `agents lead`; an older CLI says to upgrade.
+- On macOS, docking or floating the Lead from FastWispr is noticed even after `~/.agents/lead` is
+  removed and recreated: the extension also watches `~/.agents` and rereads the switch every 2 s.
 
 From the owner's recording of 2026-10-13 and the round 16 design:
 
