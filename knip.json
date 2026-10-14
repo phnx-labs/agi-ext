@@ -14,9 +14,7 @@
       ],
       "ignoreBinaries": [
         "vsce",
-        "agents",
-        "osascript",
-        "notify-send"
+        "agents"
       ]
     },
     "ui": {

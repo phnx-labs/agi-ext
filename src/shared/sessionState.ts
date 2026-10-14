@@ -2,8 +2,10 @@
 // sidebar), read from the CLI's own row facts. The CLI decides the
 // status (agents-cli SES-18, sessions-cli inferActivity); this only names it.
 //
-//   status input_required / phase waiting, or an open ask  -> asks     (Your move · asks)
-//   idle: replied, or an open stall/failure on a live agent  -> yours    (Your move · idle)
+//   status input_required / phase waiting, or an open ask  -> asks     (Asks)
+//   an open stall/failure on a live agent                    -> stuck    (Stuck)
+//   idle with an open review request (attention `review`)    -> review   (Ready for review)
+//   idle: finished its turn, nothing asked                   -> idle     (Idle)
 //   idle with background work still pending (subagents,
 //     background shells, monitors; the row's `pending`)        -> waiting  (Waiting)
 //   running                                                  -> working  (Running)
@@ -11,7 +13,7 @@
 //     abandoned, failed): nothing about whether it succeeded -> ended    (Ended)
 //   unknown: alive, no transcript the CLI could read          -> unknown  (Running · no transcript)
 
-export type SessionStateKey = 'asks' | 'working' | 'waiting' | 'yours' | 'ended' | 'unknown';
+export type SessionStateKey = 'asks' | 'stuck' | 'review' | 'idle' | 'working' | 'waiting' | 'ended' | 'unknown';
 
 export interface SessionStateFacts {
   phase?: string;
@@ -82,39 +84,51 @@ export function agoWords(ms: number): string {
   return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
 
-// On screen they collapse to three, by who has the ball (owner, 2026-10-12:
-// "how is Needs you different from idle, or from Your turn?"):
-//   Your move — the agent does nothing until you act; a tag says why
-//               (asks · idle), a question first
+// On screen they group by who has the ball (owner, 2026-10-13: "11 of 12 Your
+// move cards were idle"; only a real ask is your move):
+//   Your move — the agent does nothing until you act: a question, a permission,
+//               a plan, or a stall or failure the CLI flagged
+//   Review    — it finished and asked for a review
+//   Idle      — it finished its turn and asked nothing
 //   Running   — the agent is working (or alive with no readable transcript), or
 //               its turn ended but it waits on its own background work (Waiting)
 //   Ended     — the process exited
-export type SessionBall = 'move' | 'running' | 'ended';
+export type SessionBall = 'move' | 'review' | 'idle' | 'running' | 'ended';
 
-export const BALL_WORD: Record<SessionBall, string> = { move: 'Your move', running: 'Running', ended: 'Ended' };
+export const BALL_WORD: Record<SessionBall, string> = { move: 'Your move', review: 'Ready for review', idle: 'Idle', running: 'Running', ended: 'Ended' };
 
 export function ballOf(key: SessionStateKey): SessionBall {
   if (key === 'working' || key === 'waiting' || key === 'unknown') return 'running';
-  if (key === 'ended') return 'ended';
-  return 'move';
+  if (key === 'asks' || key === 'stuck') return 'move';
+  return key;
 }
 
-/** The order Your move sorts in: a question before an idle turn. */
-const MOVE_RANK: Partial<Record<SessionStateKey, number>> = { asks: 0, yours: 1 };
-
-export function moveRank(key: SessionStateKey): number {
-  return MOVE_RANK[key] ?? Number.MAX_SAFE_INTEGER;
-}
-
-/** The words a state shows: the ball, plus the reason when it is your move. */
+/** The words a state shows. */
 export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
-  asks: 'Your move · asks',
-  yours: 'Your move · idle',
+  asks: 'Asks',
+  stuck: 'Stuck',
+  review: 'Ready for review',
+  idle: 'Idle',
   working: 'Running',
   waiting: 'Waiting',
   unknown: 'Running · no transcript',
   ended: 'Ended',
 };
+
+/** How soon an ask needs you, as agents-cli computed it on the attention item
+ *  (`urgency`). An item from a CLI that does not send it reads as normal. */
+export type Urgency = 'urgent' | 'high' | 'normal' | 'low';
+
+const URGENCY_RANK: Record<Urgency, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+export function urgencyOf(attention: { urgency?: string } | null | undefined): Urgency {
+  const u = attention?.urgency;
+  return u && u in URGENCY_RANK ? (u as Urgency) : 'normal';
+}
+
+export function urgencyRank(u: Urgency): number {
+  return URGENCY_RANK[u];
+}
 
 const ASK_KINDS = new Set(['question', 'permission', 'plan_review', 'declared']);
 const STOPPED_STATUS = new Set(['orphaned', 'crashed', 'abandoned']);
@@ -126,7 +140,7 @@ export function sessionStateOf(s: SessionStateFacts): SessionStateKey {
   // The process is gone: Ended, whether or not the work succeeded.
   if (STOPPED_STATUS.has(status) || s.phase === 'failed' || s.phase === 'done' || status === 'closed') return 'ended';
   // A live agent the CLI flags as stalled or failed is not progressing: your move.
-  if (open === 'stall' || open === 'failure') return 'yours';
+  if (open === 'stall' || open === 'failure') return 'stuck';
   if (s.phase === 'running') return 'working';
   if (status === 'unknown') return 'unknown';
   // Idle, but a subagent, background shell or monitor it started still runs: the
@@ -134,14 +148,14 @@ export function sessionStateOf(s: SessionStateFacts): SessionStateKey {
   // An absent `pending` is unknown (an older CLI on a peer) and reads as before.
   const idle = status === 'idle' || (!status && s.phase === 'idle');
   if (idle && pendingCounts(s.pending).total > 0) return 'waiting';
-  return 'yours';
+  return open === 'review' ? 'review' : 'idle';
 }
 
 /** Why the CLI raised an attention row, carried verbatim from the stream
  *  (`RemoteAttention.kind`). The extension classifies nothing. */
 type AttentionKind = 'question' | 'permission' | 'plan_review' | 'declared' | 'failure' | 'stall' | 'review';
 
-/** Needs-you order on every surface: an interactive hand-back (question, permission,
+/** Within one urgency and wait, an interactive hand-back (question, permission,
  *  plan_review, declared) leads, then a hard failure, a stall the CLI detected, and a
  *  review request. */
 const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {

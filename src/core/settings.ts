@@ -113,7 +113,8 @@ export interface AgentSettings {
   prompts: PromptEntry[];
   editor: EditorPreferences;
   display: DisplayPreferences;
-  notifications?: NotificationSettings;
+  /** How Sessions cards show an open ask; the defaults when unset. */
+  cards?: CardSettings;
   /** How every Merge button merges (Review rows, the session sidebar); squash when unset. */
   mergeMethod?: MergeMethod;
 }
@@ -140,17 +141,25 @@ export interface DisplayPreferences {
   showLabelOnlyOnFocus: boolean;  // true = hide label when terminal loses focus
 }
 
-export interface NotificationSettings {
-  enabled: boolean;
-  style: 'native' | 'vscode';
-  enabledAgents: string[];
+/** Session cards in the Project panel: whether an ask shows its answers, how much
+ *  of each option, and how much of the question. */
+export interface CardSettings {
+  asks: 'answers' | 'question' | 'off';
+  options: 'titles' | 'details';
+  question: 'two' | 'full';
 }
 
-export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
-  enabled: false,
-  style: 'native',
-  enabledAgents: ['claude']
-};
+export const DEFAULT_CARD_SETTINGS: CardSettings = { asks: 'answers', options: 'titles', question: 'two' };
+
+/** The stored card settings with any value this version does not know read as its default. */
+export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings {
+  const d = DEFAULT_CARD_SETTINGS;
+  return {
+    asks: v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
+    options: v?.options === 'details' ? 'details' : d.options,
+    question: v?.question === 'full' ? 'full' : d.question,
+  };
+}
 
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   showFullAgentNames: true,
@@ -217,8 +226,7 @@ export function getDefaultSettings(): AgentSettings {
     quickLaunch: { ...DEFAULT_QUICK_LAUNCH },
     prompts: [],
     editor: { markdownViewerEnabled: true },
-    display: { ...DEFAULT_DISPLAY_PREFERENCES },
-    notifications: { ...DEFAULT_NOTIFICATION_SETTINGS }
+    display: { ...DEFAULT_DISPLAY_PREFERENCES }
   };
 }
 

@@ -38,6 +38,8 @@ import {
   applyReviewPref,
   sessionCount,
   sessionMade,
+  answerArgv,
+  answerFailure,
   type ProjectRef,
   type PrsModel,
   type SessionHere,
@@ -56,7 +58,7 @@ import { openExternalUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
 import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, PICKABLE_AGENTS, renderPanelSettings } from '../core/panelSettings';
-import { validMergeMethod } from '../core/settings';
+import { cardSettings, validMergeMethod } from '../core/settings';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
 import { buildIconPathFromUri } from './theme.vscode';
@@ -93,7 +95,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown;
 }
 
 interface TabState {
@@ -150,6 +152,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketList') void this.openTicket(null);
       else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'answer' && typeof msg.key === 'string' && (typeof msg.choice === 'string' || typeof msg.text === 'string')) void this.answer(msg.key, typeof msg.choice === 'string' ? { choice: msg.choice } : { text: msg.text as string });
       else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number, typeof msg.sha === 'string' ? msg.sha : undefined);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
         // Redraw either way, so a write that failed shows the stored value again.
@@ -337,6 +340,13 @@ class ProjectView implements vscode.WebviewViewProvider {
       await this.load('prs', true);
     });
     await this.merging;
+  }
+
+  /** An answer from a card, after its 5 s Undo: one `agents feed answer`; the card
+   *  shows what the CLI said when it was not delivered. */
+  private async answer(key: string, answer: { choice: string } | { text: string }): Promise<void> {
+    const error = await this.controller.answer(key, answer);
+    void this.view?.webview.postMessage({ type: 'answered', key, error });
   }
 
   private goalsAt = 0;
@@ -596,6 +606,18 @@ class ProjectPanelController {
     });
   }
 
+  /** Answer an open ask the stream shows; the CLI's words when it was not delivered. */
+  async answer(key: string, answer: { choice: string } | { text: string }): Promise<string | null> {
+    if (!this.presented().some((r) => r.attention?.key === key && r.attention.state === 'open')) return 'This ask is no longer open.';
+    try {
+      const { stdout } = await runAgentsArgs(answerArgv(key, answer), { timeout: 60_000 });
+      return answerFailure(stdout);
+    } catch (e) {
+      const out = (e as { stdout?: string }).stdout;
+      return (out && answerFailure(out)) || errorText(e).split('\n')[0] || 'agents feed answer failed';
+    }
+  }
+
   /** One Settings-tab change, written where that setting already lives. */
   async setSetting(key: string, value: unknown): Promise<void> {
     if (key === 'defaultAgent' || key === 'secondaryAgent') {
@@ -736,7 +758,8 @@ class ProjectPanelController {
     const count = sessionCount(rows, here, prefs);
     const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
     const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name }), count: { shown: count.shown, asks: count.asks } };
+    const cards = cardSettings(getSettings(this.context).cards);
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
@@ -933,7 +956,6 @@ export function shell(cspSource: string, logoCss = ''): string {
   .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--r-text); }
   .n { color: var(--r-faint); font-variant-numeric: tabular-nums; font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .sub { color: var(--r-caption); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .st-doing { background: var(--r-doing); } .st-review { background: var(--r-review); } .st-todo { background: var(--r-todo); } .st-backlog { background: var(--r-backlog); }
   .ms { margin-top: 8px; } .ms .t { flex: 1; }
   .note { margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--r-well); color: var(--r-caption); }
   .note b { color: var(--r-text); }
@@ -1054,6 +1076,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .menu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 2px; }
   .pinned { margin: 6px 0 10px; padding: 2px 5px 6px; border-radius: 9px; background: var(--r-warn-tint); }
   .pinned .ph { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-warn); padding: 5px 4px 4px; }
+  .pinned.now { background: var(--r-bad-tint); } .pinned.now .ph { color: var(--r-bad); }
   .grp { margin-top: 8px; }
   .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; }
   .gh:hover { background: var(--r-hover); }
@@ -1084,7 +1107,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pill.solo { padding: 0 4px; border: 0; }
   .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-asks { background: var(--r-warn) !important; }
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-working { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
-  .pill.st-yours i, .d-yours { background: var(--r-gold) !important; }
+  .st-stuck.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-stuck i { background: var(--r-warn) !important; }
+  .pill.st-review i, .d-review { background: var(--r-info) !important; }
   /* Waiting on its own work: a blue dot that breathes slowly, and a chip per kind. */
   .st-waiting.pill { color: var(--r-wait); border-color: color-mix(in srgb, var(--r-wait) 45%, transparent); } .pill.st-waiting i, .d-waiting { background: var(--r-wait) !important; }
   .st-waiting.pill i { animation: waitbreathe 2.2s ease-in-out infinite; }
@@ -1121,10 +1145,24 @@ export function shell(cspSource: string, logoCss = ''): string {
   .card .line { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   .card .line.said { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .card .line.live { color: var(--r-caption); margin-top: 3px; } .card .line .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; } .card .line .tool { font-weight: 600; font-size: 11px; }
-  .card .ask { display: block; padding: 6px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; cursor: zoom-in; }
+  .card .why { margin-top: 2px; font-size: 11px; color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .why.u-urgent, .card .why.u-high { color: var(--r-bad); } .card .why [data-since] { font-variant-numeric: tabular-nums; }
+  .card .ask { display: block; padding: 6px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; cursor: default; }
+  .card .ask .ah { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-warn); margin-bottom: 2px; }
   .card .ask .q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .card .ask .exp { display: block; text-align: right; font-size: 10.5px; font-weight: 600; color: var(--r-warn); margin-top: 1px; }
-  .card .ask.open { cursor: zoom-out; } .card .ask.open .q { display: block; }
+  .card .ask .q[data-expand] { cursor: zoom-in; } .card .ask.open .q { display: block; cursor: zoom-out; } .card .ask .q.full { display: block; }
+  .card .ask .q.cmdq { font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .card .ask [hidden] { display: none !important; }
+  .card .opts { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
+  .card .opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; text-align: left; font: inherit; font-size: 11.5px; line-height: 1.35; padding: 3px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); color: var(--r-text); cursor: pointer; }
+  .card .opt:hover, .card .opt:focus-visible { background: var(--r-hover); border-color: var(--r-warn); outline: none; }
+  .card .opt .k { flex: none; font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
+  .card .opt .ol { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .opt small { flex-basis: 100%; padding-left: 13px; color: var(--r-caption); font-size: 11px; }
+  .card .alt { display: flex; gap: 12px; margin-top: 4px; }
+  .card .lnk { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--vscode-textLink-foreground); cursor: pointer; } .card .lnk:hover { text-decoration: underline; }
+  .card .aother input { width: 100%; box-sizing: border-box; margin-top: 5px; font: inherit; font-size: 11.5px; padding: 3px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; }
+  .card .asend { margin-top: 5px; font-size: 11.5px; color: var(--r-text-2); } .card .asend.err { color: var(--r-bad); }
   .made { display: grid; gap: 5px; padding: 6px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-well); }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 170px; padding: 1px 6px 1px 4px; border-radius: 5px; border: 1px solid var(--r-edge); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1215,6 +1253,10 @@ ${THUMB_SCRIPT}
   const opened = new Set();
   const pendingMerge = new Map();
   const mergeTimers = new Map();
+  // Answers from a card, by attention key: held 5 s with Undo, then sent once; what
+  // the CLI said stays on the card. Asks whose Other… box is open.
+  const pendingAnswer = new Map();
+  const otherOpen = new Set();
   let shownProject;
   function waitWords(ms) {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -1228,9 +1270,50 @@ ${THUMB_SCRIPT}
   setInterval(tickWaits, 1000);
   function restoreLocal() {
     main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
-    main.querySelectorAll('.card[data-session] .ask .exp').forEach((x) => { x.textContent = x.closest('.ask').classList.contains('open') ? 'less' : 'more'; });
     for (const [key, left] of pendingMerge) drawUndo(key, left);
+    // A sent answer is forgotten once its ask leaves the list.
+    for (const [key, p] of pendingAnswer) { if (p.state === 'sent' && !askEl(key)) pendingAnswer.delete(key); else drawAsk(key); }
+    for (const key of otherOpen) { if (askEl(key)) drawAsk(key); else otherOpen.delete(key); }
     tickWaits();
+  }
+  function askEl(key) { return main.querySelector('.ask[data-ask="' + CSS.escape(key) + '"]'); }
+  function drawAsk(key) {
+    const el = askEl(key); if (!el) return;
+    const p = pendingAnswer.get(key);
+    const busy = !!p && p.state !== 'error';
+    el.querySelector('.aother').hidden = busy || !otherOpen.has(key);
+    el.querySelectorAll('.opts, .alt').forEach((x) => { x.hidden = busy; });
+    const send = el.querySelector('.asend');
+    send.hidden = !p;
+    if (!p) return;
+    send.className = 'asend' + (p.state === 'error' ? ' err' : '');
+    const q = '\u201c' + p.label + '\u201d';
+    const words = document.createElement('span');
+    words.textContent = p.state === 'wait' ? 'Sending ' + q + ' in ' + p.left + 's'
+      : p.state === 'sending' ? 'Sending ' + q + '\u2026' : p.state === 'sent' ? 'Sent ' + q : 'Not sent: ' + p.error;
+    send.replaceChildren(words);
+    if (p.state === 'wait') { const b = document.createElement('button'); b.className = 'lnk'; b.setAttribute('data-ask-undo', ''); b.textContent = 'Undo'; send.append(' \u00b7 ', b); }
+  }
+  // One answer per ask: a click (or key 1-9) waits 5 s, then posts once.
+  function answerAsk(key, label, payload) {
+    const held = pendingAnswer.get(key);
+    if (held && held.state !== 'error') return;
+    otherOpen.delete(key);
+    const p = Object.assign({ left: 5, label, state: 'wait' }, payload);
+    pendingAnswer.set(key, p); drawAsk(key);
+    p.timer = setInterval(() => {
+      if (pendingAnswer.get(key) !== p) { clearInterval(p.timer); return; }
+      p.left -= 1;
+      if (p.left > 0) { drawAsk(key); return; }
+      clearInterval(p.timer); p.state = 'sending'; drawAsk(key);
+      vscode.postMessage({ type: 'answer', key, choice: p.choice, text: p.text });
+    }, 1000);
+  }
+  // Leaving Sessions stops an answer still counting down: its Undo would be off screen.
+  function cancelAnswers() {
+    let n = 0;
+    for (const [key, p] of pendingAnswer) if (p.state === 'wait') { clearInterval(p.timer); pendingAnswer.delete(key); n++; }
+    return n;
   }
   function mergeBtn(key) { const [repo, num] = key.split('#'); return main.querySelector('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]'); }
   function drawUndo(key, left) {
@@ -1252,6 +1335,7 @@ ${THUMB_SCRIPT}
   function choose(tab) {
     if (tab === current) return;
     if (current === 'prs' && cancelMerges()) toast('Merge cancelled: you left Review before it started.');
+    if (current === 'sessions' && cancelAnswers()) toast('Answer not sent: you left Sessions before it went.');
     scroll[current] = main.scrollTop;
     current = tab;
     select(tab);
@@ -1310,6 +1394,11 @@ ${THUMB_SCRIPT}
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') { document.body.classList.remove('loading'); main.querySelectorAll('[data-comment]').forEach((b) => { b.disabled = false; }); }
     else if (m.type === 'notice') toast(m.text);
+    else if (m.type === 'answered') {
+      const p = pendingAnswer.get(m.key); if (!p) return;
+      if (m.error) { p.state = 'error'; p.error = m.error; } else p.state = 'sent';
+      drawAsk(m.key);
+    }
     else if (m.type === 'reveal') {
       const c = main.querySelector('.card[data-session="' + CSS.escape(m.sessionId) + '"]');
       if (c) { c.scrollIntoView({ block: 'nearest' }); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
@@ -1410,7 +1499,17 @@ ${THUMB_SCRIPT}
     if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
     const os = e.target.closest('[data-open-session]');
     if (os) { vscode.postMessage({ type: 'openSession', sessionId: os.dataset.openSession, host: os.dataset.host }); return; }
-    const ask = e.target.closest('.card .ask[data-expand]');
+    // An ask on a card: each answer button carries what it sends (a choice id or words).
+    const askBox = e.target.closest('.card .ask[data-ask]');
+    if (askBox) {
+      const key = askBox.dataset.ask;
+      const opt = e.target.closest('[data-choice], [data-ask-text]');
+      if (opt) { e.stopPropagation(); answerAsk(key, opt.dataset.label, opt.dataset.choice ? { choice: opt.dataset.choice } : { text: opt.dataset.askText }); return; }
+      if (e.target.closest('[data-ask-other]')) { otherOpen.add(key); drawAsk(key); askBox.querySelector('[data-ask-input]').focus(); return; }
+      if (e.target.closest('[data-ask-undo]')) { const p = pendingAnswer.get(key); if (p) clearInterval(p.timer); pendingAnswer.delete(key); drawAsk(key); return; }
+      if (e.target.closest('.aother, .asend')) return;
+    }
+    const ask = e.target.closest('.card .ask [data-expand]');
     if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
     const goal = e.target.closest('.goals [data-url]');
     if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url }); return; }
@@ -1493,6 +1592,21 @@ ${THUMB_SCRIPT}
     reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
+    // Other…: Enter sends what was typed (after the same 5 s), Escape closes the box.
+    const input = e.target.closest && e.target.closest('[data-ask-input]');
+    if (input) {
+      const key = input.closest('.ask').dataset.ask;
+      if (e.key === 'Enter' && input.value.trim()) { e.preventDefault(); const text = input.value.trim(); input.value = ''; answerAsk(key, text.length > 40 ? text.slice(0, 40) + '\u2026' : text, { text }); }
+      else if (e.key === 'Escape') { otherOpen.delete(key); drawAsk(key); }
+      return;
+    }
+    // 1-9 answer the selected card's ask with that option.
+    if (current === 'sessions' && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target.closest && e.target.closest('input, textarea, select'))) {
+      const held = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.card[data-session]') : null;
+      const ask = (held || main.querySelector('.card.sel'))?.querySelector('.ask[data-ask] .opts:not([hidden])');
+      const opt = ask ? ask.querySelectorAll('.opt')[Number(e.key) - 1] : null;
+      if (opt) { e.preventDefault(); opt.click(); return; }
+    }
     const tab = e.target.closest && e.target.closest('.tab');
     if (tab && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];

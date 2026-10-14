@@ -1,0 +1,383 @@
+[
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "",
+  "activity": "",
+  "ticket": "PHNX-4371",
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "9b1f0c2e-publish",
+  "host": "yosemite-m5",
+  "title": "Release agents-cli 1.23.0",
+  "phase": "waiting",
+  "liveStatus": "input_required",
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agents-cli",
+  "lastActivityMs": 1791939060000,
+  "startedAtMs": 1791934020000,
+  "attention": {
+   "key": "yosemite-m5/9b1f0c2e-publish/b-7f3a",
+   "kind": "question",
+   "state": "open",
+   "openedAt": "2026-10-14T00:51:00Z",
+   "urgency": "urgent",
+   "urgencyReason": "Blocks a release (npm publish)",
+   "question": {
+    "text": "The 1.23.0 tag is pushed and CI is green. Publish to npm now? zion holds the npm token; m5 would need it copied over first.",
+    "header": "Publish"
+   },
+   "choices": [
+    {
+     "id": "yes-publish-from-zion",
+     "label": "Yes, publish from zion",
+     "description": "Runs scripts/release.sh 1.23.0 --confirm on zion, where the npm secrets live"
+    },
+    {
+     "id": "copy-the-token-to-m5",
+     "label": "Copy the token to m5",
+     "description": "Moves the npm credential to yosemite-m5 first; needs your approval on zion"
+    },
+    {
+     "id": "wait-until-morning",
+     "label": "Wait until morning",
+     "description": "Leaves the tag in place; nothing is published tonight"
+    }
+   ]
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "",
+  "activity": "",
+  "ticket": "PHNX-4353",
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "51ac77d0-secrets",
+  "host": "this-mac",
+  "title": "Secrets in cloud runs",
+  "phase": "waiting",
+  "liveStatus": "input_required",
+  "tabHere": true,
+  "tabIndex": 2,
+  "cwd": "/Users/muqsit/src/github.com/phnx-labs/rush",
+  "lastActivityMs": 1791941100000,
+  "startedAtMs": 1791936120000,
+  "attention": {
+   "key": "zion/51ac77d0-secrets/b-11c2",
+   "kind": "permission",
+   "state": "open",
+   "openedAt": "2026-10-14T01:25:00Z",
+   "urgency": "high",
+   "urgencyReason": "High-priority ticket PHNX-4353",
+   "question": {
+    "text": "Claude needs approval to run Bash: secrets exec prod -- kubectl -n factory rollout restart deploy/task-service",
+    "header": "Approval needed"
+   },
+   "choices": [
+    {
+     "id": "approve",
+     "label": "Approve",
+     "deliveryKey": "1"
+    },
+    {
+     "id": "approve-session",
+     "label": "Approve for session",
+     "deliveryKey": "2"
+    },
+    {
+     "id": "deny",
+     "label": "Deny",
+     "deliveryKey": "esc"
+    }
+   ]
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "e4d2a913-cards",
+  "host": "yosemite-m6",
+  "title": "Sidebar asks as cards",
+  "phase": "waiting",
+  "liveStatus": "input_required",
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agi-ext",
+  "lastActivityMs": 1791941580000,
+  "startedAtMs": 1791938220000,
+  "attention": {
+   "key": "yosemite-m6/e4d2a913-cards/b-5a01",
+   "kind": "question",
+   "state": "open",
+   "openedAt": "2026-10-14T01:33:00Z",
+   "question": {
+    "text": "Which order should the Asks group use when two asks have the same urgency?",
+    "header": "Ordering"
+   },
+   "choices": [
+    {
+     "id": "longest-wait-first",
+     "label": "Longest wait first",
+     "description": "The ask that has waited longest leads"
+    },
+    {
+     "id": "newest-first",
+     "label": "Newest first",
+     "description": "The ask that arrived last leads"
+    }
+   ]
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "77c0d1aa-copy",
+  "host": "yosemite-m2",
+  "title": "Landing page hero copy",
+  "phase": "waiting",
+  "liveStatus": "input_required",
+  "cwd": "/home/muqsit/src/github.com/muqsitnawaz/themuqsit",
+  "lastActivityMs": 1791940560000,
+  "startedAtMs": 1791939420000,
+  "attention": {
+   "key": "yosemite-m2/77c0d1aa-copy/b-0d9e",
+   "kind": "question",
+   "state": "open",
+   "openedAt": "2026-10-14T01:16:00Z",
+   "urgency": "low",
+   "urgencyReason": "Low-priority ticket PHNX-4290",
+   "question": {
+    "text": "Keep the headline at \"The API for work\" or try \"Hand Rush the work\"?",
+    "header": "Headline"
+   },
+   "choices": [
+    {
+     "id": "keep",
+     "label": "Keep “The API for work”"
+    },
+    {
+     "id": "try",
+     "label": "Try “Hand Rush the work”"
+    }
+   ]
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "Waiting on the helm release lock held by another rollout.",
+  "activity": "",
+  "ticket": "PHNX-4368",
+  "confirmedProject": "agi",
+  "context": "headless",
+  "agentType": "claude",
+  "sessionId": "3f9e2b10-stall",
+  "host": "yosemite-s1",
+  "title": "Factory: decommission OpenSandbox",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/rush",
+  "lastActivityMs": 1791939840000,
+  "startedAtMs": 1791931020000,
+  "attention": {
+   "key": "yosemite-s1/3f9e2b10-stall/s-33",
+   "kind": "stall",
+   "state": "open",
+   "openedAt": "2026-10-14T01:04:00Z"
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "PR #612 is green and ready for your review.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "a81c55e2-review",
+  "host": "yosemite-m5",
+  "title": "Codex sign-in on the AGI Menu",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agi-menu",
+  "lastActivityMs": 1791940740000,
+  "startedAtMs": 1791937620000,
+  "prStatus": {
+   "number": 612,
+   "checks": "passing",
+   "isDraft": false
+  },
+  "attention": {
+   "key": "yosemite-m5/a81c55e2-review/r-612",
+   "kind": "review",
+   "state": "open",
+   "openedAt": "2026-10-14T01:19:00Z"
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "All 12 reachable devices answered; m1 is at 98% disk.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "idle-0",
+  "host": "this-mac",
+  "title": "Health check for the fleet",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "tabHere": true,
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agents-cli",
+  "lastActivityMs": 1791941280000,
+  "startedAtMs": 1791938880000
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "Done. The overlay now closes on Esc and keeps the draft.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "idle-1",
+  "host": "yosemite-m5",
+  "title": "Trim the Lead overlay",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "tabHere": false,
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agents-cli",
+  "lastActivityMs": 1791940200000,
+  "startedAtMs": 1791937800000
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "Renamed four profiles and updated the docs.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "idle-2",
+  "host": "yosemite-m6",
+  "title": "Rename the cloud profiles",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "tabHere": false,
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agents-cli",
+  "lastActivityMs": 1791938700000,
+  "startedAtMs": 1791936300000
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "The 502 comes from the voice proxy timing out after 10 s; details in the ticket.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "idle-3",
+  "host": "yosemite-m2",
+  "title": "Voice token 502",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "tabHere": false,
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/agents-cli",
+  "lastActivityMs": 1791937320000,
+  "startedAtMs": 1791934920000
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "Adding the tools/call handler.",
+  "activity": "Bash: bun test src/mcp",
+  "ticket": "PHNX-4365",
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "run-1",
+  "host": "yosemite-m5",
+  "title": "MCP server: hand Rush a task",
+  "phase": "running",
+  "liveStatus": "running",
+  "tabHere": true,
+  "tabIndex": 1,
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/rush",
+  "lastActivityMs": 1791941820000,
+  "startedAtMs": 1791940320000
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "Measuring 200 creates against preprod.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "headless",
+  "agentType": "claude",
+  "sessionId": "wait-1",
+  "host": "yosemite-m6",
+  "title": "Session create p95",
+  "phase": "idle",
+  "liveStatus": "idle",
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/rush",
+  "lastActivityMs": 1791941640000,
+  "startedAtMs": 1791938820000,
+  "pending": {
+   "shells": [
+    {
+     "id": "b1",
+     "description": "Poll preprod until 200 sessions close",
+     "startedAtMs": 1791941640000
+    }
+   ]
+  }
+ },
+ {
+  "label": "",
+  "topic": "",
+  "lastResponse": "Moved the state to the R2 backend.",
+  "activity": "",
+  "ticket": null,
+  "confirmedProject": "agi",
+  "context": "terminal",
+  "presence": "attached",
+  "agentType": "claude",
+  "sessionId": "ended-1",
+  "host": "yosemite-m2",
+  "title": "Cloudflare rules state",
+  "phase": "done",
+  "liveStatus": "closed",
+  "cwd": "/home/muqsit/src/github.com/phnx-labs/rush",
+  "lastActivityMs": 1791923820000,
+  "startedAtMs": 1791916620000
+ }
+]

@@ -48,7 +48,7 @@ const LEAD_ASK = 'agents.lead.ask';
 /** A session row as the palette needs it, with its state for the dot. */
 export interface PaletteSession extends IndexedSession {
   state: SessionStateKey;
-  /** "Waiting · 1 shell" or "Your move · asks", as on the card. */
+  /** "Waiting · 1 shell" or "Asks", as on the card. */
   stateWords: string;
   /** Whether `sessions artifacts` can read it: it lives on this machine. */
   local: boolean;
@@ -145,7 +145,7 @@ const index = new ArtifactIndex();
 export type Item = vscode.QuickPickItem & { go?: () => void; open?: () => void };
 
 const STATE_COLOR: Record<SessionStateKey, string | undefined> = {
-  asks: 'charts.yellow', yours: 'charts.orange', working: 'charts.green', waiting: 'charts.blue', unknown: 'charts.green', ended: undefined,
+  asks: 'charts.yellow', stuck: 'charts.orange', review: 'charts.purple', idle: undefined, working: 'charts.green', waiting: 'charts.blue', unknown: 'charts.green', ended: undefined,
 };
 
 function artifactKind(p: string): string {

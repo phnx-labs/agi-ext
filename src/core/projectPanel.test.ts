@@ -192,7 +192,7 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl" title="Health">Health<')
-  expect(html).toContain('class="pill st-yours"><i></i>Your move · idle<')
+  expect(html).toContain('class="pill st-idle"><i></i>Idle<')
   // The tab and machine moved: the machine sits dimmed at the bottom right, the tab in ⋯.
   expect(html).not.toContain('class="where"')
   expect(html).toContain('<span class="hst" title="Machine">m6</span></div>')
@@ -210,7 +210,7 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   expect(html).toContain('data-act="focus"')
   expect(html).toContain('data-act="close"')
   expect(html).toContain('data-here="1"')
-  expect(html).toContain('card st-yours sel')
+  expect(html).toContain('card st-idle sel')
   expect(html).toContain('>22m<')
   expect(card(row({ lastResponse: 'I filed [PHNX-4324](https://linear.app/x/issue/PHNX-43' }))).toContain('I filed PHNX-4324<')
 })
@@ -230,16 +230,17 @@ test('what a card offers follows where it lives: close a tab here, hide one with
 
 test('a pending question shows in the card, opens on a click, and says how long it has waited', () => {
   const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', question: { text: 'Run the restart on m2?' } }))
-  expect(ask).toContain('<div class="ask" data-expand title="Show the whole question"><span class="q">Run the restart on m2?</span><span class="exp">more</span></div>')
+  // No attention key to answer with: the question alone.
+  expect(ask).toContain('<div class="ask"><div class="ah">Asks</div><div class="q" title="Run the restart on m2?" data-expand>Run the restart on m2?</div></div>')
   const opened = new Date(NOW - 12_000).toISOString()
   const fresh = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: opened } }))
-  expect(fresh).toContain(`Your move · asks · <span class="wait" data-since="${NOW - 12_000}">12s</span>`)
+  expect(fresh).toContain(`Asks · <span class="wait" data-since="${NOW - 12_000}">12s</span>`)
   expect(fresh).toContain('card st-asks fresh')
   const old = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: new Date(NOW - 3_600_000).toISOString() } }))
   expect(old).not.toContain(' fresh')
 })
 
-test('the longest-waiting question leads Your move', () => {
+test('the longest-waiting question leads its urgency', () => {
   const at = (ms: number) => new Date(NOW - ms).toISOString()
   const html = renderSessions([
     row({ sessionId: 'new', phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: at(60_000) } }),
@@ -296,11 +297,13 @@ test('group by machine, by state, or not at all', () => {
   const byMachine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'machine' }) })
   expect(byMachine.indexOf('data-group="machine:zion"')).toBeLessThan(byMachine.indexOf('data-group="machine:yosemite-m5"'))
   const byState = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state' }) })
-  // Three states: the replied session is pinned under Your move, the working one groups under Running.
-  expect(byState.indexOf('data-session="b"')).toBeLessThan(byState.indexOf('data-group="state:running"'))
+  // The replied session is in Idle, folded; the working one groups under Running.
+  expect(byState).toContain('class="grp closed" data-group="idle"')
+  expect(byState).not.toContain('data-session="b"')
+  expect(byState.indexOf('data-group="idle"')).toBeLessThan(byState.indexOf('data-group="state:running"'))
   expect(byState.indexOf('data-group="state:running"')).toBeLessThan(byState.indexOf('data-session="a"'))
-  expect(byState).not.toContain('data-group="state:yours"')
-  expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'none' }) })).not.toContain('data-group=')
+  // None: no grouping beyond Idle.
+  expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'none' }) }).match(/data-group="[^"]*"/g)).toEqual(['data-group="idle"'])
 })
 
 test('what the agent made groups by folder; only images this machine can show get a thumbnail', () => {
@@ -317,17 +320,20 @@ test('what the agent made groups by folder; only images this machine can show ge
   expect(made.ticket).toBe('PHNX-1')
 })
 
-test('stored preferences keep only values this version knows; older ones get Ended shown and folded', () => {
-  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' } }))
+test('stored preferences keep only values this version knows; older ones get Ended shown and folded, and Idle folded', () => {
+  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' }, v: 3 }))
     .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', showEnded: true, folded: ['here'], hidden: { a: 5 } })
   expect(readSessionPrefs(undefined)).toEqual(DEFAULT_SESSION_PREFS)
   // Before v2, Ended off was the old default, not a choice.
-  expect(readSessionPrefs({ group: 'app', showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended', 'state:ended'], v: 2 })
+  expect(readSessionPrefs({ group: 'app', showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended', 'state:ended', 'idle'], v: 3 })
+  // v2 folds Idle once; after that, unfolding it is a choice that stays.
+  expect(readSessionPrefs({ group: 'app', showEnded: true, folded: ['ended'], v: 2 }).folded).toEqual(['ended', 'idle'])
+  expect(readSessionPrefs({ group: 'app', showEnded: true, folded: ['ended'], v: 3 }).folded).toEqual(['ended'])
   // Machine grouping has no Ended group to fold, so Ended stays off rather than flooding the list.
   expect(readSessionPrefs({ group: 'machine', showEnded: false })).toMatchObject({ showEnded: false })
   const byState = renderSessions([row({ sessionId: 'gone', phase: 'done', liveStatus: 'closed' })], NOW, { selectedId: null, here: HERE, prefs: readSessionPrefs({ group: 'state' }) })
   expect(byState).toContain('class="grp closed" data-group="state:ended"')
-  expect(readSessionPrefs({ showEnded: false, folded: [], v: 2 })).toMatchObject({ showEnded: false, folded: [] })
+  expect(readSessionPrefs({ showEnded: false, folded: [], v: 3 })).toMatchObject({ showEnded: false, folded: [] })
 })
 
 test('a card leads with its harness logo; the model the CLI reported lives in its ⋯ menu', () => {
@@ -340,7 +346,7 @@ test('a card leads with its harness logo; the model the CLI reported lives in it
   expect(bare).toContain('<dt>Model</dt><dd>not reported</dd>')
 })
 
-test('your move leads with a question, then an idle turn; a crashed process is Ended', () => {
+test('only a question is your move; an idle turn is in Idle; a crashed process is Ended', () => {
   const html = renderSessions([
     row({ sessionId: 'done', phase: 'idle', liveStatus: 'idle', lastActivityMs: 9 }),
     row({ sessionId: 'crash', phase: 'failed', liveStatus: 'crashed', lastActivityMs: 8, tabHere: true }),
@@ -349,7 +355,8 @@ test('your move leads with a question, then an idle turn; a crashed process is E
   ], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   expect([at('ask'), at('done'), at('run'), at('crash')]).toEqual([at('ask'), at('done'), at('run'), at('crash')].sort((x, y) => x - y))
-  expect(html).toContain('<div class="ph">Your move <span class="n">2</span></div>')
+  expect(html).toContain('<div class="ph">Asks <span class="n">1</span></div>')
+  expect(html).toContain('<b>Idle</b> <span class="n">1</span> <span class="gs">· finished, nothing asked</span>')
 })
 
 test('needs you orders by the CLI attention kind: a question before a permission before a stall', () => {
@@ -405,14 +412,14 @@ test('prs: the author shows as their GitHub avatar, only from avatars.githubuser
   expect(renderPrs(pr('https://evil.example/x.png'), Date.parse('2026-10-09T00:00:00Z'), OPTS)).not.toContain('evil.example')
 })
 
-test('a session whose agent posted blocked is pinned first, as Your move · blocked', () => {
+test('a session whose agent posted blocked leads its urgency, as Blocked', () => {
   const rows = [
     row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open' }, tabHere: true }),
     row({ sessionId: 'session_stuck', phase: 'idle', liveStatus: 'idle', tabHere: true }),
   ]
   const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), blockedIds: new Set(['stuck']) })
   expect(html.indexOf('data-session="session_stuck"')).toBeLessThan(html.indexOf('data-session="ask"'))
-  expect(html).toContain('<span class="pill st-blocked"><i></i>Your move · blocked</span>')
+  expect(html).toContain('<span class="pill st-blocked"><i></i>Blocked</span>')
   expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })).not.toContain('st-blocked')
 })
 
@@ -429,13 +436,13 @@ test('Waiting: an idle session with background work shows a blue pill, a chip pe
   expect(html).toContain('▸ Poll prod until the segment closes · 6m')
   expect(html).toContain('data-busy="1"')
   const idle = row({ sessionId: 'y', phase: 'idle', liveStatus: 'idle' })
-  expect(sessionCount([waiting, idle]).asks).toBe(1)
-  const list = renderSessions([waiting, idle], NOW, { selectedId: null, here: HERE, prefs: prefs() })
-  const pinned = list.slice(list.indexOf('class="pinned"'), list.indexOf('<section'))
-  expect(pinned).toContain('data-session="y"')
-  expect(pinned).not.toContain('data-session="w"')
-  // An older CLI without the field: exactly today's card.
-  expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toContain('class="pill st-yours"><i></i>Your move · idle<')
+  expect(sessionCount([waiting, idle]).asks).toBe(0)
+  const list = renderSessions([waiting, idle], NOW, { selectedId: null, here: HERE, prefs: prefs({ folded: [] }) })
+  const idleGroup = list.slice(list.indexOf('data-group="idle"'), list.indexOf('data-group="background"'))
+  expect(idleGroup).toContain('data-session="y"')
+  expect(idleGroup).not.toContain('data-session="w"')
+  // An older CLI without the field: an idle card.
+  expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toContain('class="pill st-idle"><i></i>Idle<')
 })
 
 test('a quieter card: the repository only when it is not this window\'s, the machine bottom right, ⚡ and ◆, details in ⋯', () => {
