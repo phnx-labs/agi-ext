@@ -99,7 +99,7 @@ function hashEntries(entries: LiveTerminal[]): string {
     .map((e) => `${e.terminalId ?? ''}|${e.sessionId ?? ''}|${e.pid}|${e.kind}|${e.cwd ?? ''}|${e.tabIndex ?? ''}`)
     .sort()
     .join('\n');
-  return createHash('sha1').update(stable).digest('hex');
+  return createHash('sha256').update(stable).digest('hex');
 }
 
 // Publish this window's live terminals. Skips the disk write when our slice
