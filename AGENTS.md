@@ -94,6 +94,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (title and `agents://session/<id>`; re-read only on a new mtime) and `sessions artifacts <id> --json`
   for this machine's newest sessions, in the background when the picker opens, at most
   once a minute; the picker never waits on it.
+  A ninth: Settings > Devices is one `agents devices list --json` read when Settings shows
+  (at most once a minute), on Refresh, and after a checkbox or star; each checkbox or star is
+  one `agents devices enable|disable` or `agents devices config <name> auto-launch.preferred`
+  argv (`deviceSettingArgv`, `src/core/panelSettings.ts`). It draws the CLI's `autoSkip`; it
+  never decides placement.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once; reassigning `root.innerHTML`
   per update made it jitter and erased what the owner was typing. A reused node keeps its

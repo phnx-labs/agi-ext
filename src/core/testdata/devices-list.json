@@ -1,0 +1,433 @@
+[
+ {
+  "name": "bismas-macbook-pro",
+  "platform": "macos",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker",
+  "health": {
+   "host": "bismas-macbook-pro",
+   "reachable": false,
+   "headroom": "unknown"
+  }
+ },
+ {
+  "name": "ipad165",
+  "platform": "unknown",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker",
+  "health": {
+   "host": "ipad165",
+   "reachable": false,
+   "headroom": "unknown"
+  }
+ },
+ {
+  "name": "iphone182",
+  "platform": "unknown",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker",
+  "health": {
+   "host": "iphone182",
+   "reachable": false,
+   "headroom": "unknown"
+  }
+ },
+ {
+  "name": "mac-mini",
+  "platform": "macos",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "description": "signing + notarize box",
+  "autoPool": true,
+  "autoSkip": "loaded",
+  "config": {
+   "description": "signing + notarize box",
+   "role": "worker"
+  },
+  "health": {
+   "host": "mac-mini",
+   "reachable": true,
+   "loadPercent": 115.8,
+   "memPercent": 65.12156419685593,
+   "memTotalBytes": 25203884032,
+   "memFreeBytes": 8790720512,
+   "diskTotalBytes": 494384795648,
+   "diskFreeBytes": 36533485568,
+   "diskUsedPercent": 92.61031368893235,
+   "headroom": "loaded"
+  }
+ },
+ {
+  "name": "macbook-air",
+  "platform": "macos",
+  "shell": "posix",
+  "tailscale": {
+   "online": false
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker"
+ },
+ {
+  "name": "mark",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": false
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker"
+ },
+ {
+  "name": "mark-1",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "description": "gpu box - cuda 12.4",
+  "autoPool": false,
+  "autoSkip": "off",
+  "config": {
+   "description": "gpu box - cuda 12.4",
+   "role": "worker",
+   "autoLaunchEnabled": false
+  },
+  "health": {
+   "host": "mark-1",
+   "reachable": true,
+   "loadPercent": 13.625000000000002,
+   "memPercent": 8.067030033145775,
+   "memTotalBytes": 32857444352,
+   "memFreeBytes": 30206824448,
+   "diskTotalBytes": 241635364864,
+   "diskFreeBytes": 117687762944,
+   "diskUsedPercent": 51.29530687271775,
+   "headroom": "idle"
+  }
+ },
+ {
+  "name": "mark-aws-1",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker",
+  "health": {
+   "host": "mark-aws-1",
+   "reachable": true,
+   "loadPercent": 13.5,
+   "memPercent": 13.910011457716582,
+   "memTotalBytes": 8107835392,
+   "memFreeBytes": 6980034560,
+   "diskTotalBytes": 206900281344,
+   "diskFreeBytes": 199329951744,
+   "diskUsedPercent": 3.6589266823727957,
+   "headroom": "idle"
+  }
+ },
+ {
+  "name": "pinnacles",
+  "platform": "macos",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker",
+  "health": {
+   "host": "pinnacles",
+   "reachable": false,
+   "memTotalBytes": 67779641344,
+   "diskTotalBytes": 1995218165760,
+   "headroom": "unknown"
+  }
+ },
+ {
+  "name": "win-mini",
+  "platform": "windows",
+  "shell": "powershell",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "autoPool": false,
+  "autoSkip": "not-a-worker",
+  "health": {
+   "host": "win-mini",
+   "reachable": true,
+   "loadPercent": 26,
+   "memPercent": 52.23590681962137,
+   "memTotalBytes": 12804014080,
+   "memFreeBytes": 6115721216,
+   "diskTotalBytes": 510938910720,
+   "diskFreeBytes": 344193392640,
+   "diskUsedPercent": 32.63511832462068,
+   "headroom": "busy"
+  }
+ },
+ {
+  "name": "yosemite-m0",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": false
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": "offline",
+  "config": {
+   "role": "worker"
+  }
+ },
+ {
+  "name": "yosemite-m1",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": null,
+  "config": {
+   "role": "worker"
+  },
+  "health": {
+   "host": "yosemite-m1",
+   "reachable": true,
+   "loadPercent": 0.625,
+   "memPercent": 14.45837622163614,
+   "memTotalBytes": 29343571968,
+   "memFreeBytes": 25100967936,
+   "diskTotalBytes": 488420507648,
+   "diskFreeBytes": 30783737856,
+   "diskUsedPercent": 93.69728801842498,
+   "headroom": "idle"
+  }
+ },
+ {
+  "name": "yosemite-m2",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": null,
+  "config": {
+   "role": "worker"
+  },
+  "health": {
+   "host": "yosemite-m2",
+   "reachable": true,
+   "loadPercent": 4.4375,
+   "memPercent": 15.013619558562704,
+   "memTotalBytes": 29343588352,
+   "memFreeBytes": 24938053632,
+   "diskTotalBytes": 488420507648,
+   "diskFreeBytes": 34604933120,
+   "diskUsedPercent": 92.9149303564994,
+   "headroom": "idle"
+  }
+ },
+ {
+  "name": "yosemite-m3",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": false
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": "offline",
+  "config": {
+   "role": "worker"
+  }
+ },
+ {
+  "name": "yosemite-m4",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": false
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": "offline",
+  "config": {
+   "role": "worker"
+  }
+ },
+ {
+  "name": "yosemite-m5",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": "disk-low",
+  "config": {
+   "role": "worker"
+  },
+  "health": {
+   "host": "yosemite-m5",
+   "reachable": true,
+   "loadPercent": 53.87499999999999,
+   "memPercent": 20.519790585153856,
+   "memTotalBytes": 29343588352,
+   "memFreeBytes": 23322345472,
+   "diskTotalBytes": 488420507648,
+   "diskFreeBytes": 13263634432,
+   "diskUsedPercent": 97.28438216161902,
+   "headroom": "disk-low"
+  }
+ },
+ {
+  "name": "yosemite-m6",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": "disk-low",
+  "config": {
+   "role": "worker"
+  },
+  "health": {
+   "host": "yosemite-m6",
+   "reachable": true,
+   "loadPercent": 1.125,
+   "memPercent": 17.372829010559386,
+   "memTotalBytes": 29343567872,
+   "memFreeBytes": 24245760000,
+   "diskTotalBytes": 488420507648,
+   "diskFreeBytes": 16615530496,
+   "diskUsedPercent": 96.59810957242307,
+   "headroom": "disk-low"
+  }
+ },
+ {
+  "name": "yosemite-s0",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": null,
+  "config": {
+   "role": "worker",
+   "autoLaunchPreferred": true
+  },
+  "health": {
+   "host": "yosemite-s0",
+   "reachable": true,
+   "loadPercent": 3.25,
+   "memPercent": 48.06523157715331,
+   "memTotalBytes": 128526270464,
+   "memFreeBytes": 66749820928,
+   "diskTotalBytes": 4031871553536,
+   "diskFreeBytes": 1390958149632,
+   "diskUsedPercent": 65.50093099042024,
+   "headroom": "idle"
+  }
+ },
+ {
+  "name": "yosemite-s1",
+  "platform": "linux",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": false,
+  "role": "worker",
+  "autoPool": true,
+  "autoSkip": null,
+  "config": {
+   "role": "worker",
+   "autoLaunchPreferred": true
+  },
+  "health": {
+   "host": "yosemite-s1",
+   "reachable": true,
+   "loadPercent": 1.0499999999999998,
+   "memPercent": 46.81721858577134,
+   "memTotalBytes": 130661142528,
+   "memFreeBytes": 69489229824,
+   "diskTotalBytes": 4031871553536,
+   "diskFreeBytes": 2217725517824,
+   "diskUsedPercent": 44.99513468183211,
+   "headroom": "idle"
+  }
+ },
+ {
+  "name": "zion",
+  "platform": "macos",
+  "shell": "posix",
+  "tailscale": {
+   "online": true
+  },
+  "interactive": true,
+  "role": "personal",
+  "description": "my laptop - never auto-place",
+  "autoPool": false,
+  "autoSkip": "personal",
+  "config": {
+   "description": "my laptop - never auto-place",
+   "role": "personal"
+  },
+  "health": {
+   "host": "zion",
+   "reachable": true,
+   "loadPercent": 234,
+   "memPercent": 39.895654399258326,
+   "memTotalBytes": 135725219840,
+   "memFreeBytes": 81576755200,
+   "diskTotalBytes": 3996276899840,
+   "diskFreeBytes": 564408791040,
+   "diskUsedPercent": 85.87663454795644,
+   "headroom": "loaded"
+  }
+ }
+]
