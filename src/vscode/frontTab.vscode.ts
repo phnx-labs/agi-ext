@@ -28,6 +28,10 @@ function heldBy(tab: vscode.Tab): vscode.Terminal | undefined {
   return undefined;
 }
 
+function isOpen(tab: vscode.Tab): boolean {
+  return vscode.window.tabGroups.all.some((g) => g.tabs.includes(tab));
+}
+
 function frontTab(): vscode.Tab | undefined {
   const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
   return tab && tab.input instanceof vscode.TabInputTerminal ? tab : undefined;
@@ -41,8 +45,10 @@ function resolveFront(activeChanged: boolean): vscode.Terminal | undefined {
   if (matches && activeChanged) { bind(active!, tab); return active; }
   const held = heldBy(tab);
   if (held) return held;
-  if (matches) { bind(active!, tab); return active; }
-  const named = vscode.window.terminals.filter((t) => t.name === tab.label);
+  // A terminal already seen in another open tab is a stale `activeTerminal`, not this tab's.
+  const elsewhere = (t: vscode.Terminal) => { const at = tabOf.get(t); return !!at && at !== tab && isOpen(at); };
+  if (matches && !elsewhere(active!)) { bind(active!, tab); return active; }
+  const named = vscode.window.terminals.filter((t) => t.name === tab.label && !elsewhere(t));
   return named.length === 1 ? named[0] : active;
 }
 
@@ -67,8 +73,8 @@ export function terminalTabNumbers(): Map<vscode.Terminal, number> {
 }
 
 /** Calls `listener` when the tab in front or its terminal changes, from either
- *  event. A tab that only changed its label or state does not call it, so a
- *  Project panel selection is not taken back while you stay on one tab. */
+ *  event. A tab that only changed its label or state does not call it, nor does a
+ *  file coming to the front, so a Project panel selection is not taken back. */
 export function onDidChangeFrontTab(listener: (terminal: vscode.Terminal | undefined) => void): vscode.Disposable {
   let last: { tab: vscode.Tab | undefined; terminal: vscode.Terminal | undefined } | undefined;
   const fire = (activeChanged: boolean) => {
@@ -76,6 +82,7 @@ export function onDidChangeFrontTab(listener: (terminal: vscode.Terminal | undef
     const terminal = resolveFront(activeChanged);
     if (last && last.tab === tab && last.terminal === terminal) return;
     last = { tab, terminal };
+    if (tab && !(tab.input instanceof vscode.TabInputTerminal)) return;
     listener(terminal);
   };
   const subs = [
