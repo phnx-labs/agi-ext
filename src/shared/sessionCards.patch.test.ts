@@ -68,3 +68,16 @@ test('a card inserted above another leaves the other card its own node and image
   expect(root.querySelector('.card') === bCard).toBe(true);
   expect(root.querySelectorAll('.card').length).toBe(1);
 });
+
+test('a redraw puts a clicked checkbox back to the stored value (Settings, a write that failed)', () => {
+  const root = document.createElement('main');
+  const html = '<div class="drow" data-key="box-a"><input type="checkbox" data-device="box-a" checked></div>';
+  patchChildren(root, html);
+  const box = root.querySelector('input') as unknown as { checked: boolean };
+  box.checked = false;
+  patchChildren(root, html);
+  expect(root.querySelector('input') === box).toBe(true);
+  expect(box.checked).toBe(true);
+  patchChildren(root, html.replace(' checked', ''));
+  expect(box.checked).toBe(false);
+});

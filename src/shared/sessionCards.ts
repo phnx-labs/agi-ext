@@ -1630,6 +1630,14 @@ function patchAttrs(live, next) {
   for (const a of Array.from(next.attributes)) if (!kept(a.name) && live.getAttribute(a.name) !== a.value) live.setAttribute(a.name, a.value);
 }
 
+// Once clicked, a checkbox ignores its checked attribute, and isEqualNode compares
+// attributes only, so a redraw sets each one to the value it draws.
+function syncChecks(live, next) {
+  const mine = live.nodeName === 'INPUT' ? [live] : Array.from(live.querySelectorAll('input[type=checkbox]'));
+  const drawn = next.nodeName === 'INPUT' ? [next] : Array.from(next.querySelectorAll('input[type=checkbox]'));
+  mine.forEach((el, i) => { if (el.type === 'checkbox' && drawn[i]) el.checked = drawn[i].hasAttribute('checked'); });
+}
+
 function patchNode(live, next) {
   const now = Array.from(next.childNodes);
   for (let i = 0; i < now.length; i++) {
@@ -1657,8 +1665,9 @@ function patchNode(live, next) {
     const sameKey = key && x.nodeType === 1 && x.nodeName === y.nodeName && x.getAttribute('data-key') === key;
     if (!sameKey && nodeSig(x) !== nodeSig(y)) { live.replaceChild(y, x); continue; }
     if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
-    if (x.isEqualNode(y)) continue;
+    if (x.isEqualNode(y)) { syncChecks(x, y); continue; }
     patchAttrs(x, y);
+    if (x.nodeName === 'INPUT') syncChecks(x, y);
     patchNode(x, y);
   }
   while (live.childNodes.length > now.length) live.removeChild(live.lastChild);
