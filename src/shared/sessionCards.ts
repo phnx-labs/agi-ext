@@ -466,57 +466,6 @@ function artifactKind(f) {
   return dot > 0 ? base.slice(dot + 1).toLowerCase() : 'file';
 }
 
-// An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
-// alive for a sidebar preview. Each image is instead fetched once when it scrolls
-// near view, downscaled to a WebP wide enough for the full-width hero, and cached for the webview's life.
-// Decodes run one at a time so a folder of renders never spikes the machine.
-const THUMB_WIDTH = 480;
-const THUMB_RETRY_MS = 30000;
-const THUMB_CACHE_MAX = 120;
-const thumbCache = new Map();
-const thumbFailedAt = new Map();
-let thumbQueue = Promise.resolve();
-const thumbObserver = new IntersectionObserver((entries) => {
-  for (const entry of entries) {
-    if (!entry.isIntersecting) continue;
-    thumbObserver.unobserve(entry.target);
-    queueThumb(entry.target.getAttribute('data-thumb'));
-  }
-}, { rootMargin: '200px' });
-
-function thumbImg(f) {
-  if (f.path.toLowerCase().endsWith('.svg')) return '<img src="' + esc(f.uri) + '" alt="">';
-  // No src until the small copy exists: src="" would draw a broken-image icon.
-  const ready = thumbCache.get(f.uri);
-  return '<img data-thumb="' + esc(f.uri) + '"' + (ready ? ' src="' + esc(ready) + '"' : '') + ' alt="">';
-}
-
-function queueThumb(uri) {
-  thumbQueue = thumbQueue.then(async () => {
-    // A render still being written fails to decode; try again later, not every render.
-    if (Date.now() - (thumbFailedAt.get(uri) || 0) < THUMB_RETRY_MS) return;
-    if (!thumbCache.has(uri)) {
-      try {
-        const bitmap = await createImageBitmap(await (await fetch(uri)).blob(), { resizeWidth: THUMB_WIDTH, resizeQuality: 'medium' });
-        const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        canvas.getContext('2d').drawImage(bitmap, 0, 0);
-        bitmap.close();
-        // WebP keeps transparency; JPEG would turn a cutout or logo black.
-        thumbCache.set(uri, canvas.toDataURL('image/webp', 0.8));
-        // A long session can name hundreds of images; keep the newest copies only.
-        while (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
-      } catch {
-        thumbFailedAt.set(uri, Date.now());
-        return;
-      }
-    }
-    const url = thumbCache.get(uri);
-    for (const img of root.querySelectorAll('img[data-thumb]')) if (img.getAttribute('data-thumb') === uri) img.src = url;
-  });
-}
-
 // Wires the timeline and artifact cards rendered into root: their thumbnails,
 // filters, phases, seek bar, step folds and links. Reads the surface's own
 // root, viewState, vscode, lastSnapshot and render.
@@ -565,8 +514,7 @@ function bindSeekDrag() {
 }
 
 function bindSessionCards() {
-  thumbObserver.disconnect();
-  for (const img of root.querySelectorAll('img[data-thumb]')) if (!img.hasAttribute('src')) thumbObserver.observe(img);
+  observeThumbs(root);
   for (const el of root.querySelectorAll('.artifact-open')) {
     if (bindOnce(el, 'open')) el.addEventListener('click', (e) => {
       e.preventDefault();
@@ -707,6 +655,8 @@ ${fontFaces}  body {
     --r-gold-hover: linear-gradient(135deg, #F0D99E, #DCC384 35%, #D4B872 55%, #B39354);
     --r-on-gold: #09090B;
     --r-ok: #86efac;
+    --r-wait: #93c5fd;
+    --r-wait-tint: rgba(59, 130, 246, 0.16);
     --r-ok-tint: rgba(34, 197, 94, 0.16);
     --r-warn: #fcd34d;
     --r-warn-tint: rgba(245, 158, 11, 0.14);
@@ -737,6 +687,8 @@ ${fontFaces}  body {
     --r-mark: #FBF8F2;
     --r-on-gold: #141829;
     --r-ok: #15803d;
+    --r-wait: #1D5FA8;
+    --r-wait-tint: rgba(29, 95, 168, 0.10);
     --r-ok-tint: rgba(22, 163, 74, 0.12);
     --r-warn: #b45309;
     --r-warn-tint: rgba(217, 119, 6, 0.12);
@@ -769,6 +721,8 @@ ${fontFaces}  body {
     --r-gold-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
     --r-on-gold: var(--vscode-button-foreground);
     --r-ok: var(--vscode-charts-green);
+    --r-wait: var(--vscode-charts-blue);
+    --r-wait-tint: transparent;
     --r-ok-tint: transparent;
     --r-warn: var(--vscode-charts-yellow);
     --r-warn-tint: transparent;
@@ -1320,6 +1274,16 @@ ${fontFaces}  body {
   .state-running .state-dot { background: var(--r-ok); box-shadow: 0 0 0 3px var(--r-ok-tint); }
   .state-waiting .state-dot { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
   .state-failed .state-dot { background: var(--r-bad); }
+  /* Waiting on its own background work: a blue dot that breathes slowly. */
+  .state-pending .state-dot { background: var(--r-wait); box-shadow: 0 0 0 3px var(--r-wait-tint); animation: waitbreathe 2.2s ease-in-out infinite; }
+  .session-stats.state-pending { color: var(--r-wait); }
+  @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+  .pend-list { margin: 8px 0 2px; border-radius: 10px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); background: var(--r-wait-tint); }
+  .pend-k { font-family: var(--r-display); font-size: 10px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--r-wait); }
+  .pend-list ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
+  .pend-list li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; }
+  .pend-m { color: var(--r-wait); } .pend-d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pend-t { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); }
+  @media (prefers-reduced-motion: reduce) { .state-pending .state-dot { animation: none; } }
   .session-stats.live .state-dot { animation: livedot 2s ease-out infinite; }
   @keyframes livedot { 0% { box-shadow: 0 0 0 0 var(--r-ok); } 100% { box-shadow: 0 0 0 6px transparent; } }
   @media (prefers-reduced-motion: reduce) { .session-stats.live .state-dot { animation: none; } }
@@ -1565,6 +1529,73 @@ ${fontFaces}  body {
   @media (prefers-reduced-motion: reduce) { .reply-box:focus-within { transform: none; } }`;
 }
 
+// The thumbnail cache both sidebars use (the timeline's artifact tiles and the
+// Project panel's card previews). Plain webview JavaScript, no backticks; it reads
+// only the document. An <img data-thumb="uri"> gets a 480 px WebP copy once.
+export const THUMB_SCRIPT = `
+// An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
+// alive for a sidebar preview. Each image is instead fetched once when it scrolls
+// near view, downscaled to a WebP wide enough for the full-width hero, and cached for the webview's life.
+// Decodes run one at a time so a folder of renders never spikes the machine.
+const THUMB_WIDTH = 480;
+const THUMB_RETRY_MS = 30000;
+const THUMB_CACHE_MAX = 120;
+const thumbCache = new Map();
+const thumbFailedAt = new Map();
+let thumbQueue = Promise.resolve();
+const thumbObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    thumbObserver.unobserve(entry.target);
+    queueThumb(entry.target.getAttribute('data-thumb'));
+  }
+}, { rootMargin: '200px' });
+
+function thumbImg(f) {
+  if (f.path.toLowerCase().endsWith('.svg')) return '<img src="' + esc(f.uri) + '" alt="">';
+  // No src until the small copy exists: src="" would draw a broken-image icon.
+  const ready = thumbCache.get(f.uri);
+  return '<img data-thumb="' + esc(f.uri) + '"' + (ready ? ' src="' + esc(ready) + '"' : '') + ' alt="">';
+}
+
+function queueThumb(uri) {
+  thumbQueue = thumbQueue.then(async () => {
+    // A render still being written fails to decode; try again later, not every render.
+    if (Date.now() - (thumbFailedAt.get(uri) || 0) < THUMB_RETRY_MS) return;
+    if (!thumbCache.has(uri)) {
+      try {
+        const bitmap = await createImageBitmap(await (await fetch(uri)).blob(), { resizeWidth: THUMB_WIDTH, resizeQuality: 'medium' });
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        bitmap.close();
+        // WebP keeps transparency; JPEG would turn a cutout or logo black.
+        thumbCache.set(uri, canvas.toDataURL('image/webp', 0.8));
+        // A long session can name hundreds of images; keep the newest copies only.
+        while (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
+      } catch {
+        thumbFailedAt.set(uri, Date.now());
+        return;
+      }
+    }
+    const url = thumbCache.get(uri);
+    for (const img of document.querySelectorAll('img[data-thumb]')) if (img.getAttribute('data-thumb') === uri) img.src = url;
+  });
+}
+
+// After a redraw: an image whose small copy is cached shows it at once; the rest
+// load as they scroll near view. A reused <img> keeps the src it already has.
+function observeThumbs(scope) {
+  thumbObserver.disconnect();
+  for (const img of scope.querySelectorAll('img[data-thumb]')) {
+    if (img.hasAttribute('src')) continue;
+    const ready = thumbCache.get(img.getAttribute('data-thumb'));
+    if (ready) img.src = ready; else thumbObserver.observe(img);
+  }
+}
+`;
+
 // The in-place patch both sidebars use (the Active Session card and the Project
 // panel's lists). Plain webview JavaScript inlined into each nonce'd <script>;
 // written as it would be inside that template literal (no backticks).
@@ -1579,6 +1610,8 @@ export const PATCH_SCRIPT = `
 // so a fold is keyed by its summary: a fold the viewer opened keeps its open
 // state, and rows inserted above it never hand that state to another row. A
 // thumbnail keeps the src the observer filled only while it shows the same image.
+// A node with data-key moves to its new position instead of being rewritten, and
+// one whose data-h (a hash of its markup) is unchanged is not touched at all.
 function nodeSig(n) {
   if (n.nodeType !== 1) return String(n.nodeType);
   const names = [];
@@ -1598,19 +1631,37 @@ function patchAttrs(live, next) {
 }
 
 function patchNode(live, next) {
-  const was = Array.from(live.childNodes);
   const now = Array.from(next.childNodes);
   for (let i = 0; i < now.length; i++) {
-    const x = was[i];
     const y = now[i];
+    let x = live.childNodes[i];
+    // A keyed node (a session card) pairs with its own live node even when cards
+    // above it were added or removed, so its images are never handed to another card.
+    const key = y.nodeType === 1 ? y.getAttribute('data-key') : null;
+    if (key && x && !(x.nodeType === 1 && x.getAttribute('data-key') === key)) {
+      let found = null;
+      for (let j = i + 1; j < live.childNodes.length; j++) {
+        const c = live.childNodes[j];
+        if (c.nodeType === 1 && c.getAttribute('data-key') === key) { found = c; break; }
+      }
+      if (found) { live.insertBefore(found, x); x = found; }
+      // A new card never takes over another card's node: it goes in before it.
+      else if (x.nodeType === 1 && x.hasAttribute('data-key')) { live.insertBefore(y, x); continue; }
+    }
     if (!x) { live.appendChild(y); continue; }
-    if (nodeSig(x) !== nodeSig(y)) { live.replaceChild(y, x); continue; }
+    // A card whose fields hash is unchanged is left exactly as it is, classes the
+    // page added (selection, a flash) included.
+    const h = y.nodeType === 1 ? y.getAttribute('data-h') : null;
+    if (h && x.nodeType === 1 && x.nodeName === y.nodeName && x.getAttribute('data-h') === h) continue;
+    // The same keyed card is patched in place even when the page changed its classes.
+    const sameKey = key && x.nodeType === 1 && x.nodeName === y.nodeName && x.getAttribute('data-key') === key;
+    if (!sameKey && nodeSig(x) !== nodeSig(y)) { live.replaceChild(y, x); continue; }
     if (x.nodeType !== 1) { if (x.nodeValue !== y.nodeValue) x.nodeValue = y.nodeValue; continue; }
     if (x.isEqualNode(y)) continue;
     patchAttrs(x, y);
     patchNode(x, y);
   }
-  for (let i = was.length - 1; i >= now.length; i--) live.removeChild(was[i]);
+  while (live.childNodes.length > now.length) live.removeChild(live.lastChild);
 }
 
 function patchChildren(live, html) {

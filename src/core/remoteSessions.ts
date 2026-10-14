@@ -7,6 +7,7 @@
 import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project';
 import { isHarnessEnvelope } from './harnessEnvelope';
 import { normalizePrStatus, type RemotePrStatus } from './prStatus';
+import type { PendingItem, SessionPending } from '../shared/sessionState';
 
 export { resolveProject, normalizeHost };
 
@@ -431,6 +432,14 @@ export interface RemoteSession {
   userTurns?: RemoteUserTurn[];
   /** Subagents this session ran. Absent on an older CLI. */
   subagents?: RemoteSubagent[];
+  /** Background work running now (subagents, background shells, monitors), from
+   *  the feed's `pending`. Absent when nothing is pending or on an older CLI. An
+   *  idle row with pending work is Waiting, not Your move (`sessionStateOf`). */
+  pending?: SessionPending;
+  /** Reasoning effort, when the CLI knows it. */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Fast mode (the harness's usage.speed is "fast"), when the CLI knows it. */
+  fast?: boolean;
   /** Full genuine first user turn from the durable session index. Empty on an
    *  older CLI, where the UI labels its topic fallback as a summary. */
   firstUserMessage: string;
@@ -500,6 +509,9 @@ export interface RawActiveSession {
   activityHistogram?: unknown;
   userTurns?: unknown;
   subagents?: unknown;
+  pending?: unknown;
+  effort?: unknown;
+  fast?: unknown;
   /** Compatibility task fields emitted by older/alternate session producers. */
   prompt?: string;
   firstUserMessage?: string;
@@ -918,6 +930,28 @@ function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {
 
 const SUBAGENT_PROMPT_MAX = 400;
 
+/** The feed's `pending`: each list keeps entries with an id; an empty result is absent. */
+function normalizePending(raw: unknown): SessionPending | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const v = raw as Record<string, unknown>;
+  const list = (xs: unknown): PendingItem[] => (Array.isArray(xs) ? xs : []).flatMap((e) => {
+    if (!e || typeof e !== 'object') return [];
+    const o = e as Record<string, unknown>;
+    const id = asStr(o.id);
+    if (!id) return [];
+    const startedAtMs = finiteNum(o.startedAtMs);
+    return [{ id, description: asStr(o.description), ...(startedAtMs ? { startedAtMs } : {}) }];
+  });
+  const out: SessionPending = {};
+  for (const k of ['subagents', 'shells', 'monitors'] as const) {
+    const xs = list(v[k]);
+    if (xs.length) out[k] = xs;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
 function normalizeSubagents(raw: unknown): RemoteSubagent[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.flatMap((entry) => {
@@ -1189,6 +1223,9 @@ export function normalizeActiveSession(
     activityHistogram: withoutEnvelopeTurns(normalizeActivityHistogram(raw.activityHistogram), allUserTurns),
     userTurns: allUserTurns?.filter((t) => !isHarnessEnvelope(t.text)),
     subagents: normalizeSubagents(raw.subagents),
+    pending: normalizePending(raw.pending),
+    effort: typeof raw.effort === 'string' && EFFORTS.has(raw.effort) ? (raw.effort as RemoteSession['effort']) : undefined,
+    fast: typeof raw.fast === 'boolean' ? raw.fast : undefined,
     firstUserMessage: asStr(raw.firstUserMessage),
     label: asStr(raw.label),
     // Current watch rows mark index-backed history explicitly; older picker-shaped

@@ -97,3 +97,14 @@ describe('resumeNotice', () => {
     expect(w.text).toContain('which does not hold svatlas; nothing was opened');
   });
 });
+
+test('the resume picker lists the same sessions as the Project panel, the repository-path stopgap included', () => {
+  const rows = [
+    row({ sessionId: 'own', confirmedProject: 'rush', cwd: '/Users/me/src/agents', title: 'Own' }),
+    row({ sessionId: 'old-name', confirmedProject: 'prix', cwd: '/home/me/src/agents', title: 'Filed under the old name' }),
+    row({ sessionId: 'other', confirmedProject: 'agi', cwd: '/Users/me/src/agents', title: 'Another live project' }),
+  ];
+  const fallback = new Map([['rush', { repoPaths: ['~/src/agents'], registered: new Set(['rush', 'agi']) }]]);
+  expect(resumeItems(rows, ['rush'], { ...opts(), fallback }).map((i) => i.sessionId).sort()).toEqual(['old-name', 'own']);
+  expect(resumeItems(rows, ['rush'], opts()).map((i) => i.sessionId)).toEqual(['own']);
+});

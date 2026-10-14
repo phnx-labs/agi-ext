@@ -1107,6 +1107,7 @@
     "@types/node": "^20.x",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",
+    "happy-dom": "^21.0.1",
     "knip": "^6.35.1",
     "typescript": "^5.3.3"
   },

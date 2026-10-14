@@ -23,6 +23,34 @@ The Lead, docked (round 16):
   and the tab stay either way.
 - Needs agents-cli with `agents lead`; an older CLI says to upgrade.
 
+From the owner's recording of 2026-10-13 and the round 16 design:
+
+- Waiting, a fourth state: a session whose turn ended but whose own subagents, background
+  shells or monitors still run reads Waiting, with a slowly breathing blue dot and chips that
+  count each kind (⑂ subagents, ▸ shells, ◉ monitors); hovering lists them with how long each
+  has run. It is not Your move, so Your move counts only sessions that truly wait on you.
+  Needs the feed's `pending` field (agents-cli); without it nothing changes.
+- The session sidebar lists that work under "Waiting on its own work".
+- A quieter card: no workspace name (a card names its repository only when it is not this
+  window's), the machine dimmed at the bottom right, and tab, model, folder, session id (with
+  Copy) and account in a ⋯ menu on the card. ⚡ marks fast mode and ◆ high, xhigh or max effort when
+  the CLI reports them.
+- Sessions the CLI files under a project's old name show again: until agents-cli maps old
+  names, the Project panel and Resume Session also list a session working in one of the
+  project's repositories when the CLI gave it no project or a name no project has; a session
+  of another project in the same repository stays with that project. Its ⋯ menu says what
+  the CLI called it.
+- Card thumbnails no longer flash on a refresh: they load once as a small cached copy in a
+  fixed box, and a card that did not change is left alone.
+- ⌘K finds artifacts. It now has sections: Artifacts (by the page's real title, "made by
+  <session> on <machine>"), Sessions, Tickets and Pull requests. Enter goes to the session,
+  an artifact's included; its ↗ button opens the page. With nothing typed, the sections show
+  as headings, newest first; once you type, VS Code's own matching orders the rows (each row
+  names its kind). The artifact list refreshes in the background, so the picker opens at
+  once, and a page is read only for its first 512 KB.
+- ⌘K offers "Ask the Lead: “…”" for a sentence of two or more words when the Lead is
+  installed; it hands your words to the Lead.
+
 ## [0.9.399] - 2026-10-13
 
 From the owner's video reviews of 0.9.398 and the round 14 and 15 prototypes (2026-10-12):
