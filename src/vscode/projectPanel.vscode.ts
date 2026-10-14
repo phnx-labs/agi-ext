@@ -645,13 +645,14 @@ class ProjectPanelController {
    *  repository is checked out. It uses the PR as the list read it; nothing is read again. */
   async fixPr(slug: string, number: number): Promise<void> {
     const p = this.reviewSeen?.done.get(slug)?.open.find((x) => x.number === number);
-    if (!p) return;
+    if (!p) { void this.view.notice(`#${number} is not in the PR list just read; Review is reading it again.`); void this.view.load('prs', true); return; }
     try {
       const project = await this.project().catch(() => null);
       const checkout = project ? (await readRegistry()).find((x) => x.name === project.name)?.repos?.find((r) => r.slug === slug)?.path || null : null;
       await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.defaultAgent().key, prompt: prFixPrompt(p, slug, checkout) });
     } catch (e) {
       void vscode.window.showErrorMessage(`Could not start an agent on #${number}: ${errorText(e)}`);
+      void this.view.load('prs', true);
     }
   }
 
@@ -1593,7 +1594,8 @@ ${THUMB_SCRIPT}
       return;
     }
     const fix = e.target.closest('[data-fix-repo]');
-    if (fix) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); toast('Starting an agent on #' + fix.dataset.fixNumber + '…'); return; }
+    // One agent per click: the button stays off until Review redraws.
+    if (fix) { e.preventDefault(); e.stopPropagation(); if (fix.disabled) return; fix.disabled = true; fix.textContent = 'Starting…'; vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); return; }
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
     if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }

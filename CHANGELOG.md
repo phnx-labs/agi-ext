@@ -28,8 +28,9 @@ ticket was squeezed into the sidebar and every link left VSCodium for another ap
 - Review rows carry the ↗ open icon from the Active Session header on hover.
 - Fix on a failing PR, and on one that conflicts with its base, starts your default agent in a
   new tab with the PR's link, its branch, the failing checks' names and where the repository is
-  checked out. It tells the agent to work in a worktree, fix the cause rather than weaken a
-  check, rebase onto the base for a conflict, push to the PR's own branch, and report the run
+  checked out. The PR's title, branch and check names are fenced as data the agent must not
+  take instructions from. It tells the agent to check the PR out in a new worktree with
+  `gh pr checkout` (forks included), fix the cause rather than weaken a check, rebase onto the base for a conflict, push to the PR's own branch, and report the run
   that passed. Conflicting PRs get their own group above Failing, and never offer Merge
   (owner screenshot, 2026-10-14).
 - Sign in to GitHub and Linear once in the integrated browser; it stays signed in across
