@@ -4,6 +4,32 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.401] - 2026-10-14
+
+Agent asks reach you (PHNX-4369), from the owner's recording of 2026-10-13, where 11 of 12
+"Your move" cards were idle and a 46-minute urgent ask sat among them:
+
+- Your move is only a real ask. Sessions now pins **Needs you now** (asks agents-cli marks urgent
+  or high) and **Asks** (normal and low), each ordered by urgency, then longest wait. A stall or a
+  failure still needs you. Then **Ready for review**, then **Idle · finished, nothing asked**,
+  folded by default with its count, then Running and Ended as before. The Sessions badge counts
+  asks only.
+- An ask's card shows why it is urgent under the title, in agents-cli's words ("Blocks a release
+  (npm publish) · waiting 46m"), then the question in two lines (the full text on hover and on a
+  click) and its answers as one-line buttons, "1 Yes, publish from zion", with each option's
+  description on hover. Keys 1 to 9 answer the selected card. Other… takes a typed reply;
+  Try another way tells the agent to go on without you or park the task. A permission ask shows
+  its command and Approve, Approve for session and Deny.
+- An answer waits 5 seconds as "Sending “…” in 5s · Undo", then runs one
+  `agents feed answer <key> --choice <id>` (or `--text`). When the CLI could not deliver it, the
+  card says why and offers the answers again.
+- Settings has a Session cards section: Asks on cards (With answers, Question only, Off),
+  Answer options (Titles only, Titles and details) and Question text (Two lines, Full).
+- The extension no longer posts its own notifications: Approval alerts and Alert style are gone.
+  Banners for asks, with reminders by urgency, come from the AGI Menu.
+- States read the same on every surface: Asks, Stuck, Ready for review, Idle, Running, Waiting,
+  Ended; an agent that posted it is blocked reads Blocked.
+
 ## [0.9.400] - 2026-10-13
 
 The Lead, docked (round 16):

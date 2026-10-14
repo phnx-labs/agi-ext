@@ -1287,9 +1287,9 @@ function renderNeedsYou(s) {
 // sidebar and the Project panel say the same thing for the same row.
 function sessionState(s) {
   const st = s.state || { key: 'unknown', word: 'Unknown' };
-  // Your move reads amber (a question or an idle turn), Running green, Waiting on
-  // its own background work blue, Ended quiet.
-  const cls = st.key === 'asks' || st.key === 'yours' ? 'waiting' : st.key === 'working' || st.key === 'unknown' ? 'running' : st.key === 'waiting' ? 'pending' : 'idle';
+  // Your move reads amber (an ask, a stall or a failure), Running green, Waiting on
+  // its own background work blue; Idle, review and Ended are quiet.
+  const cls = st.key === 'asks' || st.key === 'stuck' ? 'waiting' : st.key === 'working' || st.key === 'unknown' ? 'running' : st.key === 'waiting' ? 'pending' : 'idle';
   return { cls, word: st.word };
 }
 
@@ -1297,7 +1297,7 @@ function renderSessionStats(s) {
   const span = s.durationMs > 0 ? s.durationMs : (s.startedAtMs ? Date.now() - s.startedAtMs : 0);
   const age = compactDuration(span);
   if (!age && !s.lastActivityMs) return '';
-  const st = s.blocked ? { cls: 'failed', word: 'Your move · blocked' } : sessionState(s);
+  const st = s.blocked ? { cls: 'failed', word: 'Blocked' } : sessionState(s);
   const ran = age ? (st.cls === 'running' ? ' <b>' + esc(age) + '</b>' : ' · ran <b>' + esc(age) + '</b>') : '';
   // A dot that pulses says "active just now" (owner video, 2026-10-12 8:15 PM); the exact
   // time is its tooltip. The account lives in the ⋯ menu.
@@ -1620,7 +1620,7 @@ function renderPending(s) {
 // or with a similar request (relatedSessions, from the rows already in memory).
 // Each chip carries its state dot and, in its tooltip, why it is related; a click
 // makes it the subject.
-const RELATED_DOT = { asks: 'waiting', yours: 'waiting', working: 'running', waiting: 'pending', unknown: 'running', ended: 'idle' };
+const RELATED_DOT = { asks: 'waiting', stuck: 'waiting', review: 'idle', idle: 'idle', working: 'running', waiting: 'pending', unknown: 'running', ended: 'idle' };
 
 function renderRelated(s) {
   const rel = s.related || [];

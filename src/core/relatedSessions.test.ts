@@ -19,7 +19,7 @@ test('related: a shared ticket or PR ties strongest, then the same branch, then 
   expect(got[0]!.why).toBe('same ticket PHNX-4338');
   expect(got[1]!.why).toBe('same branch fix/codex-signin');
   expect(got[2]!.why).toBe('similar request');
-  expect(got[0]!.state).toBe('yours');
+  expect(got[0]!.state).toBe('idle');
   // A shared default branch is no tie, and a lone shared word is not similarity.
   expect(relatedSessions(row({ sessionId: 'a', title: 'deploy factory' }), [row({ sessionId: 'b', title: 'factory landing' })], NOW)).toEqual([]);
 });

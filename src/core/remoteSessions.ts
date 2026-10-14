@@ -45,7 +45,12 @@ interface RemoteAttention {
   state: 'open' | 'answered' | 'consumed' | 'continued' | 'resolved';
   openedAt: string;
   fingerprint: string;
-  question?: { text?: string; options?: Array<{ label?: string; description?: string; id?: string; deliveryKey?: string }> };
+  question?: { text?: string; header?: string; options?: Array<{ label?: string; description?: string; id?: string; deliveryKey?: string }> };
+  /** The answers `agents feed answer --choice <id>` takes. */
+  choices?: Array<{ id: string; label: string; description?: string; deliveryKey?: string }>;
+  /** How soon it needs a person, and why, as agents-cli computed it (absent on an older CLI). */
+  urgency?: 'urgent' | 'high' | 'normal' | 'low';
+  urgencyReason?: string;
 }
 
 interface RemotePullRequest {

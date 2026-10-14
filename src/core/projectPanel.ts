@@ -9,7 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { extractLinearTicketId } from './utils';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, attentionRank, ballOf, moveRank, pendingCounts, pendingLines, pendingWords, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, sessionStateOf, urgencyOf, urgencyRank, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { resolveProject } from '../shared/project';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
@@ -217,8 +218,13 @@ export interface SessionLike {
   model?: string;
   phase: 'running' | 'idle' | 'waiting' | 'failed' | 'done';
   liveStatus: string;
-  attention?: { kind: string; state: string; openedAt?: string; question?: { text?: string } };
-  question?: { text?: string } | null;
+  /** The CLI's open attention item: its key answers it (`agents feed answer`); urgency
+   *  and its reason come from agents-cli (absent on an older CLI: normal). */
+  attention?: {
+    key?: string; kind: string; state: string; openedAt?: string; urgency?: string; urgencyReason?: string;
+    question?: AskQuestion; choices?: { id: string; label: string; description?: string }[];
+  };
+  question?: AskQuestion | null;
   request?: { headline?: string; attachments?: { kind: string; name: string }[] };
   timeline?: { steps: { text: string }[] };
   lastResponse: string;
@@ -255,6 +261,13 @@ export interface SessionLike {
   fast?: boolean;
   /** The account it runs on, when the stream names one. */
   account?: string;
+}
+
+/** A question as the CLI carries it (agents-cli `BlockQuestion`). */
+interface AskQuestion {
+  text?: string;
+  header?: string;
+  options?: { label?: string; description?: string; id?: string }[];
 }
 
 /** An image the user pasted into the session's request, resolved on this machine. */
@@ -421,14 +434,16 @@ export interface SessionListPrefs {
   hidden: Record<string, number>;
   /** Show only the sessions on today's goal (its ticket id in the title, topic or reply). */
   todayOnly: boolean;
-  /** 2 once Ended defaults to shown and folded; older stored prefs lack it. */
-  v: 2;
+  /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded. */
+  v: 3;
 }
 
 /** The Ended group's key under App and under State; Machine and None have no Ended group. */
 const ENDED_GROUPS = ['ended', 'state:ended'];
+/** The Idle group's key: finished turns that asked nothing, folded by default. */
+const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS], hidden: {}, todayOnly: false, v: 2 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS, IDLE_GROUP], hidden: {}, todayOnly: false, v: 3 };
 
 const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
 const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
@@ -436,7 +451,8 @@ const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
 /** A stored preference object, keeping only values this version knows. Prefs stored
  *  before v2 saved Ended off as the old default, not as a choice, so they get the
  *  new default: Ended shown and folded. Turning it on was a choice and is kept, and
- *  a Machine or None grouping, which has no Ended group to fold, keeps Ended off. */
+ *  a Machine or None grouping, which has no Ended group to fold, keeps Ended off.
+ *  Prefs from before v3 get the Idle group folded. */
 export function readSessionPrefs(v: unknown): SessionListPrefs {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const hidden: Record<string, number> = {};
@@ -445,17 +461,18 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
   }
   const folded = Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [];
   const group = GROUPS.includes(o.group as SessionGroupBy) ? (o.group as SessionGroupBy) : DEFAULT_SESSION_PREFS.group;
-  const before = o.v !== 2 && o.showEnded !== true;
+  const before = o.v !== 2 && o.v !== 3 && o.showEnded !== true;
+  const kept = before ? [...folded, ...ENDED_GROUPS] : folded;
   const foldable = group === 'app' || group === 'state';
   return {
     group,
     sort: SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort,
     showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
     showEnded: before ? foldable : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
-    folded: before ? [...new Set([...folded, ...ENDED_GROUPS])] : folded,
+    folded: o.v === 3 ? folded : [...new Set([...kept, IDLE_GROUP])],
     hidden,
     todayOnly: o.todayOnly === true,
-    v: 2,
+    v: 3,
   };
 }
 
@@ -563,6 +580,8 @@ export interface SessionListOptions {
   searchKey?: string;
   /** The project shown, so a card filed under another name says so in its ⋯ menu. */
   project?: string;
+  /** How a card shows an open ask (Settings, Session cards). */
+  cards?: CardSettings;
 }
 
 const ACT_ICON = {
@@ -665,6 +684,55 @@ function askedAt(s: SessionLike): number {
 /** A question shows its attention glow for this long after it arrives. */
 const FRESH_MS = 20_000;
 
+/** The words "Try another way" sends: the agent goes on without you, or parks the task. */
+export const TRY_ANOTHER_WAY = "I can't answer this right now. Try a different approach that doesn't need me; if there is none, park this and move to the next task.";
+
+/** One `agents feed answer` for an ask: a choice by its id, or typed words. `--json`
+ *  makes a delivery the CLI could not make an error the card can show. */
+export function answerArgv(key: string, answer: { choice: string } | { text: string }): string[] {
+  return ['feed', 'answer', key, ...('choice' in answer ? ['--choice', answer.choice] : ['--text', answer.text]), '--json'];
+}
+
+/** What `agents feed answer --json` said, as the card shows it: null when it was delivered. */
+export function answerFailure(stdout: string): string | null {
+  let r: { status?: string; reason?: string };
+  try { r = JSON.parse(stdout.trim().split('\n').pop() ?? ''); } catch { return stdout.trim() || 'The CLI gave no answer.'; }
+  if (r.status === 'failed') return `Not delivered: ${r.reason ?? 'no reason given'}`;
+  if (r.status === 'unknown') return `Delivery unconfirmed: ${r.reason ?? 'no receipt yet'}`;
+  return null;
+}
+
+/** An ask's answers: the attention item's own choices, else its question's options. */
+function askChoices(s: SessionLike): { id?: string; label: string; description?: string }[] {
+  const a = s.attention;
+  if (a?.choices?.length) return a.choices.filter((c) => c.label);
+  const q = a?.question ?? s.question;
+  return (q?.options ?? []).flatMap((o) => (o.label ? [{ id: o.id, label: o.label, description: o.description }] : []));
+}
+
+/** The ask on a card: its header and question, and, with answers on, one compact
+ *  button per choice (keys 1–9), Other… and Try another way. Every button carries
+ *  what it sends; the page holds it 5 s with Undo before one `feed answer`. */
+function askBlock(s: SessionLike, cards: CardSettings): string {
+  const a = s.attention?.state === 'open' ? s.attention : undefined;
+  const q = a?.question ?? s.question ?? undefined;
+  const text = plain(q?.text || '');
+  if (!text) return '';
+  const permission = a?.kind === 'permission';
+  const full = cards.question === 'full';
+  const head = `<div class="ah">Asks${q?.header ? ` · ${escapeHtml(plain(q.header))}` : ''}</div>`;
+  const question = `<div class="q${permission ? ' cmdq' : ''}${full ? ' full' : ''}" title="${escapeHtml(text)}"${full ? '' : ' data-expand'}>${escapeHtml(text)}</div>`;
+  const key = a?.key;
+  if (cards.asks !== 'answers' || !key) return `<div class="ask">${head}${question}</div>`;
+  const opt = (c: { id?: string; label: string; description?: string }, i: number) => {
+    const sends = c.id ? `data-choice="${escapeHtml(c.id)}"` : `data-ask-text="${escapeHtml(c.label)}"`;
+    const detail = cards.options === 'details' && c.description ? `<small>${escapeHtml(c.description)}</small>` : '';
+    return `<button class="opt" ${sends} data-label="${escapeHtml(c.label)}"${c.description ? ` title="${escapeHtml(c.description)}"` : ''}>${i < 9 ? `<span class="k">${i + 1}</span>` : ''}<span class="ol">${escapeHtml(c.label)}</span>${detail}</button>`;
+  };
+  const opts = askChoices(s).map(opt).join('');
+  return `<div class="ask" data-ask="${escapeHtml(key)}">${head}${question}${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button></div><div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div></div>`;
+}
+
 /** A thumbnail's markup: no `src` until the webview's cache holds a 480 px copy
  *  (`THUMB_SCRIPT`, `src/shared/sessionCards.ts`), so a redraw never decodes the
  *  full render again. An SVG is drawn directly. */
@@ -692,10 +760,11 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
   return `<details class="cmore"><summary class="act" title="Details" aria-label="Details">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button></div></details>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings }): string {
   const state = sessionStateOf(s);
   const title = sessionTitle(s);
-  const question = state === 'asks' ? plain(s.question?.text || s.attention?.question?.text || '') : '';
+  const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
+  const ask = state === 'asks' && cards.asks !== 'off' ? askBlock(s, cards) : '';
   const said = agentLine(s);
   const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
   const made = opts.made;
@@ -721,14 +790,14 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const folderChip = folders.length ? `<a class="chip" href="#" data-artifact="${escapeHtml((folders[0].files[0] ?? folders[0].images[0]).path)}" title="${escapeHtml(folders.map((f) => f.display).join('\n'))}">${glyph('folder')}${folders.length}</a>` : '';
   const chips = [prs, ticketChip, folderChip].join('');
   const asked = askedAt(s);
-  const waited = state === 'asks' && Number.isFinite(asked) ? Math.max(0, now - asked) : -1;
+  const waited = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? Math.max(0, now - asked) : -1;
   // Waiting names its work on hover; its chips count each kind (⑂ subagents, ▸ shells, ◉ monitors).
   const pendHover = pendingLines(s.pending, now).join('\n');
   const counts = pendingCounts(s.pending);
   const pendChips = state !== 'ended' && counts.total
     ? PENDING_KINDS.filter((k) => counts[k.key]).map((k) => `<span class="pc" title="${escapeHtml(pendHover)}">${k.mark} ${counts[k.key]}</span>`).join('')
     : '';
-  const word = opts.blocked ? 'Your move · blocked' : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
+  const word = opts.blocked ? 'Blocked' : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
   const pillTitle = state === 'waiting' ? ` title="${escapeHtml(`Waiting on its own work: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
   const pill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}${waited >= 0 ? ` · <span class="wait" data-since="${asked}">${waitFor(waited)}</span>` : ''}</span>`;
   // The repository only when it is not the one this window has open.
@@ -736,13 +805,15 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const ours = new Set([opts.here.workspace, ...(opts.here.folders ?? [])].map((f) => f.toLowerCase()));
   const repoTag = repo && !ours.has(repo.toLowerCase()) ? `<span class="repo" title="${escapeHtml(displayHome(s.cwd!))}">${escapeHtml(repo)}</span>` : '';
   const fx = `${s.fast ? '<span class="fast" title="Fast mode">⚡</span>' : ''}${s.effort === 'high' || s.effort === 'xhigh' || s.effort === 'max' ? `<span class="hi" title="${escapeHtml(s.effort)} reasoning effort">◆</span>` : ''}`;
-  const preview = question
-    ? `<div class="ask" data-expand title="Show the whole question"><span class="q">${escapeHtml(question)}</span><span class="exp">more</span></div>`
-    : said ? `<div class="line said">${escapeHtml(said)}</div>`
-      : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '';
+  // Why it is urgent, in agents-cli's words, with how long it has waited.
+  const reason = s.attention?.state === 'open' && s.attention.urgencyReason
+    ? `<div class="why u-${urgencyOf(s.attention)}">${escapeHtml(s.attention.urgencyReason)}${waited >= 0 ? ` · waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ''}</div>` : '';
+  const preview = ask
+    || (said ? `<div class="line said">${escapeHtml(said)}</div>`
+      : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
   const body = `
     <div class="top">${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${cardMenu(s, place, opts)}${go}${x}</span></div>
-    <div class="meta">${pill}${pendChips}${repoTag}</div>
+    ${reason}<div class="meta">${pill}${pendChips}${repoTag}</div>
     ${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
     ${thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}<div class="cbot">${chips ? `<div class="cstrip">${chips}</div>` : ''}<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span></div>
   `;
@@ -753,7 +824,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
 }
 
 const PLACE_ORDER: Record<PlaceKind, number> = { here: 0, window: 1, ghostty: 2, terminal: 3, background: 4, leftover: 5, ended: 6 };
-const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', working: 'working', waiting: 'waiting', yours: 'yours', unknown: 'unknown', ended: 'ended' };
+const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', stuck: 'asks', review: 'review', idle: 'idle', working: 'working', waiting: 'waiting', unknown: 'unknown', ended: 'ended' };
 
 /** What the list keeps after the viewer's Show choices and hidden sessions. */
 function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionListPrefs): { row: SessionLike; place: SessionPlace }[] {
@@ -780,9 +851,10 @@ function menuHtml(p: SessionListPrefs): string {
   </div>`;
 }
 
-/** The Sessions tab: a header with counts and the ⇅ menu, Your move pinned (a
- *  question first, then a crash, then a finished reply), then the viewer's
- *  grouping of the rest. Each card is compact until hovered or selected. */
+/** The Sessions tab: a header with its controls, then what needs you, pinned above
+ *  every grouping: Needs you now (urgent and high asks), Asks (normal and low), each
+ *  by urgency, then longest wait. Then Ready for review, Idle (finished turns that
+ *  asked nothing, folded by default), and the viewer's grouping of the rest. */
 export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { here, prefs } = opts;
   const visible = visibleSessions(rows, here, prefs);
@@ -791,23 +863,42 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const all = prefs.todayOnly && opts.todayId ? visible.filter(({ row }) => today(row)) : visible;
   const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
   const blocked = (r: SessionLike) => !!opts.blockedIds?.has(r.sessionId.replace(/^session_/, ''));
-  // Among questions, the one waiting longest comes first.
+  const ball = (r: SessionLike) => (blocked(r) ? 'move' : ballOf(sessionStateOf(r)));
+  const urgency = (r: SessionLike) => urgencyOf(r.attention?.state === 'open' ? r.attention : null);
   const waitedSince = (r: SessionLike) => { const t = askedAt(r); return Number.isFinite(t) ? t : Infinity; };
-  const isMine = (r: SessionLike) => blocked(r) || ballOf(sessionStateOf(r)) === 'move';
-  // Blocked first (the agent said it cannot go on), then a question, then an idle turn.
-  const rank = (r: SessionLike) => (blocked(r) ? -1 : moveRank(sessionStateOf(r)));
-  const mine = sortRows(all.filter(({ row }) => isMine(row)), prefs.sort)
-    .sort((a, b) => rank(a.row) - rank(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)) || waitedSince(a.row) - waitedSince(b.row));
-  const rest = all.filter(({ row }) => !isMine(row));
+  // Urgency first; within it a blocked agent (it said it cannot go on), then the longest wait.
+  const mine = sortRows(all.filter(({ row }) => ball(row) === 'move'), prefs.sort)
+    .sort((a, b) => urgencyRank(urgency(a.row)) - urgencyRank(urgency(b.row)) || Number(blocked(b.row)) - Number(blocked(a.row))
+      || waitedSince(a.row) - waitedSince(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
+  const pressing = mine.filter(({ row }) => urgencyRank(urgency(row)) <= urgencyRank('high'));
+  const asks = mine.filter(({ row }) => urgencyRank(urgency(row)) > urgencyRank('high'));
+  const rest = all.filter(({ row }) => ball(row) === 'running' || ball(row) === 'ended');
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project,
+    selected: row.sessionId === opts.selectedId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards,
   });
-  // The tab already shows the count and the Your move dot, so the header carries only its controls.
+  // The tab already shows the count and the asks badge, so the header carries only its controls.
   const head = `<div class="shead"><span class="label">Sessions</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  const pinned = mine.length ? `<div class="pinned"><div class="ph">${BALL_WORD.move} <span class="n">${mine.length}</span></div>${mine.map((x) => card(x, true)).join('')}</div>` : '';
+  const pin = (cls: string, name: string, items: typeof mine) => items.length ? `<div class="pinned${cls}"><div class="ph">${name} <span class="n">${items.length}</span></div>${items.map((x) => card(x, true)).join('')}</div>` : '';
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string };
+  const folded = new Set(prefs.folded);
+  const section = (g: Group) => {
+    const counts = new Map<SessionStateKey, number>();
+    for (const { row } of g.items) { const k = sessionStateOf(row); counts.set(k, (counts.get(k) ?? 0) + 1); }
+    const dots = [...counts].map(([k, n]) => `<i class="d-${DOT_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
+    const closed = folded.has(g.key);
+    return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b> <span class="n">${g.items.length}</span>${g.sub ? ` <span class="gs">· ${escapeHtml(g.sub)}</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span></div>
+      <div class="items">${closed ? '' : sortRows(g.items, prefs.sort).map((x) => card(x)).join('')}</div>
+    </section>`;
+  };
+  const byBall = (b: 'review' | 'idle') => all.filter(({ row }) => ball(row) === b);
+  const ballIcon = (b: 'review' | 'idle') => `<span class="pill st-${b} solo"><i></i></span>`;
+  const pinned = pin(' now', 'Needs you now', pressing) + pin('', 'Asks', asks)
+    + [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
+      { key: IDLE_GROUP, name: BALL_WORD.idle, sub: 'finished, nothing asked', icon: ballIcon('idle'), items: byBall('idle') }]
+      .filter((g) => g.items.length).map(section).join('');
   let groups: Group[];
   if (prefs.group === 'app') {
     const byKey = new Map<string, Group>();
@@ -824,20 +915,10 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   } else {
     return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>` + tail;
   }
-  const folded = new Set(prefs.folded);
-  return head + pinned + groups.filter((g) => g.items.length).map((g) => {
-    const counts = new Map<SessionStateKey, number>();
-    for (const { row } of g.items) { const k = sessionStateOf(row); counts.set(k, (counts.get(k) ?? 0) + 1); }
-    const dots = [...counts].map(([k, n]) => `<i class="d-${DOT_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
-    const closed = folded.has(g.key);
-    return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b> <span class="n">${g.items.length}</span>${g.sub ? ` <span class="gs">· ${escapeHtml(g.sub)}</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span></div>
-      <div class="items">${closed ? '' : sortRows(g.items, prefs.sort).map((x) => card(x)).join('')}</div>
-    </section>`;
-  }).join('') + tail;
+  return head + pinned + groups.filter((g) => g.items.length).map(section).join('') + tail;
 }
 
-/** The tab's numbers: live sessions, the ones that are your move, tabs held here. */
+/** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
 export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS): { shown: number; asks: number; tabs: number } {
   const items = here ? visibleSessions(rows, here, prefs) : rows.map((row) => ({ row, place: null as SessionPlace | null }));
   return {

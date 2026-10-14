@@ -127,10 +127,15 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   against the fake CLI in `src/core/testdata/lead-bin/agents`.
 - Closing a tab sends `agents ps stop <id>` only on `TerminalExitReason.User`
   (`src/vscode/terminalReadiness.ts`); reload and restore never kill a session.
-- Needs-you order is `ATTENTION_KIND_RANK` in `src/shared/sessionState.ts`;
-  a stall is a CLI signal, `FloorPhase` has no `stalled` member. Idle plus a non-empty
-  feed `pending` is Waiting (the agent's ball, never Your move); `subAgentCount` is
-  cumulative and never decides liveness.
+- Your move is only an open ask, stall or failure (`sessionStateOf`, `ballOf` in
+  `src/shared/sessionState.ts`); a finished turn that asked nothing is Idle. Asks order by
+  the CLI's attention `urgency` (`urgencyOf`; absent reads normal), then longest wait, then
+  `ATTENTION_KIND_RANK`; the extension never computes urgency. A stall is a CLI signal,
+  `FloorPhase` has no `stalled` member. Idle plus a non-empty feed `pending` is Waiting (the
+  agent's ball, never Your move); `subAgentCount` is cumulative and never decides liveness.
+- A card answers an ask with one `agents feed answer <attention.key> --choice|--text … --json`
+  after a 5 s Undo in the page (`answerArgv`, `src/core/projectPanel.ts`), only for a key the
+  stream shows open. The extension posts no notifications of its own; banners are the AGI Menu's.
 - Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
   `src/core/projectPanel.ts`); the extension never guesses a project from a cwd. One stopgap
   until agents-cli aliases ship: a row whose checkout is one of the project's own repository

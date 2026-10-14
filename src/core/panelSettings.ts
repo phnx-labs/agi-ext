@@ -5,7 +5,7 @@
 import { escapeHtml } from './projectPanel';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
-import { DEFAULT_NOTIFICATION_SETTINGS, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+import { cardSettings, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'showLabelsInTitles', label: 'Labels in titles', sub: 'The tab title shows the session label' },
@@ -14,6 +14,13 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
   { key: 'showLabelOnlyOnFocus', label: 'Hide labels off focus', sub: 'Background tabs show only the agent' },
   { key: 'showFullAgentNames', label: 'Full agent names', sub: '“Claude” instead of “CC”' },
   { key: 'showSessionIdInTitles', label: 'Session id', sub: 'Append the short id to the title' },
+];
+
+/** The Session cards pickers: each key, its words, and its choices in order. */
+const CARD_ROWS: { key: keyof CardSettings; label: string; sub: string; options: { value: string; label: string }[] }[] = [
+  { key: 'asks', label: 'Asks on cards', sub: 'Off leaves only the “Asks · 46m” pill', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
+  { key: 'options', label: 'Answer options', sub: 'Each option’s description shows on hover either way', options: [{ value: 'titles', label: 'Titles only' }, { value: 'details', label: 'Titles and details' }] },
+  { key: 'question', label: 'Question text', sub: 'The full question is on hover either way', options: [{ value: 'two', label: 'Two lines' }, { value: 'full', label: 'Full' }] },
 ];
 
 const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -37,11 +44,9 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   if (group === 'display' && DISPLAY_ROWS.some((r) => r.key === field) && typeof value === 'boolean') {
     return { ...settings, display: { ...settings.display, [field]: value } };
   }
-  if (key === 'notifications.enabled' && typeof value === 'boolean') {
-    return { ...settings, notifications: { ...notifications(settings), enabled: value } };
-  }
-  if (key === 'notifications.style' && (value === 'native' || value === 'vscode')) {
-    return { ...settings, notifications: { ...notifications(settings), style: value } };
+  const card = CARD_ROWS.find((r) => group === 'cards' && r.key === field);
+  if (card && card.options.some((o) => o.value === value)) {
+    return { ...settings, cards: { ...cardSettings(settings.cards), [card.key]: value } };
   }
   if (key === 'mergeMethod' && typeof value === 'string' && (MERGE_METHODS as readonly string[]).includes(value)) {
     return { ...settings, mergeMethod: value as AgentSettings['mergeMethod'] };
@@ -56,10 +61,6 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
     return { ...settings, quickLaunch: { ...settings.quickLaunch, slots } };
   }
   return null;
-}
-
-function notifications(s: AgentSettings): NonNullable<AgentSettings['notifications']> {
-  return s.notifications ?? DEFAULT_NOTIFICATION_SETTINGS;
 }
 
 function toggle(key: string, label: string, sub: string, on: boolean): string {
@@ -81,7 +82,7 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
     const model = q?.modelAlias || q?.model || '';
     return `<div class="krow">${kbd(k)}<span>Quick launch ${k}${model ? ` <small>${escapeHtml(model)}</small>` : ''}</span>${picker(`quickLaunch.${k}`, byKey, q?.agent ?? '', `Quick launch ${k}`)}</div>`;
   };
-  const alerts = notifications(s);
+  const cards = cardSettings(s.cards);
   return `<div class="settings">
   <div class="sh">Session titles</div>
   ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}
@@ -92,10 +93,10 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   ${SLOTS.map(slot).join('')}
   <div class="sh">Pull requests</div>
   <label class="srow"><span><b>Merge with</b><small>One click on Merge uses this; a repository that does not allow it uses one it allows</small></span>${picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with')}</label>
-  <div class="sh">Reader and alerts</div>
+  <div class="sh">Session cards</div>
+  ${CARD_ROWS.map((r) => `<label class="srow"><span><b>${escapeHtml(r.label)}</b><small>${escapeHtml(r.sub)}</small></span>${picker(`cards.${r.key}`, r.options, cards[r.key], r.label)}</label>`).join('')}
+  <div class="sh">Reader</div>
   ${toggle('editor.markdownViewerEnabled', 'Open .md and .html in Reader', 'The Reader editor for Markdown and HTML', s.editor?.markdownViewerEnabled ?? true)}
-  ${toggle('notifications.enabled', 'Approval alerts', 'Notify when a session in this window needs you', alerts.enabled)}
-  <label class="srow"><span><b>Alert style</b></span>${picker('notifications.style', [{ value: 'native', label: 'Native OS' }, { value: 'vscode', label: 'Editor toast' }], alerts.style, 'Alert style')}</label>
-  <p class="foot">Devices, accounts and projects live in the <code>agents</code> CLI and the AGI Menu.</p>
+  <p class="foot">Banners for asks, with their reminders, come from the AGI Menu. Devices, accounts and projects live in the <code>agents</code> CLI and the AGI Menu.</p>
 </div>`;
 }

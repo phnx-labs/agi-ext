@@ -5147,8 +5147,6 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
         notifyAgentPanelSessionUpdate();
         const { notifyProjectPanelSessionUpdate } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
         notifyProjectPanelSessionUpdate();
-        const { notifyNewlyWaiting } = require('./waitingNotifier.vscode') as typeof import('./waitingNotifier.vscode');
-        notifyNewlyWaiting(() => settingsStore.getSettings(context).notifications);
         const { notifyResumePickerUpdate } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');
         notifyResumePickerUpdate();
       }

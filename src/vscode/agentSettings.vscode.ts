@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { homedir } from 'os';
-import { AgentSettings, getDefaultSettings, PromptEntry, DEFAULT_DISPLAY_PREFERENCES, DEFAULT_NOTIFICATION_SETTINGS, DEFAULT_QUICK_LAUNCH, migrateStaleClaudeQuickLaunch, migrateLegacyQuickLaunchSlots } from '../core/settings';
+import { AgentSettings, getDefaultSettings, PromptEntry, DEFAULT_DISPLAY_PREFERENCES, DEFAULT_QUICK_LAUNCH, migrateStaleClaudeQuickLaunch, migrateLegacyQuickLaunchSlots } from '../core/settings';
 import { readPromptsFromPath, writePromptsToPath } from '../core/prompts';
 import * as workbench from './workbench.vscode';
 import * as terminals from './terminals.vscode';
@@ -60,21 +60,6 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
       }
       if (stored.display.showLabelOnlyOnFocus === undefined) {
         stored.display.showLabelOnlyOnFocus = DEFAULT_DISPLAY_PREFERENCES.showLabelOnlyOnFocus;
-      }
-      context.globalState.update('agentSettings', stored);
-    }
-    if (!stored.notifications) {
-      stored.notifications = { ...DEFAULT_NOTIFICATION_SETTINGS };
-      context.globalState.update('agentSettings', stored);
-    } else {
-      if (stored.notifications.enabled === undefined) {
-        stored.notifications.enabled = DEFAULT_NOTIFICATION_SETTINGS.enabled;
-      }
-      if (!stored.notifications.style) {
-        stored.notifications.style = DEFAULT_NOTIFICATION_SETTINGS.style;
-      }
-      if (!stored.notifications.enabledAgents || stored.notifications.enabledAgents.length === 0) {
-        stored.notifications.enabledAgents = [...DEFAULT_NOTIFICATION_SETTINGS.enabledAgents];
       }
       context.globalState.update('agentSettings', stored);
     }
@@ -142,8 +127,7 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
       aliases: [],
       prompts: readPrompts(),
       editor: { markdownViewerEnabled: true },
-      display: { ...DEFAULT_DISPLAY_PREFERENCES },
-      notifications: { ...DEFAULT_NOTIFICATION_SETTINGS }
+      display: { ...DEFAULT_DISPLAY_PREFERENCES }
     };
     context.globalState.update('agentSettings', migrated);
     return migrated;
