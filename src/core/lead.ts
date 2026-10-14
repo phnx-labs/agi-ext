@@ -391,40 +391,55 @@ export function writeSurface(surface: LeadSurface, home: string = os.homedir()):
 
 /**
  * Watch the switch without creating anything: `onChange` gets the surface each
- * time it differs from the last one seen. While ~/.agents/lead is absent it stats
- * the folder every `absentPollMs` (cheap, and only until it appears); a watcher
- * that errors, or whose folder is removed or renamed, is re-armed.
+ * time it differs from the last one seen. Three sources feed one `sync`, because
+ * no single one is reliable on every platform:
+ * - a watcher on ~/.agents/lead, while it exists;
+ * - a watcher on ~/.agents, for the lead folder appearing or going away (on
+ *   macOS, FSEvents may say nothing to a watcher whose own folder is deleted, and
+ *   a watcher does not follow a folder recreated at the same path);
+ * - an unref'd read every `pollMs` (default 2 s), since FSEvents can coalesce or
+ *   drop events. surface.json is a few bytes; the read is the comparison.
+ * Each `sync` re-arms whichever watcher no longer matches what is on disk.
  */
-export function watchSurface(onChange: (s: LeadSurface) => void, home: string = os.homedir(), opts: { absentPollMs?: number; rearmMs?: number } = {}): { dispose(): void } {
+export function watchSurface(onChange: (s: LeadSurface) => void, home: string = os.homedir(), opts: { pollMs?: number } = {}): { dispose(): void } {
   const dir = leadDir(home);
-  const absentPollMs = opts.absentPollMs ?? 10_000;
-  const rearmMs = opts.rearmMs ?? 1_000;
+  const parent = path.dirname(dir);
   let last = readSurface(home);
-  let watcher: fs.FSWatcher | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let dirWatcher: fs.FSWatcher | undefined;
+  let parentWatcher: fs.FSWatcher | undefined;
   let disposed = false;
   const check = () => { const now = nextSurface(readSurfaceFile(home), last); if (now !== last) { last = now; onChange(now); } };
-  const later = (ms: number) => { if (!disposed) { timer = setTimeout(arm, ms); timer.unref?.(); } };
-  const close = () => { watcher?.close(); watcher = undefined; };
-  function arm(): void {
-    timer = undefined;
-    if (disposed) return;
-    close();
-    if (!fs.existsSync(dir)) { check(); later(absentPollMs); return; }
+  const watch = (target: string): fs.FSWatcher | undefined => {
     try {
-      watcher = fs.watch(dir, (event, name) => {
-        if (event === 'rename' && !fs.existsSync(dir)) { close(); check(); later(rearmMs); return; }
-        if (!name || String(name).startsWith('surface.json')) check();
-      });
-      watcher.on('error', () => { close(); later(rearmMs); });
-    } catch {
-      later(rearmMs);
-      return;
-    }
+      const w = fs.watch(target, () => sync());
+      // A broken watcher is dropped; the next sync (at the latest the poll) re-arms it.
+      w.on('error', () => { w.close(); if (dirWatcher === w) dirWatcher = undefined; if (parentWatcher === w) parentWatcher = undefined; });
+      return w;
+    } catch { return undefined; }
+  };
+  let dirIno: number | undefined;
+  function sync(): void {
+    if (disposed) return;
+    let ino: number | undefined;
+    try { ino = fs.statSync(dir).ino; } catch { ino = undefined; }
+    // The folder went away, or was recreated (a new inode): the old watcher is stale.
+    if (ino !== dirIno) { dirWatcher?.close(); dirWatcher = undefined; dirIno = ino; }
+    if (ino !== undefined && !dirWatcher) dirWatcher = watch(dir);
+    if (!parentWatcher && fs.existsSync(parent)) parentWatcher = watch(parent);
     check();
   }
-  arm();
-  return { dispose: () => { disposed = true; if (timer) clearTimeout(timer); close(); } };
+  const timer = setInterval(sync, opts.pollMs ?? 2_000);
+  timer.unref?.();
+  sync();
+  return {
+    dispose: () => {
+      disposed = true;
+      clearInterval(timer);
+      dirWatcher?.close();
+      parentWatcher?.close();
+      dirWatcher = parentWatcher = undefined;
+    },
+  };
 }
 
 // ── The process boundary ──

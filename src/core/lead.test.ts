@@ -172,7 +172,7 @@ describe('the surface switch', () => {
     try {
       writeSurface('bubble', home);
       const seen: string[] = [];
-      const w = watchSurface((s) => seen.push(s), home, { absentPollMs: 30 });
+      const w = watchSurface((s) => seen.push(s), home, { pollMs: 30 });
       const file = path.join(home, '.agents', 'lead', 'surface.json');
       fs.writeFileSync(file, '{"surface":"bub');
       expect(readSurfaceFile(home)).toBe('invalid');
@@ -191,7 +191,7 @@ describe('the surface switch', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-surface-'));
     try {
       const seen: string[] = [];
-      const w = watchSurface((s) => seen.push(s), home, { absentPollMs: 30, rearmMs: 30 });
+      const w = watchSurface((s) => seen.push(s), home, { pollMs: 30 });
       await Bun.sleep(80);
       expect(fs.existsSync(path.join(home, '.agents', 'lead'))).toBe(false);
       writeSurface('bubble', home);
@@ -203,6 +203,31 @@ describe('the surface switch', () => {
       writeSurface('bubble', home);
       for (let i = 0; i < 100 && seen.length < 3; i++) await Bun.sleep(20);
       expect(seen).toEqual(['bubble', 'docked', 'bubble']);
+      w.dispose();
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  // The poll is the fallback; with it out of the way (one minute) the watchers alone must follow
+  // the folder being removed and recreated. On macOS a watcher on a deleted folder goes deaf, so
+  // this is what the ~/.agents watcher is for.
+  test('without the poll, the watchers follow the folder being removed and recreated', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-surface-'));
+    try {
+      writeSurface('bubble', home);
+      const seen: string[] = [];
+      const w = watchSurface((s) => seen.push(s), home, { pollMs: 60_000 });
+      const lead = path.join(home, '.agents', 'lead');
+      for (const [step, want] of [['rm', 'docked'], ['bubble', 'bubble'], ['rm', 'docked'], ['bubble', 'bubble'], ['docked', 'docked']] as const) {
+        await Bun.sleep(150);
+        if (step === 'rm') fs.rmSync(lead, { recursive: true, force: true });
+        else writeSurface(step, home);
+        const n = seen.length;
+        for (let i = 0; i < 150 && seen.length === n; i++) await Bun.sleep(20);
+        expect(seen[seen.length - 1]).toBe(want);
+      }
+      expect(seen).toEqual(['docked', 'bubble', 'docked', 'bubble', 'docked']);
       w.dispose();
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
@@ -221,7 +246,7 @@ describe('the surface switch', () => {
     try {
       expect(readSurface(home)).toBe('docked');
       const seen: string[] = [];
-      const w = watchSurface((s) => seen.push(s), home, { absentPollMs: 30 });
+      const w = watchSurface((s) => seen.push(s), home, { pollMs: 30 });
       writeSurface('bubble', home);
       expect(JSON.parse(fs.readFileSync(path.join(home, '.agents', 'lead', 'surface.json'), 'utf8'))).toEqual({ surface: 'bubble' });
       expect(readSurface(home)).toBe('bubble');
