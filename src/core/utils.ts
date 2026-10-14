@@ -479,18 +479,6 @@ export function getPrefixFromTerminalId(terminalId: string): string | null {
   return prefix || null;
 }
 
-/**
- * Find a terminal name that matches a tab label.
- * Returns the matching name from the list, or null if not found.
- * Used for matching terminal tabs to terminal instances.
- */
-export function findTerminalNameByTabLabel(
-  terminalNames: string[],
-  tabLabel: string
-): string | null {
-  return terminalNames.find(name => name === tabLabel) ?? null;
-}
-
 // === PROMPT UTILITIES ===
 
 /**

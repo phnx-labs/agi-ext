@@ -1,13 +1,6 @@
-import { extractLinearTicketId, isHostFallbackLabel } from './utils';
-
 export interface SessionTabLabelState {
   manualLabel?: string;
   autoLabel?: string;
-}
-
-export interface LiveSessionLabelSource {
-  label: string;
-  topic: string;
 }
 
 export interface SessionTabLabelUpdate {
@@ -20,43 +13,20 @@ export interface PersistedSessionTabLabels {
   autoLabel?: string;
 }
 
-/** Slash-command/scaffolding turns are transport, not a useful task title. */
-export function isScaffoldingSessionTopic(text: string): boolean {
-  const value = text.trim();
-  return /^Base directory for this skill:/i.test(value)
-    || /^<command-(?:name|message)>/i.test(value)
-    || /^\/[a-z][\w:-]*(?:\s|$)/i.test(value);
-}
-
 /**
- * Reconcile one editor tab with the canonical name carried by the CLI stream.
- * Manual labels win. The sole migration exception is a label that is plainly a
- * first-turn placeholder: older extension versions re-adopted that generated
- * tab title as a manual label during window reload.
+ * Reconcile one editor tab with the session's one name, `streamTitle` of its
+ * stream row: the tab shows what its card and the status bar show. A name the
+ * extension kept for a tab (an older Agents: Label) gives way: a rename now
+ * renames the session itself, so the CLI's title carries it (PHNX-4387).
  */
 export function planSessionTabLabelUpdate(
   tab: SessionTabLabelState,
-  live: LiveSessionLabelSource,
+  title: string,
 ): SessionTabLabelUpdate | undefined {
-  const sessionLabel = live.label.trim();
-  // The CLI's `[host/<device>]` fallback is not a task title — the executing
-  // device belongs in the status bar, not the tab (PHNX-3893). Treat it as no
-  // label so the tab keeps its bare agent base until a real name/topic lands.
-  if (!sessionLabel || isHostFallbackLabel(sessionLabel)) return undefined;
-
-  const manualLabel = tab.manualLabel?.trim() || '';
-  const topic = live.topic.trim();
-  const ticket = extractLinearTicketId(topic);
-  const label = ticket && !sessionLabel.startsWith(ticket)
-    ? `${ticket} ${sessionLabel}`
-    : sessionLabel;
-  const staleManualLabel = !!manualLabel
-    && (manualLabel === topic || isScaffoldingSessionTopic(manualLabel));
-  if (manualLabel && !staleManualLabel) return undefined;
-
-  const current = manualLabel || tab.autoLabel?.trim() || '';
-  if (current === label) return undefined;
-  return { label, clearManualLabel: staleManualLabel };
+  if (!title) return undefined;
+  const manual = !!tab.manualLabel?.trim();
+  if (!manual && tab.autoLabel?.trim() === title) return undefined;
+  return { label: title, clearManualLabel: manual };
 }
 
 /** Keep automatic-label provenance when VS Code recreates a terminal widget. */

@@ -16,7 +16,7 @@ mock.module('vscode', () => vscodeDouble({
     registerWebviewViewProvider: (_id: string, p: typeof provider) => { provider = p; return noop; },
     onDidChangeActiveTerminal: () => noop,
     showErrorMessage: () => Promise.resolve(undefined),
-    tabGroups: { all: [] },
+    tabGroups: { all: [], onDidChangeTabs: () => noop, onDidChangeTabGroups: () => noop },
   },
   workspace: { workspaceFolders: undefined },
   commands: { registerCommand: () => noop, executeCommand: () => Promise.resolve(undefined) },

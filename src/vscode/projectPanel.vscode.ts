@@ -12,7 +12,7 @@ import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
-import { resolveTabIndex, type TabView } from '../core/tabIndex';
+import { frontTerminal, onDidChangeFrontTab, terminalTabNumbers } from './frontTab.vscode';
 import { normalizeHost } from '../shared/project';
 import type { RemoteSession } from '../core/remoteSessions';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
@@ -50,7 +50,7 @@ import {
 import { SESSION_STATE_WORD, sessionStateOf } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
-import { currentAgentPanelSubject, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
+import { currentAgentPanelSubject, followFrontTerminal, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
@@ -264,8 +264,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   /** Scroll the card for this session into view, once the list has it. */
-  reveal(sessionId: string): void {
-    if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId });
+  reveal(sessionId: string, flash = true): void {
+    if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId, flash });
   }
 
   /** The project menu: one `agents projects list` read when it opens. */
@@ -775,12 +775,12 @@ class ProjectPanelController {
 
   sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
-    const tabGroups: TabView[][] = vscode.window.tabGroups.all.map((g) => g.tabs.map((tab) => ({ label: tab.label, isTerminal: tab.input instanceof vscode.TabInputTerminal })));
+    const tabNumbers = terminalTabNumbers();
     const rows = this.projectRows(p)
       .map((r) => {
         const tab = terminals.getBySessionId(r.sessionId);
         const who = sessionPresentationStore.liveSession(r.sessionId);
-        return { ...r, tabHere: !!tab, tabIndex: tab ? resolveTabIndex(tabGroups, tab.terminal.name) : undefined, account: who?.accountLabel ?? who?.account ?? undefined };
+        return { ...r, tabHere: !!tab, tabIndex: tab ? tabNumbers.get(tab.terminal) : undefined, account: who?.accountLabel ?? who?.account ?? undefined };
       });
     const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
     const previewUri = (f: string) => webview.asWebviewUri(vscode.Uri.file(f)).toString();
@@ -801,7 +801,9 @@ class ProjectPanelController {
     const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
     const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
     const cards = cardSettings(getSettings(this.context).cards);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
+    const front = frontTerminal();
+    const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, tabKey: process.platform === 'darwin' ? '⌘' : 'Alt+', here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
@@ -918,11 +920,13 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
     })),
     // Internal: the session panel's ticket tile opens the ticket here.
     vscode.commands.registerCommand('agents.searchSessions', () => controller.searchSessions()),
-    // The list follows the tab in front: switching tabs moves its selection (owner video, 2026-10-12).
-    vscode.window.onDidChangeActiveTerminal((t) => {
+    // The list follows the tab in front: switching tabs moves its selection (owner video,
+    // 2026-10-12), on either tab event, never with a flash (PHNX-4387).
+    onDidChangeFrontTab((t) => {
       const id = t ? terminals.getByTerminal(t)?.sessionId : undefined;
       if (!id) return;
-      void controller.redrawSessions().then(() => controller.view.reveal(id));
+      followFrontTerminal();
+      void controller.redrawSessions().then(() => controller.view.reveal(id, false));
     }),
     vscode.commands.registerCommand('agents.project.openTicket', (id: unknown) => typeof id === 'string' && id ? controller.view.openTicketTab(id) : undefined),
     // Internal: the Lead talks to the project this panel shows (src/vscode/lead.vscode.ts).
@@ -1132,7 +1136,12 @@ export function shell(cspSource: string, logoCss = ''): string {
   .gact:hover { color: var(--r-text); border-color: var(--r-faint); } .gact + .dots { margin-left: 6px; }
   .items, .flat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 4px; } .pinned .card + .card { margin-top: 6px; }
   .card { display: block; min-width: 0; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--r-glass); color: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
-  .card:hover, .card.sel, .card:focus-visible { background: var(--r-hover); border-color: var(--r-faint); outline: none; }
+  .card:hover, .card:focus-visible { background: var(--r-hover); border-color: var(--r-faint); outline: none; }
+  /* Selected is its own look, not hover's: a gold rail inside the left edge. */
+  .card.sel { background: var(--r-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold); }
+  .card .thistab { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-gold); line-height: 12px; margin-bottom: 2px; }
+  .card .tabn { flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
+  .card .started { margin-top: 2px; font-size: 10.5px; color: var(--r-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card.multi { border-color: var(--r-gold); }
   .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; }
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1463,7 +1472,9 @@ ${THUMB_SCRIPT}
     }
     else if (m.type === 'reveal') {
       const c = main.querySelector('.card[data-session="' + CSS.escape(m.sessionId) + '"]');
-      if (c) { c.scrollIntoView({ block: 'nearest' }); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
+      if (!c) return;
+      c.scrollIntoView({ block: 'nearest' });
+      if (m.flash) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
     }
   });
   // Sessions: a click selects; icons focus, resume, close or hide. Closing a tab

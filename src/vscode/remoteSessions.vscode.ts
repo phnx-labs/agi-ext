@@ -1,15 +1,9 @@
-// This machine's host identity, and the one remaining per-session label read.
+// This machine's host identity.
 // Live session state is owned by `agents feed watch --json` and projected by
 // SessionPresentationStore; this module never polls or reconstructs that state.
 
 import * as os from 'os';
-import {
-  isLocalHostIdentity,
-  normalizeHost,
-  parseSessionLabelSource,
-  SessionLabelSource,
-} from '../core/remoteSessions';
-import { runAgentsArgs } from '../core/agentsBin';
+import { isLocalHostIdentity, normalizeHost } from '../core/remoteSessions';
 
 /** This machine's name — its local sessions are queried directly (no SSH). */
 const LOCAL_HOST = os.hostname();
@@ -38,40 +32,6 @@ function isLocalHost(host: string | undefined | null): boolean {
 export function remoteDeviceArg(host: string | undefined | null): string | undefined {
   const h = (host ?? '').trim();
   return isLocalHost(h) ? undefined : h;
-}
-
-const DETAIL_TIMEOUT_MS = 15000;
-
-/**
- * Label inputs for ONE session that lives on another machine.
- *
- * A tab spawned with `agents run --device` has its transcript on the host, so the
- * local by-session-id lookups the label poller normally uses (the Claude
- * sessions/*.json scan, the jsonl preview read) find nothing and the tab keeps
- * the bare agent prefix forever. `agents ps preview <id> --device <name> --json`
- * resolves both fields on the machine that owns the session (its `session`
- * record carries `label`, `topic` and `cwd`).
- *
- * `host` is optional: omit it and the CLI resolves the id across the fleet. A
- * `--device auto` tab that never recorded which box the CLI picked still gets a
- * title this way.
- *
- * Returns null when the host is unreachable or the session is not indexed there
- * yet — a fresh session has no first message for a second or two, and the poller
- * simply retries on its next tick.
- */
-export async function fetchRemoteSessionLabelSource(
-  sessionId: string,
-  host?: string,
-): Promise<SessionLabelSource | null> {
-  const args = ['ps', 'preview', sessionId, '--json'];
-  if (host) args.push('--device', host);
-  try {
-    const { stdout } = await runAgentsArgs(args, { timeout: DETAIL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
-    return parseSessionLabelSource(stdout, sessionId);
-  } catch {
-    return null;
-  }
 }
 
 // A session's real `version` + `account` used to be resolved here by spawning

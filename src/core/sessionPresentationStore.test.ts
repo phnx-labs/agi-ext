@@ -158,6 +158,7 @@ describe('SessionPresentationStore', () => {
         kind: 'claude',
         host: 'tmux',
         machine: 'yosemite-s1',
+        title: 'Compact page headers',
         topic: 'Compact the PageHeader across every page',
         label: '',
         cwd: '/home/muqsit/src/github.com/muqsitnawaz/svatlas',
@@ -168,6 +169,7 @@ describe('SessionPresentationStore', () => {
     });
     expect(store.liveSession('022fe0a8-7674-402a-a5e0-248195894663')).toEqual({
       machine: 'yosemite-s1',
+      title: 'Compact page headers',
       topic: 'Compact the PageHeader across every page',
       label: '',
       cwd: '/home/muqsit/src/github.com/muqsitnawaz/svatlas',

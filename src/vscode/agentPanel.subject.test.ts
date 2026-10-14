@@ -1,7 +1,7 @@
 // The sidebar's subject model (PHNX-3939 follow-up).
 //
 // One preview, two triggers, LAST WINS:
-//   an agent terminal takes focus   -> onDidChangeActiveTerminal
+//   an agent terminal takes focus   -> onDidChangeFrontTab (either tab event)
 //   a Project panel session is clicked -> setAgentPanelSubjectFromProject
 //
 // Driven through the REAL registration path: `registerAgentPanel` subscribes the
@@ -16,6 +16,7 @@ const win: {
   activeTerminal: unknown;
   terminals: unknown[];
   onDidChangeActiveTerminal: (cb: () => void) => { dispose(): void };
+  tabGroups: unknown;
   onDidCloseTerminal: (cb: () => void) => { dispose(): void };
   onDidOpenTerminal: (cb: () => void) => { dispose(): void };
   registerWebviewViewProvider: (id: string, provider: unknown, opts?: unknown) => { dispose(): void };
@@ -24,6 +25,7 @@ const win: {
   activeTerminal: undefined,
   terminals: [],
   onDidChangeActiveTerminal: () => ({ dispose() { /* noop */ } }),
+  tabGroups: { all: [], activeTabGroup: undefined, onDidChangeTabs: () => ({ dispose() { /* noop */ } }), onDidChangeTabGroups: () => ({ dispose() { /* noop */ } }) },
   onDidCloseTerminal: () => ({ dispose() { /* noop */ } }),
   onDidOpenTerminal: () => ({ dispose() { /* noop */ } }),
   registerWebviewViewProvider: () => ({ dispose() { /* noop */ } }),

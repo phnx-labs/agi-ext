@@ -2,7 +2,7 @@
 // the extension (PHNX-3939); everything that describes a session lives here.
 //
 // Subject model — two triggers, one subject, last wins:
-//   an agent terminal takes focus       -> onDidChangeActiveTerminal
+//   an agent terminal takes focus       -> the front tab changes (onDidChangeFrontTab)
 //   a Project panel session is clicked  -> setAgentPanelSubjectFromProject {sessionId, host}
 // The subject is PRESENTATION STATE ONLY: never persisted, never written to a
 // config or workspaceState. A subject with no local terminal still renders — the
@@ -22,7 +22,7 @@
 //   linear/PR      -> regex scan over the session preview + tail
 //
 // Refresh signals:
-//   onDidChangeActiveTerminal               -> re-render immediately
+//   onDidChangeFrontTab (either tab event) -> re-render immediately
 //   onDidCloseTerminal / onDidOpenTerminal  -> re-render
 //   session CLI stream fact (agents-cli daemon) -> re-render, trailing-coalesced
 //     (PHNX-2833: no local poll timer — the daemon is the only scheduler)
@@ -64,7 +64,7 @@ import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 import { runAgents, runCliArgs } from '../core/agentsBin';
 import { canOfferMerge, prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
-import { cleanTitle } from '../core/projectPanel';
+import { streamTitle } from '../core/projectPanel';
 import { mergeWithMenu } from './prMerge.vscode';
 import { getSettings } from './agentSettings.vscode';
 import { validMergeMethod } from '../core/settings';
@@ -78,6 +78,7 @@ import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
 import { blockedUpdate, sessionUpdates, type SessionUpdate } from '../core/sessionUpdates';
 import { ticketFace, type TicketFace } from '../core/ticketFaces';
 import { dictation } from './dictation.vscode';
+import { frontTerminal, onDidChangeFrontTab } from './frontTab.vscode';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
@@ -292,9 +293,9 @@ function trailTitles(): { back?: string; fwd?: string } {
   return { ...(back ? { back } : {}), ...(fwd ? { fwd } : {}) };
 }
 
-/** The focused agent terminal, when one is focused and it is an agent tab. */
+/** The agent terminal in the front tab, when it is an agent tab. */
 function activeAgentEntry(): terminals.EditorTerminal | undefined {
-  const active = vscode.window.activeTerminal;
+  const active = frontTerminal();
   if (!active) return undefined;
   const entry = terminals.getByTerminal(active);
   return entry && entry.agentConfig ? entry : undefined;
@@ -352,7 +353,9 @@ export function setAgentPanelSubjectFromProject(sessionId: string, host?: string
  * A tab without a session id yet (Codex, Grok) still takes the subject: the
  * subject is the tab, and resolveSubject reads its id when it lands.
  */
-function setSubjectFromActiveTerminal(): void {
+/** The front tab's session becomes the subject (the Project panel calls this
+ *  before it redraws, so its selection never lags the tab). */
+export function followFrontTerminal(): void {
   const entry = activeAgentEntry();
   if (!entry) return;
   moveSubject({ sessionId: entry.sessionId ?? '', terminalId: entry.id, source: 'terminal' });
@@ -1017,8 +1020,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (card.plan) snapshot.plan = card.plan;
         snapshot.attachments = live.attachments;
         const remoteDevice = remoteDeviceArg(live.host);
-        // The same title as the Project panel's card: an inserted note or a bare command is skipped.
-        snapshot.sessionTitle = cleanTitle(live.title || '') || cleanTitle(live.label || '') || undefined;
+        // The session's one name, as its tab, its card and the status bar show it.
+        snapshot.sessionTitle = streamTitle(live) || undefined;
         snapshot.related = relatedSessions(live, sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), Date.now());
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
@@ -2259,7 +2262,7 @@ export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanel
   // last-wins pair with the Project panel click. Set BEFORE the debounce so a burst
   // of tab switches still leaves the subject on the tab the user landed on.
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTerminal(() => { setSubjectFromActiveTerminal(); debouncedRefresh(); }),
+    onDidChangeFrontTab(() => { followFrontTerminal(); debouncedRefresh(); }),
     vscode.window.onDidCloseTerminal(debouncedRefresh),
     vscode.window.onDidOpenTerminal(debouncedRefresh),
     { dispose: () => { if (refreshTimer) clearTimeout(refreshTimer); clearAgentPanelSubject(); } }

@@ -4,7 +4,6 @@ import {
   sanitizeLabel,
   getExpandedAgentName,
   getTerminalDisplayInfo,
-  findTerminalNameByTabLabel,
   formatTerminalTitle,
   isHostFallbackLabel,
   presentableLabel,
@@ -148,22 +147,6 @@ describe('getPrefixFromTerminalId', () => {
     expect(getPrefixFromTerminalId('CL-1735824000000-1')).toBe('CC');
     expect(getPrefixFromTerminalId('Claude')).toBe('Claude');
     expect(getPrefixFromTerminalId('')).toBeNull();
-  });
-});
-
-describe('findTerminalNameByTabLabel', () => {
-  test('matches a whole, case-sensitive name only', () => {
-    const names = ['CC', 'CC - auth feature', 'CX - bug fix', 'Cc'];
-    expect(findTerminalNameByTabLabel(names, 'CC - auth feature')).toBe('CC - auth feature');
-    expect(findTerminalNameByTabLabel(names, 'Cc')).toBe('Cc');
-    for (const label of ['cC', 'CC - auth', 'auth feature', 'bash']) expect(findTerminalNameByTabLabel(names, label)).toBeNull();
-    expect(findTerminalNameByTabLabel([], 'CC')).toBeNull();
-  });
-
-  test('is ambiguous across duplicate names — always the first (motivates identity resolution)', () => {
-    const names = ['CC', 'CC', 'CC'];
-    // A caller doing `names.indexOf(result)` gets 0 no matter which tab is live.
-    expect(names.indexOf(findTerminalNameByTabLabel(names, 'CC') as string)).toBe(0);
   });
 });
 
