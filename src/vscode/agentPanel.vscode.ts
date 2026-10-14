@@ -1969,7 +1969,7 @@ function bindPanel() {
         terminalId: lastSnapshot && lastSnapshot.terminalId,
         workspaceRoot: lastSnapshot && lastSnapshot.workspaceRoot,
         url: el.getAttribute('data-url') || undefined,
-        external: e.metaKey || e.altKey,
+        external: e.metaKey || e.ctrlKey || e.altKey,
       });
     });
   }

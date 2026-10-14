@@ -13,7 +13,7 @@ ticket was squeezed into the sidebar and every link left VSCodium for another ap
   an editor tab in the editor's integrated browser, beside your agents, where you can review,
   merge, comment and change status on the real site. A second click on the same page brings its
   tab forward instead of opening another.
-- ⌘ or ⌥ click opens your default browser. The new `agents.links.openIn` setting (`editor` or
+- A ⌘, Ctrl or ⌥ click opens your default browser. The new `agents.links.openIn` setting (`editor` or
   `browser`) sets the default; editors without the integrated browser keep opening your browser.
 - Clicking a ticket in Issues opens its Linear page as a tab and leaves a compact card in the
   panel: state, title, who it is delegated to and Start. The description and comments are

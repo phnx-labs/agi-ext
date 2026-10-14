@@ -195,7 +195,9 @@ class ProjectView implements vscode.WebviewViewProvider {
     await this.load(tab, false);
   }
 
-  async load(tab: TabId, force: boolean): Promise<void> {
+  /** `reveal`: this load answers a ticket click, so its Linear page opens as a tab once the card
+   *  is current; Refresh and a re-show never reopen it. */
+  async load(tab: TabId, force: boolean, reveal = false): Promise<void> {
     const state = this.tabs.get(tab)!;
     // A forced refresh on a hidden tab still has to reread when it is shown.
     if (force) { state.loadedAt = 0; state.generation++; }
@@ -233,9 +235,10 @@ class ProjectView implements vscode.WebviewViewProvider {
     else void view.webview.postMessage({ type: 'loading' });
     let html: string;
     let ok = true;
+    let ticket: TicketDetail | undefined;
     try {
-      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket)
-        : tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
+      if (tab === 'tickets' && this.ticket) ({ html, ticket } = await this.controller.ticketDetail(this.ticket));
+      else html = tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
           : await this.controller.render(tab, project, force);
     } catch (e) {
       ok = false;
@@ -247,14 +250,12 @@ class ProjectView implements vscode.WebviewViewProvider {
     state.loadedFor = project.name;
     // An error is not a fresh result: the next show reads again.
     state.loadedAt = ok ? Date.now() : 0;
+    // Only the current load's ticket becomes the shown one: a slower, superseded read never
+    // replaces it (Start and the Linear tab act on what the card shows).
+    if (ticket) this.controller.showTicket(ticket);
     this.post(tab, html);
-    // A ticket the user just opened shows its Linear page as an editor tab beside the card;
-    // Refresh rereads the card without reopening the page.
-    if (tab === 'tickets' && ok && this.ticket && this.revealTicket === this.ticket) {
-      this.revealTicket = null;
-      const url = this.controller.ticketUrl(this.ticket);
-      if (url) void openLink(url);
-    }
+    // A ticket the user just opened shows its Linear page as an editor tab beside the card.
+    if (reveal && ticket?.url) void openLink(ticket.url);
   }
 
   redrawSessions(): Promise<void> {
@@ -278,7 +279,6 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   /** A ticket tile, here or in the session panel, opens the ticket in Issues. */
   async openTicketTab(id: string): Promise<void> {
-    this.revealTicket = id;
     if (this.view) this.view.show(true);
     else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     // Straight to the ticket: the Issues list is not read first.
@@ -290,22 +290,19 @@ class ProjectView implements vscode.WebviewViewProvider {
     }
     void this.view?.webview.postMessage({ type: 'tab', tab: 'tickets' });
     this.post('tickets', '<div class="empty">Loading…</div>');
-    await this.load('tickets', true);
+    await this.load('tickets', true, true);
   }
 
   /** A ticket row click opens its detail (one read); the back control returns to the list. */
   async openTicket(id: string | null): Promise<void> {
     this.ticket = id;
-    this.revealTicket = id;
     const state = this.tabs.get('tickets')!;
     if (id) this.post('tickets', '<div class="empty">Loading…</div>');
     else state.loadedAt = 0;
-    await this.load('tickets', !!id);
+    await this.load('tickets', !!id, !!id);
   }
 
   private commenting = false;
-  /** The ticket whose Linear page opens once its card has loaded. */
-  private revealTicket: string | null = null;
 
   private async comment(id: string, text: string): Promise<void> {
     // One `linear update` at a time: a second click must not post the comment twice.
@@ -563,15 +560,14 @@ class ProjectPanelController {
     return bin;
   }
 
-  /** The Linear page of the ticket the card shows, once its read returned. */
-  ticketUrl(id: string): string | undefined {
-    return this.shownTicket?.identifier === id && this.shownTicket.url ? this.shownTicket.url : undefined;
+  /** The ticket the card shows; set by the load that drew it, after its generation check. */
+  showTicket(t: TicketDetail): void {
+    this.shownTicket = t;
   }
 
-  async ticketDetail(id: string): Promise<string> {
+  async ticketDetail(id: string): Promise<{ html: string; ticket: TicketDetail }> {
     const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
     const t = parseTicketDetail(stdout);
-    this.shownTicket = t;
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     const agent = this.ticketAgent(t);
     const project = await this.project().catch(() => null);
@@ -579,7 +575,7 @@ class ProjectPanelController {
     const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
     }));
-    return renderTicketDetail(t, { agentName: agent.name, delegated: agent.delegated }, onIt);
+    return { html: renderTicketDetail(t, { agentName: agent.name, delegated: agent.delegated }, onIt), ticket: t };
   }
 
   async comment(id: string, text: string): Promise<void> {
@@ -1540,7 +1536,7 @@ ${THUMB_SCRIPT}
     const ask = e.target.closest('.card .ask [data-expand]');
     if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
     const goal = e.target.closest('.goals [data-url]');
-    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.altKey }); return; }
+    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = main.querySelector('.menu');
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
@@ -1588,7 +1584,7 @@ ${THUMB_SCRIPT}
     const art = e.target.closest('[data-artifact]');
     if (art && card) { e.preventDefault(); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
-    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.altKey }); return; }
+    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });

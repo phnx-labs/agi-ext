@@ -657,7 +657,7 @@
             "Open web links in your default browser."
           ],
           "default": "editor",
-          "markdownDescription": "Where the extension opens GitHub PRs, Linear tickets and other web links. A ⌘ or ⌥ click always opens your default browser. Sign in to GitHub and Linear once in the integrated browser; it keeps the sign-in across workspaces (`#workbench.browser.dataStorage#`)."
+          "markdownDescription": "Where the extension opens GitHub PRs, Linear tickets and other web links. A ⌘, Ctrl or ⌥ click always opens your default browser. Sign in to GitHub and Linear once in the integrated browser; it keeps the sign-in across workspaces (`#workbench.browser.dataStorage#`)."
         },
         "agents.dictation.model": {
           "type": "string",

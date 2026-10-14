@@ -32,3 +32,28 @@ export function browserTabArgs(rawUrl: string, target: LinkTarget): { url: strin
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
   return { url: rawUrl, reuseUrlFilter: rawUrl };
 }
+
+/** What opening a link needs from the editor, injected so the decision is testable. */
+export interface LinkOpeners {
+  /** Whether the integrated browser command is registered. */
+  hasBrowser(): Promise<boolean>;
+  openTab(args: { url: string; reuseUrlFilter: string }): PromiseLike<unknown>;
+  openExternal(url: string): PromiseLike<unknown>;
+}
+
+/** Open `rawUrl` (trimmed) as a browser tab when it is a web page and `target` is the editor;
+ *  otherwise, or when the editor has no integrated browser or the tab fails to open, outside
+ *  the editor. Returns where it went. */
+export async function openWith(rawUrl: string, target: LinkTarget, io: LinkOpeners): Promise<'tab' | 'external'> {
+  const url = rawUrl.trim();
+  const args = browserTabArgs(url, target);
+  if (args) {
+    try {
+      if (await io.hasBrowser()) { await io.openTab(args); return 'tab'; }
+    } catch {
+      // A browser the policy disabled or a build with another argument shape: leave the editor instead.
+    }
+  }
+  await io.openExternal(url);
+  return 'external';
+}

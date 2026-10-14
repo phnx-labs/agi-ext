@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { browserTabArgs, isAllowedExternalUrl, isAllowedWebviewCommand } from './webviewSecurity';
+import { browserTabArgs, isAllowedExternalUrl, isAllowedWebviewCommand, openWith, type LinkOpeners } from './webviewSecurity';
 import { isDeprecatedAgentKey } from './agents';
 
 describe('isAllowedExternalUrl', () => {
@@ -39,5 +39,41 @@ describe('browserTabArgs', () => {
     expect(browserTabArgs('agents://session/abc', 'editor')).toBeNull();
     expect(browserTabArgs('not a url', 'editor')).toBeNull();
     expect(browserTabArgs('https://github.com/phnx-labs/agents/pull/3979', 'browser')).toBeNull();
+  });
+});
+
+describe('openWith', () => {
+  const io = (o: Partial<LinkOpeners> = {}) => {
+    const calls: string[] = [];
+    const opener: LinkOpeners = {
+      hasBrowser: async () => true,
+      openTab: async (a) => { calls.push(`tab ${a.url} ${a.reuseUrlFilter}`); },
+      openExternal: async (u) => { calls.push(`external ${u}`); },
+      ...o,
+    };
+    return { calls, opener };
+  };
+  const PR = 'https://github.com/phnx-labs/agents/pull/3979';
+
+  it('opens a web page as a tab, trimmed, with the same URL to reuse', async () => {
+    const { calls, opener } = io();
+    expect(await openWith(` ${PR} `, 'editor', opener)).toBe('tab');
+    expect(calls).toEqual([`tab ${PR} ${PR}`]);
+  });
+
+  it('leaves the editor for a modifier click, mailto:, agents: and an editor without the browser', async () => {
+    for (const [url, target, o] of [[PR, 'browser', {}], ['mailto:a@b.co', 'editor', {}], ['agents://session/x', 'editor', {}], [PR, 'editor', { hasBrowser: async () => false }]] as const) {
+      const { calls, opener } = io(o);
+      expect(await openWith(url, target, opener)).toBe('external');
+      expect(calls).toEqual([`external ${url}`]);
+    }
+  });
+
+  it('falls back to the OS browser when the browser lookup or the tab fails', async () => {
+    for (const o of [{ hasBrowser: async () => { throw new Error('no commands'); } }, { openTab: async () => { throw new Error('disabled by policy'); } }]) {
+      const { calls, opener } = io(o);
+      expect(await openWith(PR, 'editor', opener)).toBe('external');
+      expect(calls).toEqual([`external ${PR}`]);
+    }
   });
 });
