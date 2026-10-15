@@ -30,11 +30,12 @@ function prUrl(r: Extract<LeadRef, { kind: 'pr' }>): string {
   return r.url && isWebUrl(r.url) ? r.url : `https://github.com/${r.repo}/pull/${r.number}`;
 }
 
-/** Open a ref: a ticket in Issues, a PR on GitHub, a session in its tab (or resumed). */
-async function openLeadRef(r: LeadRef, external = false): Promise<void> {
+/** Open a ref: a ticket in Issues (read in the Lead's project's Linear workspace), a PR on
+ *  GitHub, a session in its tab (or resumed). */
+async function openLeadRef(r: LeadRef, project: string | undefined, external = false): Promise<void> {
   if (r.kind === 'ticket') {
     if (external && r.url && isWebUrl(r.url)) { await vscode.env.openExternal(vscode.Uri.parse(r.url)); return; }
-    await vscode.commands.executeCommand('agents.project.openTicket', r.id);
+    await vscode.commands.executeCommand('agents.project.openTicket', r.id, project);
     return;
   }
   if (r.kind === 'pr') { await vscode.env.openExternal(vscode.Uri.parse(prUrl(r))); return; }
@@ -75,7 +76,7 @@ class LeadController {
     this.status.command = 'agents.lead.open';
     this.tab = new LeadTab(context, this.client, {
       project: () => this.resolveProject(),
-      openRef: (r, external) => openLeadRef(r, external),
+      openRef: (r, external) => openLeadRef(r, this.project, external),
       ask: (text) => this.send(text),
       talk: () => this.toggleMic('tab'),
       mic: () => this.mic.phase,
@@ -203,7 +204,7 @@ class LeadController {
     });
     qp.onDidTriggerItemButton(({ item, button }) => {
       if (button === CONFIRM && item.confirm) void this.confirm(item.confirm);
-      else if (button === IN_LINEAR && item.ref) void openLeadRef(item.ref, true);
+      else if (button === IN_LINEAR && item.ref) void openLeadRef(item.ref, this.project, true);
     });
     qp.onDidAccept(() => {
       const row = qp.activeItems[0];
@@ -286,7 +287,7 @@ class LeadController {
       rows.push({
         label: refLabel(r), description: refDescription(r), iconPath: refIcon(ext, r), alwaysShow: true, ref: r,
         ...(r.kind === 'ticket' && r.url ? { buttons: [IN_LINEAR] } : {}),
-        act: () => { this.qp?.hide(); return openLeadRef(r); },
+        act: () => { this.qp?.hide(); return openLeadRef(r, this.project); },
       });
     }
     if (t.timing && t.finished) {

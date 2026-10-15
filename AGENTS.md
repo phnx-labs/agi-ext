@@ -69,7 +69,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   an artifact that row lists. Nothing loads on selection.
   A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
   `linear tasks <ID> --json` (`ProjectPanelController.ticketDetail`), on the click only, never
-  on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
+  on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv. Both run in
+  one Linear profile (`ticketProfile`, `src/core/ticketDetail.ts`): the shown project's for a
+  ticket opened in the panel, the named project's (`agents.project.openTicket <id> <project>`,
+  from the Active Session sidebar or the Lead) otherwise; Comment reuses the profile its detail
+  was read in.
   A fourth: the Project panel's goal lines are one `linear goals --json` read when the panel
   shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never per tab or per click.
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'path';
-import { linearBinDirs, LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from './linearBin';
+import { linearBinDirs, linearSpawnEnv, LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from './linearBin';
 
 const fixtureRoot = path.join(import.meta.dir, 'testdata', 'linear-bin');
 const executableFixture = path.join(fixtureRoot, 'executable');
@@ -36,5 +36,24 @@ describe('resolveLinearBin', () => {
 
   test('provides an actionable installation message', () => {
     expect(LINEAR_NOT_FOUND_MESSAGE).toContain('~/.local/bin/linear');
+  });
+});
+
+describe('linearSpawnEnv', () => {
+  test('the default profile leaves the env as it is', () => {
+    const base = { PATH: '/usr/bin', LINEAR_API_KEY: 'k' };
+    expect(linearSpawnEnv(null, base)).toBe(base);
+  });
+
+  test('a profile adds exactly LINEAR_PROFILE and leaves the base untouched', () => {
+    const base = { PATH: '/usr/bin', LINEAR_API_KEY: 'k' };
+    const env = linearSpawnEnv('personal', base);
+    expect(env).toEqual({ PATH: '/usr/bin', LINEAR_API_KEY: 'k', LINEAR_PROFILE: 'personal' });
+    expect(Object.keys(env).filter((k) => !(k in base))).toEqual(['LINEAR_PROFILE']);
+    expect(base).toEqual({ PATH: '/usr/bin', LINEAR_API_KEY: 'k' });
+  });
+
+  test('a profile replaces one inherited from the editor', () => {
+    expect(linearSpawnEnv('personal', { LINEAR_PROFILE: 'work' }).LINEAR_PROFILE).toBe('personal');
   });
 });
