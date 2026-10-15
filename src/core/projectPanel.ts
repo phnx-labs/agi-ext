@@ -14,12 +14,15 @@ import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, attentionRank, ballOf, pe
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { resolveProject } from '../shared/project';
 import { BUILT_IN_AGENTS } from './agents';
+import { linearSpawnEnv } from './linearBin';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
 
 export interface ProjectRef {
   name: string;
   linearName: string | null;
+  /** The linear-cli profile holding the project's workspace key (`linear.profile`); null is the default profile. */
+  linearProfile: string | null;
   /** Its repositories and where each is checked out; only `agents projects list` carries them. */
   repos?: { slug: string; path: string }[];
   /** The checkout the window's folder resolved to (`agents projects status --path`'s `root`). */
@@ -91,7 +94,7 @@ export function parseProjectDetection(raw: string): ProjectRef | null {
   if (!name) return null;
   const linear = d.linear && typeof d.linear === 'object' ? (d.linear as Json) : null;
   const root = str(d.root);
-  return { name, linearName: str(linear?.name), ...(root ? { root } : {}) };
+  return { name, linearName: str(linear?.name), linearProfile: str(linear?.profile), ...(root ? { root } : {}) };
 }
 
 /** `agents projects list --json`. */
@@ -108,8 +111,14 @@ export function parseProjectList(raw: string): ProjectRef[] {
         return slug ? [{ slug, path: str(o.path) ?? '' }] : [];
       })
       : [];
-    return { name, linearName: str(linear?.name), repos };
+    return { name, linearName: str(linear?.name), linearProfile: str(linear?.profile), repos };
   });
+}
+
+/** The Issues read: `linear tasks --project <linear> --json`, in the project's Linear profile. */
+export function ticketsRead(p: ProjectRef, base: NodeJS.ProcessEnv = process.env): { argv: string[]; env: NodeJS.ProcessEnv } {
+  if (!p.linearName) throw new Error(`Project "${p.name}" has no Linear project. Link one: agents projects link ${p.name}`);
+  return { argv: ['tasks', '--project', p.linearName, '--json'], env: linearSpawnEnv(p.linearProfile, base) };
 }
 
 /** `~/…` for a path under home, as the CLI prints it. */

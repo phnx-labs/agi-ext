@@ -22,3 +22,9 @@ export function linearBinDirs(
 export function resolveLinearBin(dirs: string[] = linearBinDirs()): string | null {
   return resolveExecutable('linear', dirs);
 }
+
+/** The env for one linear spawn on behalf of a project: its profile selects the
+ *  workspace key; no profile leaves the default profile's env untouched. */
+export function linearSpawnEnv(profile: string | null, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return profile === null ? base : { ...base, LINEAR_PROFILE: profile };
+}

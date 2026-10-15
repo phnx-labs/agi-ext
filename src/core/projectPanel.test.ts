@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test'
 import {
-  parsePrs, parseProjectDetection, parseProjectList, parseTickets,
+  parsePrs, parseProjectDetection, parseProjectList, parseTickets, ticketsRead,
   activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
   DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
@@ -11,13 +11,33 @@ import {
 
 test('detection: a matched workspace yields name + Linear name; no match is null', () => {
   expect(parseProjectDetection('{"name":"agi","linear":{"name":"AGI","projectId":"x"},"root":"~/src/a"}'))
-    .toEqual({ name: 'agi', linearName: 'AGI', root: '~/src/a' })
+    .toEqual({ name: 'agi', linearName: 'AGI', linearProfile: null, root: '~/src/a' })
   expect(parseProjectDetection('{"name":null,"linear":null,"root":null}')).toBeNull()
 })
 
 test('project list keeps projects without a Linear binding', () => {
   expect(parseProjectList('[{"name":"agi","linear":{"name":"AGI"}},{"name":"wispr"}]'))
-    .toEqual([{ name: 'agi', linearName: 'AGI', repos: [] }, { name: 'wispr', linearName: null, repos: [] }])
+    .toEqual([{ name: 'agi', linearName: 'AGI', linearProfile: null, repos: [] }, { name: 'wispr', linearName: null, linearProfile: null, repos: [] }])
+})
+
+test('a project in another Linear workspace carries its linear.profile, in detection and in the list', () => {
+  expect(parseProjectDetection('{"name":"talora-health","linear":{"name":"Talora","projectId":"t","profile":"personal"},"root":"~/src/talora"}'))
+    .toEqual({ name: 'talora-health', linearName: 'Talora', linearProfile: 'personal', root: '~/src/talora' })
+  expect(parseProjectList('[{"name":"talora-health","linear":{"name":"Talora","profile":"personal"}},{"name":"agi","linear":{"name":"AGI"}}]').map((p) => p.linearProfile))
+    .toEqual(['personal', null])
+})
+
+test('the Issues read runs in the project\'s Linear profile, and only a profiled project sets one', () => {
+  const base = { PATH: '/usr/bin', LINEAR_API_KEY: 'k' }
+  const talora = ticketsRead({ name: 'talora-health', linearName: 'Talora', linearProfile: 'personal' }, base)
+  expect(talora.argv).toEqual(['tasks', '--project', 'Talora', '--json'])
+  expect(talora.env).toEqual({ PATH: '/usr/bin', LINEAR_API_KEY: 'k', LINEAR_PROFILE: 'personal' })
+  const agi = ticketsRead({ name: 'agi', linearName: 'AGI', linearProfile: null }, base)
+  expect(agi.argv).toEqual(['tasks', '--project', 'AGI', '--json'])
+  expect(agi.env).toBe(base)
+  expect('LINEAR_PROFILE' in agi.env).toBe(false)
+  expect(() => ticketsRead({ name: 'wispr', linearName: null, linearProfile: 'personal' }, base))
+    .toThrow('Project "wispr" has no Linear project. Link one: agents projects link wispr')
 })
 
 test('the project menu offers the projects with a repository inside the window folder', () => {

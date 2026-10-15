@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
-import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
+import { LINEAR_NOT_FOUND_MESSAGE, linearSpawnEnv, resolveLinearBin } from '../core/linearBin';
 import { parseGoals, renderGoals } from '../core/goals';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
@@ -22,6 +22,7 @@ import {
   parsePrs,
   parseProjectDetection,
   parseTickets,
+  ticketsRead,
   projectSessions,
   projectFallback,
   projectsInFolder,
@@ -437,7 +438,8 @@ class ProjectPanelController {
   /** The picked project for this workspace, else the one containing its first folder. */
   project(): Promise<ProjectRef | null> {
     const picked = this.context.workspaceState.get<ProjectRef>(PICKED_PROJECT_KEY);
-    if (picked) return Promise.resolve(picked);
+    // A pick stored before Linear profiles has no linearProfile: the default profile.
+    if (picked) return Promise.resolve({ ...picked, linearProfile: picked.linearProfile ?? null });
     if (!this.detected) {
       const detected = this.detect();
       this.detected = detected;
@@ -469,7 +471,7 @@ class ProjectPanelController {
   async pickByName(name: string): Promise<void> {
     const p = (await this.projectList()).find((x) => x.name === name);
     if (!p) throw new Error(`No project named ${name}`);
-    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: p.name, linearName: p.linearName });
+    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: p.name, linearName: p.linearName, linearProfile: p.linearProfile });
     this.refresh(true);
   }
 
@@ -522,10 +524,8 @@ class ProjectPanelController {
     const cached = this.tickets;
     if (!force && cached && cached.project === p.name && Date.now() - cached.at < FRESH_MS) return cached.groups;
     const groups = (async () => {
-      if (!p.linearName) throw new Error(`Project "${p.name}" has no Linear project. Link one: agents projects link ${p.name}`);
-      const bin = resolveLinearBin();
-      if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
-      const { stdout } = await execFileAsync(bin, ['tasks', '--project', p.linearName, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+      const { argv, env } = ticketsRead(p);
+      const { stdout } = await execFileAsync(this.linear(), argv, { timeout: 60_000, maxBuffer: 20 * 1024 * 1024, env });
       const parsed = parseTickets(stdout);
       // A read that lands after a project switch is not the shown project's.
       if (this.tickets?.project === p.name) this.ticketsSeen = parsed;
@@ -579,9 +579,10 @@ class ProjectPanelController {
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
   todayId: string | undefined;
 
-  /** Company and today's goal: one `linear goals --json` read. */
+  /** Company and today's goal: one `linear goals --json` read, in the shown project's workspace. */
   async goals(): Promise<string> {
-    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+    const env = await this.linearEnv();
+    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024, env });
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
     return renderGoals(goals);
@@ -593,13 +594,19 @@ class ProjectPanelController {
     return bin;
   }
 
+  /** The env for a linear spawn on behalf of the shown project; no project is the default profile. */
+  private async linearEnv(): Promise<NodeJS.ProcessEnv> {
+    return linearSpawnEnv((await this.project())?.linearProfile ?? null);
+  }
+
   async ticketDetail(id: string): Promise<string> {
-    const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+    // The ticket is read in the shown project's workspace; that project also lists who is on it.
+    const project = await this.project();
+    const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024, env: linearSpawnEnv(project?.linearProfile ?? null) });
     const t = parseTicketDetail(stdout);
     this.shownTicket = t;
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     const agent = this.ticketAgent(t);
-    const project = await this.project().catch(() => null);
     const rows = project ? this.projectRows(project) : (preferLive(this.presented()) as unknown as SessionLike[]);
     const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
@@ -608,7 +615,7 @@ class ProjectPanelController {
   }
 
   async comment(id: string, text: string): Promise<void> {
-    await execFileAsync(this.linear(), commentArgv(id, text), { timeout: 60_000 });
+    await execFileAsync(this.linear(), commentArgv(id, text), { timeout: 60_000, env: await this.linearEnv() });
   }
 
   /** Start runs the agent Linear delegates the ticket to when this version launches it
@@ -875,7 +882,7 @@ class ProjectPanelController {
     const projects = await readRegistry(true);
     const current = await this.project();
     const choice = await vscode.window.showQuickPick(
-      projects.map((p) => ({ label: p.name, description: p.linearName ?? 'no Linear project', picked: p.name === current?.name, project: p })),
+      projects.map((p) => ({ label: p.name, description: p.linearName ? (p.linearProfile ? `${p.linearName} · ${p.linearProfile}` : p.linearName) : 'no Linear project', picked: p.name === current?.name, project: p })),
       { placeHolder: 'Show which project in the Project sidebar?' },
     );
     if (!choice) return;
