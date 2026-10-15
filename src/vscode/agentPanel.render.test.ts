@@ -427,6 +427,9 @@ test('Made: one sideways row — the PR with its checks opens GitHub, then other
   expect(html).toContain('<span class="mk-st tk-st">In Progress</span>');
   expect(html).toContain('<span class="mk-t">One card sidebar</span>');
   expect(cards.renderMadeShelf({ ticket: { id: 'PHNX-1' } })).toContain('<span class="mk-t">Linear ticket</span>');
+  // The tile names the session's project, so the ticket reads in that project's Linear workspace.
+  expect(cards.renderMadeShelf({ ticket: { id: 'TAL-3' }, confirmedProject: 'talora-health' })).toContain('data-ticket="TAL-3" data-ticket-project="talora-health"');
+  expect(cards.renderMadeShelf({ ticket: { id: 'PHNX-1' } })).toContain('data-ticket="PHNX-1" data-ticket-project=""');
   // An image previews; a page shows its type mark and can be shared from this machine.
   expect(html).toContain('<img data-thumb="vscode-resource:/hero.jpg"');
   expect(html).toContain('data-share="/u/Downloads/New/index.html"');

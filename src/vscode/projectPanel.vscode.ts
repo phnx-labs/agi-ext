@@ -57,7 +57,7 @@ import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openExternalUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
-import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
+import { commentRun, parseTicketDetail, renderTicketDetail, ticketProfile, ticketPrompt, ticketRead, type OpenedTicket, type TicketDetail, type TicketOrigin } from '../core/ticketDetail';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, validMergeMethod } from '../core/settings';
 import { BUILT_IN_AGENTS } from '../core/agents';
@@ -111,6 +111,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   private active: TabId;
   /** The ticket whose detail the Tickets tab shows, or null for the list. */
   private ticket: string | null = null;
+  /** Where that ticket was opened, which decides the Linear profile it is read in. */
+  private ticketFrom: TicketOrigin = 'panel';
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
   constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
@@ -244,7 +246,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     let html: string;
     let ok = true;
     try {
-      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket)
+      html = tab === 'tickets' && this.ticket ? await this.controller.ticketDetail(this.ticket, this.ticketFrom)
         : tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
           : await this.controller.render(tab, project, force);
     } catch (e) {
@@ -280,11 +282,12 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   /** A ticket tile, here or in the session panel, opens the ticket in Issues. */
-  async openTicketTab(id: string): Promise<void> {
+  async openTicketTab(id: string, from: TicketOrigin = 'panel'): Promise<void> {
     if (this.view) this.view.show(true);
     else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     // Straight to the ticket: the Issues list is not read first.
     this.ticket = id;
+    this.ticketFrom = from;
     if (this.active !== 'tickets') {
       this.active = 'tickets';
       void this.context.workspaceState.update(TAB_KEY, 'tickets');
@@ -298,6 +301,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   /** A ticket row click opens its detail (one read); the back control returns to the list. */
   async openTicket(id: string | null): Promise<void> {
     this.ticket = id;
+    this.ticketFrom = 'panel';
     const state = this.tabs.get('tickets')!;
     if (id) this.post('tickets', '<div class="empty">Loading…</div>');
     else state.loadedAt = 0;
@@ -360,20 +364,27 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   private goalsAt = 0;
+  private goalsGeneration = 0;
 
   /** The two goal lines above the tabs; a failed read says so on one faint line. */
   private async loadGoals(force: boolean): Promise<void> {
     if (!this.view?.visible) return;
     if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
     this.goalsAt = Date.now();
+    const gen = ++this.goalsGeneration;
     let html: string;
-    const before = this.controller.todayId;
+    let todayId: string | undefined;
+    let ok = true;
     try {
-      html = await this.controller.goals();
+      ({ html, todayId } = await this.controller.goals());
     } catch (e) {
-      this.goalsAt = 0;
+      ok = false;
       html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
     }
+    if (gen !== this.goalsGeneration) return; // a newer read (refresh / project switch) owns the lines
+    const before = this.controller.todayId;
+    if (ok) this.controller.todayId = todayId;
+    else this.goalsAt = 0;
     void this.view?.webview.postMessage({ type: 'goals', html });
     // Today's ticket marks its sessions with ☀; redraw the list when it changes.
     if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
@@ -579,13 +590,14 @@ class ProjectPanelController {
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
   todayId: string | undefined;
 
-  /** Company and today's goal: one `linear goals --json` read, in the shown project's workspace. */
-  async goals(): Promise<string> {
-    const env = await this.linearEnv();
-    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024, env });
+  /** Company and today's goal: one `linear goals --json` read, in the shown project's
+   *  workspace; the caller keeps todayId only when this read is still the newest. */
+  async goals(): Promise<{ html: string; todayId: string | undefined }> {
+    // A failed project lookup is no shown project: the default profile, as before profiles.
+    const shown = await this.project().catch(() => null);
+    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024, env: linearSpawnEnv(shown?.linearProfile ?? null) });
     const goals = parseGoals(stdout);
-    this.todayId = goals.today?.id;
-    return renderGoals(goals);
+    return { html: renderGoals(goals), todayId: goals.today?.id };
   }
 
   private linear(): string {
@@ -594,15 +606,17 @@ class ProjectPanelController {
     return bin;
   }
 
-  /** The env for a linear spawn on behalf of the shown project; no project is the default profile. */
-  private async linearEnv(): Promise<NodeJS.ProcessEnv> {
-    return linearSpawnEnv((await this.project())?.linearProfile ?? null);
-  }
+  /** The ticket the detail last opened and its profile, so Comment posts in the same workspace. */
+  private openedTicket: OpenedTicket | undefined;
 
-  async ticketDetail(id: string): Promise<string> {
-    // The ticket is read in the shown project's workspace; that project also lists who is on it.
-    const project = await this.project();
-    const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024, env: linearSpawnEnv(project?.linearProfile ?? null) });
+  async ticketDetail(id: string, from: TicketOrigin): Promise<string> {
+    // A failed project lookup is no shown project, as before profiles; a named
+    // project is looked up in the registry and an unknown one is an error.
+    const project = await this.project().catch(() => null);
+    const opened: OpenedTicket = { id, profile: ticketProfile(from, project, from === 'panel' || from.project === null ? [] : await readRegistry()) };
+    this.openedTicket = opened;
+    const { argv, env } = ticketRead(opened);
+    const { stdout } = await execFileAsync(this.linear(), argv, { timeout: 60_000, maxBuffer: 20 * 1024 * 1024, env });
     const t = parseTicketDetail(stdout);
     this.shownTicket = t;
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
@@ -615,7 +629,8 @@ class ProjectPanelController {
   }
 
   async comment(id: string, text: string): Promise<void> {
-    await execFileAsync(this.linear(), commentArgv(id, text), { timeout: 60_000, env: await this.linearEnv() });
+    const { argv, env } = commentRun(this.openedTicket, id, text);
+    await execFileAsync(this.linear(), argv, { timeout: 60_000, env });
   }
 
   /** Start runs the agent Linear delegates the ticket to when this version launches it
@@ -935,7 +950,11 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
       followFrontTerminal();
       void controller.redrawSessions().then(() => controller.view.reveal(id, false));
     }),
-    vscode.commands.registerCommand('agents.project.openTicket', (id: unknown) => typeof id === 'string' && id ? controller.view.openTicketTab(id) : undefined),
+    // A caller outside the panel names the ticket's project (null: a session in no project), so it is
+    // read in that project's Linear workspace; with no second argument it is the shown project's.
+    vscode.commands.registerCommand('agents.project.openTicket', (id: unknown, project?: unknown) => typeof id === 'string' && id
+      ? controller.view.openTicketTab(id, project === undefined ? 'panel' : { project: typeof project === 'string' && project ? project : null })
+      : undefined),
     // Internal: the Lead talks to the project this panel shows (src/vscode/lead.vscode.ts).
     vscode.commands.registerCommand('agents.project.current', async () => (await controller.project())?.name),
   );

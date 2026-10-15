@@ -4,7 +4,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.404] - 2026-10-14
+## [0.9.405] - 2026-10-14
 
 - **A project in another Linear workspace shows its own tickets.** When a project's definition
   names a Linear profile (`linear: { profile: personal }` in `~/.agents/projects/<name>.yaml`),
@@ -14,6 +14,11 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   ("Talora · personal"). Projects without a profile read Linear exactly as before. It needs an
   agents-cli that reports `linear.profile` and a linear-cli that reads `LINEAR_PROFILE`; a
   project picked before this version reads the default profile until you pick it again.
+- **A ticket opened from elsewhere reads in its own workspace.** A ticket tile in the Active
+  Session sidebar opens in the Linear workspace of that session's project, and a ticket the Lead
+  names in the Lead's project's, whichever project the Project panel shows; its Comment posts
+  there too. A project the CLI no longer lists says so instead of reading the wrong workspace.
+- Goal lines from a project you just switched away from no longer replace the new project's.
 
 ## [0.9.403] - 2026-10-14
 

@@ -166,6 +166,8 @@ interface PanelSnapshot {
   sessionTitle?: string;
   model?: string;
   project?: string;
+  /** The registered project the CLI files the session under (`confirmedProject`); its ticket is read in that project's Linear workspace. */
+  confirmedProject?: string;
   hostLabel?: string;
   // The heavy timeline filters read this machine's session index, so they exist only here.
   sessionLocal?: boolean;
@@ -556,8 +558,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if ((msg.dir === 'back' || msg.dir === 'fwd') && stepTrail(msg.dir)) void this.refresh();
         return;
       case 'openTicket':
-        // The ticket opens in the Project panel's Issues tab: one read, with comments.
-        if (typeof msg.id === 'string' && msg.id) void vscode.commands.executeCommand('agents.project.openTicket', msg.id);
+        // The ticket opens in the Project panel's Issues tab: one read, with comments, in the
+        // Linear workspace of the project its tile names (null: a session in no project).
+        if (typeof msg.id === 'string' && msg.id) void vscode.commands.executeCommand('agents.project.openTicket', msg.id, typeof msg.project === 'string' && msg.project ? msg.project : null);
         return;
       case 'dictationState':
         this.view?.webview.postMessage({ type: 'dictation', state: dictation.state() });
@@ -1025,6 +1028,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.related = relatedSessions(live, sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), Date.now());
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
+        snapshot.confirmedProject = live.confirmedProject || undefined;
         snapshot.hostLabel = remoteDevice || os.hostname().split('.')[0];
         snapshot.sessionLocal = card.sessionLocal;
         snapshot.inWorktree = !!live.worktreeSlug;
@@ -1567,7 +1571,7 @@ function renderMadeShelf(s) {
       '<span class="mk-f"><span class="mk-go" aria-hidden="true">↗</span></span></button>');
   }
   if (tk) {
-    tiles.push('<button type="button" class="mk mk-pr mk-tk" data-ticket="' + esc(tk.id) + '" title="' + esc('Read ' + tk.id + (tk.title ? ' ' + tk.title : '')) + '">' +
+    tiles.push('<button type="button" class="mk mk-pr mk-tk" data-ticket="' + esc(tk.id) + '" data-ticket-project="' + esc(s.confirmedProject || '') + '" title="' + esc('Read ' + tk.id + (tk.title ? ' ' + tk.title : '')) + '">' +
       '<span class="mk-h">' + APP_ICON.linear + '<b>' + esc(tk.id) + '</b>' + (tk.state ? '<span class="mk-st tk-st">' + esc(tk.state) + '</span>' : '') + '</span>' +
       '<span class="mk-t">' + esc(tk.title || 'Linear ticket') + '</span>' +
       '<span class="mk-f"><span class="mk-read">Read ›</span></span></button>');
@@ -1949,7 +1953,7 @@ function bindPanel() {
     if (bindOnce(el, 'share')) el.addEventListener('click', (e) => { e.stopPropagation(); vscode.postMessage({ type: 'shareArtifact', path: el.getAttribute('data-share') }); });
   }
   for (const el of root.querySelectorAll('[data-ticket]')) {
-    if (bindOnce(el, 'ticket')) el.addEventListener('click', () => vscode.postMessage({ type: 'openTicket', id: el.getAttribute('data-ticket') }));
+    if (bindOnce(el, 'ticket')) el.addEventListener('click', () => vscode.postMessage({ type: 'openTicket', id: el.getAttribute('data-ticket'), project: el.getAttribute('data-ticket-project') || null }));
   }
   for (const el of root.querySelectorAll('[data-nav]')) {
     if (bindOnce(el, 'nav')) el.addEventListener('click', () => vscode.postMessage({ type: 'nav', dir: el.getAttribute('data-nav') }));

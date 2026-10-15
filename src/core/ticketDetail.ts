@@ -1,7 +1,8 @@
 // The Tickets tab's detail view: one `linear tasks <ID> --json` read on the click
 // that opens it, drawn in the panel. Comments leave as one `linear update` argv.
 
-import { escapeHtml } from './projectPanel';
+import { escapeHtml, type ProjectRef } from './projectPanel';
+import { linearSpawnEnv } from './linearBin';
 
 export interface TicketDetail {
   identifier: string;
@@ -48,6 +49,39 @@ export function parseTicketDetail(raw: string): TicketDetail {
 /** The argv that adds one comment; `--comment=` keeps a leading "-" in the text from reading as a flag. */
 export function commentArgv(identifier: string, text: string): string[] {
   return ['update', identifier, `--comment=${text}`];
+}
+
+/** Where a ticket was opened: the panel's own Issues list, ⌘K or a card here (the
+ *  shown project), or another surface naming the project it belongs to (null: a
+ *  session in no project). */
+export type TicketOrigin = 'panel' | { project: string | null };
+
+/** The Linear profile a ticket opened from `origin` is read and commented in. A named
+ *  project the registry does not list is an error, never the default profile. */
+export function ticketProfile(origin: TicketOrigin, shown: ProjectRef | null, registry: ProjectRef[]): string | null {
+  if (origin === 'panel') return shown?.linearProfile ?? null;
+  if (origin.project === null) return null;
+  const name = origin.project;
+  const p = registry.find((x) => x.name === name);
+  if (!p) throw new Error(`No project named ${name} in agents projects list; cannot tell which Linear workspace its ticket is in.`);
+  return p.linearProfile;
+}
+
+/** The ticket the detail shows, and the profile it was read in. */
+export interface OpenedTicket {
+  id: string;
+  profile: string | null;
+}
+
+/** One ticket's detail read: `linear tasks <ID> --json` in its profile. */
+export function ticketRead(t: OpenedTicket, base: NodeJS.ProcessEnv = process.env): { argv: string[]; env: NodeJS.ProcessEnv } {
+  return { argv: ['tasks', t.id, '--json'], env: linearSpawnEnv(t.profile, base) };
+}
+
+/** A comment on the open ticket, in the profile its detail was read in; any other ticket is refused. */
+export function commentRun(opened: OpenedTicket | undefined, id: string, text: string, base: NodeJS.ProcessEnv = process.env): { argv: string[]; env: NodeJS.ProcessEnv } {
+  if (!opened || opened.id !== id) throw new Error(`${id} is not the ticket open in the panel.`);
+  return { argv: commentArgv(id, text), env: linearSpawnEnv(opened.profile, base) };
 }
 
 /** The task a new agent gets for the ticket. */

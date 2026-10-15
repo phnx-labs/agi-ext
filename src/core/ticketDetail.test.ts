@@ -1,5 +1,6 @@
 import { test, expect } from 'bun:test'
-import { commentArgv, parseTicketDetail, renderTicketDetail } from './ticketDetail'
+import { commentArgv, commentRun, parseTicketDetail, renderTicketDetail, ticketProfile, ticketRead } from './ticketDetail'
+import type { ProjectRef } from './projectPanel'
 
 // Shape of `linear tasks PHNX-4289 --json` (linear-cli, 2026-10-11), trimmed.
 const RAW = JSON.stringify({
@@ -39,4 +40,40 @@ test('a delegated ticket names its agent; sessions already on it come first with
   expect(busy).toContain('Merge &lt;3867&gt;')
   expect(busy).toContain('<button class="link" data-start>Start Claude in a new tab</button>')
   expect(busy).not.toContain('▶ Start')
+})
+
+// The shown project is talora-health (personal workspace); agi reads the default workspace.
+const TALORA: ProjectRef = { name: 'talora-health', linearName: 'Talora', linearProfile: 'personal' }
+const AGI: ProjectRef = { name: 'agi', linearName: 'AGI', linearProfile: null }
+const REGISTRY = [TALORA, AGI]
+const BASE = { PATH: '/usr/bin' }
+
+test('a ticket opened from another surface reads in the profile of the project it names, not the shown one', () => {
+  const profile = ticketProfile({ project: 'agi' }, TALORA, REGISTRY)
+  expect(profile).toBeNull()
+  expect(ticketRead({ id: 'PHNX-1', profile }, BASE)).toEqual({ argv: ['tasks', 'PHNX-1', '--json'], env: BASE })
+  expect(ticketProfile({ project: 'talora-health' }, AGI, REGISTRY)).toBe('personal')
+})
+
+test('a ticket from a session in no project reads in the default profile, whatever is shown', () => {
+  expect(ticketProfile({ project: null }, TALORA, [])).toBeNull()
+})
+
+test('a named project the registry does not list is an error, never the default profile', () => {
+  expect(() => ticketProfile({ project: 'gone' }, TALORA, REGISTRY)).toThrow('No project named gone')
+})
+
+test('a ticket opened from the panel reads in the shown project\'s profile; no shown project is the default', () => {
+  const profile = ticketProfile('panel', TALORA, [])
+  expect(ticketRead({ id: 'TAL-3', profile }, BASE).env).toEqual({ PATH: '/usr/bin', LINEAR_PROFILE: 'personal' })
+  expect(ticketProfile('panel', null, [])).toBeNull()
+})
+
+test('Comment posts in the profile the open ticket was read in, and only on that ticket', () => {
+  // Opened from a default-workspace session while talora (personal) is shown.
+  const opened = { id: 'PHNX-1', profile: ticketProfile({ project: 'agi' }, TALORA, REGISTRY) }
+  expect(commentRun(opened, 'PHNX-1', 'done', BASE)).toEqual({ argv: ['update', 'PHNX-1', '--comment=done'], env: BASE })
+  expect(commentRun({ id: 'TAL-3', profile: 'personal' }, 'TAL-3', 'ok', BASE).env).toEqual({ PATH: '/usr/bin', LINEAR_PROFILE: 'personal' })
+  expect(() => commentRun(opened, 'PHNX-2', 'x', BASE)).toThrow('PHNX-2 is not the ticket open in the panel.')
+  expect(() => commentRun(undefined, 'PHNX-1', 'x', BASE)).toThrow()
 })
