@@ -450,9 +450,6 @@ export interface RemoteSession {
   /** Full genuine first user turn from the durable session index. Empty on an
    *  older CLI, where the UI labels its topic fallback as a summary. */
   firstUserMessage: string;
-  /** Absolute transcript path the CLI stamped on the row (`sessionFile`). Empty
-   *  when the stream has none (older CLI or a non-file-backed session). */
-  sessionFile: string;
   /** User-set session label from the CLI payload. Kept separate from topic so UI
    *  card headers can prefer explicit names over inferred task lines. */
   label: string;
@@ -1239,7 +1236,6 @@ export function normalizeActiveSession(
     effort: typeof raw.effort === 'string' && EFFORTS.has(raw.effort) ? (raw.effort as RemoteSession['effort']) : undefined,
     fast: typeof raw.fast === 'boolean' ? raw.fast : undefined,
     firstUserMessage: asStr(raw.firstUserMessage),
-    sessionFile: asStr(raw.sessionFile),
     label: asStr(raw.label),
     // Current watch rows mark index-backed history explicitly; older picker-shaped
     // rows used lifecycle state='inactive'. Present one stable word to the UI.

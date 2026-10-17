@@ -1,9 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { sessionPresentationStore } from '../core/sessionPresentationStore';
-import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
-import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
+import { resolveAgentsBin, bootstrapPath, runCliArgs } from '../core/agentsBin';
 
 export type RecapAgentType = 'claude' | 'codex' | 'cursor' | 'copilot';
 
@@ -74,10 +72,17 @@ export function buildRecapArgv(
   ];
 }
 
+/** The transcript file `sessions <id> --json` records for exactly this session. */
+export function transcriptPathOf(sessionsJson: string, sessionId: string): string | undefined {
+  const rows = JSON.parse(sessionsJson) as Array<{ id?: unknown; filePath?: unknown }>;
+  const row = rows.find((r) => r.id === sessionId);
+  return typeof row?.filePath === 'string' && row.filePath ? row.filePath : undefined;
+}
+
 export async function runRecapHeadless(args: RunRecapArgs): Promise<string | null> {
-  // The CLI stamps the transcript path on the row; only this machine's is a local file.
-  const transcriptPath = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
-    .find((s) => s.sessionId === args.sessionId && s.host === LOCAL_LABEL)?.sessionFile;
+  // The CLI's session index, not the stream: recap must work while no view demands it.
+  const { stdout } = await runCliArgs('sessions', [args.sessionId, '--json'], { timeout: 10_000 });
+  const transcriptPath = transcriptPathOf(stdout, args.sessionId);
   if (!transcriptPath) {
     console.warn(`[recap] no transcript for session ${args.sessionId} (${args.agentType})`);
     return null;
