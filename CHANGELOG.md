@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- Terminal readiness (shell, prompt and agent ready, and shell adoption) is detected by one
+  probe implementation. A window whose monitor connection is down now runs the same detector
+  the monitor runs, instead of a second copy that could drift from it.
+- Shell-adoption diagnostics have one writer to `~/.cache/swarmify/shell-adoption.log`; it
+  records arming, forwarding and the adopted agent, no longer every 2 s poll.
+
 ## [0.9.406] - 2026-10-17
 
 The project menu lists every Linear project, so a wrong or missing detection is one click to fix

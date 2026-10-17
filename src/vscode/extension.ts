@@ -510,12 +510,8 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   if (automatic) armShellAdoptionForTerminal(terminal, context);
   await sendCommandWhenReady(terminal, command);
   if (opts.agentKey) {
-    // Arm agentReady detection with the minted id (matching openSingleAgent).
-    // Readiness is detected by the process-state probe; the id is still passed
-    // so the monitor broadcast learns the session id (PHNX-2553).
-    readiness.armAgentReady(terminal, opts.agentKey && sessionId
-      ? { agentKey: opts.agentKey, sessionId, cwd }
-      : {});
+    // Arm agentReady detection, the process-state probe (matching openSingleAgent).
+    readiness.armAgentReady(terminal);
   }
 }
 
@@ -1961,9 +1957,7 @@ async function openSingleAgent(
     // and otherwise leaves the tab open with a readable status line on a launch
     // failure (RUSH-2593). No-op for shell tabs.
     await sendCommandWhenReady(terminal, wrapNativeAgentCommand(command, agentKey === 'shell'));
-    readiness.armAgentReady(terminal, agentKey && sessionId
-      ? { agentKey, sessionId, cwd }
-      : {});
+    readiness.armAgentReady(terminal);
   }
 
   if (agentKey === 'shell') {
@@ -2665,11 +2659,7 @@ export async function openAgentSessionTerminal(
   if (session.account) {
     terminals.setAccount(terminal, session.account);
   }
-  readiness.armAgentReady(terminal, {
-    agentKey: agentKey || session.agent,
-    sessionId: session.id,
-    cwd: workspacePath,
-  });
+  readiness.armAgentReady(terminal);
 
   try {
     await readiness.waitFor(terminal, 'agentReady');
@@ -2713,15 +2703,12 @@ async function resumeCurrentInBestProfile(context: vscode.ExtensionContext) {
   // `--session-id` pins the NEW session id; the CLI honors it only when it
   // picks claude (claude-only flag) and ignores it otherwise. The harness is
   // unknown at spawn: stamp the outgoing harness as the prior (the session
-  // feed's read-back corrects it) and arm the claude session-file fast path
-  // optimistically — any other pick simply never fires that watch and the
-  // generic process probe resolves agentReady.
+  // feed's read-back corrects it).
   const newSessionId = randomUUID();
   const host = terminalEntry.host;
   await launchResumeTerminal(context, {
     builtIn,
     stampAgentKey: agentKey,
-    armAgentKey: 'claude',
     launchCmd: buildAutoRunLaunchCommand({ host, sessionId: newSessionId }),
     newSessionId,
     oldSessionId: terminalEntry.sessionId,
@@ -2840,8 +2827,6 @@ interface ResumeLaunchPlan {
   builtIn: (typeof BUILT_IN_AGENTS)[number];
   /** Harness stamped on the terminal entry at spawn. */
   stampAgentKey: string;
-  /** Harness the readiness session-file fast path arms for. */
-  armAgentKey: string;
   launchCmd: string;
   newSessionId: string;
   oldSessionId: string;
@@ -2910,11 +2895,7 @@ async function launchResumeTerminal(
     console.warn(`[RESUME] promptReady wait FAILED: ${err} — sending launch anyway`);
   }
   terminal.sendText(plan.launchCmd);
-  readiness.armAgentReady(terminal, {
-    agentKey: plan.armAgentKey,
-    sessionId: plan.newSessionId,
-    cwd: workspacePath,
-  });
+  readiness.armAgentReady(terminal);
   terminal.show();
 
   // Type the payload, then Enter as a separate keystroke — Claude's Ink TUI
@@ -2945,14 +2926,12 @@ async function launchResumeInHarness(
     vscode.window.showInformationMessage(`No built-in agent config for ${opts.agentKey}`);
     return;
   }
-  // Only Claude can pin its new session id up front (--session-id), which
-  // gives readiness an exact jsonl to watch; other harnesses reuse the old id
-  // and the generic process probe.
+  // Only Claude can pin its new session id up front (--session-id); other
+  // harnesses reuse the old id.
   const newSessionId = opts.agentKey === 'claude' ? randomUUID() : opts.oldSessionId;
   await launchResumeTerminal(context, {
     builtIn,
     stampAgentKey: opts.agentKey,
-    armAgentKey: opts.agentKey,
     launchCmd: buildAgentRunLaunchCommand(
       opts.agentKey,
       opts.host,
@@ -3196,9 +3175,7 @@ export async function openSingleAgentWithQueue(
   }
 
   // Arm agentReady detection (process-state probe).
-  readiness.armAgentReady(terminal, agentKey && sessionId
-    ? { agentKey, sessionId, cwd }
-    : {});
+  readiness.armAgentReady(terminal);
 
   if (agentKey === 'opencode' && opencodeSessionsBefore !== null) {
     detectOpencodeSessionId(terminal, cwd, opencodeSessionsBefore, context);
@@ -3314,9 +3291,7 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
         } else {
           terminal.sendText(command);
         }
-        readiness.armAgentReady(terminal, agentKey && sessionId
-          ? { agentKey, sessionId, cwd }
-          : {});
+        readiness.armAgentReady(terminal);
       }
       if (agentKey === 'opencode' && opencodeSessionsBefore !== null) {
         detectOpencodeSessionId(terminal, cwd, opencodeSessionsBefore, context);
@@ -3546,21 +3521,21 @@ async function armAutoLabelPoller(
 function armShellAdoptionForTerminal(terminal: vscode.Terminal, context: vscode.ExtensionContext): void {
   const entry = terminals.getByTerminal(terminal);
   if (!entry) {
-    appendAdoptionLog(`armShellAdoptionForTerminal: "${terminal.name}" not in terminals registry — skipping`);
+    readiness.adoptionLog(`armShellAdoptionForTerminal: "${terminal.name}" not in terminals registry — skipping`);
     return;
   }
   if (entry.agentConfig?.prefix !== 'sh') {
-    appendAdoptionLog(`armShellAdoptionForTerminal: "${terminal.name}" prefix=${entry.agentConfig?.prefix}, not 'sh' — skipping`);
+    readiness.adoptionLog(`armShellAdoptionForTerminal: "${terminal.name}" prefix=${entry.agentConfig?.prefix}, not 'sh' — skipping`);
     return;
   }
 
-  appendAdoptionLog(`armShellAdoptionForTerminal: calling readiness.armShellAdoption for "${terminal.name}" (id=${entry.id})`);
+  readiness.adoptionLog(`armShellAdoptionForTerminal: calling readiness.armShellAdoption for "${terminal.name}" (id=${entry.id})`);
 
   readiness.armShellAdoption(terminal, ({ agentKey, sessionId }) => {
-    appendAdoptionLog(`armShellAdoptionForTerminal callback: agentKey=${agentKey} sessionId=${sessionId} terminal="${terminal.name}"`);
+    readiness.adoptionLog(`armShellAdoptionForTerminal callback: agentKey=${agentKey} sessionId=${sessionId} terminal="${terminal.name}"`);
     const def = getBuiltInByKey(agentKey);
     if (!def) {
-      appendAdoptionLog(`armShellAdoptionForTerminal callback: no built-in def for "${agentKey}" — aborting`);
+      readiness.adoptionLog(`armShellAdoptionForTerminal callback: no built-in def for "${agentKey}" — aborting`);
       console.warn(`[ADOPT] No built-in def for agent key "${agentKey}"`);
       return;
     }
@@ -3572,7 +3547,7 @@ function armShellAdoptionForTerminal(terminal: vscode.Terminal, context: vscode.
       def.prefix
     );
     const adopted = terminals.adoptShellAsAgent(terminal, newConfig, agentKey, sessionId);
-    appendAdoptionLog(`armShellAdoptionForTerminal callback: adoptShellAsAgent returned ${adopted}`);
+    readiness.adoptionLog(`armShellAdoptionForTerminal callback: adoptShellAsAgent returned ${adopted}`);
     if (!adopted) return;
     if (sessionId && supportsPrewarming(agentKey)) {
       startAutoLabelPollerForTerminal(terminal, context);
@@ -3581,14 +3556,6 @@ function armShellAdoptionForTerminal(terminal: vscode.Terminal, context: vscode.
       updateStatusBarForTerminal(terminal, context.extensionPath);
     }
   });
-}
-
-function appendAdoptionLog(msg: string): void {
-  try {
-    const file = path.join(os.homedir(), '.cache', 'swarmify', 'shell-adoption.log');
-    fsSync.mkdirSync(path.dirname(file), { recursive: true });
-    fsSync.appendFileSync(file, `${new Date().toISOString()} [ext] ${msg}\n`);
-  } catch { /* ignore */ }
 }
 
 /**
@@ -3954,7 +3921,6 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
       // 2. Generate the session id; the shell keeps its terminal identity.
       let newSessionId: string | null = null;
       let command = agentConfig.command || '';
-      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
       const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
 
       if (agentKey === 'claude') {
@@ -3983,9 +3949,7 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
 
       // 8. Restart agent with new session
       terminal.sendText('clear && ' + command);
-      readiness.armAgentReady(terminal, agentKey && newSessionId
-        ? { agentKey, sessionId: newSessionId, cwd }
-        : {});
+      readiness.armAgentReady(terminal);
 
       // 9. Update status bar
       updateStatusBarForTerminal(terminal, context.extensionPath);
@@ -4278,9 +4242,8 @@ async function openForkTerminal(
   // from that box's active feed rather than looking it up locally.
   if (opts.forkHost) terminals.setHost(terminal, opts.forkHost);
   readiness.registerTerminal(terminal);
-  // Arm agentReady like the launcher this mirrors; the verb mints the session id,
-  // so none is supplied here (the id-carrying fast path arms once it publishes).
-  readiness.armAgentReady(terminal, agentKey ? { agentKey, cwd: workspaceFolder } : {});
+  // Arm agentReady like the launcher this mirrors.
+  readiness.armAgentReady(terminal);
 
   const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
   if (resumeKey) terminals.setAgentType(terminal, resumeKey);
@@ -4658,11 +4621,7 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
       }
 
       if (resumeCmd && restoredAgentKey) {
-        readiness.armAgentReady(terminal, {
-          agentKey: restoredAgentKey,
-          sessionId: session.sessionId,
-          cwd: workspacePath,
-        });
+        readiness.armAgentReady(terminal);
       }
     }
   };
@@ -4735,11 +4694,7 @@ async function reopenLastClosedSession(context: vscode.ExtensionContext): Promis
 
     // Any known harness reopens, not just the prewarm five (#1747).
     if (resumeCmd) {
-      readiness.armAgentReady(terminal, {
-        agentKey: closed.agentType,
-        sessionId: closed.sessionId,
-        cwd: workspacePath,
-      });
+      readiness.armAgentReady(terminal);
     }
   }
 
@@ -4882,7 +4837,7 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
   const connected = () => follower.connected;
   readiness.setMonitorConnectivity(connected);
   readiness.setMonitorArmSink({
-    armAgent: (pid, agentKey, sessionId) => { void follower.armAgent(pid, agentKey, sessionId); },
+    armAgent: (pid) => { void follower.armAgent(pid); },
     armShellAdoption: (pid) => { void follower.armShellAdoption(pid); },
   });
 

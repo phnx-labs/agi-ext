@@ -109,7 +109,7 @@ Open the editor, press one chord, and an agent starts on the right machine with 
 
 **No scheduler in the extension.** Nothing in the extension launches, resumes, kills, injects, or rotates anything on a timer. The CLI daemon is the only scheduler. A second scheduler in a UI process caused the resume storms and the 31 percent idle CPU incident the current design exists to end.
 
-**No transcript parsing or local state reads for facts.** The extension does not read `~/.claude/projects`, terminal registries, or session state files to decide anything the stream can carry. Remaining readers (`src/monitor/sessionParse.ts`, the recursive `fs.watch` in `src/vscode/terminalReadiness.ts`, `src/monitor/readinessDetector.ts`) are recorded debt, scheduled for deletion, never extended.
+**No transcript parsing or local state reads for facts.** The extension does not read `~/.claude/projects`, terminal registries, or session state files to decide anything the stream can carry. Remaining readers (`src/monitor/sessionParse.ts`, `src/monitor/readinessDetector.ts`) are recorded debt, scheduled for deletion, never extended.
 
 **No second platform.** The extension does not score devices or accounts, resolve project paths, decide fork identity, or reproduce resume compatibility. Each of those has one owner in the CLI and the extension calls it.
 

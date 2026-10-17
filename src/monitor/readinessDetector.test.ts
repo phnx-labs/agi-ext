@@ -61,7 +61,7 @@ describe('ReadinessDetector', () => {
       // tabReady fires synchronously when the pid is added.
       expect(facts.some((f) => f.event === 'tabReady' && f.pid === pid)).toBe(true);
 
-      detector.armAgent(pid, 'claude', undefined);
+      detector.armAgent(pid);
 
       await waitFor(
         () => facts.some((f) => f.event === 'shellReady' && f.pid === pid),

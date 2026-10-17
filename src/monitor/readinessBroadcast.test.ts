@@ -103,7 +103,7 @@ describe('readiness broadcast round-trip', () => {
 
       // Report this window's terminal (with the real shell pid), then arm agent.
       expect(await follower.reportTuples([tuple({ windowId: 'winA', pid, agentType: 'claude' })])).toBe(true);
-      expect(await follower.armAgent(pid, 'claude', undefined)).toBe(true);
+      expect(await follower.armAgent(pid)).toBe(true);
 
       // The leader's single detector probes the pid and broadcasts shellReady...
       await waitFor(

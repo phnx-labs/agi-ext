@@ -369,8 +369,7 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 |---|---|---|
 | `src/core/prewarm.simple.ts` | still spawns `opencode session list` on every OpenCode tab open (the second, `workspaceState` crash-recovery mapping was deleted; the per-window file is the one restore store) | delete once the CLI daemon owns restore |
 | `src/monitor/sessionParse.ts` | resolves session-root directories for the readiness detector's file scan; obsolete parsing helpers were deleted in #74 | replace the remaining file scan with CLI-provided fields |
-| `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |
-| `src/monitor/readinessDetector.ts` | extension-invented lifecycle classifier (ps and pgrep loops) | move the signal into the CLI daemon, project it on the stream |
+| `src/monitor/readinessDetector.ts` | extension-invented lifecycle classifier (ps and pgrep loops), the only copy of each readiness probe: the leader runs one for every window's shell pids, and a window runs its own in-process (`src/vscode/terminalReadiness.ts`) while the monitor is down and to re-await promptReady after a reset, emitting into the same `ingestReadinessFact` / `ingestShellAdoptionFact` | move the signal into the CLI daemon, project it on the stream |
 | `src/vscode/agentPanel.vscode.ts` | `messageCount` and `recentFiles` are not on the stream and are dropped from the instant paint | add them to `SessionWatchRow`; never a lazy enrich |
 
 Wave 1 of PHNX-4044 (released as 0.9.371) removed 31 dead files and 49 dead exports, installed the knip gate, dropped `node-pty` and `@vscode/webview-ui-toolkit`, collapsed twelve shell quoters onto `shellQuote` and three binary resolvers onto `agentsBin.ts`, and derived the UI harness tables from the CLI catalog with a drift test.

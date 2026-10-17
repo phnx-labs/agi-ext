@@ -119,9 +119,9 @@ export class MonitorFollower<T> {
    * Ask the monitor to arm agentReady detection for a shell pid (#68). No-op
    * (returns false) while disconnected so the caller keeps the local fallback.
    */
-  async armAgent(pid: number, agentKey?: string, sessionId?: string): Promise<boolean> {
+  async armAgent(pid: number): Promise<boolean> {
     if (!this.client.connected) return false;
-    const request: ArmAgentRequest = { op: MONITOR_OP.armAgent, pid, agentKey, sessionId };
+    const request: ArmAgentRequest = { op: MONITOR_OP.armAgent, pid };
     try {
       await this.client.request(request);
       return true;
