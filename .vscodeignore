@@ -7,7 +7,6 @@ tsconfig.json
 node_modules/**
 **/node_modules/**
 !node_modules/yaml/**
-!node_modules/sql.js/**
 !node_modules/ws/**
 ui/**
 scripts/**

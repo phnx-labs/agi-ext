@@ -128,7 +128,7 @@ import {
   type RemoteAutoLabelHooks,
 } from '../core/remoteAutoLabel';
 import { displayIdentity, formatAgentStatusBarText, formatAgentStatusBarTooltip, resolveStreamIdentityStamp } from '../core/statusIdentity';
-import { getSessionPathBySessionId, getSessionPreviewInfo, getOpenCodeSessionPreviewInfo, getCursorSessionPreviewInfo } from './sessions.vscode';
+import { terminalPickFace } from '../core/terminalPicker';
 import * as handoff from '../core/handoff';
 import { decodeInjectQuery, selectInjectTarget } from '../core/inject';
 import { runMonitorHostOnLeader } from '../monitor/host';
@@ -2900,30 +2900,6 @@ interface TerminalQuickPickItem extends vscode.QuickPickItem {
   lastActivityMs?: number;
 }
 
-async function getSessionPreviewForEntry(
-  entry: terminals.EditorTerminal,
-  workspacePath?: string
-): Promise<{ firstUserMessage?: string; lastUserMessage?: string; lastActivityMs?: number; messageCount: number } | null> {
-  if (!entry.sessionId) return null;
-  const agentType = entry.agentType || prefixToAgentType(entry.agentConfig?.prefix ?? null);
-  if (!agentType) return null;
-
-  const sessionPath = await getSessionPathBySessionId(
-    entry.sessionId,
-    agentType,
-    workspacePath
-  );
-  if (!sessionPath) return null;
-
-  if (agentType === 'opencode') {
-    return await getOpenCodeSessionPreviewInfo(sessionPath);
-  }
-  if (agentType === 'cursor') {
-    return await getCursorSessionPreviewInfo(sessionPath);
-  }
-  return await getSessionPreviewInfo(sessionPath);
-}
-
 function cycleAgentTerminal(direction: 1 | -1) {
   const agentEntries = terminals.getAllTerminals().filter(e => e.agentConfig);
   if (agentEntries.length === 0) return;
@@ -2938,59 +2914,27 @@ function cycleAgentTerminal(direction: 1 | -1) {
 
 async function goToTerminal(context: vscode.ExtensionContext) {
   const allEntries = terminals.getAllTerminals();
-  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const rows = new Map(sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL).map((s) => [s.sessionId, s]));
+  const extensionPath = context.extensionPath;
+  const now = Date.now();
 
   const items: TerminalQuickPickItem[] = [];
-  const previewPromises: Array<{ itemIndex: number; entry: terminals.EditorTerminal; promise: Promise<{ firstUserMessage?: string; lastUserMessage?: string; lastActivityMs?: number; messageCount: number } | null> }> = [];
-
-  const extensionPath = context.extensionPath;
-
   for (const entry of allEntries) {
     if (!entry.agentConfig) continue;
-
-    const effectiveTitle = liveTitle(entry.sessionId) || entry.autoLabel || 'Untitled';
-    const itemIndex = items.length;
-
+    const face = terminalPickFace(entry.sessionId ? rows.get(entry.sessionId) : undefined, now);
     items.push({
-      label: effectiveTitle,
-      description: '',
-      detail: '',
+      label: liveTitle(entry.sessionId) || entry.autoLabel || 'Untitled',
+      description: face.description,
+      detail: face.detail,
       iconPath: buildIconPath(entry.agentConfig.title, extensionPath) ?? undefined,
-      terminal: entry.terminal
+      terminal: entry.terminal,
+      lastActivityMs: face.lastActivityMs,
     });
-
-    if (entry.sessionId) {
-      previewPromises.push({
-        itemIndex,
-        entry,
-        promise: getSessionPreviewForEntry(entry, workspacePath)
-      });
-    }
   }
 
   if (items.length === 0) {
     vscode.window.showInformationMessage('No agent terminals open');
     return;
-  }
-
-  const previewResults = await Promise.all(previewPromises.map(p => p.promise));
-  for (let i = 0; i < previewPromises.length; i++) {
-    const previewPromise = previewPromises[i];
-    const entry = previewPromise.entry;
-    const idx = previewPromise.itemIndex;
-    const info = previewResults[i];
-    if (info) {
-      if (info.lastActivityMs) {
-        const diffMs = Date.now() - info.lastActivityMs;
-        items[idx].description = diffMs < 60_000 ? 'Just now' : formatRelativeTime(info.lastActivityMs);
-        items[idx].lastActivityMs = info.lastActivityMs;
-      }
-
-      const parts: string[] = [];
-      if (info.firstUserMessage) parts.push(truncateText(info.firstUserMessage, 80));
-      if (info.messageCount > 0) parts.push(`(${info.messageCount})`);
-      items[idx].detail = parts.join(' ');
-    }
   }
 
   items.sort((a, b) => (b.lastActivityMs ?? 0) - (a.lastActivityMs ?? 0));

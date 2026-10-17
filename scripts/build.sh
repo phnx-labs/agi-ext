@@ -68,13 +68,11 @@ echo "Packaging extension..."
 VSIX_OUT="$DIST_DIR/swarm-ext-${VERSION}.vsix"
 bunx @vscode/vsce package --out "$VSIX_OUT"
 
-# Integrity guard: the extension `require()`s these at activation time (yaml in
-# sessions.persist, swarmifyConfig;
-# sql.js in sessions.vscode for Cursor chat previews).
-# If vsce ever prunes them from the VSIX the extension throws on activate() and
-# EVERY `agents.*` command becomes "command not found" (this shipped once as
-# 0.9.293). Fail the build here rather than let a dependency-less package
-# escape to the marketplace.
+# Integrity guard: the extension `require()`s yaml at activation time
+# (sessions.persist, swarmifyConfig). If vsce ever prunes it from the VSIX the
+# extension throws on activate() and EVERY `agents.*` command becomes "command
+# not found" (this shipped once as 0.9.293). Fail the build here rather than
+# let a dependency-less package escape to the marketplace.
 echo "Verifying packaged runtime dependencies..."
 VSIX_FILES="$(unzip -Z1 "$VSIX_OUT")"
 if printf '%s\n' "$VSIX_FILES" | grep -q '^extension/\.agents/'; then
@@ -82,9 +80,7 @@ if printf '%s\n' "$VSIX_FILES" | grep -q '^extension/\.agents/'; then
     exit 1
 fi
 MISSING=""
-# Exact-line literal match (-xF): the deps contain regex metachars (sql.js) and
-# we want the top-level entry, not a substring.
-for dep in yaml sql.js; do
+for dep in yaml; do
     if ! printf '%s\n' "$VSIX_FILES" | grep -qxF "extension/node_modules/${dep}/package.json"; then
         MISSING="${MISSING} ${dep}"
     fi
@@ -96,6 +92,6 @@ if [ -n "$MISSING" ]; then
     rm -f "$VSIX_OUT"
     exit 1
 fi
-echo "Runtime dependencies present in VSIX (yaml, sql.js)."
+echo "Runtime dependencies present in VSIX (yaml)."
 
 echo "Build complete: $VSIX_OUT"
