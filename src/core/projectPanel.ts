@@ -1,5 +1,5 @@
 // Pure model + HTML for the Project sidebar panel (PHNX-4289).
-// Each section is one CLI read: `agents projects tickets <name> --json` (Issues),
+// Each section is one CLI read: `linear tasks --project <id> --json` (Issues),
 // `agents projects prs list <name> --json` (Review). Sessions come from the
 // session stream rows already in the presentation store, filtered on the CLI's
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
@@ -20,6 +20,10 @@ import type { SessionCardFields } from './sessionCardFields';
 export interface ProjectRef {
   name: string;
   linearName: string | null;
+  /** The Linear project's id; Issues reads it with an explicit `--project`. */
+  linearId: string | null;
+  /** The Linear workspace (`linear.profile`); null is the default one. */
+  linearProfile: string | null;
   /** Its repositories and where each is checked out; only `agents projects list` carries them. */
   repos?: { slug: string; path: string }[];
   /** The checkout the window's folder resolved to (`agents projects status --path`'s `root`). */
@@ -95,14 +99,18 @@ function arr(v: unknown, what: string): unknown[] {
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+function linearLink(v: unknown): Pick<ProjectRef, 'linearName' | 'linearId' | 'linearProfile'> {
+  const l = v && typeof v === 'object' ? (v as Json) : null;
+  return { linearName: str(l?.name), linearId: str(l?.projectId), linearProfile: str(l?.profile) };
+}
+
 /** `agents projects status --path <dir> --json`: all-null when no project contains dir. */
 export function parseProjectDetection(raw: string): ProjectRef | null {
   const d = obj(JSON.parse(raw), 'project detection');
   const name = str(d.name);
   if (!name) return null;
-  const linear = d.linear && typeof d.linear === 'object' ? (d.linear as Json) : null;
   const root = str(d.root);
-  return { name, linearName: str(linear?.name), ...(root ? { root } : {}) };
+  return { name, ...linearLink(d.linear), ...(root ? { root } : {}) };
 }
 
 /** `agents projects list --json`. */
@@ -111,7 +119,6 @@ export function parseProjectList(raw: string): ProjectRef[] {
     const d = obj(p, 'project');
     const name = str(d.name);
     if (!name) throw new Error('Unexpected project shape from the CLI');
-    const linear = d.linear && typeof d.linear === 'object' ? (d.linear as Json) : null;
     const root = str(d.root);
     const listed = Array.isArray(d.repos)
       ? d.repos.flatMap((r) => {
@@ -122,7 +129,7 @@ export function parseProjectList(raw: string): ProjectRef[] {
       : [];
     const single = str(d.repo);
     const repos = listed.length || !single ? listed : [{ slug: single, path: root ?? '' }];
-    return { name, linearName: str(linear?.name), repos, ...(root ? { root } : {}) };
+    return { name, ...linearLink(d.linear), repos, ...(root ? { root } : {}) };
   });
 }
 
@@ -131,17 +138,41 @@ export function displayHome(p: string, home: string = os.homedir()): string {
   return p === home ? '~' : p.startsWith(home + '/') ? '~' + p.slice(home.length) : p;
 }
 
-/** Projects bound to `folder`: a directory the CLI row binds (its root or a repository
- *  checkout) inside it, as when a window is opened on a parent folder, or holding it. */
-export function projectsInFolder(all: ProjectRef[], folder: string, home: string): { projects: { name: string; repos: string[]; linear: string | null }[] } {
-  const abs = (p: string) => (p === '~' ? home : p.startsWith('~/') ? path.join(home, p.slice(2)) : p);
-  const under = (child: string, parent: string) => child === parent || child.startsWith(parent.replace(/\/+$/, '') + '/');
-  const bound = (dir: string) => !!folder && (under(abs(dir), folder) || under(folder, abs(dir)));
-  return {
-    projects: all
-      .filter((p) => projectRepoPaths(p).some(bound))
-      .map((p) => ({ name: p.name, repos: (p.repos ?? []).map((r) => r.slug.split('/').pop() ?? r.slug), linear: p.linearName })),
-  };
+export interface LinearProject { id: string; name: string }
+
+/** `linear projects --json`: the workspace's live projects. */
+export function parseLinearProjects(raw: string): LinearProject[] {
+  return arr(JSON.parse(raw), 'linear projects').flatMap((p) => {
+    const d = obj(p, 'linear project');
+    const id = str(d.id);
+    const name = str(d.name);
+    return id && name ? [{ id, name }] : [];
+  });
+}
+
+/** One row of the project menu. `pick` is what choosing it stores: an agents project's
+ *  name, or `linear:<id>` for a Linear project no agents project links. */
+export interface ProjectMenuRow { pick: string; label: string; detail: string; current: boolean; found: boolean }
+
+/** The project menu: every live Linear project, shown through the agents project that
+ *  links it (its repositories, so Review works), then agents projects whose Linear link
+ *  is missing or gone. `found` marks what detection gave this folder. With no Linear list
+ *  (its read failed) the agents projects are listed as they are. */
+export function projectMenu(all: ProjectRef[], linear: LinearProject[] | null, current: ProjectRef | null, found: string | null): ProjectMenuRow[] {
+  const repos = (p: ProjectRef) => (p.repos ?? []).map((r) => r.slug.split('/').pop() ?? r.slug).join(' · ');
+  if (!linear) return all.map((p) => ({ pick: p.name, label: p.linearName ?? p.name, detail: [p.name, repos(p)].filter(Boolean).join(' · '), current: p.name === current?.name, found: p.name === found }));
+  const live = new Set(linear.map((l) => l.id));
+  const rows: ProjectMenuRow[] = linear.map((l) => {
+    const linked = all.filter((p) => p.linearId === l.id);
+    const p = linked.find((x) => x.name === current?.name) ?? linked.find((x) => x.name === found) ?? linked[0];
+    if (!p) return { pick: `linear:${l.id}`, label: l.name, detail: 'tickets only, no repositories linked', current: current?.linearId === l.id && !current.repos?.length, found: false };
+    return { pick: p.name, label: l.name, detail: [p.name, repos(p)].filter(Boolean).join(' · '), current: p.name === current?.name, found: p.name === found };
+  });
+  for (const p of all) {
+    if (p.linearId && live.has(p.linearId)) continue;
+    rows.push({ pick: p.name, label: p.name, detail: [p.linearId ? `Linear link gone (${p.linearName ?? p.linearId})` : 'no Linear project', repos(p)].filter(Boolean).join(' · '), current: p.name === current?.name, found: p.name === found });
+  }
+  return rows;
 }
 
 /** `agents projects status <name> --json` prints a one-element card array. */

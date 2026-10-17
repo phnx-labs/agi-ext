@@ -1,47 +1,62 @@
 import { test, expect } from 'bun:test'
+import * as fs from 'fs'
+import * as path from 'path'
 import {
   parsePrs, prFixPrompt, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
-  sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, projectsInFolder, ranFor, ranSpan, renderPrsProgress,
+  sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, parseLinearProjects, projectMenu, ranFor, ranSpan, renderPrsProgress,
   DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
   type SessionHere, type SessionLike, type SessionListPrefs,
 } from './projectPanel'
 
 // Shapes captured from agents-cli 1.22.123 / linear-cli on 2026-10-08.
 
-test('detection: a matched workspace yields name + Linear name; no match is null', () => {
+test('detection: a matched workspace yields its name and Linear link; no match is null', () => {
   expect(parseProjectDetection('{"name":"agi","linear":{"name":"AGI","projectId":"x"},"root":"~/src/a"}'))
-    .toEqual({ name: 'agi', linearName: 'AGI', root: '~/src/a' })
+    .toEqual({ name: 'agi', linearName: 'AGI', linearId: 'x', linearProfile: null, root: '~/src/a' })
   expect(parseProjectDetection('{"name":null,"linear":null,"root":null}')).toBeNull()
 })
 
-test('project list keeps projects without a Linear binding', () => {
-  expect(parseProjectList('[{"name":"agi","linear":{"name":"AGI"}},{"name":"wispr"}]'))
-    .toEqual([{ name: 'agi', linearName: 'AGI', repos: [] }, { name: 'wispr', linearName: null, repos: [] }])
-})
-
-test('the project menu offers the projects with a repository inside the window folder', () => {
-  const all = parseProjectList(JSON.stringify([
-    { name: 'agi', linear: { name: 'AGI' }, repos: [{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }, { slug: 'phnx-labs/.agents-system', path: '~/.agents/.system' }] },
-    { name: 'rush', repos: [{ slug: 'phnx-labs/rush', path: '/work/rush' }] },
-    { name: 'site', repos: [{ slug: 'me/site', path: '~/src/gh-other/site' }] },
-  ]))
-  expect(all[0]!.repos).toEqual([{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }, { slug: 'phnx-labs/.agents-system', path: '~/.agents/.system' }])
-  expect(projectsInFolder(all, '/home/me/src/gh', '/home/me').projects).toEqual([{ name: 'agi', repos: ['agents-cli', '.agents-system'], linear: 'AGI' }])
-  expect(projectsInFolder(all, '/work/rush', '/home/me').projects.map((p) => p.name)).toEqual(['rush'])
+test('project list keeps projects without a Linear binding, and a Linear profile', () => {
+  expect(parseProjectList('[{"name":"agi","linear":{"name":"AGI","projectId":"x","profile":"work"}},{"name":"wispr"}]'))
+    .toEqual([{ name: 'agi', linearName: 'AGI', linearId: 'x', linearProfile: 'work', repos: [] }, { name: 'wispr', linearName: null, linearId: null, linearProfile: null, repos: [] }])
+  // agi-ui.yaml binds only `root` and `repo`.
+  expect(parseProjectList('[{"name":"agi-ui","root":"~/src/gh/agi-ext","repo":"phnx-labs/agi-ext"}]')[0]!.repos).toEqual([{ slug: 'phnx-labs/agi-ext', path: '~/src/gh/agi-ext' }])
   expect(displayHome('/home/me/src/gh', '/home/me')).toBe('~/src/gh')
 })
 
-test('the project menu offers a project whose root holds the window folder, as the header found it', () => {
-  // agi-ui.yaml binds only `root` and `repo`; `agents projects status --path` finds it from its own checkout.
-  const all = parseProjectList(JSON.stringify([
-    { name: 'agi-ui', root: '~/src/gh/agi-ext', repo: 'phnx-labs/agi-ext', linear: { name: 'AGI UI' } },
-    { name: 'agi', repos: [{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }] },
-  ]))
-  expect(all[0]).toEqual({ name: 'agi-ui', linearName: 'AGI UI', repos: [{ slug: 'phnx-labs/agi-ext', path: '~/src/gh/agi-ext' }], root: '~/src/gh/agi-ext' })
-  expect(projectsInFolder(all, '/home/me/src/gh/agi-ext', '/home/me').projects).toEqual([{ name: 'agi-ui', repos: ['agi-ext'], linear: 'AGI UI' }])
-  expect(projectsInFolder(all, '/home/me/src/gh/agi-ext/src', '/home/me').projects.map((p) => p.name)).toEqual(['agi-ui'])
-  expect(projectsInFolder(all, '/home/me/src/gh', '/home/me').projects.map((p) => p.name)).toEqual(['agi-ui', 'agi'])
+// The shape of `linear projects --json` (linear-cli, 2026-10-17), with made-up names and ids.
+const LINEAR = parseLinearProjects(fs.readFileSync(path.join(import.meta.dir, 'testdata', 'linear-projects.json'), 'utf8'))
+const AGENTS = parseProjectList(JSON.stringify([
+  { name: 'tools', linear: { name: 'Tools', projectId: '11111111-0000-4000-8000-000000000002' }, repos: [{ slug: 'me/cli', path: '~/src/cli' }, { slug: 'me/linear-cli', path: '~/src/linear-cli' }] },
+  { name: 'ext', linear: { name: 'Ext', projectId: '99999999-0000-4000-8000-000000000009' }, root: '~/src/ext', repo: 'me/ext' },
+  { name: 'api', linear: { name: 'API', projectId: '99999999-0000-4000-8000-000000000008' }, root: '~/src/mono', repo: 'me/mono' },
+  { name: 'web', linear: { name: 'Web', projectId: '11111111-0000-4000-8000-000000000001' }, root: '~/src/mono', repo: 'me/mono' },
+  { name: 'voice', linear: { name: 'Voice', projectId: '11111111-0000-4000-8000-000000000004' }, repos: [{ slug: 'me/voice', path: '~/src/voice' }] },
+]))
+
+test('the project menu lists every Linear project through the agents project that links it', () => {
+  const web = AGENTS.find((p) => p.name === 'web')!
+  const rows = projectMenu(AGENTS, LINEAR, web, 'web')
+  expect(rows.map((r) => [r.label, r.pick, r.current, r.found])).toEqual([
+    ['Web', 'web', true, true],
+    ['Tools', 'tools', false, false],
+    ['Personal', 'linear:11111111-0000-4000-8000-000000000003', false, false],
+    ['Voice', 'voice', false, false],
+    ['Research', 'linear:11111111-0000-4000-8000-000000000005', false, false],
+    // Linked to a Linear project that no longer exists: still pickable for Sessions and Review.
+    ['ext', 'ext', false, false],
+    ['api', 'api', false, false],
+  ])
+  expect(rows[1]!.detail).toBe('tools · cli · linear-cli')
+  expect(rows[2]!.detail).toBe('tickets only, no repositories linked')
+  expect(rows[5]!.detail).toBe('Linear link gone (Ext) · ext')
+})
+
+test('a picked Linear-only project is the checked row; a failed Linear read still lists the agents projects', () => {
+  const personal = { name: 'Personal', linearName: 'Personal', linearId: '11111111-0000-4000-8000-000000000003', linearProfile: null, repos: [] }
+  expect(projectMenu(AGENTS, LINEAR, personal, 'ext').filter((r) => r.current).map((r) => r.label)).toEqual(['Personal'])
+  expect(projectMenu(AGENTS, null, null, 'ext').map((r) => [r.label, r.found])).toEqual([['Tools', false], ['Ext', true], ['API', false], ['Web', false], ['Voice', false]])
 })
 
 test('an ended card says how long it ran and when; durations read in minutes, hours and days', () => {

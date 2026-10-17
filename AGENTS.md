@@ -70,11 +70,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A third: a ticket row in the Project panel's Issues tab opens its Linear page as a tab and
   peeks at the description the Issues read already carried (`renderTicketPeek`,
   `src/core/ticketPeek.ts`); it reads nothing. A ticket tile for a ticket that read does not
-  hold reads that one ticket with `agents projects tickets view <name> <ID> --json`
+  hold reads that one ticket with `linear tasks <ID> --json`
   (`ProjectPanelController.openTicketPage`) for its page, on the click only, never on a timer.
-  Comments live on the Linear page; the extension has no comment box. The extension never runs
-  `linear` itself: agents-cli owns which Linear project and workspace a project is.
-  A fourth: the Project panel's goal lines are one `agents projects goals <name> --json` read
+  Comments live on the Linear page; the extension has no comment box. Every `linear` call
+  (`runLinear`) sets `LINEAR_PROFILE` to the project's `linear.profile` (`default` when it has
+  none) and names the Linear project by id (`--project <id>`), so no folder picks the workspace.
+  A fourth: the Project panel's goal lines are one `linear goals --json` read
   when the panel shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never
   per tab or per click.
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
@@ -83,10 +84,13 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   method after an in-page "Undo · 5" (`mergeNow`), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
   dialog (`mergeWithMenu`); `--admin` only after its own warning dialog.
   A sixth: ticket tiles show the title and state a Linear read in this window already returned
-  (`src/core/ticketFaces.ts`); the Issues read (`agents projects tickets <name> --json`)
+  (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <id> --json`)
   also runs when Sessions shows, under the same once-a-minute cache. A tile never reads Linear.
-  A seventh: the Project panel's project menu is one `agents projects list --json` read when
-  it opens (the same list, cached a minute in `src/vscode/projectRegistry.vscode.ts`, also
+  A seventh: the Project panel's project menu is one `agents projects list --json` and one
+  `linear projects --json` read when it opens: every live Linear project through the agents
+  project that links it, then agents projects whose link is missing or gone (`projectMenu`);
+  detection only checks a row, and the pick is remembered per workspace (the list is
+  cached a minute in `src/vscode/projectRegistry.vscode.ts`, also
   feeds the repository-path stopgap when Sessions or the resume picker first draws); Review reads `agents projects prs list <name> --json --repo <r>` per repository in
   parallel, drawn as each answers.
   The reply box's mic (and the Lead's, which reuses it) is the one place the extension runs
@@ -159,7 +163,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   name (`projectFallback`); a session another live project claims stays there. The Project
   panel and the resume picker apply the same rule. Delete it when the feed resolves old names.
 - One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
-  and exec path for `agents` and the standalone `sessions`/`secrets` it installs
+  and exec path for `agents`, the standalone `sessions`/`secrets` it installs, and `linear`
   (`resolveAgentsBin`, `runCliArgs`, `runAgents`, `src/core/agentsBin.ts`).
 - Harness ids, labels, prefixes derive from `src/core/agents.cli.ts` and `PRESENTED_AGENTS`
   in `src/core/agents.ts`; no hand-written list anywhere else, `ui/editor` included.
