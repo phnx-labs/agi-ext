@@ -212,6 +212,13 @@ describe('presentableLabel', () => {
     }
   });
 
+  test('an unclosed run of "<" is kept and stripped in linear time', () => {
+    const label = `${'<'.repeat(100_000)}x`;
+    const start = performance.now();
+    expect(presentableLabel(label)).toBe(label);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
+
   test('agrees with the tab title on what counts as a real label', () => {
     // Both label surfaces route through this function, so they cannot diverge.
     const display = { showFullAgentNames: false, showLabelsInTitles: true, showSessionIdInTitles: false, labelReplacesTitle: false };

@@ -324,7 +324,7 @@ export function isHostFallbackLabel(label: string | null | undefined): boolean {
  * about what counts as a real label (PHNX-3893).
  */
 export function presentableLabel(rawLabel: string | null | undefined): string | null {
-  const cleaned = rawLabel?.trim()?.replace(/<[^>]*>/g, '').trim() || null;
+  const cleaned = rawLabel?.trim()?.replace(/<[^<>]*>/g, '').trim() || null;
   if (!cleaned || isHostFallbackLabel(cleaned)) return null;
   return cleaned;
 }
