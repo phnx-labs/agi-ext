@@ -214,9 +214,16 @@ describe('presentableLabel', () => {
 
   test('an unclosed run of "<" is kept and stripped in linear time', () => {
     const label = `${'<'.repeat(100_000)}x`;
+    const runs = 'a'.repeat(1_000).concat('<>').repeat(100);
     const start = performance.now();
     expect(presentableLabel(label)).toBe(label);
+    expect(presentableLabel(runs)).toBe('a'.repeat(100_000));
     expect(performance.now() - start).toBeLessThan(200);
+  });
+
+  test('a nested run leaves no tag behind', () => {
+    expect(presentableLabel('ship it <<b>script>')).toBe('ship it');
+    expect(presentableLabel('x < y <b>z</b>')).toBe('x < y z');
   });
 
   test('agrees with the tab title on what counts as a real label', () => {
