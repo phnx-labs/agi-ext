@@ -1,5 +1,5 @@
 // Pure model + HTML for the Project sidebar panel (PHNX-4289).
-// Each section is one CLI read: `linear tasks --project <linear> --json` (Issues),
+// Each section is one CLI read: `agents projects tickets <name> --json` (Issues),
 // `agents projects prs list <name> --json` (Review). Sessions come from the
 // session stream rows already in the presentation store, filtered on the CLI's
 // `confirmedProject`. Parsers fail loud on a shape they do not know;
@@ -108,14 +108,17 @@ export function parseProjectList(raw: string): ProjectRef[] {
     const name = str(d.name);
     if (!name) throw new Error('Unexpected project shape from the CLI');
     const linear = d.linear && typeof d.linear === 'object' ? (d.linear as Json) : null;
-    const repos = Array.isArray(d.repos)
+    const root = str(d.root);
+    const listed = Array.isArray(d.repos)
       ? d.repos.flatMap((r) => {
         const o = r && typeof r === 'object' ? (r as Json) : {};
         const slug = str(o.slug);
         return slug ? [{ slug, path: str(o.path) ?? '' }] : [];
       })
       : [];
-    return { name, linearName: str(linear?.name), repos };
+    const single = str(d.repo);
+    const repos = listed.length || !single ? listed : [{ slug: single, path: root ?? '' }];
+    return { name, linearName: str(linear?.name), repos, ...(root ? { root } : {}) };
   });
 }
 
@@ -124,22 +127,23 @@ export function displayHome(p: string, home: string = os.homedir()): string {
   return p === home ? '~' : p.startsWith(home + '/') ? '~' + p.slice(home.length) : p;
 }
 
-/** Projects with a repository checked out inside `folder`: a window opened on a
- *  parent folder holds several, and the panel's project menu offers those first. */
-export function projectsInFolder(all: ProjectRef[], folder: string, home: string): { projects: { name: string; repos: string[] }[] } {
+/** Projects bound to `folder`: a directory the CLI row binds (its root or a repository
+ *  checkout) inside it, as when a window is opened on a parent folder, or holding it. */
+export function projectsInFolder(all: ProjectRef[], folder: string, home: string): { projects: { name: string; repos: string[]; linear: string | null }[] } {
   const abs = (p: string) => (p === '~' ? home : p.startsWith('~/') ? path.join(home, p.slice(2)) : p);
-  const inside = (p: string) => !!folder && (abs(p) === folder || abs(p).startsWith(folder.replace(/\/+$/, '') + '/'));
+  const under = (child: string, parent: string) => child === parent || child.startsWith(parent.replace(/\/+$/, '') + '/');
+  const bound = (dir: string) => !!folder && (under(abs(dir), folder) || under(folder, abs(dir)));
   return {
     projects: all
-      .filter((p) => (p.repos ?? []).some((r) => r.path && inside(r.path)))
-      .map((p) => ({ name: p.name, repos: (p.repos ?? []).map((r) => r.slug.split('/').pop() ?? r.slug) })),
+      .filter((p) => projectRepoPaths(p).some(bound))
+      .map((p) => ({ name: p.name, repos: (p.repos ?? []).map((r) => r.slug.split('/').pop() ?? r.slug), linear: p.linearName })),
   };
 }
 
 /** `agents projects status <name> --json` prints a one-element card array. */
 const STATE_ORDER: Record<string, number> = { started: 0, unstarted: 1, backlog: 2, triage: 3 };
 
-/** `linear tasks --project <name> --json`: open issues, grouped Doing → Todo → Backlog. */
+/** `agents projects tickets <name> --json` (linear-cli's `tasks` JSON): open issues, grouped Doing → Todo → Backlog. */
 export function parseTickets(raw: string): TicketGroup[] {
   const issues = arr(obj(JSON.parse(raw), 'linear tasks').issues, 'linear issues');
   const groups = new Map<string, { order: number; tickets: Ticket[] }>();
