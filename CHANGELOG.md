@@ -25,7 +25,8 @@ the approved prototype:
   (Settings > Undo before an answer is sent).
 - The Project panel header is two rows: the goal sits beside the project, and the Sessions
   heading row is gone (search and ⇅ moved onto the tab row). Settings is the gear in the
-  title bar, with Refresh inside it, and ⌃1–⌃4 switch Sessions, Issues, Review and Settings.
+  title bar, with Refresh inside it, and ⌃1–⌃4 switch Sessions, Issues, Review and Settings
+  while the panel has focus.
 - ⌘K lists sessions waiting on you first, under Needs you, and each session row shows its
   harness logo and its activity as a line of bars.
 - The Active Session sidebar shows the agent's newest feed post under the title, in gold, and
