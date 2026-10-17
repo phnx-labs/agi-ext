@@ -122,7 +122,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`),
   `harnessLaunchRegistrations` and `buildTabLaunchCommand` (`src/core/launchTarget.ts`); no
   other code builds an `agents run` launch or starts a harness binary. A relaunch (Clear) stays
-  on its tab's machine, and every fork is `agents fork` (`forkCommand`). `--cwd` is the exact open
+  on its tab's machine. `--cwd` is the exact open
   workspace, emitted once for every variant except Pick Project, which emits `--project`;
   the `harness@` account picker never combines with `--strategy` or a pinned version; the
   extension never scores devices or accounts and never resolves a target through

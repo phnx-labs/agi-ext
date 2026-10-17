@@ -1,3 +1,4 @@
+import { isAgentRunner, type RunStrategy } from './agents';
 import { shellQuote } from './shellQuote';
 
 /** The one-shot fork verb: `agents fork <id> [--device <host>]`. agents-cli
@@ -25,6 +26,8 @@ export interface ForkSessionSource {
   agentKey?: string;
   /** Device the source session LIVES on; undefined means this machine. */
   host?: string;
+  /** This machine's fleet name. Only read when a fork is moved off it. */
+  localHost?: string;
 }
 
 /**
@@ -43,15 +46,46 @@ export type ForkSessionRequest =
       agentKey: string;
       /** Device the fork runs on; undefined = this machine. */
       host?: string;
+      /** Device the source transcript lives on; undefined = this machine. */
+      sourceHost?: string;
+      /** True when the fork runs somewhere other than where the transcript lives. */
+      moved: boolean;
+      local: boolean;
+      strategy?: RunStrategy;
+      prompt: string;
     }
   | { ok: false; reason: 'no_session' | 'no_agent' };
 
+function strategyForForkAgent(agentKey: string): RunStrategy | undefined {
+  // A fork is balanced like every other launch (apps/ext/AGENTS.md § "Launch
+  // contract"). Only 'shell' — not an agent runner — carries no strategy.
+  return isAgentRunner(agentKey) ? 'balanced' : undefined;
+}
+
+function sameMachine(a: string | undefined, b: string | undefined): boolean {
+  return (a?.trim().toLowerCase() ?? '') === (b?.trim().toLowerCase() ?? '');
+}
+
 /**
- * The fork's source and placement, without touching the source terminal.
+ * The prompt the sibling agent starts with. Same machine: a bare `/continue`,
+ * which resolves through that box's own index. Moved: a single-id lookup does
+ * NOT fan out across the fleet — `sessions <id>` reads only this machine's
+ * index — so a fork that runs elsewhere has to be told where the
+ * transcript is, and `--device <machine>` is the CLI's own recovery hint.
+ */
+function forkPrompt(sessionId: string, moved: boolean, sourceMachine: string | undefined): string {
+  return moved && sourceMachine
+    ? `/continue ${sessionId} --device ${sourceMachine}`
+    : `/continue ${sessionId}`;
+}
+
+/**
+ * Build a sibling launch request without mutating or closing the source terminal.
  *
  * With no `target` the fork runs where the session lives (the `Agents: Fork`
- * behavior). With a `target` the user has chosen the device, so that wins; the
- * CLI resolves the source across the fleet either way.
+ * behavior). With a `target` the user has chosen the device, so that wins and the
+ * request records the move — the harness and its balanced account rotation are
+ * carried over untouched; only the machine changes.
  */
 export function buildForkSessionRequest(
   source: ForkSessionSource,
@@ -65,5 +99,20 @@ export function buildForkSessionRequest(
 
   const sourceHost = source.host?.trim() || undefined;
   const host = target ? target.host?.trim() || undefined : sourceHost;
-  return { ok: true, sessionId, agentKey, host };
+  const moved = !sameMachine(host, sourceHost);
+  // The transcript's machine as a name the fork can dial. A source on this box
+  // carries no `host`, so a moved fork needs this machine's fleet name instead.
+  const sourceMachine = sourceHost ?? source.localHost?.trim() ?? undefined;
+
+  return {
+    ok: true,
+    sessionId,
+    agentKey,
+    host,
+    sourceHost,
+    moved,
+    local: !host,
+    strategy: strategyForForkAgent(agentKey),
+    prompt: forkPrompt(sessionId, moved, sourceMachine),
+  };
 }

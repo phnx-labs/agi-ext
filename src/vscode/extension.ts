@@ -4228,8 +4228,10 @@ async function forkCurrentSession(
   const source = {
     sessionId: entry.sessionId,
     agentKey: entry.agentType ?? prefixToAgentType(entry.agentConfig.prefix) ?? undefined,
-    // Where the session lives; a fork runs there unless a device is picked.
+    // Where the TRANSCRIPT is. A moved fork has to read it from here, wherever
+    // it ends up running.
     host: entry.host,
+    localHost: LOCAL_MACHINE_ID,
   };
 
   const sourceTitle = liveTitle(entry.sessionId) ?? entry.autoLabel ?? shortSessionId(entry.sessionId ?? '');
@@ -4292,7 +4294,7 @@ function shortSessionId(sessionId: string): string {
 // every recent transcript — on this machine, or on any fleet device you switch to
 // — and fork the one you pick. A row's machine is where its fork runs, so picking
 // a session that lives on `yosemite-s0` starts the sibling agent THERE (over
-// `agents fork --device`), where its transcript actually is.
+// `agents run --device`), where its transcript actually is.
 
 /** Rows requested from the one device currently shown in the browser. Enough to
  *  reach yesterday's work without turning the picker into a scroll marathon. */
@@ -4424,22 +4426,18 @@ async function forkPickedSession(context: vscode.ExtensionContext): Promise<void
     },
     pickSession: (sessionId, device) => pickSessionToFork(context, sessionId, device),
     showError: message => { void vscode.window.showErrorMessage(message); },
-    openFork: async fork => {
-      const builtIn = BUILT_IN_AGENTS.find(a => a.key === fork.agentKey);
-      if (!builtIn) return false;
-      const agentConfig = createAgentConfig(
+    resolveAgentConfig: agentKey => {
+      const builtIn = BUILT_IN_AGENTS.find(a => a.key === agentKey);
+      return builtIn ? createAgentConfig(
         context.extensionPath,
         builtIn.title,
         builtIn.command,
         builtIn.icon,
         builtIn.prefix,
-      );
-      await openForkTerminal(context, agentConfig, fork.command, {
-        forkHost: fork.host,
-        viewColumn: vscode.ViewColumn.Active,
-        sourceTitle: liveTitle(fork.sessionId) ?? fork.sourceTitle,
-      });
-      return true;
+      ) : undefined;
+    },
+    launchQueued: async (agentConfig, request) => {
+      await openSingleAgentWithQueue(context, agentConfig, [request.prompt], request);
     },
     showStatus: message => { void vscode.window.setStatusBarMessage(message, 3000); },
   });
