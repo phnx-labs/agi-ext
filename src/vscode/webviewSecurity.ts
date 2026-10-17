@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { isAllowedExternalUrl, openWith, type LinkTarget } from '../core/webviewSecurity';
+import { isAllowedExternalUrl, openWith, type LinkTabs, type LinkTarget } from '../core/webviewSecurity';
 
 /** VS Code's integrated browser (1.10x+, VSCodium included): opens a page as an editor tab. */
 const BROWSER_OPEN = 'workbench.action.browser.open';
@@ -8,18 +8,19 @@ let browserFound = false;
 
 const opener = {
   hasBrowser: async (): Promise<boolean> => (browserFound ||= (await vscode.commands.getCommands(true)).includes(BROWSER_OPEN)),
-  openTab: (args: { url: string; reuseUrlFilter: string }) => vscode.commands.executeCommand(BROWSER_OPEN, args),
+  openTab: (args: { url: string; reuseUrlFilter?: string }) => vscode.commands.executeCommand(BROWSER_OPEN, args),
   openExternal: (url: string) => vscode.env.openExternal(vscode.Uri.parse(url)),
 };
 
 /** Open a link the extension trusts. A web page opens as an editor tab in the integrated
- *  browser, a second click on the same page bringing its tab forward; `external` (a ⌘, Ctrl
- *  or ⌥ click), the `agents.links.openIn` setting, an editor without the browser, or any
- *  other scheme opens it outside the editor as before. Never rejects. */
+ *  browser, in the tab `agents.links.tabs` picks; `external` (a ⌘, Ctrl or ⌥ click), the
+ *  `agents.links.openIn` setting, an editor without the browser, or any other scheme opens
+ *  it outside the editor as before. Never rejects. */
 export async function openLink(url: string, external = false): Promise<void> {
-  const target: LinkTarget = external ? 'browser' : vscode.workspace.getConfiguration('agents').get<LinkTarget>('links.openIn', 'editor');
+  const config = vscode.workspace.getConfiguration('agents');
+  const target: LinkTarget = external ? 'browser' : config.get<LinkTarget>('links.openIn', 'editor');
   try {
-    await openWith(url, target, opener);
+    await openWith(url, target, opener, config.get<LinkTabs>('links.tabs', 'reuse'));
   } catch (e) {
     void vscode.window.showWarningMessage(`Could not open ${url.trim()}: ${e instanceof Error ? e.message : String(e)}`);
   }

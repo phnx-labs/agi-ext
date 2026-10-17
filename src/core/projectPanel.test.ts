@@ -78,16 +78,20 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(groups.map((g) => g.state)).toEqual(['Doing', 'Todo', 'Backlog'])
   expect(groups[1].tickets.map((t) => t.identifier)).toEqual(['A-4', 'A-2'])
   expect(groups[0].tickets[0]).toMatchObject({ delegate: 'claude', assignee: 'Muqsit Nawaz', milestone: 'Ship B' })
-  const html = renderTickets(groups)
-  expect(html).toContain('data-ticket="A-3"')
+  const html = renderTickets(groups, (t) => ({ agentName: 'Claude', peek: `<div data-peek="${t.identifier}"></div>` }))
+  // A row carries its page and ▶; the peek the caller drew follows the row.
+  expect(html).toContain('<a class="trow" href="#" data-ticket="A-3" data-url="https://linear.app/x/A-3"')
+  expect(html).toContain('data-start-ticket="A-3" title="Start Claude on A-3 in a new tab"')
+  expect(html).toContain('</button><div data-peek="A-3"></div></li>')
+  expect(groups[0].tickets[0].description).toBe('')
   // People, not names: the delegated agent as its harness logo, the assignee as a colored initial.
   expect(html).toContain('<span class="iav agent" title="Delegated to claude"><i class="hx hx-claude"')
   expect(html).toMatch(/<span class="iav av\d" title="Muqsit Nawaz">MN<\/span>/)
 })
 
 test('tickets render escapes titles from the tracker', () => {
-  const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>' }] })))
-  expect(html).not.toContain('<img')
+  const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>', url: 'https://linear.app/x/"><b>' }] })), () => ({ agentName: '<i>', peek: '' }))
+  expect(html).not.toMatch(/<img|"><b>|<i>/)
   expect(html).toContain('&lt;img')
 })
 

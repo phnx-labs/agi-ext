@@ -20,6 +20,20 @@ The Project panel reads Linear through the project, as Review already reads GitH
   repositories and Linear project are always current.
 - Needs an agents-cli with `agents projects tickets`; an older one says to run `agents upgrade`.
 
+Issues is a list you act from, now that a ticket opens as its Linear tab (owner screenshots,
+2026-10-17):
+
+- A click on a ticket opens its Linear page as a tab and unfolds a peek under the row: the
+  description's opening lines, the sessions already on it, and ▶ Start. A second click folds it.
+  The peek comes from the Issues read; it reads nothing.
+- ▶ on every row, shown on hover, starts the delegated agent (else your default) on the ticket
+  in one click.
+- The in-panel ticket page and its comment box are gone: you comment on the Linear page.
+- New setting `agents.links.tabs`: `reuse` (default; a page already open comes forward),
+  `single` (every link in one browser tab) or `new` (a tab per click). Default zoom and the
+  browser's other settings are the editor's own: `workbench.browser.pageZoom`,
+  `workbench.browser.newTabPlacement`.
+
 ## [0.9.404] - 2026-10-17
 
 PRs and tickets open as editor tabs, from the owner's screenshot of 2026-10-13, where the whole

@@ -34,6 +34,12 @@ describe('browserTabArgs', () => {
     expect(browserTabArgs('http://localhost:5173/', 'editor')).toEqual({ url: 'http://localhost:5173/', reuseUrlFilter: 'http://localhost:5173/' });
   });
 
+  it('single shows every page in one tab; new never reuses one', () => {
+    const url = 'https://github.com/o/r/pull/7';
+    expect(browserTabArgs(url, 'editor', 'single')).toEqual({ url, reuseUrlFilter: '//*/**' });
+    expect(browserTabArgs(url, 'editor', 'new')).toEqual({ url });
+  });
+
   it('leaves the editor for other schemes and when the link should open in the browser', () => {
     expect(browserTabArgs('mailto:muqsit@trp.so', 'editor')).toBeNull();
     expect(browserTabArgs('agents://session/abc', 'editor')).toBeNull();

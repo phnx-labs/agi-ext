@@ -21,32 +21,40 @@ export function isAllowedExternalUrl(rawUrl: unknown): boolean {
 /** How a web link opens: `editor` is a tab in the editor's integrated browser, `browser` the OS default. */
 export type LinkTarget = 'editor' | 'browser';
 
+/** Which browser tab a link lands in: `reuse` brings a tab already showing the page forward,
+ *  `single` shows every link in one browser tab, `new` opens a tab per click. */
+export type LinkTabs = 'reuse' | 'single' | 'new';
+
+/** Matches every http(s) page: the scheme-less filter skips the scheme check, `*` is any
+ *  host and `/**` any path (`workbench.action.browser.open` globs each part). */
+const ANY_PAGE = '//*/**';
+
 /** The argument for `workbench.action.browser.open` that shows `url` as an editor tab, or
  *  null when it is not a web page (mailto:, agents:) or the link should leave the editor.
- *  `reuseUrlFilter` is the same URL, so a second click brings its tab forward instead of
- *  opening another. */
-export function browserTabArgs(rawUrl: string, target: LinkTarget): { url: string; reuseUrlFilter: string } | null {
+ *  `reuseUrlFilter` picks the tab the browser navigates instead of opening another. */
+export function browserTabArgs(rawUrl: string, target: LinkTarget, tabs: LinkTabs = 'reuse'): { url: string; reuseUrlFilter?: string } | null {
   if (target !== 'editor') return null;
   let u: URL;
   try { u = new URL(rawUrl); } catch { return null; }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
-  return { url: rawUrl, reuseUrlFilter: rawUrl };
+  if (tabs === 'new') return { url: rawUrl };
+  return { url: rawUrl, reuseUrlFilter: tabs === 'single' ? ANY_PAGE : rawUrl };
 }
 
 /** What opening a link needs from the editor, injected so the decision is testable. */
 export interface LinkOpeners {
   /** Whether the integrated browser command is registered. */
   hasBrowser(): Promise<boolean>;
-  openTab(args: { url: string; reuseUrlFilter: string }): PromiseLike<unknown>;
+  openTab(args: { url: string; reuseUrlFilter?: string }): PromiseLike<unknown>;
   openExternal(url: string): PromiseLike<unknown>;
 }
 
 /** Open `rawUrl` (trimmed) as a browser tab when it is a web page and `target` is the editor;
  *  otherwise, or when the editor has no integrated browser or the tab fails to open, outside
  *  the editor. Returns where it went. */
-export async function openWith(rawUrl: string, target: LinkTarget, io: LinkOpeners): Promise<'tab' | 'external'> {
+export async function openWith(rawUrl: string, target: LinkTarget, io: LinkOpeners, tabs: LinkTabs = 'reuse'): Promise<'tab' | 'external'> {
   const url = rawUrl.trim();
-  const args = browserTabArgs(url, target);
+  const args = browserTabArgs(url, target, tabs);
   if (args) {
     try {
       if (await io.hasBrowser()) { await io.openTab(args); return 'tab'; }

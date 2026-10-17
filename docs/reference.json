@@ -4,7 +4,7 @@
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
     "commands": 119,
-    "settings": 9,
+    "settings": 10,
     "keybindings": 48,
     "menuItems": 16,
     "views": 2,
@@ -654,6 +654,21 @@
           ],
           "default": "editor",
           "markdownDescription": "Where the extension opens GitHub PRs, Linear tickets and other web links. A ⌘, Ctrl or ⌥ click always opens your default browser. Sign in to GitHub and Linear once in the integrated browser; it keeps the sign-in across workspaces (`#workbench.browser.dataStorage#`)."
+        },
+        "agents.links.tabs": {
+          "type": "string",
+          "enum": [
+            "reuse",
+            "single",
+            "new"
+          ],
+          "enumDescriptions": [
+            "A page that is already open comes forward; any other link opens a new tab.",
+            "Every link shows in one browser tab, replacing the page it showed. Your own browser tabs count too.",
+            "Every click opens a new browser tab."
+          ],
+          "default": "reuse",
+          "markdownDescription": "Which integrated browser tab a PR, ticket or other web link opens in, when `#agents.links.openIn#` is `editor`. Default zoom and the browser's other settings are the editor's own: `#workbench.browser.pageZoom#`, `#workbench.browser.newTabPlacement#`."
         },
         "agents.dictation.model": {
           "type": "string",
