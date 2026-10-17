@@ -315,6 +315,27 @@ export function isHostFallbackLabel(label: string | null | undefined): boolean {
 }
 
 /**
+ * Drop every `<…>` run, nested ones included, in one linear pass; a `<` that
+ * never closes is kept. A regex either rescans per `<` (quadratic) or leaves
+ * `<script>` behind from `<<b>script>`.
+ */
+function stripAngleRuns(text: string): string {
+  const out: string[] = [];
+  const opens: number[] = [];
+  for (const ch of text) {
+    if (ch === '<') {
+      opens.push(out.length);
+      out.push(ch);
+    } else if (ch === '>' && opens.length > 0) {
+      out.length = opens.pop()!;
+    } else {
+      out.push(ch);
+    }
+  }
+  return out.join('');
+}
+
+/**
  * A session label reduced to what may actually be shown, or `null` when nothing
  * presentable remains: angle-bracket runs (the CLI's `<account>` decoration) are
  * stripped, and a label that is only the `[host/<device>]` fallback is dropped.
@@ -324,7 +345,7 @@ export function isHostFallbackLabel(label: string | null | undefined): boolean {
  * about what counts as a real label (PHNX-3893).
  */
 export function presentableLabel(rawLabel: string | null | undefined): string | null {
-  const cleaned = rawLabel?.trim()?.replace(/<[^<>]*>/g, '').trim() || null;
+  const cleaned = rawLabel ? stripAngleRuns(rawLabel).trim() || null : null;
   if (!cleaned || isHostFallbackLabel(cleaned)) return null;
   return cleaned;
 }
