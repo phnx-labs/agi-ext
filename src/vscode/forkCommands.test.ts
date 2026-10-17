@@ -5,8 +5,6 @@ import {
   handleForkPickHost,
   registerForkPickHostCommand,
 } from './forkCommands.vscode';
-import { handleForkPickedSession } from './sessionBrowser.vscode';
-import type { SessionBrowserSessionRow } from '../core/sessionBrowser';
 
 /**
  * A palette entry and its `registerCommand` are two halves of one contract, in two
@@ -49,7 +47,7 @@ describe('fork command contributions', () => {
       callback = run;
       return {};
     }, () => handleForkPickHost({
-      source: { sessionId: 'source-id', agentKey: 'claude' },
+      source: { sessionId: 'source-id', agentKey: 'claude', localHost: 'source-machine' },
       pickHost: async () => ({ host: 'chosen-host', cancelled: false }),
       openFork: async (value) => { launch = value; },
       showRejection: (value) => { rejection = value; },
@@ -70,7 +68,7 @@ describe('fork command contributions', () => {
   test('a remote Grok source brought back local carries the bare fork verb', async () => {
     let launch: unknown;
     await handleForkPickHost({
-      source: { sessionId: 'source-id', agentKey: 'grok', host: 'source-host' },
+      source: { sessionId: 'source-id', agentKey: 'grok', host: 'source-host', localHost: 'this-host' },
       pickHost: async () => ({ host: undefined, cancelled: false }),
       openFork: async (value) => { launch = value; },
       showRejection: () => {},
@@ -81,52 +79,5 @@ describe('fork command contributions', () => {
       host: undefined,
       viewColumn: 'Active',
     });
-  });
-});
-
-describe('Agents: Fork (Pick Session)', () => {
-  const row = (machine: string, remote: boolean): SessionBrowserSessionRow => ({
-    kind: 'session',
-    session: { id: 'picked-id', shortId: 'picked', agent: 'codex', timestamp: '', machine, topic: 'Fix the parser' },
-    machine,
-    remote,
-    current: false,
-    label: '',
-    description: '',
-    detail: '',
-  });
-
-  test('forks the picked session with the agents fork verb, on the device it lives on', async () => {
-    let fork: unknown;
-    let status = '';
-    await handleForkPickedSession({
-      currentSession: () => ({ sessionId: null }),
-      pickSession: async () => row('yosemite-s1', true),
-      localMachine: 'zion',
-      openFork: async (value) => { fork = value; return true; },
-      showError: () => { throw new Error('unexpected error'); },
-      showStatus: (message) => { status = message; },
-    });
-    expect(fork).toEqual({
-      command: "agents fork 'picked-id' --device 'yosemite-s1'",
-      sessionId: 'picked-id',
-      agentKey: 'codex',
-      host: 'yosemite-s1',
-      sourceTitle: 'Fix the parser',
-    });
-    expect(status).toBe('Forking picked on yosemite-s1');
-  });
-
-  test('a session on this machine forks here', async () => {
-    let command = '';
-    await handleForkPickedSession({
-      currentSession: () => ({ sessionId: null }),
-      pickSession: async () => row('zion', false),
-      localMachine: 'zion',
-      openFork: async (value) => { command = value.command; return true; },
-      showError: () => {},
-      showStatus: () => {},
-    });
-    expect(command).toBe("agents fork 'picked-id'");
   });
 });

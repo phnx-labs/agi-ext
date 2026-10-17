@@ -18,9 +18,6 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   longer start as their raw binaries there.
 - Resume (Pick Harness) and Resume in Best Profile pass the workspace as `--cwd` and start in
   `--mode auto`, like every other launch.
-- Fork (Pick Session) runs `agents fork`, like Fork and Fork (Pick Host): the sibling starts
-  from the CLI's recap of the picked session instead of a typed `/continue`, on the machine the
-  session lives on, and the tab reads "fork of <title>".
 
 ## [0.9.406] - 2026-10-17
 
