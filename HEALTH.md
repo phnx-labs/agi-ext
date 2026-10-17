@@ -130,7 +130,7 @@ Ranked by maintenance payoff. "Confirmed" means both sides of a duplicate and al
 There are 12 `createTerminal(` sites. Eleven open agent tabs: `extension.ts` 490, 1939, 2093, 2642, 2877, 3152, 3280, 4257, 4608, 4707, and `customEditor.ts:166`. Only three use `registerAgentTerminal` (`extension.ts:367`). The others each wire `terminals.register`, `readiness.registerTerminal`, the agent type, session id, host and poller by hand. Those hand-wired copies already differ:
 
 - Four sites pass the shell-aware environment. The rest scrub as an agent, including `openSingleAgentWithQueue` (3152), which can launch `shell`.
-- Five sites `await terminal.processId` with no timeout (381, 2885, 3161, 3288, 4265). Three use `processIdWithin`.
+- Six sites `await terminal.processId` with no timeout (381, 994, 2885, 3161, 3288, 4265). Three use `processIdWithin`.
 - `customEditor.ts` never registers readiness. It sends queued prompts with `sendText(msg)` after a flat 5 s wait, and the comment at `extension.ts:3208` says a newline does not submit in Ink.
 - `reopenLastClosedSession` (4685) repeats `openAgentSessionTerminal` but skips its live-tab check. It can open a second tab on a session that is already open.
 - `extension.ts:778` holds a second `extractTerminalIdentificationOptions` that drops `sessionId` and `version` from the one in `terminals.vscode.ts:32`. So `restoredSessionId(identOpts.sessionId, …)` at `:1010` always receives `undefined`.
