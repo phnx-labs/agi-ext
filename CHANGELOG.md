@@ -52,6 +52,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Every agent tab is opened one way, so they all wait at most 10 s for their shell before
   registering (six waited forever), and a shell tab opened by a dispatch or the startup
   auto-open keeps your environment like New Shell instead of being scrubbed as an agent.
+- A tab label with a long unclosed run of `<` no longer takes quadratic time to clean.
 
 ## [0.9.406] - 2026-10-17
 
