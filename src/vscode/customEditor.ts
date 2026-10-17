@@ -45,7 +45,7 @@ export class AgentsMarkdownEditorProvider implements vscode.CustomTextEditorProv
     };
 
     // Set webview HTML content
-    webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, document);
+    webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
 
     // Handle messages from webview
     const messageSubscription = webviewPanel.webview.onDidReceiveMessage((message) => {
@@ -480,7 +480,7 @@ ${bodyHtml}
     });
   }
 
-  private getHtmlForWebview(webview: vscode.Webview, document: vscode.TextDocument): string {
+  private getHtmlForWebview(webview: vscode.Webview): string {
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'out', 'ui', 'editor', 'assets', 'index.js')
     );
