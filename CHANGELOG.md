@@ -4,6 +4,32 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.404] - 2026-10-17
+
+PRs and tickets open as editor tabs, from the owner's screenshot of 2026-10-13, where the whole
+ticket was squeezed into the sidebar and every link left VSCodium for another app:
+
+- A PR, a ticket's Linear page, a goal line and every other web link the extension shows open as
+  an editor tab in the editor's integrated browser, beside your agents, where you can review,
+  merge, comment and change status on the real site. A second click on the same page brings its
+  tab forward instead of opening another.
+- A ⌘, Ctrl or ⌥ click opens your default browser. The new `agents.links.openIn` setting (`editor` or
+  `browser`) sets the default; editors without the integrated browser keep opening your browser.
+- Clicking a ticket in Issues opens its Linear page as a tab and leaves a compact card in the
+  panel: state, title, who it is delegated to and Start. The description and comments are
+  folded.
+- Review rows carry the ↗ open icon from the Active Session header on hover.
+- Fix on a failing PR, and on one that conflicts with its base, starts your default agent in a
+  new tab with the PR's link, its branch, the failing checks' names and where the repository is
+  checked out. The PR's title, branch and check names are fenced as data the agent must not
+  take instructions from. It tells the agent to check the PR out in a new worktree with
+  `gh pr checkout` (forks included), fix the cause rather than weaken a check, rebase onto the base for a conflict, push to the PR's own branch, and report the run
+  that passed. Conflicting PRs get their own group above Failing, and never offer Merge
+  (owner screenshot, 2026-10-14).
+- Sign in to GitHub and Linear once in the integrated browser; it stays signed in across
+  workspaces. With the Linear desktop app installed, linear.app hands each link to the app; turn
+  off Preferences › Open in desktop app once in the tab (a per-browser preference).
+
 ## [0.9.403] - 2026-10-14
 
 The sessions sidebar follows the front tab and shows one name (PHNX-4387):
@@ -40,30 +66,6 @@ Also in this release (documented as 0.9.402, which was never published):
   loaded, disk low, unreachable). Personal, desktop, non-worker and offline devices are one line
   each. Needs agents-cli with `autoSkip` in `agents devices list --json`; an older one says to run
   `agents upgrade`. Every other setting is unchanged.
-
-PRs and tickets open as editor tabs, from the owner's screenshot of 2026-10-13, where the whole
-ticket was squeezed into the sidebar and every link left VSCodium for another app:
-
-- A PR, a ticket's Linear page, a goal line and every other web link the extension shows open as
-  an editor tab in the editor's integrated browser, beside your agents, where you can review,
-  merge, comment and change status on the real site. A second click on the same page brings its
-  tab forward instead of opening another.
-- A ⌘, Ctrl or ⌥ click opens your default browser. The new `agents.links.openIn` setting (`editor` or
-  `browser`) sets the default; editors without the integrated browser keep opening your browser.
-- Clicking a ticket in Issues opens its Linear page as a tab and leaves a compact card in the
-  panel: state, title, who it is delegated to and Start. The description and comments are
-  folded.
-- Review rows carry the ↗ open icon from the Active Session header on hover.
-- Fix on a failing PR, and on one that conflicts with its base, starts your default agent in a
-  new tab with the PR's link, its branch, the failing checks' names and where the repository is
-  checked out. The PR's title, branch and check names are fenced as data the agent must not
-  take instructions from. It tells the agent to check the PR out in a new worktree with
-  `gh pr checkout` (forks included), fix the cause rather than weaken a check, rebase onto the base for a conflict, push to the PR's own branch, and report the run
-  that passed. Conflicting PRs get their own group above Failing, and never offer Merge
-  (owner screenshot, 2026-10-14).
-- Sign in to GitHub and Linear once in the integrated browser; it stays signed in across
-  workspaces. With the Linear desktop app installed, linear.app hands each link to the app; turn
-  off Preferences › Open in desktop app once in the tab (a per-browser preference).
 
 ## [0.9.401] - 2026-10-14
 
