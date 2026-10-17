@@ -211,7 +211,8 @@ going on, where, and what came out of it" in one look; text explains only what a
 
 The thin-client violations still in the tree are listed with their fate in `docs/ARCH.md`
 ("Findings"): `watchForPlan`,
-`sessionParse.ts`, the transcript `fs.watch`, `readinessDetector.ts`. Touching one means
+`sessionParse.ts`, `readinessDetector.ts` (the one copy of every readiness probe; a window
+runs its own while the monitor is down). Touching one means
 deleting or shrinking it, never extending it.
 Five tests assert on source text (`autoLabelHydration`: stream rebind before the sidebars
 refresh; `statusBarIdentity.spawnStorm`: identity only from the store;

@@ -34,8 +34,7 @@ export const MONITOR_OP = {
   snapshot: 'snapshot',
   /**
    * Follower -> monitor: arm agentReady detection for a shell pid (#68). The
-   * monitor's readiness detector runs the process-state probe (and the
-   * session-file fast path when agentKey+sessionId are known) once per pid and
+   * monitor's readiness detector runs the process-state probe once per pid and
    * broadcasts an `agentReady` fact. This is the cross-window successor to the
    * window-local `armAgentReady(terminal, …)` call.
    */
@@ -83,9 +82,6 @@ export interface ArmAgentRequest {
   op: typeof MONITOR_OP.armAgent;
   /** Shell pid (root of the process tree) to watch for an idle agent child. */
   pid: number;
-  /** Known agent key, enabling the session-file fast path when paired with a sessionId. */
-  agentKey?: string;
-  sessionId?: string;
 }
 
 export interface ArmShellAdoptionRequest {

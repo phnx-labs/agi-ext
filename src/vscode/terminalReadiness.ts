@@ -1,19 +1,19 @@
 // VS Code glue for the terminalReadiness state machine.
 //
-// One global registry keyed by vscode.Terminal instance. Each entry owns its
-// own probes/watchers/listeners and is torn down when the terminal closes.
+// One global registry keyed by vscode.Terminal instance; its entry is torn down
+// when the terminal closes. Probing is ReadinessDetector's: the monitor's, or
+// this window's own (`local`) while the monitor is down.
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-// Diagnostic file logger for shell adoption — VS Code's console.log doesn't
-// land in any persisted log file, so we mirror adoption events to disk for
-// post-hoc debugging. Path: ~/.cache/swarmify/shell-adoption.log
+// VS Code's console.log lands in no persisted file, so shell adoption mirrors
+// its steps to ~/.cache/swarmify/shell-adoption.log for post-hoc debugging.
 const ADOPTION_LOG_PATH = path.join(os.homedir(), '.cache', 'swarmify', 'shell-adoption.log');
 let adoptionLogReady = false;
-function adoptLog(msg: string): void {
+export function adoptionLog(msg: string): void {
   try {
     if (!adoptionLogReady) {
       fs.mkdirSync(path.dirname(ADOPTION_LOG_PATH), { recursive: true });
@@ -35,39 +35,24 @@ import {
   detectAgentKeyFromArgs,
   extractSessionIdFromArgs,
 } from '../core/terminalReadiness';
-import {
-  SHELL_PROBE_BASE_MS,
-  IDLE_PROBE_BASE_MS,
-  PS_TIMEOUT_MS,
-  PROMPT_IDLE_WINDOW_MS,
-  PROMPT_READY_TIMEOUT_MS,
-  AGENT_READY_TIMEOUT_MS,
-  PROMPT_FALLBACK_GRACE_MS,
-  AGENT_IDLE_WINDOW_MS,
-  AGENT_MIN_CHILD_RUNTIME_MS,
-  backoffMs,
-  probeIsKnownShell,
-  probeChildPids,
-  probeStat,
-} from '../monitor/probes';
-import {
-  SHELL_ADOPTION_POLL_MS,
-  SHELL_ADOPTION_MAX_LIFETIME_MS,
-  SHELL_ADOPTION_TREE_DEPTH,
-  findAgentInTree,
-  locateSessionIdForAgent,
-} from '../monitor/readinessDetector';
+import { PROMPT_READY_TIMEOUT_MS, AGENT_READY_TIMEOUT_MS } from '../monitor/probes';
+import { ReadinessDetector } from '../monitor/readinessDetector';
 
 interface Registered {
   entry: ReadinessEntry;
   terminal: vscode.Terminal;
   pid: number | null;
-  disposables: vscode.Disposable[];
-  timers: NodeJS.Timeout[];
   agentArmed: boolean;
 }
 
 const registry = new Map<vscode.Terminal, Registered>();
+
+const local = new ReadinessDetector({
+  emit: ({ pid, event }) => ingestReadinessFact(pid, event),
+  emitAdoption: ({ pid, agentKey, sessionId, childPid }) =>
+    ingestShellAdoptionFact(pid, { agentKey: agentKey as AgentLauncherKey, sessionId, childPid }),
+  fired: (pid, event) => [...registry.values()].some((r) => r.pid === pid && hasFired(r.entry, event)),
+});
 
 // --- Monitor follower routing (#68) ---------------------------------------
 //
@@ -76,10 +61,10 @@ const registry = new Map<vscode.Terminal, Registered>();
 // resolves each fact to its own terminal and feeds the SAME state machine via
 // markEvent. Local probing is therefore SUPPRESSED while connected, and the arm
 // intents are forwarded to the monitor. When disconnected (election race, leader
-// loss) everything falls back to local probing — nothing breaks.
+// loss) this window's own detector probes instead, emitting into the same ingest.
 
 export interface MonitorArmSink {
-  armAgent(pid: number, agentKey: string | undefined, sessionId: string | undefined): void;
+  armAgent(pid: number): void;
   armShellAdoption(pid: number): void;
 }
 
@@ -115,24 +100,24 @@ export function ingestShellAdoptionFact(pid: number, info: ShellAdoptionInfo): v
     if (!state || !state.armed) continue;
     state.armed = false;
     shellAdoptions.delete(terminal);
+    adoptionLog(`"${terminal.name}" (shellPid=${pid}): adopted agentKey=${info.agentKey} childPid=${info.childPid} sessionId=${info.sessionId}`);
     try {
       state.onAdopted(info);
     } catch (err) {
+      adoptionLog(`"${terminal.name}": onAdopted callback threw: ${err}`);
       console.error('[READINESS] shell adoption callback threw', err);
     }
   }
 }
 
-// On leadership loss / disconnect, restart local probing for any terminal still
-// waiting on an event it would otherwise only learn via broadcast.
+// On leadership loss / disconnect, probe locally whatever each terminal still
+// awaits; the detector skips every milestone the terminal already reached.
 export function onMonitorDisconnected(): void {
   for (const [terminal, r] of registry.entries()) {
     if (r.pid === null) continue;
-    if (!hasFired(r.entry, 'shellReady')) startShellReadyProbe(r);
-    if (!hasFired(r.entry, 'promptReady')) startPromptReadyFallbackProbe(r);
-    if (r.agentArmed && !hasFired(r.entry, 'agentReady')) startAgentReadyProbe(r);
-    const state = shellAdoptions.get(terminal);
-    if (state && state.armed) startLocalShellAdoption(terminal, r, state);
+    local.addPid(r.pid);
+    if (r.agentArmed) local.armAgent(r.pid);
+    if (shellAdoptions.get(terminal)?.armed) local.armShellAdoption(r.pid);
   }
 }
 
@@ -177,8 +162,6 @@ export function registerTerminal(
     entry: createEntry(),
     terminal,
     pid: null,
-    disposables: [],
-    timers: [],
     agentArmed: opts.restored === true,
   };
   registry.set(terminal, r);
@@ -186,7 +169,9 @@ export function registerTerminal(
   if (opts.restored) {
     // Resolve pid for completeness but skip all probes — the agent is up.
     Promise.resolve(terminal.processId).then((pid) => {
-      if (pid) r.pid = pid;
+      if (!pid || registry.get(terminal) !== r) return;
+      r.pid = pid;
+      armPendingAdoption(terminal, pid);
     }, () => { /* ignore */ });
     markEvent(r.entry, 'agentReady');
     return;
@@ -194,15 +179,14 @@ export function registerTerminal(
 
   // tabReady: resolves as soon as the pty is allocated.
   Promise.resolve(terminal.processId).then((pid) => {
-    if (!pid) return;
+    if (!pid || registry.get(terminal) !== r) return;
     r.pid = pid;
     markEvent(r.entry, 'tabReady');
     // When connected to the monitor, the leader probes this pid once and
     // broadcasts shellReady/promptReady (resolved via ingestReadinessFact);
     // skip the local ps/pgrep probes. The follower already reports this pid.
-    if (useMonitor(r.pid)) return;
-    startShellReadyProbe(r);
-    startPromptReadyFallbackProbe(r);
+    if (!useMonitor(pid)) local.addPid(pid);
+    armPendingAdoption(terminal, pid);
   }, () => {
     // Terminal was disposed before pid resolved.
   });
@@ -210,40 +194,35 @@ export function registerTerminal(
 
 // Called by Resume/Reload flows after ^C^C: we want to re-await promptReady
 // fresh because the agent CLI needs to release the pty and the shell prompt
-// needs to reappear.
+// needs to reappear. Probed here even while the monitor is connected: the
+// leader already reported promptReady for this pid and will not report it again.
 export function resetAfterAgentExit(terminal: vscode.Terminal): void {
   const r = registry.get(terminal);
   if (!r) return;
   r.agentArmed = false;
   resetFrom(r.entry, 'promptReady');
-  startPromptReadyFallbackProbe(r);
+  if (r.pid !== null) local.reset(r.pid);
 }
+
+export { detectAgentKeyFromArgs, extractSessionIdFromArgs };
 
 // Arm agentReady detection. Call this right after sending the agent launch
 // command. Detection is the process-state probe (stable 'S' plus minimum
 // child runtime).
-type FastPathAgentKey = AgentLauncherKey;
-export { detectAgentKeyFromArgs, extractSessionIdFromArgs };
-
-export interface ArmAgentOptions {
-  agentKey?: string;
-  sessionId?: string;
-  cwd?: string;
-}
-
-export function armAgentReady(terminal: vscode.Terminal, opts: ArmAgentOptions = {}): void {
+export function armAgentReady(terminal: vscode.Terminal): void {
   const r = registry.get(terminal);
   if (!r) return;
   if (r.agentArmed) return;
   if (hasFired(r.entry, 'agentReady')) return;
   r.agentArmed = true;
+  if (r.pid === null) return;
 
   if (useMonitor(r.pid)) {
-    monitorArmSink!.armAgent(r.pid, opts.agentKey, opts.sessionId);
+    monitorArmSink!.armAgent(r.pid);
     return;
   }
-
-  startAgentReadyProbe(r);
+  local.addPid(r.pid);
+  local.armAgent(r.pid);
 }
 
 // Public wait. If timeoutMs is undefined, sensible defaults are picked per event.
@@ -275,8 +254,7 @@ function disposeTerminal(terminal: vscode.Terminal): void {
   if (!r) return;
   registry.delete(terminal);
   shellAdoptions.delete(terminal);
-  for (const d of r.disposables) d.dispose();
-  for (const t of r.timers) clearTimeout(t);
+  if (r.pid !== null) local.removePid(r.pid);
   coreDispose(r.entry, 'terminal closed');
 }
 
@@ -341,22 +319,12 @@ export async function maybeTearDownAgentOnClose(t: AgentCloseTeardown): Promise<
 
 // --- Shell adoption ------------------------------------------------------
 //
-// Polls the descendant process tree of an SH terminal looking for known
-// agent CLIs. Fires `onAdopted` once with the detected agent and its
-// session id (when resolvable). Stops itself after firing.
-//
-// Detection handles:
-//   - direct invocation: `claude`, `codex`, `cursor-agent`, `opencode`
-//   - node-wrapped binaries (where comm shows `node`) via args inspection
-//   - `agents run <agent>` wrappers from agents-cli
-//
-// Session id resolution:
-//   1. Inspect the agent process args for `--session-id <uuid>`
-//   2. Fall back to scanning the agent's session-file root for a file with
-//      mtime >= the agent process start time
+// Watches the descendant process tree of an SH terminal for a known agent CLI
+// (ReadinessDetector's adoption loop) and fires `onAdopted` once with the
+// agent and its session id, when resolvable.
 
 export interface ShellAdoptionInfo {
-  agentKey: FastPathAgentKey;
+  agentKey: AgentLauncherKey;
   sessionId: string | undefined;
   childPid: number;
 }
@@ -364,7 +332,6 @@ export interface ShellAdoptionInfo {
 export type ShellAdoptionCallback = (info: ShellAdoptionInfo) => void;
 
 interface ShellAdoptionState {
-  startedAt: number;
   armed: boolean;
   onAdopted: ShellAdoptionCallback;
 }
@@ -377,226 +344,37 @@ export function armShellAdoption(
 ): void {
   const r = registry.get(terminal);
   if (!r) {
-    adoptLog(`armShellAdoption: terminal "${terminal.name}" not in readiness registry — bailing`);
+    adoptionLog(`armShellAdoption: terminal "${terminal.name}" not in readiness registry — bailing`);
     return;
   }
   if (shellAdoptions.has(terminal)) {
-    adoptLog(`armShellAdoption: terminal "${terminal.name}" already armed — skipping`);
+    adoptionLog(`armShellAdoption: terminal "${terminal.name}" already armed — skipping`);
     return;
   }
-  const state: ShellAdoptionState = { startedAt: Date.now(), armed: true, onAdopted };
-  shellAdoptions.set(terminal, state);
-  adoptLog(`armShellAdoption: armed for terminal "${terminal.name}" (pid=${r.pid})`);
+  shellAdoptions.set(terminal, { armed: true, onAdopted });
+  adoptionLog(`armShellAdoption: armed for terminal "${terminal.name}" (pid=${r.pid})`);
+  if (r.pid !== null) armPendingAdoption(terminal, r.pid);
+}
 
+// Arms happen before the pid resolves too; registerTerminal calls this again
+// once it has.
+function armPendingAdoption(terminal: vscode.Terminal, pid: number): void {
+  if (!shellAdoptions.get(terminal)?.armed) return;
   // Connected: the monitor walks this pid's tree once and broadcasts the
   // ShellAdoptionInfo (resolved via ingestShellAdoptionFact). Forward the arm.
-  if (useMonitor(r.pid)) {
-    adoptLog(`armShellAdoption: forwarding to monitor for "${terminal.name}" (pid=${r.pid})`);
-    monitorArmSink!.armShellAdoption(r.pid);
+  if (useMonitor(pid)) {
+    adoptionLog(`armShellAdoption: forwarding to monitor for "${terminal.name}" (pid=${pid})`);
+    monitorArmSink!.armShellAdoption(pid);
     return;
   }
-
-  startLocalShellAdoption(terminal, r, state);
-}
-
-function startLocalShellAdoption(
-  terminal: vscode.Terminal,
-  r: Registered,
-  state: ShellAdoptionState,
-): void {
-  const onAdopted = state.onAdopted;
-  let tickCount = 0;
-  const tick = async () => {
-    tickCount++;
-    if (!state.armed) return;
-    if (r.entry.disposed) {
-      adoptLog(`tick #${tickCount} for "${terminal.name}": entry disposed, stopping`);
-      shellAdoptions.delete(terminal);
-      return;
-    }
-    if (Date.now() - state.startedAt > SHELL_ADOPTION_MAX_LIFETIME_MS) {
-      adoptLog(`tick #${tickCount} for "${terminal.name}": max lifetime exceeded, dropping`);
-      shellAdoptions.delete(terminal);
-      return;
-    }
-    if (r.pid === null) {
-      adoptLog(`tick #${tickCount} for "${terminal.name}": pid not yet resolved, retrying`);
-      const t = setTimeout(tick, SHELL_ADOPTION_POLL_MS);
-      r.timers.push(t);
-      return;
-    }
-
-    try {
-      const match = await findAgentInTree(r.pid, SHELL_ADOPTION_TREE_DEPTH);
-      if (match) {
-        adoptLog(`tick #${tickCount} for "${terminal.name}" (shellPid=${r.pid}): MATCH agentKey=${match.agentKey} childPid=${match.childPid} sessionIdFromArgs=${match.sessionId}`);
-        const sessionId = match.sessionId
-          ?? await locateSessionIdForAgent(match.agentKey, match.childPid);
-        adoptLog(`tick #${tickCount} for "${terminal.name}": resolved sessionId=${sessionId}`);
-        state.armed = false;
-        shellAdoptions.delete(terminal);
-        try {
-          onAdopted({ agentKey: match.agentKey, sessionId, childPid: match.childPid });
-          adoptLog(`tick #${tickCount} for "${terminal.name}": onAdopted callback returned cleanly`);
-        } catch (err) {
-          adoptLog(`tick #${tickCount} for "${terminal.name}": onAdopted callback threw: ${err}`);
-          console.error('[READINESS] shell adoption callback threw', err);
-        }
-        return;
-      } else if (tickCount % 5 === 1) {
-        // log every ~10s while idle so we can see polling is alive
-        adoptLog(`tick #${tickCount} for "${terminal.name}" (shellPid=${r.pid}): no agent CLI in descendant tree`);
-      }
-    } catch (err) {
-      adoptLog(`tick #${tickCount} for "${terminal.name}": probe threw ${err}`);
-    }
-
-    const t = setTimeout(tick, SHELL_ADOPTION_POLL_MS);
-    r.timers.push(t);
-  };
-
-  const first = setTimeout(tick, SHELL_ADOPTION_POLL_MS);
-  r.timers.push(first);
-}
-
-// --- Probes ---------------------------------------------------------------
-
-function startShellReadyProbe(r: Registered): void {
-  const pid = r.pid;
-  if (pid === null) return;
-  const startedAt = Date.now();
-  let attempt = 0;
-
-  const tick = async () => {
-    if (r.entry.disposed) return;
-    if (hasFired(r.entry, 'shellReady')) return;
-
-    try {
-      if (await probeIsKnownShell(pid)) {
-        markEvent(r.entry, 'shellReady');
-        return;
-      }
-    } catch {
-      // Process may have died; nothing to do.
-      return;
-    }
-
-    if (Date.now() - startedAt > PS_TIMEOUT_MS) {
-      // Give up and assume shellReady — whatever's in the pty is what the user
-      // picked. Don't block the pipeline forever.
-      markEvent(r.entry, 'shellReady');
-      return;
-    }
-
-    const t = setTimeout(tick, backoffMs(SHELL_PROBE_BASE_MS, attempt++));
-    r.timers.push(t);
-  };
-  tick();
-}
-
-function startPromptReadyFallbackProbe(r: Registered): void {
-  const pid = r.pid;
-  if (pid === null) return;
-  if (hasFired(r.entry, 'promptReady')) return;
-
-  let idleSince: number | null = null;
-  let attempt = 0;
-
-  const tick = async () => {
-    if (r.entry.disposed) return;
-    // Shell-integration event (initReadiness) is the preferred signal; if it
-    // already fired we never poll again.
-    if (hasFired(r.entry, 'promptReady')) return;
-
-    const idle = (await probeChildPids(pid)).length === 0;
-
-    let accumulating = false;
-    if (idle) {
-      if (idleSince === null) idleSince = Date.now();
-      if (Date.now() - idleSince >= PROMPT_IDLE_WINDOW_MS) {
-        markEvent(r.entry, 'promptReady');
-        return;
-      }
-      accumulating = true;
-    } else {
-      idleSince = null;
-    }
-
-    // Sample at base cadence while accumulating the idle window so we fire on
-    // time; back off only while there's no idle signal to chase.
-    const delay = accumulating ? IDLE_PROBE_BASE_MS : backoffMs(IDLE_PROBE_BASE_MS, attempt++);
-    const t = setTimeout(tick, delay);
-    r.timers.push(t);
-  };
-
-  // Give shell integration a chance first; only fall back to polling if it
-  // hasn't fired by the grace deadline.
-  const first = setTimeout(tick, PROMPT_FALLBACK_GRACE_MS);
-  r.timers.push(first);
-}
-
-function startAgentReadyProbe(r: Registered): void {
-  const pid = r.pid;
-  if (pid === null) return;
-  if (hasFired(r.entry, 'agentReady')) return;
-
-  let idleSince: number | null = null;
-  let childFirstSeenAt: number | null = null;
-  let attempt = 0;
-
-  const tick = async () => {
-    if (r.entry.disposed) return;
-    if (hasFired(r.entry, 'agentReady')) return;
-
-    let accumulating = false;
-    try {
-      const childPid = (await probeChildPids(pid))[0];
-      if (childPid === undefined) {
-        // No child yet — agent CLI hasn't started. Reset both signals.
-        idleSince = null;
-        childFirstSeenAt = null;
-      } else {
-        if (childFirstSeenAt === null) {
-          childFirstSeenAt = Date.now();
-        }
-
-        const idle = (await probeStat(childPid)).startsWith('S');
-        if (idle) {
-          if (idleSince === null) idleSince = Date.now();
-          const runtimeMs = Date.now() - childFirstSeenAt;
-          if (
-            Date.now() - idleSince >= AGENT_IDLE_WINDOW_MS &&
-            runtimeMs >= AGENT_MIN_CHILD_RUNTIME_MS
-          ) {
-            markEvent(r.entry, 'agentReady');
-            return;
-          }
-          accumulating = true;
-        } else {
-          // Any R/D/Z state breaks continuity. This is the main defense against
-          // mistaking network-I/O sleep for TUI-idle sleep.
-          idleSince = null;
-        }
-      }
-    } catch {
-      idleSince = null;
-    }
-
-    // Sample at base cadence while the idle window accumulates; back off while
-    // the agent is actively working so an idle machine isn't probed every 150ms.
-    const delay = accumulating ? IDLE_PROBE_BASE_MS : backoffMs(IDLE_PROBE_BASE_MS, attempt++);
-    const t = setTimeout(tick, delay);
-    r.timers.push(t);
-  };
-
-  tick();
+  local.addPid(pid);
+  local.armShellAdoption(pid);
 }
 
 export function __clearRegistryForTests(): void {
   for (const [terminal, r] of registry.entries()) {
     shellAdoptions.delete(terminal);
-    for (const d of r.disposables) d.dispose();
-    for (const t of r.timers) clearTimeout(t);
+    if (r.pid !== null) local.removePid(r.pid);
   }
   registry.clear();
 }

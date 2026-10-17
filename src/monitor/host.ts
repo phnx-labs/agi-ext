@@ -196,7 +196,7 @@ export class MonitorHost {
     }
     if (req && op === MONITOR_OP.armAgent) {
       const r = req as ArmAgentRequest;
-      this.readinessDetector?.armAgent(r.pid, r.agentKey, r.sessionId);
+      this.readinessDetector?.armAgent(r.pid);
       return { ok: true };
     }
     if (req && op === MONITOR_OP.armShellAdoption) {

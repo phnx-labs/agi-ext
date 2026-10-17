@@ -1,15 +1,14 @@
-// Leader-side, pid-keyed terminal-readiness detector (#68).
+// Pid-keyed terminal-readiness detector (#68), the one copy of every probe.
 //
-// The elected monitor runs ONE of these. It is fed the union of every window's
-// shell pids (from the host's tuple snapshot) and runs the same ps/pgrep probes
-// terminalReadiness runs today — but once per pid instead of once per
-// (window, terminal). As each milestone is reached it emits a fact the host
-// broadcasts; followers map the pid back to their own terminal and resolve the
-// existing `waitFor` against it.
+// The elected monitor runs one, fed the union of every window's shell pids
+// (from the host's tuple snapshot), and broadcasts each milestone it reaches;
+// followers map the pid back to their own terminal. A window runs its own
+// in-process one for the pids it probes while the monitor is down, and for a
+// reset (terminalReadiness.ts), emitting straight into the same ingest path.
 //
 // vscode-free: it operates purely on pids, reuses the shared probe primitives
-// (probes.ts) and session roots (sessionParse.ts), and is driven by the host —
-// so it runs and tests in a plain process against real subprocesses.
+// (probes.ts) and session roots (sessionParse.ts), so it runs and tests in a
+// plain process against real subprocesses.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -40,11 +39,11 @@ import {
   probeStartMs,
 } from './probes';
 
-// --- Shell-adoption constants + tree walk (shared with the local fallback) -
+// --- Shell-adoption constants + tree walk ---------------------------------
 
-export const SHELL_ADOPTION_POLL_MS = 2000;
-export const SHELL_ADOPTION_MAX_LIFETIME_MS = 10 * 60 * 1000;
-export const SHELL_ADOPTION_TREE_DEPTH = 5;
+const SHELL_ADOPTION_POLL_MS = 2000;
+const SHELL_ADOPTION_MAX_LIFETIME_MS = 10 * 60 * 1000;
+const SHELL_ADOPTION_TREE_DEPTH = 5;
 const SHELL_ADOPTION_SESSION_LOOKBACK_MS = 60 * 1000;
 
 const SESSION_UUID_RE =
@@ -89,7 +88,7 @@ export function selectAgentFromCandidates(
  * the walk continues past other-agent processes (shallow-first order preserved)
  * instead of returning the first agent of any type.
  */
-export async function findAgentInTree(
+async function findAgentInTree(
   rootPid: number,
   maxDepth: number,
   wantAgentKey?: AgentLauncherKey,
@@ -148,7 +147,7 @@ async function collectRecentSessionFiles(
 }
 
 /** Resolve a session id for an adopted agent by scanning its recent session files. */
-export async function locateSessionIdForAgent(
+async function locateSessionIdForAgent(
   agentKey: AgentLauncherKey,
   childPid: number,
 ): Promise<string | undefined> {
@@ -177,6 +176,12 @@ export async function locateSessionIdForAgent(
 export interface ReadinessDetectorOptions {
   emit: (fact: ReadinessFactPayload) => void;
   emitAdoption: (fact: ShellAdoptionFactPayload) => void;
+  /**
+   * Whether `pid` already reached `event`. In a window the terminal's readiness
+   * entry is the record (shell integration marks promptReady, a reset clears
+   * it); the leader, which has no entries, keeps its own.
+   */
+  fired?: (pid: number, event: ReadinessEventName) => boolean;
 }
 
 interface PidEntry {
@@ -192,6 +197,7 @@ interface PidEntry {
 export class ReadinessDetector {
   private readonly emit: (fact: ReadinessFactPayload) => void;
   private readonly emitAdoption: (fact: ShellAdoptionFactPayload) => void;
+  private readonly firedFor?: (pid: number, event: ReadinessEventName) => boolean;
   private readonly entries = new Map<number, PidEntry>();
   // Pids whose agentReady arm arrived before the pid appeared in a snapshot.
   private readonly pendingAgentArms = new Set<number>();
@@ -201,6 +207,7 @@ export class ReadinessDetector {
   constructor(options: ReadinessDetectorOptions) {
     this.emit = options.emit;
     this.emitAdoption = options.emitAdoption;
+    this.firedFor = options.fired;
   }
 
   /** The current set of pids under observation (test introspection). */
@@ -215,45 +222,16 @@ export class ReadinessDetector {
     for (const pid of pids) {
       if (typeof pid !== 'number' || !Number.isFinite(pid)) continue;
       next.add(pid);
-      if (!this.entries.has(pid)) this.addPid(pid);
+      this.addPid(pid);
     }
     for (const pid of [...this.entries.keys()]) {
-      if (!next.has(pid)) this.disposePid(pid);
+      if (!next.has(pid)) this.removePid(pid);
     }
   }
 
-  /** Arm agentReady detection for a shell pid (mirrors armAgentReady). The
-   *  agentKey/sessionId the follower passes are not needed here — the probe is
-   *  pid-driven — but the signature mirrors the arm request for parity. */
-  armAgent(pid: number, _agentKey?: string, _sessionId?: string): void {
-    if (this.stopped) return;
-    const entry = this.entries.get(pid);
-    if (!entry) {
-      this.pendingAgentArms.add(pid);
-      return;
-    }
-    this.applyAgentArm(entry);
-  }
-
-  /** Arm shell-adoption detection for a shell pid (mirrors armShellAdoption). */
-  armShellAdoption(pid: number): void {
-    if (this.stopped) return;
-    const entry = this.entries.get(pid);
-    if (!entry) {
-      this.pendingAdoptionArms.add(pid);
-      return;
-    }
-    this.applyAdoptionArm(entry);
-  }
-
-  stop(): void {
-    this.stopped = true;
-    for (const pid of [...this.entries.keys()]) this.disposePid(pid);
-    this.pendingAgentArms.clear();
-    this.pendingAdoptionArms.clear();
-  }
-
-  private addPid(pid: number): void {
+  /** Observe `pid`: fire tabReady and probe shellReady and promptReady. Idempotent. */
+  addPid(pid: number): void {
+    if (this.stopped || this.entries.has(pid)) return;
     const entry: PidEntry = {
       pid,
       disposed: false,
@@ -277,7 +255,8 @@ export class ReadinessDetector {
     }
   }
 
-  private disposePid(pid: number): void {
+  /** Stop observing `pid` and cancel its probes. */
+  removePid(pid: number): void {
     const entry = this.entries.get(pid);
     if (!entry) return;
     entry.disposed = true;
@@ -286,14 +265,57 @@ export class ReadinessDetector {
     this.entries.delete(pid);
   }
 
+  /** The agent exited: disarm it and re-await promptReady (resetAfterAgentExit). */
+  reset(pid: number): void {
+    if (this.stopped) return;
+    const entry = this.entries.get(pid);
+    if (!entry) {
+      this.addPid(pid);
+      return;
+    }
+    entry.fired.delete('promptReady');
+    entry.fired.delete('agentReady');
+    entry.agentArmed = false;
+    this.startPromptProbe(entry);
+  }
+
+  /** Arm agentReady detection for a shell pid (mirrors armAgentReady). */
+  armAgent(pid: number): void {
+    if (this.stopped) return;
+    const entry = this.entries.get(pid);
+    if (!entry) {
+      this.pendingAgentArms.add(pid);
+      return;
+    }
+    this.applyAgentArm(entry);
+  }
+
+  /** Arm shell-adoption detection for a shell pid (mirrors armShellAdoption). */
+  armShellAdoption(pid: number): void {
+    if (this.stopped) return;
+    const entry = this.entries.get(pid);
+    if (!entry) {
+      this.pendingAdoptionArms.add(pid);
+      return;
+    }
+    this.applyAdoptionArm(entry);
+  }
+
+  stop(): void {
+    this.stopped = true;
+    for (const pid of [...this.entries.keys()]) this.removePid(pid);
+    this.pendingAgentArms.clear();
+    this.pendingAdoptionArms.clear();
+  }
+
   private fired(entry: PidEntry, event: ReadinessEventName): boolean {
-    return entry.fired.has(event);
+    return this.firedFor ? this.firedFor(entry.pid, event) : entry.fired.has(event);
   }
 
   // Mark `event` and (internally) all lower milestones, emitting the reached
   // milestone. The follower's markEvent cascades, so emitting the top is enough.
   private fire(entry: PidEntry, event: ReadinessEventName): void {
-    if (entry.disposed || entry.fired.has(event)) return;
+    if (entry.disposed || this.fired(entry, event)) return;
     const idx = READINESS_ORDER.indexOf(event);
     for (let i = 0; i <= idx; i++) entry.fired.add(READINESS_ORDER[i]);
     this.emit({ pid: entry.pid, event });
