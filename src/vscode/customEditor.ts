@@ -149,7 +149,10 @@ The user selected the above text from a markdown file. Help them with whatever t
         type: 'agentResult',
         result: 'Opening new agent terminal with your selection...',
       });
-      const terminal = await openSingleAgentWithQueue(this.context, agentConfig, [contextMessage], { local: true });
+      const terminal = await openSingleAgentWithQueue(this.context, agentConfig, [contextMessage], {
+        cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        local: true,
+      });
 
       // Store terminal reference for this document
       const docUri = document.uri.toString();
