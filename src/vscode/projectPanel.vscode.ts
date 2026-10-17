@@ -576,18 +576,23 @@ class ProjectPanelController {
     return { agentName: agent.name, peek: renderTicketPeek(t.identifier, t.description, { agentName: agent.name, delegated: agent.delegated }, onIt) };
   }
 
-  /** Open a ticket's Linear page as a tab: the URL the Issues read carried, else one
-   *  `agents projects tickets view` read for a ticket not in it (a closed one). */
+  /** Open a ticket's Linear page as a tab: the URL the Issues read carried (waiting for
+   *  that read when it is still running), else one `agents projects tickets view` read for a
+   *  ticket not in it (a closed one). */
   async openTicketPage(id: string): Promise<void> {
     let url = this.ticketById(id)?.url;
     try {
       if (!url) {
         const project = await this.project();
         if (!project) throw new Error('No agents project contains this workspace; pick one to read its tickets.');
-        const { stdout } = await linearThroughAgents(['tickets', 'view', project.name, id, '--json'], 60_000);
-        const t = parseTicketView(stdout);
-        if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
-        url = t.url;
+        await this.ticketGroups(project, false).catch(() => undefined);
+        url = this.ticketById(id)?.url;
+        if (!url) {
+          const { stdout } = await linearThroughAgents(['tickets', 'view', project.name, id, '--json'], 60_000);
+          const t = parseTicketView(stdout);
+          if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
+          url = t.url;
+        }
       }
       if (!url) throw new Error('Linear gave no page for it.');
     } catch (e) {
@@ -1259,7 +1264,6 @@ export function shell(cspSource: string, logoCss = ''): string {
   .tli:hover, .tli.peek { background: var(--r-hover); } .tli .trow:hover { background: none; }
   .tgo { background: none; border: 0; padding: 0; cursor: pointer; }
   .tgo svg { fill: currentColor; stroke: none; }
-  .tgo:disabled { opacity: .4; cursor: default; }
   .tpeek { flex-basis: 100%; padding: 0 8px 8px 24px; display: flex; flex-direction: column; gap: 6px; }
   .tpeek[hidden] { display: none; }
   .tpeek .tbody { font-size: 12px; line-height: 1.45; color: var(--r-text-2); overflow-wrap: anywhere; }
@@ -1343,6 +1347,10 @@ ${THUMB_SCRIPT}
   setInterval(tickWaits, 1000);
   // The one ticket whose peek is open in Issues; it survives redraws of the list.
   let peeked = null;
+  // A tile's peek scrolls into view once its row is drawn, which may be after the message.
+  let scrollToPeek = false;
+  // When ▶ last started each ticket: a redraw replaces the button, so the guard lives here.
+  const startedAt = new Map();
   function drawPeek() {
     main.querySelectorAll('.tli').forEach((li) => {
       const on = li.querySelector('.trow').dataset.ticket === peeked;
@@ -1350,6 +1358,8 @@ ${THUMB_SCRIPT}
       li.querySelector('.trow').setAttribute('aria-expanded', String(on));
       const box = li.querySelector('.tpeek'); if (box) box.hidden = !on;
     });
+    const row = scrollToPeek && main.querySelector('.tli.peek');
+    if (row) { row.scrollIntoView({ block: 'nearest' }); scrollToPeek = false; }
   }
   function restoreLocal() {
     drawPeek();
@@ -1485,10 +1495,7 @@ ${THUMB_SCRIPT}
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') document.body.classList.remove('loading');
-    else if (m.type === 'peek') {
-      peeked = m.id; drawPeek();
-      main.querySelector('.tli.peek')?.scrollIntoView({ block: 'nearest' });
-    }
+    else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }
     else if (m.type === 'notice') toast(m.text);
     else if (m.type === 'answered') {
       const p = pendingAnswer.get(m.key); if (!p) return;
@@ -1571,7 +1578,7 @@ ${THUMB_SCRIPT}
     if (pick) { pmenu.hidden = true; vscode.postMessage({ type: 'pickProject', name: pick.dataset.projPick }); return; }
     if (e.target.closest('[data-proj-all]')) { pmenu.hidden = true; vscode.postMessage({ type: 'pick' }); return; }
     if (!pmenu.hidden && !e.target.closest('.pmenu')) { pmenu.hidden = true; document.querySelector('[data-proj-menu]').setAttribute('aria-expanded', 'false'); }
-    // A ticket tile or chip opens the ticket in Issues, with its comments.
+    // A ticket tile or chip peeks at its row in Issues and opens its Linear page.
     const tk = e.target.closest('[data-open-ticket]');
     if (tk) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
     const merge = e.target.closest('[data-merge-repo]');
@@ -1660,10 +1667,11 @@ ${THUMB_SCRIPT}
     const go = e.target.closest('[data-start-ticket]');
     if (go) {
       e.preventDefault(); e.stopPropagation();
-      if (go.disabled) return;
-      go.disabled = true;
-      setTimeout(() => { go.disabled = false; }, 3000);
-      vscode.postMessage({ type: 'startTicket', id: go.dataset.startTicket });
+      // One agent per click: a second click on the ticket within 5 s starts nothing.
+      const id = go.dataset.startTicket;
+      if (Date.now() - (startedAt.get(id) || 0) < 5000) return;
+      startedAt.set(id, Date.now());
+      vscode.postMessage({ type: 'startTicket', id });
       return;
     }
     const art = e.target.closest('[data-artifact]');
