@@ -16,6 +16,7 @@ import {
 import { MIC_IDLE, PressGate, nextMic, type MicEvent, type MicMachine, type MicOrigin, type MicUpdate } from '../core/leadInput';
 import { dictation } from './dictation.vscode';
 import { LeadTab } from './leadTab.vscode';
+import { openLink } from './webviewSecurity';
 
 type Row = vscode.QuickPickItem & { act?: () => unknown; confirm?: string; ref?: LeadRef };
 
@@ -30,14 +31,15 @@ function prUrl(r: Extract<LeadRef, { kind: 'pr' }>): string {
   return r.url && isWebUrl(r.url) ? r.url : `https://github.com/${r.repo}/pull/${r.number}`;
 }
 
-/** Open a ref: a ticket in Issues, a PR on GitHub, a session in its tab (or resumed). */
+/** Open a ref: a ticket in Issues (its Linear page as a tab from the row's button), a PR's
+ *  GitHub page as a tab, a session in its tab (or resumed). */
 async function openLeadRef(r: LeadRef, external = false): Promise<void> {
   if (r.kind === 'ticket') {
-    if (external && r.url && isWebUrl(r.url)) { await vscode.env.openExternal(vscode.Uri.parse(r.url)); return; }
+    if (external && r.url && isWebUrl(r.url)) { await openLink(r.url); return; }
     await vscode.commands.executeCommand('agents.project.openTicket', r.id);
     return;
   }
-  if (r.kind === 'pr') { await vscode.env.openExternal(vscode.Uri.parse(prUrl(r))); return; }
+  if (r.kind === 'pr') { await openLink(prUrl(r)); return; }
   const { resumeAndNotify } = await import('./resumeSession.vscode');
   await resumeAndNotify({ sessionId: r.id, host: r.host ?? '', title: r.title ?? '' });
 }

@@ -748,6 +748,19 @@
           "default": "auto",
           "description": "Where the per-harness \"Agents: New <Harness>\" commands run. Device choice stays with the CLI: 'auto' emits --device auto, which draws from the fleet's worker pool (agents devices role). The (Pick Host), (Auto), (Pick Project), (Pick Account), and (Local) command variants are unaffected."
         },
+        "agents.links.openIn": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "browser"
+          ],
+          "enumDescriptions": [
+            "Open PRs, tickets and other web links as editor tabs in the integrated browser, so you act on them beside your agents. A second click on the same page brings its tab forward. Editors without the integrated browser open your default browser.",
+            "Open web links in your default browser."
+          ],
+          "default": "editor",
+          "markdownDescription": "Where the extension opens GitHub PRs, Linear tickets and other web links. A ⌘, Ctrl or ⌥ click always opens your default browser. Sign in to GitHub and Linear once in the integrated browser; it keeps the sign-in across workspaces (`#workbench.browser.dataStorage#`)."
+        },
         "agents.dictation.model": {
           "type": "string",
           "default": "~/.cache/whisper-models/ggml-large-v3-turbo.bin",

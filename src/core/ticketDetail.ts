@@ -115,8 +115,8 @@ export function renderTicketDetail(t: TicketDetail, start: TicketStart, onIt: Ti
   <h3>${escapeHtml(t.title)}</h3>
   <div class="tmeta">${escapeHtml(t.milestone ?? 'No milestone')}${t.url ? ` · <a href="#" data-url="${escapeHtml(t.url)}">Open in Linear ↗</a>` : ''}</div>
   <div class="dispatch"><div class="dwho">${who}</div>${work}</div>
-  <details open><summary>Description</summary><div class="tbody">${t.description ? miniMarkdown(t.description) : '<p class="none">No description.</p>'}</div></details>
-  <details open><summary>Comments <span class="n">${t.comments.length}</span></summary>
+  <details><summary>Description</summary><div class="tbody">${t.description ? miniMarkdown(t.description) : '<p class="none">No description.</p>'}</div></details>
+  <details><summary>Comments <span class="n">${t.comments.length}</span></summary>
     ${t.comments.length > shown.length ? `<div class="older">${t.comments.length - shown.length} older in Linear</div>` : ''}
     <div class="comments">${shown.map((c) => `<div class="cmt"><div class="cby">${escapeHtml(c.author)} · ${escapeHtml(c.date)}</div><div class="cbody">${miniMarkdown(clip(c.body))}</div></div>`).join('')}</div>
     <textarea class="cnew" placeholder="Comment on ${id}…" rows="3" aria-label="Comment on ${id}"></textarea>

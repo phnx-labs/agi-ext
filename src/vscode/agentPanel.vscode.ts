@@ -35,7 +35,7 @@ import * as os from 'os';
 import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
-import { openExternalUrl } from './webviewSecurity';
+import { openWebviewUrl } from './webviewSecurity';
 import { todoProgressFromItems, type TodoProgress } from '../core/session.activity';
 import {
   type PullRequestRef as SharedPullRequestRef,
@@ -534,7 +534,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         return;
       case 'openUrl':
         if (typeof msg.url === 'string') {
-          openExternalUrl(msg.url);
+          openWebviewUrl(msg.url, msg.external === true);
         }
         return;
       case 'openSourceControl':
@@ -544,7 +544,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         void this.refresh();
         return;
       case 'runQuickAction':
-        await this.runQuickAction(msg.action, msg.terminalId, msg.url);
+        await this.runQuickAction(msg.action, msg.terminalId, msg.url, msg.external === true);
         return;
       case 'replyToSession':
         await this.replyToSession(
@@ -714,7 +714,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       if (url) {
         await vscode.env.clipboard.writeText(url);
         const open = await vscode.window.showInformationMessage(`Shared ${path.basename(filePath)} (${picked.label}). Link copied.`, 'Open');
-        if (open === 'Open') openExternalUrl(url);
+        if (open === 'Open') openWebviewUrl(url);
       } else {
         void vscode.window.showInformationMessage(`Shared ${path.basename(filePath)}.`);
       }
@@ -728,6 +728,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     action: string,
     terminalId: string | undefined,
     url: string | undefined,
+    external = false,
   ): Promise<void> {
     const entry = terminalId ? terminals.getById(terminalId) : undefined;
     const terminal = entry?.terminal ?? vscode.window.activeTerminal;
@@ -776,7 +777,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         return;
       case 'openPr':
         if (typeof url === 'string') {
-          openExternalUrl(url);
+          openWebviewUrl(url, external);
         }
         return;
       case 'diff':
@@ -1964,13 +1965,14 @@ function bindPanel() {
     });
   }
   for (const el of root.querySelectorAll('[data-action]')) {
-    if (bindOnce(el, 'action')) el.addEventListener('click', () => {
+    if (bindOnce(el, 'action')) el.addEventListener('click', (e) => {
       vscode.postMessage({
         type: 'runQuickAction',
         action: el.getAttribute('data-action'),
         terminalId: lastSnapshot && lastSnapshot.terminalId,
         workspaceRoot: lastSnapshot && lastSnapshot.workspaceRoot,
         url: el.getAttribute('data-url') || undefined,
+        external: e.metaKey || e.ctrlKey || e.altKey,
       });
     });
   }
