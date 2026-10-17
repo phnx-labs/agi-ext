@@ -8,7 +8,6 @@ import {
   getBuiltInDefByTitle,
   agentKindFromTerminalId,
   isAgentRunner,
-  usesManagedAgentLaunch,
   modeFlagForAgent,
   buildAgentLaunchCommand,
   wrapNativeAgentCommand,
@@ -93,14 +92,10 @@ describe('modeFlagForAgent', () => {
   // We launch via `agents run <agent>`, which owns `--mode plan|auto|edit` and
   // translates it per CLI. So the flag is agent-agnostic — NOT the raw
   // `--permission-mode`, which agents run would not forward.
-  test('maps every mode to agents run --mode, for any agent', () => {
-    expect(modeFlagForAgent('claude', 'plan')).toBe('--mode plan');
-    expect(modeFlagForAgent('claude', 'auto')).toBe('--mode auto');
-    expect(modeFlagForAgent('claude', 'edit')).toBe('--mode edit');
-    // agent-agnostic: codex/gemini/unknown get the same universal flag.
-    expect(modeFlagForAgent('codex', 'plan')).toBe('--mode plan');
-    expect(modeFlagForAgent('gemini', 'edit')).toBe('--mode edit');
-    expect(modeFlagForAgent('unknown', 'auto')).toBe('--mode auto');
+  test('maps every mode to agents run --mode', () => {
+    expect(modeFlagForAgent('plan')).toBe('--mode plan');
+    expect(modeFlagForAgent('auto')).toBe('--mode auto');
+    expect(modeFlagForAgent('edit')).toBe('--mode edit');
   });
 });
 
@@ -117,13 +112,6 @@ describe('launch contract — every runner uses the managed launch builder', () 
     expect(isAgentRunner('grok')).toBe(true);
     expect(isAgentRunner('kimi')).toBe(true);
     expect(isAgentRunner('droid')).toBe(true);
-  });
-
-  test('usesManagedAgentLaunch routes every runner through agents run, never shell', () => {
-    for (const key of RUNNERS) expect(usesManagedAgentLaunch(key)).toBe(true);
-    expect(usesManagedAgentLaunch('shell')).toBe(false);
-    // A host target does not make shell an `agents run` agent (it has none).
-    expect(usesManagedAgentLaunch('shell', 'yosemite-s1')).toBe(false);
   });
 
   test('every runner supports balanced selection on local, auto, and explicit-host targets', () => {
@@ -195,6 +183,13 @@ describe('buildAgentLaunchCommand', () => {
     const flagged = buildAgentLaunchCommand('codex', null, undefined, '--mode plan');
     expect(flagged.match(/--mode/g)?.length).toBe(1);
     expect(flagged).toContain('--mode plan');
+  });
+
+  test('Resume in Best Profile: auto takes a new Claude session id and the fleet places it', () => {
+    expect(buildAgentLaunchCommand('auto', 'new-id', undefined, undefined, undefined, undefined, undefined, {
+      host: 'auto',
+      cwd: '/w',
+    })).toBe("agents run auto --interactive --device 'auto' --cwd '/w' --session-id new-id --mode auto");
   });
 
   test('includes --interactive and the agent key in the base command', () => {

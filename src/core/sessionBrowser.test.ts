@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildAgentLaunchCommand } from './agents';
-import { buildForkSessionRequest } from './forkSession';
+import { buildForkSessionRequest, forkCommand } from './forkSession';
 import {
   buildSessionBrowserRows,
   cleanSessionTopic,
@@ -119,51 +118,30 @@ describe('buildSessionBrowserRows', () => {
   });
 });
 
-describe('picked row -> launch command', () => {
+describe('picked row -> fork command', () => {
   // The seam the whole feature turns on: what the browser SHOWS as a device is
-  // what the launch RUNS on. Walk a picked row through the real fork request and
-  // the real command builder — no mocks in between.
-  test('a row on a fleet device launches there, in that box\'s copy of the repo', () => {
-    const picked = session({
-      id: 'sess-remote',
-      agent: 'claude',
-      machine: 'yosemite-s1',
-      cwd: '/home/muqsit/src/github.com/muqsitnawaz/agents-cli',
-    });
+  // where the fork RUNS. Walk a picked row through the real fork request and the
+  // real fork verb.
+  test('a row on a fleet device forks there', () => {
+    const picked = session({ id: 'sess-remote', agent: 'claude', machine: 'yosemite-s1', cwd: '/home/u/src/x' });
     const request = buildForkSessionRequest({
       sessionId: picked.id,
       agentKey: picked.agent,
       host: forkHostForSession(picked, 'zion'),
     });
     if (!request.ok) throw new Error('expected fork request');
-    expect(request.local).toBe(false);
-
-    const command = buildAgentLaunchCommand(
-      request.agentKey, 'new-id', undefined, undefined, undefined,
-      request.strategy, undefined, { host: request.host, local: request.local, remoteCwd: picked.cwd },
-    );
-    expect(command).toContain("--device 'yosemite-s1'");
-    expect(command).toContain("--remote-cwd '/home/muqsit/src/github.com/muqsitnawaz/agents-cli'");
-    expect(command).not.toContain(" --cwd ");
-    expect(request.prompt).toBe('/continue sess-remote');
+    expect(forkCommand(request.sessionId, request.host)).toBe("agents fork 'sess-remote' --device 'yosemite-s1'");
   });
 
-  test('a row on this machine launches locally, with no host or remote cwd', () => {
-    const picked = session({ id: 'sess-local', agent: 'claude', machine: 'zion', cwd: '/Users/muqsit/src' });
+  test('a row on this machine forks here, with no device', () => {
+    const picked = session({ id: 'sess-local', agent: 'claude', machine: 'zion', cwd: '/Users/u/src' });
     const request = buildForkSessionRequest({
       sessionId: picked.id,
       agentKey: picked.agent,
       host: forkHostForSession(picked, 'zion'),
     });
     if (!request.ok) throw new Error('expected fork request');
-    expect(request.local).toBe(true);
-
-    const command = buildAgentLaunchCommand(
-      request.agentKey, 'new-id', undefined, undefined, undefined,
-      request.strategy, undefined, { host: request.host, local: request.local },
-    );
-    expect(command).not.toContain('--device');
-    expect(command).not.toContain('--remote-cwd');
+    expect(forkCommand(request.sessionId, request.host)).toBe("agents fork 'sess-local'");
   });
 });
 

@@ -14,7 +14,7 @@ import {
 } from './utils';
 import { CLI_AGENT_META } from './agents.cli';
 import type { CliAgentId } from './agents.cli';
-import { shellQuote as _shellQuote } from './shellQuote';
+import { shellQuote } from './shellQuote';
 
 // Built-in agent definition (static data)
 export interface BuiltInAgentDef {
@@ -118,9 +118,8 @@ export type AgentLaunchMode = 'plan' | 'auto' | 'edit';
 
 const AGENTS_RUN_MODES: readonly AgentLaunchMode[] = ['plan', 'auto', 'edit'];
 
-// Resolve the launch flag that puts an agent into `mode`. `agentKey` is accepted
-// for call-site stability but not needed — `agents run --mode` is universal.
-export function modeFlagForAgent(_agentKey: string, mode: AgentLaunchMode): string | undefined {
+// Resolve the launch flag that puts an agent into `mode`; `agents run --mode` is universal.
+export function modeFlagForAgent(mode: AgentLaunchMode): string | undefined {
   return AGENTS_RUN_MODES.includes(mode) ? `--mode ${mode}` : undefined;
 }
 
@@ -128,11 +127,6 @@ export function modeFlagForAgent(_agentKey: string, mode: AgentLaunchMode): stri
 // the agents-cli: pinned uses the configured default, balanced rotates across
 // healthy accounts. The CLI ignores --strategy when an @version is pinned.
 export type RunStrategy = 'pinned' | 'available' | 'balanced';
-
-// Wrapper for the canonical shell quoter (re-exported for compatibility).
-export function shquote(s: string): string {
-  return _shellQuote(s);
-}
 
 // Build the `agents run <agent> --interactive [--mode <m>] […]` shell string for
 // an interactive terminal launch. `mode` defaults to `'auto'` when the caller
@@ -188,8 +182,8 @@ export function buildAgentLaunchCommand(
   // `agents devices` and runs interactive-on-host. Emitted for ANY agent so
   // grok/kimi/droid (which launch as raw binaries locally) get host parity.
   if (host) {
-    command += ` --device ${shquote(host)}`;
-    if (remoteCwd) command += ` --remote-cwd ${shquote(remoteCwd)}`;
+    command += ` --device ${shellQuote(host)}`;
+    if (remoteCwd) command += ` --remote-cwd ${shellQuote(remoteCwd)}`;
   }
   // Bare interactive runs auto-place in the CLI. A hostless version pin keeps
   // its local placement intent; an explicit host takes precedence.
@@ -199,14 +193,15 @@ export function buildAgentLaunchCommand(
   // Working directory is independent of placement and version selection. Local
   // and pinned launches need it too: the terminal's inherited process.cwd() can
   // differ from the active folder (and AGENT_WORKSPACE_DIR is only metadata).
-  if (cwd) command += ` --cwd ${shquote(cwd)}`;
+  if (cwd) command += ` --cwd ${shellQuote(cwd)}`;
   // A picked project owns the working directory on ANY target — local, picked
   // host, or --device auto — so it is emitted once here rather than duplicated
   // in each branch above.
   if (project) {
-    command += ` --project ${shquote(project)}`;
+    command += ` --project ${shellQuote(project)}`;
   }
-  if (sessionId && agentKey === 'claude') {
+  // `auto` may resolve to Claude, which then takes the id; any other pick ignores it.
+  if (sessionId && (agentKey === 'claude' || agentKey === 'auto')) {
     command += ` --session-id ${sessionId}`;
   }
   // --strategy is meaningless (and ignored by the CLI) once a version is
@@ -223,7 +218,7 @@ export function buildAgentLaunchCommand(
   // Skip when the caller already threaded an explicit --mode via additionalFlags
   // so we never emit it twice.
   const effectiveMode: AgentLaunchMode = mode ?? 'auto';
-  const modeFlag = modeFlagForAgent(agentKey, effectiveMode);
+  const modeFlag = modeFlagForAgent(effectiveMode);
   if (modeFlag && (!additionalFlags || !additionalFlags.includes('--mode'))) {
     command += ` ${modeFlag}`;
   }
@@ -299,9 +294,3 @@ export function isAgentRunner(agentKey: string): boolean {
   return agentKey !== 'shell';
 }
 
-/** Every agent runner launches through `agents run`, locally or across an SSH
- * host boundary. The launch target chooses picker or automatic account
- * selection; shell alone stays a raw terminal because it is not an agent. */
-export function usesManagedAgentLaunch(agentKey: string, _targetHost?: string): boolean {
-  return isAgentRunner(agentKey);
-}

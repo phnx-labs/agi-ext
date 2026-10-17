@@ -139,7 +139,8 @@ The user selected the above text from a markdown file. Help them with whatever t
       const { CLAUDE_TITLE, formatTerminalTitle, getSessionChunk } = await import('../core/utils');
       const terminals = await import('./terminals.vscode');
       const { buildAgentTerminalEnv } = await import('../core/terminals');
-      const { generateClaudeSessionId, buildClaudeOpenCommand } = await import('../core/prewarm.simple');
+      const { generateClaudeSessionId } = await import('../core/prewarm.simple');
+      const { buildTabLaunchCommand } = await import('../core/launchTarget');
       const settingsModule = await import('./agentSettings.vscode');
 
       const agentConfig = getBuiltInByTitle(this.context.extensionPath, CLAUDE_TITLE);
@@ -150,7 +151,12 @@ The user selected the above text from a markdown file. Help them with whatever t
 
       // Generate session ID for Claude
       const sessionId = generateClaudeSessionId();
-      const command = buildClaudeOpenCommand(sessionId);
+      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const command = buildTabLaunchCommand('claude', {
+        cwd: workspacePath,
+        sessionId,
+        defaultModel: settingsModule.getDefaultModel(this.context, 'claude'),
+      })!;
 
       // Create new terminal
       const editorLocation: vscode.TerminalEditorLocationOptions = {
@@ -158,7 +164,6 @@ The user selected the above text from a markdown file. Help them with whatever t
         preserveFocus: false
       };
 
-      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       const terminalId = terminals.nextId(agentConfig.prefix);
       const display = settingsModule.getSettings(this.context).display || {};
       const sessionChunk = display.showSessionIdInTitles ? getSessionChunk(sessionId) : null;

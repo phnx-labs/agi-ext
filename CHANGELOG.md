@@ -11,6 +11,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   the monitor runs, instead of a second copy that could drift from it.
 - Shell-adoption diagnostics have one writer to `~/.cache/swarmify/shell-adoption.log`; it
   records arming, forwarding and the adopted agent, no longer every 2 s poll.
+- Clear and the startup auto-open relaunch a Claude tab on this machine (or on the device the
+  tab runs on). They used `--device auto`, so a local tab could come back on another machine.
+- The startup auto-open, Clear and the Reader's Ask Claude start every harness through
+  `agents run` in the open workspace, like New <Harness>; Codex, Antigravity and the rest no
+  longer start as their raw binaries there.
+- Resume (Pick Harness) and Resume in Best Profile pass the workspace as `--cwd` and start in
+  `--mode auto`, like every other launch.
+- Fork (Pick Session) runs `agents fork`, like Fork and Fork (Pick Host): the sibling starts
+  from the CLI's recap of the picked session instead of a typed `/continue`, on the machine the
+  session lives on, and the tab reads "fork of <title>".
 
 ## [0.9.406] - 2026-10-17
 
