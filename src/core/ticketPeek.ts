@@ -4,7 +4,7 @@
 
 import { escapeHtml } from './projectPanel';
 
-/** What `agents projects tickets view <name> <ID> --json` gives a ticket tile that the
+/** What `linear tasks <ID> --json` gives a ticket tile that the
  *  Issues list does not hold (a closed ticket): the page to open, and its face. */
 export interface TicketView {
   identifier: string;
