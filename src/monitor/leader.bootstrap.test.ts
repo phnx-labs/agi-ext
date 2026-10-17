@@ -141,6 +141,7 @@ test.skipIf(process.platform === 'win32')('a leader whose bind fails keeps the f
   const accepted = new Set<net.Socket>();
   const foreign = net.createServer((socket) => {
     accepted.add(socket);
+    socket.on('error', () => {}); // a window that probes and hangs up first makes the reply EPIPE
     socket.once('close', () => accepted.delete(socket));
     socket.end('foreign\n');
   });
