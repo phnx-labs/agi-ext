@@ -108,6 +108,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   one `agents devices enable|disable` or `agents devices config <name> auto-launch.preferred`
   argv (`deviceSettingArgv`, `src/core/panelSettings.ts`). It draws the CLI's `autoSkip`; it
   never decides placement.
+  A tenth: Close Terminal With Recap finds the transcript with one `sessions <id> --json` read
+  when the command runs (`transcriptPathOf`, `src/vscode/recap.vscode.ts`), so it works while
+  no view demands the stream; the extension reads no transcript itself.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once; reassigning `root.innerHTML`
   per update made it jitter and erased what the owner was typing. A reused node keeps its
