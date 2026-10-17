@@ -20,7 +20,8 @@ const { document } = window;
 const page = shell('vscode-webview:');
 document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<script'));
 const sent: { type: string; url?: string; id?: string; external?: boolean }[] = [];
-const script = page.match(/<script[^>]*>([\s\S]*?)<\/script\s*>/i)![1];
+const open = page.indexOf('<script');
+const script = page.slice(page.indexOf('>', open) + 1, page.lastIndexOf('</script'));
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
   window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m) }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* the thumbnails are not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
@@ -56,10 +57,11 @@ test('a redraw keeps the open peek; a tile asks for its row by message', () => {
   expect(peek('A-1').hidden).toBe(true);
 });
 
-test('▶ on the row and Start in the peek each send one start, and a double click sends one', () => {
+test('▶ on the row and Start in the peek each send one start; a second click, even after a redraw, sends none', () => {
   sent.length = 0;
-  const go = el('.tli .tgo[data-start-ticket="A-1"]');
-  go.click(); go.click();
+  el('.tli .tgo[data-start-ticket="A-1"]').click();
+  deliver({ type: 'html', tab: 'tickets', html: draw() });
+  el('.tli .tgo[data-start-ticket="A-1"]').click();
   el('.tpeek[data-peek="A-2"] [data-start-ticket="A-2"]').click();
   expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2' }]);
 });

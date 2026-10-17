@@ -8,8 +8,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 The Project panel reads Linear through the project, as Review already reads GitHub:
 
-- Issues, a ticket's card, Comment and the goal lines run `agents projects tickets <name>`,
-  `agents projects tickets view|comment` and `agents projects goals <name>`. agents-cli knows
+- Issues, a ticket tile's page and the goal lines run `agents projects tickets <name>`,
+  `agents projects tickets view` and `agents projects goals <name>`. agents-cli knows
   which Linear project (and, with profiles, which workspace) a project is; the extension no
   longer runs `linear` itself or looks for its binary.
 - A project is read by the Linear project id it records, not the board's name, so a renamed
