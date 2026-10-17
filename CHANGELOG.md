@@ -4,7 +4,37 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [Unreleased]
+## [0.9.407] - 2026-10-17
+
+The owner's two videos from 2026-10-17 (3:08 and 4:39 AM) and the 5:18 AM screenshot, built from
+the approved prototype:
+
+- A card click brings the session's tab forward wherever its agent runs. A session on s0, s1
+  or m1 with its tab in this window stayed behind the tab in front; only a local one came
+  forward. ⌘K then Enter does the same, and Settings > Card click can keep the tab where it is.
+- An editor-tab click moves This tab and the Active Session sidebar together, also for a new
+  tab that has no session yet. With a plain shell in front the sidebar says so instead of
+  showing the last session.
+- A card shows its state as its tint: red when it asks or is blocked, green while it works,
+  yellow when it is idle or ready for review. The status pill and the `⌘3` tab number are gone
+  (the word is in the tooltip; Settings > State word brings the pill back), the PRs, tickets
+  and folders stay on one row that scrolls sideways, and Close the tab moved into the card's ⋯.
+- Settings > A card shows turns off the description, chips, machine, age or state word, down
+  to a card that is only the logo and title on one line.
+- An answer goes at once and brings that agent's tab forward; the 5 s Undo is now a setting
+  (Settings > Undo before an answer is sent).
+- The Project panel header is two rows: the goal sits beside the project, and the Sessions
+  heading row is gone (search and ⇅ moved onto the tab row). Settings is the gear in the
+  title bar, with Refresh inside it, and ⌃1–⌃4 switch Sessions, Issues, Review and Settings.
+- ⌘K lists sessions waiting on you first, under Needs you, and each session row shows its
+  harness logo and its activity as a line of bars.
+- The Active Session sidebar shows the agent's newest feed post under the title, in gold, and
+  its posts are gold in the feed. Fork moved from the title into ⋯. The reply box stays at the
+  bottom of the sidebar.
+- Made shows a rendered page once when the row lists its source beside it (`plan.md` and
+  `plan.html`), marked "from plan.md".
+
+Also in this release:
 
 - Terminal readiness (shell, prompt and agent ready, and shell adoption) is detected by one
   probe implementation. A window whose monitor connection is down now runs the same detector

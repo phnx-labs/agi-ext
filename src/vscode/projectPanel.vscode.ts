@@ -47,7 +47,7 @@ import {
   type Ticket,
   type TicketGroup,
 } from '../core/projectPanel';
-import { SESSION_STATE_WORD, sessionStateOf, waitFor } from '../shared/sessionState';
+import { SESSION_STATE_WORD, sessionStateOf, sparkline, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, followFrontTerminal, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
@@ -61,7 +61,8 @@ import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketP
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, validMergeMethod } from '../core/settings';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
-import { harnessLogoCss } from './theme.vscode';
+import { buildIconPath, harnessLogoCss } from './theme.vscode';
+import { BUILT_IN_AGENTS } from '../core/agents';
 import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
 import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 
@@ -124,6 +125,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       const host = typeof msg.host === 'string' ? msg.host : undefined;
       const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
       if (msg.type === 'ready') this.onReady();
+      else if (msg.type === 'refresh') this.controller.refresh();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
       else if (msg.type === 'open') openWebviewUrl(msg.url, msg.external === true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
@@ -131,7 +133,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
       else if (msg.type === 'pickProject' && typeof msg.name === 'string') void this.controller.pickByName(msg.name).catch((e) => { void vscode.window.showErrorMessage(`Could not switch project: ${errorText(e)}`); });
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true);
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? 'card' : 'no');
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
       else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
@@ -258,6 +260,12 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   /** Scroll the card for this session into view, once the list has it. */
+  /** The title bar's gear and ⌃1–⌃4: the panel comes up on that tab, through the page's own switch. */
+  async open(tab: TabId): Promise<void> {
+    await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+    void this.view?.webview.postMessage({ type: 'choose', tab });
+  }
+
   reveal(sessionId: string, flash = true): void {
     if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId, flash });
   }
@@ -317,8 +325,8 @@ class ProjectView implements vscode.WebviewViewProvider {
     await this.merging;
   }
 
-  /** An answer from a card, after its 5 s Undo: one `agents feed answer`; the card
-   *  shows what the CLI said when it was not delivered. */
+  /** An answer from a card (at once, or after the 5 s Undo Settings asks for): one
+   *  `agents feed answer`; the card shows what the CLI said when it was not delivered. */
   private async answer(key: string, answer: { choice: string } | { text: string }): Promise<void> {
     const error = await this.controller.answer(key, answer);
     void this.view?.webview.postMessage({ type: 'answered', key, error });
@@ -380,6 +388,12 @@ class ProjectView implements vscode.WebviewViewProvider {
     this.tabs.get(tab)!.html = html;
     if (tab === this.active) void this.view?.webview.postMessage({ type: 'html', tab, html });
   }
+}
+
+/** The harness's own logo for a ⌘K row, as its tab carries it. */
+function harnessIcon(extensionPath: string, agentType: string): vscode.IconPath | undefined {
+  const icon = BUILT_IN_AGENTS.find((a) => a.key === agentType)?.icon;
+  return icon ? buildIconPath(extensionPath, icon) : undefined;
 }
 
 /** One `linear` call in a project's Linear workspace. An unset profile is `default`, so the
@@ -859,16 +873,18 @@ class ProjectPanelController {
     const cards = cardSettings(getSettings(this.context).cards);
     const front = frontTerminal();
     const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, tabKey: process.platform === 'darwin' ? '⌘' : 'Alt+', here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** A card click selects the session: the other sidebar shows it. Nothing opens. */
   /** A card click: the session panel shows it, and when its tab is in this window
    *  that tab comes to the front (owner, 2026-10-12). Nothing is resumed or spawned. */
-  select(sessionId: string, host: string | undefined, focus = false): void {
+  /** Show the session in the sidebar; its tab in this window comes forward, wherever its
+   *  agent runs (s1, m1…). A card asks through Settings > Card click; ⌘K always fronts. */
+  select(sessionId: string, host: string | undefined, front: 'card' | 'always' | 'no' = 'no'): void {
     setAgentPanelSubjectFromProject(sessionId, host);
     void this.view.redrawSessions();
-    if (!focus || (host && remoteDeviceArg(host))) return;
+    if (front === 'no' || (front === 'card' && cardSettings(getSettings(this.context).cards).click !== 'front')) return;
     terminals.getBySessionId(sessionId)?.terminal.show(false);
   }
 
@@ -894,6 +910,8 @@ class ProjectPanelController {
         state,
         stateWords: paletteStateWords(like) + (state === 'asks' && Number.isFinite(opened) ? ` · ${waitFor(Date.now() - opened)}` : ''),
         local: !remoteDeviceArg(r.host),
+        spark: sparkline(r.activityHistogram?.buckets),
+        icon: harnessIcon(this.context.extensionPath, r.agentType),
       };
     });
     const tickets = this.ticketsSeen.flatMap((g) => g.tickets.map((t) => ({ identifier: t.identifier, title: t.title, state: g.state, delegate: t.delegate, assignee: t.assignee })));
@@ -902,7 +920,7 @@ class ProjectPanelController {
       sessions,
       tickets,
       prs,
-      goToSession: (sessionId, host) => { this.select(sessionId, host, true); this.view.reveal(sessionId); },
+      goToSession: (sessionId, host) => { this.select(sessionId, host, 'always'); this.view.reveal(sessionId); },
       openTicket: (id) => { void this.view.openTicketTab(id); },
     });
   }
@@ -968,6 +986,8 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
   }));
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.project.refresh', () => controller.refresh()),
+    vscode.commands.registerCommand('agents.project.settings', () => controller.view.open('settings')),
+    vscode.commands.registerCommand('agents.project.tab', (tab: unknown) => (TABS as readonly unknown[]).includes(tab) ? controller.view.open(tab as TabId) : undefined),
     vscode.commands.registerCommand('agents.project.pick', () => controller.pick().catch((e) => {
       void vscode.window.showErrorMessage(`Could not list projects: ${errorText(e)}`);
     })),
@@ -975,11 +995,11 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('agents.searchSessions', () => controller.searchSessions()),
     // The list follows the tab in front: switching tabs moves its selection (owner video,
     // 2026-10-12), on either tab event, never with a flash (PHNX-4387).
+    // A tab with no session yet (a new agent, a shell) still moves THIS TAB and the sidebar.
     onDidChangeFrontTab((t) => {
       const id = t ? terminals.getByTerminal(t)?.sessionId : undefined;
-      if (!id) return;
       followFrontTerminal();
-      void controller.redrawSessions().then(() => controller.view.reveal(id, false));
+      void controller.redrawSessions().then(() => { if (id) controller.view.reveal(id, false); });
     }),
     vscode.commands.registerCommand('agents.project.openTicket', (id: unknown) => typeof id === 'string' && id ? controller.view.openTicketTab(id) : undefined),
     // Internal: the Lead talks to the project this panel shows (src/vscode/lead.vscode.ts).
@@ -1078,7 +1098,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .pp .ti { width: 12px; height: 12px; }
   .pp b { font-weight: 600; }
   .pp .car { color: var(--r-faint); font-size: 9px; }
-  .pwhy { font-size: 11px; color: var(--r-faint); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmenu { position: absolute; z-index: 30; top: 100%; left: 8px; right: 8px; margin-top: 4px; background: var(--vscode-menu-background, var(--r-glass)); border: 1px solid var(--r-edge); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
   .pmenu[hidden] { display: none; }
   .pms { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); padding: 6px 8px 4px; }
@@ -1092,7 +1111,8 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .pmenu .pfound { font-style: normal; font-weight: 400; font-size: 10.5px; color: var(--r-caption); margin-left: 4px; }
   .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
-  .goals { padding: 6px 10px 4px; flex: none; }
+  /* The goal sits on the project row, beside the project (owner video, 2026-10-17). */
+  .goals { flex: 1; min-width: 0; }
   .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
   .goals a:hover .gtx { color: var(--r-text); }
   .goals .gl2 { color: var(--r-text-2); }
@@ -1145,7 +1165,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   /* Selected is its own look, not hover's: a gold rail inside the left edge. */
   .card.sel { background: var(--r-glass-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold-line); }
   .card .thistab { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-gold-line); line-height: 12px; margin-bottom: 2px; }
-  .card .tabn { flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
   .card .started { margin-top: 2px; font-size: 10.5px; color: var(--r-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card.multi { border-color: var(--r-gold-line); }
   .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; }
@@ -1185,7 +1204,17 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   /* A card always shows the same preview; hover only reveals its icons, so nothing moves. */
   .card .ask, .card .line.said { margin-top: 5px; }
   .card .cstrip, .card .thumbs { margin-top: 6px; }
-  .cstrip { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  /* One row of chips that scrolls sideways, never a second row (owner video, 2026-10-17). */
+  .cstrip { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .cstrip::-webkit-scrollbar { display: none; } .cstrip > * { flex: none; }
+  .cbot .cstrip { flex: 1; min-width: 0; }
+  /* The card's tint is its state: red asks or blocked, green working, yellow idle. */
+  .card.st-asks, .card.st-stuck, .card.st-blocked { background: color-mix(in srgb, var(--r-bad) 14%, transparent); border-color: color-mix(in srgb, var(--r-bad) 45%, transparent); }
+  .card.st-working, .card.st-waiting { background: color-mix(in srgb, var(--r-ok) 9%, transparent); border-color: color-mix(in srgb, var(--r-ok) 32%, transparent); }
+  .card.st-idle, .card.st-review { background: color-mix(in srgb, var(--r-idle) 8%, transparent); border-color: color-mix(in srgb, var(--r-idle) 30%, transparent); }
+  .card.st-asks:hover, .card.st-stuck:hover, .card.st-blocked:hover, .card.st-working:hover, .card.st-waiting:hover, .card.st-idle:hover, .card.st-review:hover { filter: brightness(1.15); }
+  .card .age.wait { color: var(--r-bad); font-variant-numeric: tabular-nums; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .pill .wait { font-variant-numeric: tabular-nums; font-weight: 600; }
   .pill.st-asks i { position: relative; overflow: visible; }
   .pill.st-asks i::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--r-warn); opacity: 0; animation: askring 2.4s ease-out infinite; }
@@ -1236,7 +1265,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
   .card .top .hx { width: 14px; height: 14px; border-radius: 3px; }
   ${logoCss}
-  .tab[data-tab="settings"] { margin-left: auto; }
+  /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
+  .tabs .sctl { margin-left: auto; position: relative; display: flex; align-items: center; min-width: 0; }
+  .tabs .sctl .shead { margin: 0; gap: 4px; }
   /* Ticket detail and Settings (PHNX-4329). */
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; font: inherit; font-weight: 600; align-self: flex-start; }
   button.primary:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
@@ -1286,26 +1317,27 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .settings .dstar[aria-pressed="true"] { color: var(--r-gold-line); } .settings .dstar:hover { background: var(--r-glass-hover); }
   .settings .doff { color: var(--r-faint); font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .err { color: var(--r-bad); }
+  .settings .rbtn { flex: none; font: inherit; font-size: 11.5px; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); cursor: pointer; } .settings .rbtn:hover { background: var(--r-glass-hover); }
   @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
 <div class="proj" hidden>
   <button class="pp" data-proj-menu aria-haspopup="menu" aria-expanded="false" title="Show another project"><svg class="ti" viewBox="0 0 16 16"><path d="M2 4.5h4l1.2 1.3H14v6.7H2z"/></svg><b class="ppn"></b><span class="car">▾</span></button>
-  <span class="pwhy"></span>
+  <div class="goals" hidden></div>
   <div class="pmenu" role="menu" hidden></div>
 </div>
-<div class="goals" hidden></div>
 <div class="tabs" role="tablist" aria-label="Project">
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
-  <button class="tab" role="tab" data-tab="settings" aria-selected="false" title="Settings"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg><span class="lbl">Settings</span></button>
+  <div class="sctl"></div>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
+  const ctl = document.querySelector('.tabs .sctl');
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
   // Questions the viewer opened, and Merge clicks still in their Undo window; both
@@ -1372,13 +1404,19 @@ ${THUMB_SCRIPT}
     send.replaceChildren(words);
     if (p.state === 'wait') { const b = document.createElement('button'); b.className = 'lnk'; b.setAttribute('data-ask-undo', ''); b.textContent = 'Undo'; send.append(' \u00b7 ', b); }
   }
-  // One answer per ask: a click (or key 1-9) waits 5 s, then posts once.
+  // One answer per ask: a click (or key 1-9) posts once, at once or after the 5 s Undo
+  // Settings asks for, and brings that agent's tab forward through the card's own select.
   function answerAsk(key, label, payload) {
     const held = pendingAnswer.get(key);
     if (held && held.state !== 'error') return;
     otherOpen.delete(key);
-    const p = Object.assign({ left: 5, label, state: 'wait' }, payload);
+    const el = askEl(key);
+    const card = el && el.closest('.card[data-session]');
+    if (card) vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });
+    const wait = Number(el && el.dataset.undo) || 0;
+    const p = Object.assign({ left: wait, label, state: wait ? 'wait' : 'sending' }, payload);
     pendingAnswer.set(key, p); drawAsk(key);
+    if (!wait) { vscode.postMessage({ type: 'answer', key, choice: p.choice, text: p.text }); return; }
     p.timer = setInterval(() => {
       if (pendingAnswer.get(key) !== p) { clearInterval(p.timer); return; }
       p.left -= 1;
@@ -1422,6 +1460,7 @@ ${THUMB_SCRIPT}
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (m.type === 'tab') { current = m.tab; select(m.tab); }
+    else if (m.type === 'choose') choose(m.tab);
     else if (m.type === 'count') {
       const c = document.querySelector('[data-cnt="sessions"]'); if (c) c.textContent = m.n ? String(m.n) : '';
       const d = document.querySelector('[data-asks]'); if (d) d.textContent = m.asks ? String(m.asks) : '';
@@ -1437,11 +1476,15 @@ ${THUMB_SCRIPT}
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
       const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
       const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => [c.closest('.card').dataset.session, c]) : [];
-      const menuOpen = same && main.querySelector('.menu') && !main.querySelector('.menu').hidden;
-      if (same) patchChildren(main, m.html); else main.innerHTML = m.html;
+      const menuOpen = same && ctl.querySelector('.menu') && !ctl.querySelector('.menu').hidden;
+      // The tab's heading row (☀, search, ⇅ and its menu) goes into the tab row; the rest into main.
+      const page = document.createElement('template'); page.innerHTML = m.html;
+      const head = [...page.content.children].find((c) => c.classList.contains('shead')); if (head) head.remove();
+      patchChildren(ctl, head ? head.outerHTML : '');
+      if (same) patchChildren(main, page.innerHTML); else main.innerHTML = page.innerHTML;
       if (keepToast) main.querySelector('.toast')?.replaceWith(keepToast);
       for (const [id, box] of keepConfirm) main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')?.appendChild(box);
-      if (menuOpen) { main.querySelector('.menu').hidden = false; main.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
+      if (menuOpen) { ctl.querySelector('.menu').hidden = false; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
       main.dataset.tab = m.tab;
       if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       observeThumbs(main);
@@ -1460,7 +1503,7 @@ ${THUMB_SCRIPT}
       // Always shown: with nothing found, the menu is how a project gets picked.
       row.hidden = false;
       row.querySelector('.ppn').textContent = m.name || 'No project';
-      row.querySelector('.pwhy').textContent = m.picked ? 'picked for this window' : m.name ? 'found from this folder' : 'none found from this folder';
+      row.querySelector('.pp').title = (m.picked ? 'Picked for this window' : m.name ? 'Found from this folder' : 'None found from this folder') + ' · show another project';
     }
     else if (m.type === 'projectList') {
       const pmenu = document.querySelector('.pmenu');
@@ -1582,6 +1625,7 @@ ${THUMB_SCRIPT}
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
     if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
+    if (e.target.closest('[data-refresh]')) { vscode.postMessage({ type: 'refresh' }); return; }
     const os = e.target.closest('[data-open-session]');
     if (os) { vscode.postMessage({ type: 'openSession', sessionId: os.dataset.openSession, host: os.dataset.host }); return; }
     // An ask on a card: each answer button carries what it sends (a choice id or words).
@@ -1599,11 +1643,11 @@ ${THUMB_SCRIPT}
     const goal = e.target.closest('.goals [data-url]');
     if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
-    const menu = main.querySelector('.menu');
+    const menu = ctl.querySelector('.menu');
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
     const pref = e.target.closest('[data-pref]');
     if (pref) { vscode.postMessage({ type: 'prefs', key: pref.dataset.pref, value: pref.dataset.value }); return; }
-    if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; main.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
+    if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
     if (e.target.closest('[data-undo]')) { const u = undo; undo = null; main.querySelector('.toast').hidden = true; if (u) u(); return; }
     const bulk = e.target.closest('[data-bulk]');
     if (bulk) {
@@ -1695,7 +1739,7 @@ ${THUMB_SCRIPT}
     reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
-    // Other…: Enter sends what was typed (after the same 5 s), Escape closes the box.
+    // Other…: Enter sends what was typed (with the same Undo setting), Escape closes the box.
     const input = e.target.closest && e.target.closest('[data-ask-input]');
     if (input) {
       const key = input.closest('.ask').dataset.ask;
@@ -1715,7 +1759,7 @@ ${THUMB_SCRIPT}
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
       next.focus(); choose(next.dataset.tab); return;
     }
-    if (e.key === 'Escape') { const m = main.querySelector('.menu'); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
+    if (e.key === 'Escape') { const m = ctl.querySelector('.menu'); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
     if (e.target.closest && e.target.closest('a, button, summary')) return;
     const gh = e.target.closest && e.target.closest('.gh');
     if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }

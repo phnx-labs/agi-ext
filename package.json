@@ -658,6 +658,17 @@
         "icon": "$(arrow-swap)"
       },
       {
+        "command": "agents.project.settings",
+        "title": "Project Panel Settings",
+        "category": "Agents: Project",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "agents.project.tab",
+        "title": "Show a Project Panel Tab",
+        "category": "Agents: Project"
+      },
+      {
         "command": "agents.lead.ask",
         "title": "Ask the Lead",
         "category": "Lead",
@@ -810,6 +821,10 @@
       ],
       "commandPalette": [
         {
+          "command": "agents.project.tab",
+          "when": "false"
+        },
+        {
           "command": "agents.setSessionId",
           "when": "agents.activeIsAgent"
         },
@@ -863,13 +878,41 @@
           "group": "navigation@1"
         },
         {
-          "command": "agents.project.refresh",
+          "command": "agents.project.settings",
           "when": "view == agentsProject.panel",
           "group": "navigation@2"
         }
       ]
     },
     "keybindings": [
+      {
+        "command": "agents.project.tab",
+        "args": "sessions",
+        "key": "ctrl+1",
+        "mac": "ctrl+1",
+        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+      },
+      {
+        "command": "agents.project.tab",
+        "args": "tickets",
+        "key": "ctrl+2",
+        "mac": "ctrl+2",
+        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+      },
+      {
+        "command": "agents.project.tab",
+        "args": "prs",
+        "key": "ctrl+3",
+        "mac": "ctrl+3",
+        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+      },
+      {
+        "command": "agents.project.tab",
+        "args": "settings",
+        "key": "ctrl+4",
+        "mac": "ctrl+4",
+        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+      },
       {
         "command": "agents.autogit",
         "key": "ctrl+shift+g",

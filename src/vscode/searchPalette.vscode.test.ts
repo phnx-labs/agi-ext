@@ -12,7 +12,7 @@ const { buildItems } = await import('./searchPalette.vscode');
 
 const went: string[] = [];
 const src = {
-  sessions: [{ sessionId: 'a26860ac-1b2c', host: 'yosemite-m5', title: 'Rush MCP token security', text: 'PHNX-4365 · Build the token-scoped MCP server endpoint', lastActivityMs: 2, state: 'waiting' as const, stateWords: 'Waiting on 1 shell', local: false }],
+  sessions: [{ sessionId: 'a26860ac-1b2c', host: 'yosemite-m5', title: 'Rush MCP token security', text: 'PHNX-4365 · Build the token-scoped MCP server endpoint', lastActivityMs: 2, state: 'waiting' as const, stateWords: 'Waiting on 1 shell', local: false, spark: '' }],
   tickets: [{ identifier: 'PHNX-4365', title: 'Rush MCP server: hand Rush a task', state: 'Todo', delegate: 'claude', assignee: null }],
   prs: [{ repo: 'o/agents', number: 3889, title: 'MCP server endpoint', url: 'https://example.invalid/pr/3889', author: 'a', date: '2026-10-12T00:00:00Z', ciState: 'SUCCESS', isDraft: false }],
   goToSession: (id: string, host: string) => { went.push(`${id}@${host}`); },
@@ -34,6 +34,18 @@ test('sections come in order: Artifacts, Sessions, Tickets, Pull requests, then 
   // The row hands the words to the Lead client's command (agents.lead.ask, registered by #140).
   items.at(-1)!.go!();
   expect(executed.at(-1)).toEqual(['agents.lead.ask', 'mcp server']);
+});
+
+test('a session waiting on you leads ⌘K under Needs you, so Enter reaches it; rows carry the activity line', () => {
+  const ask = { sessionId: 'c4f1', host: 'zion', title: 'fork of Carousel pipeline', text: 'PHNX-4379', lastActivityMs: 1, state: 'asks' as const, stateWords: 'Asks · 18m 07s', local: true, spark: '▂▅█▃' };
+  const items = buildItems('', { ...src, sessions: [...src.sessions, ask] }, false, artifacts);
+  expect(items.filter((i) => i.kind === -1).map((i) => i.label)).toEqual(['Needs you', 'Artifacts', 'Sessions', 'Tickets', 'Pull requests']);
+  expect(items[1]!.label).toBe('fork of Carousel pipeline');
+  expect(items[1]!.description).toBe('Session · Asks · 18m 07s · zion  ▂▅█▃');
+  // Listed once: not again under Sessions.
+  expect(items.filter((i) => i.label === 'fork of Carousel pipeline')).toHaveLength(1);
+  items[1]!.go!();
+  expect(went.pop()).toBe('c4f1@zion');
 });
 
 test('the Lead row needs a sentence and the Lead command', () => {

@@ -659,6 +659,7 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     --r-wait-tint: rgba(59, 130, 246, 0.16);
     --r-ok-tint: rgba(34, 197, 94, 0.16);
     --r-warn: #fcd34d;
+    --r-idle: #facc15;
     --r-warn-tint: rgba(245, 158, 11, 0.14);
     --r-bad: #fca5a5;
     --r-bad-tint: rgba(239, 68, 68, 0.12);
@@ -694,6 +695,7 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     --r-wait-tint: rgba(29, 95, 168, 0.10);
     --r-ok-tint: rgba(22, 163, 74, 0.12);
     --r-warn: #b45309;
+    --r-idle: #ca8a04;
     --r-warn-tint: rgba(217, 119, 6, 0.12);
     --r-bad: #b91c1c;
     --r-bad-tint: rgba(220, 38, 38, 0.08);
@@ -731,6 +733,7 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     --r-wait-tint: transparent;
     --r-ok-tint: transparent;
     --r-warn: var(--vscode-charts-yellow);
+    --r-idle: var(--vscode-charts-yellow);
     --r-warn-tint: transparent;
     --r-bad: var(--vscode-errorForeground);
     --r-bad-tint: transparent;
@@ -1073,7 +1076,10 @@ export function sessionPanelCss(fontFaces: string): string {
     white-space: normal;
   }
   /* ── Reply field ───────────────────────────────────────────────────────── */
-  .reply-box { margin-top: 14px; }
+  /* The reply box stays at the bottom of the sidebar, whatever the card's length
+     (owner video, 2026-10-17); a short card leaves room above it instead. */
+  #panel-body { min-height: calc(100vh - 128px); }
+  .reply-box { position: sticky; bottom: 0; z-index: 2; margin-top: 14px; padding: 8px 0 10px; background: var(--vscode-sideBar-background); }
   .reply-box textarea {
     width: 100%;
     box-sizing: border-box;
@@ -1495,8 +1501,14 @@ export function sessionPanelCss(fontFaces: string): string {
   @keyframes dict-pulse { 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .dict-wave i, .dict-dot, .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }
   /* The agent's own status posts and its blocked strip. */
-  .upd { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; padding: 5px 0; font-size: 12px; }
-  .upd-mk { width: 7px; height: 7px; margin-top: 5px; border-radius: 2px; background: var(--r-text-2); }
+  /* The agent's own posts stand out in the feed: gold, with a faint gold ground. */
+  .upd { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; padding: 5px 4px; margin: 0 -4px; border-radius: 6px; font-size: 12px; background: color-mix(in srgb, var(--r-gold-line) 9%, transparent); }
+  .upd-mk { width: 7px; height: 7px; margin-top: 5px; border-radius: 2px; background: var(--r-gold-line); }
+  .upd.blocked { background: var(--r-bad-tint); }
+  .latest-upd { margin: 8px 0 2px; padding: 7px 9px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--r-gold-line) 55%, transparent); background: color-mix(in srgb, var(--r-gold-line) 9%, transparent); }
+  .latest-k { font-family: var(--r-display); font-size: 10px; letter-spacing: 0.18em; color: var(--r-gold-line); }
+  .latest-t { margin-top: 3px; font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+  .latest-d { margin-top: 2px; font-size: 12px; color: var(--r-text-2); line-height: 1.4; }
   .upd.blocked .upd-mk { background: var(--r-bad); }
   .upd b { font-weight: 600; } .upd.blocked b { color: var(--r-bad); }
   .upd-d { color: var(--r-caption); }

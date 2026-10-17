@@ -2,6 +2,7 @@ import * as path from 'path';
 import { displayPath, isInside } from './displayPath';
 import { extractLinearTicketId } from './utils';
 import { extractPrUrls, type PullRequestRef } from './panel.helpers';
+import { renderedHtmlCandidates } from './searchIndex';
 import type { RemoteSession, RemoteSessionArtifact } from './remoteSessions';
 
 /** Image files the session cards preview inline. */
@@ -25,19 +26,35 @@ export interface SessionCardFields {
  * caller supplies the webview URI for a local preview, so a remote session's
  * artifacts never get one (opening one copies it on click, `localArtifactUri`).
  */
+/** A source the row lists beside its rendered page (`plan.md` and `plan.html`, or
+ *  `.artifacts/plan.html`) shows once, as the page, which says what it was rendered from
+ *  (owner video, 2026-10-17: "the HTML plan is not shown here"). Only what the row lists:
+ *  nothing is read from disk. */
+function renderedPages(list: readonly RemoteSessionArtifact[]): RemoteSessionArtifact[] {
+  const listed = new Set(list.map((a) => a.path));
+  const pageOf = (a: RemoteSessionArtifact) => /\.(md|markdown)$/i.test(a.path) ? renderedHtmlCandidates(a.path).find((p) => listed.has(p)) : undefined;
+  const from = new Map<string, string>();
+  for (const a of list) { const page = pageOf(a); if (page) from.set(page, a.basename); }
+  return list.filter((a) => !pageOf(a)).map((a) => (from.has(a.path) ? { ...a, renderedFrom: from.get(a.path) } : a));
+}
+
 export function sessionCardFields(
   live: RemoteSession,
   opts: { sessionId: string; cwd?: string; home: string; remoteDevice?: string; previewUri?: (filePath: string) => string },
 ): SessionCardFields {
   const pathOptions = { cwd: live.cwd || opts.cwd || '', home: opts.home, isRemote: !!opts.remoteDevice, sessionId: opts.sessionId };
-  const artifacts: SessionCardFields['artifacts'] = live.artifacts.map((artifact) => ({ ...artifact, display: displayPath(artifact.path, pathOptions) }));
+  const artifacts: SessionCardFields['artifacts'] = renderedPages(live.artifacts).map((artifact) => ({ ...artifact, display: displayPath(artifact.path, pathOptions) }));
   if (opts.previewUri && !opts.remoteDevice) {
     for (const artifact of artifacts) {
       if (THUMB_EXT.test(artifact.path) && isInside(artifact.path, opts.home)) artifact.uri = opts.previewUri(artifact.path);
     }
   }
   const fields: SessionCardFields = { pathOptions, artifacts, sessionLocal: !opts.remoteDevice };
-  if (live.planFile) fields.plan = { path: live.planFile, display: displayPath(live.planFile, pathOptions) };
+  if (live.planFile) {
+    // The plan reads as its rendered page when the row lists one, like any other source.
+    const page = renderedHtmlCandidates(live.planFile).find((p) => artifacts.some((a) => a.path === p)) ?? live.planFile;
+    fields.plan = { path: page, display: displayPath(page, pathOptions) };
+  }
   if (live.prUrl) fields.pullRequests = extractPrUrls([live.prUrl]);
   const linear = extractLinearTicketId(live.topic) || extractLinearTicketId(live.lastResponse);
   if (linear) fields.linearIssue = linear;

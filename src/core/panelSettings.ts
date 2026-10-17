@@ -6,7 +6,7 @@
 import { escapeHtml } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
-import { cardSettings, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+import { CARD_PARTS, cardSettings, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'showLabelsInTitles', label: 'Labels in titles', sub: 'The tab title shows the session label' },
@@ -18,13 +18,24 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 ];
 
 /** The Session cards pickers: each key, its words, and its choices in order. */
-const CARD_ROWS: { key: keyof CardSettings; label: string; sub: string; options: { value: string; label: string }[] }[] = [
-  { key: 'asks', label: 'Asks on cards', sub: 'Off leaves only the “Asks · 46m” pill', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
+const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
+  { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
+  { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Off sends at once and brings the agent’s tab forward', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
+  { key: 'asks', label: 'Asks on cards', sub: 'Off leaves only the red card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
   { key: 'options', label: 'Answer options', sub: 'Each option’s description shows on hover either way', options: [{ value: 'titles', label: 'Titles only' }, { value: 'details', label: 'Titles and details' }] },
   { key: 'question', label: 'Question text', sub: 'The full question is on hover either way', options: [{ value: 'two', label: 'Two lines' }, { value: 'full', label: 'Full' }] },
 ];
 
-const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+/** What a card shows; turning everything off leaves the harness logo and the title. */
+const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: string }> = {
+  description: { label: 'Description', sub: 'The agent’s latest words, or what it asks' },
+  chips: { label: 'PRs, tickets, folders', sub: 'One row that scrolls sideways' },
+  machine: { label: 'Machine', sub: 'Where the agent runs' },
+  age: { label: 'Age', sub: 'Since the last activity, or how long an ask has waited' },
+  stateWord: { label: 'State word', sub: 'The color already says it: red asks, green working, yellow idle' },
+};
+
+const SLOTS: QuickLaunchSlotKey[] =['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 /** The agents a shortcut can launch, as the pickers list them. */
 export const PICKABLE_AGENTS = BUILT_IN_AGENTS.filter((a) => a.key !== 'shell')
@@ -165,6 +176,9 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   if (card && card.options.some((o) => o.value === value)) {
     return { ...settings, cards: { ...cardSettings(settings.cards), [card.key]: value } };
   }
+  if (group === 'cards' && (CARD_PARTS as readonly string[]).includes(field) && typeof value === 'boolean') {
+    return { ...settings, cards: { ...cardSettings(settings.cards), [field]: value } };
+  }
   if (key === 'mergeMethod' && typeof value === 'string' && (MERGE_METHODS as readonly string[]).includes(value)) {
     return { ...settings, mergeMethod: value as AgentSettings['mergeMethod'] };
   }
@@ -201,6 +215,7 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   };
   const cards = cardSettings(s.cards);
   return `<div class="settings">
+  <div class="srow"><span><b>Refresh</b><small>Read issues, review, goals and devices again; sessions are already live</small></span><button class="rbtn" data-refresh>Refresh</button></div>
   <div class="sh">Session titles</div>
   ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}
   <div class="sh">Shortcuts</div>
@@ -212,6 +227,8 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   <label class="srow"><span><b>Merge with</b><small>One click on Merge uses this; a repository that does not allow it uses one it allows</small></span>${picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with')}</label>
   <div class="sh">Session cards</div>
   ${CARD_ROWS.map((r) => `<label class="srow"><span><b>${escapeHtml(r.label)}</b><small>${escapeHtml(r.sub)}</small></span>${picker(`cards.${r.key}`, r.options, cards[r.key], r.label)}</label>`).join('')}
+  <div class="sh">A card shows <span class="shsub">all off: logo and title on one line</span></div>
+  ${CARD_PARTS.map((k) => toggle(`cards.${k}`, CARD_PART_ROWS[k].label, CARD_PART_ROWS[k].sub, cards[k])).join('')}
   <div class="sh">Reader</div>
   ${toggle('editor.markdownViewerEnabled', 'Open .md and .html in Reader', 'The Reader editor for Markdown and HTML', s.editor?.markdownViewerEnabled ?? true)}
   ${renderDevicesSection(m.devices)}

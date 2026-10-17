@@ -607,8 +607,6 @@ export interface SessionListOptions {
   selectedId: string | null;
   /** The session in this window's front tab; its card says "This tab". */
   frontId?: string | null;
-  /** What precedes a tab number on a card: "⌘" on macOS, "Alt+" elsewhere. */
-  tabKey?: string;
   here: SessionHere;
   prefs: SessionListPrefs;
   thumbsFor?: (s: SessionLike) => CardThumb[];
@@ -771,7 +769,7 @@ function askBlock(s: SessionLike, cards: CardSettings): string {
     return `<button class="opt" ${sends} data-label="${escapeHtml(c.label)}"${c.description ? ` title="${escapeHtml(c.description)}"` : ''}>${i < 9 ? `<span class="k">${i + 1}</span>` : ''}<span class="ol">${escapeHtml(c.label)}</span>${detail}</button>`;
   };
   const opts = askChoices(s).map(opt).join('');
-  return `<div class="ask" data-ask="${escapeHtml(key)}">${head}${question}${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button></div><div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div></div>`;
+  return `<div class="ask" data-ask="${escapeHtml(key)}" data-undo="${cards.answerUndo === 'five' ? 5 : 0}">${head}${question}${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button></div><div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div></div>`;
 }
 
 /** A thumbnail's markup: no `src` until the webview's cache holds a 480 px copy
@@ -798,10 +796,13 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
     ...(opts.project && s.confirmedProject && s.confirmedProject.toLowerCase() !== opts.project.toLowerCase()
       ? [['Project', `${opts.project} (the CLI said ${s.confirmedProject})`] as [string, string]] : []),
   ];
-  return `<details class="cmore"><summary class="act" title="Details" aria-label="Details">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button></div></details>`;
+  // Close (or Hide, for a card with no tab) lives here, out of a stray click's way (owner video, 2026-10-17).
+  const hasTab = place.kind === 'here' || place.kind === 'leftover';
+  const close = hasTab ? '<button class="danger" data-act="close">Close the tab</button>' : '<button data-act="hide">Hide until it does something new</button>';
+  return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button>${close}</div></details>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; tabKey?: string; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings }): string {
   const state = sessionStateOf(s);
   const title = sessionTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
@@ -814,9 +815,6 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const go = state === 'ended'
     ? (s.resumable === false ? '' : `<button class="act" data-act="resume" title="Resume the agent${hasTab ? ' in its tab' : ''}">${glyph('resume')}</button>`)
     : `<button class="act" data-act="focus" title="Focus ${escapeHtml(place.kind === 'here' ? (s.tabIndex ? `tab ${s.tabIndex} in this window` : 'its tab in this window') : place.kind === 'window' ? `its tab in ${place.name}` : place.kind === 'ghostty' ? 'its Ghostty window' : 'it')}">${glyph('focus')}</button>`;
-  const x = hasTab
-    ? `<button class="act x" data-act="close" title="Close the tab">${glyph('close')}</button>`
-    : `<button class="act x" data-act="hide" title="Hide until it does something new">${glyph('hide')}</button>`;
   const ticketId = made?.ticket ?? s.ticket ?? '';
   const ticket = ticketId ? ticketFace(ticketId) : null;
   const ticketChip = ticketId ? `<a class="chip" href="#" data-open-ticket="${escapeHtml(ticketId)}" title="${escapeHtml(ticket?.title ? `${ticketId}: ${ticket.title}` : `Read ${ticketId}`)}">${LINEAR_MARK}${escapeHtml(ticketId)}</a>` : '';
@@ -838,9 +836,14 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const pendChips = state !== 'ended' && counts.total
     ? PENDING_KINDS.filter((k) => counts[k.key]).map((k) => `<span class="pc" title="${escapeHtml(pendHover)}">${k.mark} ${counts[k.key]}</span>`).join('')
     : '';
+  // The card's tint says its state (red asks or blocked, green working, yellow idle); the
+  // word stays in its tooltip and for screen readers, and on the card when Settings asks.
   const word = opts.blocked ? 'Blocked' : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
   const pillTitle = state === 'waiting' ? ` title="${escapeHtml(`Waiting on its own work: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
-  const pill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}${waited >= 0 ? ` · <span class="wait" data-since="${asked}">${waitFor(waited)}</span>` : ''}</span>`;
+  const pill = cards.stateWord ? `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>` : '';
+  const age = !cards.age ? ''
+    : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
+      : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;
   // The repository only when it is not the one this window has open.
   const repo = s.cwd ? resolveProject(s.cwd) : '';
   const ours = new Set([opts.here.workspace, ...(opts.here.folders ?? [])].map((f) => f.toLowerCase()));
@@ -852,16 +855,20 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const preview = ask
     || (said ? `<div class="line said">${escapeHtml(said)}</div>`
       : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
-  // An open tab carries its number, as the tab key reaches it; the front tab says so.
-  const tabNo = place.kind === 'here' && s.tabIndex ? `<span class="tabn" title="Tab ${s.tabIndex} in this window">${escapeHtml(opts.tabKey ?? '⌘')}${s.tabIndex}</span>` : '';
   const started = s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(s.startedAs)}">started: ${escapeHtml(plain(s.startedAs))}</div>` : '';
+  // Where it runs goes with Machine; its background work with Description.
+  const meta = pill + (cards.description ? pendChips : '') + (cards.machine ? repoTag : '');
+  const text = cards.description
+    ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
+    : ask;
+  const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
+  const host = cards.machine ? `<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span>` : '';
   const body = `
-    ${opts.front ? '<div class="thistab">This tab</div>' : ''}<div class="top">${tabNo}${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${ageWords(s.lastActivityMs, now)}</span><span class="acts">${cardMenu(s, place, opts)}${go}${x}</span></div>
-    ${started}${reason}<div class="meta">${pill}${pendChips}${repoTag}</div>
-    ${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
-    ${thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}<div class="cbot">${chips ? `<div class="cstrip">${chips}</div>` : ''}<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span></div>
+    ${opts.front ? '<div class="thistab">This tab</div>' : ''}<div class="top">${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span><span class="sr">${escapeHtml(word)}</span>${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${age}<span class="acts">${cardMenu(s, place, opts)}${go}</span></div>
+    ${meta ? `<div class="meta">${meta}</div>` : ''}${text}
+    ${cards.chips && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
-  const cls = `card st-${state}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
+  const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
@@ -925,10 +932,10 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
   const rest = all.filter((x) => ball(x.row) === 'running' || ball(x.row) === 'ended' || (tabHere(x) && ball(x.row) !== 'move'));
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, front: !!opts.frontId && row.sessionId === opts.frontId && place.kind === 'here', tabKey: opts.tabKey, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards,
+    selected: row.sessionId === opts.selectedId, front: !!opts.frontId && row.sessionId === opts.frontId && place.kind === 'here', pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards,
   });
   // The tab already shows the count and the asks badge, so the header carries only its controls.
-  const head = `<div class="shead"><span class="label">Sessions</span>${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   const pin = (cls: string, name: string, items: typeof mine) => items.length ? `<div class="pinned${cls}"><div class="ph">${name} <span class="n">${items.length}</span></div>${items.map((x) => card(x, true)).join('')}</div>` : '';
@@ -1133,7 +1140,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   const all = m.repos.flatMap((r) => r.open.map((p) => ({ p, slug: r.slug })));
   const shown = all.filter(({ p }) => prefs.showDrafts || !p.isDraft);
   const hidden = all.length - shown.length;
-  const head = `<div class="shead"><span class="label">Review</span><span class="sum">${shown.length} open${hidden ? ` · ${hidden} draft${hidden === 1 ? '' : 's'} hidden` : ''}</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Group and show" aria-label="Group and show">${glyph('sort')}</button>${reviewMenu(prefs)}</div>`;
+  const head = `<div class="shead"><span class="sum">${shown.length} open${hidden ? ` · ${hidden} draft${hidden === 1 ? '' : 's'} hidden` : ''}</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Group and show" aria-label="Group and show">${glyph('sort')}</button>${reviewMenu(prefs)}</div>`;
   const partial = m.partial ? '<div class="warn">Some repositories could not be read; this list is incomplete.</div>' : '';
   const readingLine = reading.length ? `<div class="reading">Reading ${reading.map((w) => escapeHtml(w.split('/').pop() ?? w)).join(', ')}…</div>` : '';
   const errors = m.repos.filter((r) => r.error).map((r) => `<div class="err">${escapeHtml(r.slug)}: could not read: ${escapeHtml(r.error!)}</div>`).join('');
