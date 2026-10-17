@@ -325,11 +325,12 @@ describe('Focus / ↻ Resume run agents.resumeSession', () => {
     const row = (title: string) => ({ rowKey: 'p', sourceDevice: 'worker', machine: 'worker', sessionId: 'session-placeholder', kind: 'claude', label: 'agents-cli-3', topic: '/compact', cwd: '/home/u/src/agents-cli', title, startedAtMs: 100 });
     sessionPresentationStore.apply({ v: 1, type: 'reset', streamId: 'title', sequence: 1, capturedAt: 100, scope: 'worker', attention: [], agents: [row('')] });
     panel.setAgentPanelSubjectFromProject('session-placeholder', 'worker');
-    const untitled = await provider.buildSnapshot();
-    expect(untitled.title).toBeUndefined();
-    expect(provider.titleOf('session-placeholder')).toBeUndefined();
+    provider.snapshot = await provider.buildSnapshot();
+    expect(provider.titleOf('session-placeholder')).toBe(provider.snapshot.agentName);
+    expect(provider.titleOf('session-placeholder')).not.toBe('agents-cli-3');
     sessionPresentationStore.apply({ v: 1, type: 'reset', streamId: 'title', sequence: 2, capturedAt: 200, scope: 'worker', attention: [], agents: [row('Ship the release')] });
-    expect((await provider.buildSnapshot()).title).toBe('Ship the release');
+    provider.snapshot = await provider.buildSnapshot();
+    expect(provider.titleOf('session-placeholder')).toBe('Ship the release');
   });
 
   test('both buttons resume the panel\'s session by id and say where it went', async () => {
