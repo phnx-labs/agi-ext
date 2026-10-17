@@ -38,6 +38,12 @@ describe('resumeItems', () => {
 
     const [bare] = resumeItems([row({ title: undefined, label: undefined, topic: undefined })], ['svatlas'], opts());
     expect(bare).toMatchObject({ title: 'b64b7320', you: '', agent: '' });
+    // The picker names a session as its card does (streamTitle): Claude's <folder>-<n>
+    // placeholder and a bare slash command are not names; a real /rename is.
+    const [placeholder] = resumeItems([row({ title: '', label: 'svatlas-2', topic: '/compact', cwd: '/home/u/src/svatlas' })], ['svatlas'], opts());
+    expect(placeholder.title).toBe('b64b7320');
+    const [renamed] = resumeItems([row({ title: '', label: 'Signals review', cwd: '/home/u/src/svatlas' })], ['svatlas'], opts());
+    expect(renamed.title).toBe('Signals review');
 
     const [fromTimeline] = resumeItems([row({
       timeline: { steps: [{ text: 'Ran 3 commands', source: 'derived' }, { text: 'Pulled 12 commits.', source: 'narration' }] },

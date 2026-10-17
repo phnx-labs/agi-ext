@@ -84,6 +84,35 @@ export function agoWords(ms: number): string {
   return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
 
+/** "now", "6m", "2h", "3d": how long ago `atMs` was, on a card; '' when unknown. */
+export function ageWords(atMs: number, now: number): string {
+  if (!atMs) return '';
+  return now - atMs < 60_000 ? 'now' : agoWords(now - atMs);
+}
+
+/** "just now", "12 min ago", "3 hours ago", "2 days ago"; '' when unknown. The
+ *  Active Session sidebar's script carries this same function. */
+export function relTime(atMs: number, now = Date.now()): string {
+  if (!atMs) return '';
+  const m = Math.floor((now - atMs) / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
+  const d = Math.floor(h / 24);
+  return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+}
+
+/** How long a question has waited: "12s", "5m 02s", "18h 4m", "2d 3h". The Project
+ *  panel's script carries this same function and ticks it each second. */
+export function waitFor(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+  const h = Math.floor(s / 3600);
+  return h < 24 ? h + 'h ' + Math.floor((s % 3600) / 60) + 'm' : Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+}
+
 // On screen they group by who has the ball (owner, 2026-10-13: "11 of 12 Your
 // move cards were idle"; only a real ask is your move):
 //   Your move — the agent does nothing until you act: a question, a permission,
@@ -113,6 +142,22 @@ export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
   waiting: 'Waiting',
   unknown: 'Running · no transcript',
   ended: 'Ended',
+};
+
+/** The color a state's dot takes on every surface (a card's group dots, the sidebar's
+ *  state line and Related chips): your move amber, running green, waiting on its own
+ *  work blue, ready for review indigo; idle and ended stay quiet. */
+export type StateTone = 'move' | 'running' | 'waiting' | 'review' | 'quiet';
+
+export const STATE_TONE: Record<SessionStateKey, StateTone> = {
+  asks: 'move',
+  stuck: 'move',
+  review: 'review',
+  idle: 'quiet',
+  working: 'running',
+  waiting: 'waiting',
+  unknown: 'running',
+  ended: 'quiet',
 };
 
 /** How soon an ask needs you, as agents-cli computed it on the attention item

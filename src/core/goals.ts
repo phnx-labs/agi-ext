@@ -1,4 +1,4 @@
-import { escapeHtml } from './projectPanel';
+import { escapeHtml } from '../shared/sessionCards';
 
 // The goals the Project panel shows above its tabs (owner, 2026-10-12: "show the
 // company goal, then my goal: what I'm focusing on today; succinct, not a block").

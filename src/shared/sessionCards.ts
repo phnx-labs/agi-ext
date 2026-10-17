@@ -9,26 +9,29 @@
 //
 // Written exactly as it was inside the sidebar's template literal: a regex
 // backslash is doubled, because this literal collapses `\\` to `\` the same way.
-// No backticks and no interpolation inside.
+// No backticks inside; the only interpolations are functions shared with the host
+// (their compiled source is inserted as is), so the host and the page say one thing.
+
+import { relTime } from './sessionState';
+
+/** HTML-escape any value; the host's renderers and both sidebars' scripts (as
+ *  `esc`, from THUMB_SCRIPT) use this one. */
+export function escapeHtml(s: unknown): string {
+  return String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
+}
+
+const SERVICE_MARK = {
+  github: '<path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>',
+  linear: '<circle cx="8" cy="8" r="8" fill="#5E6AD2" stroke="none"/><path d="M2.2 9.6l4.2 4.2M2.9 6.8l6.3 6.3M4.4 4.4l7.2 7.2M6.8 2.9l6.3 6.3" stroke="#fff" stroke-width="1.1"/>',
+};
+
+/** GitHub's or Linear's own mark, for whatever points there; `cls` sizes it for the surface. */
+export function serviceMark(service: keyof typeof SERVICE_MARK, cls: string): string {
+  return `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true">${SERVICE_MARK[service]}</svg>`;
+}
 
 export const SESSION_CARDS_SCRIPT = `
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-
-function relTime(ms) {
-  if (!ms) return '';
-  const delta = Date.now() - ms;
-  if (delta < 60_000) return 'just now';
-  const m = Math.floor(delta / 60_000);
-  if (m < 60) return m + ' min ago';
-  const h = Math.floor(m / 60);
-  if (h < 24) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
-  const d = Math.floor(h / 24);
-  return d + ' day' + (d === 1 ? '' : 's') + ' ago';
-}
+${relTime}
 
 function truncate(s, n) {
   if (!s) return '';
@@ -432,11 +435,7 @@ function renderTimelineCard(s) {
 // Everything the session produced for a person, as the row carries it: the CLI's
 // artifact files grouped into folders, its PRs and its ticket. The Made shelf in
 // the sidebar draws them; these are the shared pieces (icons, kinds, thumbnails).
-const APP_ICON = {
-  github: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>',
-  finder: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3.5" fill="#1E6FF0"/><path d="M8.6 0H12.5A3.5 3.5 0 0116 3.5v9A3.5 3.5 0 0112.5 16H7.4C7.9 12 8.9 9.5 7.2 9.2 6.4 9 7.6 3 8.6 0z" fill="#9DD0FF"/><path d="M4.7 5v1.6M11.3 5v1.6M3.8 11c2.6 1.8 5.8 1.8 8.4 0" stroke="#0B2A5C" stroke-width="1.1" fill="none" stroke-linecap="round"/></svg>',
-  linear: '<svg class="art-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#5E6AD2"/><path d="M2.2 9.6l4.2 4.2M2.9 6.8l6.3 6.3M4.4 4.4l7.2 7.2M6.8 2.9l6.3 6.3" stroke="#fff" stroke-width="1.1"/></svg>',
-};
+const APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};
 function artifactItems(s) {
   const files = (s.artifacts || []).slice();
   if (s.plan && !files.some((a) => a.path === s.plan.path)) {
@@ -622,16 +621,16 @@ export function sessionPanelFontFaces(fontJost: string, fontInter: string): stri
 `;
 }
 
-/** The session panel stylesheet: Rush register tokens, cards, timeline, gallery.
- *  Tokens hang off `body` and its VS Code theme class, so a surface that hosts the
- *  cards in a shadow root gives them a `body` element carrying that class. */
-export function sessionPanelCss(fontFaces: string): string {
-  return `  /* ── Rush register tokens (rush/DESIGN.md, Day and Altitude) ─────────────
+/** The Rush register both sidebars read: the theme tokens, the one outlined card,
+ *  and the slow breath of a Waiting dot. The Active Session sidebar's stylesheet
+ *  opens with it and the Project panel's inlines it, so a color is set in one place. */
+export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md, Day and Altitude) ─────────────
      The ONLY block allowed to hold a color literal; every rule below reads these.
      Dark editor = Altitude (white glass, zinc type), light editor = Day (ivory
      glass, ink type). High-contrast themes keep VS Code's own colors. Gold is the
-     one accent: the primary action only. Status stays small: dots, badges, text. */
-${fontFaces}  body {
+     one accent: the primary action (--r-gold) and the selected card's rail
+     (--r-gold-line). Status stays small: dots, badges, text. */
+  body {
     --r-display: 'Jost', Futura, 'Century Gothic', var(--vscode-font-family), sans-serif;
     --r-sans: 'Inter', var(--vscode-font-family), system-ui, sans-serif;
     --r-mono: var(--vscode-editor-font-family, ui-monospace), ui-monospace, monospace;
@@ -667,6 +666,9 @@ ${fontFaces}  body {
     --r-bar-hi: rgba(255, 255, 255, 0.62);
     --r-focus: rgba(255, 255, 255, 0.45);
     --r-float: 0 10px 26px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --r-gold-line: #D4B872;
+    --r-info: #a5b4fc;
+    --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-light {
     --r-text: #141829;
@@ -699,6 +701,9 @@ ${fontFaces}  body {
     --r-bar-hi: rgba(20, 24, 41, 0.55);
     --r-focus: rgba(20, 24, 41, 0.45);
     --r-float: 0 10px 24px rgba(20, 24, 41, 0.18), 0 2px 6px rgba(20, 24, 41, 0.12);
+    --r-gold-line: #A8884A;
+    --r-info: #4f46e5;
+    --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-high-contrast, body.vscode-high-contrast-light {
     --r-text: var(--vscode-foreground);
@@ -733,8 +738,27 @@ ${fontFaces}  body {
     --r-bar-hi: var(--vscode-foreground);
     --r-focus: var(--vscode-focusBorder);
     --r-float: none;
+    --r-gold-line: var(--vscode-focusBorder);
+    --r-info: var(--vscode-textLink-foreground);
+    --r-av0: transparent; --r-av1: transparent; --r-av2: transparent; --r-av3: transparent; --r-av4: transparent; --r-av5: transparent; --r-on-av: var(--vscode-foreground);
   }
-  :root {
+  .card {
+    border: 1px solid var(--r-edge);
+    border-radius: 10px;
+    padding: 9px 11px;
+    background: var(--r-glass);
+    box-shadow: inset 0 1px 0 var(--r-sheen);
+  }
+  /* A harness logo: its .hx-<key> class (harnessLogoCss) sets the image. */
+  .hx { display: inline-block; flex: none; background-position: center; background-size: contain; background-repeat: no-repeat; }
+  @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+`;
+
+/** The session panel stylesheet: Rush register tokens, cards, timeline, gallery.
+ *  Tokens hang off `body` and its VS Code theme class, so a surface that hosts the
+ *  cards in a shadow root gives them a `body` element carrying that class. */
+export function sessionPanelCss(fontFaces: string): string {
+  return `${fontFaces}${RUSH_THEME_CSS}  :root {
     color-scheme: light dark;
   }
   /* Pin the whole webview canvas to the sidebar background so short content
@@ -776,14 +800,7 @@ ${fontFaces}  body {
     padding: 24px 4px;
     font-style: italic;
   }
-  .card {
-    border: 1px solid var(--r-edge);
-    border-radius: 10px;
-    padding: 9px 11px;
-    background: var(--r-glass);
-    box-shadow: inset 0 1px 0 var(--r-sheen);
-    margin-top: 4px;
-  }
+  .card { margin-top: 4px; }
   .agent-head {
     display: flex;
     align-items: center;
@@ -793,9 +810,6 @@ ${fontFaces}  body {
     width: 16px;
     height: 16px;
     border-radius: 4px;
-    flex-shrink: 0;
-    object-fit: contain;
-    background: transparent;
   }
   .agent-head-text { flex: 1; min-width: 0; }
   .title-row {
@@ -906,15 +920,6 @@ ${fontFaces}  body {
     font-weight: 600;
     line-height: 1.45;
     word-break: break-word;
-  }
-  /* Progress checkpoints — amber marker for the live now-line, newest on top. */
-  .checkpoint {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: 11.5px;
-    line-height: 1.4;
   }
   /* Always-on checklist empty/summarizing state. */
   .todo-empty {
@@ -1165,11 +1170,6 @@ ${fontFaces}  body {
   .todo.status-completed .todo-mk { background: var(--r-ok); }
   .todo.status-completed .todo-txt { text-decoration: line-through; color: var(--r-caption); }
   .todo-txt { color: var(--r-text); word-break: break-word; }
-  .actions-row {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
   .action-btn {
     flex: 1 1 auto;
     background: var(--r-glass);
@@ -1273,18 +1273,18 @@ ${fontFaces}  body {
   .session-stats b { color: var(--r-text); font-weight: 600; }
   .state-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--r-caption); }
   .state-running .state-dot { background: var(--r-ok); box-shadow: 0 0 0 3px var(--r-ok-tint); }
-  .state-waiting .state-dot { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
+  .state-move .state-dot { background: var(--r-warn); box-shadow: 0 0 0 3px var(--r-warn-tint); }
+  .state-review .state-dot { background: var(--r-info); }
   .state-failed .state-dot { background: var(--r-bad); }
   /* Waiting on its own background work: a blue dot that breathes slowly. */
-  .state-pending .state-dot { background: var(--r-wait); box-shadow: 0 0 0 3px var(--r-wait-tint); animation: waitbreathe 2.2s ease-in-out infinite; }
-  .session-stats.state-pending { color: var(--r-wait); }
-  @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
+  .state-waiting .state-dot { background: var(--r-wait); box-shadow: 0 0 0 3px var(--r-wait-tint); animation: waitbreathe 2.2s ease-in-out infinite; }
+  .session-stats.state-waiting { color: var(--r-wait); }
   .pend-list { margin: 8px 0 2px; border-radius: 10px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); background: var(--r-wait-tint); }
   .pend-k { font-family: var(--r-display); font-size: 10px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--r-wait); }
   .pend-list ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
   .pend-list li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; }
   .pend-m { color: var(--r-wait); } .pend-d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pend-t { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); }
-  @media (prefers-reduced-motion: reduce) { .state-pending .state-dot { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .state-waiting .state-dot { animation: none; } }
   .session-stats.live .state-dot { animation: livedot 2s ease-out infinite; }
   @keyframes livedot { 0% { box-shadow: 0 0 0 0 var(--r-ok); } 100% { box-shadow: 0 0 0 6px transparent; } }
   @media (prefers-reduced-motion: reduce) { .session-stats.live .state-dot { animation: none; } }
@@ -1421,8 +1421,8 @@ ${fontFaces}  body {
   .head-menu > summary.head-btn { top: 0; right: 0; width: 24px; height: 24px; line-height: 22px; font-size: 13px; }
   .session-stats { margin: 5px 0 0; }
   .stats-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-stats.state-waiting { color: var(--r-warn); }
-  .session-stats.state-waiting .stats-text::first-line { font-weight: 600; }
+  .session-stats.state-move { color: var(--r-warn); }
+  .session-stats.state-move .stats-text::first-line { font-weight: 600; }
   /* A Running session gone quiet: revealed by its own delay, no timer. */
   .idle-warn { display: flex; align-items: center; gap: 6px; margin: 6px -11px 0; padding: 0 11px; max-height: 0; overflow: hidden; opacity: 0; font-size: 11.5px; color: var(--r-warn); background: var(--r-warn-tint);
     animation: idle-reveal 0s linear var(--idle-delay, 0ms) forwards, idle-pulse 2.4s ease-in-out var(--idle-delay, 0ms) infinite; }
@@ -1533,7 +1533,9 @@ ${fontFaces}  body {
 // The thumbnail cache both sidebars use (the timeline's artifact tiles and the
 // Project panel's card previews). Plain webview JavaScript, no backticks; it reads
 // only the document. An <img data-thumb="uri"> gets a 480 px WebP copy once.
+// It carries the one escaper, `esc`, for both pages' scripts.
 export const THUMB_SCRIPT = `
+const esc = ${escapeHtml};
 // An agent's renders are often 4000+ px; an <img> keeps the full decode (60+ MB)
 // alive for a sidebar preview. Each image is instead fetched once when it scrolls
 // near view, downscaled to a WebP wide enough for the full-width hero, and cached for the webview's life.

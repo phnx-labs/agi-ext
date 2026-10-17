@@ -5,7 +5,7 @@ import {
   parsePrs, prFixPrompt, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, parseLinearProjects, projectMenu, ranFor, ranSpan, renderPrsProgress,
-  DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle, waitFor,
+  DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle,
   type SessionHere, type SessionLike, type SessionListPrefs,
 } from './projectPanel'
 
@@ -213,13 +213,6 @@ test('titles skip the note another session inserts, hand-backs and bare commands
   expect(cleanTitle('/compact')).toBe('')
   expect(sessionTitle({ title: 'Another Claude session sent a message: …', topic: '/compact', label: 'Rush API observability', request: undefined })).toBe('Rush API observability')
   expect(sessionTitle({ title: '', topic: '', label: '', request: undefined })).toBe('Untitled')
-})
-
-test('a wait reads in seconds, then minutes and seconds, hours, days', () => {
-  expect(waitFor(12_000)).toBe('12s')
-  expect(waitFor(5 * 60_000 + 2_000)).toBe('5m 02s')
-  expect(waitFor((18 * 60 + 4) * 60_000)).toBe('18h 4m')
-  expect(waitFor(51 * 3_600_000)).toBe('2d 3h')
 })
 
 const row = (o: Partial<SessionLike>): SessionLike => ({

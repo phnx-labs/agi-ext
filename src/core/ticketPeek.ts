@@ -2,7 +2,7 @@
 // the sessions on it and Start, drawn under the row when a click opens its Linear tab.
 // The full ticket, comments included, is that tab.
 
-import { escapeHtml } from './projectPanel';
+import { escapeHtml } from '../shared/sessionCards';
 
 /** What `linear tasks <ID> --json` gives a ticket tile that the
  *  Issues list does not hold (a closed ticket): the page to open, and its face. */

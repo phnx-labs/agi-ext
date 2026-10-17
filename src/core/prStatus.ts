@@ -71,6 +71,28 @@ export function normalizePrStatus(raw: unknown): RemotePrStatus | undefined {
   };
 }
 
+export type PrTone = 'ok' | 'bad' | 'warn' | 'idle';
+
+/** One word for where the PR stands, and its tone: the Active Session sidebar's PR
+ *  tile and the Project panel card's PR chip both say it. Green checks alone are not
+ *  Ready: a conflict, a requested change, a required review or an unknown merge
+ *  state still stands between the PR and a merge. */
+export function prVerdict(pr: Pick<RemotePrStatus, 'state' | 'isDraft' | 'checks' | 'mergeable' | 'review'>): { word: string; tone: PrTone } {
+  if (pr.state === 'merged') return { word: 'Merged', tone: 'ok' };
+  if (pr.state === 'closed') return { word: 'Closed', tone: 'idle' };
+  if (pr.checks === 'failing') return { word: 'Failing', tone: 'bad' };
+  if (pr.isDraft) return { word: 'Draft', tone: 'idle' };
+  if (pr.mergeable === 'conflicting') return { word: 'Conflicts', tone: 'bad' };
+  if (pr.review === 'changes_requested') return { word: 'Changes requested', tone: 'bad' };
+  if (pr.checks === 'pending') return { word: 'Checks running', tone: 'warn' };
+  if (pr.checks === 'passing') {
+    if (pr.review === 'review_required') return { word: 'Needs review', tone: 'warn' };
+    if (pr.mergeable !== 'mergeable') return { word: 'Checks passed', tone: 'ok' };
+    return { word: 'Ready', tone: 'ok' };
+  }
+  return { word: 'Open', tone: 'idle' };
+}
+
 export type PrAction = { kind: 'merge' | 'automerge'; reason: string } | { kind: 'none'; reason: string };
 
 /** The one action the card may offer, with the reason it reads beside the PR. */

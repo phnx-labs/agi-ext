@@ -3,6 +3,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { BUILT_IN_AGENTS } from '../core/agents';
 
 // Icons that have light variants (dark logo for light backgrounds)
 const ICONS_WITH_LIGHT_VARIANTS = new Set([
@@ -48,7 +49,7 @@ export function buildIconPath(extensionPath: string, iconFilename: string): vsco
  * Build icon path using extension URI (for webview contexts).
  * Returns the specific { light: Uri; dark: Uri } shape for panel.iconPath.
  */
-export function buildIconPathFromUri(extensionUri: vscode.Uri, iconFilename: string): { light: vscode.Uri; dark: vscode.Uri } {
+function buildIconPathFromUri(extensionUri: vscode.Uri, iconFilename: string): { light: vscode.Uri; dark: vscode.Uri } {
   const darkIcon = vscode.Uri.joinPath(extensionUri, 'assets', iconFilename);
 
   const lightVariant = getLightVariant(iconFilename);
@@ -57,4 +58,14 @@ export function buildIconPathFromUri(extensionUri: vscode.Uri, iconFilename: str
     : darkIcon;
 
   return { light: lightIcon, dark: darkIcon };
+}
+
+/** One class per built-in agent (`.hx-claude`), each drawing that agent's logo from
+ *  assets/, with the light variant on a light editor theme. Both sidebars draw a
+ *  logo only through these classes. */
+export function harnessLogoCss(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+  return BUILT_IN_AGENTS.map((a) => {
+    const { dark, light } = buildIconPathFromUri(extensionUri, a.icon);
+    return `.hx-${a.key} { background-image: url("${webview.asWebviewUri(dark)}"); } body.vscode-light .hx-${a.key} { background-image: url("${webview.asWebviewUri(light)}"); }`;
+  }).join('\n  ');
 }

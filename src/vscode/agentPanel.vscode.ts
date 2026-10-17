@@ -35,12 +35,11 @@ import * as os from 'os';
 import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
+import { harnessLogoCss } from './theme.vscode';
 import { openWebviewUrl } from './webviewSecurity';
+import { getNonce } from './htmlReader';
 import { todoProgressFromItems, type TodoProgress } from '../core/session.activity';
-import {
-  type PullRequestRef as SharedPullRequestRef,
-  type WorktreeRef as SharedWorktreeRef,
-} from '../core/panel.helpers';
+import type { PullRequestRef } from '../core/panel.helpers';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import { LOCAL_MACHINE_ID, LOCAL_LABEL, remoteDeviceArg } from './remoteSessions.vscode';
@@ -56,14 +55,13 @@ import type {
   RemoteSession,
   RemoteSessionArtifact,
   RemoteTimeline,
-  RemoteTodoItem,
 } from '../core/remoteSessions';
 import { normalizeHost } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
 import { sendReplyToTerminal } from './sessionReply';
 import { runAgents, runCliArgs } from '../core/agentsBin';
-import { canOfferMerge, prAction, prRepo, type PrAction, type RemotePrStatus } from '../core/prStatus';
+import { canOfferMerge, prAction, prRepo, prVerdict, type PrAction, type PrTone, type RemotePrStatus } from '../core/prStatus';
 import { streamTitle } from '../core/projectPanel';
 import { mergeWithMenu } from './prMerge.vscode';
 import { getSettings } from './agentSettings.vscode';
@@ -71,7 +69,7 @@ import { validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
 import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
-import { SESSION_STATE_WORD, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { SESSION_STATE_WORD, STATE_TONE, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
@@ -99,11 +97,6 @@ interface GitInfo {
   dirtyCount?: number;
 }
 
-// Re-export shared types so the rest of this file doesn't need to switch on
-// `SharedFoo` everywhere. Keeps the snapshot interface readable.
-type PullRequestRef = SharedPullRequestRef;
-type WorktreeRef = SharedWorktreeRef;
-
 interface PanelSnapshot {
   /** A local agent terminal backs the subject (drives terminal-only actions). */
   hasTerminal: boolean;
@@ -115,19 +108,18 @@ interface PanelSnapshot {
   terminalId?: string;       // internal id for action commands
   agentName?: string;        // "Claude"
   agentType?: string;        // "claude" | "codex" | ... — used for usage lookup
-  agentIconUri?: string;     // webview URI to PNG logo
+  agentLogo?: string;        // built-in agent key; its .hx-<key> class draws the logo
   sessionChunk?: string;     // first 8 of session UUID
   fullSessionId?: string;
   /** Owning CLI device; remote paths must open over Remote SSH. */
   sessionHost?: string;
   version?: string;
-  label?: string;
-  autoLabel?: string;
+  /** The session's one name (`streamTitle`); until the stream names it, the name this tab carries. */
+  title?: string;
   account?: string;
   accountLabel?: string;
   // Filesystem
   cwd?: string;
-  workspaceRoot?: string;
   // Git
   git?: GitInfo;
   // Conversation
@@ -162,8 +154,7 @@ interface PanelSnapshot {
   tokPerSec?: number;
   subAgentCount?: number;
   spawnedTeam?: string;
-  // Glance header (v3): the session's own title, the running model, and where it runs.
-  sessionTitle?: string;
+  // Glance header (v3): the running model, and where it runs.
   model?: string;
   project?: string;
   hostLabel?: string;
@@ -197,8 +188,9 @@ interface PanelSnapshot {
   /** Where Back and Forward lead: the titles of the neighbouring subjects. */
   nav?: { back?: string; fwd?: string };
   pullRequests?: PullRequestRef[];
-  /** The session's PR as the feed reports it, and the one action the card may offer. */
+  /** The session's PR as the feed reports it, where it stands, and the one action the card may offer. */
   prStatus?: RemotePrStatus;
+  prVerdict?: { word: string; tone: PrTone };
   prAction?: PrAction;
   /** The Merge ▾ menu has a choice (a method, or an admin merge). */
   prCanMerge?: boolean;
@@ -521,11 +513,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           });
         }
         return;
-      case 'revealCwd':
-        if (typeof msg.path === 'string') {
-          vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(msg.path));
-        }
-        return;
       case 'copySessionId':
         if (this.snapshot.fullSessionId) {
           await vscode.env.clipboard.writeText(this.snapshot.fullSessionId);
@@ -544,7 +531,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         void this.refresh();
         return;
       case 'runQuickAction':
-        await this.runQuickAction(msg.action, msg.terminalId, msg.url, msg.external === true);
+        await this.runQuickAction(msg.action, msg.terminalId);
         return;
       case 'replyToSession':
         await this.replyToSession(
@@ -724,28 +711,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async runQuickAction(
-    action: string,
-    terminalId: string | undefined,
-    url: string | undefined,
-    external = false,
-  ): Promise<void> {
+  private async runQuickAction(action: string, terminalId: string | undefined): Promise<void> {
     const entry = terminalId ? terminals.getById(terminalId) : undefined;
     const terminal = entry?.terminal ?? vscode.window.activeTerminal;
-    // Claude's Ink TUI submits on \r; Codex submit on the \n that
-    // sendText(_, true) appends. Centralized here so action handlers below
-    // don't duplicate the gotcha.
-    const sendSlash = (slash: string) => {
-      if (!terminal) return false;
-      terminal.show(true);
-      if (entry?.agentType === 'claude') {
-        terminal.sendText(slash, false);
-        terminal.sendText('\r', false);
-      } else {
-        terminal.sendText(slash, true);
-      }
-      return true;
-    };
     switch (action) {
       case 'setSessionId':
         if (this.snapshot.hasTerminal && terminalId) {
@@ -766,7 +734,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         const sessionId = this.snapshot.fullSessionId;
         if (!sessionId) return;
         const { resumeAndNotify } = require('./resumeSession.vscode') as typeof import('./resumeSession.vscode');
-        await resumeAndNotify({ sessionId, host: this.snapshot.sessionHost ?? '', title: this.snapshot.sessionTitle ?? '' });
+        await resumeAndNotify({ sessionId, host: this.snapshot.sessionHost ?? '', title: this.snapshot.title ?? '' });
         return;
       }
       // Fork: the panel's own tab forks in place; a session with no tab here
@@ -774,24 +742,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       case 'forkSubject':
         if (terminal && entry) { terminal.show(true); await vscode.commands.executeCommand('agents.forkCurrentSession'); }
         else await vscode.commands.executeCommand('agents.forkPickSession');
-        return;
-      case 'openPr':
-        if (typeof url === 'string') {
-          openWebviewUrl(url, external);
-        }
-        return;
-      case 'diff':
-        vscode.commands.executeCommand('workbench.view.scm');
-        return;
-      case 'slash':
-        // url field carries the slash command text (e.g. "/commit", "/done").
-        // Reused over a new field so the existing webview->host message shape
-        // stays unchanged.
-        if (typeof url === 'string' && url.startsWith('/')) {
-          if (!sendSlash(url)) {
-            vscode.window.showInformationMessage('No active agent terminal.');
-          }
-        }
         return;
     }
   }
@@ -837,7 +787,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   titleOf(sessionId: string): string | undefined {
     const s = this.snapshot;
     if (!sessionId || s.fullSessionId !== sessionId) return undefined;
-    return s.sessionTitle || s.label || s.autoLabel || s.agentName;
+    return s.title || s.agentName;
   }
 
   /** Show the sidebar without taking keyboard focus from whatever opened it. */
@@ -906,9 +856,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           ? (cwdRaw as vscode.Uri).fsPath
           : envWorkspaceDir;
 
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-
-
     const sessionId = subject.sessionId || entry?.sessionId;
     const sessionChunk = sessionId ? sessionId.slice(0, 8) : undefined;
 
@@ -919,16 +866,14 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       terminalId: entry?.id,
       agentName: entry?.agentConfig?.title,
       agentType: entry?.agentType,
-      agentIconUri: this.iconUriFor(entry?.agentConfig?.prefix),
+      agentLogo: BUILT_IN_AGENTS.find((a) => a.prefix.toUpperCase() === (entry?.agentConfig?.prefix ?? '').toUpperCase())?.key,
       sessionChunk,
       fullSessionId: sessionId,
       sessionHost: subject.host,
       version: entry?.statusVersion || entry?.version,
-      label: entry?.label,
-      autoLabel: entry?.autoLabel,
+      title: entry?.label || entry?.autoLabel,
       account: entry?.statusAccount || entry?.account,
       cwd,
-      workspaceRoot,
     };
 
     // ── Fill from the CLI-normalized session stream (PHNX-3517) ─────────────
@@ -991,6 +936,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (card.pullRequests) snapshot.pullRequests = card.pullRequests;
         if (live.prStatus) {
           snapshot.prStatus = live.prStatus;
+          snapshot.prVerdict = prVerdict(live.prStatus);
           snapshot.prAction = prAction(live.prStatus);
           snapshot.prCanMerge = canOfferMerge(live.prStatus);
           snapshot.prRepo = prRepo(live.prStatus.url);
@@ -1003,9 +949,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           const def = BUILT_IN_AGENTS.find((a) => a.key === live.agentType);
           if (def) {
             snapshot.agentName = snapshot.agentName || def.title;
-            snapshot.agentIconUri = snapshot.agentIconUri || this.iconUriFor(def.prefix);
+            snapshot.agentLogo = snapshot.agentLogo || def.key;
           }
-          snapshot.label = snapshot.label || live.label || undefined;
           if (!snapshot.cwd && live.cwd) {
             cwd = live.cwd;
             snapshot.cwd = live.cwd;
@@ -1022,7 +967,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.attachments = live.attachments;
         const remoteDevice = remoteDeviceArg(live.host);
         // The session's one name, as its tab, its card and the status bar show it.
-        snapshot.sessionTitle = streamTitle(live) || undefined;
+        snapshot.title = streamTitle(live) || snapshot.title;
         snapshot.related = relatedSessions(live, sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL), Date.now());
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
@@ -1115,22 +1060,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     return snapshot;
   }
 
-  private iconUriFor(prefix: string | undefined): string | undefined {
-    if (!prefix || !this.view) return undefined;
-    const def = BUILT_IN_AGENTS.find(
-      (a) => a.prefix === prefix || a.prefix.toUpperCase() === (prefix ?? '').toUpperCase(),
-    );
-    if (!def) return undefined;
-    const onDisk = vscode.Uri.joinPath(this.extensionUri, 'assets', def.icon);
-    return this.view.webview.asWebviewUri(onDisk).toString();
-  }
-
   private renderShell(webview: vscode.Webview): string {
-    const nonce = randomNonce();
+    const nonce = getNonce();
     const cspSource = webview.cspSource;
     const fontUri = (file: string) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'assets', 'fonts', file)).toString();
     const fontJost = fontUri('jost-var.woff2');
     const fontInter = fontUri('InterVariable.woff2');
+    const logoCss = harnessLogoCss(webview, this.extensionUri);
     return /* html */ `<!doctype html>
 <html lang="en">
 <head>
@@ -1139,6 +1075,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 <style>
 ${sessionPanelCss(sessionPanelFontFaces(fontJost, fontInter))}
+  ${logoCss}
 </style>
 </head>
 <body>
@@ -1153,6 +1090,7 @@ const root = document.getElementById('root');
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
 ${SESSION_CARDS_SCRIPT}
+const STATE_TONE = ${JSON.stringify(STATE_TONE)};
 function compactTokens(value) {
   if (!Number.isFinite(value) || value <= 0) return '';
   if (value >= 1000000) return (value / 1000000).toFixed(value >= 10000000 ? 0 : 1) + 'm tok';
@@ -1174,12 +1112,12 @@ const HEAD_ICON = {
 };
 
 function renderTerminalCard(s) {
-  const logo = s.agentIconUri
-    ? '<img class="agent-logo" src="' + esc(s.agentIconUri) + '" alt="' + esc(s.agentName || '') + '" title="' + esc(s.agentName || '') + '" />'
+  const logo = s.agentLogo
+    ? '<i class="agent-logo hx hx-' + esc(s.agentLogo) + '" role="img" aria-label="' + esc(s.agentName || '') + '" title="' + esc(s.agentName || '') + '"></i>'
     : '';
-  // The title is WHAT the session is: a /rename, else the generated title, else
-  // the tab label. The harness icon already says which agent it is.
-  const title = s.sessionTitle || s.label || s.autoLabel || s.agentName || 'Agent';
+  // The title is WHAT the session is (the host's one name for it); the harness icon
+  // already says which agent it is.
+  const title = s.title || s.agentName || 'Agent';
   let usageBadge = '';
   if (s.usageStatus === 'out_of_credits') {
     usageBadge = '<span class="usage-badge usage-out">⚠ out of credits</span>';
@@ -1287,14 +1225,11 @@ function renderNeedsYou(s) {
     '</div>'
   );
 }
-// The word comes from the host (sessionStateOf, src/shared/sessionState.ts) so the
-// sidebar and the Project panel say the same thing for the same row.
+// The word comes from the host (sessionStateOf) and the tone from STATE_TONE, both in
+// src/shared/sessionState.ts, so the sidebar and the Project panel agree on a row.
 function sessionState(s) {
   const st = s.state || { key: 'unknown', word: 'Unknown' };
-  // Your move reads amber (an ask, a stall or a failure), Running green, Waiting on
-  // its own background work blue; Idle, review and Ended are quiet.
-  const cls = st.key === 'asks' || st.key === 'stuck' ? 'waiting' : st.key === 'working' || st.key === 'unknown' ? 'running' : st.key === 'waiting' ? 'pending' : 'idle';
-  return { cls, word: st.word };
+  return { cls: STATE_TONE[st.key] || 'quiet', word: st.word };
 }
 
 function renderSessionStats(s) {
@@ -1463,27 +1398,9 @@ function renderRequestCard(s) {
 // one status word, then one icon strip (a segmented check bar, a review glyph,
 // a merge glyph) whose words live in each icon's title and aria-label. The
 // per-check list folds under the bar. At most one action the host decided
-// (Merge, or Merge when green), which it confirms before running.
+// (Merge, or Merge when green), which it confirms before running. The status
+// word is the host's prVerdict (src/core/prStatus.ts), the one the Project panel's card says.
 const PR_SEGMENT_ORDER = { passed: 0, running: 1, failed: 2, skipped: 3 };
-
-// One word for where the PR stands, and its tone.
-function prVerdict(pr) {
-  if (pr.state === 'merged') return { word: 'Merged', tone: 'ok' };
-  if (pr.state === 'closed') return { word: 'Closed', tone: 'idle' };
-  if (pr.checks === 'failing') return { word: 'Failing', tone: 'bad' };
-  if (pr.isDraft) return { word: 'Draft', tone: 'idle' };
-  if (pr.mergeable === 'conflicting') return { word: 'Conflicts', tone: 'bad' };
-  if (pr.review === 'changes_requested') return { word: 'Changes requested', tone: 'bad' };
-  if (pr.checks === 'pending') return { word: 'Checks running', tone: 'warn' };
-  if (pr.checks === 'passing') {
-    // Green checks alone are not "Ready": a required review or an unknown merge
-    // state still stands between the PR and a merge.
-    if (pr.review === 'review_required') return { word: 'Needs review', tone: 'warn' };
-    if (pr.mergeable !== 'mergeable') return { word: 'Checks passed', tone: 'ok' };
-    return { word: 'Ready', tone: 'ok' };
-  }
-  return { word: 'Open', tone: 'idle' };
-}
 
 // One bar segment per check the row lists, greens first so the bar fills like
 // progress; a row with only the rolled-up verdict draws one segment for it.
@@ -1556,7 +1473,7 @@ function renderMadeShelf(s) {
   const range = currentRange(s);
   const tiles = [];
   if (pr) {
-    const v = prVerdict(pr);
+    const v = s.prVerdict;
     tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(pr.url) + '" title="' + esc('Open #' + pr.number + (pr.title ? ' ' + pr.title : '') + ' on GitHub') + '">' +
       '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(pr.number) + '</b><span class="mk-st pr-tone-' + v.tone + '">' + esc(v.word) + '</span></span>' +
       '<span class="mk-t">' + esc(pr.title || s.prRepo || '') + '</span>' +
@@ -1624,13 +1541,11 @@ function renderPending(s) {
 // or with a similar request (relatedSessions, from the rows already in memory).
 // Each chip carries its state dot and, in its tooltip, why it is related; a click
 // makes it the subject.
-const RELATED_DOT = { asks: 'waiting', stuck: 'waiting', review: 'idle', idle: 'idle', working: 'running', waiting: 'pending', unknown: 'running', ended: 'idle' };
-
 function renderRelated(s) {
   const rel = s.related || [];
   if (!rel.length) return '';
   return '<div class="rel"><span class="rel-l">Related</span><div class="rel-s" data-strip="related">' + rel.map((r) =>
-    '<button type="button" class="rel-c state-' + (RELATED_DOT[r.state] || 'idle') + '" data-related="' + esc(r.sessionId) + '" data-related-host="' + esc(r.host || '') + '" title="' + esc(r.title + ' · ' + r.why) + '">' +
+    '<button type="button" class="rel-c state-' + (STATE_TONE[r.state] || 'quiet') + '" data-related="' + esc(r.sessionId) + '" data-related-host="' + esc(r.host || '') + '" title="' + esc(r.title + ' · ' + r.why) + '">' +
       '<span class="state-dot"></span>' + esc(truncate(r.title, 48)) + '</button>').join('') + '</div></div>';
 }
 
@@ -1965,14 +1880,11 @@ function bindPanel() {
     });
   }
   for (const el of root.querySelectorAll('[data-action]')) {
-    if (bindOnce(el, 'action')) el.addEventListener('click', (e) => {
+    if (bindOnce(el, 'action')) el.addEventListener('click', () => {
       vscode.postMessage({
         type: 'runQuickAction',
         action: el.getAttribute('data-action'),
         terminalId: lastSnapshot && lastSnapshot.terminalId,
-        workspaceRoot: lastSnapshot && lastSnapshot.workspaceRoot,
-        url: el.getAttribute('data-url') || undefined,
-        external: e.metaKey || e.ctrlKey || e.altKey,
       });
     });
   }
@@ -2206,13 +2118,6 @@ function getUsageStatusFromCli(sessionId: string | undefined): UsageStatus {
     return row.usageStatus;
   }
   return row?.rateLimited === true ? 'rate_limited' : null;
-}
-
-function randomNonce(): string {
-  let s = '';
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
 }
 
 // Set once by registerAgentPanel; consumed by notifyAgentPanelSessionUpdate so

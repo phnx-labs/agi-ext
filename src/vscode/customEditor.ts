@@ -6,6 +6,7 @@ import { execFile } from 'child_process';
 import { maybePromptForAgentSymlinks } from './agentlinks.vscode';
 import { resolvePdfEngine, buildPdfArgs } from '../core/pdfEngine';
 import { buildEditorWebviewHtml } from '../core/editorHtml';
+import { getNonce } from './htmlReader';
 
 // Track spawned agent terminals per document URI
 const documentAgents = new Map<string, vscode.Terminal>();
@@ -547,14 +548,5 @@ ${bodyHtml}
       nonce: getNonce(),
     });
   }
-}
-
-function getNonce(): string {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
 }
 

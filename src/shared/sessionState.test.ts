@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { BALL_WORD, ballOf, pendingCounts, pendingLines, pendingWords, sessionStateOf, urgencyOf, urgencyRank } from './sessionState';
+import { BALL_WORD, STATE_TONE, ageWords, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, waitFor } from './sessionState';
 
 test('a waiting phase is Needs you, not Working: input_required is a question or permission pending', () => {
   expect(sessionStateOf({ phase: 'waiting', liveStatus: 'input_required' })).toBe('asks');
@@ -71,4 +71,26 @@ test('pending work is counted per kind and listed for the hover', () => {
   expect(pendingCounts(undefined).total).toBe(0);
   expect(pendingWords(p)).toBe('2 subagents, 1 shell, 1 monitor');
   expect(pendingLines(p, 10 * 60_000)).toEqual(['⑂ Watch-a-run reels · 10m', '⑂ Story C reel · 10m', '▸ Poll prod · 6m', '◉ d']);
+});
+
+test('one family of time words: a card age, a sidebar time, and a wait that ticks', () => {
+  const now = Date.parse('2026-10-17T12:00:00Z');
+  expect(ageWords(0, now)).toBe('');
+  expect(ageWords(now - 10_000, now)).toBe('now');
+  expect(ageWords(now - 5 * 60_000, now)).toBe('5m');
+  expect(ageWords(now - 3 * 3_600_000, now)).toBe('3h');
+  expect(ageWords(now - 3 * 86_400_000, now)).toBe('3d');
+  expect(relTime(0, now)).toBe('');
+  expect(relTime(now - 30_000, now)).toBe('just now');
+  expect(relTime(now - 5 * 60_000, now)).toBe('5 min ago');
+  expect(relTime(now - 90 * 60_000, now)).toBe('1 hour ago');
+  expect(relTime(now - 50 * 3_600_000, now)).toBe('2 days ago');
+  expect(waitFor(12_000)).toBe('12s');
+  expect(waitFor(5 * 60_000 + 2_000)).toBe('5m 02s');
+  expect(waitFor((18 * 60 + 4) * 60_000)).toBe('18h 4m');
+  expect(waitFor(51 * 3_600_000)).toBe('2d 3h');
+});
+
+test('every state has one tone: your move, running, waiting on its own work, review, or quiet', () => {
+  expect(STATE_TONE).toEqual({ asks: 'move', stuck: 'move', review: 'review', idle: 'quiet', working: 'running', waiting: 'waiting', unknown: 'running', ended: 'quiet' });
 });

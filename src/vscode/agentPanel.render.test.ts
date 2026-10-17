@@ -1,5 +1,7 @@
 import { test, expect } from 'bun:test';
 import { vscodeDouble } from '../testing/vscodeDouble';
+import { STATE_TONE, relTime } from '../shared/sessionState';
+import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -45,7 +47,7 @@ function extractConst(name: string): string {
 }
 
 const NAMES = [
-  'esc', 'truncate', 'relTime', 'compactDuration', 'renderInlineMarkdown', 'renderMarkdownPreview',
+  'truncate', 'compactDuration', 'renderInlineMarkdown', 'renderMarkdownPreview',
   'renderGoalCard', 'renderChecklistCard',
   'requestChips', 'renderRequestCard',
   'timelineFromCheckpoints', 'stepChips', 'renderStep', 'renderTimelineCard',
@@ -56,15 +58,17 @@ const NAMES = [
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
   'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderUpdate', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderRangeLane', 'renderNav',
-  'prVerdict', 'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
+  'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind', 'timelineShown',
 ];
-const CONSTS = ['RELATED_DOT', 'APP_ICON', 'HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'STEP_CHOICES', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'MIC_ICON', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
+const CONSTS = ['HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'STEP_CHOICES', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'MIC_ICON', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
 // same collapse to be what the webview actually runs.
-const combined = [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
+// What the host interpolates into the script, as the shell emits it.
+const injected = `const esc = ${escapeHtml};\n${relTime}\nconst STATE_TONE = ${JSON.stringify(STATE_TONE)};\nconst APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};`;
+const combined = injected + '\n' + [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
   .join('\n')
   .replace(/\\\\/g, '\\');
 const viewState: Record<string, unknown> = {};
@@ -72,14 +76,13 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
   renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, renderBlocked, currentRange,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
-  prVerdict, prCheckSegments, renderNav,
+  prCheckSegments, renderNav,
 }; })()`) as {
   renderMadeShelf: (s: unknown) => string;
   renderRelated: (s: unknown) => string;
   renderBlocked: (s: unknown) => string;
   currentRange: (s: unknown) => { startMs: number; endMs: number } | null;
   renderNav: (s: unknown) => string;
-  prVerdict: (pr: unknown) => { word: string; tone: string };
   prCheckSegments: (pr: unknown) => { segments: { state: string; name: string }[]; passed: number; running: number; failed: number; counted: number };
   renderGoalCard: (s: unknown) => string;
   renderChecklistCard: (s: unknown) => string;
@@ -361,7 +364,7 @@ test('the session header: the title and three quick icons; model, account and ho
   }
   {
     const html = cards.renderTerminalCard({
-      agentPrefix: 'CC', agentName: 'Claude', sessionTitle: 'Grok accounts login verification', model: 'claude-opus-5-5',
+      agentPrefix: 'CC', agentName: 'Claude', title: 'Grok accounts login verification', model: 'claude-opus-5-5',
       account: 'muqsit@getrush.ai', sessionChunk: 'c0d7375b', project: 'agents-cli', git: { branch: 'main' }, hostLabel: 'zion',
     });
     expect(html).toContain('>Grok accounts login verification</div>');
@@ -375,7 +378,7 @@ test('the session header: the title and three quick icons; model, account and ho
   }
   {
     for (const key of Object.keys(viewState)) delete viewState[key];
-    const html = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CL-1', fullSessionId: 'abc-full', sessionChunk: 'abc', sessionTitle: 'Codebase health', model: 'claude-opus-5-5', accountLabel: 'work', hostLabel: 'yosemite-m1', project: 'agents', git: { branch: 'main' }, startedAtMs: Date.parse('2026-10-04T06:21:00'), tokenCount: 121_000_000, tokPerSec: 124 });
+    const html = cards.renderTerminalCard({ hasTerminal: true, terminalId: 'CL-1', fullSessionId: 'abc-full', sessionChunk: 'abc', title: 'Codebase health', model: 'claude-opus-5-5', accountLabel: 'work', hostLabel: 'yosemite-m1', project: 'agents', git: { branch: 'main' }, startedAtMs: Date.parse('2026-10-04T06:21:00'), tokenCount: 121_000_000, tokPerSec: 124 });
     const face = html.slice(0, html.indexOf('class="head-menu"'));
     const menu = html.slice(html.indexOf('class="menu-panel"'));
     expect(face).toContain('>Codebase health</div>');
@@ -396,11 +399,12 @@ test('the session header: the title and three quick icons; model, account and ho
 
 test('Made: one sideways row — the PR with its checks opens GitHub, then other PRs and the ticket tile, then files newest first; a range dims, a local page can be shared', () => {
   for (const key of Object.keys(viewState)) delete viewState[key];
+  const prStatus = normalizePrStatus({ url: 'https://github.com/phnx-labs/agi-ext/pull/103', number: 103, title: 'Sidebar one card', state: 'MERGED', isDraft: false, mergeable: 'MERGEABLE', checks: 'passing',
+    checkItems: Array.from({ length: 6 }, (_, i) => ({ name: 'c' + i, state: 'passed' })) })!;
   const snap = {
     fullSessionId: 'made', sessionLocal: true,
     ticket: { id: 'PHNX-4248', title: 'One card sidebar', state: 'In Progress' },
-    prStatus: normalizePrStatus({ url: 'https://github.com/phnx-labs/agi-ext/pull/103', number: 103, title: 'Sidebar one card', state: 'MERGED', isDraft: false, mergeable: 'MERGEABLE', checks: 'passing',
-      checkItems: Array.from({ length: 6 }, (_, i) => ({ name: 'c' + i, state: 'passed' })) }),
+    prStatus, prVerdict: prVerdict(prStatus),
     pullRequests: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3716', ownerRepo: 'phnx-labs/agi-cli', number: 3716 }],
     artifacts: [
       { path: '/u/Downloads/Old/a.png', display: '~/Downloads/Old/a.png', basename: 'a.png', bucket: 'docs', editedAtMs: 1_000, uri: 'vscode-resource:/a.png' },
@@ -676,7 +680,7 @@ test('the state line says the shared state word and running time; a live agent p
   const idle = cards.renderSessionStats({ state: { key: 'yours', word: 'Your turn' }, durationMs: day, lastActivityMs: Date.now() - 3 * 3600_000 });
   expect(idle).toContain('Your turn · ran <b>1d 2h</b></span>');
   const asks = cards.renderSessionStats({ state: { key: 'asks', word: 'Needs you' }, durationMs: 60_000 });
-  expect(asks).toContain('state-waiting');
+  expect(asks).toContain('state-move');
   expect(asks).toContain('Needs you');
   const ended = cards.renderSessionStats({ state: { key: 'ended', word: 'Ended' }, durationMs: 60_000 });
   expect(ended).toContain('Ended · ran');
@@ -750,12 +754,12 @@ test('a dragged range narrows the strip, the steps and the You list; a range out
   for (const key of Object.keys(viewState)) delete viewState[key];
 });
 
-import { normalizePrStatus, prAction, prRepo } from '../core/prStatus';
+import { normalizePrStatus, prAction, prRepo, prVerdict } from '../core/prStatus';
 
 const PR_URL = 'https://github.com/phnx-labs/agi-ext/pull/103';
 const prRow = (extra: object = {}) => {
   const prStatus = normalizePrStatus({ url: PR_URL, number: 103, state: 'OPEN', isDraft: false, reviewDecision: 'REVIEW_REQUIRED', mergeable: 'MERGEABLE', checks: 'passing', ...extra });
-  return { prStatus, prAction: prAction(prStatus), prRepo: prRepo(PR_URL) };
+  return { prStatus, prVerdict: prVerdict(prStatus!), prAction: prAction(prStatus), prRepo: prRepo(PR_URL) };
 };
 
 test('the PR in the ⋯ menu: its glyphs and at most one merge action, with the reason when there is none (PHNX-4289)', () => {
@@ -788,14 +792,6 @@ test('the PR in the ⋯ menu: its glyphs and at most one merge action, with the 
   }
   {
     const pr = (extra: object = {}) => normalizePrStatus({ url: PR_URL, number: 103, state: 'OPEN', isDraft: false, ...extra });
-    expect(cards.prVerdict(pr({ state: 'MERGED' })).word).toBe('Merged');
-    expect(cards.prVerdict(pr({ isDraft: true, checks: 'pending' }))).toEqual({ word: 'Draft', tone: 'idle' });
-    expect(cards.prVerdict(pr({ isDraft: true, checks: 'failing' })).word).toBe('Failing');
-    expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'CONFLICTING' })).word).toBe('Conflicts');
-    expect(cards.prVerdict(pr({ checks: 'pending' })).word).toBe('Checks running');
-    expect(cards.prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE' })).word).toBe('Ready');
-    expect(cards.prVerdict(pr()).word).toBe('Open');
-
     // One segment per check, greens first, skipped out of the fraction.
     const bar = cards.prCheckSegments(pr({ checkItems: [
       { name: 'e2e', state: 'failed' }, { name: 'docs', state: 'skipped' }, { name: 'test', state: 'passed' },
@@ -810,11 +806,16 @@ test('the PR in the ⋯ menu: its glyphs and at most one merge action, with the 
     expect(cards.prCheckSegments(pr()).segments).toEqual([]);
 
   }
-  {
-    const base = { url: 'u', number: 1, isDraft: false, checkItems: [], checks: 'passing' };
-    expect(cards.prVerdict({ ...base, mergeable: 'mergeable', review: 'review_required' })).toEqual({ word: 'Needs review', tone: 'warn' });
-    expect(cards.prVerdict({ ...base, mergeable: 'unknown' }).word).toBe('Checks passed');
-  }
+});
+
+test('a conflicting PR with green checks reads Conflicts on the Project panel card and in the sidebar alike', async () => {
+  const { renderSessionCard, sessionPlace } = await import('../core/projectPanel');
+  const row = prRow({ checks: 'passing', mergeable: 'CONFLICTING', reviewDecision: 'APPROVED', headSha: '358a1fb' });
+  const here = { device: 'zion', localHost: 'this-mac', workspace: 'agents', editor: 'vscodium' as const, editorName: 'VSCodium', icons: {} };
+  const s = { sessionId: 's', host: 'this-mac', title: 'T', label: '', topic: '', phase: 'idle' as const, liveStatus: 'idle', lastResponse: '', activity: '', ticket: null, lastActivityMs: 0, confirmedProject: 'agi', prStatus: row.prStatus };
+  const card = renderSessionCard(s, sessionPlace(s, here), 0, { selected: false, pinned: false, here, thumbs: [], made: null });
+  expect(card).toContain('class="chip pr-bad" title="PR #103: Conflicts"');
+  expect(cards.renderMadeShelf(row)).toContain('<span class="mk-st pr-tone-bad">Conflicts</span>');
 });
 
 test('a merge runs one pinned CLI verb, only after the modal confirms and only if the host still agrees', async () => {
@@ -960,7 +961,7 @@ test('Related: one line of chips with each session state dot and why in the tool
   ] });
   expect(html).toContain('<span class="rel-l">Related</span>');
   expect(html).toContain('data-strip="related"');
-  expect(html).toContain('class="rel-c state-waiting" data-related="a1" data-related-host="yosemite-m6" title="Codex sign-in accounts · same ticket PHNX-4338"');
+  expect(html).toContain('class="rel-c state-move" data-related="a1" data-related-host="yosemite-m6" title="Codex sign-in accounts · same ticket PHNX-4338"');
   expect(html).toContain('class="rel-c state-running" data-related="b2"');
   expect(cards.renderRelated({ related: [] })).toBe('');
   expect(cards.renderRelated({})).toBe('');

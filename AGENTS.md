@@ -134,8 +134,14 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   events feed `onDidChangeFrontTab`, and a tab maps to its terminal by identity
   (`assignTabs`, `src/core/tabIndex.ts`), never by label alone.
 - A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, card,
-  status bar and the Active Session sidebar. The extension generates no title and reports
-  none back to the CLI; Rename Session types Claude's own `/rename`.
+  status bar, the Active Session sidebar and the resume picker. The extension generates no
+  title and reports none back to the CLI; Rename Session types Claude's own `/rename`.
+- What a card says is computed once and both sidebars read it: a PR's word is `prVerdict`
+  (`src/core/prStatus.ts`); a state's dot color `STATE_TONE` and the time words are in
+  `src/shared/sessionState.ts`; the theme tokens and `.card` (`RUSH_THEME_CSS`), the escaper
+  and the GitHub and Linear marks are in `src/shared/sessionCards.ts`; harness logos come from
+  `harnessLogoCss`. A webview script reuses a host function by interpolating it
+  (`${relTime}`), never a copy.
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
