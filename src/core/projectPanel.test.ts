@@ -27,9 +27,21 @@ test('the project menu offers the projects with a repository inside the window f
     { name: 'site', repos: [{ slug: 'me/site', path: '~/src/gh-other/site' }] },
   ]))
   expect(all[0]!.repos).toEqual([{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }, { slug: 'phnx-labs/.agents-system', path: '~/.agents/.system' }])
-  expect(projectsInFolder(all, '/home/me/src/gh', '/home/me').projects).toEqual([{ name: 'agi', repos: ['agents-cli', '.agents-system'] }])
+  expect(projectsInFolder(all, '/home/me/src/gh', '/home/me').projects).toEqual([{ name: 'agi', repos: ['agents-cli', '.agents-system'], linear: 'AGI' }])
   expect(projectsInFolder(all, '/work/rush', '/home/me').projects.map((p) => p.name)).toEqual(['rush'])
   expect(displayHome('/home/me/src/gh', '/home/me')).toBe('~/src/gh')
+})
+
+test('the project menu offers a project whose root holds the window folder, as the header found it', () => {
+  // agi-ui.yaml binds only `root` and `repo`; `agents projects status --path` finds it from its own checkout.
+  const all = parseProjectList(JSON.stringify([
+    { name: 'agi-ui', root: '~/src/gh/agi-ext', repo: 'phnx-labs/agi-ext', linear: { name: 'AGI UI' } },
+    { name: 'agi', repos: [{ slug: 'phnx-labs/agents-cli', path: '~/src/gh/agents-cli' }] },
+  ]))
+  expect(all[0]).toEqual({ name: 'agi-ui', linearName: 'AGI UI', repos: [{ slug: 'phnx-labs/agi-ext', path: '~/src/gh/agi-ext' }], root: '~/src/gh/agi-ext' })
+  expect(projectsInFolder(all, '/home/me/src/gh/agi-ext', '/home/me').projects).toEqual([{ name: 'agi-ui', repos: ['agi-ext'], linear: 'AGI UI' }])
+  expect(projectsInFolder(all, '/home/me/src/gh/agi-ext/src', '/home/me').projects.map((p) => p.name)).toEqual(['agi-ui'])
+  expect(projectsInFolder(all, '/home/me/src/gh', '/home/me').projects.map((p) => p.name)).toEqual(['agi-ui', 'agi'])
 })
 
 test('an ended card says how long it ran and when; durations read in minutes, hours and days', () => {
