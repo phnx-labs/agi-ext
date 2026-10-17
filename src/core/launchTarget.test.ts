@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test';
 import { BUILT_IN_AGENTS } from './agents';
 import {
   buildNewAgentLaunchCommand,
+  buildTabLaunchCommand,
   harnessLaunchRegistrations,
   resolveLaunchTarget,
   launchOptsForTarget,
@@ -253,5 +254,33 @@ describe('registered harness launch commands', () => {
     expect(buildNewAgentLaunchCommand(local.launchOptions(), { sessionId: 'sess-abc' })).toBe(
       'agents run grok --interactive --local --strategy balanced --mode auto',
     );
+  });
+});
+
+describe('buildTabLaunchCommand', () => {
+  // Clear and the startup auto-open relaunched a local Claude tab with
+  // `--device auto`, so it could land on another machine.
+  it('keeps a relaunch of a local Claude tab on this machine, in the exact workspace', () => {
+    expect(buildTabLaunchCommand('claude', { cwd: '/w', sessionId: 'abc-123' })).toBe(
+      "agents run claude --interactive --local --cwd '/w' --session-id abc-123 --mode auto",
+    );
+  });
+
+  it('launches every other harness through agents run too, never its raw binary', () => {
+    expect(buildTabLaunchCommand('codex', { cwd: '/w', defaultModel: 'gpt-5' })).toBe(
+      "agents run codex --interactive --local --cwd '/w' --model gpt-5 --mode auto",
+    );
+    expect(buildTabLaunchCommand('antigravity', { cwd: '/w' })).toMatch(/^agents run antigravity --interactive --local /);
+  });
+
+  it('relaunches a tab offloaded to a device on that device', () => {
+    expect(buildTabLaunchCommand('claude', { cwd: '/w', host: 'yosemite-s0', sessionId: 'abc-123' })).toBe(
+      "agents run claude --interactive --device 'yosemite-s0' --cwd '/w' --session-id abc-123 --mode auto",
+    );
+  });
+
+  it('leaves Shell and a custom agent to their own command', () => {
+    expect(buildTabLaunchCommand('shell', { cwd: '/w' })).toBeUndefined();
+    expect(buildTabLaunchCommand(undefined, { cwd: '/w' })).toBeUndefined();
   });
 });

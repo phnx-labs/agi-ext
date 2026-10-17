@@ -1,8 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import {
   inlineContinueInstructions,
-  buildAgentRunLaunchCommand,
-  buildAutoRunLaunchCommand,
   buildResumeInput,
 } from './resumeInBest';
 
@@ -42,43 +40,6 @@ Run \`sessions $ARGUMENTS --markdown\` to load the transcript.`;
     const out = inlineContinueInstructions('Run with $ARGUMENTS here.', '');
     expect(out).toBe('Run with  here.');
   });
-});
-
-describe('buildAgentRunLaunchCommand', () => {
-  test('no version pin — balanced rotation picks the account', () => {
-    expect(buildAgentRunLaunchCommand('codex')).toBe('agents run codex --interactive');
-  });
-
-  test('host is shell-quoted', () => {
-    expect(buildAgentRunLaunchCommand('claude', 'yosemite-s0')).toBe(
-      "agents run claude --interactive --device 'yosemite-s0'",
-    );
-  });
-
-  test('claude gets --session-id; other harnesses do not', () => {
-    expect(buildAgentRunLaunchCommand('claude', undefined, 'new-id')).toBe(
-      'agents run claude --interactive --session-id new-id',
-    );
-    expect(buildAgentRunLaunchCommand('codex', undefined, 'ignored')).toBe(
-      'agents run codex --interactive',
-    );
-  });
-
-});
-
-describe('buildAutoRunLaunchCommand', () => {
-  test('full auto — the CLI resolves host, harness, and account', () => {
-    expect(buildAutoRunLaunchCommand({ sessionId: 'new-id' })).toBe(
-      'agents run auto --interactive --session-id new-id',
-    );
-  });
-
-  test('host is shell-quoted; --session-id is always passed (claude-only on the CLI side)', () => {
-    expect(buildAutoRunLaunchCommand({ host: 'yosemite-s0', sessionId: 'new-id' })).toBe(
-      "agents run auto --interactive --device 'yosemite-s0' --session-id new-id",
-    );
-  });
-
 });
 
 describe('buildResumeInput', () => {

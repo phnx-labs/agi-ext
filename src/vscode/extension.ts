@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
-import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, usesManagedAgentLaunch, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, shquote, isDeprecatedAgentKey } from '../core/agents';
+import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, isDeprecatedAgentKey } from '../core/agents';
+import { shellQuote } from '../core/shellQuote';
 import { readManagedProjects } from '../core/managedProjects';
 import { cliResumeOutcome, decideSpawn, projectWindowResume, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
+  buildTabLaunchCommand,
   harnessLaunchRegistrations,
   resolveLaunchTarget,
   type NewAgentLaunchOpts,
@@ -32,11 +34,7 @@ import {
 } from '../core/sessionTabLabelSync';
 import { runRecapHeadless, isRecapSupported } from './recap.vscode';
 import { buildAgentTerminalEnv } from '../core/terminals';
-import {
-  buildAgentRunLaunchCommand,
-  buildAutoRunLaunchCommand,
-  buildResumeInput,
-} from '../core/resumeInBest';
+import { buildResumeInput } from '../core/resumeInBest';
 import { runStaggered, RESTORE_MAX_CONCURRENCY, RESTORE_STAGGER_MS } from '../core/restoreThrottle';
 import * as os from 'os';
 import * as fsSync from 'fs';
@@ -173,14 +171,6 @@ function buildTerminalTitle(
   return formatTerminalTitle(prefix, { label: label || undefined, display, sessionChunk, isFocused });
 }
 
-// Build the launch command for any built-in agent. Always routes through
-// `agents run <agent> --interactive` so the agents-cli applies the
-// configured strategy (pinned/available/balanced) from agents.yaml. Claude
-// gets --session-id for resume; other agents detect their own session
-// post-spawn.
-// buildAgentLaunchCommand, RunStrategy, and shquote are now in core/agents.ts
-// so they can be unit-tested without a VS Code harness.
-
 // PATH augmented with the agents shim dirs — the extension-host PATH can omit them,
 // so a bare `agents` spawn would fail to resolve. Shared by the detached spawns below.
 function agentsSpawnEnv(): NodeJS.ProcessEnv {
@@ -269,20 +259,6 @@ async function attachAgentFromBackground(): Promise<void> {
   });
 }
 
-// Back-compat shim: keeps the old name used elsewhere in this file. The
-// strategy argument is no longer needed since agents-cli reads it from
-// agents.yaml directly. `buildClaudeOpenCommand` is no longer called —
-// pinned now also routes through `agents run`.
-function buildClaudeLaunchCommand(
-  _context: vscode.ExtensionContext,
-  sessionId: string,
-  defaultModel?: string,
-  additionalFlags?: string,
-  mode?: AgentLaunchMode,
-): string {
-  return buildAgentLaunchCommand('claude', sessionId, defaultModel, additionalFlags, undefined, undefined, mode);
-}
-
 // --- Fleet-aware launch: routing belongs to agents-cli -----------------------
 const BALANCED_HOST = 'balanced';
 
@@ -299,11 +275,7 @@ async function resolveSlotHost(slot: QuickLaunchSlot): Promise<string | undefine
   return device.name;
 }
 
-async function pickLaunchHost(
-  _context: vscode.ExtensionContext,
-  title = 'Run on…',
-  _agentKey?: string,
-): Promise<{ host?: string; cancelled: boolean }> {
+async function pickLaunchHost(title = 'Run on…'): Promise<{ host?: string; cancelled: boolean }> {
   const devices = await listRegisteredDevices();
   const picked = await vscode.window.showQuickPick([
     { label: '$(vm) This Mac', description: 'Run locally', host: undefined as string | undefined },
@@ -414,7 +386,7 @@ async function registerAgentTerminal(
 async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunchOpts = {}): Promise<void> {
   let host = opts.host;
   if (opts.pickHost) {
-    const picked = await pickLaunchHost(context, 'New agent — run on…', opts.agentKey);
+    const picked = await pickLaunchHost('New agent — run on…');
     if (picked.cancelled) return;
     host = picked.host;
   }
@@ -1642,7 +1614,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     let host: string | undefined;
     if (forceHostPick) {
-      const picked = await pickLaunchHost(context, `Run ${slot.label || builtInDef.title} on…`);
+      const picked = await pickLaunchHost(`Run ${slot.label || builtInDef.title} on…`);
       if (picked.cancelled) return;
       host = picked.host;
     } else {
@@ -1854,15 +1826,6 @@ async function openSingleAgent(
   const defaultModel = agentKey && (!additionalFlags || !additionalFlags.includes('--model'))
     ? settingsStore.getDefaultModel(context, agentKey)
     : undefined;
-  let command = agentConfig.command || '';
-  if (command) {
-    if (defaultModel) {
-      command = `${command} --model ${defaultModel}`;
-    }
-    if (additionalFlags) {
-      command = `${command} ${additionalFlags}`;
-    }
-  }
 
   // Handle session ID for supported agent types
   const workspaceFolder = getActiveWorkspaceFolder()?.uri.fsPath || process.cwd();
@@ -1878,53 +1841,31 @@ async function openSingleAgent(
     opencodeSessionsBefore = await listOpencodeSessions(cwd);
   }
 
-  // All built-in agents launch via `agents run <agent> --interactive` so the
-  // agents-cli picks up the configured strategy (pinned/available/balanced)
-  // from ~/.agents/agents.yaml automatically — or an explicit override
-  // (pinnedVersion / strategy) from the per-strategy launch commands. Only
-  // Claude's session is generated up-front for the resume flow; other agents
-  // detect their session post-spawn.
-  // EVERY agent runner routes through `agents run` — local, auto-host, and
-  // picked-host launches alike — so `--strategy balanced --mode auto` applies
-  // uniformly (grok/kimi/droid included; they used to launch as raw binaries with
-  // no rotation). Shell is the only non-runner and keeps its raw command. This is
-  // the launch contract in apps/ext/AGENTS.md; there is no per-harness list.
-  if (agentKey && isAgentRunner(agentKey)) {
-    // Mint Claude's session id up front for LOCAL and REMOTE alike. The id is
-    // what every downstream surface keys off: the status bar, the auto-label
-    // poller that fills in the tab title, and Session Resume / Trace / Fork.
-    // A host run used to skip it and let the remote coin its own id, which left
-    // remote tabs stuck on the bare agent prefix with an empty status bar and no
-    // way to resume them by id. `agents run --device` accepts a caller-supplied
-    // `--session-id` and pins the remote session to it (hosts/run-target.ts
-    // resolveHostSessionId), so the id we generate here is the id the remote
-    // session actually uses.
-    if (agentKey === 'claude') {
-      sessionId = generateClaudeSessionId();
-      console.log(`[SESSION] Claude using on-demand session ID: ${sessionId}${targetHost ? ` (host ${targetHost})` : ''}`);
-    }
-    // No remote host → this machine. Pass `local: true` so buildAgentLaunchCommand
-    // does NOT emit `--device auto` (that flag is only for the explicit Auto path
-    // which resolves a host first, or for openSingleAgentWithQueue callers that
-    // set local: false). New Grok/Kimi/… must stay local with balanced strategy.
-    command = buildAgentLaunchCommand(
-      agentKey,
-      sessionId,
-      defaultModel,
-      additionalFlags,
-      pinnedVersion,
-      strategy,
-      undefined,
-      {
-        host: targetHost,
-        local: !targetHost,
-        // Ordinary launches preserve the exact workspace. Choosing a managed
-        // project's defaultPath is reserved for the explicit Pick Project flow
-        // in launchAgent; this legacy launch path has no project picker.
-        cwd,
-      },
-    );
+  // Mint Claude's session id up front for LOCAL and REMOTE alike. The id is
+  // what every downstream surface keys off: the status bar, the auto-label
+  // poller that fills in the tab title, and Session Resume / Trace / Fork.
+  // A host run used to skip it and let the remote coin its own id, which left
+  // remote tabs stuck on the bare agent prefix with an empty status bar and no
+  // way to resume them by id. `agents run --device` accepts a caller-supplied
+  // `--session-id` and pins the remote session to it (hosts/run-target.ts
+  // resolveHostSessionId), so the id we generate here is the id the remote
+  // session actually uses.
+  if (agentKey === 'claude') {
+    sessionId = generateClaudeSessionId();
+    console.log(`[SESSION] Claude using on-demand session ID: ${sessionId}${targetHost ? ` (host ${targetHost})` : ''}`);
   }
+  // Ordinary launches preserve the exact workspace. Choosing a managed
+  // project's defaultPath is reserved for the explicit Pick Project flow in
+  // launchAgent; this launch path has no project picker.
+  const command = buildTabLaunchCommand(agentKey, {
+    cwd,
+    host: targetHost,
+    sessionId,
+    defaultModel,
+    additionalFlags,
+    pinnedVersion,
+    strategy,
+  }) ?? agentConfig.command;
 
   const editorLocation: vscode.TerminalEditorLocationOptions = {
     viewColumn: vscode.ViewColumn.Active,
@@ -2701,7 +2642,9 @@ async function resumeCurrentInBestProfile(context: vscode.ExtensionContext) {
   }
 
   // `--session-id` pins the NEW session id; the CLI honors it only when it
-  // picks claude (claude-only flag) and ignores it otherwise. The harness is
+  // picks claude (claude-only flag) and ignores it otherwise. A tab already on a
+  // device resumes there; any other lets the CLI place it (`--device auto`, which
+  // a bare `agents run auto` also means). The harness is
   // unknown at spawn: stamp the outgoing harness as the prior (the session
   // feed's read-back corrects it).
   const newSessionId = randomUUID();
@@ -2709,7 +2652,9 @@ async function resumeCurrentInBestProfile(context: vscode.ExtensionContext) {
   await launchResumeTerminal(context, {
     builtIn,
     stampAgentKey: agentKey,
-    launchCmd: buildAutoRunLaunchCommand({ host, sessionId: newSessionId }),
+    runAgentKey: 'auto',
+    runSessionId: newSessionId,
+    runHost: host ?? 'auto',
     newSessionId,
     oldSessionId: terminalEntry.sessionId,
     host,
@@ -2757,7 +2702,7 @@ async function resumeCurrentPickHost(context: vscode.ExtensionContext) {
     return;
   }
   const currentHost = entry.host ?? 'this Mac';
-  const pick = await pickLaunchHost(context, `Resume ${agentKey} on… (currently: ${currentHost})`, agentKey);
+  const pick = await pickLaunchHost(`Resume ${agentKey} on… (currently: ${currentHost})`);
   if (pick.cancelled) return;
   const sessionId = entry.sessionId!;
   const opened = await openAgentSessionTerminal(context, {
@@ -2827,7 +2772,12 @@ interface ResumeLaunchPlan {
   builtIn: (typeof BUILT_IN_AGENTS)[number];
   /** Harness stamped on the terminal entry at spawn. */
   stampAgentKey: string;
-  launchCmd: string;
+  /** What `agents run` launches: a harness, or `auto` for the CLI to pick one. */
+  runAgentKey: string;
+  /** The new session's id, when the launch can pin it up front. */
+  runSessionId: string | null;
+  /** Where it runs: a device, `auto`, or this machine when absent. */
+  runHost?: string;
   newSessionId: string;
   oldSessionId: string;
   host?: string;
@@ -2894,7 +2844,10 @@ async function launchResumeTerminal(
   } catch (err) {
     console.warn(`[RESUME] promptReady wait FAILED: ${err} — sending launch anyway`);
   }
-  terminal.sendText(plan.launchCmd);
+  terminal.sendText(buildAgentLaunchCommand(
+    plan.runAgentKey, plan.runSessionId, undefined, undefined, undefined, undefined, undefined,
+    { host: plan.runHost, local: !plan.runHost, cwd: workspacePath },
+  ));
   readiness.armAgentReady(terminal);
   terminal.show();
 
@@ -2932,11 +2885,9 @@ async function launchResumeInHarness(
   await launchResumeTerminal(context, {
     builtIn,
     stampAgentKey: opts.agentKey,
-    launchCmd: buildAgentRunLaunchCommand(
-      opts.agentKey,
-      opts.host,
-      opts.agentKey === 'claude' ? newSessionId : null,
-    ),
+    runAgentKey: opts.agentKey,
+    runSessionId: opts.agentKey === 'claude' ? newSessionId : null,
+    runHost: opts.host,
     newSessionId,
     oldSessionId: opts.oldSessionId,
     host: opts.host,
@@ -3105,7 +3056,7 @@ export async function openSingleAgentWithQueue(
   // agents discover their session post-spawn. opts?.mode defaults to 'auto'
   // (writable-but-gated) inside buildAgentLaunchCommand when no mode is supplied.
   const targetHost = opts?.host && opts.host !== 'local' ? opts.host : undefined;
-  if (agentKey && usesManagedAgentLaunch(agentKey, targetHost)) {
+  if (agentKey && isAgentRunner(agentKey)) {
     if (agentKey === 'claude') {
       // Claude: generate session ID at open time; others are discovered post-spawn.
       // A caller (dispatch) may pre-supply the id so it can watch that exact
@@ -3237,7 +3188,6 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
       const agentKey = builtInDef?.key as keyof AgentSettings['builtIn'] | undefined;
       const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
 
-      let command = agent.command;
       let sessionId: string | null = null;
       let opencodeSessionsBefore: string[] | null = null;
 
@@ -3248,9 +3198,9 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
       if (agentKey === 'claude') {
         // Claude: generate session ID at open time; others are discovered post-spawn.
         sessionId = generateClaudeSessionId();
-        command = buildClaudeLaunchCommand(context, sessionId, defaultModel);
         console.log(`[SESSION] Auto-open Claude with session ID: ${sessionId}`);
       }
+      const command = buildTabLaunchCommand(agentKey, { cwd, sessionId, defaultModel }) ?? agent.command;
 
       const title = buildTerminalTitle(agent.title, undefined, context, sessionId);
 
@@ -3919,15 +3869,17 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
 
     try {
       // 2. Generate the session id; the shell keeps its terminal identity.
-      let newSessionId: string | null = null;
-      let command = agentConfig.command || '';
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
       const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
-
-      if (agentKey === 'claude') {
-        // Claude: generate UUID on-demand
-        newSessionId = generateClaudeSessionId();
-        command = buildClaudeLaunchCommand(context, newSessionId, defaultModel);
-      }
+      // Claude: generate UUID on-demand
+      const newSessionId = agentKey === 'claude' ? generateClaudeSessionId() : null;
+      // The relaunch stays where the tab runs: this machine, or the device it was offloaded to.
+      const command = buildTabLaunchCommand(agentKey, {
+        cwd,
+        host: terminals.getByTerminal(terminal)?.host,
+        sessionId: newSessionId,
+        defaultModel,
+      }) ?? agentConfig.command;
 
       // 4. Set new session/agent type
       if (agentKey && supportsPrewarming(agentKey)) {
@@ -4276,10 +4228,8 @@ async function forkCurrentSession(
   const source = {
     sessionId: entry.sessionId,
     agentKey: entry.agentType ?? prefixToAgentType(entry.agentConfig.prefix) ?? undefined,
-    // Where the TRANSCRIPT is. A moved fork has to read it from here, wherever
-    // it ends up running.
+    // Where the session lives; a fork runs there unless a device is picked.
     host: entry.host,
-    localHost: LOCAL_MACHINE_ID,
   };
 
   const sourceTitle = liveTitle(entry.sessionId) ?? entry.autoLabel ?? shortSessionId(entry.sessionId ?? '');
@@ -4289,7 +4239,7 @@ async function forkCurrentSession(
       source,
       pickHost: async (agentKey) => {
         const harness = getBuiltInByKey(agentKey)?.title ?? agentKey;
-        return pickLaunchHost(context, `Fork this ${harness} session — run on…`, agentKey);
+        return pickLaunchHost(`Fork this ${harness} session — run on…`);
       },
       openFork: async ({ command, host, viewColumn }) => openForkTerminal(
         context,
@@ -4342,7 +4292,7 @@ function shortSessionId(sessionId: string): string {
 // every recent transcript — on this machine, or on any fleet device you switch to
 // — and fork the one you pick. A row's machine is where its fork runs, so picking
 // a session that lives on `yosemite-s0` starts the sibling agent THERE (over
-// `agents run --device`), where its transcript actually is.
+// `agents fork --device`), where its transcript actually is.
 
 /** Rows requested from the one device currently shown in the browser. Enough to
  *  reach yesterday's work without turning the picker into a scroll marathon. */
@@ -4366,7 +4316,7 @@ async function listBrowsableSessions(
     limit: SESSION_BROWSER_LIMIT,
     currentSessionId,
     currentSessionDevice,
-    quote: shquote,
+    quote: shellQuote,
   });
 }
 
@@ -4474,18 +4424,22 @@ async function forkPickedSession(context: vscode.ExtensionContext): Promise<void
     },
     pickSession: (sessionId, device) => pickSessionToFork(context, sessionId, device),
     showError: message => { void vscode.window.showErrorMessage(message); },
-    resolveAgentConfig: agentKey => {
-      const builtIn = BUILT_IN_AGENTS.find(a => a.key === agentKey);
-      return builtIn ? createAgentConfig(
+    openFork: async fork => {
+      const builtIn = BUILT_IN_AGENTS.find(a => a.key === fork.agentKey);
+      if (!builtIn) return false;
+      const agentConfig = createAgentConfig(
         context.extensionPath,
         builtIn.title,
         builtIn.command,
         builtIn.icon,
         builtIn.prefix,
-      ) : undefined;
-    },
-    launchQueued: async (agentConfig, request) => {
-      await openSingleAgentWithQueue(context, agentConfig, [request.prompt], request);
+      );
+      await openForkTerminal(context, agentConfig, fork.command, {
+        forkHost: fork.host,
+        viewColumn: vscode.ViewColumn.Active,
+        sourceTitle: liveTitle(fork.sessionId) ?? fork.sourceTitle,
+      });
+      return true;
     },
     showStatus: message => { void vscode.window.setStatusBarMessage(message, 3000); },
   });

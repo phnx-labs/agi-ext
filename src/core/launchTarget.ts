@@ -7,7 +7,7 @@
 // lib/devices/pool.ts). That keeps one placement rule for the whole fleet
 // instead of a second, drifting copy in the UI layer.
 
-import { buildAgentLaunchCommand } from './agents';
+import { buildAgentLaunchCommand, isAgentRunner, type RunStrategy } from './agents';
 
 /** The configured default target for the per-harness New commands. */
 export type LaunchTarget = 'auto' | 'local' | 'ask';
@@ -216,5 +216,37 @@ export function buildNewAgentLaunchCommand(
       project,
       cwd: project ? undefined : context.cwd,
     },
+  );
+}
+
+/**
+ * The launch line for a tab that runs on this machine, or on `host` when one is
+ * named: openSingleAgent, the startup auto-open, Clear and the Reader's Ask.
+ * A relaunch must stay where its tab is, so a missing host is `--local`, never
+ * `--device auto`. Undefined for a terminal that is not a CLI harness (Shell, a
+ * user-defined custom agent), which keeps its own command.
+ */
+export function buildTabLaunchCommand(
+  agentKey: string | undefined,
+  opts: {
+    cwd?: string;
+    host?: string;
+    sessionId?: string | null;
+    defaultModel?: string;
+    additionalFlags?: string;
+    pinnedVersion?: string;
+    strategy?: RunStrategy;
+  } = {},
+): string | undefined {
+  if (!agentKey || !isAgentRunner(agentKey)) return undefined;
+  return buildAgentLaunchCommand(
+    agentKey,
+    opts.sessionId ?? null,
+    opts.defaultModel,
+    opts.additionalFlags,
+    opts.pinnedVersion,
+    opts.strategy,
+    undefined,
+    { host: opts.host, local: !opts.host, cwd: opts.cwd },
   );
 }

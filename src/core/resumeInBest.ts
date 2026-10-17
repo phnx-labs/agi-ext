@@ -1,11 +1,9 @@
-// Shared logic for resuming sessions into agent terminals: builds the launch and
-// /continue input for the resume flows. Lives in core/ so it can be unit-tested
-// without VS Code.
+// Shared logic for resuming sessions into agent terminals: builds the /continue
+// input for the resume flows; buildAgentLaunchCommand composes the launch. Lives
+// in core/ so it can be unit-tested without VS Code.
 //
 // NOTE: version PICKING for rotations no longer lives here — the resume paths
 // delegate host/harness/account selection to `agents run auto` (RUSH-2132).
-
-import { shellQuote } from './shellQuote';
 
 /**
  * Convert the central `continue.md` body into a self-contained prompt for
@@ -20,51 +18,6 @@ export function inlineContinueInstructions(
 ): string {
   const withoutFrontmatter = continueMdBody.replace(/^---[\s\S]*?\n---\s*\n/, '');
   return withoutFrontmatter.replace(/\$ARGUMENTS/g, sessionId).trim();
-}
-
-/**
- * Launch a harness through `agents run` with NO version pin — the balanced
- * rotation picks the account. This is the `Agents: Resume (Pick Harness)`
- * launch: the user is switching harness, not account, so any healthy install
- * of the target harness will do. `claudeSessionId` pins the new Claude
- * session's id; ignored for other harnesses.
- */
-export function buildAgentRunLaunchCommand(
-  agentKey: string,
-  host?: string,
-  claudeSessionId?: string | null,
-): string {
-  let cmd = `agents run ${agentKey} --interactive`;
-  if (host) {
-    cmd += ` --device ${shellQuote(host)}`;
-  }
-  if (agentKey === 'claude' && claudeSessionId) {
-    cmd += ` --session-id ${claudeSessionId}`;
-  }
-  return cmd;
-}
-
-/**
- * The full-auto resume launch (`Agents: Resume in Best Profile`): the CLI
- * resolves host (affinity) → harness (cross-harness headroom) → account
- * (balanced), and exits nonzero with a fail-loud `no healthy … resets <time>`
- * error when every layer is exhausted. A terminal already on a device resumes
- * ON that device (`--device`); a local terminal omits it and lets affinity pick.
- * `--session-id` is honored only when the CLI picks claude (existing
- * claude-only semantics) and ignored otherwise — passing it unconditionally
- * keeps the local terminal's AGENT_SESSION_ID aligned with the session Claude
- * actually creates.
- */
-export function buildAutoRunLaunchCommand(opts: {
-  host?: string;
-  sessionId: string;
-}): string {
-  let cmd = 'agents run auto --interactive';
-  if (opts.host) {
-    cmd += ` --device ${shellQuote(opts.host)}`;
-  }
-  cmd += ` --session-id ${opts.sessionId}`;
-  return cmd;
 }
 
 /**

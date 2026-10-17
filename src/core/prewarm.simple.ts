@@ -14,13 +14,6 @@ export function generateClaudeSessionId(): string {
 }
 
 /**
- * Build the open command for Claude with a session ID
- */
-export function buildClaudeOpenCommand(sessionId: string): string {
-  return `claude --session-id ${sessionId}`;
-}
-
-/**
  * Get OpenCode session IDs from 'opencode session list' output
  * Returns most recent sessions first (sorted by updated time)
  */

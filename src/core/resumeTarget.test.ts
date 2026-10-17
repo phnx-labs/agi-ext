@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'bun:test';
 import { buildHarnessOptions } from './resumeTarget';
-import { buildAgentRunLaunchCommand } from './resumeInBest';
 import type { AgentInventory } from './agentInventory';
 
 const AGENTS = [
@@ -37,26 +36,5 @@ describe('buildHarnessOptions', () => {
     const out = buildHarnessOptions(AGENTS, {}, undefined);
     expect(out.map(o => o.agent)).toEqual(['claude', 'codex', 'grok']);
     expect(out.every(o => o.signedInCount === 0 && o.healthyCount === 0)).toBe(true);
-  });
-});
-
-describe('buildAgentRunLaunchCommand', () => {
-  it('runs the target harness unpinned so balanced rotation picks the account', () => {
-    expect(buildAgentRunLaunchCommand('codex')).toBe('agents run codex --interactive');
-  });
-
-  it('stays on the session device when one is given', () => {
-    expect(buildAgentRunLaunchCommand('codex', 'mac-mini')).toBe(
-      "agents run codex --interactive --device 'mac-mini'",
-    );
-  });
-
-  it('pins the new session id only for claude', () => {
-    expect(buildAgentRunLaunchCommand('claude', undefined, 'uuid-1')).toBe(
-      'agents run claude --interactive --session-id uuid-1',
-    );
-    expect(buildAgentRunLaunchCommand('codex', undefined, 'uuid-1')).toBe(
-      'agents run codex --interactive',
-    );
   });
 });

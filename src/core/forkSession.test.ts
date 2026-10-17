@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildAgentLaunchCommand, wrapNativeAgentCommand } from './agents';
+import { wrapNativeAgentCommand } from './agents';
 import { buildForkSessionRequest, forkCommand, forkFailed, forkTabLabel } from './forkSession';
 
 test('forkCommand is the bare fork verb here, and carries the device for another box', () => {
@@ -8,113 +8,28 @@ test('forkCommand is the bare fork verb here, and carries the device for another
 });
 
 describe('buildForkSessionRequest', () => {
-  test('builds a local same-harness fork with balanced account selection', () => {
-    const request = buildForkSessionRequest({ sessionId: 'session-123', agentKey: 'Codex' });
-    expect(request).toEqual({
+  test('a fork runs where its source lives', () => {
+    expect(buildForkSessionRequest({ sessionId: 'session-123', agentKey: 'Codex' })).toEqual({
       ok: true,
       sessionId: 'session-123',
       agentKey: 'codex',
       host: undefined,
-      sourceHost: undefined,
-      moved: false,
-      local: true,
-      strategy: 'balanced',
-      prompt: '/continue session-123',
     });
-    if (!request.ok) throw new Error('expected fork request');
-    expect(buildAgentLaunchCommand(
-      request.agentKey, null, undefined, undefined, undefined, request.strategy, undefined,
-      { host: request.host, local: request.local },
-    )).toBe('agents run codex --interactive --local --strategy balanced --mode auto');
+    const remote = buildForkSessionRequest({ sessionId: 'session-remote', agentKey: 'claude', host: 'yosemite-s0' });
+    if (!remote.ok) throw new Error('expected fork request');
+    expect(forkCommand(remote.sessionId, remote.host)).toBe("agents fork 'session-remote' --device 'yosemite-s0'");
   });
 
-  test('keeps a remote fork on the source host with balanced account selection', () => {
-    const request = buildForkSessionRequest({ sessionId: 'session-remote', agentKey: 'claude', host: 'yosemite-s0' });
-    expect(request).toMatchObject({
-      ok: true,
-      agentKey: 'claude',
-      host: 'yosemite-s0',
-      sourceHost: 'yosemite-s0',
-      moved: false,
-      local: false,
-      strategy: 'balanced',
-      prompt: '/continue session-remote',
-    });
-    if (!request.ok) throw new Error('expected fork request');
-    const command = buildAgentLaunchCommand(
-      request.agentKey, 'new-session', undefined, undefined, undefined, request.strategy, undefined,
-      { host: request.host, local: request.local },
-    );
-    expect(command).toContain("--device 'yosemite-s0'");
-    expect(command).toContain('--session-id new-session');
-    expect(command).toContain('--strategy balanced');
-  });
-
-  test('a fork is balanced for every runner, including one with no accounts to rotate', () => {
-    // droid has no account enumeration, but the launch contract still emits
-    // --strategy balanced (a graceful CLI no-op, never an error) so every fork —
-    // like every New launch — is uniform. Only 'shell' would carry no strategy.
-    expect(buildForkSessionRequest({ sessionId: 'session-123', agentKey: 'droid' })).toMatchObject({
-      ok: true,
-      agentKey: 'droid',
-      strategy: 'balanced',
-    });
+  test('a picked device wins, and picking this machine brings a remote source home', () => {
+    expect(buildForkSessionRequest({ sessionId: 's', agentKey: 'claude' }, { host: 'yosemite-m0' }))
+      .toMatchObject({ ok: true, host: 'yosemite-m0' });
+    expect(buildForkSessionRequest({ sessionId: 's', agentKey: 'claude', host: 'yosemite-s0' }, {}))
+      .toMatchObject({ ok: true, host: undefined });
   });
 
   test('rejects a terminal without a session id or a recognized harness', () => {
     expect(buildForkSessionRequest({ agentKey: 'gemini' })).toEqual({ ok: false, reason: 'no_session' });
     expect(buildForkSessionRequest({ sessionId: 'session-123' })).toEqual({ ok: false, reason: 'no_agent' });
-  });
-});
-
-describe('buildForkSessionRequest with a picked device', () => {
-  test('moves a local session onto the picked device and points it back home', () => {
-    const request = buildForkSessionRequest(
-      { sessionId: 'session-local', agentKey: 'claude', localHost: 'zion' },
-      { host: 'yosemite-m0' },
-    );
-    expect(request).toMatchObject({
-      ok: true,
-      agentKey: 'claude',
-      host: 'yosemite-m0',
-      sourceHost: undefined,
-      moved: true,
-      local: false,
-      // The transcript stayed on zion and a single-id lookup does not fan out,
-      // so the fork has to be told where to read it from.
-      prompt: '/continue session-local --device zion',
-    });
-    if (!request.ok) throw new Error('expected fork request');
-    expect(buildAgentLaunchCommand(
-      request.agentKey, 'fork-session', undefined, undefined, undefined, request.strategy, undefined,
-      { host: request.host, local: request.local },
-    )).toContain("--device 'yosemite-m0'");
-  });
-
-  test('pulls a remote session back to this machine', () => {
-    expect(buildForkSessionRequest(
-      { sessionId: 'session-2', agentKey: 'claude', host: 'yosemite-s0', localHost: 'zion' },
-      {},
-    )).toMatchObject({
-      ok: true,
-      host: undefined,
-      sourceHost: 'yosemite-s0',
-      moved: true,
-      local: true,
-      prompt: '/continue session-2 --device yosemite-s0',
-    });
-  });
-
-  test('picking the machine the session already lives on is not a move', () => {
-    expect(buildForkSessionRequest(
-      { sessionId: 'session-3', agentKey: 'claude', host: 'yosemite-s0', localHost: 'zion' },
-      { host: 'Yosemite-S0' },
-    )).toMatchObject({
-      ok: true,
-      host: 'Yosemite-S0',
-      moved: false,
-      prompt: '/continue session-3',
-    });
   });
 });
 

@@ -1,6 +1,5 @@
 import type { BrowsableSession } from '../core/sessionBrowser';
-import type { RunStrategy } from '../core/agents';
-import { buildForkSessionRequest } from '../core/forkSession';
+import { buildForkSessionRequest, forkCommand } from '../core/forkSession';
 import { forkHostForSession, type SessionBrowserSessionRow } from '../core/sessionBrowser';
 
 interface SessionBrowserRunResult {
@@ -148,57 +147,12 @@ export async function runSessionBrowserPicker<Item extends { row?: SessionBrowse
   });
 }
 
-async function runPickedSessionFork(opts: {
-  row: SessionBrowserSessionRow;
-  localMachine: string;
-  launch: (request: {
-    agentKey: string;
-    prompt: string;
-    strategy?: RunStrategy;
-    host?: string;
-    local: boolean;
-    cwd?: string;
-    remoteCwd?: string;
-  }) => Promise<boolean>;
-  showError: (message: string) => void;
-}): Promise<boolean> {
-  const request = buildForkSessionRequest({
-    sessionId: opts.row.session.id,
-    agentKey: opts.row.session.agent,
-    host: forkHostForSession(opts.row.session, opts.localMachine, opts.row.machine),
-  });
-  if (!request.ok) {
-    opts.showError(request.reason === 'no_session'
-      ? `Session ${opts.row.session.shortId} has no id to fork.`
-      : `Session ${opts.row.session.shortId} has no agent harness to fork with.`);
-    return false;
-  }
-
-  return opts.launch({
-    agentKey: request.agentKey,
-    prompt: request.prompt,
-    strategy: request.strategy,
-    host: request.host,
-    local: request.local,
-    cwd: request.local ? opts.row.session.cwd : undefined,
-    remoteCwd: request.local ? undefined : opts.row.session.cwd,
-  });
-}
-
-export async function handleForkPickedSession<AgentConfig>(opts: {
+export async function handleForkPickedSession(opts: {
   currentSession: () => { sessionId: string | null; device?: string };
   pickSession: (sessionId: string | null, device?: string) => Promise<SessionBrowserSessionRow | null>;
   localMachine: string;
-  resolveAgentConfig: (agentKey: string) => AgentConfig | undefined;
-  launchQueued: (config: AgentConfig, request: {
-    agentKey: string;
-    prompt: string;
-    strategy?: RunStrategy;
-    host?: string;
-    local: boolean;
-    cwd?: string;
-    remoteCwd?: string;
-  }) => Promise<void>;
+  /** Opens the fork tab for the `agents fork` command; false when the harness has no tab config. */
+  openFork: (fork: { command: string; sessionId: string; agentKey: string; host?: string; sourceTitle: string }) => Promise<boolean>;
   showError: (message: string) => void;
   showStatus: (message: string) => void;
 }): Promise<void> {
@@ -206,21 +160,30 @@ export async function handleForkPickedSession<AgentConfig>(opts: {
   const row = await opts.pickSession(current.sessionId, current.device);
   if (!row) return;
 
-  const launched = await runPickedSessionFork({
-    row,
-    localMachine: opts.localMachine,
-    showError: opts.showError,
-    launch: async request => {
-      const config = opts.resolveAgentConfig(request.agentKey);
-      if (!config) {
-        opts.showError(`Cannot fork a ${row.session.agent} session — no built-in agent config for it.`);
-        return false;
-      }
-      await opts.launchQueued(config, request);
-      return true;
-    },
+  // The fork runs where the picked transcript lives; `agents fork` resolves the
+  // source across the fleet and seeds the sibling with its recap.
+  const request = buildForkSessionRequest({
+    sessionId: row.session.id,
+    agentKey: row.session.agent,
+    host: forkHostForSession(row.session, opts.localMachine, row.machine),
   });
-  if (launched) {
-    opts.showStatus(`Forking ${row.session.shortId}${row.remote ? ` on ${row.machine}` : ''}`);
+  if (!request.ok) {
+    opts.showError(request.reason === 'no_session'
+      ? `Session ${row.session.shortId} has no id to fork.`
+      : `Session ${row.session.shortId} has no agent harness to fork with.`);
+    return;
   }
+
+  const opened = await opts.openFork({
+    command: forkCommand(request.sessionId, request.host),
+    sessionId: request.sessionId,
+    agentKey: request.agentKey,
+    host: request.host,
+    sourceTitle: row.session.topic || row.session.shortId,
+  });
+  if (!opened) {
+    opts.showError(`Cannot fork a ${row.session.agent} session — no built-in agent config for it.`);
+    return;
+  }
+  opts.showStatus(`Forking ${row.session.shortId}${row.remote ? ` on ${row.machine}` : ''}`);
 }

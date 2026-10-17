@@ -119,8 +119,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - The Active Session sidebar is the one preview: a Project panel session click sets its
   subject (`setAgentPanelSubjectFromProject`), brings the session's tab forward only when that
   tab is in this window, and spawns or resumes nothing. No per-selection fetch.
-- Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`) and
-  `harnessLaunchRegistrations` (`src/core/launchTarget.ts`): `--cwd` is the exact open
+- Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`),
+  `harnessLaunchRegistrations` and `buildTabLaunchCommand` (`src/core/launchTarget.ts`); no
+  other code builds an `agents run` launch or starts a harness binary. A relaunch (Clear) stays
+  on its tab's machine, and every fork is `agents fork` (`forkCommand`). `--cwd` is the exact open
   workspace, emitted once for every variant except Pick Project, which emits `--project`;
   the `harness@` account picker never combines with `--strategy` or a pinned version; the
   extension never scores devices or accounts and never resolves a target through

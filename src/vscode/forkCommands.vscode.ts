@@ -19,7 +19,7 @@ export function registerForkPickHostCommand<Disposable>(
  * effects; this seam keeps one production implementation testable end-to-end.
  */
 export async function handleForkPickHost<ViewColumn>(opts: {
-  source: ForkSessionSource & { localHost: string };
+  source: ForkSessionSource;
   pickHost: (agentKey: string) => Promise<{ host?: string; cancelled: boolean }>;
   openFork: (launch: ForkPickHostLaunch<ViewColumn>) => Promise<void>;
   showRejection: (reason: 'no_session' | 'no_agent') => void;
