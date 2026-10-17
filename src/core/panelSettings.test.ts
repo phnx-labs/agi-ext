@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, renderPanelSettings } from './panelSettings'
-import { getDefaultSettings } from './settings'
+import { DEFAULT_CARD_SETTINGS, getDefaultSettings } from './settings'
 
 test('each Settings control writes its own key and nothing else', () => {
   const base = getDefaultSettings()
@@ -19,18 +19,31 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
 
-test('Session cards: three pickers write cards.*; banners are the AGI Menu\'s, so there is no alert setting', () => {
+test('Session cards: pickers and part toggles write cards.*; banners are the AGI Menu\'s, so there is no alert setting', () => {
   const base = getDefaultSettings()
-  expect(applyPanelSetting(base, 'cards.asks', 'off')?.cards).toEqual({ asks: 'off', options: 'titles', question: 'two' })
+  expect(applyPanelSetting(base, 'cards.asks', 'off')?.cards).toEqual({ ...DEFAULT_CARD_SETTINGS, asks: 'off' })
+  // A click fronts the tab and an answer goes at once unless Settings says otherwise (owner video, 2026-10-17).
+  expect(DEFAULT_CARD_SETTINGS.click).toBe('front')
+  expect(DEFAULT_CARD_SETTINGS.answerUndo).toBe('off')
+  expect(applyPanelSetting(base, 'cards.click', 'show')?.cards?.click).toBe('show')
+  expect(applyPanelSetting(base, 'cards.answerUndo', 'five')?.cards?.answerUndo).toBe('five')
+  // Each part of a card turns off on its own; a part takes only a boolean.
+  expect(applyPanelSetting(base, 'cards.description', false)?.cards?.description).toBe(false)
+  expect(applyPanelSetting(base, 'cards.stateWord', true)?.cards?.stateWord).toBe(true)
+  expect(applyPanelSetting(base, 'cards.description', 'no')).toBeNull()
+  expect(applyPanelSetting(base, 'cards.title', false)).toBeNull()
   expect(applyPanelSetting(base, 'cards.options', 'details')?.cards?.options).toBe('details')
   expect(applyPanelSetting(base, 'cards.question', 'full')?.cards?.question).toBe('full')
   expect(applyPanelSetting(base, 'cards.asks', 'loud')).toBeNull()
   expect(applyPanelSetting(base, 'notifications.enabled', true)).toBeNull()
-  const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { asks: 'question', options: 'titles', question: 'two' } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'question', chips: false } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
   expect(html).toContain('<div class="sh">Session cards</div>')
   expect(html).toMatch(/data-setting="cards\.asks"[^>]*><option value="answers">With answers<\/option><option value="question" selected>Question only<\/option><option value="off">Off<\/option>/)
   expect(html).toContain('<option value="titles" selected>Titles only</option>')
   expect(html).toContain('<option value="two" selected>Two lines</option>')
+  expect(html).toContain('<input type="checkbox" data-setting="cards.chips">')
+  expect(html).toContain('<input type="checkbox" data-setting="cards.description" checked>')
+  expect(html).toContain('data-refresh')
   expect(html).not.toContain('Approval alerts')
   expect(html).not.toContain('notifications.')
 })

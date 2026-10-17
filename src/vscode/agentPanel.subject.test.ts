@@ -101,6 +101,25 @@ describe('sidebar subject — last of { focused terminal, clicked Project panel 
     win.activeTerminal = undefined;
   });
 
+  test('a shell in front clears the subject, so the sidebar names the shell instead of the last session', () => {
+    const a = agentTab('CC-subject-shell-a', 'session-shell-a');
+    const sh = { name: 'SH', processId: Promise.resolve(++pidSeq), exitStatus: undefined, creationOptions: {}, show() { /* noop */ } };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    terminals.register(sh as any, 'SH-subject', { title: 'Shell', prefix: 'sh', icon: 'agents.png', commandId: 'agents.newShell' } as any, ++pidSeq);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    panel.registerAgentPanel(context as any);
+    win.activeTerminal = a;
+    onActiveTerminal!();
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-shell-a');
+    win.activeTerminal = sh;
+    onActiveTerminal!();
+    expect(panel.currentAgentPanelSubject()).toBeUndefined();
+    // Back to the agent: it is the subject again.
+    win.activeTerminal = a;
+    onActiveTerminal!();
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-shell-a');
+  });
+
   test('focusing an agent terminal makes it the subject', () => {
     const a = agentTab('CC-subject-a', 'session-a');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

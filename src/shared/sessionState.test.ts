@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { BALL_WORD, STATE_TONE, ageWords, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, waitFor } from './sessionState';
+import { BALL_WORD, STATE_TONE, ageWords, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, sparkline, urgencyOf, urgencyRank, waitFor } from './sessionState';
 
 test('a waiting phase is Needs you, not Working: input_required is a question or permission pending', () => {
   expect(sessionStateOf({ phase: 'waiting', liveStatus: 'input_required' })).toBe('asks');
@@ -94,3 +94,15 @@ test('one family of time words: a card age, a sidebar time, and a wait that tick
 test('every state has one tone: your move, running, waiting on its own work, review, or quiet', () => {
   expect(STATE_TONE).toEqual({ asks: 'move', stuck: 'move', review: 'review', idle: 'quiet', working: 'running', waiting: 'waiting', unknown: 'running', ended: 'quiet' });
 });
+
+test('the ⌘K activity line folds the row histogram into block characters scaled to the busiest column', () => {
+  const buckets = Array.from({ length: 48 }, (_, i) => ({ tools: i < 4 ? 8 : i >= 44 ? 4 : 0 }))
+  const line = sparkline(buckets)
+  expect(line).toHaveLength(12)
+  expect(line[0]).toBe('█')
+  expect(line[11]).toBe('▅')
+  expect(line.slice(1, 11)).toBe('▁'.repeat(10))
+  // No histogram, or a silent one, draws nothing rather than a flat line.
+  expect(sparkline(undefined)).toBe('')
+  expect(sparkline(Array.from({ length: 48 }, () => ({ tools: 0 })))).toBe('')
+})

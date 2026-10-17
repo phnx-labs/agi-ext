@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
+import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings'
 import {
   parsePrs, prFixPrompt, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
@@ -235,8 +236,8 @@ const HERE: SessionHere = {
   icons: { vscodium: 'vscode-resource:/assets/apps/vscodium.png', ghostty: 'vscode-resource:/assets/apps/ghostty.png' },
 }
 const prefs = (o: Partial<SessionListPrefs> = {}): SessionListPrefs => ({ ...DEFAULT_SESSION_PREFS, ...o })
-const card = (s: SessionLike, o: { thumbs?: { uri: string; path: string; label: string }[]; made?: ReturnType<typeof sessionMade> | null; selected?: boolean } = {}) =>
-  renderSessionCard(s, sessionPlace(s, HERE), NOW, { selected: !!o.selected, pinned: false, here: HERE, thumbs: o.thumbs ?? [], made: o.made ?? null })
+const card = (s: SessionLike, o: { thumbs?: { uri: string; path: string; label: string }[]; made?: ReturnType<typeof sessionMade> | null; selected?: boolean; cards?: CardSettings } = {}) =>
+  renderSessionCard(s, sessionPlace(s, HERE), NOW, { selected: !!o.selected, pinned: false, here: HERE, thumbs: o.thumbs ?? [], made: o.made ?? null, cards: o.cards })
 
 test('a session lives where its tab is: this window, another window by its workspace, Ghostty, the background, or a tab its agent left', () => {
   const place = (o: Partial<SessionLike>) => sessionPlace(row(o), HERE)
@@ -265,7 +266,14 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl" title="Health">Health<')
-  expect(html).toContain('class="pill st-idle"><i></i>Idle<')
+  // The tint says the state; the word is for screen readers, on the card only when Settings asks.
+  expect(html).toMatch(/^<div class="card st-idle sel"/)
+  expect(html).toContain('<span class="sr">Idle</span>')
+  expect(html).not.toContain('class="pill')
+  expect(card(s, { cards: { ...DEFAULT_CARD_SETTINGS, stateWord: true } })).toContain('class="pill st-idle"><i></i>Idle<')
+  // Close is in ⋯, out of a stray click's way.
+  expect(html).not.toContain('class="act x"')
+  expect(html).toContain('<button class="danger" data-act="close">Close the tab</button></div></details>')
   // The tab and machine moved: the machine sits dimmed at the bottom right, the tab in ⋯.
   expect(html).not.toContain('class="where"')
   expect(html).toContain('<span class="hst" title="Machine">m6</span></div>')
@@ -307,7 +315,8 @@ test('a pending question shows in the card, opens on a click, and says how long 
   expect(ask).toContain('<div class="ask"><div class="ah">Asks</div><div class="q" title="Run the restart on m2?" data-expand>Run the restart on m2?</div></div>')
   const opened = new Date(NOW - 12_000).toISOString()
   const fresh = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: opened } }))
-  expect(fresh).toContain(`Asks · <span class="wait" data-since="${NOW - 12_000}">12s</span>`)
+  // The wait ticks where the age sits; the card itself is red.
+  expect(fresh).toContain(`<span class="age wait" data-since="${NOW - 12_000}" title="Waiting on you">12s</span>`)
   expect(fresh).toContain('card st-asks fresh')
   const old = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: new Date(NOW - 3_600_000).toISOString() } }))
   expect(old).not.toContain(' fresh')
@@ -442,7 +451,7 @@ test('every open tab keeps its card in Open tabs, in tab order, working or finis
     tab('asks', 2, { phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', question: { text: 'Ship it?' } } }),
     tab('review', 4, { phase: 'idle', liveStatus: 'idle', attention: { kind: 'review', state: 'resolved' } }),
     row({ sessionId: 'away', phase: 'idle', liveStatus: 'idle' }),
-  ], NOW, { selectedId: null, tabKey: '⌘', here: HERE, prefs: prefs() })
+  ], NOW, { selectedId: null, here: HERE, prefs: prefs() })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   const open = html.indexOf('data-group="here"')
   // The ask is answered once, from the pinned group; its card is not repeated in Open tabs.
@@ -450,7 +459,8 @@ test('every open tab keeps its card in Open tabs, in tab order, working or finis
   expect(html.match(/data-session="asks"/g)?.length).toBe(1)
   // Tab order, whatever moved last; the finished tab stays.
   expect([open, at('first'), at('third')]).toEqual([open, at('first'), at('third')].sort((x, y) => x - y))
-  expect(html).toContain('<span class="tabn" title="Tab 3 in this window">⌘3</span>')
+  // The tab number lives on the editor tab and in ⋯, not on the card (owner video, 2026-10-17).
+  expect(html).not.toContain('class="tabn"')
   // Idle holds only the finished session with no tab here.
   expect(html).toContain('<b>Idle</b> <span class="n">1</span>')
   expect(at('away')).toBe(-1)
@@ -533,7 +543,8 @@ test('a session whose agent posted blocked leads its urgency, as Blocked', () =>
   ]
   const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), blockedIds: new Set(['stuck']) })
   expect(html.indexOf('data-session="session_stuck"')).toBeLessThan(html.indexOf('data-session="ask"'))
-  expect(html).toContain('<span class="pill st-blocked"><i></i>Blocked</span>')
+  expect(html).toMatch(/class="card st-blocked"[^>]*data-session="session_stuck"/)
+  expect(html).toContain('<span class="sr">Blocked</span>')
   expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })).not.toContain('st-blocked')
 })
 
@@ -542,8 +553,8 @@ const SHELL = { id: 'b1', description: 'Poll prod until the segment closes', sta
 test('Waiting: an idle session with background work shows a blue pill, a chip per kind with the list on hover, and is not Your move', () => {
   const waiting = row({ sessionId: 'w', phase: 'idle', liveStatus: 'idle', pending: { shells: [SHELL], subagents: [{ id: 'a', description: 'Watch reels' }] } })
   const html = card(waiting)
-  expect(html).toContain('class="pill st-waiting" title="Waiting on its own work: 1 subagent, 1 shell')
-  expect(html).toContain('<i></i>Waiting</span>')
+  expect(html).toMatch(/^<div class="card st-waiting"/)
+  expect(html).toContain('<span class="sr">Waiting</span>')
   expect(html).toContain('>⑂ 1</span>')
   expect(html).toContain('>▸ 1</span>')
   expect(html).not.toContain('>◉')
@@ -556,7 +567,7 @@ test('Waiting: an idle session with background work shows a blue pill, a chip pe
   expect(idleGroup).toContain('data-session="y"')
   expect(idleGroup).not.toContain('data-session="w"')
   // An older CLI without the field: an idle card.
-  expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toContain('class="pill st-idle"><i></i>Idle<')
+  expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toMatch(/^<div class="card st-idle"/)
 })
 
 test('a quieter card: the repository only when it is not this window\'s, the machine bottom right, ⚡ and ◆, details in ⋯', () => {
@@ -620,4 +631,23 @@ test('two live projects sharing a repository keep their own sessions; only an un
   expect(projectSessions(rows, 'rush', projectFallback({ name: 'rush', root: '~/src/agents' }, null)).map((r) => r.sessionId)).toEqual(['rush-own', 'none'])
   // The detected root counts as a checkout too.
   expect(projectFallback({ name: 'x', root: '~/src/x' }, []).repoPaths).toEqual(['~/src/x'])
+})
+
+test('a card can shrink to its logo and title: every part turns off on its own (owner video, 2026-10-17)', () => {
+  const s = row({ title: 'Linear', phase: 'idle', liveStatus: 'idle', tabHere: true, tabIndex: 8, lastResponse: 'Deploys are running.', prStatus: { number: 4211, checks: 'passing', isDraft: false }, ticket: 'PHNX-4253' })
+  const full = card(s)
+  expect(full).toContain('class="line said"')
+  expect(full).toContain('class="cstrip"')
+  expect(full).toContain('class="hst"')
+  expect(full).toContain('class="age"')
+  const line = card(s, { cards: { ...DEFAULT_CARD_SETTINGS, description: false, chips: false, machine: false, age: false } })
+  expect(line).not.toContain('class="line')
+  expect(line).not.toContain('class="cstrip"')
+  expect(line).not.toContain('class="cbot"')
+  expect(line).not.toContain('class="age')
+  expect(line).toContain('class="ttl" title="Linear">Linear<')
+  // An ask still shows its question and answers with the description off: that is what it needs from you.
+  const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { key: 'k', kind: 'question', state: 'open', question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }] } }), { cards: { ...DEFAULT_CARD_SETTINGS, description: false } })
+  expect(ask).toContain('data-ask="k" data-undo="0"')
+  expect(ask).toContain('data-choice="y"')
 })

@@ -48,4 +48,25 @@ describe('sessionCardFields', () => {
     const done = sessionCardFields(normalizeActiveSession(raw({ attention: attention('resolved') } as Partial<RawActiveSession>), 'this-mac', 0), { sessionId: 's-1', home: HOME });
     expect(done.needsYou).toBeUndefined();
   });
+
+  test('a source listed beside its rendered page shows once, as the page; the plan follows it', () => {
+    const dir = `${HOME}/src/atlas/.agents/plans`;
+    const live = normalizeActiveSession(raw({
+      planFile: `${dir}/guard.md`,
+      artifacts: [
+        { path: `${dir}/guard.md`, basename: 'guard.md', bucket: 'plans' },
+        { path: `${dir}/guard.html`, basename: 'guard.html', bucket: 'plans' },
+        { path: `${dir}/notes.md`, basename: 'notes.md', bucket: 'plans' },
+        { path: `${dir}/.artifacts/map.html`, basename: 'map.html', bucket: 'plans' },
+        { path: `${dir}/map.md`, basename: 'map.md', bucket: 'plans' },
+      ],
+    }), 'this-mac', 0);
+    const card = sessionCardFields(live, { sessionId: 's-1', home: HOME });
+    expect(card.artifacts.map((a) => [a.basename, a.renderedFrom])).toEqual([
+      ['guard.html', 'guard.md'],
+      ['notes.md', undefined],
+      ['map.html', 'map.md'],
+    ]);
+    expect(card.plan?.path).toBe(`${dir}/guard.html`);
+  });
 });

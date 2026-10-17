@@ -53,6 +53,10 @@ export interface PaletteSession extends IndexedSession {
   stateWords: string;
   /** Whether `sessions artifacts` can read it: it lives on this machine. */
   local: boolean;
+  /** Its activity as block characters (`sparkline`); empty when the row has none. */
+  spark: string;
+  /** The harness's logo; the state icon when the harness has none. */
+  icon?: vscode.IconPath;
 }
 
 export interface PaletteSources {
@@ -169,6 +173,18 @@ export function buildItems(query: string, src: PaletteSources, leadReady: boolea
   const items: Item[] = [];
   const section = (label: string, rows: Item[]) => { if (rows.length) items.push({ label, kind: vscode.QuickPickItemKind.Separator }, ...rows); };
   const openFile = (p: string) => () => { void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(p)); };
+  // A session waiting on you leads, so ⌘K then Enter reaches it (owner video, 2026-10-17).
+  const sessionItem = (p: PaletteSession): Item => ({
+    label: p.title,
+    iconPath: p.icon ?? stateIcon(p.state),
+    description: `Session · ${p.stateWords} · ${p.host}${p.spark ? `  ${p.spark}` : ''}`,
+    detail: p.text.split('\n')[0] || undefined,
+    alwaysShow: true,
+    go: () => src.goToSession(p.sessionId, p.host),
+  });
+  const sessions = found.sessions as PaletteSession[];
+  const waiting = sessions.filter((p) => p.state === 'asks' || p.state === 'stuck');
+  section('Needs you', waiting.map(sessionItem));
   section('Artifacts', found.artifacts.map(({ artifact: a, session }) => {
     const by = session as PaletteSession | undefined;
     return {
@@ -182,17 +198,7 @@ export function buildItems(query: string, src: PaletteSources, leadReady: boolea
       open: openFile(a.openPath),
     };
   }));
-  section('Sessions', found.sessions.map((s) => {
-    const p = s as PaletteSession;
-    return {
-      label: p.title,
-      iconPath: stateIcon(p.state),
-      description: `Session · ${p.stateWords} · ${p.host}`,
-      detail: p.text.split('\n')[0] || undefined,
-      alwaysShow: true,
-      go: () => src.goToSession(p.sessionId, p.host),
-    };
-  }));
+  section('Sessions', sessions.filter((p) => !waiting.includes(p)).map(sessionItem));
   section('Tickets', found.tickets.map((t) => ({
     label: t.title,
     iconPath: new vscode.ThemeIcon('issues'),

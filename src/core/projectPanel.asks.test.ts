@@ -46,14 +46,15 @@ test('a finished turn that asked nothing is in Idle, folded with its count, unle
 test('a compact ask: the reason under the title, the question in two lines, one-line answers with keys, Other… and Try another way', () => {
   const html = card('9b1f0c2e-publish')
   expect(html).toContain('<div class="why u-urgent">Blocks a release (npm publish) · waiting <span data-since="1791939060000">46m 00s</span></div>')
-  expect(html).toContain('<div class="ask" data-ask="yosemite-m5/9b1f0c2e-publish/b-7f3a"><div class="ah">Asks · Publish</div>')
+  expect(html).toContain('<div class="ask" data-ask="yosemite-m5/9b1f0c2e-publish/b-7f3a" data-undo="0"><div class="ah">Asks · Publish</div>')
   expect(html).toMatch(/<div class="q" title="The 1\.23\.0 tag is pushed[^"]*" data-expand>/)
   expect(html).toContain('<button class="opt" data-choice="yes-publish-from-zion" data-label="Yes, publish from zion" title="Runs scripts/release.sh 1.23.0 --confirm on zion, where the npm secrets live"><span class="k">1</span><span class="ol">Yes, publish from zion</span></button>')
   expect(html).toContain('<span class="k">3</span><span class="ol">Wait until morning</span>')
   expect(html).not.toContain('<small>')
   expect(html).toContain('<button class="lnk" data-ask-other>Other…</button>')
   expect(html).toContain(`data-ask-text="I can&#39;t answer this right now. Try a different approach that doesn&#39;t need me; if there is none, park this and move to the next task." data-label="Try another way"`)
-  expect(html).toContain('Asks · <span class="wait"')
+  // The wait ticks in the age slot; the red card is the state.
+  expect(html).toContain('<span class="age wait" data-since="1791939060000" title="Waiting on you">46m 00s</span>')
 })
 
 test('a permission ask shows its command line and Approve, Approve for session and Deny from the CLI choices', () => {
@@ -63,15 +64,16 @@ test('a permission ask shows its command line and Approve, Approve for session a
   expect(html).toContain('<div class="why u-high">High-priority ticket PHNX-4353 · waiting')
 })
 
-test('Session cards settings: Off leaves the pill, Question only drops the answers, Full and details show everything', () => {
+test('Session cards settings: Off leaves the red card and its wait, Question only drops the answers, Full and details show everything', () => {
   const off = card('9b1f0c2e-publish', { ...DEFAULT_CARD_SETTINGS, asks: 'off' })
   expect(off).not.toContain('class="ask"')
-  expect(off).toContain('<i></i>Asks · <span class="wait" data-since="1791939060000">46m 00s</span></span>')
+  expect(off).toMatch(/^<div class="card st-asks"/)
+  expect(off).toContain('<span class="age wait" data-since="1791939060000" title="Waiting on you">46m 00s</span>')
   const question = card('9b1f0c2e-publish', { ...DEFAULT_CARD_SETTINGS, asks: 'question' })
   expect(question).toContain('<div class="ask"><div class="ah">Asks · Publish</div>')
   expect(question).not.toContain('class="opt"')
   expect(question).not.toContain('data-ask-other')
-  const full = card('9b1f0c2e-publish', { asks: 'answers', options: 'details', question: 'full' })
+  const full = card('9b1f0c2e-publish', { ...DEFAULT_CARD_SETTINGS, asks: 'answers', options: 'details', question: 'full' })
   expect(full).toMatch(/<div class="q full" title="[^"]*">/)
   expect(full).not.toContain('data-expand')
   expect(full).toContain('<span class="ol">Copy the token to m5</span><small>Moves the npm credential to yosemite-m5 first; needs your approval on zion</small></button>')

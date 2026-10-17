@@ -1,7 +1,7 @@
 // The Project panel's real webview script, run in happy-dom against the real card
-// markup (testdata/session-rows.asks.json): an answer waits 5 s with Undo before
-// its one `answer` message, a key 1-9 answers the selected card, a redraw keeps
-// the countdown, and the CLI's error lands on the card.
+// markup (testdata/session-rows.asks.json). With Settings' 5 s Undo, an answer waits
+// before its one `answer` message, a key 1-9 answers the selected card, a redraw keeps
+// the countdown, and the CLI's error lands on the card. By default it goes at once.
 import { afterAll, expect, mock, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -11,11 +11,13 @@ import { vscodeDouble } from '../testing/vscodeDouble';
 mock.module('vscode', () => vscodeDouble());
 const { shell } = await import('./projectPanel.vscode');
 const { DEFAULT_SESSION_PREFS, renderSessions } = await import('../core/projectPanel');
+const { DEFAULT_CARD_SETTINGS } = await import('../core/settings');
+const UNDO = { ...DEFAULT_CARD_SETTINGS, answerUndo: 'five' as const };
 
 const ROWS = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '..', 'core', 'testdata', 'session-rows.asks.json'), 'utf8'));
 const NOW = Date.parse('2026-10-14T01:37:00Z');
 const HERE = { device: 'zion', localHost: 'this-mac', workspace: 'agents', editor: 'vscodium' as const, editorName: 'VSCodium', icons: {} };
-const draw = (selectedId: string | null) => renderSessions(ROWS, NOW, { selectedId, here: HERE, prefs: DEFAULT_SESSION_PREFS });
+const draw = (selectedId: string | null, cards = UNDO) => renderSessions(ROWS, NOW, { selectedId, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards });
 const KEY = 'yosemite-m5/9b1f0c2e-publish/b-7f3a';
 
 const window = new Window();
@@ -79,9 +81,21 @@ test('an answer whose card leaves the list before its 5 s is not sent', async ()
   const before = sent.filter((m) => m.type === 'answer').length;
   deliver({ type: 'html', tab: 'sessions', html: draw(null) });
   (ask().querySelector('[data-choice="wait-until-morning"]') as unknown as HTMLElement).click();
-  const without = renderSessions(ROWS.filter((r: { sessionId: string }) => r.sessionId !== '9b1f0c2e-publish'), NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS });
+  const without = renderSessions(ROWS.filter((r: { sessionId: string }) => r.sessionId !== '9b1f0c2e-publish'), NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: UNDO });
   deliver({ type: 'html', tab: 'sessions', html: without });
   await sleep(5300);
   expect(sent.filter((m) => m.type === 'answer').length).toBe(before);
   expect(document.querySelector('.toast')!.textContent).toContain('Answer not sent: its card left the list before it went.');
 }, 15_000);
+
+test('by default an answer goes at once, and its agent comes to the front through the card\'s own select', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw(null, DEFAULT_CARD_SETTINGS) });
+  const from = sent.length;
+  (ask().querySelector('[data-choice="yes-publish-from-zion"]') as unknown as HTMLElement).click();
+  const card = ask().closest('.card') as unknown as HTMLElement;
+  expect(sent.slice(from)).toEqual([
+    { type: 'select', sessionId: '9b1f0c2e-publish', host: card.dataset.host, focus: card.dataset.here === '1' },
+    { type: 'answer', key: KEY, choice: 'yes-publish-from-zion', text: undefined },
+  ]);
+  expect(ask().querySelector('.asend')!.textContent).toBe('Sending “Yes, publish from zion”…');
+});

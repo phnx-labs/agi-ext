@@ -142,22 +142,40 @@ export interface DisplayPreferences {
 }
 
 /** Session cards in the Project panel: whether an ask shows its answers, how much
- *  of each option, and how much of the question. */
+ *  of each option and of the question, what a click does, whether an answer waits
+ *  for an Undo, and which parts each card shows (all of them down to logo and title). */
 export interface CardSettings {
   asks: 'answers' | 'question' | 'off';
   options: 'titles' | 'details';
   question: 'two' | 'full';
+  click: 'front' | 'show';
+  answerUndo: 'off' | 'five';
+  description: boolean;
+  chips: boolean;
+  machine: boolean;
+  age: boolean;
+  stateWord: boolean;
 }
 
-export const DEFAULT_CARD_SETTINGS: CardSettings = { asks: 'answers', options: 'titles', question: 'two' };
+/** The parts a card can leave out, as Settings lists them. */
+export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord'] as const;
+
+export const DEFAULT_CARD_SETTINGS: CardSettings = {
+  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off',
+  description: true, chips: true, machine: true, age: true, stateWord: false,
+};
 
 /** The stored card settings with any value this version does not know read as its default. */
 export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings {
   const d = DEFAULT_CARD_SETTINGS;
+  const part = (k: (typeof CARD_PARTS)[number]) => (typeof v?.[k] === 'boolean' ? v[k] as boolean : d[k]);
   return {
     asks: v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
     options: v?.options === 'details' ? 'details' : d.options,
     question: v?.question === 'full' ? 'full' : d.question,
+    click: v?.click === 'show' ? 'show' : d.click,
+    answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
+    description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'),
   };
 }
 

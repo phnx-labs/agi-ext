@@ -268,6 +268,8 @@ export interface RemoteSessionArtifact {
   title?: string;
   /** When the session last wrote it (or the file's mtime), for newest-first sorting. */
   editedAtMs?: number;
+  /** For a rendered page the row also lists the source of: that source's file name. */
+  renderedFrom?: string;
 }
 
 /** One failed or policy-blocked tool call, newest last (CLI `failures[]`). */

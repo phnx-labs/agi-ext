@@ -102,6 +102,8 @@ interface PanelSnapshot {
   hasTerminal: boolean;
   /** There is a session to render at all — from a terminal OR a Project panel click. */
   hasSubject?: boolean;
+  /** The plain terminal in front when no session is the subject (SH, a shell). */
+  frontShell?: string;
   /** Where the subject came from; a Project subject shows "following the Project panel selection". */
   subjectSource?: 'terminal' | 'project';
   // Terminal facts
@@ -285,12 +287,19 @@ function trailTitles(): { back?: string; fwd?: string } {
   return { ...(back ? { back } : {}), ...(fwd ? { fwd } : {}) };
 }
 
-/** The agent terminal in the front tab, when it is an agent tab. */
+/** The agent terminal in the front tab, when it is an agent tab; a shell (SH, until an
+ *  agent is adopted into it) is not one. */
 function activeAgentEntry(): terminals.EditorTerminal | undefined {
   const active = frontTerminal();
   if (!active) return undefined;
   const entry = terminals.getByTerminal(active);
-  return entry && entry.agentConfig ? entry : undefined;
+  return entry?.agentConfig && entry.agentConfig.prefix !== 'sh' ? entry : undefined;
+}
+
+/** The name of the plain terminal in the front tab (SH, a shell), when no agent is there. */
+function frontShellName(): string | undefined {
+  const active = frontTerminal();
+  return active && !activeAgentEntry() ? active.name : undefined;
 }
 
 /**
@@ -349,8 +358,9 @@ export function setAgentPanelSubjectFromProject(sessionId: string, host?: string
  *  before it redraws, so its selection never lags the tab). */
 export function followFrontTerminal(): void {
   const entry = activeAgentEntry();
-  if (!entry) return;
-  moveSubject({ sessionId: entry.sessionId ?? '', terminalId: entry.id, source: 'terminal' });
+  if (entry) { moveSubject({ sessionId: entry.sessionId ?? '', terminalId: entry.id, source: 'terminal' }); return; }
+  // A shell in front: the sidebar says so instead of keeping the last session (owner video, 2026-10-17).
+  if (frontShellName()) panelSubject = undefined;
 }
 
 /** Forget the subject entirely (dispose, and the reset point for tests). */
@@ -841,7 +851,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     // needs is on the stream row.
     const subject = resolveSubject();
     if (!subject) {
-      return { hasTerminal: false, hasSubject: false };
+      const shell = frontShellName();
+      return { hasTerminal: false, hasSubject: false, ...(shell ? { frontShell: shell } : {}) };
     }
     const entry = subject.entry;
 
@@ -1108,7 +1119,6 @@ function prettyModel(id) {
 const HEAD_ICON = {
   open: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/></svg>',
   resume: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5l7 4.5-7 4.5z"/></svg>',
-  fork: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.5"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="8" cy="12.5" r="1.5"/><path d="M4 5v1.5a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V5M8 8.5V11"/></svg>',
 };
 
 function renderTerminalCard(s) {
@@ -1169,14 +1179,16 @@ function renderTerminalCard(s) {
   const tokens = [compactTokens(s.tokenCount), s.tokPerSec > 0 ? Math.round(s.tokPerSec) + ' tok/s' : ''].filter(Boolean).join(' · ');
   if (tokens) menu.push(['Tokens', esc(tokens)]);
   const identity = [((s.agentType || s.agentName || '') + ' ' + (s.version || '')).trim(), s.model, s.fullSessionId, s.cwd, s.sessionHost].filter(Boolean);
+  // Fork lives here, not in the title (owner video, 2026-10-17: "I don't really use it that much").
+  if (s.fullSessionId) menu.push(['Fork', '<button type="button" class="action-btn" data-action="forkSubject">Fork this session</button>']);
   const menuBody =
     menu.map((row) => '<div class="menu-row"><span class="menu-k">' + esc(row[0]) + '</span><span class="menu-v">' + row[1] + '</span></div>').join('') +
     (identity.length ? '<div class="session-details">' + identity.map((value) => '<div>' + esc(value) + '</div>').join('') + '</div>' : '');
   const menuBtn = menuBody
     ? '<summary class="head-btn menu-btn" aria-label="Session details" title="Session details">⋯</summary>'
     : '';
-  // Quick icons, each with its words in the tooltip: open the tab (or resume a
-  // session with no tab here) and fork. Both need the session id.
+  // The quick icon, its words in the tooltip: open the tab, or resume a session with no
+  // tab here. It needs the session id.
   const icon = (action, label, svg) =>
     '<button type="button" class="head-btn" data-action="' + action + '" aria-label="' + label + '" title="' + label + '">' + svg + '</button>';
   const actions =
@@ -1184,8 +1196,7 @@ function renderTerminalCard(s) {
       (s.fullSessionId
         ? (s.hasTerminal
             ? icon('focusSubject', 'Open its tab', HEAD_ICON.open)
-            : icon('resumeSubject', 'Resume session', HEAD_ICON.resume)) +
-          icon('forkSubject', 'Fork session', HEAD_ICON.fork)
+            : icon('resumeSubject', 'Resume session', HEAD_ICON.resume))
         : '') +
     '</div>';
   return (
@@ -1499,10 +1510,20 @@ function renderMadeShelf(s) {
       ? '<button type="button" class="mk-share" data-share="' + esc(f.path) + '" title="Share as a Rush artifact" aria-label="' + esc('Share ' + f.name) + '">' + SHARE_ICON + '</button>'
       : '';
     tiles.push('<div class="mk mk-file' + out + busy + '"><button type="button" class="mk-open artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc('Open ' + f.path) + '">' + face +
-      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(busy ? 'opening…' : kind + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
+      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(busy ? 'opening…' : kind + (f.renderedFrom ? ' · from ' + f.renderedFrom : '') + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
   }
   return '<div class="made"><div class="made-l">Made <span>' + tiles.length + '</span></div>' +
     '<div class="made-strip" data-strip="made">' + tiles.join('') + '</div></div>';
+}
+
+// ── From the agent ──────────────────────────────────────────────────────────
+// The newest \`agents feed post\` sits under the title, gold, where it is read first
+// (owner video, 2026-10-17); a blocked post has the red strip below instead.
+function renderLatestUpdate(s) {
+  const u = (s.updates || []).filter((x) => !x.blocked).slice(-1)[0];
+  if (!u) return '';
+  return '<div class="latest-upd"><div class="latest-k">FROM THE AGENT · ' + esc(relTime(u.atMs).toUpperCase()) + '</div>' +
+    '<div class="latest-t">' + esc(u.title) + '</div>' + (u.detail ? '<div class="latest-d">' + esc(truncate(u.detail, 280)) + '</div>' : '') + '</div>';
 }
 
 // ── Blocked ─────────────────────────────────────────────────────────────────
@@ -1771,7 +1792,7 @@ function render(snap) {
     if (input) replyDrafts[replySession] = input.value;
     replySession = '';
     root.innerHTML = (
-      '<div class="empty">No session selected.<br><br>' +
+      '<div class="empty">' + (snap && snap.frontShell ? '<b>' + esc(snap.frontShell) + '</b> is a shell, not an agent session.' : 'No session selected.') + '<br><br>' +
       'Click an agent tab in the editor, open one with <b>Cmd+Shift+A</b>, ' +
       'or click a session in the Project panel.</div>'
     );
@@ -1799,6 +1820,7 @@ function render(snap) {
       renderGoalCard(snap) +
       renderBlocked(snap) +
       renderNeedsYou(snap) +
+      renderLatestUpdate(snap) +
       renderPending(snap) +
       renderRequestCard(snap) +
       renderMadeShelf(snap) +

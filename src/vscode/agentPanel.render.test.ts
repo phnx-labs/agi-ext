@@ -56,7 +56,7 @@ const NAMES = [
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
-  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderUpdate', 'artifactItems',
+  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderLatestUpdate', 'renderUpdate', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderRangeLane', 'renderNav',
   'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind', 'timelineShown',
@@ -74,13 +74,14 @@ const combined = injected + '\n' + [...CONSTS.map(extractConst), ...NAMES.map(ex
 const viewState: Record<string, unknown> = {};
 const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderGoalCard, renderChecklistCard, renderRequestCard, renderTimelineCard,
-  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, renderBlocked, currentRange,
+  renderFilesCard, renderReplyBox, renderTerminalCard, renderMadeShelf, renderRelated, renderBlocked, renderLatestUpdate, currentRange,
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
   prCheckSegments, renderNav,
 }; })()`) as {
   renderMadeShelf: (s: unknown) => string;
   renderRelated: (s: unknown) => string;
   renderBlocked: (s: unknown) => string;
+  renderLatestUpdate: (s: unknown) => string;
   currentRange: (s: unknown) => { startMs: number; endMs: number } | null;
   renderNav: (s: unknown) => string;
   prCheckSegments: (pr: unknown) => { segments: { state: string; name: string }[]; passed: number; running: number; failed: number; counted: number };
@@ -320,12 +321,13 @@ test('renderFilesCard shows the op mix and the true total when bounded, and noth
   expect(cards.renderFilesCard({ files: { changes: [], total: 0, source: 'tools' } })).toBe('');
 });
 
-test('the session header: the title and three quick icons; model, account and host live in the ⋯ menu', () => {
+test('the session header: the title and its one quick icon; fork, model, account and host live in the ⋯ menu', () => {
   {
-    // A session with its tab here: open the tab, and fork. No ◎ / ↻ (owner: "the rotation one reads as restart").
+    // A session with its tab here: open the tab. Fork is in ⋯ (owner video, 2026-10-17). No ◎ / ↻ (owner: "the rotation one reads as restart").
     const tabbed = cards.renderTerminalCard({ fullSessionId: 'c9d700d5', agentName: 'Claude', sessionChunk: 'c9d700d5', hasTerminal: true });
     expect(tabbed).toContain('data-action="focusSubject" aria-label="Open its tab"');
-    expect(tabbed).toContain('data-action="forkSubject" aria-label="Fork session"');
+    expect(tabbed).not.toContain('aria-label="Fork session"');
+    expect(tabbed).toContain('<span class="menu-k">Fork</span><span class="menu-v"><button type="button" class="action-btn" data-action="forkSubject">Fork this session</button>');
     expect(tabbed).not.toContain('data-action="resumeSubject"');
     expect(tabbed).not.toContain('>◎<');
     expect(tabbed).not.toContain('>↻<');
@@ -986,4 +988,25 @@ test('blocked: the agent own words in a red strip, and its status posts sit amon
   expect(only).toContain('class="upd blocked"');
   expect(only).toContain('data-path="/u/a/index.html">index.html</a>');
   for (const key of Object.keys(viewState)) delete viewState[key];
+});
+
+test('the agent\'s newest feed post sits under the title, gold; a blocked post keeps its red strip instead', () => {
+  const now = Date.now();
+  const updates = [
+    { atMs: now - 3_600_000, title: 'Older post', detail: '', blocked: false, links: [] },
+    { atMs: now - 60_000, title: 'Self sign-up is built across three green PRs', detail: 'Merge phoenix-id#16, agents#4245 and agents#4244, then I release.', blocked: false, links: [] },
+    { atMs: now - 30_000, title: 'Waiting on the npm token', detail: '', blocked: true, links: [] },
+  ];
+  const html = cards.renderLatestUpdate({ updates });
+  expect(html).toContain('<div class="latest-k">FROM THE AGENT · ');
+  expect(html).toContain('<div class="latest-t">Self sign-up is built across three green PRs</div>');
+  expect(html).toContain('Merge phoenix-id#16, agents#4245 and agents#4244, then I release.');
+  expect(html).not.toContain('Older post');
+  expect(html).not.toContain('npm token');
+  expect(cards.renderLatestUpdate({})).toBe('');
+});
+
+test('a Made tile for a rendered page names the source it came from', () => {
+  const html = cards.renderMadeShelf({ artifacts: [{ path: '/h/p/plan.html', display: '~/p/plan.html', basename: 'plan.html', bucket: 'plans', renderedFrom: 'plan.md' }] });
+  expect(html).toContain('<span class="mk-n">plan.html</span><span class="mk-m">html · from plan.md</span>');
 });
