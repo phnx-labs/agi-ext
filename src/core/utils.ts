@@ -233,11 +233,6 @@ export function extractLinearTicketId(text: string | undefined): string | null {
   return match ? match[0] : null;
 }
 
-/**
- * Extract the first N words from a string for auto-label generation.
- * Used for status bar display when no user label is set.
- */
-
 // Bidirectional icon <-> prefix mapping
 const ICON_TO_PREFIX: Record<string, string> = {
   'claude.png': CLAUDE_TITLE,
