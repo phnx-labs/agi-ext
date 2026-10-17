@@ -29,7 +29,7 @@ function debugLog(...args: unknown[]): void {
  * Extract identification options from a VS Code terminal.
  * Used to gather all inputs for getTerminalDisplayInfo.
  */
-function extractTerminalIdentificationOptions(terminal: vscode.Terminal): TerminalIdentificationOptions {
+export function extractTerminalIdentificationOptions(terminal: vscode.Terminal): TerminalIdentificationOptions {
   const opts = terminal.creationOptions as vscode.TerminalOptions;
   const env = opts?.env;
   const terminalId = env ? env['AGENT_TERMINAL_ID'] : undefined;
@@ -69,7 +69,6 @@ export interface EditorTerminal {
   autoLabel?: string;       // Auto-generated label (populated by LLM)
   createdAt: number;
   pid?: number;             // Shell process ID
-  messageQueue: string[];   // Queued messages to send after terminal ready
   manualSessionOverride?: ManualSessionOverride;
   sessionId?: string;       // CLI session ID (for resume, history reading)
   host?: string;            // Device the agent runs on when offloaded via `agents run --device`;
@@ -115,17 +114,13 @@ async function saveStatusBarLabel(
 
 // Recently closed session info for "reopen last session"
 export interface ClosedSession {
-  terminalId: string;
-  prefix: string;
-  sessionId?: string;
+  sessionId: string;
   /** Device the closed session ran on, so reopening resumes it there. */
   host?: string;
   label?: string;
   agentType?: SessionAgentType;
   version?: string;
   account?: string;
-  agentConfig: Omit<AgentConfig, 'count'> | null;
-  closedAt: number;
 }
 
 const MAX_CLOSED_SESSIONS = 10;
@@ -359,7 +354,6 @@ export function register(
     agentConfig,
     createdAt: createdAt ?? Date.now(),
     pid,
-    messageQueue: [],
     // The name a tab was created with is its title already; a rename to the same
     // title is never issued.
     appliedTitle: terminal.name || undefined,
@@ -493,7 +487,7 @@ export function stopAutoLabelPoller(terminal: vscode.Terminal): void {
   }
 }
 
-export function restoredSessionId(envId: string | null | undefined, persisted?: sessionsPersist.PersistedSession): string | undefined {
+function restoredSessionId(envId: string | null | undefined, persisted?: sessionsPersist.PersistedSession): string | undefined {
   // The env is frozen at shell creation; persisted stream rebindings are newer.
   return persisted ? persisted.sessionId : envId || undefined;
 }
@@ -559,7 +553,6 @@ export function setSessionId(terminal: vscode.Terminal, sessionId: string, manua
 export function setAgentType(
   terminal: vscode.Terminal,
   agentType: SessionAgentType,
-  adoptExistingSession = false,
 ): void {
   const entry = getByTerminal(terminal);
   if (entry) {
@@ -670,25 +663,6 @@ export function getAgentType(terminal: vscode.Terminal): SessionAgentType | unde
   return entry?.agentType;
 }
 
-// Message queue management
-
-export function queueMessage(terminal: vscode.Terminal, message: string): void {
-  const entry = getByTerminal(terminal);
-  if (entry) {
-    entry.messageQueue.push(message);
-  }
-}
-
-export function flushQueue(terminal: vscode.Terminal): string[] {
-  const entry = getByTerminal(terminal);
-  if (entry) {
-    const messages = [...entry.messageQueue];
-    entry.messageQueue = [];
-    return messages;
-  }
-  return [];
-}
-
 // Rename a terminal tab title — WITHOUT ever stealing focus.
 //
 // `workbench.action.terminal.renameWithArg` only operates on the active
@@ -751,8 +725,85 @@ export async function applyPendingTitle(terminal: vscode.Terminal): Promise<void
 
 // Lifecycle
 
+type InferAgentConfig = (name: string, knownPrefix?: string | null) => Omit<AgentConfig, 'count'> | null;
+
+/**
+ * Register an agent tab this window did not open itself: one found on activation
+ * or one the editor opened later. Its identity comes from the env it was created
+ * with, and the persisted entry with its terminal id (newer than that env) restores
+ * labels, host, version and session. False when it is not an agent tab, or when
+ * `requireProcess` and it has no shell.
+ */
+export async function adopt(
+  terminal: vscode.Terminal,
+  inferAgentConfig: InferAgentConfig,
+  opts: {
+    context?: vscode.ExtensionContext;
+    persistedSessions: readonly sessionsPersist.PersistedSession[];
+    requireProcess?: boolean;
+    onSessionRestored?: (terminal: vscode.Terminal) => void;
+  },
+): Promise<boolean> {
+  const identOpts = extractTerminalIdentificationOptions(terminal);
+  const info = getTerminalDisplayInfo(identOpts);
+  if (!info.isAgent || !info.prefix) return false;
+
+  const agentConfig = inferAgentConfig(terminal.name, info.prefix);
+  if (!agentConfig) return false;
+
+  const id = identOpts.terminalId || nextId(info.prefix);
+  const { pid, timedOut } = await processIdWithin(terminal);
+
+  // A terminal-editor input can survive a window reload after its backing
+  // pseudo-terminal has gone away. VS Code still exposes that stale input in
+  // window.terminals, but processId resolves undefined (and the renderer logs
+  // "Unable to resolve resource vscode-terminal:..."). Registering it makes
+  // restoreAgentTerminals believe the persisted session already has a live
+  // tab, so it skips the real recreation and the user gets no terminal at all.
+  // Only a terminal with a backing process is an existing terminal. A revived
+  // agent tab with no pty is closed, so the persisted-session path reopens that
+  // session as the one live tab in its place. One still starting (timed out)
+  // may yet come up, so it is left alone.
+  if (pid === undefined && opts.requireProcess) {
+    if (!timedOut) terminal.dispose();
+    console.log(`[TERMINALS] No backing process for "${terminal.name}" (${timedOut ? 'still starting, left open' : 'no pty, closed'})`);
+    return false;
+  }
+
+  const persisted = identOpts.terminalId
+    ? opts.persistedSessions.find(p => p.terminalId === identOpts.terminalId)
+    : undefined;
+  const restoredLabels = restoredSessionTabLabels(info.label || undefined, persisted);
+  register(terminal, id, agentConfig, pid, opts.context, restoredLabels.manualLabel);
+  if (restoredLabels.autoLabel) setAutoLabel(terminal, restoredLabels.autoLabel);
+  console.log(`[TERMINALS] Registered: id=${id}, prefix=${info.prefix}, pid=${pid}, label=${info.label}`);
+
+  // VS Code can drop `creationOptions.env` across a reload, so the persisted
+  // entry is the other source for the device and the pinned version. The host
+  // goes on BEFORE any host-dependent lookup: without it a remote session's
+  // resume degrades to a local binary and the label poller reads the wrong
+  // filesystem (RUSH-2047).
+  if (persisted?.host) setHost(terminal, persisted.host);
+  const pinnedVersion = resolveRestoredVersion(identOpts.version, persisted?.version);
+  if (pinnedVersion) setVersion(terminal, pinnedVersion);
+
+  // The agent type goes on even without a session id, so a fresh session file
+  // can be adopted later.
+  const agentType = prefixToAgentType(info.prefix);
+  if (agentType) setAgentType(terminal, agentType);
+  const sessionId = restoredSessionId(identOpts.sessionId, persisted);
+  if (sessionId !== undefined) {
+    setSessionId(terminal, sessionId);
+    console.log(`[TERMINALS] Restored session: sessionId=${sessionId}, agentType=${agentType}`);
+  }
+  const restoredEntry = getByTerminal(terminal);
+  if (restoredEntry) restoredEntry.manualSessionOverride = persisted?.manualSessionOverride;
+  if (sessionId && opts.onSessionRestored) opts.onSessionRestored(terminal);
+  return true;
+}
+
 export async function scanExisting(
-  inferAgentConfig: (name: string, knownPrefix?: string | null) => Omit<AgentConfig, 'count'> | null,
+  inferAgentConfig: InferAgentConfig,
   context?: vscode.ExtensionContext,
   onSessionRestored?: (terminal: vscode.Terminal) => void
 ): Promise<number> {
@@ -768,98 +819,12 @@ export async function scanExisting(
   console.log(`[TERMINALS] Loaded ${persistedSessions.length} persisted sessions`);
 
   for (const terminal of vscode.window.terminals) {
-    console.log(`[TERMINALS] Checking terminal: "${terminal.name}"`);
-
-    // Skip terminals whose process has exited (tab may still be open)
-    if (terminal.exitStatus !== undefined) {
-      console.log(`[TERMINALS] Process exited, skipping`);
-      continue;
+    // Skip terminals whose process has exited (tab may still be open), and ones
+    // already registered.
+    if (terminal.exitStatus !== undefined || terminalToId.has(terminal)) continue;
+    if (await adopt(terminal, inferAgentConfig, { context, persistedSessions, requireProcess: true, onSessionRestored })) {
+      registeredCount++;
     }
-
-    // Skip if already registered
-    if (terminalToId.has(terminal)) {
-      console.log(`[TERMINALS] Already registered, skipping`);
-      continue;
-    }
-
-    // Use the central identification function with all available inputs
-    const identOpts = extractTerminalIdentificationOptions(terminal);
-    const info = getTerminalDisplayInfo(identOpts);
-    console.log(`[TERMINALS] Display info for "${terminal.name}": isAgent=${info.isAgent}, prefix=${info.prefix}`);
-
-    if (!info.isAgent || !info.prefix) continue;
-
-    const agentConfig = inferAgentConfig(terminal.name, info.prefix);
-    if (!agentConfig) continue;
-
-    const id = identOpts.terminalId || nextId(info.prefix);
-
-    const { pid, timedOut } = await processIdWithin(terminal);
-
-    // A terminal-editor input can survive a window reload after its backing
-    // pseudo-terminal has gone away. VS Code still exposes that stale input in
-    // window.terminals, but processId resolves undefined (and the renderer logs
-    // "Unable to resolve resource vscode-terminal:..."). Registering it makes
-    // restoreAgentTerminals believe the persisted session already has a live
-    // tab, so it skips the real recreation and the user gets no terminal at all.
-    // Only a terminal with a backing process is an existing terminal. A revived
-    // agent tab with no pty is closed, so the persisted-session path reopens that
-    // session as the one live tab in its place. One still starting (timed out)
-    // may yet come up, so it is left alone.
-    if (pid === undefined) {
-      if (!timedOut) terminal.dispose();
-      console.log(`[TERMINALS] No backing process for "${terminal.name}" (${timedOut ? 'still starting, left open' : 'no pty, closed'})`);
-      continue;
-    }
-
-    const persistedByTerminalId = identOpts.terminalId
-      ? persistedSessions.find(p => p.terminalId === identOpts.terminalId)
-      : undefined;
-    const restoredLabels = restoredSessionTabLabels(info.label || undefined, persistedByTerminalId);
-    register(terminal, id, agentConfig, pid, context, restoredLabels.manualLabel);
-    if (restoredLabels.autoLabel) setAutoLabel(terminal, restoredLabels.autoLabel);
-    registeredCount++;
-    console.log(`[TERMINALS] Registered: id=${id}, prefix=${info.prefix}, pid=${pid}, label=${info.label}`);
-
-    // Restore the pinned agent version. Env is the most-recent source of
-    // truth (set by resumeCurrentInBestProfile at spawn time), but VS Code
-    // can drop `terminal.creationOptions.env` across some reload paths, so
-    // we also check the persisted session by terminalId. This lookup MUST
-    // run regardless of which sessionId-recovery strategy wins below — a
-    // prior version of this code nested the persisted fallback inside
-    // Strategy 2 (`if (!sessionId && info.prefix) { ... }`), so Strategy 1
-    // succeeding silently skipped version recovery, and Cmd+Shift+J's
-    // "already on usable version" short-circuit couldn't fire.
-    // Recover the offloaded device BEFORE any host-dependent lookup runs. VS Code
-    // restores terminals without our env vars, so `entry.host` is lost on reload
-    // unless we rehydrate it from the persisted session here. Without this, a
-    // remote session's resume command degrades to a local raw binary and the
-    // label poller reads the wrong filesystem (extension.ts restore callers pass
-    // `session.host` into the resume path; scanExisting is the other
-    // reload path that must keep it, RUSH-2047).
-    if (persistedByTerminalId?.host) {
-      setHost(terminal, persistedByTerminalId.host);
-    }
-
-    const pinnedVersion = resolveRestoredVersion(
-      identOpts.version,
-      persistedByTerminalId?.version
-    );
-    if (pinnedVersion) {
-      setVersion(terminal, pinnedVersion);
-    }
-
-    const agentType = prefixToAgentType(info.prefix);
-    if (agentType) setAgentType(terminal, agentType, true);
-    const sessionId = restoredSessionId(identOpts.sessionId, persistedByTerminalId);
-
-    if (sessionId !== undefined) {
-      setSessionId(terminal, sessionId);
-      console.log(`[TERMINALS] Restored session: sessionId=${sessionId}, agentType=${agentType}`);
-    }
-    const restoredEntry = getByTerminal(terminal);
-    if (restoredEntry) restoredEntry.manualSessionOverride = persistedByTerminalId?.manualSessionOverride;
-    if (sessionId && onSessionRestored) onSessionRestored(terminal);
   }
 
   console.log(`[TERMINALS] Scan complete. Registered ${registeredCount} agent terminals.`);

@@ -24,7 +24,7 @@ import { computeWindowId } from '../core/windowId';
 import { terminalTabNumbers } from './frontTab.vscode';
 import { resolveStartedAtMs } from '../core/processStartTime';
 import { agentKindFromTerminalId } from '../core/agents';
-import { getById } from './terminals.vscode';
+import { getById, processIdWithin } from './terminals.vscode';
 
 const REGISTRY_DIR = path.join(os.homedir(), '.agents', '.cache', 'terminals');
 const REGISTRY_FILE = path.join(REGISTRY_DIR, 'live-terminals.json');
@@ -143,7 +143,7 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     const env = opts?.env as Record<string, string | undefined> | undefined;
     const tid = env?.AGENT_TERMINAL_ID;
     if (!tid) continue;
-    const pid = await t.processId;
+    const { pid } = await processIdWithin(t);
     if (!pid) continue;
     const tabIndex = tabNumbers.get(t);
     out.push({

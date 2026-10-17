@@ -472,17 +472,15 @@ describe('agent tab icons', () => {
     const start = src.indexOf('async function launchAgent');
     expect(start).toBeGreaterThan(-1);
     const body = src.slice(start, src.indexOf('\n}', start));
-    expect(body).toContain('createTerminal(');
-    // Mutation-resistant on purpose: a bare `toContain('iconPath')` passes even
-    // for `iconPath: undefined` AND for the buildIconPath(def.prefix, ...) trap
-    // below, i.e. it cannot fail on the regression it exists to catch. Pin the
-    // resolved value, and forbid the prefix-keyed lookup outright.
-    expect(body).toMatch(/iconPath:\s*agentConfig\.iconPath/);
-    expect(body).not.toMatch(/buildIconPath\(/);
+    // Every agent tab is created by the one opener, which takes the icon from the
+    // config it registers (openTrackedTab.test.ts checks the created tab).
+    const opener = src.slice(src.indexOf('async function openTrackedTab'), src.indexOf('async function launchAgent'));
+    expect(opener).toMatch(/iconPath:\s*spec\.agentConfig\.iconPath/);
+    expect(opener).not.toMatch(/buildIconPath\(/);
+    expect(body).not.toContain('createTerminal(');
     // Registration must not be conditional on knowing the agent: an automatic
     // launch (agents.newAgent) has no agentKey and must still be registered.
-    expect(body).toMatch(/await registerAgentTerminal\(terminal, context, \{/);
-    expect(body).not.toMatch(/if \(agentConfig && terminalId\)/);
+    expect(body).toMatch(/await openTrackedTab\(context, \{\n\s*agentConfig,/);
   });
 
   test('the icon table is keyed by TITLE, never by the lowercase prefix', () => {

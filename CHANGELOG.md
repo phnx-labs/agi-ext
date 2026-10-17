@@ -42,6 +42,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   "Running · no transcript" the same green group dot in the Project panel as in the sidebar.
   A card's age reads "now" through its first minute. A ticket delegated to an agent shows that
   agent's logo on its Issues row, where it drew an empty circle.
+- Reopen Last Closed Session focuses the tab already showing that session instead of opening
+  a second one, like Resume.
+- The Reader's Send to Agent submits the selection: it was typed into Claude after a flat 5 s
+  but never sent. It now goes in once Claude is ready, followed by its own Enter, and the tab
+  is tracked like other agent tabs (readiness, label, closes on a clean exit).
+- A tab the editor opens after the window starts gets back the session id and version it was
+  launched with, and its device from the restore store. It came back with no session.
+- Every agent tab is opened one way, so they all wait at most 10 s for their shell before
+  registering (six waited forever), and a shell tab opened by a dispatch or the startup
+  auto-open keeps your environment like New Shell instead of being scrubbed as an agent.
 
 ## [0.9.406] - 2026-10-17
 
