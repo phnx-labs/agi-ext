@@ -43,6 +43,7 @@ import {
   type SessionHere,
   type SessionLike,
   type SessionListPrefs,
+  type Ticket,
   type TicketGroup,
 } from '../core/projectPanel';
 import { SESSION_STATE_WORD, sessionStateOf } from '../shared/sessionState';
@@ -54,7 +55,7 @@ import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openLink, openWebviewUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
-import { parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
+import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, validMergeMethod } from '../core/settings';
 import { BUILT_IN_AGENTS } from '../core/agents';
@@ -68,8 +69,8 @@ import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 // Review, and a Settings gear) for one project, while the other sidebar keeps the
 // focused session. Only the active tab loads. Issues and Review each read their
 // one CLI verb when shown (at most once per
-// FRESH_MS) or on Refresh; a ticket's detail is one `agents projects tickets view` read on the
-// click that opens it. Sessions draws the stream rows already in the presentation
+// FRESH_MS) or on Refresh; a ticket row opens its Linear page as a tab and peeks at the
+// description that read carried. Sessions draws the stream rows already in the presentation
 // store and demands the stream only while it is the visible tab. Settings reads
 // agentSettings and nothing else. Above the tabs, the company goal and today's
 // goal are one `agents projects goals` read when the panel shows (at most once per
@@ -105,8 +106,6 @@ interface TabState {
 class ProjectView implements vscode.WebviewViewProvider {
   view: vscode.WebviewView | undefined;
   private active: TabId;
-  /** The ticket whose detail the Tickets tab shows, or null for the list. */
-  private ticket: string | null = null;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
   constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
@@ -145,9 +144,6 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
       else if (msg.type === 'reviewPrefs' && typeof msg.key === 'string' && typeof msg.value === 'string') void this.controller.setReviewPref(msg.key, msg.value).then((html) => { if (html) this.post('prs', html); });
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
-      else if (msg.type === 'ticket' && typeof msg.id === 'string') void this.openTicket(msg.id);
-      else if (msg.type === 'ticketList') void this.openTicket(null);
-      else if (msg.type === 'comment' && typeof msg.id === 'string' && typeof msg.text === 'string') void this.comment(msg.id, msg.text);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
       else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
       else if (msg.type === 'answer' && typeof msg.key === 'string' && (typeof msg.choice === 'string' || typeof msg.text === 'string')) void this.answer(msg.key, typeof msg.choice === 'string' ? { choice: msg.choice } : { text: msg.text as string });
@@ -198,9 +194,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     await this.load(tab, false);
   }
 
-  /** `reveal`: this load answers a ticket click, so its Linear page opens as a tab once the card
-   *  is current; Refresh and a re-show never reopen it. */
-  async load(tab: TabId, force: boolean, reveal = false): Promise<void> {
+  async load(tab: TabId, force: boolean): Promise<void> {
     const state = this.tabs.get(tab)!;
     // A forced refresh on a hidden tab still has to reread when it is shown.
     if (force) { state.loadedAt = 0; state.generation++; }
@@ -211,8 +205,6 @@ class ProjectView implements vscode.WebviewViewProvider {
       void this.loadDevices(force);
       return;
     }
-    // An open ticket rereads only on Refresh; showing the tab again keeps what is drawn.
-    if (tab === 'tickets' && this.ticket && !force) return;
     const gen = ++state.generation;
     let project: ProjectRef | null;
     try {
@@ -242,27 +234,18 @@ class ProjectView implements vscode.WebviewViewProvider {
     else void view.webview.postMessage({ type: 'loading' });
     let html: string;
     let ok = true;
-    let ticket: TicketDetail | undefined;
     try {
-      if (tab === 'tickets' && this.ticket) ({ html, ticket } = await this.controller.ticketDetail(this.ticket));
-      else html = tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
+      html = tab === 'prs' ? await this.controller.reviewByRepo(project, force, (partial) => { if (gen === state.generation) this.post(tab, partial); })
           : await this.controller.render(tab, project, force);
     } catch (e) {
       ok = false;
       html = `<div class="err">${escapeHtml(errorText(e))}</div>`;
-      // A failed ticket read still offers the way back to the list.
-      if (tab === 'tickets' && this.ticket) html = `<button class="back" data-back>‹ Tickets</button>${html}`;
     }
     if (gen !== state.generation) return; // a newer load (refresh / project switch) owns the tab
     state.loadedFor = project.name;
     // An error is not a fresh result: the next show reads again.
     state.loadedAt = ok ? Date.now() : 0;
-    // Only the current load's ticket becomes the shown one: a slower, superseded read never
-    // replaces it (Start and the Linear tab act on what the card shows).
-    if (ticket) this.controller.showTicket(ticket);
     this.post(tab, html);
-    // A ticket the user just opened shows its Linear page as an editor tab beside the card.
-    if (reveal && ticket?.url) void openLink(ticket.url);
   }
 
   redrawSessions(): Promise<void> {
@@ -284,57 +267,29 @@ class ProjectView implements vscode.WebviewViewProvider {
     }
   }
 
-  /** A ticket tile, here or in the session panel, opens the ticket in Issues. */
+  /** A ticket tile, here or in the session panel: its row peeks in Issues and its Linear
+   *  page opens as a tab. */
   async openTicketTab(id: string): Promise<void> {
     if (this.view) this.view.show(true);
     else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
-    // Straight to the ticket: the Issues list is not read first.
-    this.ticket = id;
     if (this.active !== 'tickets') {
       this.active = 'tickets';
       void this.context.workspaceState.update(TAB_KEY, 'tickets');
       this.syncDemand();
     }
     void this.view?.webview.postMessage({ type: 'tab', tab: 'tickets' });
-    this.post('tickets', '<div class="empty">Loading…</div>');
-    await this.load('tickets', true, true);
-  }
-
-  /** A ticket row click opens its detail (one read); the back control returns to the list. */
-  async openTicket(id: string | null): Promise<void> {
-    this.ticket = id;
-    const state = this.tabs.get('tickets')!;
-    if (id) this.post('tickets', '<div class="empty">Loading…</div>');
-    else state.loadedAt = 0;
-    await this.load('tickets', !!id, !!id);
-  }
-
-  private commenting = false;
-
-  private async comment(id: string, text: string): Promise<void> {
-    // One comment at a time: a second click must not post the comment twice.
-    if (!text.trim() || this.ticket !== id || this.commenting) return;
-    this.commenting = true;
-    void this.view?.webview.postMessage({ type: 'loading' });
-    try {
-      await this.controller.comment(id, text);
-    } catch (e) {
-      void this.view?.webview.postMessage({ type: 'idle' });
-      void vscode.window.showErrorMessage(`Could not comment on ${id}: ${errorText(e)}`);
-      return;
-    } finally {
-      this.commenting = false;
-    }
-    await this.load('tickets', true);
+    void this.view?.webview.postMessage({ type: 'peek', id });
+    const cached = this.tabs.get('tickets')!.html;
+    if (cached) this.post('tickets', cached);
+    await Promise.all([this.load('tickets', false), this.controller.openTicketPage(id)]);
   }
 
   notice(text: string): Thenable<boolean> | undefined {
     return this.view?.webview.postMessage({ type: 'notice', text });
   }
 
-  /** Refresh rereads what is shown; a new project starts on the ticket list. */
-  refresh(projectChanged = false): void {
-    if (projectChanged) this.ticket = null;
+  /** Refresh rereads what is shown. */
+  refresh(): void {
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
     void this.loadGoals(true);
   }
@@ -438,10 +393,8 @@ function errorText(e: unknown): string {
 
 class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
-  /** One `agents projects tickets` read feeds Issues (and a ticket's Start agent). */
+  /** One `agents projects tickets` read feeds Issues (and a ticket's Start agent and peek). */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
-  /** The detail last drawn, so Start names the ticket the user is looking at. */
-  private shownTicket: TicketDetail | undefined;
   /** The last Issues read that answered, for ⌘K's Tickets section. */
   private ticketsSeen: TicketGroup[] = [];
   readonly view: ProjectView;
@@ -557,7 +510,7 @@ class ProjectPanelController {
   }
 
   async render(id: Exclude<TabId, 'sessions' | 'settings'>, p: ProjectRef, force: boolean): Promise<string> {
-    if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force));
+    if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force), (t) => this.ticketRow(p, t));
     // `prs list` exits 1 when a repo could not be read but still prints the envelope
     // with `partial: true`; render it rather than discarding it.
     let stdout: string;
@@ -608,38 +561,45 @@ class ProjectPanelController {
     return renderGoals(goals);
   }
 
-  /** The ticket the card shows; set by the load that drew it, after its generation check. */
-  showTicket(t: TicketDetail): void {
-    this.shownTicket = t;
+  private ticketById(id: string): Ticket | undefined {
+    for (const g of this.ticketsSeen) for (const t of g.tickets) if (t.identifier === id) return t;
+    return undefined;
   }
 
-  private async ticketProject(): Promise<ProjectRef> {
-    const project = await this.project();
-    if (!project) throw new Error('No agents project contains this workspace; pick one to read its tickets.');
-    return project;
-  }
-
-  async ticketDetail(id: string): Promise<{ html: string; ticket: TicketDetail }> {
-    const project = await this.ticketProject();
-    const { stdout } = await linearThroughAgents(['tickets', 'view', project.name, id, '--json'], 60_000);
-    const t = parseTicketDetail(stdout);
-    if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
+  /** A row's ▶ agent and its peek: the description the list read carried, and the live
+   *  sessions on the ticket. */
+  private ticketRow(p: ProjectRef, t: Ticket): { agentName: string; peek: string } {
     const agent = this.ticketAgent(t);
-    const rows = this.projectRows(project);
-    const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
+    const onIt = this.projectRows(p).filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
     }));
-    return { html: renderTicketDetail(t, { agentName: agent.name, delegated: agent.delegated }, onIt), ticket: t };
+    return { agentName: agent.name, peek: renderTicketPeek(t.identifier, t.description, { agentName: agent.name, delegated: agent.delegated }, onIt) };
   }
 
-  async comment(id: string, text: string): Promise<void> {
-    const project = await this.ticketProject();
-    await linearThroughAgents(['tickets', 'comment', project.name, id, '--', text], 60_000);
+  /** Open a ticket's Linear page as a tab: the URL the Issues read carried, else one
+   *  `agents projects tickets view` read for a ticket not in it (a closed one). */
+  async openTicketPage(id: string): Promise<void> {
+    let url = this.ticketById(id)?.url;
+    try {
+      if (!url) {
+        const project = await this.project();
+        if (!project) throw new Error('No agents project contains this workspace; pick one to read its tickets.');
+        const { stdout } = await linearThroughAgents(['tickets', 'view', project.name, id, '--json'], 60_000);
+        const t = parseTicketView(stdout);
+        if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
+        url = t.url;
+      }
+      if (!url) throw new Error('Linear gave no page for it.');
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not open ${id}: ${errorText(e)}`);
+      return;
+    }
+    await openLink(url);
   }
 
   /** Start runs the agent Linear delegates the ticket to when this version launches it
    *  ("Claude", "codex1" → Codex), else your default agent. */
-  private ticketAgent(t: TicketDetail): (typeof PICKABLE_AGENTS)[number] & { delegated: boolean } {
+  private ticketAgent(t: Pick<Ticket, 'delegate'>): (typeof PICKABLE_AGENTS)[number] & { delegated: boolean } {
     const d = (t.delegate ?? '').toLowerCase().replace(/\[bot\]$/, '').replace(/^app\//, '').replace(/\d+$/, '');
     const hit = d ? PICKABLE_AGENTS.find((a) => a.key === d || a.name.toLowerCase() === d) : undefined;
     return hit ? { ...hit, delegated: true } : { ...this.defaultAgent(), delegated: false };
@@ -668,11 +628,11 @@ class ProjectPanelController {
     }
   }
 
-  /** Start on a ticket: the default agent in a new tab here, through the same
+  /** Start on a ticket from its row: the agent in a new tab here, through the same
    *  launch path as Agents: Spawn With Prompt. */
   async startOnTicket(id: string): Promise<void> {
-    const t = this.shownTicket;
-    if (!t || t.identifier !== id) return;
+    const t = this.ticketById(id);
+    if (!t) { void this.view.notice(`${id} is not in the ticket list just read; Issues is reading it again.`); void this.view.load('tickets', true); return; }
     try {
       await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.ticketAgent(t).key, prompt: ticketPrompt(t) });
     } catch (e) {
@@ -930,7 +890,7 @@ class ProjectPanelController {
     this.detected = undefined;
     // ⌘K's Tickets and Pull requests are the shown project's; a switch must not keep the last one's.
     if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; }
-    this.view.refresh(projectChanged);
+    this.view.refresh();
   }
 }
 
@@ -1292,30 +1252,30 @@ export function shell(cspSource: string, logoCss = ''): string {
   /* Ticket detail and Settings (PHNX-4329). */
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; font: inherit; font-weight: 600; align-self: flex-start; }
   button.primary:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
-  .tdetail { padding: 6px 2px 14px; }
-  .tdetail .back { background: none; border: 0; color: var(--vscode-textLink-foreground); cursor: pointer; padding: 2px 0; font: inherit; }
-  .tdetail .th1 { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--r-caption); }
-  .tdetail .tstate { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; }
-  .tdetail .tstate i { width: 6px; height: 6px; border-radius: 50%; background: var(--r-faint); display: block; }
-  .tdetail h3 { margin: 6px 0 4px; font-size: 13px; line-height: 1.35; }
-  .tdetail .tmeta { color: var(--r-caption); font-size: 11px; margin-bottom: 8px; }
-  .tdetail .tmeta a, .tdetail .tbody a, .tdetail .cbody a { color: var(--vscode-textLink-foreground); }
-  .tdetail .dispatch { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--r-edge); border-radius: 8px; margin: 8px 0; }
-  .tdetail .hint, .tdetail .older, .tdetail .none { color: var(--r-caption); font-size: 11px; }
-  .tdetail .dwho { font-size: 12px; } .tdetail .dispatch .sh { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); margin-top: 4px; }
-  .tdetail .onit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .tdetail .ons { display: flex; gap: 6px; align-items: center; min-width: 0; border: 1px solid var(--r-edge); border-radius: 7px; padding: 5px 7px; }
-  .tdetail .onm { flex: 1; min-width: 0; display: grid; } .tdetail .onm b { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tdetail .onm small { color: var(--r-caption); font-size: 10.5px; }
-  .tdetail .ons .primary { flex: none; }
-  .tdetail button.link { background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-decoration: underline; }
-  .tdetail .tbody, .tdetail .cbody { font-size: 12px; line-height: 1.45; color: var(--r-text-2); overflow-wrap: anywhere; }
-  .tdetail .tbody p, .tdetail .cbody p { margin: 4px 0; } .tdetail h4 { margin: 8px 0 2px; font-size: 12px; }
-  .tdetail ul { list-style: disc; padding-left: 18px; margin: 4px 0; }
-  .tdetail code, .tdetail pre { font-family: var(--vscode-editor-font-family); font-size: 11px; }
-  .tdetail pre { white-space: pre-wrap; background: var(--r-well); border-radius: 6px; padding: 6px; }
-  .tdetail .cmt { border: 1px solid var(--r-edge); border-radius: 8px; padding: 6px 8px; margin: 6px 0; }
-  .tdetail .cby { font-size: 11px; color: var(--r-caption); margin-bottom: 2px; }
-  .tdetail .cnew { width: 100%; box-sizing: border-box; border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; padding: 6px; font: inherit; color: var(--vscode-input-foreground, var(--r-text)); background: var(--vscode-input-background); margin: 6px 0; resize: vertical; }
+  /* A ticket row: ▶ shows on hover; its peek unfolds under it, inside the same hover tone. */
+  .tli { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; border-radius: 6px; }
+  .tli .trow { flex: 1; min-width: 0; }
+  .tli:hover .pro, .tli.peek .pro { opacity: 1; }
+  .tli:hover, .tli.peek { background: var(--r-hover); } .tli .trow:hover { background: none; }
+  .tgo { background: none; border: 0; padding: 0; cursor: pointer; }
+  .tgo svg { fill: currentColor; stroke: none; }
+  .tgo:disabled { opacity: .4; cursor: default; }
+  .tpeek { flex-basis: 100%; padding: 0 8px 8px 24px; display: flex; flex-direction: column; gap: 6px; }
+  .tpeek[hidden] { display: none; }
+  .tpeek .tbody { font-size: 12px; line-height: 1.45; color: var(--r-text-2); overflow-wrap: anywhere; }
+  .tpeek .tbody p { margin: 3px 0; } .tpeek h4 { margin: 6px 0 2px; font-size: 12px; }
+  .tpeek ul { list-style: disc; padding-left: 18px; margin: 3px 0; }
+  .tpeek code, .tpeek pre { font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .tpeek pre { white-space: pre-wrap; background: var(--r-well); border-radius: 6px; padding: 6px; }
+  .tpeek a { color: var(--vscode-textLink-foreground); }
+  .tpeek .hint, .tpeek .none { color: var(--r-caption); font-size: 11px; }
+  .tpeek .tact { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tpeek .sh { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); }
+  .tpeek .onit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .tpeek .ons { display: flex; gap: 6px; align-items: center; min-width: 0; border: 1px solid var(--r-edge); border-radius: 7px; padding: 5px 7px; }
+  .tpeek .onm { flex: 1; min-width: 0; display: grid; } .tpeek .onm b { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tpeek .onm small { color: var(--r-caption); font-size: 10.5px; }
+  .tpeek .ons .primary { flex: none; }
+  .tpeek button.link { background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-decoration: underline; }
   .settings { padding: 4px 2px 16px; }
   .settings .sh { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); margin: 14px 0 4px; }
   .settings .srow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); cursor: pointer; }
@@ -1381,7 +1341,18 @@ ${THUMB_SCRIPT}
   // The wait on a question ticks every second; only these numbers change.
   function tickWaits() { main.querySelectorAll('[data-since]').forEach((el) => { const t = Number(el.dataset.since); if (t) el.textContent = waitWords(Date.now() - t); }); }
   setInterval(tickWaits, 1000);
+  // The one ticket whose peek is open in Issues; it survives redraws of the list.
+  let peeked = null;
+  function drawPeek() {
+    main.querySelectorAll('.tli').forEach((li) => {
+      const on = li.querySelector('.trow').dataset.ticket === peeked;
+      li.classList.toggle('peek', on);
+      li.querySelector('.trow').setAttribute('aria-expanded', String(on));
+      const box = li.querySelector('.tpeek'); if (box) box.hidden = !on;
+    });
+  }
   function restoreLocal() {
+    drawPeek();
     main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
     for (const [key, left] of pendingMerge) drawUndo(key, left);
     // An ask that left the list takes its answer along: a sent one is forgotten, and
@@ -1496,6 +1467,7 @@ ${THUMB_SCRIPT}
     else if (m.type === 'project') {
       // Only a different project cancels a merge still counting down; every load re-sends the name.
       if (shownProject !== undefined && m.name !== shownProject && cancelMerges()) toast('Merge cancelled: the project changed before it started.');
+      if (shownProject !== undefined && m.name !== shownProject) peeked = null;
       shownProject = m.name;
       const row = document.querySelector('.proj');
       row.hidden = !m.name;
@@ -1512,7 +1484,11 @@ ${THUMB_SCRIPT}
     }
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
-    else if (m.type === 'idle') { document.body.classList.remove('loading'); main.querySelectorAll('[data-comment]').forEach((b) => { b.disabled = false; }); }
+    else if (m.type === 'idle') document.body.classList.remove('loading');
+    else if (m.type === 'peek') {
+      peeked = m.id; drawPeek();
+      main.querySelector('.tli.peek')?.scrollIntoView({ block: 'nearest' });
+    }
     else if (m.type === 'notice') toast(m.text);
     else if (m.type === 'answered') {
       const p = pendingAnswer.get(m.key); if (!p) return;
@@ -1670,16 +1646,24 @@ ${THUMB_SCRIPT}
     }
     const th = e.target.closest('.th[data-path]');
     if (th) { e.preventDefault(); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
-    // Tickets: a row opens its detail here; the detail's controls each post one message.
-    const trow = e.target.closest('[data-ticket]');
-    const detail = main.querySelector('.tdetail');
-    if (trow && trow.classList.contains('trow')) { e.preventDefault(); vscode.postMessage({ type: 'ticket', id: trow.dataset.ticket }); return; }
-    if (e.target.closest('[data-back]')) { vscode.postMessage({ type: 'ticketList' }); return; }
-    if (detail && e.target.closest('[data-start]')) { vscode.postMessage({ type: 'startTicket', id: detail.dataset.ticket }); return; }
-    if (detail && e.target.closest('[data-comment]')) {
-      const box = detail.querySelector('.cnew');
-      const btn = e.target.closest('[data-comment]');
-      if (box && box.value.trim() && !btn.disabled) { btn.disabled = true; vscode.postMessage({ type: 'comment', id: detail.dataset.ticket, text: box.value }); }
+    // Tickets: a row opens its Linear page as a tab and unfolds its peek; a second click
+    // folds it without opening the page again. ▶ starts an agent on it, once per click.
+    const trow = e.target.closest('.trow[data-ticket]');
+    if (trow) {
+      e.preventDefault();
+      const id = trow.dataset.ticket;
+      if (peeked === id) { peeked = null; drawPeek(); return; }
+      peeked = id; drawPeek();
+      if (trow.dataset.url) vscode.postMessage({ type: 'open', url: trow.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey });
+      return;
+    }
+    const go = e.target.closest('[data-start-ticket]');
+    if (go) {
+      e.preventDefault(); e.stopPropagation();
+      if (go.disabled) return;
+      go.disabled = true;
+      setTimeout(() => { go.disabled = false; }, 3000);
+      vscode.postMessage({ type: 'startTicket', id: go.dataset.startTicket });
       return;
     }
     const art = e.target.closest('[data-artifact]');

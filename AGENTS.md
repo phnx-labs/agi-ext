@@ -67,11 +67,13 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   The Project panel opens an artifact through the same path: `openListedArtifact`
   (`src/vscode/sessionCardActions.ts`) finds the row by session id AND host and copies only
   an artifact that row lists. Nothing loads on selection.
-  A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
-  `agents projects tickets view <name> <ID> --json` (`ProjectPanelController.ticketDetail`), on
-  the click only, never on a timer; its Comment button is one
-  `agents projects tickets comment <name> <ID> -- <text>` argv. The extension never runs `linear`
-  itself: agents-cli owns which Linear project and workspace a project is.
+  A third: a ticket row in the Project panel's Issues tab opens its Linear page as a tab and
+  peeks at the description the Issues read already carried (`renderTicketPeek`,
+  `src/core/ticketPeek.ts`); it reads nothing. A ticket tile for a ticket that read does not
+  hold reads that one ticket with `agents projects tickets view <name> <ID> --json`
+  (`ProjectPanelController.openTicketPage`) for its page, on the click only, never on a timer.
+  Comments live on the Linear page; the extension has no comment box. The extension never runs
+  `linear` itself: agents-cli owns which Linear project and workspace a project is.
   A fourth: the Project panel's goal lines are one `agents projects goals <name> --json` read
   when the panel shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never
   per tab or per click.

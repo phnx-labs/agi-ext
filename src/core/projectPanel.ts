@@ -26,9 +26,13 @@ export interface ProjectRef {
   root?: string;
 }
 
-interface Ticket {
+export interface Ticket {
   identifier: string;
   title: string;
+  /** The ticket's Linear page; a row click opens it as a tab. */
+  url: string | null;
+  /** Markdown as Linear stores it; the row's peek shows its opening lines. */
+  description: string;
   priority: number;
   milestone: string | null;
   /** The person it is assigned to, and the agent it is delegated to, as Linear names them. */
@@ -158,6 +162,8 @@ export function parseTickets(raw: string): TicketGroup[] {
     const ticket: Ticket = {
       identifier: str(d.identifier) ?? '?',
       title: str(d.title) ?? '',
+      url: str(d.url),
+      description: str(d.description) ?? '',
       priority: num(d.priority),
       milestone: str(ms?.name),
       assignee: str(assignee?.name),
@@ -1005,11 +1011,23 @@ function personAvatar(name: string | null): string {
   return `<span class="iav av${h % 6}" title="${escapeHtml(name)}">${escapeHtml(initials)}</span>`;
 }
 
-export function renderTickets(groups: TicketGroup[]): string {
+/** What a row adds beyond the list read: the agent its ▶ starts, and its peek. */
+export interface TicketRowExtras { agentName: string; peek: string }
+
+const START_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>';
+
+/** A row opens the ticket's Linear tab and unfolds its peek; ▶ (shown on hover) starts an agent on it. */
+export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras): string {
   if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
+  const row = (t: Ticket) => {
+    const id = escapeHtml(t.identifier);
+    const x = extras(t);
+    const start = `Start ${escapeHtml(x.agentName)} on ${id} in a new tab`;
+    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}"${t.url ? ` data-url="${escapeHtml(t.url)}"` : ''} title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${id}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span><span class="who">${personAvatar(t.delegate)}${personAvatar(t.assignee)}</span></a><button class="pro tgo" data-start-ticket="${id}" title="${start}" aria-label="${start}">${START_ICON}</button>${x.peek}</li>`;
+  };
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
-    <ul>${g.tickets.map((t) => `<li><a class="trow" href="#" data-ticket="${escapeHtml(t.identifier)}">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${escapeHtml(t.identifier)}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span><span class="who">${personAvatar(t.delegate)}${personAvatar(t.assignee)}</span></a></li>`).join('')}</ul>
+    <ul>${g.tickets.map(row).join('')}</ul>
   </details>`).join('');
 }
 
