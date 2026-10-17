@@ -8,7 +8,6 @@ import {
   isHostFallbackLabel,
   presentableLabel,
   getSessionChunk,
-  extractFirstNWords,
   extractLinearTicketId,
   getPrefixFromTerminalId,
   truncateText,
@@ -59,14 +58,6 @@ describe('small text helpers', () => {
     expect(sanitizeLabel('  \t\n  ')).toBe('');
   });
 
-  test('extractFirstNWords keeps N words, adds an ellipsis only when it cut, and reads blank as null', () => {
-    expect(extractFirstNWords('Hello world how are you doing today', 5)).toBe('Hello world how are you...');
-    expect(extractFirstNWords('  hello   world  ', 5)).toBe('hello world');
-    expect(extractFirstNWords('one two three four five', 3)).toBe('one two three...');
-    expect(extractFirstNWords('one two three four five', 5)).toBe('one two three four five');
-    expect(extractFirstNWords(undefined, 5)).toBeNull();
-    expect(extractFirstNWords('   ', 5)).toBeNull();
-  });
 
   test('truncateText keeps text within the limit and ends a cut with an ellipsis', () => {
     expect(truncateText('hello', 5)).toBe('hello');

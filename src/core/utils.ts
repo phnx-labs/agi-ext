@@ -237,19 +237,6 @@ export function extractLinearTicketId(text: string | undefined): string | null {
  * Extract the first N words from a string for auto-label generation.
  * Used for status bar display when no user label is set.
  */
-export function extractFirstNWords(text: string | undefined, n: number = 5): string | null {
-  if (!text) return null;
-  const cleaned = text.trim().replace(/\s+/g, ' ');
-  if (!cleaned) return null;
-  const words = cleaned.split(' ').slice(0, n);
-  if (words.length === 0) return null;
-  const result = words.join(' ');
-  // Add ellipsis if truncated
-  if (cleaned.split(' ').length > n) {
-    return result + '...';
-  }
-  return result;
-}
 
 // Bidirectional icon <-> prefix mapping
 const ICON_TO_PREFIX: Record<string, string> = {

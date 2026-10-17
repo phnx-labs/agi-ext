@@ -2,16 +2,12 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { homedir } from 'os';
 import { runCliArgs } from './agentsBin';
-import { todoProgressFromCli, type TodoProgress } from './session.activity';
 
 export interface SessionToolStats {
   toolCalls: number;
   filesEdited: number;
   filesRead: number;
   recentFiles: string[];
-  /** Live checklist progress from the CLI's `session.todos` (RUSH-1503); undefined
-   *  when the session wrote no todo list or an older CLI omitted the field. */
-  todos?: TodoProgress;
 }
 
 export interface HandoffMessage {
@@ -157,11 +153,6 @@ async function computeSessionToolStats(
   )
     ? parsedStats
     : (parsedStats.events ?? []);
-  // Live checklist rides the SAME CLI call (RUSH-1503): `session.todos` is the
-  // state engine's computed checklist, so the panel no longer re-parses the tail.
-  const todos = Array.isArray(parsedStats)
-    ? undefined
-    : (todoProgressFromCli(parsedStats.session?.todos) ?? undefined);
   const toolUses = events.filter(ev => ev.type === 'tool_use');
   const editedFiles = new Set<string>();
   const readFiles = new Set<string>();
@@ -184,73 +175,15 @@ async function computeSessionToolStats(
     filesEdited: editedFiles.size,
     filesRead: readFiles.size,
     recentFiles: recentFiles.slice(-20),
-    todos,
   };
-}
-
-interface ToolStatsCacheEntry {
-  mtimeMs: number;
-  size: number;
-  stats: SessionToolStats;
-}
-
-// Tool-stats are read by the agentPanel 4s poll, per window. The session
-// transcript only grows when the agent acts, so cache the result keyed by the
-// session file's mtime+size and re-shell out only when it actually changed.
-// An in-flight guard coalesces concurrent callers onto one subprocess so a slow
-// `sessions` call can't stack across ticks (#94).
-const toolStatsCache = new Map<string, ToolStatsCacheEntry>();
-const toolStatsInFlight = new Map<string, Promise<SessionToolStats>>();
-
-// Exported for tests. `compute` is the real work (shelling out to the agents
-// CLI in production); the cache and in-flight machinery are exercised directly.
-async function getCachedToolStats(
-  sessionId: string,
-  sessionFilePath: string | undefined,
-  compute: () => Promise<SessionToolStats>,
-): Promise<SessionToolStats> {
-  let key: { mtimeMs: number; size: number } | undefined;
-  if (sessionFilePath) {
-    try {
-      const st = await fs.stat(sessionFilePath);
-      key = { mtimeMs: st.mtimeMs, size: st.size };
-    } catch {
-      key = undefined;
-    }
-    if (key) {
-      const cached = toolStatsCache.get(sessionId);
-      if (cached && cached.mtimeMs === key.mtimeMs && cached.size === key.size) {
-        return cached.stats;
-      }
-    }
-  }
-
-  const inflight = toolStatsInFlight.get(sessionId);
-  if (inflight) return inflight;
-
-  const p = compute()
-    .then((stats) => {
-      if (key) toolStatsCache.set(sessionId, { ...key, stats });
-      return stats;
-    })
-    .finally(() => {
-      if (toolStatsInFlight.get(sessionId) === p) toolStatsInFlight.delete(sessionId);
-    });
-  toolStatsInFlight.set(sessionId, p);
-  return p;
 }
 
 export async function getSessionToolStatsViaAgentsCli(
   sessionId: string,
   cwd?: string,
-  sessionFilePath?: string,
 ): Promise<SessionToolStats> {
   try {
-    return await getCachedToolStats(
-      sessionId,
-      sessionFilePath,
-      () => computeSessionToolStats(sessionId, cwd),
-    );
+    return await computeSessionToolStats(sessionId, cwd);
   } catch {
     return { toolCalls: 0, filesEdited: 0, filesRead: 0, recentFiles: [] };
   }

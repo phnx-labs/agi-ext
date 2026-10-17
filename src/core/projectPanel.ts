@@ -6,7 +6,6 @@
 // the provider turns that into the section's error state, never an empty list.
 
 import * as os from 'os';
-import * as path from 'path';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';

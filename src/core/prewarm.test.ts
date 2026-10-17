@@ -77,8 +77,7 @@ describe('PREWARM_CONFIGS', () => {
     expect(PREWARM_CONFIGS.codex.exitSequence).toEqual(['\x03', '\x03']);
   });
 
-  test('cursor config has correct settings', () => {
-    expect(PREWARM_CONFIGS.cursor.command).toBe('cursor-agent');
+  test('cursor config has correct exit sequence', () => {
     expect(PREWARM_CONFIGS.cursor.exitSequence).toEqual(['\x03', '\x03']);
   });
 });

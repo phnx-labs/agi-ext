@@ -4,9 +4,7 @@ import {
   detectDirectoryMoves,
   formatChangeStatus,
   parseIgnorePatterns,
-  prepareCommitContext,
-  shouldIgnoreFile,
-  summarizeDiff
+  shouldIgnoreFile
 } from './git';
 
 const DIFF = `diff --git a/a.ts b/a.ts
@@ -83,30 +81,3 @@ describe('buildCommitPrompt', () => {
   });
 });
 
-test('summarizeDiff names each file with its changed-line count and a preview', () => {
-  expect(summarizeDiff('')).toBe('');
-  const summary = summarizeDiff(DIFF);
-  expect(summary).toContain('File: a.ts');
-  expect(summary).toContain('File: b.ts');
-  expect(summary).toContain('lines changed');
-  expect(summary).toContain('+export const x = 1;');
-});
-
-describe('prepareCommitContext', () => {
-  test('carries the status, a diff summary and the user prompt', () => {
-    const result = prepareCommitContext('Modified: src/index.ts\nNew: src/utils.ts', [], [], DIFF);
-    expect(result.isMove).toBe(false);
-    expect(result.context).toContain('New: src/utils.ts');
-    expect(result.context).toContain('Diff Summary:');
-    expect(result.userPrompt).toContain('generate a concise commit message');
-  });
-
-  test('truncates a long status list and reports a directory move', () => {
-    const many = Array.from({ length: 150 }, (_, i) => `Modified: file${i}.ts`).join('\n');
-    expect(prepareCommitContext(many, [], []).context).toContain('and 50 more files');
-    const deleted = Array.from({ length: 10 }, (_, i) => `old/dir/file${i}.ts`);
-    const moved = prepareCommitContext('status', deleted, deleted.map((p) => p.replace('old/dir/', '')));
-    expect(moved.isMove).toBe(true);
-    expect(moved.context).toContain('Move detected:');
-  });
-});

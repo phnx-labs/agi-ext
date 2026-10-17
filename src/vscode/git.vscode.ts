@@ -5,7 +5,7 @@ import {
   buildCommitPrompt,
   formatChangeStatus,
   parseIgnorePatterns,
-  prepareCommitContext,
+  detectDirectoryMoves,
   shouldIgnoreFile
 } from '../core/git';
 import { generateCommitMessageWithClaude } from '../core/commitgen';
@@ -124,9 +124,9 @@ export async function generateCommitMessage(sourceControl?: { rootUri?: vscode.U
       let stagedDiffChanges: string | undefined;
       let allDiffChanges: string | undefined;
 
-      const commitContext = prepareCommitContext(allStatusChanges, deletedPaths, addedPaths);
+      const directoryMove = detectDirectoryMoves(deletedPaths, addedPaths);
 
-      if (!commitContext.isMove) {
+      if (!directoryMove) {
         unstagedDiffChanges = await repo.diff();
         stagedDiffChanges = await repo.diffWithHEAD();
 
@@ -138,13 +138,7 @@ export async function generateCommitMessage(sourceControl?: { rootUri?: vscode.U
           diffParts.push(`Unstaged Changes:\n${unstagedDiffChanges}`);
         }
         allDiffChanges = diffParts.join('\n\n');
-
-        const updatedContext = prepareCommitContext(allStatusChanges, deletedPaths, addedPaths, allDiffChanges);
-        commitContext.context = updatedContext.context;
-        commitContext.userPrompt = updatedContext.userPrompt;
       }
-
-      const directoryMove = commitContext.moveInfo;
 
       // Build prompt for OpenAI with git diff stat, first ~50 lines of diff, and examples
       const diffLines = allDiffChanges?.split('\n') || [];

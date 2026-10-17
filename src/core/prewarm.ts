@@ -4,49 +4,12 @@ import { shellQuote } from './shellQuote';
 
 export type PrewarmAgentType = 'claude' | 'codex' | 'cursor' | 'opencode';
 
-/** Configuration for pre-warming per agent type */
-export interface PrewarmConfig {
-  agentType: PrewarmAgentType;
-  command: string;              // CLI command (e.g., 'claude', 'codex')
-  statusCommand: string;        // Command to get session info (e.g., '/status', '/stats')
-  sessionIdPattern: RegExp;     // Pattern to extract session ID from output
-  exitSequence: string[];       // Key sequences to cleanly exit
-}
-
-// Pre-warm configurations per agent
-export const PREWARM_CONFIGS: Record<PrewarmAgentType, PrewarmConfig> = {
-  claude: {
-    agentType: 'claude',
-    command: 'claude',
-    statusCommand: '/status',
-    // Matches: "Session ID: 01J9..."/"Session: 01J9..."
-    sessionIdPattern: /Session(?:\s+ID)?:\s*([a-zA-Z0-9_-]+)/i,
-    exitSequence: ['\x1b', '\x03', '\x03'],  // Esc, Ctrl+C, Ctrl+C (need Esc first for Claude)
-  },
-  codex: {
-    agentType: 'codex',
-    command: 'codex',
-    statusCommand: '/status',
-    // Matches: "Session: 01J9..." or "Session ID: 01J9..."
-    sessionIdPattern: /Session(?:\s+ID)?:\s*([a-zA-Z0-9_-]+)/i,
-    exitSequence: ['\x03', '\x03'],  // Ctrl+C twice
-  },
-  cursor: {
-    agentType: 'cursor',
-    command: 'cursor-agent',
-    statusCommand: '/status',
-    // Matches session ID pattern
-    sessionIdPattern: /Session(?:\s+ID)?:\s*([a-zA-Z0-9_-]+)/i,
-    exitSequence: ['\x03', '\x03'],  // Ctrl+C twice
-  },
-  opencode: {
-    agentType: 'opencode',
-    command: 'opencode',
-    statusCommand: '',  // OpenCode doesn't have /status - session ID tracked via session list
-    // Matches OpenCode session ID format: ses_xxx
-    sessionIdPattern: /ses_[a-zA-Z0-9]+/i,
-    exitSequence: ['\x03', '\x03'],  // Ctrl+C twice
-  }
+/** The keys that cleanly exit each pre-warmable agent. */
+export const PREWARM_CONFIGS: Record<PrewarmAgentType, { exitSequence: string[] }> = {
+  claude: { exitSequence: ['\x1b', '\x03', '\x03'] },  // Esc, Ctrl+C, Ctrl+C (need Esc first for Claude)
+  codex: { exitSequence: ['\x03', '\x03'] },
+  cursor: { exitSequence: ['\x03', '\x03'] },
+  opencode: { exitSequence: ['\x03', '\x03'] },
 };
 
 /**
