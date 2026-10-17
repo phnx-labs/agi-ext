@@ -27,6 +27,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   (`sessions <id> --json`, once per use) instead of searching harness folders. The extension's
   transcript reader (`sessions.vscode.ts`) and its `sql.js` dependency are gone, which shrinks
   the VSIX from 15.1 MB to 5.6 MB.
+- A session card says what the Active Session sidebar says. A PR with green checks and a
+  conflict read "ready to merge" on its Project panel card and "Conflicts" in the sidebar; the
+  card's PR chip now carries the sidebar's word and color (Conflicts, Changes requested, Needs
+  review, Checks passed, Ready, …).
+- The Active Session sidebar draws a harness's light logo on a light theme (Codex, Cursor, Grok,
+  Droid were near-invisible white marks).
+- The resume picker and the Project panel's Name sort name a session as its card does: Claude's
+  `<folder>-<n>` placeholder and a bare slash command are no longer a name. The sidebar no longer
+  falls back to the raw stream label for a session the stream has no title for.
+- One theme for both sidebars: Project panel cards take the sidebar's card (10 px corners,
+  9×11 px padding, a top sheen) and hover tone; the Today chip's border, which read an undefined
+  color, now shows. "Ready for review" has the same indigo dot in the sidebar as on the card, and
+  "Running · no transcript" the same green group dot in the Project panel as in the sidebar.
+  A card's age reads "now" through its first minute. A ticket delegated to an agent shows that
+  agent's logo on its Issues row, where it drew an empty circle.
 
 ## [0.9.406] - 2026-10-17
 
