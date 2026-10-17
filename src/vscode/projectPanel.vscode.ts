@@ -422,6 +422,16 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 }
 
+/** One `agents projects tickets|goals` call; a CLI without the verb is an upgrade error. */
+async function linearThroughAgents(args: string[], timeout: number): Promise<{ stdout: string }> {
+  try {
+    return await runAgentsArgs(['projects', ...args], { timeout, maxBuffer: 20 * 1024 * 1024 });
+  } catch (e) {
+    if (/unknown command '(tickets|goals)'/.test(errorText(e))) throw new Error(`This agents-cli has no \`agents projects ${args[0]}\`. Run \`agents upgrade\`.`);
+    throw e;
+  }
+}
+
 function errorText(e: unknown): string {
   return (e as { stderr?: string }).stderr?.trim() || (e instanceof Error ? e.message : String(e));
 }
@@ -443,7 +453,13 @@ class ProjectPanelController {
   /** The picked project for this workspace, else the one containing its first folder. */
   project(): Promise<ProjectRef | null> {
     const picked = this.context.workspaceState.get<{ name: string }>(PICKED_PROJECT_KEY)?.name;
-    if (picked) return readRegistry().then((all) => all.find((p) => p.name === picked) ?? null);
+    if (picked) {
+      return readRegistry().then((all) => {
+        const found = all.find((p) => p.name === picked);
+        if (!found) throw new Error(`The project picked for this window, ${picked}, is no longer in agents projects list. Pick another.`);
+        return found;
+      });
+    }
     if (!this.detected) {
       const detected = this.detect();
       this.detected = detected;
@@ -528,7 +544,7 @@ class ProjectPanelController {
     const cached = this.tickets;
     if (!force && cached && cached.project === p.name && Date.now() - cached.at < FRESH_MS) return cached.groups;
     const groups = (async () => {
-      const { stdout } = await runAgentsArgs(['projects', 'tickets', p.name, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+      const { stdout } = await linearThroughAgents(['tickets', p.name, '--json'], 60_000);
       const parsed = parseTickets(stdout);
       // A read that lands after a project switch is not the shown project's.
       if (this.tickets?.project === p.name) this.ticketsSeen = parsed;
@@ -585,8 +601,8 @@ class ProjectPanelController {
   /** Company and today's goal of the project's Linear workspace: one `agents projects goals` read. */
   async goals(): Promise<string> {
     const project = await this.project();
-    if (!project) return '';
-    const { stdout } = await runAgentsArgs(['projects', 'goals', project.name, '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+    if (!project) { this.todayId = undefined; return ''; }
+    const { stdout } = await linearThroughAgents(['goals', project.name, '--json'], 30_000);
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
     return renderGoals(goals);
@@ -605,7 +621,7 @@ class ProjectPanelController {
 
   async ticketDetail(id: string): Promise<{ html: string; ticket: TicketDetail }> {
     const project = await this.ticketProject();
-    const { stdout } = await runAgentsArgs(['projects', 'tickets', 'view', project.name, id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+    const { stdout } = await linearThroughAgents(['tickets', 'view', project.name, id, '--json'], 60_000);
     const t = parseTicketDetail(stdout);
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     const agent = this.ticketAgent(t);
@@ -618,7 +634,7 @@ class ProjectPanelController {
 
   async comment(id: string, text: string): Promise<void> {
     const project = await this.ticketProject();
-    await runAgentsArgs(['projects', 'tickets', 'comment', project.name, id, text], { timeout: 60_000 });
+    await linearThroughAgents(['tickets', 'comment', project.name, id, '--', text], 60_000);
   }
 
   /** Start runs the agent Linear delegates the ticket to when this version launches it
@@ -1490,7 +1506,7 @@ ${THUMB_SCRIPT}
       const pmenu = document.querySelector('.pmenu');
       const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       if (m.error) { pmenu.innerHTML = '<div class="pms err">' + esc(m.error) + '</div>'; return; }
-      pmenu.innerHTML = '<div class="pms">' + (m.projects.length ? 'Projects in ' + esc(m.folder) : 'No project has a repository in ' + esc(m.folder)) + '</div>' +
+      pmenu.innerHTML = '<div class="pms">' + (m.projects.length ? 'Projects in ' + esc(m.folder) : 'No project is bound to ' + esc(m.folder)) + '</div>' +
         m.projects.map((p) => '<button role="menuitemradio" aria-checked="' + (p.name === m.current) + '" data-proj-pick="' + esc(p.name) + '"><span class="ck">' + (p.name === m.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(p.name) + '</b><small>' + esc(p.repos.concat(p.linear ? ['Linear ' + p.linear] : []).join(' · ')) + '</small></span></button>').join('') +
         '<hr><button data-proj-all><span class="ck"></span>All projects…</button>';
     }

@@ -70,7 +70,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
   `agents projects tickets view <name> <ID> --json` (`ProjectPanelController.ticketDetail`), on
   the click only, never on a timer; its Comment button is one
-  `agents projects tickets comment <name> <ID> <text>` argv. The extension never runs `linear`
+  `agents projects tickets comment <name> <ID> -- <text>` argv. The extension never runs `linear`
   itself: agents-cli owns which Linear project and workspace a project is.
   A fourth: the Project panel's goal lines are one `agents projects goals <name> --json` read
   when the panel shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never
