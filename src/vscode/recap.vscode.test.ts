@@ -5,6 +5,7 @@ import {
   recapSidecarPath,
   stripFrontmatter,
   isRecapSupported,
+  transcriptPathOf,
 } from './recap.vscode';
 
 describe('recapSidecarPath', () => {
@@ -85,5 +86,20 @@ describe('isRecapSupported', () => {
     expect(isRecapSupported('shell')).toBe(false);
     expect(isRecapSupported(undefined)).toBe(false);
     expect(isRecapSupported('')).toBe(false);
+  });
+});
+
+describe('transcriptPathOf', () => {
+  const id = '6d4836c1-119c-4e1e-a893-e01ae6250516';
+  const file = `/home/me/.claude/projects/-home-me-repo/${id}.jsonl`;
+
+  test('reads the file the session index records for that id', () => {
+    const out = JSON.stringify([{ id, shortId: '6d4836c1', agent: 'claude', filePath: file, messageCount: 42 }]);
+    expect(transcriptPathOf(out, id)).toBe(file);
+  });
+
+  test('an unknown id (the CLI prints []) or another session has no transcript', () => {
+    expect(transcriptPathOf('[]', id)).toBeUndefined();
+    expect(transcriptPathOf(JSON.stringify([{ id: 'other', filePath: '/x.jsonl' }]), id)).toBeUndefined();
   });
 });

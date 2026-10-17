@@ -21,11 +21,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - Go to Terminal draws each tab's last-activity time and first ask from the session stream
   instead of reading Claude, Codex, OpenCode and Cursor transcripts itself, so it opens without
   touching disk. The detail line no longer ends in a count of transcript lines, which the stream
-  does not carry: `Ship the fix (42)` is now `Ship the fix`. Tabs whose session runs on another
-  machine now show both too.
-- Close Terminal With Recap finds the transcript through the path the stream row names for this
-  machine. The extension's transcript reader (`sessions.vscode.ts`) and its `sql.js`
-  dependency are gone, which shrinks the VSIX.
+  does not carry: `Ship the fix (42)` is now `Ship the fix`, and a tab with no first ask shows no
+  detail instead of a bare `(42)`. Tabs whose session runs on another machine now show both too.
+- Close Terminal With Recap asks the CLI's session index for the transcript
+  (`sessions <id> --json`, once per use) instead of searching harness folders. The extension's
+  transcript reader (`sessions.vscode.ts`) and its `sql.js` dependency are gone, which shrinks
+  the VSIX from 15.1 MB to 5.6 MB.
 
 ## [0.9.406] - 2026-10-17
 

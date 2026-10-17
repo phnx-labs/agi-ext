@@ -58,7 +58,6 @@ import {
   presentableLabel,
   getSessionChunk,
   truncateText,
-  formatRelativeTime,
   TerminalIdentificationOptions,
   prefixToAgentType,
   SessionAgentType
