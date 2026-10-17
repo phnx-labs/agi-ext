@@ -1,5 +1,5 @@
-// The Tickets tab's detail view: one `linear tasks <ID> --json` read on the click
-// that opens it, drawn in the panel. Comments leave as one `linear update` argv.
+// The Tickets tab's detail view: one `agents projects tickets view <name> <ID> --json`
+// read on the click that opens it, drawn in the panel.
 
 import { escapeHtml } from './projectPanel';
 
@@ -23,7 +23,7 @@ type Json = Record<string, unknown>;
 const rec = (v: unknown): Json | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : null);
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 
-/** `linear tasks <ID> --json`: one issue object. */
+/** `agents projects tickets view <name> <ID> --json` (linear-cli's `tasks <ID>` JSON): one issue object. */
 export function parseTicketDetail(raw: string): TicketDetail {
   const d = rec(JSON.parse(raw));
   const identifier = str(d?.identifier);
@@ -43,11 +43,6 @@ export function parseTicketDetail(raw: string): TicketDetail {
       return { author: str(rec(o.user)?.name) ?? 'Unknown', date: (str(o.createdAt) ?? '').slice(0, 10), body: str(o.body) ?? '' };
     }),
   };
-}
-
-/** The argv that adds one comment; `--comment=` keeps a leading "-" in the text from reading as a flag. */
-export function commentArgv(identifier: string, text: string): string[] {
-  return ['update', identifier, `--comment=${text}`];
 }
 
 /** The task a new agent gets for the ticket. */

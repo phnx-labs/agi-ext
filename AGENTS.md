@@ -68,17 +68,20 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/sessionCardActions.ts`) finds the row by session id AND host and copies only
   an artifact that row lists. Nothing loads on selection.
   A third: clicking a ticket in the Project panel's Tickets tab reads that one ticket with
-  `linear tasks <ID> --json` (`ProjectPanelController.ticketDetail`), on the click only, never
-  on a timer; its Comment button is one `linear update <ID> --comment=<text>` argv.
-  A fourth: the Project panel's goal lines are one `linear goals --json` read when the panel
-  shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never per tab or per click.
+  `agents projects tickets view <name> <ID> --json` (`ProjectPanelController.ticketDetail`), on
+  the click only, never on a timer; its Comment button is one
+  `agents projects tickets comment <name> <ID> <text>` argv. The extension never runs `linear`
+  itself: agents-cli owns which Linear project and workspace a project is.
+  A fourth: the Project panel's goal lines are one `agents projects goals <name> --json` read
+  when the panel shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never
+  per tab or per click.
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
   --number N`) on the click for its head commit and whether you may bypass protection
   (`src/vscode/prMerge.vscode.ts`). A Review row's Merge is one click with the Settings
   method after an in-page "Undo · 5" (`mergeNow`), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
   dialog (`mergeWithMenu`); `--admin` only after its own warning dialog.
   A sixth: ticket tiles show the title and state a Linear read in this window already returned
-  (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <linear> --json`)
+  (`src/core/ticketFaces.ts`); the Issues read (`agents projects tickets <name> --json`)
   also runs when Sessions shows, under the same once-a-minute cache. A tile never reads Linear.
   A seventh: the Project panel's project menu is one `agents projects list --json` read when
   it opens (the same list, cached a minute in `src/vscode/projectRegistry.vscode.ts`, also

@@ -4,6 +4,22 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.405] - 2026-10-17
+
+The Project panel reads Linear through the project, as Review already reads GitHub:
+
+- Issues, a ticket's card, Comment and the goal lines run `agents projects tickets <name>`,
+  `agents projects tickets view|comment` and `agents projects goals <name>`. agents-cli knows
+  which Linear project (and, with profiles, which workspace) a project is; the extension no
+  longer runs `linear` itself or looks for its binary.
+- A project is read by the Linear project id it records, not the board's name, so a renamed
+  board keeps working. A link to a project Linear no longer has shows linear-cli's error and
+  `Relink it: agents projects link <name> --linear`, instead of an empty list or "not found".
+- The project menu names each project's Linear project beside its repositories.
+- A picked project is remembered by name and read fresh from `agents projects list`, so its
+  repositories and Linear project are always current.
+- Needs an agents-cli with `agents projects tickets`; an older one says to run `agents upgrade`.
+
 ## [0.9.404] - 2026-10-17
 
 PRs and tickets open as editor tabs, from the owner's screenshot of 2026-10-13, where the whole

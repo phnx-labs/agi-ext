@@ -2,10 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { runAgentsArgs } from '../core/agentsBin';
-import { LINEAR_NOT_FOUND_MESSAGE, resolveLinearBin } from '../core/linearBin';
 import { parseGoals, renderGoals } from '../core/goals';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
@@ -57,7 +54,7 @@ import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openLink, openWebviewUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
-import { commentArgv, parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
+import { parseTicketDetail, renderTicketDetail, ticketPrompt, type TicketDetail } from '../core/ticketDetail';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, validMergeMethod } from '../core/settings';
 import { BUILT_IN_AGENTS } from '../core/agents';
@@ -66,17 +63,16 @@ import { buildIconPathFromUri } from './theme.vscode';
 import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
 import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 
-const execFileAsync = promisify(execFile);
 
 // The Project sidebar panel (PHNX-4289): one view with tabs (Sessions, Issues,
 // Review, and a Settings gear) for one project, while the other sidebar keeps the
 // focused session. Only the active tab loads. Issues and Review each read their
 // one CLI verb when shown (at most once per
-// FRESH_MS) or on Refresh; a ticket's detail is one `linear tasks <ID>` read on the
+// FRESH_MS) or on Refresh; a ticket's detail is one `agents projects tickets view` read on the
 // click that opens it. Sessions draws the stream rows already in the presentation
 // store and demands the stream only while it is the visible tab. Settings reads
 // agentSettings and nothing else. Above the tabs, the company goal and today's
-// goal are one `linear goals --json` read when the panel shows (at most once per
+// goal are one `agents projects goals` read when the panel shows (at most once per
 // FRESH_MS) or on Refresh. No timer anywhere.
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
@@ -316,7 +312,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   private commenting = false;
 
   private async comment(id: string, text: string): Promise<void> {
-    // One `linear update` at a time: a second click must not post the comment twice.
+    // One comment at a time: a second click must not post the comment twice.
     if (!text.trim() || this.ticket !== id || this.commenting) return;
     this.commenting = true;
     void this.view?.webview.postMessage({ type: 'loading' });
@@ -432,7 +428,7 @@ function errorText(e: unknown): string {
 
 class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
-  /** One `linear tasks` read feeds Issues (and a ticket's Start agent). */
+  /** One `agents projects tickets` read feeds Issues (and a ticket's Start agent). */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
   /** The detail last drawn, so Start names the ticket the user is looking at. */
   private shownTicket: TicketDetail | undefined;
@@ -446,8 +442,8 @@ class ProjectPanelController {
 
   /** The picked project for this workspace, else the one containing its first folder. */
   project(): Promise<ProjectRef | null> {
-    const picked = this.context.workspaceState.get<ProjectRef>(PICKED_PROJECT_KEY);
-    if (picked) return Promise.resolve(picked);
+    const picked = this.context.workspaceState.get<{ name: string }>(PICKED_PROJECT_KEY)?.name;
+    if (picked) return readRegistry().then((all) => all.find((p) => p.name === picked) ?? null);
     if (!this.detected) {
       const detected = this.detect();
       this.detected = detected;
@@ -460,7 +456,7 @@ class ProjectPanelController {
 
   /** Whether the shown project is one the user picked, rather than found from the folder. */
   picked(): boolean {
-    return !!this.context.workspaceState.get<ProjectRef>(PICKED_PROJECT_KEY);
+    return !!this.context.workspaceState.get<{ name: string }>(PICKED_PROJECT_KEY)?.name;
   }
 
   /** The project menu reads the list fresh each time it opens; the read also refreshes the shared registry. */
@@ -479,7 +475,7 @@ class ProjectPanelController {
   async pickByName(name: string): Promise<void> {
     const p = (await this.projectList()).find((x) => x.name === name);
     if (!p) throw new Error(`No project named ${name}`);
-    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: p.name, linearName: p.linearName });
+    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: p.name });
     this.refresh(true);
   }
 
@@ -487,7 +483,7 @@ class ProjectPanelController {
 
   /** Read the Issues list for ticket tiles at most once per FRESH_MS, failed or not; never throws. */
   warmTicketFaces(p: ProjectRef): void {
-    if (!p.linearName || !resolveLinearBin() || Date.now() - this.facesTriedAt < FRESH_MS) return;
+    if (!p.linearName || Date.now() - this.facesTriedAt < FRESH_MS) return;
     this.facesTriedAt = Date.now();
     this.ticketGroups(p, false).catch(() => undefined);
   }
@@ -532,10 +528,7 @@ class ProjectPanelController {
     const cached = this.tickets;
     if (!force && cached && cached.project === p.name && Date.now() - cached.at < FRESH_MS) return cached.groups;
     const groups = (async () => {
-      if (!p.linearName) throw new Error(`Project "${p.name}" has no Linear project. Link one: agents projects link ${p.name}`);
-      const bin = resolveLinearBin();
-      if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
-      const { stdout } = await execFileAsync(bin, ['tasks', '--project', p.linearName, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+      const { stdout } = await runAgentsArgs(['projects', 'tickets', p.name, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
       const parsed = parseTickets(stdout);
       // A read that lands after a project switch is not the shown project's.
       if (this.tickets?.project === p.name) this.ticketsSeen = parsed;
@@ -589,18 +582,14 @@ class ProjectPanelController {
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
   todayId: string | undefined;
 
-  /** Company and today's goal: one `linear goals --json` read. */
+  /** Company and today's goal of the project's Linear workspace: one `agents projects goals` read. */
   async goals(): Promise<string> {
-    const { stdout } = await execFileAsync(this.linear(), ['goals', '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
+    const project = await this.project();
+    if (!project) return '';
+    const { stdout } = await runAgentsArgs(['projects', 'goals', project.name, '--json'], { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 });
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
     return renderGoals(goals);
-  }
-
-  private linear(): string {
-    const bin = resolveLinearBin();
-    if (!bin) throw new Error(LINEAR_NOT_FOUND_MESSAGE);
-    return bin;
   }
 
   /** The ticket the card shows; set by the load that drew it, after its generation check. */
@@ -608,13 +597,19 @@ class ProjectPanelController {
     this.shownTicket = t;
   }
 
+  private async ticketProject(): Promise<ProjectRef> {
+    const project = await this.project();
+    if (!project) throw new Error('No agents project contains this workspace; pick one to read its tickets.');
+    return project;
+  }
+
   async ticketDetail(id: string): Promise<{ html: string; ticket: TicketDetail }> {
-    const { stdout } = await execFileAsync(this.linear(), ['tasks', id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
+    const project = await this.ticketProject();
+    const { stdout } = await runAgentsArgs(['projects', 'tickets', 'view', project.name, id, '--json'], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 });
     const t = parseTicketDetail(stdout);
     if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
     const agent = this.ticketAgent(t);
-    const project = await this.project().catch(() => null);
-    const rows = project ? this.projectRows(project) : (preferLive(this.presented()) as unknown as SessionLike[]);
+    const rows = this.projectRows(project);
     const onIt = rows.filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
     }));
@@ -622,7 +617,8 @@ class ProjectPanelController {
   }
 
   async comment(id: string, text: string): Promise<void> {
-    await execFileAsync(this.linear(), commentArgv(id, text), { timeout: 60_000 });
+    const project = await this.ticketProject();
+    await runAgentsArgs(['projects', 'tickets', 'comment', project.name, id, text], { timeout: 60_000 });
   }
 
   /** Start runs the agent Linear delegates the ticket to when this version launches it
@@ -909,7 +905,7 @@ class ProjectPanelController {
       { placeHolder: 'Show which project in the Project sidebar?' },
     );
     if (!choice) return;
-    await this.context.workspaceState.update(PICKED_PROJECT_KEY, choice.project);
+    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: choice.project.name });
     this.refresh(true);
   }
 
@@ -1495,7 +1491,7 @@ ${THUMB_SCRIPT}
       const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       if (m.error) { pmenu.innerHTML = '<div class="pms err">' + esc(m.error) + '</div>'; return; }
       pmenu.innerHTML = '<div class="pms">' + (m.projects.length ? 'Projects in ' + esc(m.folder) : 'No project has a repository in ' + esc(m.folder)) + '</div>' +
-        m.projects.map((p) => '<button role="menuitemradio" aria-checked="' + (p.name === m.current) + '" data-proj-pick="' + esc(p.name) + '"><span class="ck">' + (p.name === m.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(p.name) + '</b><small>' + esc(p.repos.join(' · ')) + '</small></span></button>').join('') +
+        m.projects.map((p) => '<button role="menuitemradio" aria-checked="' + (p.name === m.current) + '" data-proj-pick="' + esc(p.name) + '"><span class="ck">' + (p.name === m.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(p.name) + '</b><small>' + esc(p.repos.concat(p.linear ? ['Linear ' + p.linear] : []).join(' · ')) + '</small></span></button>').join('') +
         '<hr><button data-proj-all><span class="ck"></span>All projects…</button>';
     }
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
