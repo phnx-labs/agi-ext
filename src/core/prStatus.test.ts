@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { canOfferMerge, normalizePrStatus, oneClickMerge, parsePrForMerge, prAction, prRepo, rowMergeChoices } from './prStatus';
+import { canOfferMerge, normalizePrStatus, oneClickMerge, parsePrForMerge, prAction, prRepo, prVerdict, rowMergeChoices } from './prStatus';
 
 // The shape the feed puts on a row's `pr` today (agents-cli 1.22.122: gh's own
 // words), plus the head commit, title and per-check items a newer CLI adds.
@@ -43,6 +43,21 @@ test('the card offers merge only when GitHub would take it, pinned to a known he
   // Today's row has no head commit: nothing is offered, and the reason says why.
   expect(prAction(normalizePrStatus(row))).toEqual({ kind: 'none', reason: 'merging from here needs a newer agents CLI (head commit not on the row)' });
   expect(prAction(undefined).kind).toBe('none');
+});
+
+test('one verdict for where the PR stands: green checks are not Ready past a conflict, a change request or a required review', () => {
+  const pr = (extra: object = {}) => normalizePrStatus({ ...row, reviewDecision: '', mergeable: '', checks: '', ...extra })!;
+  expect(prVerdict(pr({ state: 'MERGED' }))).toEqual({ word: 'Merged', tone: 'ok' });
+  expect(prVerdict(pr({ state: 'CLOSED' }))).toEqual({ word: 'Closed', tone: 'idle' });
+  expect(prVerdict(pr({ isDraft: true, checks: 'pending' }))).toEqual({ word: 'Draft', tone: 'idle' });
+  expect(prVerdict(pr({ isDraft: true, checks: 'failing' }))).toEqual({ word: 'Failing', tone: 'bad' });
+  expect(prVerdict(pr({ checks: 'passing', mergeable: 'CONFLICTING' }))).toEqual({ word: 'Conflicts', tone: 'bad' });
+  expect(prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE', reviewDecision: 'CHANGES_REQUESTED' }))).toEqual({ word: 'Changes requested', tone: 'bad' });
+  expect(prVerdict(pr({ checks: 'pending' }))).toEqual({ word: 'Checks running', tone: 'warn' });
+  expect(prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE', reviewDecision: 'REVIEW_REQUIRED' }))).toEqual({ word: 'Needs review', tone: 'warn' });
+  expect(prVerdict(pr({ checks: 'passing', mergeable: 'UNKNOWN' }))).toEqual({ word: 'Checks passed', tone: 'ok' });
+  expect(prVerdict(pr({ checks: 'passing', mergeable: 'MERGEABLE' }))).toEqual({ word: 'Ready', tone: 'ok' });
+  expect(prVerdict(pr())).toEqual({ word: 'Open', tone: 'idle' });
 });
 
 test('the repo comes only from a github.com pull URL', () => {

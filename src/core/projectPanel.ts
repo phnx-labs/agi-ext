@@ -10,12 +10,14 @@ import * as path from 'path';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, sessionStateOf, urgencyOf, urgencyRank, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, sessionStateOf, urgencyOf, urgencyRank, waitFor, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { resolveProject } from '../shared/project';
+import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
+import { prVerdict, type RemotePrStatus } from './prStatus';
 
 export interface ProjectRef {
   name: string;
@@ -287,7 +289,7 @@ export interface SessionLike {
   lastResponse: string;
   activity: string;
   ticket: string | null;
-  prStatus?: { number: number; checks?: 'passing' | 'failing' | 'pending'; isDraft: boolean; state?: string };
+  prStatus?: Pick<RemotePrStatus, 'number' | 'state' | 'isDraft' | 'checks' | 'mergeable' | 'review'>;
   branch?: string;
   worktreeSlug?: string;
   files?: { total: number };
@@ -410,34 +412,7 @@ function fieldsHash(text: string): string {
   return (h >>> 0).toString(36);
 }
 
-function relAge(ms: number, now: number): string {
-  if (!ms) return '';
-  const m = Math.max(0, Math.round((now - ms) / 60000));
-  return m < 1 ? 'now' : m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
-}
-
 // ── HTML ──────────────────────────────────────────────────────────────────
-
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
-}
-
-/** Small line icons (16px box, currentColor). Each use carries a title with the words. */
-const ICON: Record<string, string> = {
-  pr: '<path d="M5 3.5v9M11 12.5V7a2 2 0 0 0-2-2H7" /><circle cx="5" cy="3" r="1.3"/><circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/><path d="M8.5 3.5 7 5l1.5 1.5"/>',
-  image: '<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.1"/><path d="m3 12 3.5-3.5 2.5 2.5 2-2 2.5 2.5"/>',
-  file: '<path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/>',
-  host: '<rect x="2.5" y="3" width="11" height="7.5" rx="1"/><path d="M6 13.5h4M8 10.5v3"/>',
-  ticket: '<path d="M2.5 5.5V4h11v1.5a1.5 1.5 0 0 0 0 3V10h-11V8.5a1.5 1.5 0 0 0 0-3Z"/>',
-  clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>',
-  you: '<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c.8-2.4 2.7-3.5 5-3.5s4.2 1.1 5 3.5"/>',
-  agent: '<rect x="3" y="4" width="10" height="8" rx="2"/><path d="M6 8h.01M10 8h.01M8 2v2"/>',
-  run: '<path d="M4 6l2.5 2L4 10M8 10.5h4"/>',
-  branch: '<circle cx="5" cy="3.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5v6M11 7.5c0 2-2 2.5-6 3.5"/>',
-};
-function icon(name: string, title: string): string {
-  return `<svg class="ic" viewBox="0 0 16 16" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(title)}</title>${ICON[name]}</svg>`;
-}
 
 /** The ↗ the Active Session header uses to open a tab: on a PR row it opens the PR's GitHub
  *  page as an editor tab (a ⌘ or ⌥ click, in the OS browser). */
@@ -447,13 +422,13 @@ function prOpenIcon(p: { number: number; url: string }): string {
 
 /** Where a chip points, as that service's own mark: GitHub for pull requests, Linear for
  *  tickets (the tracker the Issues tab reads). */
-const GITHUB_MARK = '<svg class="ic mark" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
-const LINEAR_MARK = '<svg class="ic mark" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7.2" fill="#5E6AD2" stroke="none"/><path d="M2.2 9.6l4.2 4.2M1.6 7l7.4 7.4M2.6 4.6l8.8 8.8M4.4 2.8l8.8 8.8" stroke="#fff" stroke-width="1.05"/></svg>';
+const GITHUB_MARK = serviceMark('github', 'ic mark');
+const LINEAR_MARK = serviceMark('linear', 'ic mark');
 
+/** The PR chip says the same verdict as the Active Session sidebar's PR tile (`prVerdict`). */
 function prMini(pr: NonNullable<SessionLike['prStatus']>): string {
-  const tone = pr.state === 'merged' ? 'ok' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ok' : pr.checks === 'failing' ? 'bad' : 'run';
-  const words = pr.state === 'merged' ? 'merged' : pr.isDraft ? 'draft' : pr.checks === 'passing' ? 'ready to merge' : pr.checks === 'failing' ? 'checks failing' : 'checks running';
-  return `<span class="chip pr-${tone}" title="PR #${pr.number}: ${words}">${GITHUB_MARK}#${pr.number}</span>`;
+  const v = prVerdict(pr);
+  return `<span class="chip pr-${v.tone}" title="PR #${pr.number}: ${escapeHtml(v.word)}">${GITHUB_MARK}#${pr.number}</span>`;
 }
 
 /** A live tool call reads as what it runs, not as a "Tool: args" label: a shell
@@ -728,7 +703,7 @@ export function cleanTitle(raw: string): string {
  *  `<folder>-<n>` placeholder or the `[host/…]` fallback), else the topic or the
  *  request; each skipped while it is only an inserted note or a slash command
  *  (owner video, 2026-10-12 8:15 PM). '' while the CLI knows none. */
-export function streamTitle(s: Pick<SessionLike, 'title' | 'topic' | 'label' | 'request' | 'cwd'>): string {
+export function streamTitle(s: { title?: string; topic?: string; label?: string; request?: { headline?: string }; cwd?: string }): string {
   const label = s.label && !isHostFallbackLabel(s.label) && !isDerivedSessionName(s.label, s.cwd ?? '') ? s.label : '';
   for (const c of [s.title, label, s.topic, s.request?.headline]) {
     const t = cleanTitle(c ?? '');
@@ -740,16 +715,6 @@ export function streamTitle(s: Pick<SessionLike, 'title' | 'topic' | 'label' | '
 /** The card title: `streamTitle`, or Untitled. */
 export function sessionTitle(s: Pick<SessionLike, 'title' | 'topic' | 'label' | 'request' | 'cwd'>): string {
   return streamTitle(s) || 'Untitled';
-}
-
-/** How long a question has waited: "12s", "5m 02s", "18h 4m", "2d 3h". The list's
- *  script ticks the same words each second. */
-export function waitFor(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
-  const h = Math.floor(s / 3600);
-  return h < 24 ? `${h}h ${Math.floor((s % 3600) / 60)}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 /** When the open question was asked, from the CLI's attention item; NaN when none. */
@@ -891,7 +856,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const tabNo = place.kind === 'here' && s.tabIndex ? `<span class="tabn" title="Tab ${s.tabIndex} in this window">${escapeHtml(opts.tabKey ?? '⌘')}${s.tabIndex}</span>` : '';
   const started = s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(s.startedAs)}">started: ${escapeHtml(plain(s.startedAs))}</div>` : '';
   const body = `
-    ${opts.front ? '<div class="thistab">This tab</div>' : ''}<div class="top">${tabNo}${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${relAge(s.lastActivityMs, now)}</span><span class="acts">${cardMenu(s, place, opts)}${go}${x}</span></div>
+    ${opts.front ? '<div class="thistab">This tab</div>' : ''}<div class="top">${tabNo}${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}<span class="age">${ageWords(s.lastActivityMs, now)}</span><span class="acts">${cardMenu(s, place, opts)}${go}${x}</span></div>
     ${started}${reason}<div class="meta">${pill}${pendChips}${repoTag}</div>
     ${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}
     ${thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}<div class="cbot">${chips ? `<div class="cstrip">${chips}</div>` : ''}<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span></div>
@@ -903,7 +868,6 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
 }
 
 const PLACE_ORDER: Record<PlaceKind, number> = { here: 0, window: 1, ghostty: 2, terminal: 3, background: 4, leftover: 5, ended: 6 };
-const DOT_TONE: Record<SessionStateKey, string> = { asks: 'asks', stuck: 'asks', review: 'review', idle: 'idle', working: 'working', waiting: 'waiting', unknown: 'unknown', ended: 'ended' };
 
 /** What the list keeps after the viewer's Show choices and hidden sessions. */
 function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionListPrefs): { row: SessionLike; place: SessionPlace }[] {
@@ -919,7 +883,7 @@ function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: Sess
     return [...items].sort((a, b) => (a.row.tabIndex ?? Infinity) - (b.row.tabIndex ?? Infinity) || b.row.lastActivityMs - a.row.lastActivityMs);
   }
   const by = sort === 'name'
-    ? (a: SessionLike, b: SessionLike) => plain(a.title || a.label || a.topic).localeCompare(plain(b.title || b.label || b.topic))
+    ? (a: SessionLike, b: SessionLike) => streamTitle(a).localeCompare(streamTitle(b))
     : sort === 'newest' ? (a: SessionLike, b: SessionLike) => (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0)
       : (a: SessionLike, b: SessionLike) => b.lastActivityMs - a.lastActivityMs;
   return [...items].sort((a, b) => (sort === 'name' ? 0 : Number(sessionStateOf(b.row) === 'working') - Number(sessionStateOf(a.row) === 'working')) || by(a.row, b.row));
@@ -973,7 +937,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const section = (g: Group) => {
     const counts = new Map<SessionStateKey, number>();
     for (const { row } of g.items) { const k = sessionStateOf(row); counts.set(k, (counts.get(k) ?? 0) + 1); }
-    const dots = [...counts].map(([k, n]) => `<i class="d-${DOT_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
+    const dots = [...counts].map(([k, n]) => `<i class="d-${STATE_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
     // A folded group opens while it holds the selected session (the front tab included).
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
@@ -1018,8 +982,6 @@ export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: Ses
     tabs: rows.filter((s) => s.tabHere).length,
   };
 }
-
-const pct = (done: number, total: number) => (total > 0 ? Math.round((done / total) * 100) : 0);
 
 const PRIORITY_TITLE: Record<number, string> = { 0: 'No priority', 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
 
@@ -1146,7 +1108,7 @@ function prFace(p: PrRow): string {
 }
 
 function prLine(p: PrRow, slug: string, now: number, mergeWith: string, showRepo: boolean): string {
-  const age = relAge(Date.parse(p.date), now);
+  const age = ageWords(Date.parse(p.date), now);
   return `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prOpenIcon(p)}${prStatusCell(p, slug, mergeWith)}</li>`;
 }
 
@@ -1194,7 +1156,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
     body = section('Open', shown);
   }
   const merged = prefs.showMerged ? m.repos.flatMap((r) => r.merged.map((p) => ({ p, slug: r.slug }))).sort((a, b) => Date.parse(b.p.date) - Date.parse(a.p.date)) : [];
-  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${relAge(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
+  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
   return head + partial + readingLine + errors + body + none + mergedHtml + '<div class="toast" hidden></div>';
 }

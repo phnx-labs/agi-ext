@@ -3,7 +3,7 @@
 // Devices section, which shows `agents devices list --json` and writes through
 // `agents devices`. The CLI decides placement; this only draws its verdict.
 
-import { escapeHtml } from './projectPanel';
+import { escapeHtml } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import { cardSettings, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';

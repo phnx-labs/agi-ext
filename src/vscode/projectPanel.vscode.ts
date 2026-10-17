@@ -14,7 +14,6 @@ import { normalizeHost } from '../shared/project';
 import type { RemoteSession } from '../core/remoteSessions';
 import { sessionStreamDemand } from '../monitor/sessionDemand';
 import {
-  escapeHtml,
   preferLive,
   parsePrs,
   parseProjectDetection,
@@ -31,7 +30,6 @@ import {
   renderTickets,
   readSessionPrefs,
   readReviewPrefs,
-  waitFor,
   onTicket,
   sessionTitle,
   applyReviewPref,
@@ -49,7 +47,7 @@ import {
   type Ticket,
   type TicketGroup,
 } from '../core/projectPanel';
-import { SESSION_STATE_WORD, sessionStateOf } from '../shared/sessionState';
+import { SESSION_STATE_WORD, sessionStateOf, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, followFrontTerminal, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
@@ -57,13 +55,13 @@ import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openLink, openWebviewUrl } from './webviewSecurity';
-import { PATCH_SCRIPT, THUMB_SCRIPT } from '../shared/sessionCards';
+import { PATCH_SCRIPT, RUSH_THEME_CSS, THUMB_SCRIPT, escapeHtml } from '../shared/sessionCards';
+import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, validMergeMethod } from '../core/settings';
-import { BUILT_IN_AGENTS } from '../core/agents';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
-import { buildIconPathFromUri } from './theme.vscode';
+import { harnessLogoCss } from './theme.vscode';
 import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
 import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 
@@ -989,25 +987,9 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
   );
 }
 
-function nonce(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let s = '';
-  for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
-}
-
-/** One class per harness (`.hx-claude`), each drawing that harness's logo from
- *  assets/, with the light variant on a light editor theme. */
-function harnessLogoCss(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  return BUILT_IN_AGENTS.filter((a) => a.key !== 'shell').map((a) => {
-    const { dark, light } = buildIconPathFromUri(extensionUri, a.icon);
-    return `.hx-${a.key} { background-image: url("${webview.asWebviewUri(dark)}"); } body.vscode-light .hx-${a.key} { background-image: url("${webview.asWebviewUri(light)}"); }`;
-  }).join('\n  ');
-}
-
 /** The panel's webview document; exported for the script syntax test. */
 export function shell(cspSource: string, logoCss = ''): string {
-  const n = nonce();
+  const n = getNonce();
   return /* html */ `<!doctype html>
 <html lang="en">
 <head>
@@ -1015,57 +997,24 @@ export function shell(cspSource: string, logoCss = ''): string {
 <meta http-equiv="Content-Security-Policy"
   content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
 <style>
-  /* Rush register, as in the Active Terminal panel. This block is the only one
-     with color literals; dark editor = Altitude, light = Day, high contrast keeps
-     VS Code's own colors. */
-  body {
-    --r-text: #FAFAFA; --r-text-2: #D4D4D8; --r-caption: #A1A1AA; --r-faint: #71717A;
-    --r-glass: rgba(255,255,255,0.05); --r-hover: rgba(255,255,255,0.08); --r-edge: rgba(255,255,255,0.12);
-    --r-well: rgba(0,0,0,0.35); --r-sky: rgba(86,104,150,0.16);
-    --r-ok: #86efac; --r-ok-tint: rgba(34,197,94,0.16); --r-warn: #fcd34d; --r-warn-tint: rgba(245,158,11,0.14);
-    --r-bad: #fca5a5; --r-bad-tint: rgba(239,68,68,0.12); --r-info: #a5b4fc; --r-wait: #93c5fd;
-    --r-doing: #4ade80; --r-review: #bef264; --r-todo: #71717a; --r-backlog: #3f3f46; --r-gold: #D4B872;
-    --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
-  }
-  body.vscode-light {
-    --r-text: #141829; --r-text-2: #4B4A55; --r-caption: #665E52; --r-faint: #8A8174;
-    --r-glass: rgba(251,248,242,0.70); --r-hover: rgba(20,24,41,0.06); --r-edge: #DCD2C3;
-    --r-well: rgba(20,24,41,0.06); --r-sky: rgba(184,204,220,0.30);
-    --r-ok: #15803d; --r-ok-tint: rgba(22,163,74,0.12); --r-warn: #b45309; --r-warn-tint: rgba(217,119,6,0.12);
-    --r-bad: #b91c1c; --r-bad-tint: rgba(220,38,38,0.08); --r-info: #4f46e5; --r-wait: #1D5FA8;
-    --r-doing: #15803d; --r-review: #65a30d; --r-todo: #a8a29e; --r-backlog: #d6d3d1; --r-gold: #A8884A;
-    --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
-  }
-  body.vscode-high-contrast, body.vscode-high-contrast-light {
-    --r-text: var(--vscode-foreground); --r-text-2: var(--vscode-foreground); --r-caption: var(--vscode-descriptionForeground); --r-faint: var(--vscode-descriptionForeground);
-    --r-glass: transparent; --r-hover: var(--vscode-list-hoverBackground); --r-edge: var(--vscode-contrastBorder); --r-well: transparent; --r-sky: transparent;
-    --r-ok: var(--vscode-testing-iconPassed); --r-ok-tint: transparent; --r-warn: var(--vscode-editorWarning-foreground); --r-warn-tint: transparent;
-    --r-bad: var(--vscode-errorForeground); --r-bad-tint: transparent; --r-info: var(--vscode-textLink-foreground); --r-wait: var(--vscode-charts-blue);
-    --r-doing: var(--vscode-testing-iconPassed); --r-review: var(--vscode-testing-iconPassed); --r-todo: var(--vscode-descriptionForeground); --r-backlog: var(--vscode-contrastBorder); --r-gold: var(--vscode-focusBorder);
-    --r-av0: transparent; --r-av1: transparent; --r-av2: transparent; --r-av3: transparent; --r-av4: transparent; --r-av5: transparent; --r-on-av: var(--vscode-foreground);
-  }
-  body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
+${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
     background: var(--vscode-sideBar-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }
   body.loading main { opacity: 0.55; }
   section { padding: 8px 0; border-bottom: 1px solid var(--r-edge); }
   section:last-child { border-bottom: none; }
   ul { list-style: none; margin: 0; padding: 0; }
   a { color: inherit; text-decoration: none; }
-  .head, .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .head { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .title { font-weight: 600; font-size: 15px; flex: 1; }
   .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--r-caption); flex: 1; }
   .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--r-text); }
   .n { color: var(--r-faint); font-variant-numeric: tabular-nums; font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .sub { color: var(--r-caption); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ms { margin-top: 8px; } .ms .t { flex: 1; }
-  .note { margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: var(--r-well); color: var(--r-caption); }
-  .note b { color: var(--r-text); }
   .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   .srow { display: grid; grid-template-columns: minmax(0,1fr) 18px; gap: 2px 8px; width: 100%; text-align: left; padding: 7px 6px; margin: 1px 0; border: none; border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer; }
-  .srow:hover { background: var(--r-hover); } .srow.sel { background: var(--r-hover); box-shadow: inset 2px 0 0 var(--r-gold); }
+  .srow:hover { background: var(--r-glass-hover); } .srow.sel { background: var(--r-glass-hover); box-shadow: inset 2px 0 0 var(--r-gold-line); }
   .srow:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-  .fact { display: inline-flex; align-items: center; gap: 3px; }
-  .fact.pr-ok { color: var(--r-ok); } .fact.pr-bad { color: var(--r-bad); } .fact.pr-run { color: var(--r-warn); }
   .mark { grid-column: 2; grid-row: 1 / span 2; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px; color: var(--r-faint); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .quiet summary, details summary { cursor: pointer; padding: 6px 2px 2px; color: var(--r-caption); font-size: 11.5px; }
@@ -1090,7 +1039,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   /* The row's ↗ (the Active Session header's open icon): shown on hover, opens the PR as a tab. */
   .pro { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: var(--r-caption); opacity: 0; }
   .prli:hover .pro, .pro:focus-visible { opacity: 1; }
-  .pro:hover { background: var(--r-hover); color: var(--r-text); }
+  .pro:hover { background: var(--r-glass-hover); color: var(--r-text); }
   .pro svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   /* A PR row: its author on the left, its state as the rightmost control (Merge when checks pass). */
   .rs { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 8px; font: 600 11px var(--vscode-font-family); border: 1px solid transparent; white-space: nowrap; }
@@ -1098,9 +1047,9 @@ export function shell(cspSource: string, logoCss = ''): string {
   .rs.undo { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; font-variant-numeric: tabular-nums; min-width: 62px; justify-content: center; }
   .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); }
   /* Fix: a quiet button beside the failure that starts an agent tab on the PR. */
-  .rs.fix { color: var(--r-text); background: transparent; border: 1px solid var(--r-edge); cursor: pointer; } .rs.fix:hover { background: var(--r-hover); } .rs.fix:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
+  .rs.fix { color: var(--r-text); background: transparent; border: 1px solid var(--r-edge); cursor: pointer; } .rs.fix:hover { background: var(--r-glass-hover); } .rs.fix:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
   .rgrp .head { margin-bottom: 2px; } .rgrp.g-ready .label { color: var(--r-ok); } .rgrp.g-fail .label { color: var(--r-bad); }
-  .trow:hover, .prow:hover { background: var(--r-hover); }
+  .trow:hover, .prow:hover { background: var(--r-glass-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
   .ring { width: 14px; height: 14px; flex: none; margin-top: 1px; display: inline-block; }
   .ring svg { width: 14px; height: 14px; display: block; fill: none; stroke-width: 2; }
@@ -1125,7 +1074,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .proj { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; flex: none; min-width: 0; }
   .proj[hidden] { display: none; }
   .pp { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); border-radius: 6px; padding: 2px 7px; font: inherit; font-size: 11.5px; color: var(--r-text); cursor: pointer; flex: none; }
-  .pp:hover { background: var(--r-hover); }
+  .pp:hover { background: var(--r-glass-hover); }
   .pp .ti { width: 12px; height: 12px; }
   .pp b { font-weight: 600; }
   .pp .car { color: var(--r-faint); font-size: 9px; }
@@ -1135,19 +1084,12 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pms { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); padding: 6px 8px 4px; }
   .pms.err { text-transform: none; letter-spacing: 0; color: var(--r-bad); }
   .pmenu button { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; text-align: left; font: inherit; font-size: 12px; color: var(--r-text); padding: 5px 8px; border-radius: 5px; cursor: pointer; }
-  .pmenu button:hover { background: var(--r-hover); }
+  .pmenu button:hover { background: var(--r-glass-hover); }
   .pmenu .ck { width: 12px; flex: none; color: var(--r-text-2); }
   .pmenu .pn { display: flex; flex-direction: column; min-width: 0; }
   .pmenu .pn small { color: var(--r-caption); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmenu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 0; }
   .pmenu .pfound { font-style: normal; font-weight: 400; font-size: 10.5px; color: var(--r-caption); margin-left: 4px; }
-  .tkt { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 7px 9px; border: 1px solid var(--r-edge); border-radius: 8px; background: var(--r-glass); text-decoration: none; color: var(--r-text); max-width: 280px; }
-  .tkt:hover { border-color: var(--r-caption); background: var(--r-hover); }
-  .tkh { display: flex; align-items: center; gap: 5px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
-  .tkh .ic { width: 12px; height: 12px; }
-  .tks { margin-left: auto; font-family: var(--r-sans, inherit); font-size: 10.5px; color: var(--r-caption); }
-  .tkx { font-size: 11.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .tkm { font-size: 10.5px; color: var(--r-caption); }
   .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
   .goals { padding: 6px 10px 4px; flex: none; }
@@ -1161,8 +1103,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   .goals .gerr { font-size: 11px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tab { height: 26px; padding: 0 8px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
   .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
-  .tab:hover { background: var(--r-hover); }
-  .tab[aria-selected="true"] { background: var(--r-hover); color: var(--r-text); font-weight: 600; }
+  .tab:hover { background: var(--r-glass-hover); }
+  .tab[aria-selected="true"] { background: var(--r-glass-hover); color: var(--r-text); font-weight: 600; }
   .tab[aria-selected="true"] .lbl { display: inline; }
   .tab:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   .tab .ti { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -1175,12 +1117,12 @@ export function shell(cspSource: string, logoCss = ''): string {
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
   .shead .sum { margin-left: auto; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .icon { width: 24px; height: 22px; display: grid; place-items: center; border-radius: 5px; border: 1px solid transparent; background: none; color: var(--r-caption); cursor: pointer; padding: 0; flex: none; }
-  .icon:hover, .icon[aria-expanded="true"] { background: var(--r-hover); border-color: var(--r-edge); color: var(--r-text); }
+  .icon:hover, .icon[aria-expanded="true"] { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .icon .ic { width: 14px; height: 14px; }
   .menu { position: absolute; right: 0; top: 26px; z-index: 5; min-width: 176px; padding: 5px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 10px 28px rgba(0,0,0,.28); }
   .menu .sec { font-size: 11px; color: var(--r-faint); padding: 6px 8px 2px; }
   .menu button { display: flex; gap: 8px; align-items: center; width: 100%; border: 0; background: none; color: var(--r-text); font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 5px; cursor: pointer; text-align: left; }
-  .menu button:hover { background: var(--r-hover); }
+  .menu button:hover { background: var(--r-glass-hover); }
   .menu .ck { width: 12px; } .menu .mi { width: 13px; height: 13px; fill: none; stroke: var(--r-caption); stroke-width: 1.4; }
   .menu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 2px; }
   .pinned { margin: 6px 0 10px; padding: 2px 5px 6px; border-radius: 9px; background: var(--r-warn-tint); }
@@ -1188,7 +1130,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pinned.now { background: var(--r-bad-tint); } .pinned.now .ph { color: var(--r-bad); }
   .grp { margin-top: 8px; }
   .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; }
-  .gh:hover { background: var(--r-hover); }
+  .gh:hover { background: var(--r-glass-hover); }
   .gh .car { width: 10px; color: var(--r-faint); font-size: 10px; transition: transform .15s; } .grp.closed .car { transform: rotate(-90deg); }
   .gi-box { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
   .appic { width: 20px; height: 20px; display: block; }
@@ -1198,35 +1140,34 @@ export function shell(cspSource: string, logoCss = ''): string {
   .gact { margin-left: auto; font: inherit; font-size: 10.5px; border: 1px solid var(--r-edge); background: none; color: var(--r-caption); border-radius: 5px; padding: 0 7px; cursor: pointer; }
   .gact:hover { color: var(--r-text); border-color: var(--r-faint); } .gact + .dots { margin-left: 6px; }
   .items, .flat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 4px; } .pinned .card + .card { margin-top: 6px; }
-  .card { display: block; min-width: 0; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--r-glass); color: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
-  .card:hover, .card:focus-visible { background: var(--r-hover); border-color: var(--r-faint); outline: none; }
+  .card { display: block; min-width: 0; color: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
+  .card:hover, .card:focus-visible { background: var(--r-glass-hover); border-color: var(--r-faint); outline: none; }
   /* Selected is its own look, not hover's: a gold rail inside the left edge. */
-  .card.sel { background: var(--r-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold); }
-  .card .thistab { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-gold); line-height: 12px; margin-bottom: 2px; }
+  .card.sel { background: var(--r-glass-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold-line); }
+  .card .thistab { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-gold-line); line-height: 12px; margin-bottom: 2px; }
   .card .tabn { flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
   .card .started { margin-top: 2px; font-size: 10.5px; color: var(--r-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card.multi { border-color: var(--r-gold); }
+  .card.multi { border-color: var(--r-gold-line); }
   .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; }
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
   .acts { display: none; gap: 2px; flex: none; }
   .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .card:hover .age, .card.sel .age, .card:focus-within .age { display: none; }
   .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
-  .act:hover { background: var(--r-hover); border-color: var(--r-edge); color: var(--r-text); } .act.x:hover { color: var(--r-bad); }
+  .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); } .act.x:hover { color: var(--r-bad); }
   .act .ic { width: 13px; height: 13px; stroke-width: 1.6; }
   .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; min-width: 0; font-size: 10.5px; color: var(--r-faint); }
   .meta .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .pill { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; font-size: 10.5px; line-height: 16px; color: var(--r-text-2); }
   .pill i, .dots i { background: var(--r-faint); } .pill i { width: 6px; height: 6px; border-radius: 50%; display: block; }
   .pill.solo { padding: 0 4px; border: 0; }
-  .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-asks { background: var(--r-warn) !important; }
-  .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-working { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
+  .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-move { background: var(--r-warn) !important; }
+  .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-running { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
   .st-stuck.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-stuck i { background: var(--r-warn) !important; }
   .pill.st-review i, .d-review { background: var(--r-info) !important; }
   /* Waiting on its own work: a blue dot that breathes slowly, and a chip per kind. */
   .st-waiting.pill { color: var(--r-wait); border-color: color-mix(in srgb, var(--r-wait) 45%, transparent); } .pill.st-waiting i, .d-waiting { background: var(--r-wait) !important; }
   .st-waiting.pill i { animation: waitbreathe 2.2s ease-in-out infinite; }
-  @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
   .pc { display: inline-flex; align-items: center; gap: 3px; flex: none; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); color: var(--r-wait); border-radius: 4px; padding: 0 4px; font-family: var(--vscode-editor-font-family); font-size: 10.5px; line-height: 15px; cursor: default; }
   .meta .repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .fx { display: inline-flex; gap: 2px; flex: none; } .fx span { font-size: 10.5px; line-height: 1; padding: 2px 3px; border-radius: 4px; background: var(--r-well); }
@@ -1237,7 +1178,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .card:has(.cmore[open]) .acts { display: flex; } .card:has(.cmore[open]) .age { display: none; }
   .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
   .cmenu dl { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 3px 8px; margin: 0; font-size: 11px; } .cmenu dt { color: var(--r-faint); } .cmenu dd { margin: 0; overflow-wrap: anywhere; }
-  .cmenu button { display: block; width: 100%; margin-top: 6px; padding: 3px 4px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-hover); }
+  .cmenu button { display: block; width: 100%; margin-top: 6px; padding: 3px 4px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-glass-hover); }
   .pill.st-blocked { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-blocked i { background: var(--r-bad) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
@@ -1253,9 +1194,8 @@ export function shell(cspSource: string, logoCss = ''): string {
   .card.fresh { animation: askglow 1.1s ease-in-out 3; }
   @keyframes askglow { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 45% { background: var(--r-warn-tint); box-shadow: 0 0 0 2px var(--r-warn); } }
   .card.flash { animation: flashsel .9s ease-out; }
-  @keyframes flashsel { 0% { box-shadow: 0 0 0 2px var(--r-gold); } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @keyframes flashsel { 0% { box-shadow: 0 0 0 2px var(--r-gold-line); } 100% { box-shadow: 0 0 0 0 transparent; } }
   .ic.mark { width: 11px; height: 11px; }
-  .lab { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); margin: 7px 0 2px; }
   .card .line { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   .card .line.said { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .card .line.live { color: var(--r-caption); margin-top: 3px; } .card .line .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; } .card .line .tool { font-weight: 600; font-size: 11px; }
@@ -1269,7 +1209,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .card .ask [hidden] { display: none !important; }
   .card .opts { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
   .card .opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; text-align: left; font: inherit; font-size: 11.5px; line-height: 1.35; padding: 3px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); color: var(--r-text); cursor: pointer; }
-  .card .opt:hover, .card .opt:focus-visible { background: var(--r-hover); border-color: var(--r-warn); outline: none; }
+  .card .opt:hover, .card .opt:focus-visible { background: var(--r-glass-hover); border-color: var(--r-warn); outline: none; }
   .card .opt .k { flex: none; font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
   .card .opt .ol { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .opt small { flex-basis: 100%; padding-left: 13px; color: var(--r-caption); font-size: 11px; }
@@ -1277,20 +1217,14 @@ export function shell(cspSource: string, logoCss = ''): string {
   .card .lnk { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--vscode-textLink-foreground); cursor: pointer; } .card .lnk:hover { text-decoration: underline; }
   .card .aother input { width: 100%; box-sizing: border-box; margin-top: 5px; font: inherit; font-size: 11.5px; padding: 3px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; }
   .card .asend { margin-top: 5px; font-size: 11.5px; color: var(--r-text-2); } .card .asend.err { color: var(--r-bad); }
-  .made { display: grid; gap: 5px; padding: 6px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-well); }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 170px; padding: 1px 6px 1px 4px; border-radius: 5px; border: 1px solid var(--r-edge); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   a.chip { text-decoration: none; cursor: pointer; } a.chip:hover { border-color: var(--r-caption); color: var(--r-text); }
-  .chip.pr-ok { color: var(--r-ok); } .chip.pr-bad { color: var(--r-bad); } .chip.pr-run { color: var(--r-warn); }
-  .folder { display: flex; gap: 6px; align-items: flex-start; min-width: 0; color: var(--r-text-2); font-size: 11.5px; } .folder .ic { margin-top: 2px; color: var(--r-faint); }
-  .folder .fx { min-width: 0; display: grid; } .folder .fx span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .folder .fp { font-size: 10.5px; color: var(--r-faint); }
-  .folder:hover b { text-decoration: underline; }
+  .chip.pr-ok { color: var(--r-ok); } .chip.pr-bad { color: var(--r-bad); } .chip.pr-warn { color: var(--r-warn); }
   .thumbs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
   .th { position: relative; height: 40px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); display: block; flex: none; }
-  .th { width: 64px; } .card .th { width: 54px; height: 34px; aspect-ratio: 54 / 34; contain: strict; background: var(--r-well); } .th.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold); }
+  .th { width: 64px; } .card .th { width: 54px; height: 34px; aspect-ratio: 54 / 34; contain: strict; background: var(--r-well); } .th.in { outline: 1.5px dashed var(--r-faint); outline-offset: 1px; } .th img { width: 100%; height: 100%; object-fit: cover; display: block; } .th:hover { border-color: var(--r-gold-line); }
   .th i { position: absolute; left: 3px; bottom: 3px; font-style: normal; font-size: 9px; background: rgba(0,0,0,.62); color: #fff; border-radius: 3px; padding: 0 3px; }
   .th b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; }
-  .more { font-size: 10.5px; border: 1px solid var(--r-edge); border-radius: 5px; padding: 0 6px; color: var(--r-caption); }
   .confirm { margin-top: 8px; padding: 8px; border-radius: 7px; background: var(--r-warn-tint); color: var(--r-text-2); font-size: 11.5px; display: grid; gap: 6px; cursor: default; }
   .confirm .cb { display: flex; gap: 6px; } .confirm button, .bulk button, .toast button { font: inherit; font-size: 11px; border: 1px solid var(--r-edge); background: none; color: var(--r-text); border-radius: 5px; padding: 2px 9px; cursor: pointer; }
   .confirm .danger { color: var(--r-warn); border-color: var(--r-warn); }
@@ -1300,7 +1234,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .bulk[hidden], .toast[hidden], .menu[hidden] { display: none; }
   .reveal { position: fixed; z-index: 20; pointer-events: none; border-radius: 8px; border: 1px solid var(--r-faint); background: var(--vscode-sideBar-background); padding: 3px; display: none; }
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
-  .card .top .hx { display: inline-block; width: 14px; height: 14px; border-radius: 3px; flex: none; background-position: center; background-size: contain; background-repeat: no-repeat; }
+  .card .top .hx { width: 14px; height: 14px; border-radius: 3px; }
   ${logoCss}
   .tab[data-tab="settings"] { margin-left: auto; }
   /* Ticket detail and Settings (PHNX-4329). */
@@ -1310,7 +1244,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .tli { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; border-radius: 6px; }
   .tli .trow { flex: 1; min-width: 0; }
   .tli:hover .pro, .tli.peek .pro { opacity: 1; }
-  .tli:hover, .tli.peek { background: var(--r-hover); } .tli .trow:hover { background: none; }
+  .tli:hover, .tli.peek { background: var(--r-glass-hover); } .tli .trow:hover { background: none; }
   .tgo { background: none; border: 0; padding: 0; cursor: pointer; }
   .tgo svg { fill: currentColor; stroke: none; }
   .tpeek { flex-basis: 100%; padding: 0 8px 8px 24px; display: flex; flex-direction: column; gap: 6px; }
@@ -1349,7 +1283,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .settings .dskip.quiet { color: var(--r-faint); }
   .settings .dlow { color: var(--r-warn); } .settings .dfull { color: var(--r-bad); }
   .settings .dstar { font: inherit; font-size: 15px; line-height: 1; background: none; border: none; color: var(--r-faint); cursor: pointer; padding: 2px; border-radius: 4px; }
-  .settings .dstar[aria-pressed="true"] { color: var(--r-gold); } .settings .dstar:hover { background: var(--r-hover); }
+  .settings .dstar[aria-pressed="true"] { color: var(--r-gold-line); } .settings .dstar:hover { background: var(--r-glass-hover); }
   .settings .doff { color: var(--r-faint); font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .err { color: var(--r-bad); }
   @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
@@ -1384,15 +1318,9 @@ ${THUMB_SCRIPT}
   const pendingAnswer = new Map();
   const otherOpen = new Set();
   let shownProject;
-  function waitWords(ms) {
-    const s = Math.max(0, Math.floor(ms / 1000));
-    if (s < 60) return s + 's';
-    if (s < 3600) return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
-    const h = Math.floor(s / 3600);
-    return h < 24 ? h + 'h ' + Math.floor((s % 3600) / 60) + 'm' : Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
-  }
+  ${waitFor}
   // The wait on a question ticks every second; only these numbers change.
-  function tickWaits() { main.querySelectorAll('[data-since]').forEach((el) => { const t = Number(el.dataset.since); if (t) el.textContent = waitWords(Date.now() - t); }); }
+  function tickWaits() { main.querySelectorAll('[data-since]').forEach((el) => { const t = Number(el.dataset.since); if (t) el.textContent = waitFor(Date.now() - t); }); }
   setInterval(tickWaits, 1000);
   // The one ticket whose peek is open in Issues; it survives redraws of the list.
   let peeked = null;
@@ -1536,7 +1464,6 @@ ${THUMB_SCRIPT}
     }
     else if (m.type === 'projectList') {
       const pmenu = document.querySelector('.pmenu');
-      const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       if (m.error) { pmenu.innerHTML = '<div class="pms err">' + esc(m.error) + '</div>'; return; }
       pmenu.innerHTML = '<div class="pms">' + (m.linearError ? 'Projects' : 'Linear projects') + '</div>' +
         (m.linearError ? '<div class="pms err">Linear projects could not be read: ' + esc(m.linearError) + '</div>' : '') +

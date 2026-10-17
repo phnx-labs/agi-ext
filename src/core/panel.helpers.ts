@@ -39,11 +39,3 @@ export function extractPrUrls(lines: string[]): PullRequestRef[] {
   }
   return out;
 }
-
-export interface WorktreeRef {
-  path: string;
-  name: string;
-  branch?: string;
-  isActive: boolean;
-  isMain: boolean;
-}

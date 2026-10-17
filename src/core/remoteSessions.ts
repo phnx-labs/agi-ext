@@ -157,7 +157,7 @@ export function dialablePeerScopes(devices: readonly RosterDeviceLite[], localMa
  * terminal-emulator name (e.g. "ghostty").
  */
 /** One live checklist item from the CLI's TodoProgress (RUSH-1380). */
-export interface RemoteTodoItem {
+interface RemoteTodoItem {
   content: string;
   status: 'pending' | 'in_progress' | 'completed';
   /** Present-continuous label for the active step (drives the live verb). */

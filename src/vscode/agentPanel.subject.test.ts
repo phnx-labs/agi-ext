@@ -318,12 +318,26 @@ describe('Focus / ↻ Resume run agents.resumeSession', () => {
     expect(commandCalls.filter((c) => c[0] === 'agents.resumeSession')).toEqual([]);
   });
 
+  test('a Project subject is named by streamTitle: Claude\'s <folder>-<n> placeholder label never shows', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const provider = panel.registerAgentPanel(context as any) as any;
+    // Its only words are a bare slash command and the placeholder: streamTitle names nothing.
+    const row = (title: string) => ({ rowKey: 'p', sourceDevice: 'worker', machine: 'worker', sessionId: 'session-placeholder', kind: 'claude', label: 'agents-cli-3', topic: '/compact', cwd: '/home/u/src/agents-cli', title, startedAtMs: 100 });
+    sessionPresentationStore.apply({ v: 1, type: 'reset', streamId: 'title', sequence: 1, capturedAt: 100, scope: 'worker', attention: [], agents: [row('')] });
+    panel.setAgentPanelSubjectFromProject('session-placeholder', 'worker');
+    const untitled = await provider.buildSnapshot();
+    expect(untitled.title).toBeUndefined();
+    expect(provider.titleOf('session-placeholder')).toBeUndefined();
+    sessionPresentationStore.apply({ v: 1, type: 'reset', streamId: 'title', sequence: 2, capturedAt: 200, scope: 'worker', attention: [], agents: [row('Ship the release')] });
+    expect((await provider.buildSnapshot()).title).toBe('Ship the release');
+  });
+
   test('both buttons resume the panel\'s session by id and say where it went', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const provider = panel.registerAgentPanel(context as any) as any;
     commandCalls.length = 0;
     notices.length = 0;
-    provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-remote', sessionHost: 'yosemite-m2', sessionTitle: 'Merge guard' };
+    provider.snapshot = { hasTerminal: false, teams: [], fullSessionId: 'session-remote', sessionHost: 'yosemite-m2', title: 'Merge guard' };
     await provider.runQuickAction('resumeSubject', undefined, undefined);
     await provider.runQuickAction('focusSubject', undefined, undefined);
     expect(commandCalls).toEqual([

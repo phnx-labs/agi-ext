@@ -8,9 +8,10 @@
 // A row is usable with only its id, title, machine and last activity: a field the
 // row does not carry is left out, never filled in.
 
-import { preferLive, projectSessions, type ProjectFallback, type SessionLike } from './projectPanel';
+import { preferLive, projectSessions, streamTitle, type ProjectFallback, type SessionLike } from './projectPanel';
 import type { SpawnAckStatus } from './spawn';
-import { agentWords, firstLineOf, firstText, latestUserText } from '../shared/sessionText';
+import { agentWords, firstLineOf, latestUserText } from '../shared/sessionText';
+import { ageWords } from '../shared/sessionState';
 
 /** The stream-row fields the picker reads (RemoteSession satisfies it). */
 export interface PickerRow {
@@ -27,7 +28,7 @@ export interface PickerRow {
   phase?: SessionLike['phase'];
   liveStatus?: string;
   userTurns?: Array<{ text: string }>;
-  request?: { text?: string };
+  request?: { text?: string; headline?: string };
   firstUserMessage?: string;
   lastResponse?: string;
   tail?: string[];
@@ -62,7 +63,7 @@ export function resumeItems(
   return scoped.map((r) => ({
     sessionId: r.sessionId,
     host: r.host,
-    title: firstText(r.title, r.label, r.topic) || r.sessionId.slice(0, 8),
+    title: streamTitle(r) || r.sessionId.slice(0, 8),
     machine: r.host === opts.localHost ? opts.localName : r.host,
     you: firstLineOf(latestUserText({ userTurns: r.userTurns, latestRequest: r.request?.text, firstUserMessage: r.firstUserMessage })),
     agent: firstLineOf(agentWords([r.lastResponse, r.tail?.[r.tail.length - 1]], r.timeline)),
@@ -73,12 +74,8 @@ export function resumeItems(
 
 /** "now", "12m ago", "3h ago", "2d ago"; '' when unknown. */
 export function ago(ms: number, now: number): string {
-  if (!ms) return '';
-  const m = Math.max(0, Math.round((now - ms) / 60000));
-  if (m < 1) return 'now';
-  if (m < 60) return `${m}m ago`;
-  if (m < 48 * 60) return `${Math.round(m / 60)}h ago`;
-  return `${Math.round(m / 1440)}d ago`;
+  const age = ageWords(ms, now);
+  return age && age !== 'now' ? `${age} ago` : age;
 }
 
 /** The QuickPick row: title, then machine · age · OPEN, then your and the agent's lines.

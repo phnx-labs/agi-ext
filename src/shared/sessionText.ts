@@ -3,7 +3,7 @@
 // Resume Session picker (src/core/sessionPicker.ts) reads these.
 
 /** First non-blank string, trimmed; '' when none. */
-export function firstText(...values: Array<string | null | undefined>): string {
+function firstText(...values: Array<string | null | undefined>): string {
   for (const v of values) {
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
