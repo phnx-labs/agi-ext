@@ -223,6 +223,10 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.post(tab, '<div class="empty">No project found for this folder. <a href="#" data-pick>Pick a project</a></div>');
       return;
     }
+    if (tab !== 'tickets' && this.controller.ticketsOnly(project)) {
+      this.post(tab, `<div class="empty">${escapeHtml(project.name)} is a Linear project no agents project links, so it has tickets but no sessions or pull requests here.</div>`);
+      return;
+    }
     if (tab === 'sessions') {
       // Ticket tiles show titles from the Issues read; Sessions shares it, once per FRESH_MS.
       this.controller.warmTicketFaces(project);
@@ -411,7 +415,9 @@ class ProjectPanelController {
     const picked = this.pickedState();
     if (picked?.linear) {
       const l = picked.linear;
-      return Promise.resolve({ name: l.name, linearName: l.name, linearId: l.id, linearProfile: l.profile, repos: [] });
+      // A project linked to it since the pick takes over, so Sessions and Review follow.
+      return readRegistry().then((all) => all.find((p) => p.linearId === l.id)
+        ?? { name: l.name, linearName: l.name, linearId: l.id, linearProfile: l.profile, repos: [] });
     }
     if (picked?.name) {
       const name = picked.name;
@@ -444,6 +450,12 @@ class ProjectPanelController {
   /** Whether the shown project is one the user picked, rather than found from the folder. */
   picked(): boolean {
     return !!this.pickedState();
+  }
+
+  /** A picked Linear project no agents project links: it has tickets, but no sessions or PRs. */
+  ticketsOnly(p: ProjectRef): boolean {
+    const l = this.pickedState()?.linear;
+    return !!l && p.linearId === l.id && p.name === l.name && !p.repos?.length;
   }
 
   /** The project menu reads the list fresh each time it opens; the read also refreshes the shared registry. */

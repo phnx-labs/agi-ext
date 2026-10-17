@@ -178,7 +178,7 @@ export function projectMenu(all: ProjectRef[], linear: LinearProject[] | null, c
 /** `agents projects status <name> --json` prints a one-element card array. */
 const STATE_ORDER: Record<string, number> = { started: 0, unstarted: 1, backlog: 2, triage: 3 };
 
-/** `agents projects tickets <name> --json` (linear-cli's `tasks` JSON): open issues, grouped Doing → Todo → Backlog. */
+/** `linear tasks --project <id> --json`: open issues, grouped Doing → Todo → Backlog. */
 export function parseTickets(raw: string): TicketGroup[] {
   const issues = arr(obj(JSON.parse(raw), 'linear tasks').issues, 'linear issues');
   const groups = new Map<string, { order: number; tickets: Ticket[] }>();

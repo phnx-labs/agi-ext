@@ -2,7 +2,7 @@ import { escapeHtml } from './projectPanel';
 
 // The goals the Project panel shows above its tabs (owner, 2026-10-12: "show the
 // company goal, then my goal: what I'm focusing on today; succinct, not a block").
-// Read from one `agents projects goals <name> --json`: the company initiative, this week's cycle
+// Read from one `linear goals --json`: the company initiative, this week's cycle
 // goal, and my day goal (an issue). Two quiet lines; the week rides the tooltip.
 
 export interface Goals {
