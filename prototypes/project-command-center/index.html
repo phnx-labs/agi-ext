@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AGI EXT · Project command center prototype</title>
+  <link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="activity-rail" aria-label="Primary navigation">
+      <div class="brand-mark">A</div>
+      <a class="rail-icon active" href="index.html" aria-label="Fleet" title="Fleet">
+        <svg viewBox="0 0 24 24"><path d="M4 18V9l8-4 8 4v9M8 18v-5h8v5M3 18h18"/></svg>
+      </a>
+      <a class="rail-icon" href="projects.html" aria-label="Projects" title="Projects">
+        <svg viewBox="0 0 24 24"><path d="M4 5h6l2 2h8v12H4z"/></svg>
+      </a>
+      <span class="rail-icon" aria-label="Agents" title="Agents">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M6 20c0-4 2.5-6 6-6s6 2 6 6"/></svg>
+      </span>
+      <span class="rail-icon" aria-label="Inbox" title="Inbox">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 14h5l2 2h2l2-2h5"/></svg>
+      </span>
+      <span class="rail-icon rail-bottom" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1-2-4-2 1a8 8 0 0 0-2-1l-.3-2h-5L9 6a8 8 0 0 0-2 1L5 6 3 10l2 1a7 7 0 0 0 0 2l-2 1 2 4 2-1a8 8 0 0 0 2 1l.4 2h5l.4-2a8 8 0 0 0 2-1l2 1 2-4-2-1a7 7 0 0 0 .1-1z"/></svg>
+      </span>
+    </aside>
+
+    <header class="topbar">
+      <span class="product">AGI EXT</span>
+      <span class="crumb"><span>Fleet</span><span>›</span><strong>AGI</strong></span>
+      <div class="top-spacer"></div>
+      <div class="search" aria-label="Search"><span>⌕</span><span>Search projects, work, agents…</span><span class="kbd">⌘K</span></div>
+      <button class="icon-btn" aria-label="Notifications">2</button>
+    </header>
+
+    <aside class="sidebar" aria-label="Project navigation">
+      <div class="nav-heading">Workspace</div>
+      <a class="nav-item" href="projects.html"><span class="nav-icon">⌂</span><span>Project overview</span><span class="nav-count">5</span></a>
+      <div class="nav-item"><span class="nav-icon">◎</span><span>Needs you</span><span class="nav-count warn">3</span></div>
+      <div class="nav-item"><span class="nav-icon">◫</span><span>All work</span><span class="nav-count">119</span></div>
+
+      <div class="nav-heading">Projects</div>
+      <a class="nav-item active" href="index.html"><span class="project-glyph agi">A</span><span>AGI</span><span class="project-progress"><i style="width:99%"></i></span><span class="nav-count">8</span></a>
+      <div class="nav-item"><span class="project-glyph atlas">AT</span><span>Atlas</span><span class="project-progress"><i style="width:82%"></i></span><span class="nav-count">8+</span></div>
+      <div class="nav-item"><span class="project-glyph prix">P</span><span>Prix</span><span class="project-progress"><i style="width:72%"></i></span><span class="nav-count">45</span></div>
+      <div class="nav-item"><span class="project-glyph rush">R</span><span>Rush</span><span class="project-progress"><i style="width:89%"></i></span><span class="nav-count">35</span></div>
+      <div class="nav-item"><span class="project-glyph wispr">W</span><span>Wispr</span><span class="project-progress"><i style="width:80%"></i></span><span class="nav-count">14</span></div>
+      <div class="nav-item new-project"><span class="nav-icon">＋</span><span>Add project</span></div>
+
+      <div class="nav-heading">Saved views</div>
+      <div class="nav-item"><span class="nav-icon">◉</span><span>My active work</span><span class="nav-count">6</span></div>
+      <div class="nav-item"><span class="nav-icon">◇</span><span>Agents in review</span><span class="nav-count">2</span></div>
+      <div class="nav-item"><span class="nav-icon">△</span><span>Blocked</span><span class="nav-count warn">3</span></div>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <section class="project-head">
+          <div class="project-badge">A</div>
+          <div class="project-title">
+            <h1>AGI</h1>
+            <p>Extension, CLI, and fleet reliability · updated 9 minutes ago</p>
+          </div>
+          <div class="head-actions">
+            <div class="avatar-stack" aria-label="Project members">
+              <span class="avatar human" title="Muqsit Nawaz · project lead">MN</span>
+              <span class="avatar human bisma" title="Bisma · collaborator">BA</span>
+              <span class="avatar agent claude" title="Claude · 12 assigned">C</span>
+              <span class="avatar agent" title="Codex · active">X</span>
+              <span class="avatar more" title="5 more agents">+5</span>
+            </div>
+            <button class="button">•••</button>
+            <button class="button primary">＋ Dispatch work</button>
+          </div>
+        </section>
+
+        <nav class="project-tabs" aria-label="Project sections">
+          <a class="project-tab active" href="index.html">Overview</a>
+          <span class="project-tab">Issues <span class="mono">8</span></span>
+          <span class="project-tab">Agents <span class="mono">4</span></span>
+          <span class="project-tab">Activity</span>
+          <span class="project-tab">Resources</span>
+        </nav>
+
+        <section class="summary-strip" aria-label="Current milestone summary">
+          <div class="summary-primary">
+            <div class="eyebrow">Current milestone · benchmark focus</div>
+            <div class="milestone-title">Ship the benchmark</div>
+            <div class="progress-line"><div class="progress-track"><i style="width:57%"></i></div><span class="progress-number">4 / 7 complete</span></div>
+          </div>
+          <div class="stat"><strong>8</strong><span>open issues</span></div>
+          <div class="stat"><strong class="warn">3</strong><span>need attention</span></div>
+          <div class="stat"><strong>4</strong><span>agents active</span></div>
+        </section>
+
+        <section class="milestone-ribbon" aria-label="Milestones">
+          <div class="milestone-card active"><div class="top"><span class="dot">◐</span><b>Ship the benchmark</b></div><small>4 of 7 · current focus</small></div>
+          <div class="milestone-card done"><div class="top"><span class="dot">✓</span><b>Factory reliability</b></div><small>8 of 8 complete</small></div>
+          <div class="milestone-card done"><div class="top"><span class="dot">✓</span><b>Fleet onboarding</b></div><small>6 of 6 complete</small></div>
+        </section>
+
+        <div class="content-grid">
+          <div>
+            <section class="panel" aria-label="Project issues">
+              <div class="panel-head">
+                <h2>Work by milestone</h2><span class="subtle">Humans own outcomes. Agents own execution.</span>
+                <div class="right"><button class="filter">Status: Open⌄</button><button class="filter">Owner: Anyone⌄</button></div>
+              </div>
+              <div class="issue-group">
+                <div class="group-head"><span>⌄</span><span>Ship the benchmark</span><span class="count">7 issues · 57%</span></div>
+                <a class="issue-row" href="task-phnx-3938.html">
+                  <span class="priority high"><i></i><i></i><i></i><i></i></span><span class="issue-id mono">PHNX-3938</span>
+                  <span class="issue-title">Fleet view: fix empty panels, attribution &amp; chrome <span class="label">UI</span></span>
+                  <span class="ownership"><span class="avatar human" title="Muqsit Nawaz">MN</span><span class="handoff">→</span><span class="avatar agent" title="Codex · working now">X</span></span>
+                  <span class="state doing">Doing</span>
+                </a>
+                <div class="issue-row">
+                  <span class="priority high"><i></i><i></i><i></i><i></i></span><span class="issue-id mono">PHNX-3939</span>
+                  <span class="issue-title">Sessions panel: real prompts &amp; working session view</span>
+                  <span class="ownership"><span class="avatar human" title="Muqsit Nawaz">MN</span><span class="handoff">→</span><span class="avatar agent claude idle" title="Claude · complete">C</span></span>
+                  <span class="state review">Review</span>
+                </div>
+                <div class="issue-row">
+                  <span class="priority urgent"><i></i><i></i><i></i><i></i></span><span class="issue-id mono">PHNX-3967</span>
+                  <span class="issue-title">Browser: one canonical Comet + close port-squat</span>
+                  <span class="ownership"><span class="avatar human" title="Muqsit Nawaz">MN</span><span class="handoff">→</span><span class="avatar agent claude" title="Claude · active">C</span></span>
+                  <span class="state doing">Doing</span>
+                </div>
+                <div class="issue-row">
+                  <span class="priority high"><i></i><i></i><i></i><i></i></span><span class="issue-id mono">PHNX-3940</span>
+                  <span class="issue-title">Fleet account state is inconsistent across machines</span>
+                  <span class="ownership"><span class="avatar human bisma" title="Bisma">BA</span><span class="handoff">→</span><span class="avatar agent grok idle" title="Unassigned agent">?</span></span>
+                  <span class="state todo">Todo</span>
+                </div>
+              </div>
+              <div class="issue-group">
+                <div class="group-head"><span>⌄</span><span>Infrastructure hardening</span><span class="count">4 issues · 25%</span></div>
+                <div class="issue-row">
+                  <span class="priority high"><i></i><i></i><i></i><i></i></span><span class="issue-id mono">PHNX-3899</span>
+                  <span class="issue-title">Codex dispatch is blocked fleet-wide <span class="label">Bug</span></span>
+                  <span class="ownership"><span class="avatar human" title="Muqsit Nawaz">MN</span><span class="handoff">→</span><span class="avatar agent droid" title="Droid · active">D</span></span>
+                  <span class="state blocked">Blocked</span>
+                </div>
+                <div class="issue-row">
+                  <span class="priority high"><i></i><i></i><i></i><i></i></span><span class="issue-id mono">PHNX-3494</span>
+                  <span class="issue-title">System security guards need trustworthy PR CI</span>
+                  <span class="ownership"><span class="avatar human" title="Muqsit Nawaz">MN</span><span class="handoff">→</span><span class="avatar agent grok" title="Grok · active">G</span></span>
+                  <span class="state todo">Todo</span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="side-column">
+            <section class="panel">
+              <div class="panel-head"><h2>Ownership</h2><span class="right subtle">18 people + agents</span></div>
+              <div class="side-body">
+                <div class="side-section">
+                  <div class="side-title">Humans</div>
+                  <div class="person-row"><span class="avatar human">MN</span><span><span class="name">Muqsit Nawaz</span><br><span class="role">Lead · outcomes</span></span><span class="work">7 open</span></div>
+                  <div class="person-row"><span class="avatar human bisma">BA</span><span><span class="name">Bisma</span><br><span class="role">Product</span></span><span class="work">1 open</span></div>
+                </div>
+                <div class="side-section">
+                  <div class="side-title">Execution agents</div>
+                  <div class="person-row"><span class="avatar agent claude">C</span><span><span class="name">Claude</span><br><span class="role">12 assigned</span></span><span class="work status-ok">3 active</span></div>
+                  <div class="person-row"><span class="avatar agent">X</span><span><span class="name">Codex</span><br><span class="role">Prototype</span></span><span class="work status-ok">active</span></div>
+                  <div class="person-row"><span class="avatar agent grok">G</span><span><span class="name">Grok</span><br><span class="role">2 assigned</span></span><span class="work">idle</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head"><h2>Latest activity</h2><span class="right subtle">Live</span></div>
+              <div class="side-body">
+                <div class="activity-row"><span class="activity-dot"></span><div><p><strong>Codex</strong> started the project-view prototype</p><time>9 minutes ago</time></div></div>
+                <div class="activity-row"><span class="activity-dot" style="background:var(--violet)"></span><div><p><strong>Claude</strong> moved PHNX-3939 to review</p><time>18 minutes ago</time></div></div>
+                <div class="activity-row"><span class="activity-dot" style="background:var(--amber)"></span><div><p>PHNX-3899 is waiting on a fleet capability</p><time>32 minutes ago</time></div></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </main>
+
+    <footer class="statusbar"><span class="status-ok">● feed connected</span><span>5 projects</span><span>4 agents active</span><span class="spacer"></span><span>agents-cli · live projection</span></footer>
+  </div>
+</body>
+</html>
