@@ -18,6 +18,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   longer start as their raw binaries there.
 - Resume (Pick Harness) and Resume in Best Profile pass the workspace as `--cwd` and start in
   `--mode auto`, like every other launch.
+- Go to Terminal draws each tab's last-activity time and first ask from the session stream
+  instead of reading Claude, Codex, OpenCode and Cursor transcripts itself, so it opens without
+  touching disk. The detail line no longer ends in a count of transcript lines, which the stream
+  does not carry: `Ship the fix (42)` is now `Ship the fix`. Tabs whose session runs on another
+  machine now show both too.
+- Close Terminal With Recap finds the transcript through the path the stream row names for this
+  machine. The extension's transcript reader (`sessions.vscode.ts`) and its `sql.js`
+  dependency are gone, which shrinks the VSIX.
 
 ## [0.9.406] - 2026-10-17
 

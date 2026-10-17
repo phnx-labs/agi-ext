@@ -1,7 +1,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { getSessionPathBySessionId } from './sessions.vscode';
+import { sessionPresentationStore } from '../core/sessionPresentationStore';
+import { LOCAL_LABEL, LOCAL_MACHINE_ID } from './remoteSessions.vscode';
 import { resolveAgentsBin, bootstrapPath } from '../core/agentsBin';
 
 export type RecapAgentType = 'claude' | 'codex' | 'cursor' | 'copilot';
@@ -74,11 +75,9 @@ export function buildRecapArgv(
 }
 
 export async function runRecapHeadless(args: RunRecapArgs): Promise<string | null> {
-  const transcriptPath = await getSessionPathBySessionId(
-    args.sessionId,
-    args.agentType,
-    args.workspacePath,
-  );
+  // The CLI stamps the transcript path on the row; only this machine's is a local file.
+  const transcriptPath = sessionPresentationStore.presentedSessions(LOCAL_MACHINE_ID, LOCAL_LABEL)
+    .find((s) => s.sessionId === args.sessionId && s.host === LOCAL_LABEL)?.sessionFile;
   if (!transcriptPath) {
     console.warn(`[recap] no transcript for session ${args.sessionId} (${args.agentType})`);
     return null;

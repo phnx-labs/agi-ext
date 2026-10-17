@@ -167,6 +167,7 @@ describe('resolveProject', () => {
   test('an older CLI row leaves every glance field absent rather than empty', () => {
     const s = normalizeActiveSession({ kind: 'claude', status: 'running', cwd: '/x', sessionFile: '/x/b.jsonl' } as RawActiveSession, 'zion', FETCHED_AT);
     expect([s.model, s.failures, s.activityHistogram, s.userTurns, s.subagents]).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(s.sessionFile).toBe('/x/b.jsonl');
   });
 
   test('copies the summarizer signals verbatim — goal, checkpoints, checklist, state (PHNX-3939)', () => {
