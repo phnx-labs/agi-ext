@@ -95,7 +95,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -133,7 +133,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
       else if (msg.type === 'pickProject' && typeof msg.name === 'string') void this.controller.pickByName(msg.name).catch((e) => { void vscode.window.showErrorMessage(`Could not switch project: ${errorText(e)}`); });
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? 'card' : 'no');
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true ? 'always' : 'card') : 'no');
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
       else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
@@ -259,13 +259,13 @@ class ProjectView implements vscode.WebviewViewProvider {
     return this.load('sessions', false);
   }
 
-  /** Scroll the card for this session into view, once the list has it. */
   /** The title bar's gear and ⌃1–⌃4: the panel comes up on that tab, through the page's own switch. */
   async open(tab: TabId): Promise<void> {
     await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     void this.view?.webview.postMessage({ type: 'choose', tab });
   }
 
+  /** Scroll the card for this session into view, once the list has it. */
   reveal(sessionId: string, flash = true): void {
     if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId, flash });
   }
@@ -876,11 +876,9 @@ class ProjectPanelController {
     return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
   }
 
-  /** A card click selects the session: the other sidebar shows it. Nothing opens. */
-  /** A card click: the session panel shows it, and when its tab is in this window
-   *  that tab comes to the front (owner, 2026-10-12). Nothing is resumed or spawned. */
   /** Show the session in the sidebar; its tab in this window comes forward, wherever its
-   *  agent runs (s1, m1…). A card asks through Settings > Card click; ⌘K always fronts. */
+   *  agent runs (s1, m1…). A card asks through Settings > Card click; ⌘K and an answer
+   *  always front it. Nothing is resumed or spawned. */
   select(sessionId: string, host: string | undefined, front: 'card' | 'always' | 'no' = 'no'): void {
     setAgentPanelSubjectFromProject(sessionId, host);
     void this.view.redrawSessions();
@@ -1173,7 +1171,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .acts { display: none; gap: 2px; flex: none; }
   .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .card:hover .age, .card.sel .age, .card:focus-within .age { display: none; }
   .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
-  .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); } .act.x:hover { color: var(--r-bad); }
+  .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .act .ic { width: 13px; height: 13px; stroke-width: 1.6; }
   .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; min-width: 0; font-size: 10.5px; color: var(--r-faint); }
   .meta .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
@@ -1412,7 +1410,7 @@ ${THUMB_SCRIPT}
     otherOpen.delete(key);
     const el = askEl(key);
     const card = el && el.closest('.card[data-session]');
-    if (card) vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });
+    if (card) vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1', answer: true });
     const wait = Number(el && el.dataset.undo) || 0;
     const p = Object.assign({ left: wait, label, state: wait ? 'wait' : 'sending' }, payload);
     pendingAnswer.set(key, p); drawAsk(key);
@@ -1582,7 +1580,9 @@ ${THUMB_SCRIPT}
     if (more) {
       const copy = e.target.closest('[data-copy]');
       if (copy) { vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); more.open = false; }
-      return;
+      // Close and Hide live in ⋯; they run below, as the card's own [data-act].
+      if (!e.target.closest('.cmenu [data-act]')) return;
+      more.open = false;
     }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }

@@ -20,7 +20,7 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 /** The Session cards pickers: each key, its words, and its choices in order. */
 const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
   { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
-  { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Off sends at once and brings the agent’s tab forward', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
+  { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Either way the answer brings its agent’s tab forward; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
   { key: 'asks', label: 'Asks on cards', sub: 'Off leaves only the red card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
   { key: 'options', label: 'Answer options', sub: 'Each option’s description shows on hover either way', options: [{ value: 'titles', label: 'Titles only' }, { value: 'details', label: 'Titles and details' }] },
   { key: 'question', label: 'Question text', sub: 'The full question is on hover either way', options: [{ value: 'two', label: 'Two lines' }, { value: 'full', label: 'Full' }] },
@@ -35,7 +35,7 @@ const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: 
   stateWord: { label: 'State word', sub: 'The color already says it: red asks, green working, yellow idle' },
 };
 
-const SLOTS: QuickLaunchSlotKey[] =['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 /** The agents a shortcut can launch, as the pickers list them. */
 export const PICKABLE_AGENTS = BUILT_IN_AGENTS.filter((a) => a.key !== 'shell')

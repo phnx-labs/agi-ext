@@ -94,8 +94,20 @@ test('by default an answer goes at once, and its agent comes to the front throug
   (ask().querySelector('[data-choice="yes-publish-from-zion"]') as unknown as HTMLElement).click();
   const card = ask().closest('.card') as unknown as HTMLElement;
   expect(sent.slice(from)).toEqual([
-    { type: 'select', sessionId: '9b1f0c2e-publish', host: card.dataset.host, focus: card.dataset.here === '1' },
+    { type: 'select', sessionId: '9b1f0c2e-publish', host: card.dataset.host, focus: card.dataset.here === '1', answer: true },
     { type: 'answer', key: KEY, choice: 'yes-publish-from-zion', text: undefined },
   ]);
   expect(ask().querySelector('.asend')!.textContent).toBe('Sending “Yes, publish from zion”…');
 });
+
+test('Close and Hide in a card\'s ⋯ menu do what the old × did, and the menu closes', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw(null) });
+  const card = document.querySelector('.card[data-tab="0"]') as unknown as HTMLElement;
+  const more = card.querySelector('.cmore') as unknown as HTMLDetailsElement;
+  more.open = true;
+  const from = sent.length;
+  (more.querySelector('[data-act="hide"]') as unknown as HTMLElement).click();
+  expect(sent.slice(from)).toEqual([{ type: 'hide', targets: [{ sessionId: card.dataset.session!, host: card.dataset.host! }] }]);
+  expect(more.open).toBe(false);
+});
+

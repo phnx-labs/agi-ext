@@ -734,28 +734,28 @@
         "args": "sessions",
         "key": "ctrl+1",
         "mac": "ctrl+1",
-        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+        "when": "focusedView == agentsProject.panel"
       },
       {
         "command": "agents.project.tab",
         "args": "tickets",
         "key": "ctrl+2",
         "mac": "ctrl+2",
-        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+        "when": "focusedView == agentsProject.panel"
       },
       {
         "command": "agents.project.tab",
         "args": "prs",
         "key": "ctrl+3",
         "mac": "ctrl+3",
-        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+        "when": "focusedView == agentsProject.panel"
       },
       {
         "command": "agents.project.tab",
         "args": "settings",
         "key": "ctrl+4",
         "mac": "ctrl+4",
-        "when": "isMac && view.agentsProject.panel.visible || !isMac && focusedView == agentsProject.panel"
+        "when": "focusedView == agentsProject.panel"
       },
       {
         "command": "agents.autogit",
