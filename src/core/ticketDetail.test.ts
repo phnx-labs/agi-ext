@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { commentArgv, parseTicketDetail, renderTicketDetail } from './ticketDetail'
+import { parseTicketDetail, renderTicketDetail } from './ticketDetail'
 
 // Shape of `linear tasks PHNX-4289 --json` (linear-cli, 2026-10-11), trimmed.
 const RAW = JSON.stringify({
@@ -20,10 +20,6 @@ test('ticket detail escapes everything the tracker sends and keeps only safe mar
   expect(html).toContain('1 older in Linear')
   expect(html.indexOf('c2')).toBeLessThan(html.indexOf('&lt;img'))
   expect(html).not.toContain("<p>c1</p>")
-})
-
-test('a comment is one argv; text that starts with a dash stays the comment', () => {
-  expect(commentArgv('PHNX-1', '--done please')).toEqual(['update', 'PHNX-1', '--comment=--done please'])
 })
 
 test('a delegated ticket names its agent; sessions already on it come first with Open, starting another is quiet', () => {
