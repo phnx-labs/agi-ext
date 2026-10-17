@@ -6,19 +6,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.405] - 2026-10-17
 
-The Project panel reads Linear through the project, as Review already reads GitHub:
+The project menu lists every Linear project, so a wrong or missing detection is one click to fix
+(owner, 2026-10-17):
 
-- Issues, a ticket tile's page and the goal lines run `agents projects tickets <name>`,
-  `agents projects tickets view` and `agents projects goals <name>`. agents-cli knows
-  which Linear project (and, with profiles, which workspace) a project is; the extension no
-  longer runs `linear` itself or looks for its binary.
-- A project is read by the Linear project id it records, not the board's name, so a renamed
-  board keeps working. A link to a project Linear no longer has shows linear-cli's error and
-  `Relink it: agents projects link <name> --linear`, instead of an empty list or "not found".
-- The project menu names each project's Linear project beside its repositories.
-- A picked project is remembered by name and read fresh from `agents projects list`, so its
-  repositories and Linear project are always current.
-- Needs an agents-cli with `agents projects tickets`; an older one says to run `agents upgrade`.
+- The menu shows each live Linear project through the agents project that links it, with its
+  repositories, so Issues and Review follow the pick. A Linear project no agents project links
+  shows its tickets only. Agents projects whose Linear link is gone (agi-ui's "AGI UI")
+  are listed after, marked so.
+- Detection still picks first and marks its row "found from this folder"; a pick wins and is
+  remembered per workspace, and Use detection again clears it. With nothing found the header
+  reads "No project" instead of disappearing. Switch Project offers the same rows.
+- Issues reads `linear tasks --project <id>`, so a renamed board keeps working and a link to a
+  project Linear no longer has shows linear-cli's error instead of an empty list. Every
+  `linear` call runs in the project's Linear workspace (`LINEAR_PROFILE`, `default` when unset).
 
 Issues is a list you act from, now that a ticket opens as its Linear tab (owner screenshots,
 2026-10-17):

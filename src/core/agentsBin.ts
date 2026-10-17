@@ -23,7 +23,7 @@ const CACHE_TTL_MS = 60_000;
 
 /** The agents-cli family: `agents`, the standalone CLIs that own sessions and secrets,
  *  and `artifacts`, which publishes an artifact as a shareable Rush link. */
-export type CliTool = 'agents' | 'sessions' | 'secrets' | 'artifacts';
+export type CliTool = 'agents' | 'sessions' | 'secrets' | 'artifacts' | 'linear';
 
 const cachedBins = new Map<CliTool, { bin: string; at: number }>();
 
@@ -120,6 +120,8 @@ export interface RunAgentsOptions {
   timeout?: number;
   maxBuffer?: number;
   cwd?: string;
+  /** Added to the host's environment, e.g. LINEAR_PROFILE for one linear call. */
+  env?: Record<string, string>;
 }
 
 /**
@@ -158,7 +160,7 @@ export async function runCliArgs(
     timeout: options.timeout ?? 30_000,
     maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
     cwd: options.cwd,
-    env: { ...process.env, PATH: `${augmented}:${process.env.PATH ?? ''}` },
+    env: { ...process.env, ...options.env, PATH: `${augmented}:${process.env.PATH ?? ''}` },
   });
 }
 

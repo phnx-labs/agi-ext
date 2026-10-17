@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { runAgentsArgs } from '../core/agentsBin';
+import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
 import { parseGoals, renderGoals } from '../core/goals';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
@@ -21,7 +21,8 @@ import {
   parseTickets,
   projectSessions,
   projectFallback,
-  projectsInFolder,
+  parseLinearProjects,
+  projectMenu,
   displayHome,
   renderPrs,
   prFixPrompt,
@@ -38,6 +39,8 @@ import {
   sessionMade,
   answerArgv,
   answerFailure,
+  type LinearProject,
+  type ProjectMenuRow,
   type ProjectRef,
   type PrsModel,
   type SessionHere,
@@ -73,7 +76,7 @@ import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 // description that read carried. Sessions draws the stream rows already in the presentation
 // store and demands the stream only while it is the visible tab. Settings reads
 // agentSettings and nothing else. Above the tabs, the company goal and today's
-// goal are one `agents projects goals` read when the panel shows (at most once per
+// goal are one `linear goals` read when the panel shows (at most once per
 // FRESH_MS) or on Refresh. No timer anywhere.
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
@@ -217,7 +220,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     view.description = project?.name;
     void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
     if (!project) {
-      this.post(tab, '<div class="empty">No agents project contains this workspace. <a href="#" data-pick>Pick a project</a></div>');
+      this.post(tab, '<div class="empty">No project found for this folder. <a href="#" data-pick>Pick a project</a></div>');
       return;
     }
     if (tab === 'sessions') {
@@ -257,10 +260,10 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId, flash });
   }
 
-  /** The project menu: one `agents projects list` read when it opens. */
+  /** The project menu, read each time it opens. */
   private async listProjects(): Promise<void> {
     try {
-      const list = await this.controller.projectsHere();
+      const list = await this.controller.menu();
       void this.view?.webview.postMessage({ type: 'projectList', ...list });
     } catch (e) {
       void this.view?.webview.postMessage({ type: 'projectList', error: errorText(e) });
@@ -377,15 +380,15 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 }
 
-/** One `agents projects tickets|goals` call; a CLI without the verb is an upgrade error. */
-async function linearThroughAgents(args: string[], timeout: number): Promise<{ stdout: string }> {
-  try {
-    return await runAgentsArgs(['projects', ...args], { timeout, maxBuffer: 20 * 1024 * 1024 });
-  } catch (e) {
-    if (/unknown command '(tickets|goals)'/.test(errorText(e))) throw new Error(`This agents-cli has no \`agents projects ${args[0]}\`. Run \`agents upgrade\`.`);
-    throw e;
-  }
+/** One `linear` call in a project's Linear workspace. An unset profile is `default`, so the
+ *  extension host's own folder never picks the workspace. */
+function runLinear(args: string[], profile: string | null, timeout: number): Promise<{ stdout: string }> {
+  return runCliArgs('linear', args, { timeout, maxBuffer: 20 * 1024 * 1024, env: { LINEAR_PROFILE: profile ?? 'default' } });
 }
+
+/** What the project menu stores for a window: an agents project, or a Linear project no
+ *  agents project links. */
+type PickedProject = { name: string; linear?: undefined } | { name?: undefined; linear: LinearProject & { profile: string | null } };
 
 function errorText(e: unknown): string {
   return (e as { stderr?: string }).stderr?.trim() || (e instanceof Error ? e.message : String(e));
@@ -393,7 +396,7 @@ function errorText(e: unknown): string {
 
 class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
-  /** One `agents projects tickets` read feeds Issues (and a ticket's Start agent and peek). */
+  /** One `linear tasks` read feeds Issues (and a ticket's Start agent and peek). */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
   /** The last Issues read that answered, for ⌘K's Tickets section. */
   private ticketsSeen: TicketGroup[] = [];
@@ -405,14 +408,29 @@ class ProjectPanelController {
 
   /** The picked project for this workspace, else the one containing its first folder. */
   project(): Promise<ProjectRef | null> {
-    const picked = this.context.workspaceState.get<{ name: string }>(PICKED_PROJECT_KEY)?.name;
-    if (picked) {
+    const picked = this.pickedState();
+    if (picked?.linear) {
+      const l = picked.linear;
+      return Promise.resolve({ name: l.name, linearName: l.name, linearId: l.id, linearProfile: l.profile, repos: [] });
+    }
+    if (picked?.name) {
+      const name = picked.name;
       return readRegistry().then((all) => {
-        const found = all.find((p) => p.name === picked);
-        if (!found) throw new Error(`The project picked for this window, ${picked}, is no longer in agents projects list. Pick another.`);
+        const found = all.find((p) => p.name === name);
+        if (!found) throw new Error(`The project picked for this window, ${name}, is no longer in agents projects list. Pick another.`);
         return found;
       });
     }
+    return this.detectedProject();
+  }
+
+  private pickedState(): PickedProject | undefined {
+    const v = this.context.workspaceState.get<PickedProject>(PICKED_PROJECT_KEY);
+    return v?.name || v?.linear?.id ? v : undefined;
+  }
+
+  /** What detection gives this window's folder, asked once until it finds one. */
+  private detectedProject(): Promise<ProjectRef | null> {
     if (!this.detected) {
       const detected = this.detect();
       this.detected = detected;
@@ -425,7 +443,7 @@ class ProjectPanelController {
 
   /** Whether the shown project is one the user picked, rather than found from the folder. */
   picked(): boolean {
-    return !!this.context.workspaceState.get<{ name: string }>(PICKED_PROJECT_KEY)?.name;
+    return !!this.pickedState();
   }
 
   /** The project menu reads the list fresh each time it opens; the read also refreshes the shared registry. */
@@ -433,18 +451,39 @@ class ProjectPanelController {
     return readRegistry(true);
   }
 
-  /** The projects with a repository inside this window's folder, for the panel's project menu. */
-  async projectsHere(): Promise<{ folder: string; current: string; projects: { name: string; repos: string[] }[] }> {
+  /** The Linear projects the menu last read, so a pick stores the one it showed. */
+  private linearSeen: { projects: LinearProject[]; profile: string | null } = { projects: [], profile: null };
+
+  /** The project menu: one `agents projects list` and one `linear projects --json` read
+   *  when it opens, in the shown project's Linear workspace. */
+  async menu(): Promise<{ folder: string; picked: boolean; rows: ProjectMenuRow[]; linearError?: string }> {
     const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    const [all, current] = await Promise.all([this.projectList(), this.project()]);
-    return { folder: displayHome(folder), current: current?.name ?? '', ...projectsInFolder(all, folder, os.homedir()) };
+    const [all, current, found] = await Promise.all([this.projectList(), this.project().catch(() => null), this.detectedProject().catch(() => null)]);
+    const profile = current?.linearProfile ?? null;
+    let linear: LinearProject[] | null = null;
+    let linearError: string | undefined;
+    try {
+      linear = parseLinearProjects((await runLinear(['projects', '--json'], profile, 30_000)).stdout);
+      this.linearSeen = { projects: linear, profile };
+    } catch (e) {
+      linearError = errorText(e).split('\n')[0] ?? 'failed';
+    }
+    return { folder: displayHome(folder), picked: this.picked(), rows: projectMenu(all, linear, current, found?.name ?? null), ...(linearError ? { linearError } : {}) };
   }
 
-  /** Show this project here; remembered for the workspace, as the quick pick does. */
-  async pickByName(name: string): Promise<void> {
-    const p = (await this.projectList()).find((x) => x.name === name);
-    if (!p) throw new Error(`No project named ${name}`);
-    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: p.name });
+  /** Show what a menu row names here, remembered for the workspace; '' goes back to detection. */
+  async pickByName(pick: string): Promise<void> {
+    let next: PickedProject | undefined;
+    if (pick.startsWith('linear:')) {
+      const l = this.linearSeen.projects.find((x) => `linear:${x.id}` === pick);
+      if (!l) throw new Error('That Linear project is not in the list just read. Open the menu again.');
+      next = { linear: { ...l, profile: this.linearSeen.profile } };
+    } else if (pick) {
+      const p = (await this.projectList()).find((x) => x.name === pick);
+      if (!p) throw new Error(`No project named ${pick}`);
+      next = { name: p.name };
+    }
+    await this.context.workspaceState.update(PICKED_PROJECT_KEY, next);
     this.refresh(true);
   }
 
@@ -452,7 +491,7 @@ class ProjectPanelController {
 
   /** Read the Issues list for ticket tiles at most once per FRESH_MS, failed or not; never throws. */
   warmTicketFaces(p: ProjectRef): void {
-    if (!p.linearName || Date.now() - this.facesTriedAt < FRESH_MS) return;
+    if (!p.linearId || Date.now() - this.facesTriedAt < FRESH_MS) return;
     this.facesTriedAt = Date.now();
     this.ticketGroups(p, false).catch(() => undefined);
   }
@@ -497,7 +536,8 @@ class ProjectPanelController {
     const cached = this.tickets;
     if (!force && cached && cached.project === p.name && Date.now() - cached.at < FRESH_MS) return cached.groups;
     const groups = (async () => {
-      const { stdout } = await linearThroughAgents(['tickets', p.name, '--json'], 60_000);
+      if (!p.linearId) throw new Error(`${p.name} has no Linear project. Pick one from the project menu, or link it: agents projects link ${p.name} --linear`);
+      const { stdout } = await runLinear(['tasks', '--project', p.linearId, '--json'], p.linearProfile, 60_000);
       const parsed = parseTickets(stdout);
       // A read that lands after a project switch is not the shown project's.
       if (this.tickets?.project === p.name) this.ticketsSeen = parsed;
@@ -551,11 +591,10 @@ class ProjectPanelController {
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
   todayId: string | undefined;
 
-  /** Company and today's goal of the project's Linear workspace: one `agents projects goals` read. */
+  /** Company and today's goal of the project's Linear workspace: one `linear goals` read. */
   async goals(): Promise<string> {
-    const project = await this.project();
-    if (!project) { this.todayId = undefined; return ''; }
-    const { stdout } = await linearThroughAgents(['goals', project.name, '--json'], 30_000);
+    const project = await this.project().catch(() => null);
+    const { stdout } = await runLinear(['goals', '--json'], project?.linearProfile ?? null, 30_000);
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
     return renderGoals(goals);
@@ -577,18 +616,18 @@ class ProjectPanelController {
   }
 
   /** Open a ticket's Linear page as a tab: the URL the Issues read carried (waiting for
-   *  that read when it is still running), else one `agents projects tickets view` read for a
+   *  that read when it is still running), else one `linear tasks <ID>` read for a
    *  ticket not in it (a closed one). */
   async openTicketPage(id: string): Promise<void> {
     let url = this.ticketById(id)?.url;
     try {
       if (!url) {
         const project = await this.project();
-        if (!project) throw new Error('No agents project contains this workspace; pick one to read its tickets.');
+        if (!project) throw new Error('No project found for this folder; pick one from the project menu to read its tickets.');
         await this.ticketGroups(project, false).catch(() => undefined);
         url = this.ticketById(id)?.url;
         if (!url) {
-          const { stdout } = await linearThroughAgents(['tickets', 'view', project.name, id, '--json'], 60_000);
+          const { stdout } = await runLinear(['tasks', id, '--json'], project.linearProfile, 60_000);
           const t = parseTicketView(stdout);
           if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
           url = t.url;
@@ -878,16 +917,13 @@ class ProjectPanelController {
     return this.view.redrawSessions();
   }
 
+  /** The command palette's project menu: the same rows as the panel's. */
   async pick(): Promise<void> {
-    const projects = await readRegistry(true);
-    const current = await this.project();
-    const choice = await vscode.window.showQuickPick(
-      projects.map((p) => ({ label: p.name, description: p.linearName ?? 'no Linear project', picked: p.name === current?.name, project: p })),
-      { placeHolder: 'Show which project in the Project sidebar?' },
-    );
-    if (!choice) return;
-    await this.context.workspaceState.update(PICKED_PROJECT_KEY, { name: choice.project.name });
-    this.refresh(true);
+    const { rows, picked, linearError } = await this.menu();
+    const items = rows.map((r) => ({ label: `${r.current ? '$(check) ' : ''}${r.label}`, description: r.found ? `${r.detail} · found from this folder` : r.detail, pick: r.pick }));
+    if (picked) items.push({ label: 'Use detection again', description: 'the project found from this folder', pick: '' });
+    const choice = await vscode.window.showQuickPick(items, { placeHolder: linearError ? `Linear projects could not be read: ${linearError}` : 'Show which project in the Project sidebar?' });
+    if (choice) await this.pickByName(choice.pick);
   }
 
   refresh(projectChanged = false): void {
@@ -1092,6 +1128,7 @@ export function shell(cspSource: string, logoCss = ''): string {
   .pmenu .pn { display: flex; flex-direction: column; min-width: 0; }
   .pmenu .pn small { color: var(--r-caption); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pmenu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 0; }
+  .pmenu .pfound { font-style: normal; font-weight: 400; font-size: 10.5px; color: var(--r-caption); margin-left: 4px; }
   .tkt { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 7px 9px; border: 1px solid var(--r-edge); border-radius: 8px; background: var(--r-glass); text-decoration: none; color: var(--r-text); max-width: 280px; }
   .tkt:hover { border-color: var(--r-caption); background: var(--r-hover); }
   .tkh { display: flex; align-items: center; gap: 5px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
@@ -1480,17 +1517,19 @@ ${THUMB_SCRIPT}
       if (shownProject !== undefined && m.name !== shownProject) peeked = null;
       shownProject = m.name;
       const row = document.querySelector('.proj');
-      row.hidden = !m.name;
-      row.querySelector('.ppn').textContent = m.name;
-      row.querySelector('.pwhy').textContent = m.picked ? 'picked for this window' : 'found from this folder';
+      // Always shown: with nothing found, the menu is how a project gets picked.
+      row.hidden = false;
+      row.querySelector('.ppn').textContent = m.name || 'No project';
+      row.querySelector('.pwhy').textContent = m.picked ? 'picked for this window' : m.name ? 'found from this folder' : 'none found from this folder';
     }
     else if (m.type === 'projectList') {
       const pmenu = document.querySelector('.pmenu');
       const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       if (m.error) { pmenu.innerHTML = '<div class="pms err">' + esc(m.error) + '</div>'; return; }
-      pmenu.innerHTML = '<div class="pms">' + (m.projects.length ? 'Projects in ' + esc(m.folder) : 'No project is bound to ' + esc(m.folder)) + '</div>' +
-        m.projects.map((p) => '<button role="menuitemradio" aria-checked="' + (p.name === m.current) + '" data-proj-pick="' + esc(p.name) + '"><span class="ck">' + (p.name === m.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(p.name) + '</b><small>' + esc(p.repos.concat(p.linear ? ['Linear ' + p.linear] : []).join(' · ')) + '</small></span></button>').join('') +
-        '<hr><button data-proj-all><span class="ck"></span>All projects…</button>';
+      pmenu.innerHTML = '<div class="pms">' + (m.linearError ? 'Projects' : 'Linear projects') + '</div>' +
+        (m.linearError ? '<div class="pms err">Linear projects could not be read: ' + esc(m.linearError) + '</div>' : '') +
+        m.rows.map((r) => '<button role="menuitemradio" aria-checked="' + r.current + '" data-proj-pick="' + esc(r.pick) + '"><span class="ck">' + (r.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(r.label) + (r.found ? ' <i class="pfound">found from this folder</i>' : '') + '</b><small>' + esc(r.detail) + '</small></span></button>').join('') +
+        (m.picked ? '<hr><button data-proj-pick=""><span class="ck"></span>Use detection again</button>' : '');
     }
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
@@ -1565,7 +1604,7 @@ ${THUMB_SCRIPT}
     }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
-    // The project button: its menu lists the projects in this folder (one read when it opens).
+    // The project button: its menu lists every Linear project (read when it opens).
     const pmenu = document.querySelector('.pmenu');
     if (e.target.closest('[data-proj-menu]')) {
       const opening = pmenu.hidden;
@@ -1576,7 +1615,6 @@ ${THUMB_SCRIPT}
     }
     const pick = e.target.closest('[data-proj-pick]');
     if (pick) { pmenu.hidden = true; vscode.postMessage({ type: 'pickProject', name: pick.dataset.projPick }); return; }
-    if (e.target.closest('[data-proj-all]')) { pmenu.hidden = true; vscode.postMessage({ type: 'pick' }); return; }
     if (!pmenu.hidden && !e.target.closest('.pmenu')) { pmenu.hidden = true; document.querySelector('[data-proj-menu]').setAttribute('aria-expanded', 'false'); }
     // A ticket tile or chip peeks at its row in Issues and opens its Linear page.
     const tk = e.target.closest('[data-open-ticket]');
