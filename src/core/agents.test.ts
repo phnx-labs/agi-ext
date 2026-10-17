@@ -437,6 +437,12 @@ describe('wrapNativeAgentCommand (RUSH-2593)', () => {
     });
   }
 
+  test('real bash: a failed launch leaves its own status as the line\'s status, for shell integration', () => {
+    const wrapped = wrapNativeAgentCommand(`bash -c 'exit 3'`, false);
+    const out = execFileSync('bash', ['-c', `${wrapped}; echo "STATUS=$?"`], { encoding: 'utf8' });
+    expect(out).toContain('STATUS=3');
+  });
+
   test('real bash: a plain launch failure (1) still gets the generic line, not the reconnect line — there is no session to rejoin', () => {
     const wrapped = wrapNativeAgentCommand(`bash -c 'exit 1'`, false);
     const out = execFileSync('bash', ['-c', `${wrapped}; echo MARKER_REACHED`], { encoding: 'utf8' });

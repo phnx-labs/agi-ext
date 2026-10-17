@@ -82,7 +82,7 @@ AGI EXT is a presentation and interaction layer over agents-cli. The CLI owns ev
 <figcaption>Facts flow in on one lime arrow. Everything else the extension does is a gesture becoming one command.</figcaption>
 </figure>
 
-The CLI owns facts and mechanisms. The extension owns presentation: which tab is visible, local labels, sidebar layout, transient selection, and the restoration metadata needed to reopen a tab. When the UI needs a fact the stream lacks, the fact is added to the CLI's `SessionWatchRow` (backfilled from the index, the way `version` landed), never reconstructed from transcripts or fetched on a poll (the one exception, an explicit-click timeline filter, is described under the sidebar row below)ing loop. That side channel is how the 2026-08-25 CPU incident happened (agi-cli#3019).
+The CLI owns facts and mechanisms. The extension owns presentation: which tab is visible, sidebar layout, transient selection, and the restoration metadata needed to reopen a tab. When the UI needs a fact the stream lacks, the fact is added to the CLI's `SessionWatchRow` (backfilled from the index, the way `version` landed), never reconstructed from transcripts or fetched on a poll (the one exception, an explicit-click timeline filter, is described under the sidebar row below)ing loop. That side channel is how the 2026-08-25 CPU incident happened (agi-cli#3019).
 
 The invariants, each checkable against the file named:
 
@@ -367,7 +367,6 @@ The module graph was measured on this branch on 2026-09-11 with the `code:refact
 
 | Path | Violation | Fate |
 |---|---|---|
-| `src/vscode/remoteSessions.vscode.ts` `fetchRemoteSessionLabelSource` | a client-side `agents ps preview <id> --json` fetch for the label and topic, which are already on the stream row; still called from `src/vscode/extension.ts` | delete now |
 | `src/core/prewarm.simple.ts` | still spawns `opencode session list` on every OpenCode tab open (the second, `workspaceState` crash-recovery mapping was deleted; the per-window file is the one restore store) | delete once the CLI daemon owns restore |
 | `src/monitor/sessionParse.ts` | resolves session-root directories for the readiness detector's file scan; obsolete parsing helpers were deleted in #74 | replace the remaining file scan with CLI-provided fields |
 | `src/vscode/terminalReadiness.ts` recursive `fs.watch` on transcript roots | transcript watcher | replace with a daemon readiness signal |

@@ -4,7 +4,35 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
-## [0.9.402] - 2026-10-14
+## [0.9.403] - 2026-10-14
+
+The sessions sidebar follows the front tab and shows one name (PHNX-4387):
+
+- **Follows the front tab.** Switching between terminal tabs in the editor area now moves the
+  selection in Sessions and the Active Session sidebar; before, only the panel terminal's event
+  was heard and editor tabs were missed. The selected card has its own look, a gold rail on its
+  left edge (it looked the same as hover), the front tab's card is headed "This tab", a folded
+  group holding it opens, and it scrolls into view without flashing.
+- **Open tabs.** The "<workspace> · VSCodium · this window" group is now **Open tabs**: every
+  tab in this window keeps its card there, in tab order, working or finished, with its tab number
+  ("⌘3"). A tab's number comes from the terminal itself, so two tabs with the same name no longer
+  get the same number. Only an ask leaves Open tabs, for the pinned Asks group where you answer it.
+  Idle and Ready for review hold only sessions with no tab here.
+- **One name.** The tab, the card, the status bar and the Active Session sidebar show the same
+  name: the CLI's title, else its label. The extension no longer makes up tab names (the
+  headless title generator, the first-five-words fallback and Agents: Re-label from Activity are
+  removed) and no longer sends a tab's title back to the CLI as the session's label. When the
+  CLI reports what a session was started with, the card shows it on a faint "started: …" line.
+  The "started: …" line needs an agents-cli release newer than 1.23.24; until then no card
+  shows it.
+- **Rename renames the session.** Agents: Label is now **Agents: Rename Session** (Cmd+Shift+L):
+  it types Claude's `/rename` into the tab and keeps no name of its own; the new name arrives
+  through the stream. Other harnesses have no rename the CLI reads, and the command says so.
+- **Fork tabs are named.** A fork's tab reads "fork of <title>" before it starts, and
+  "fork failed: <title>" when `agents fork` exits nonzero. An agent tab whose launch fails now
+  leaves that status as the command's status, so the shell's prompt shows the failure too.
+
+Also in this release (documented as 0.9.402, which was never published):
 
 - **Settings > Devices** shows where `--device auto` places agents. Each device that may be placed
   on has a checkbox (in the pool or not, `agents devices enable|disable`), a star (preferred,

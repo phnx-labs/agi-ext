@@ -1,5 +1,5 @@
-// Shared process-group teardown for the one-shot CLI helpers (labelgen,
-// commitgen, draftPrompt, prewarm.simple).
+// Shared process-group teardown for the one-shot CLI helpers (commitgen,
+// draftPrompt, prewarm.simple).
 //
 // `child.kill()` only signals the direct pid. In the agents-cli 1.22.85
 // incident an `agents run claude` child fork-bombed `secrets __serve`; every

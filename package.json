@@ -251,11 +251,7 @@
       },
       {
         "command": "agents.setTitle",
-        "title": "Agents: Label"
-      },
-      {
-        "command": "agents.relabelTerminal",
-        "title": "Agents: Re-label from Activity"
+        "title": "Agents: Rename Session"
       },
       {
         "command": "agents.clear",
@@ -1113,7 +1109,7 @@
     "package": "bun run compile && vsce package",
     "lint:dead": "knip",
     "test": "bun test --timeout 30000",
-    "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/labelgen.test.ts src/core/commitgen.test.ts"
+    "test:agent-integration": "EXT_AGENT_INTEGRATION=1 bun test --timeout 95000 src/core/commitgen.test.ts"
   },
   "devDependencies": {
     "@phnx-labs/cli-docs": "0.1.1",

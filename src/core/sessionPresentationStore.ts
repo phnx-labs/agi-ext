@@ -280,7 +280,7 @@ export class SessionPresentationStore {
    * `null` for a harness the CLI records no identity for (Kimi has neither,
    * Grok/Cursor a version but no account) or before the CLI has indexed them.
    */
-  liveSession(sessionId: string): { machine: string; topic: string; label: string; cwd: string; agent: string; version: string | null; account: string | null; accountLabel: string | null } | undefined {
+  liveSession(sessionId: string): { machine: string; title: string; topic: string; label: string; cwd: string; agent: string; version: string | null; account: string | null; accountLabel: string | null } | undefined {
     const wanted = sessionId.trim();
     if (!wanted) return undefined;
     for (const value of this.sessions()) {
@@ -290,6 +290,7 @@ export class SessionPresentationStore {
         id?: unknown;
         machine?: unknown;
         sourceDevice?: unknown;
+        title?: unknown;
         topic?: unknown;
         prompt?: unknown;
         firstUserMessage?: unknown;
@@ -312,6 +313,7 @@ export class SessionPresentationStore {
         : typeof row.firstUserMessage === 'string' ? row.firstUserMessage
         : '';
       const label = typeof row.label === 'string' ? row.label : '';
+      const title = typeof row.title === 'string' ? row.title : '';
       const cwd = typeof row.cwd === 'string' ? row.cwd : '';
       const agent = typeof row.kind === 'string' && row.kind ? row.kind
         : typeof row.agentType === 'string' ? row.agentType
@@ -319,7 +321,7 @@ export class SessionPresentationStore {
       const version = typeof row.version === 'string' && row.version.trim() ? row.version.trim() : null;
       const account = typeof row.account === 'string' && row.account.trim() ? row.account.trim() : null;
       const accountLabel = typeof row.accountLabel === 'string' && row.accountLabel.trim() ? row.accountLabel.trim() : null;
-      return { machine, topic, label, cwd, agent, version, account, accountLabel };
+      return { machine, title, topic, label, cwd, agent, version, account, accountLabel };
     }
     return undefined;
   }

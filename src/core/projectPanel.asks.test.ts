@@ -29,14 +29,16 @@ test('only real asks are your move: urgent and high under Needs you now, the res
   expect(sessionCount(ROWS, HERE).asks).toBe(5)
 })
 
-test('a finished turn that asked nothing is in Idle, folded with its count; a review request is Ready for review', () => {
+test('a finished turn that asked nothing is in Idle, folded with its count, unless its tab is open here; a review request is Ready for review', () => {
   const html = list()
   expect(html).toContain('<section class="grp closed" data-group="idle">')
-  expect(html).toContain('<b>Idle</b> <span class="n">4</span> <span class="gs">· finished, nothing asked</span>')
-  for (let i = 0; i < 4; i++) expect(html).not.toContain(`data-session="idle-${i}"`)
+  expect(html).toContain('<b>Idle</b> <span class="n">3</span> <span class="gs">· finished, no tab here</span>')
+  for (let i = 1; i < 4; i++) expect(html).not.toContain(`data-session="idle-${i}"`)
+  // idle-0's tab is open in this window: it keeps its card in Open tabs (PHNX-4387).
+  expect(between(html, 'data-group="here"', '</section>')).toContain('data-session="idle-0"')
   expect(between(html, 'data-group="review"', '</section>')).toContain('data-session="a81c55e2-review"')
   expect(html.indexOf('data-group="review"')).toBeLessThan(html.indexOf('data-group="idle"'))
-  expect(list(undefined, [])).toContain('data-session="idle-0"')
+  expect(list(undefined, [])).toContain('data-session="idle-1"')
   // Running, Waiting and Ended keep the viewer's grouping below.
   expect(html.indexOf('data-group="idle"')).toBeLessThan(html.indexOf('data-session="run-1"'))
 })

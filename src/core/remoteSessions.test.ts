@@ -9,7 +9,6 @@ import {
   normalizeActiveSession,
   normalizeQuestion,
   dialablePeerScopes,
-  parseSessionLabelSource,
   isDerivedSessionName,
   type RemoteSession,
   type RawActiveSession,
@@ -666,62 +665,6 @@ describe('normalizeActiveSession — todos plan progress (RUSH-1380)', () => {
       FETCHED_AT
     );
     expect(s.todos).toBeUndefined();
-  });
-});
-
-describe('parseSessionLabelSource', () => {
-  // A tab whose agent runs on another machine has no local transcript; this is
-  // the parse of a by-id session read (`agents ps preview <id> --device <name> --json`) that lets it be
-  // labelled at all.
-  const record = (session: Record<string, unknown>) => JSON.stringify({ session, events: [] });
-
-  test('reads the persisted name and first message off the local envelope, dropping a derived <dirname>-<n> name', () => {
-    expect(parseSessionLabelSource(record({
-      id: 'abc', cwd: '/home/muqsit/src/agents-cli', label: 'Fix Fleet Login', topic: 'fix the fleet login',
-    }))).toEqual({ label: 'Fix Fleet Login', topic: 'fix the fleet login' });
-    expect(parseSessionLabelSource(record({
-      cwd: '/home/muqsit/src/agents-cli', label: 'agents-cli-55', topic: 'add a host picker',
-    }))).toEqual({ label: null, topic: 'add a host picker' });
-    // "RUSH-2058" matches <word>-<digits> but is not this session's dirname, so it is a real title.
-    expect(parseSessionLabelSource(record({ cwd: '/home/muqsit/src/agents-cli', label: 'RUSH-2058' }))?.label).toBe('RUSH-2058');
-    expect(parseSessionLabelSource(record({ cwd: '/x', label: '   ', topic: '' }))).toEqual({ label: null, topic: null });
-  });
-
-  test('reads the first real user event when session.topic is missing, never a synthetic one', () => {
-    const raw = (events: unknown[]) => JSON.stringify({ session: { id: 'abc', cwd: '/x' }, events });
-    expect(parseSessionLabelSource(raw([
-      { type: 'hook', hookName: 'SessionStart' },
-      { type: 'message', role: 'user', content: 'Base directory for this skill: /tmp/continue', _synthetic: true },
-      { type: 'message', role: 'user', content: 'Compact the PageHeader across every page' },
-    ]), 'abc')).toEqual({ label: null, topic: 'Compact the PageHeader across every page' });
-    expect(parseSessionLabelSource(raw([
-      { type: 'message', role: 'user', content: '<command-name>/continue</command-name>', _synthetic: true },
-    ]), 'abc')).toEqual({ label: null, topic: null });
-  });
-
-  test('returns null for output that is not a session record', () => {
-    for (const raw of ['not json', '{}', '[]']) expect(parseSessionLabelSource(raw, 'anything')).toBeNull();
-  });
-
-  // Captured from a real by-id session read against yosemite-s0 (the flat SessionMeta array shape).
-  // The first cut of this parser only understood the LOCAL `{ session, events }`
-  // shape and returned null for every offloaded tab, the exact case it serves.
-  test('reads the real REMOTE payload, a flat array rather than a { session } envelope', () => {
-    const remoteRaw = fs.readFileSync(path.join(__dirname, 'testdata', 'sessions-by-id-remote.json'), 'utf-8');
-    expect(Array.isArray(JSON.parse(remoteRaw))).toBe(true);
-    expect(parseSessionLabelSource(remoteRaw, 'e2f20244-fbb7-413a-8333-aa1b692851bc')!.topic).toBe('Reply with exactly: OK');
-  });
-
-  test('never labels a tab from a different session in a multi-record payload', () => {
-    const many = JSON.stringify([
-      { id: 'other', cwd: '/x', topic: 'someone elses work' },
-      { id: 'mine', cwd: '/x', topic: 'my work' },
-    ]);
-    expect(parseSessionLabelSource(many, 'mine')!.topic).toBe('my work');
-    expect(parseSessionLabelSource(many, 'absent')).toBeNull();
-    // Ambiguous with no id to disambiguate: refuse rather than guess.
-    expect(parseSessionLabelSource(many)).toBeNull();
-    expect(parseSessionLabelSource(JSON.stringify([{ id: 'solo', cwd: '/x', topic: 'solo work' }]))!.topic).toBe('solo work');
   });
 });
 

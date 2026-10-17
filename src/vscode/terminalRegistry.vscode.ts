@@ -21,7 +21,7 @@ import * as os from 'os';
 import * as vscode from 'vscode';
 import { createHash } from 'crypto';
 import { computeWindowId } from '../core/windowId';
-import { resolveTabIndex, type TabView } from '../core/tabIndex';
+import { terminalTabNumbers } from './frontTab.vscode';
 import { resolveStartedAtMs } from '../core/processStartTime';
 import { agentKindFromTerminalId } from '../core/agents';
 import { getById } from './terminals.vscode';
@@ -41,7 +41,6 @@ interface LiveTerminal {
   terminalId?: string;
   pid: number;
   kind: string;              // 'claude' | 'codex' | ...
-  label?: string | null;
   cwd?: string | null;
   startedAtMs: number;
   // Richer tracking so the CLI can address + display this terminal precisely.
@@ -97,10 +96,10 @@ function hashEntries(entries: LiveTerminal[]): string {
   // Stable hash of the slice content. The `at` timestamp is excluded — it
   // changes every call and would make every hash unique.
   const stable = entries
-    .map((e) => `${e.terminalId ?? ''}|${e.sessionId ?? ''}|${e.pid}|${e.kind}|${e.label ?? ''}|${e.cwd ?? ''}|${e.tabIndex ?? ''}`)
+    .map((e) => `${e.terminalId ?? ''}|${e.sessionId ?? ''}|${e.pid}|${e.kind}|${e.cwd ?? ''}|${e.tabIndex ?? ''}`)
     .sort()
     .join('\n');
-  return createHash('sha1').update(stable).digest('hex');
+  return createHash('sha256').update(stable).digest('hex');
 }
 
 // Publish this window's live terminals. Skips the disk write when our slice
@@ -137,14 +136,7 @@ export async function publishLiveTerminals(terminals: LiveTerminal[]): Promise<v
 /** @public called through the dynamic import in extension.ts, which knip cannot see */
 export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
   const out: LiveTerminal[] = [];
-  // Flatten the editor tab groups ONCE per snapshot so resolveTabIndex is a pure
-  // lookup per terminal rather than re-walking the tab tree each time.
-  const tabGroups: TabView[][] = vscode.window.tabGroups.all.map((g) =>
-    g.tabs.map((tab) => ({
-      label: tab.label,
-      isTerminal: tab.input instanceof vscode.TabInputTerminal,
-    })),
-  );
+  const tabNumbers = terminalTabNumbers();
   for (const t of vscode.window.terminals) {
     if (t.exitStatus !== undefined) continue;
     const opts = t.creationOptions as vscode.TerminalOptions;
@@ -153,15 +145,13 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
     if (!tid) continue;
     const pid = await t.processId;
     if (!pid) continue;
-    // Editor-tab position, matched by the terminal's name against its tab label.
-    const tabIndex = resolveTabIndex(tabGroups, t.name);
+    const tabIndex = tabNumbers.get(t);
     out.push({
       // The bound id, not the launch env: Codex/Grok mint theirs after launch and a tab can be rebound.
       sessionId: getById(tid)?.sessionId || undefined,
       terminalId: tid,
       pid,
       kind: agentKindFromTerminalId(tid),
-      label: deriveLabel(t.name),
       cwd: env?.AGENT_WORKSPACE_DIR ?? null,
       startedAtMs: await resolveStartedAtMs(pid),
       tabIndex,
@@ -170,7 +160,3 @@ export async function snapshotOwnTerminals(): Promise<LiveTerminal[]> {
   return out;
 }
 
-function deriveLabel(name: string): string | null {
-  const m = name.match(/-\s+(.+)$/);
-  return m ? m[1].trim() : null;
-}

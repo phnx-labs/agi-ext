@@ -3,7 +3,7 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 120,
+    "commands": 119,
     "settings": 9,
     "keybindings": 48,
     "menuItems": 16,
@@ -145,11 +145,7 @@
       },
       {
         "command": "agents.setTitle",
-        "title": "Agents: Label"
-      },
-      {
-        "command": "agents.relabelTerminal",
-        "title": "Agents: Re-label from Activity"
+        "title": "Agents: Rename Session"
       },
       {
         "command": "agents.clear",

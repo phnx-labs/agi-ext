@@ -21,14 +21,13 @@ import * as git from './git.vscode';
 import { AgentSettings, hasLoginEnabled, PromptEntry, QUICK_LAUNCH_SLOT_KEYS, getQuickLaunchSlot, QuickLaunchSlot, QuickLaunchSlotKey } from '../core/settings';
 import { listRegisteredDevices, getRegisteredDevicesCache } from './deviceHealth.vscode';
 import { deviceBadge } from '../core/deviceName';
-import { isDerivedSessionName, normalizeHost } from '../core/remoteSessions';
+import { normalizeHost } from '../core/remoteSessions';
 import * as settingsStore from './agentSettings.vscode';
 import * as swarm from './swarm.vscode';
 import * as terminals from './terminals.vscode';
-import { fetchRemoteSessionLabelSource, LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
+import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
-  isScaffoldingSessionTopic,
   planSessionTabLabelUpdate,
 } from '../core/sessionTabLabelSync';
 import { runRecapHeadless, isRecapSupported } from './recap.vscode';
@@ -53,7 +52,6 @@ import {
 import {
   CLAUDE_TITLE,
   CODEX_TITLE,
-  findTerminalNameByTabLabel,
   getExpandedAgentName,
   getTerminalDisplayInfo,
   parseTerminalName,
@@ -62,22 +60,20 @@ import {
   presentableLabel,
   getSessionChunk,
   truncateText,
-  extractFirstNWords,
-  extractLinearTicketId,
   formatRelativeTime,
   TerminalIdentificationOptions,
   prefixToAgentType,
   SessionAgentType
 } from '../core/utils';
-import { generateLabelWithLLM, setLabelGenSuppressed } from '../core/labelgen';
-import { readClaudeSessionName, readClaudeSessionNameInfo } from '../core/sessionName';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { DEFAULT_DISPLAY_PREFERENCES } from '../core/settings';
 import * as readiness from './terminalReadiness';
 import { resolveAlias, isAgentInstalled } from '../core/agentModels';
-import { buildForkSessionRequest, forkCommand } from '../core/forkSession';
+import { buildForkSessionRequest, forkCommand, forkFailed, forkTabLabel } from '../core/forkSession';
 import { handleForkPickHost, registerForkPickHostCommand } from './forkCommands.vscode';
+import { frontTerminal } from './frontTab.vscode';
+import { streamTitle } from '../core/projectPanel';
 import {
   buildSessionBrowserRows,
   cleanSessionTopic,
@@ -1294,11 +1290,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.setTitle', () => setStatusBarLabelForActiveTerminal(context))
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('agents.relabelTerminal', () => relabelActiveTerminal(context))
+    vscode.commands.registerCommand('agents.setTitle', () => renameFrontSession(context))
   );
 
   context.subscriptions.push(
@@ -1763,17 +1755,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Prefer activeTerminal (identity) over a tab-label name match: same-agent
-  // terminals share a name ("CC"), so name matching always returns the first.
-  const terminalForActiveTab = (tabLabel: string | undefined): vscode.Terminal | undefined => {
-    const active = vscode.window.activeTerminal;
-    if (active) return active;
-    if (!tabLabel) return undefined;
-    const names = vscode.window.terminals.map((t) => t.name);
-    const matchedName = findTerminalNameByTabLabel(names, tabLabel);
-    return matchedName ? vscode.window.terminals.find((t) => t.name === matchedName) : undefined;
-  };
-
   // Update status bar when active editor changes
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -1790,7 +1771,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const activeTab = activeGroup?.activeTab;
 
         if (activeTab?.input instanceof vscode.TabInputTerminal) {
-          const matchedTerminal = terminalForActiveTab(activeTab.label);
+          const matchedTerminal = frontTerminal();
           if (matchedTerminal) {
             updateStatusBarForTerminal(matchedTerminal, context.extensionPath);
             return;
@@ -1818,7 +1799,7 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const matchedTerminal = terminalForActiveTab(activeTab.label);
+        const matchedTerminal = frontTerminal();
         if (!matchedTerminal) return;
 
         tryFetchLabelOnFocus(matchedTerminal, context);
@@ -3037,7 +3018,7 @@ async function goToTerminal(context: vscode.ExtensionContext) {
   for (const entry of allEntries) {
     if (!entry.agentConfig) continue;
 
-    const effectiveTitle = entry.label || entry.autoLabel || 'Untitled';
+    const effectiveTitle = liveTitle(entry.sessionId) || entry.autoLabel || 'Untitled';
     const itemIndex = items.length;
 
     items.push({
@@ -3069,16 +3050,6 @@ async function goToTerminal(context: vscode.ExtensionContext) {
     const idx = previewPromise.itemIndex;
     const info = previewResults[i];
     if (info) {
-      if (!entry.label && !entry.autoLabel && info.firstUserMessage) {
-        const words = extractFirstNWords(info.firstUserMessage, 5);
-        const ticket = extractLinearTicketId(info.firstUserMessage);
-        const generatedTitle = ticket && words ? `${ticket} ${words}` : (ticket ?? words);
-        if (generatedTitle) {
-          terminals.setAutoLabel(entry.terminal, generatedTitle);
-          items[idx].label = generatedTitle;
-        }
-      }
-
       if (info.lastActivityMs) {
         const diffMs = Date.now() - info.lastActivityMs;
         items[idx].description = diffMs < 60_000 ? 'Just now' : formatRelativeTime(info.lastActivityMs);
@@ -3359,144 +3330,36 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
   }
 }
 
-interface FetchAutoLabelOpts {
-  force?: boolean;
-  useFullConversation?: boolean;
-}
-
 function isLocalDeviceName(name: string): boolean {
   return isLocalActiveMapKey(activeMapCacheKey(name));
 }
 
-/** Stamp a {label, topic} pair onto the tab — persisted name, else LLM/5-word. */
-async function applyLabelSource(
-  terminal: vscode.Terminal,
-  source: { label: string | null; topic: string | null },
-): Promise<string | undefined> {
-  const topic = source.topic && !isScaffoldingSessionTopic(source.topic) ? source.topic : null;
-  const ticket = topic ? extractLinearTicketId(topic) : null;
-  if (source.label) {
-    const label = ticket ? `${ticket} ${source.label}` : source.label;
-    terminals.setAutoLabel(terminal, label);
-    return label;
-  }
-  if (!topic) return undefined;
-  const llmTitle = await generateLabelWithLLM(topic);
-  const base = llmTitle ?? extractFirstNWords(topic, 5);
-  const autoLabel = ticket && base ? `${ticket} ${base}` : (ticket ?? base);
-  if (autoLabel) terminals.setAutoLabel(terminal, autoLabel);
-  return autoLabel ?? undefined;
+/** The session's one name from its stream row (`streamTitle`): what its card and
+ *  the status bar show. undefined until the stream knows one. */
+function liveTitle(sessionId: string | undefined): string | undefined {
+  const live = sessionId ? sessionPresentationStore.liveSession(sessionId) : undefined;
+  return (live && streamTitle(live)) || undefined;
 }
 
-/**
- * Auto-label for a tab whose agent runs on another machine.
- *
- * Same two-step shape as the local path — reuse a real persisted name, else
- * summarize the first user message — but both inputs come from
- * `agents ps preview <id> --json [--device <host>]`. A ticket id in the first
- * message is prefixed exactly as locally, so a remote tab reads the same as a
- * local one.
- */
-async function fetchRemoteAutoLabel(
-  terminal: vscode.Terminal,
-  entry: terminals.EditorTerminal,
-  host?: string
-): Promise<string | undefined> {
-  if (!entry.sessionId) return undefined;
-  const source = await fetchRemoteSessionLabelSource(entry.sessionId, host);
-  if (!source) return undefined;
-  return applyLabelSource(terminal, source);
-}
-
+/** Put the session's stream title on the tab entry; the tab title follows it. */
 async function fetchAndSetAutoLabel(
   terminal: vscode.Terminal,
   entry: terminals.EditorTerminal,
-  opts: FetchAutoLabelOpts = {}
 ): Promise<string | undefined> {
   const sessionId = entry.sessionId;
   if (!sessionId) return entry.autoLabel;
-  if (!opts.force && entry.autoLabel) return entry.autoLabel;
 
   // `--device auto` never records which box the CLI picked. The watch stream
-  // does: stamp the machine so every later lookup (label, resume, identity)
-  // routes to the transcript's owner instead of scanning this laptop.
+  // does: stamp the machine so every later lookup (resume, identity) routes to
+  // the transcript's owner instead of scanning this laptop.
   if (!entry.host) {
     const live = sessionPresentationStore.liveSession(sessionId);
-    if (live?.machine && !isLocalDeviceName(live.machine)) {
-      terminals.setHost(terminal, live.machine);
-      entry = terminals.getByTerminal(terminal) ?? entry;
-    }
+    if (live?.machine && !isLocalDeviceName(live.machine)) terminals.setHost(terminal, live.machine);
   }
 
-  // Prefer the live stream (already has topic/label, no extra subprocess).
-  // Falls through when the row is not indexed yet or carries only scaffolding.
-  if (!opts.useFullConversation) {
-    const live = sessionPresentationStore.liveSession(sessionId);
-    if (live) {
-      const topic = live.topic.trim() && !isScaffoldingSessionTopic(live.topic) ? live.topic.trim() : null;
-      // Reuse isDerivedSessionName so a real one-word /rename ("RUSH-2058",
-      // "Auth") is kept and only Claude's `<dirname>-<n>` placeholder is dropped.
-      const rawLabel = live.label.trim();
-      const label = rawLabel && !isDerivedSessionName(rawLabel, live.cwd) ? rawLabel : null;
-      if (label || topic) {
-        const applied = await applyLabelSource(terminal, { label, topic });
-        if (applied) return applied;
-      }
-    }
-  }
-
-  // Offloaded tab: the transcript is on the host, so the local session-file scan
-  // and jsonl preview below have nothing to read. Ask the CLI (device-aware, or
-  // fleet-wide when the host is still unknown) for the same two inputs.
-  if (entry.host) {
-    return await fetchRemoteAutoLabel(terminal, entry, entry.host);
-  }
-
-  try {
-    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const previewInfo = await getSessionPreviewForEntry(entry, workspacePath);
-    const firstUserMessage = previewInfo?.firstUserMessage;
-    const ticket = firstUserMessage ? extractLinearTicketId(firstUserMessage) : null;
-
-    // 1) Reuse an existing real label. Claude persists the /status title (set by
-    //    Claude itself or the user); readClaudeSessionName returns it unless it's
-    //    the derived `<dirname>-<n>` placeholder. This is a clean human summary,
-    //    needs no LLM call, and — unlike the summary path below — doesn't require
-    //    a captured first message, so a session that already has a name gets it
-    //    even before its first turn is recorded. Codex/Opencode don't
-    //    persist an equivalent, so they fall through to the summary path.
-    if (entry.agentType === 'claude') {
-      const persistedName = await readClaudeSessionName(sessionId);
-      if (persistedName) {
-        const claudeLabel = ticket ? `${ticket} ${persistedName}` : persistedName;
-        terminals.setAutoLabel(terminal, claudeLabel);
-        return claudeLabel;
-      }
-    }
-
-    // 2) Otherwise summarize the session's activity into a short title. This
-    //    needs a first user message to summarize. A `--device auto` tab has no
-    //    local transcript — ask the CLI (fleet-wide) instead of giving up.
-    if (!firstUserMessage) {
-      return await fetchRemoteAutoLabel(terminal, entry);
-    }
-
-    const sourceText = opts.useFullConversation && previewInfo?.lastUserMessage
-      ? `Initial task:\n${firstUserMessage}\n\nLatest activity:\n${previewInfo.lastUserMessage}`
-      : firstUserMessage;
-
-    const llmTitle = await generateLabelWithLLM(sourceText);
-    const fallback = extractFirstNWords(firstUserMessage, 5);
-    const base = llmTitle ?? fallback;
-    const autoLabel = ticket && base ? `${ticket} ${base}` : (ticket ?? base);
-
-    if (autoLabel) {
-      terminals.setAutoLabel(terminal, autoLabel);
-    }
-    return autoLabel ?? undefined;
-  } catch {
-    return undefined;
-  }
+  const title = liveTitle(sessionId);
+  if (title) terminals.setAutoLabel(terminal, title);
+  return title ?? entry.autoLabel;
 }
 
 /**
@@ -3515,7 +3378,7 @@ async function syncCanonicalSessionTabLabels(context: vscode.ExtensionContext): 
     const update = planSessionTabLabelUpdate({
       manualLabel: entry.label,
       autoLabel: entry.autoLabel,
-    }, live);
+    }, streamTitle(live));
     if (!update) continue;
 
     if (update.clearManualLabel) {
@@ -3537,26 +3400,6 @@ async function syncCanonicalSessionTabLabels(context: vscode.ExtensionContext): 
       );
       await terminals.renameTerminal(entry.terminal, newTitle);
     }
-  }
-}
-
-// Un-stick a tab whose label is EXACTLY this session's own derived placeholder
-// (Claude's `<dirname>-<n>`, e.g. "muqsitnawaz-91"). On a window reload the
-// derived name baked into the tab title gets re-adopted as a sticky manual
-// label (terminals.register), which then blocks the auto-label poller forever.
-// A genuine label never equals the session's derived name, and old CLIs have no
-// derived name — so this only ever clears the placeholder, never a real label.
-// It touches only the label + its persisted store entry; the agent process is
-// never affected.
-async function maybeHealDerivedLabel(
-  terminal: vscode.Terminal,
-  entry: terminals.EditorTerminal,
-  context: vscode.ExtensionContext
-): Promise<void> {
-  if (!entry.label || !entry.sessionId || entry.agentType !== 'claude') return;
-  const info = await readClaudeSessionNameInfo(entry.sessionId);
-  if (info?.derived && info.name === entry.label) {
-    await terminals.setLabel(terminal, undefined, context);
   }
 }
 
@@ -3643,10 +3486,6 @@ async function armAutoLabelPoller(
   // Session identity is required by the status bar, table, fork, and resume
   // surfaces. It must hydrate even when optional automatic tab labels are off.
   if (!labelsEnabled && !remoteIdless) return;
-
-  // Heal first: if the sticky label is the derived placeholder, drop it so a
-  // real name/topic can resolve below.
-  await maybeHealDerivedLabel(terminal, entry, context);
 
   if ((entry.label || entry.autoLabel) && !remoteIdless) return;
 
@@ -3767,9 +3606,6 @@ async function tryFetchLabelOnFocus(
   // Need sessionId and agentType to fetch label
   if (!entry.sessionId || !entry.agentType) return;
 
-  // Heal a stuck derived-placeholder label so focusing the tab re-resolves it.
-  await maybeHealDerivedLabel(terminal, entry, context);
-
   // A label fetched while this tab was unfocused is already on the entry, but
   // the title update is gated on `activeTerminal === terminal` — so focusing
   // later used to no-op and leave the bare agent chip forever.
@@ -3884,7 +3720,7 @@ function applyHydratedSessionId(
   }
   applyStreamIdentity(terminal, entry, liveId);
   if (!agentStatusBarItem || vscode.window.activeTerminal !== terminal) return;
-  const displayLabel = presentableLabel(entry.label);
+  const displayLabel = presentableLabel(liveTitle(liveId) ?? entry.autoLabel);
   const { version, account } = displayIdentity(entry, liveId);
   renderAgentStatusBar(
     getExpandedAgentName(prefix),
@@ -3984,7 +3820,7 @@ async function tryHydrateLiveSessionId(
       vscode.window.activeTerminal === terminal &&
       needsSessionIdHydrate(entry.sessionId)
     ) {
-      const displayLabel = presentableLabel(entry.label);
+      const displayLabel = presentableLabel(liveTitle(entry.sessionId) ?? entry.autoLabel);
       const { version, account } = displayIdentity(entry, entry.sessionId);
       renderAgentStatusBar(
         getExpandedAgentName(prefix),
@@ -4008,7 +3844,7 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
   const info = identifyAgentTerminal(terminal, extensionPath);
 
   // If this is an agent terminal, show model/account/session metadata.
-  // Format: "Agents: Claude 2.1.118 <user@example.com> - <manual label> (uuid)"
+  // Format: "Agents: Claude 2.1.118 <user@example.com> - <session title> (uuid)"
   if (info.isAgent && info.prefix) {
     const expandedName = getExpandedAgentName(info.prefix);
     const sessionId = entry?.sessionId;
@@ -4026,7 +3862,8 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
     }
 
     // Show status bar with the current (now stream-stamped) identity.
-    const displayLabel = presentableLabel(entry?.label);
+    // The session's one name, as its tab and card show it (PHNX-4387).
+    const displayLabel = presentableLabel(liveTitle(sessionId) ?? entry?.autoLabel);
     const { version, account } = displayIdentity(entry, sessionId);
     renderAgentStatusBar(
       expandedName,
@@ -4049,106 +3886,32 @@ function updateStatusBarForTerminal(terminal: vscode.Terminal, extensionPath: st
   agentStatusBarItem.tooltip = undefined;
 }
 
-async function relabelActiveTerminal(context: vscode.ExtensionContext): Promise<void> {
-  const terminal = vscode.window.activeTerminal;
-  if (!terminal) {
-    vscode.window.showInformationMessage('No active terminal to re-label.');
+/**
+ * Agents: Rename Session. Renames the session itself, never only the tab: Claude's
+ * own `/rename` writes the name into its transcript, the CLI indexes it as the
+ * session's label, and the stream brings it back to the tab, the card and the
+ * status bar (PHNX-4387). agents-cli has no rename verb, and the other harnesses
+ * have no rename the CLI reads, so the command says so instead of faking a name.
+ */
+async function renameFrontSession(context: vscode.ExtensionContext): Promise<void> {
+  const terminal = frontTerminal();
+  const info = terminal ? identifyAgentTerminal(terminal, context.extensionPath) : undefined;
+  if (!terminal || !info?.isAgent) {
+    vscode.window.showInformationMessage('Rename needs an agent tab in front.');
     return;
   }
-
+  if (info.prefix !== CLAUDE_TITLE) {
+    vscode.window.showInformationMessage(`${getExpandedAgentName(info.prefix ?? '')} has no rename the CLI reads, so its name comes from the session.`);
+    return;
+  }
   const entry = terminals.getByTerminal(terminal);
-  if (!entry || !entry.sessionId || !entry.agentType) {
-    vscode.window.showInformationMessage('This terminal does not have a session to summarize.');
-    return;
-  }
-
-  terminals.setAutoLabel(terminal, undefined);
-
-  const newLabel = await fetchAndSetAutoLabel(terminal, entry, {
-    force: true,
-    useFullConversation: true
+  const input = await vscode.window.showInputBox({
+    prompt: 'Rename this session (Claude /rename)',
+    value: liveTitle(entry?.sessionId) ?? entry?.autoLabel ?? '',
   });
-
-  if (!newLabel) {
-    vscode.window.showInformationMessage('Could not generate a label from session activity.');
-    return;
-  }
-
-  updateStatusBarForTerminal(terminal, context.extensionPath);
-
-  const display = getDisplayPrefs(context);
-  if (display.showLabelsInTitles && display.autoLabelInTabTitles && entry.agentConfig) {
-    const newTitle = buildTerminalTitle(
-      entry.agentConfig.title,
-      newLabel,
-      context,
-      entry.sessionId
-    );
-    await terminals.renameTerminal(terminal, newTitle);
-  }
-}
-
-function setStatusBarLabelForActiveTerminal(context: vscode.ExtensionContext) {
-  const terminal = vscode.window.activeTerminal;
-  if (!terminal) {
-    vscode.window.showInformationMessage('No active terminal to set status bar label.');
-    return;
-  }
-
-  const info = identifyAgentTerminal(terminal, context.extensionPath);
-  if (!info.isAgent) {
-    vscode.window.showInformationMessage('This terminal is not an agent terminal.');
-    return;
-  }
-
-  const currentLabel = info.label ?? '';
-
-  vscode.window.showInputBox({
-    prompt: 'Set a status bar label for this agent',
-    placeHolder: 'Status bar label (max 5 words)',
-    value: currentLabel
-  }).then(async (input) => {
-    if (input === undefined) {
-      return;
-    }
-
-    // Ensure terminal is registered before setting label
-    let entry = terminals.getByTerminal(terminal);
-    if (!entry && info.prefix) {
-      const def = getBuiltInDefByTitle(info.prefix);
-      if (def) {
-        const agentConfig = createAgentConfig(context.extensionPath, def.title, def.command, def.icon, def.prefix);
-        const id = terminals.nextId(info.prefix);
-        const pid = await terminal.processId;
-        terminals.register(terminal, id, agentConfig, pid, context);
-      }
-    }
-
-    const cleaned = sanitizeLabel(input.trim());
-    await terminals.setLabel(terminal, cleaned || undefined, context);
-
-    // Update status bar only (don't rename terminal tab)
-    updateStatusBarForTerminal(terminal, context.extensionPath);
-
-    // Optionally update tab title when labels are shown in titles
-    const display = getDisplayPrefs(context);
-    if (display.showLabelsInTitles && info.prefix) {
-      const updatedEntry = terminals.getByTerminal(terminal);
-      const newTitle = buildTerminalTitle(
-        info.prefix,
-        cleaned || undefined,
-        context,
-        updatedEntry?.sessionId || null
-      );
-      await terminals.renameTerminal(terminal, newTitle);
-    }
-
-    // Mirror the label into Claude via /rename when applicable.
-    // Only fire when we have a non-empty label and the agent is Claude.
-    if (cleaned && info.prefix === CLAUDE_TITLE) {
-      terminal.sendText(`/rename ${cleaned}`, true);
-    }
-  });
+  const name = sanitizeLabel(input?.trim() ?? '');
+  if (!name) return;
+  terminal.sendText(`/rename ${name}`, true);
 }
 
 async function clearActiveTerminal(context: vscode.ExtensionContext) {
@@ -4481,8 +4244,11 @@ async function openForkTerminal(
   context: vscode.ExtensionContext,
   agentConfig: Omit<AgentConfig, 'count'>,
   command: string,
-  opts: { forkHost?: string; viewColumn?: vscode.ViewColumn },
+  opts: { forkHost?: string; viewColumn?: vscode.ViewColumn; sourceTitle: string },
 ): Promise<void> {
+  // Named after its source before it starts; the fork's own title replaces it
+  // once the stream has one, and a failed fork verb says so (PHNX-4387).
+  const label = forkTabLabel(opts.sourceTitle);
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   const terminalId = terminals.nextId(agentConfig.prefix);
   const builtInDef = getBuiltInByPrefix(agentConfig.prefix);
@@ -4491,13 +4257,23 @@ async function openForkTerminal(
   const terminal = vscode.window.createTerminal({
     iconPath: agentConfig.iconPath,
     location: { viewColumn: opts.viewColumn ?? vscode.ViewColumn.Active, preserveFocus: false },
-    name: buildTerminalTitle(agentConfig.title, undefined, context, null),
+    name: buildTerminalTitle(agentConfig.title, label, context, null),
     env: buildAgentTerminalEnv(terminalId, null, workspaceFolder),
     isTransient: true,
   });
 
   const pid = await terminal.processId;
   terminals.register(terminal, terminalId, agentConfig, pid, context);
+  terminals.setAutoLabel(terminal, label);
+  const watch = [
+    vscode.window.onDidEndTerminalShellExecution((e) => {
+      if (e.terminal !== terminal || !forkFailed(e.execution.commandLine.value, e.exitCode)) return;
+      const failed = forkTabLabel(opts.sourceTitle, true);
+      terminals.setAutoLabel(terminal, failed);
+      void terminals.renameTerminal(terminal, buildTerminalTitle(agentConfig.title, failed, context, null));
+    }),
+    vscode.window.onDidCloseTerminal((t) => { if (t === terminal) watch.forEach((d) => d.dispose()); }),
+  ];
   // Stamp the host so the label poller / remote id resolution reads the sibling
   // from that box's active feed rather than looking it up locally.
   if (opts.forkHost) terminals.setHost(terminal, opts.forkHost);
@@ -4543,6 +4319,8 @@ async function forkCurrentSession(
     localHost: LOCAL_MACHINE_ID,
   };
 
+  const sourceTitle = liveTitle(entry.sessionId) ?? entry.autoLabel ?? shortSessionId(entry.sessionId ?? '');
+
   if (opts.pickHost) {
     await handleForkPickHost({
       source,
@@ -4554,7 +4332,7 @@ async function forkCurrentSession(
         context,
         entry.agentConfig!,
         command,
-        { forkHost: host, viewColumn },
+        { forkHost: host, viewColumn, sourceTitle },
       ),
       showRejection: showForkRejection,
       // Open the fork as a normal full tab in the active group, not a side
@@ -4578,6 +4356,7 @@ async function forkCurrentSession(
   await openForkTerminal(context, entry.agentConfig, forkCommand(request.sessionId, request.host), {
     forkHost: request.host,
     viewColumn: vscode.ViewColumn.Active,
+    sourceTitle,
   });
   vscode.window.setStatusBarMessage(`Forking ${shortSessionId(request.sessionId)} through agents-cli`, 5000);
 }
@@ -4888,24 +4667,12 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     }
   };
 
-  // Process-leak containment: a restore burst already fans out one resume
-  // per tab (runStaggered above). Each restored tab also arms an auto-label
-  // poller (startAutoLabelPollerForTerminal below), which fires immediately
-  // and would stack a full headless `agents run claude` label-gen subprocess
-  // per tab on top of that resume fan — exactly the kind of CLI-spawn
-  // multiplier that turned a single fork-bombing child into a swap-exhausting
-  // crash in the 1.22.85 incident. Suppress label-gen spawns for the duration
-  // of the batch; each tab still gets a label via the existing first-N-words
-  // fallback (the same path a real LLM timeout already takes), and the
-  // normal (non-restore) labeling path is unaffected.
-  setLabelGenSuppressed(true);
   try {
     await runStaggered(toRestore, restoreOne, {
       concurrency: RESTORE_MAX_CONCURRENCY,
       staggerMs: RESTORE_STAGGER_MS,
     });
   } finally {
-    setLabelGenSuppressed(false);
     terminals.setRestoring([]);
   }
 
