@@ -137,66 +137,19 @@ The user selected the above text from a markdown file. Help them with whatever t
 
       // Import dynamically to avoid circular dependencies
       const { getBuiltInByTitle } = await import('./agents.vscode');
-      const { CLAUDE_TITLE, formatTerminalTitle, getSessionChunk } = await import('../core/utils');
-      const terminals = await import('./terminals.vscode');
-      const { buildAgentTerminalEnv } = await import('../core/terminals');
-      const { generateClaudeSessionId } = await import('../core/prewarm.simple');
-      const { buildTabLaunchCommand } = await import('../core/launchTarget');
-      const settingsModule = await import('./agentSettings.vscode');
+      const { CLAUDE_TITLE } = await import('../core/utils');
+      const { openSingleAgentWithQueue } = await import('./extension');
 
       const agentConfig = getBuiltInByTitle(this.context.extensionPath, CLAUDE_TITLE);
       if (!agentConfig) {
         vscode.window.showErrorMessage('Could not find Claude agent configuration');
         return;
       }
-
-      // Generate session ID for Claude
-      const sessionId = generateClaudeSessionId();
-      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const command = buildTabLaunchCommand('claude', {
-        cwd: workspacePath,
-        sessionId,
-        defaultModel: settingsModule.getDefaultModel(this.context, 'claude'),
-      })!;
-
-      // Create new terminal
-      const editorLocation: vscode.TerminalEditorLocationOptions = {
-        viewColumn: vscode.ViewColumn.Active,
-        preserveFocus: false
-      };
-
-      const terminalId = terminals.nextId(agentConfig.prefix);
-      const display = settingsModule.getSettings(this.context).display || {};
-      const sessionChunk = display.showSessionIdInTitles ? getSessionChunk(sessionId) : null;
-      const title = formatTerminalTitle(agentConfig.title, { sessionChunk });
-      const terminal = vscode.window.createTerminal({
-        iconPath: agentConfig.iconPath,
-        location: editorLocation,
-        name: title,
-        env: buildAgentTerminalEnv(terminalId, sessionId, workspacePath),
-        isTransient: true
+      webview.postMessage({
+        type: 'agentResult',
+        result: 'Opening new agent terminal with your selection...',
       });
-
-      const pid = await terminal.processId;
-      terminals.register(terminal, terminalId, agentConfig, pid, this.context);
-
-      // Track session ID and agent type
-      terminals.setSessionId(terminal, sessionId);
-      terminals.setAgentType(terminal, 'claude');
-
-      // Queue the context message
-      terminals.queueMessage(terminal, contextMessage);
-
-      // Send Claude command with session ID
-      terminal.sendText(command);
-
-      // After delay, send queued messages (5s to ensure agent process fully loaded)
-      setTimeout(() => {
-        const queued = terminals.flushQueue(terminal);
-        for (const msg of queued) {
-          terminal.sendText(msg);
-        }
-      }, 5000);
+      const terminal = await openSingleAgentWithQueue(this.context, agentConfig, [contextMessage], { local: true });
 
       // Store terminal reference for this document
       const docUri = document.uri.toString();
@@ -220,11 +173,6 @@ The user selected the above text from a markdown file. Help them with whatever t
         }
       });
       this.context.subscriptions.push(disposeListener);
-
-      webview.postMessage({
-        type: 'agentResult',
-        result: 'Opening new agent terminal with your selection...',
-      });
 
       // Notify webview that we now have an active agent
       webview.postMessage({ type: 'activeAgentChanged', hasActiveAgent: true });

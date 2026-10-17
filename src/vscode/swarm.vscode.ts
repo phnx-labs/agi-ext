@@ -138,33 +138,10 @@ async function setupWithAgentsCli(agent: AgentCli): Promise<boolean> {
   }
 }
 
-export async function setupSwarmIntegrationForAgent(
-  agent: AgentCli,
-  context: vscode.ExtensionContext,
-  onUpdate?: (status: SwarmStatus) => void
-): Promise<void> {
-  await setupSwarmIntegrationForAgents([agent], context, onUpdate);
-}
-
-async function setupSwarmIntegrationForAgents(
-  agents: AgentCli[],
-  context: vscode.ExtensionContext,
-  onUpdate?: (status: SwarmStatus) => void
-): Promise<void> {
-  const sendStatus = async () => {
-    if (onUpdate) {
-      onUpdate(await getSwarmStatus());
-    }
-  };
-
-  // Check if already enabled for all requested agents
+export async function setupSwarmIntegrationForAgent(agent: AgentCli): Promise<void> {
   const status = await getSwarmStatus();
-  const allReady = agents.every((a) => {
-    const s = status.agents[a];
-    return s.cliAvailable ? (s.mcpEnabled && s.commandInstalled) : false;
-  });
-  if (allReady) {
-    await sendStatus();
+  const agentStatus = status.agents[agent];
+  if (agentStatus.cliAvailable && agentStatus.mcpEnabled && agentStatus.commandInstalled) {
     vscode.window.showInformationMessage('Swarm is already enabled.');
     return;
   }
@@ -176,31 +153,11 @@ async function setupSwarmIntegrationForAgents(
     return;
   }
 
-  // Use agents-cli to setup each agent
-  const configured: string[] = [];
-  const failed: string[] = [];
-
-  for (const agent of agents) {
-    // Skip agents without CLI installed (agents sync requires the CLI to be present)
-    const agentStatus = status.agents[agent];
-    if (!agentStatus.cliAvailable) {
-      continue;
-    }
-
-    const ok = await setupWithAgentsCli(agent);
-    if (ok) {
-      configured.push(agent.charAt(0).toUpperCase() + agent.slice(1));
-    } else {
-      failed.push(agent);
-    }
-    await sendStatus();
-  }
-
-  if (configured.length > 0) {
-    vscode.window.showInformationMessage(`Configured ${configured.join(', ')} via agents CLI. Reload your IDE agents.`);
-  }
-  if (failed.length > 0 && configured.length === 0) {
+  // agents sync requires the agent's CLI to be present.
+  if (!agentStatus.cliAvailable) return;
+  if (await setupWithAgentsCli(agent)) {
+    vscode.window.showInformationMessage(`Configured ${agent.charAt(0).toUpperCase() + agent.slice(1)} via agents CLI. Reload your IDE agents.`);
+  } else {
     vscode.window.showWarningMessage('Setup failed. Check that agent CLIs are installed.');
   }
-  await sendStatus();
 }

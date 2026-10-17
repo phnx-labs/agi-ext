@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, AgentLaunchMode, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, isDeprecatedAgentKey } from '../core/agents';
+import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, isDeprecatedAgentKey } from '../core/agents';
 import { shellQuote } from '../core/shellQuote';
 import { readManagedProjects } from '../core/managedProjects';
-import { cliResumeOutcome, decideSpawn, projectWindowResume, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
+import { decideSpawn, projectWindowResume, resumeSessionTab, spawnNonce, parseSpawnRequest, resolveSpawnSurface, SpawnAck, SpawnRequest, writeSpawnAck } from '../core/spawn';
 import {
   buildNewAgentLaunchCommand,
   buildTabLaunchCommand,
@@ -321,67 +321,96 @@ async function pickProjectSlug(): Promise<{ slug?: string; cancelled: boolean }>
   return picked ? { slug: picked.slug, cancelled: false } : { cancelled: true };
 }
 
+/** Everything an agent tab is opened with: its terminal options and its registry facts. */
+interface TrackedTabSpec {
+  agentConfig: Omit<AgentConfig, 'count'>;
+  name: string;
+  /** Defaults to a fresh id for the config's prefix. */
+  terminalId?: string;
+  /** AGENT_WORKSPACE_DIR in the tab's env. */
+  workspacePath?: string;
+  /** The shell's start directory; the editor's default when unset. */
+  cwd?: string;
+  location?: vscode.TerminalOptions['location'];
+  /** The tab's process is this command (agentTabShell) instead of an interactive shell. */
+  command?: string;
+  hideFromUser?: boolean;
+  /** A real New Shell: the one tab whose env is not scrubbed (core/terminals.ts). */
+  userShell?: boolean;
+  /** The harness, stamped as the agent type when it is a presented agent. */
+  agentKey?: string;
+  recoveryAgent?: string;
+  sessionId?: string | null;
+  host?: string | null;
+  version?: string | null;
+  account?: string;
+  label?: string;
+  autoLabel?: string;
+  /** The original creation time of a tab being restored (see terminals.register). */
+  createdAt?: number;
+  /** False keeps the auto-label poller off for this tab. */
+  labelPoller?: boolean;
+}
+
+/**
+ * Open an agent tab. Tab identity is fixed at createTerminal (iconPath and name
+ * have no setter, and AGENT_TERMINAL_ID is the join key the CLI's rows carry
+ * back), and registration is what makes the tab visible to Copy Session ID,
+ * Resume, Handoff and Fork and what persists it across a reload, so every agent
+ * tab is opened here. `pid` is undefined when the shell did not start within 10 s.
+ */
+async function openTrackedTab(
+  context: vscode.ExtensionContext,
+  spec: TrackedTabSpec,
+): Promise<{ terminal: vscode.Terminal; terminalId: string; pid: number | undefined }> {
+  const terminalId = spec.terminalId ?? terminals.nextId(spec.agentConfig.prefix);
+  const terminal = vscode.window.createTerminal({
+    iconPath: spec.agentConfig.iconPath,
+    location: spec.location ?? { viewColumn: vscode.ViewColumn.Active },
+    name: spec.name,
+    cwd: spec.cwd,
+    env: buildAgentTerminalEnv(terminalId, spec.sessionId, spec.workspacePath, spec.version, {
+      scrubSensitive: !spec.userShell,
+      kind: spec.userShell ? 'shell' : 'agent',
+    }),
+    isTransient: true,
+    hideFromUser: spec.hideFromUser,
+    ...(spec.command ? agentTabShell(spec.command, process.env.SHELL) : {}),
+  });
+  const { pid } = await terminals.processIdWithin(terminal);
+  terminals.register(terminal, terminalId, spec.agentConfig, pid, context, spec.label, spec.createdAt);
+  if (spec.autoLabel) terminals.setAutoLabel(terminal, spec.autoLabel);
+  readiness.registerTerminal(terminal);
+
+  const resumeKey = spec.agentKey ? agentKeyFromSession(spec.agentKey) : null;
+  if (resumeKey) terminals.setAgentType(terminal, resumeKey);
+  if (spec.recoveryAgent) terminals.setRecoveryAgent(terminal, spec.recoveryAgent);
+  // The host goes on BEFORE the label poller starts: the poller reads it to
+  // decide whether to look the session up locally or over `--device`.
+  if (spec.host) terminals.setHost(terminal, spec.host);
+  if (spec.version) terminals.setVersion(terminal, spec.version);
+  if (spec.account) terminals.setAccount(terminal, spec.account);
+  if (spec.sessionId) terminals.setSessionId(terminal, spec.sessionId);
+  if (resumeKey && spec.labelPoller !== false) {
+    if (spec.sessionId) {
+      startAutoLabelPollerForTerminal(terminal, context);
+    } else if (spec.host) {
+      // Idless remote runner: only Claude's id is minted up front, so a
+      // picked-host Codex launches with none and the local SessionStart watcher
+      // never fires for it. The poller resolves the canonical id from the shared
+      // per-host active map instead (RUSH-2411).
+      startAutoLabelPollerForTerminal(terminal, context, { fast: true });
+    }
+  }
+  return { terminal, terminalId, pid };
+}
+
 // --- The one launch engine --------------------------------------------------
 // Every "New agent" command routes through launchAgent. The command is just a
 // route: it fills in whichever of {agentKey, host} the user pinned, and the
 // engine resolves the rest. Only the Pick Host variant asks agents-cli to show
 // the chosen device's account/version picker; the per-harness default and the
 // (Auto) variant both use balanced rotation and never prompt.
-/**
- * Everything a freshly created agent terminal needs beyond `createTerminal`.
- *
- * This is the half that #2534 dropped from `launchAgent`: registration is what
- * makes a tab visible to Copy Session ID / Resume / Handoff / Fork, and what
- * schedules the persistence that restores it after a window reload. It lives in
- * one place so the two creation paths cannot drift again.
- */
-async function registerAgentTerminal(
-  terminal: vscode.Terminal,
-  context: vscode.ExtensionContext,
-  args: {
-    terminalId: string;
-    agentConfig: Omit<AgentConfig, 'count'>;
-    agentKey?: string;
-    recoveryAgent?: string;
-    sessionId?: string | null;
-    host?: string | null;
-    pinnedVersion?: string | null;
-  }
-): Promise<void> {
-  const { terminalId, agentConfig, agentKey, recoveryAgent, sessionId, host, pinnedVersion } = args;
-  const pid = await terminal.processId;
-  terminals.register(terminal, terminalId, agentConfig, pid, context);
-  readiness.registerTerminal(terminal);
-
-  const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
-  if (resumeKey) {
-    terminals.setAgentType(terminal, resumeKey);
-  }
-  if (recoveryAgent) {
-    terminals.setRecoveryAgent(terminal, recoveryAgent);
-  }
-  // Stamp the host BEFORE the label poller starts: the poller reads the entry
-  // to decide whether to look the session up locally or over `--device`.
-  if (host) {
-    terminals.setHost(terminal, host);
-  }
-  if (sessionId) {
-    terminals.setSessionId(terminal, sessionId);
-    if (resumeKey) {
-      startAutoLabelPollerForTerminal(terminal, context);
-    }
-  } else if (host && resumeKey) {
-    // Idless remote runner: only Claude's id is minted up front, so a
-    // picked-host Codex launches with none and the local SessionStart watcher
-    // never fires for it. The poller resolves the canonical id from the shared
-    // per-host active map instead (RUSH-2411).
-    startAutoLabelPollerForTerminal(terminal, context, { fast: true });
-  }
-  if (pinnedVersion) {
-    terminals.setVersion(terminal, pinnedVersion);
-  }
-}
-
 async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunchOpts = {}): Promise<void> {
   let host = opts.host;
   if (opts.pickHost) {
@@ -437,7 +466,7 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   // Mint Claude's session id up front, exactly as openSingleAgent does (see the
   // docblock there). Without it launchAgent emitted no `--session-id`, so a LOCAL
   // New Claude — the flagship `agents.newClaude` command — armed neither auto-label
-  // branch in registerAgentTerminal (no sessionId, no host) and the tab kept its bare
+  // branch in openTrackedTab (no sessionId, no host) and the tab kept its bare
   // prefix until something else hydrated it (PHNX-2553). Id-minting now lives on both
   // creation paths so they cannot drift again.
   const sessionId = opts.agentKey === 'claude' ? generateClaudeSessionId() : undefined;
@@ -446,36 +475,21 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
     { defaultModel, projectSlug, cwd, sessionId },
   );
 
-  // Tab identity must be established AT createTerminal: iconPath and name are
-  // frozen there (no setter), and AGENT_TERMINAL_ID is the join key the CLI's
-  // `sessions --active` rows carry back — without it the status bar can never
-  // resolve a session id. Shell adoption cannot repair any of it later; it only
-  // rewrites the internal registry, never the live terminal.
-  const terminalId = terminals.nextId(agentConfig.prefix);
   // Registering an automatic launch under the `shell` def is a REGISTRY choice
   // (adoption re-keys it later); it does not make the tab a user shell. Only a
   // real `New Shell` is one. Conflating the two would declare
   // `scrubSensitive: false` / `kind: 'shell'` on a tab that is about to run an
   // agent, which is the opposite of the policy in core/terminals.ts.
-  const isUserShell = opts.agentKey === 'shell';
-  const terminal = vscode.window.createTerminal({
-    name: automatic ? 'Agents Auto' : buildTerminalTitle(agentConfig.title, undefined, context, sessionId ?? null),
-    iconPath: agentConfig.iconPath,
-    location: { viewColumn: vscode.ViewColumn.Active },
-    env: buildAgentTerminalEnv(terminalId, sessionId, cwd, undefined, {
-      scrubSensitive: !isUserShell,
-      kind: isUserShell ? 'shell' : 'agent',
-    }),
-    isTransient: true,
-  });
-  terminal.show(false);
-  await registerAgentTerminal(terminal, context, {
-    terminalId,
+  const { terminal } = await openTrackedTab(context, {
     agentConfig,
+    name: automatic ? 'Agents Auto' : buildTerminalTitle(agentConfig.title, undefined, context, sessionId ?? null),
+    workspacePath: cwd,
+    userShell: opts.agentKey === 'shell',
     agentKey: opts.agentKey,
     sessionId,
     host,
   });
+  terminal.show(false);
   // The harness is unknown until the runner starts, so let adoption re-key the
   // entry to the real agent the CLI picked.
   if (automatic) armShellAdoptionForTerminal(terminal, context);
@@ -739,36 +753,6 @@ interface AgentTerminalInfo {
   iconPath: vscode.IconPath | null;
 }
 
-/**
- * Extract identification options from a VS Code terminal.
- */
-function extractTerminalIdentificationOptions(terminal: vscode.Terminal): TerminalIdentificationOptions {
-  const opts = terminal.creationOptions as vscode.TerminalOptions;
-  const env = opts?.env;
-  const terminalId = env ? env['AGENT_TERMINAL_ID'] : undefined;
-
-  // Extract icon filename from iconPath
-  let iconFilename: string | null = null;
-  if (opts?.iconPath) {
-    const icon: any = opts.iconPath;
-    if (icon instanceof vscode.Uri) {
-      iconFilename = path.basename(icon.fsPath);
-    } else if (icon && typeof icon === 'object') {
-      // Handle { light: Uri; dark: Uri } shape
-      const candidate = icon.light ?? icon.dark ?? icon;
-      if (candidate instanceof vscode.Uri || (candidate && typeof candidate.fsPath === 'string')) {
-        iconFilename = path.basename(candidate.fsPath);
-      }
-    }
-  }
-
-  return {
-    name: terminal.name,
-    terminalId: terminalId as string | undefined,
-    iconFilename
-  };
-}
-
 function identifyAgentTerminal(terminal: vscode.Terminal, extensionPath: string): AgentTerminalInfo {
   // First check terminals module state
   const entry = terminals.getByTerminal(terminal);
@@ -782,7 +766,7 @@ function identifyAgentTerminal(terminal: vscode.Terminal, extensionPath: string)
   }
 
   // Fall back to central identification function with all available inputs
-  const identOpts = extractTerminalIdentificationOptions(terminal);
+  const identOpts = terminals.extractTerminalIdentificationOptions(terminal);
   const info = getTerminalDisplayInfo(identOpts);
   if (info.isAgent && info.prefix) {
     return {
@@ -943,49 +927,18 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      // Use central identification with all available inputs
-      const identOpts = extractTerminalIdentificationOptions(terminal);
-      const info = getTerminalDisplayInfo(identOpts);
-      if (!info.isAgent || !info.prefix) {
-        return;
-      }
-
-      const agentConfig = inferAgentConfigFromName(terminal.name, context.extensionPath, info.prefix);
-      if (!agentConfig) {
-        return;
-      }
-
-      const id = identOpts.terminalId || terminals.nextId(info.prefix);
-      let pid: number | undefined;
-      try {
-        pid = await terminal.processId;
-      } catch {
-        // ignore
-      }
-
-      terminals.register(terminal, id, agentConfig, pid, context, info.label || undefined);
+      const adopted = await terminals.adopt(
+        terminal,
+        (name, knownPrefix) => inferAgentConfigFromName(name, context.extensionPath, knownPrefix),
+        {
+          context,
+          persistedSessions: terminals.loadPersistedSessions(),
+          onSessionRestored: (t) => startAutoLabelPollerForTerminal(t, context),
+        },
+      );
+      if (!adopted) return;
       readiness.registerTerminal(terminal, { restored: true });
-
-      const agentType = prefixToAgentType(info.prefix);
-      if (agentType) {
-        // Register the agent type even when sessionId is missing so
-        // sessionTracker can adopt a fresh session file later.
-        terminals.setAgentType(terminal, agentType);
-      }
-
-      const persisted = terminals.loadPersistedSessions().find((session) => session.terminalId === id);
-      const restoredId = terminals.restoredSessionId(identOpts.sessionId, persisted);
-      if (restoredId !== undefined) {
-        terminals.setSessionId(terminal, restoredId);
-        if (agentType) {
-          startAutoLabelPollerForTerminal(terminal, context);
-        }
-      }
-
-      const restoredEntry = terminals.getByTerminal(terminal);
-      if (restoredEntry) restoredEntry.manualSessionOverride = persisted?.manualSessionOverride;
-
-      if (info.prefix === 'SH') {
+      if (terminals.getByTerminal(terminal)?.agentConfig?.prefix === 'sh') {
         armShellAdoptionForTerminal(terminal, context);
       }
     })
@@ -1277,11 +1230,11 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.setupClaude', () => swarm.setupSwarmIntegrationForAgent('claude', context))
+    vscode.commands.registerCommand('agents.setupClaude', () => swarm.setupSwarmIntegrationForAgent('claude'))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.setupCodex', () => swarm.setupSwarmIntegrationForAgent('codex', context))
+    vscode.commands.registerCommand('agents.setupCodex', () => swarm.setupSwarmIntegrationForAgent('codex'))
   );
 
   context.subscriptions.push(
@@ -1644,16 +1597,12 @@ export async function activate(context: vscode.ExtensionContext) {
         // Capture session info before unregistering (for reopen).
         if (entry?.agentConfig && entry.sessionId) {
           terminals.pushClosedSession({
-            terminalId: entry.id,
-            prefix: entry.agentConfig.prefix,
             sessionId: entry.sessionId,
             host: entry.host,
             label: entry.label,
             agentType: entry.agentType,
             version: entry.version,
             account: entry.account || entry.statusAccount || undefined,
-            agentConfig: entry.agentConfig,
-            closedAt: Date.now()
           });
         }
 
@@ -1806,6 +1755,21 @@ async function sendCommandWhenReady(
   console.log(`[SEND-CMD] ${elapsed()} sendText returned`);
 }
 
+/**
+ * Type each prompt into the agent's TUI and submit it. Ink TUIs (Claude) take
+ * `\r` as Enter, and `sendText(text, true)` appends `\n`, which types but does
+ * not submit. A multi-line prompt arrives as a bracketed paste that swallows a
+ * `\r` sent in the same tick, so Enter follows once the paste is in.
+ */
+function submitToTui(terminal: vscode.Terminal, prompts: readonly string[]): void {
+  prompts.forEach((prompt, i) => {
+    setTimeout(() => {
+      terminal.sendText(prompt, false);
+      setTimeout(() => terminal.sendText('\r', false), 300);
+    }, i * 700);
+  });
+}
+
 async function openSingleAgent(
   context: vscode.ExtensionContext,
   agentConfig: Omit<AgentConfig, 'count'>,
@@ -1866,29 +1830,19 @@ async function openSingleAgent(
     strategy,
   }) ?? agentConfig.command;
 
-  const editorLocation: vscode.TerminalEditorLocationOptions = {
-    viewColumn: vscode.ViewColumn.Active,
-    preserveFocus: false
-  };
-
-  const title = buildTerminalTitle(agentConfig.title, undefined, context, sessionId);
-  const terminal = vscode.window.createTerminal({
-    iconPath: agentConfig.iconPath,
-    location: editorLocation,
-    name: title,
-    env: buildAgentTerminalEnv(terminalId, sessionId, cwd, undefined, { scrubSensitive: agentKey !== 'shell', kind: agentKey === 'shell' ? 'shell' : 'agent' }),
-    cwd,
-    isTransient: true
-  });
-
   // Track + poll any known harness, not just the prewarm five (#1747).
-  await registerAgentTerminal(terminal, context, {
-    terminalId,
+  const { terminal } = await openTrackedTab(context, {
     agentConfig,
+    terminalId,
+    name: buildTerminalTitle(agentConfig.title, undefined, context, sessionId),
+    location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+    workspacePath: cwd,
+    cwd,
+    userShell: agentKey === 'shell',
     agentKey,
     sessionId,
     host: targetHost,
-    pinnedVersion,
+    version: pinnedVersion,
   });
 
   if (command) {
@@ -2014,38 +1968,25 @@ async function placeSpawnRequest(
   });
 
   const isShell = def.key === 'shell';
-  const env = buildAgentTerminalEnv(terminalId, sessionId, cwd, undefined, {
-    scrubSensitive: !isShell,
-    kind: isShell ? 'shell' : 'agent',
-  });
-
   const location: vscode.TerminalEditorLocationOptions | vscode.TerminalSplitLocationOptions =
     surface === 'native-split' && parent
       ? { parentTerminal: parent }
       : { viewColumn: vscode.ViewColumn.Active, preserveFocus: false };
 
-  const terminal = vscode.window.createTerminal({
-    iconPath: agentConfig.iconPath,
-    location,
+  const { terminal, pid } = await openTrackedTab(context, {
+    agentConfig,
+    terminalId,
     name: title,
-    env,
+    location,
+    workspacePath: cwd,
     cwd,
-    isTransient: true,
-    ...agentTabShell(req.command, process.env.SHELL),
+    command: req.command,
+    userShell: isShell,
+    agentKey: detectedKey ?? undefined,
+    sessionId,
   });
-
-  const { pid } = await terminals.processIdWithin(terminal);
-  terminals.register(terminal, terminalId, agentConfig, pid, context);
-  readiness.registerTerminal(terminal);
   if (pid === undefined) return result('failed', { terminalId, title }, "the tab's shell did not start within 10s");
-  const resumeKey = !isShell && detectedKey ? agentKeyFromSession(detectedKey) : null;
-  if (resumeKey) {
-    terminals.setAgentType(terminal, resumeKey);
-    if (sessionId) {
-      terminals.setSessionId(terminal, sessionId);
-      startAutoLabelPollerForTerminal(terminal, context);
-    }
-  } else if (isShell || !detectedKey) {
+  if (isShell || !detectedKey || !agentKeyFromSession(detectedKey)) {
     armShellAdoptionForTerminal(terminal, context);
   }
   if (vscode.window.activeTerminal === terminal) {
@@ -2517,88 +2458,44 @@ function recoveryAgentTitle(agent: string): string {
   return agent.trim().replace(/[^A-Za-z0-9._-]+/g, ' ').slice(0, 24) || 'Agent';
 }
 
-/** One resumed session, opened as its own editor tab wearing that agent's icon. */
+/**
+ * One resumed session, opened as its own editor tab wearing that agent's icon.
+ * A session a tab in this window already shows is focused instead (the same
+ * placement as /spawn).
+ */
 export async function openAgentSessionTerminal(
   context: vscode.ExtensionContext,
-  session: { id: string; shortId: string; agent: string; version?: string; account?: string; cwd?: string; host?: string; terminalId?: string },
-  // When set, the tab runs THIS command instead of `inTabResumeCommand`, here,
-  // without the placement check: the PREVIOUS band's recovery and migration.
-  resumeCommandOverride?: string,
+  session: { id: string; shortId: string; agent: string; version?: string; account?: string; host?: string; label?: string },
 ): Promise<boolean> {
-  // Same placement as /spawn: a session this window shows is focused, and one
-  // whose project belongs to another window opens there through the CLI.
-  if (!resumeCommandOverride) {
-    const { live, dead } = await terminals.sessionTabs(session.id);
-    if (live) {
-      live.terminal.show();
-      return true;
-    }
-    terminals.closeTabs(dead);
-    if (session.cwd && decideSpawn({
-      project: session.cwd,
-      windowFolders: terminals.windowFolders(),
-      otherWindows: liveWindows(process.pid).map((w) => w.folders),
-    }) === 'wrong-window') {
-      const { ok, output } = await resumeInProjectWindow({ id: session.id, agent: session.agent, cwd: session.cwd, remote: !!remoteDeviceArg(session.host) });
-      const { reason } = cliResumeOutcome(ok, output);
-      if (!ok) void vscode.window.showWarningMessage(`Session ${session.shortId}: ${reason}`);
-      return ok;
-    }
+  const { live, dead } = await terminals.sessionTabs(session.id);
+  if (live) {
+    live.terminal.show();
+    return true;
   }
+  terminals.closeTabs(dead);
   const agentKey = agentKeyFromSession(session.agent);
-  // Ordinary picker/reload paths still require a presented built-in. A canonical
-  // recovery command is different: the CLI owns the recorded harness and may
-  // support one (for example Muse) that AGI EXT does not offer as a New-agent
-  // button. Give that command a generic Agents-decorated editor terminal instead
-  // of rendering a Resume button that dies before createTerminal.
-  if (!agentKey && !resumeCommandOverride) {
+  const builtIn = agentKey ? BUILT_IN_AGENTS.find(a => a.key === agentKey) : undefined;
+  if (!builtIn) {
     vscode.window.showInformationMessage(`Cannot resume sessions of type ${session.agent || 'unknown'}`);
     return false;
   }
-
-  const builtIn = agentKey ? BUILT_IN_AGENTS.find(a => a.key === agentKey) : undefined;
-  if (!builtIn && !resumeCommandOverride) {
-    vscode.window.showInformationMessage(`No built-in agent config for ${agentKey}`);
-    return false;
-  }
-
-  const recoveryTitle = recoveryAgentTitle(session.agent);
-  const agentConfig = builtIn
-    ? createAgentConfig(context.extensionPath, builtIn.title, builtIn.command, builtIn.icon, builtIn.prefix)
-    : createAgentConfig(context.extensionPath, recoveryTitle, 'agents', 'agents.png', RECOVERY_AGENT_PREFIX);
-
-  // The tab starts in the session's own directory when it has one here.
-  const workspacePath = session.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  const resumeCmd = resumeCommandOverride ?? inTabResumeCommand(session.id);
-
-  const terminalId = session.terminalId || terminals.nextId(agentConfig.prefix);
-  const title = buildTerminalTitle(agentConfig.title, undefined, context, session.id);
-  const terminal = vscode.window.createTerminal({
-    iconPath: agentConfig.iconPath,
-    location: { viewColumn: vscode.ViewColumn.Active },
-    name: title,
-    cwd: session.cwd,
-    env: buildAgentTerminalEnv(terminalId, session.id, workspacePath, session.version),
-    isTransient: true,
-    ...agentTabShell(resumeCmd, process.env.SHELL),
-  });
-
-  await registerAgentTerminal(terminal, context, {
-    terminalId,
+  const agentConfig = createAgentConfig(context.extensionPath, builtIn.title, builtIn.command, builtIn.icon, builtIn.prefix);
+  const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    agentKey: agentKey || undefined,
-    recoveryAgent: agentKey ? undefined : session.agent,
+    name: buildTerminalTitle(agentConfig.title, session.label, context, session.id),
+    workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd(),
+    command: inTabResumeCommand(session.id),
+    agentKey: builtIn.key,
     sessionId: session.id,
     host: session.host,
-    pinnedVersion: session.version,
+    version: session.version,
+    account: session.account,
+    label: session.label,
   });
   // Show the editor-tab terminal immediately. Readiness can take seconds (or time
   // out on a broken shell integration); hiding the tab behind that await made a
   // successful Resume click look like a complete no-op.
   terminal.show();
-  if (session.account) {
-    terminals.setAccount(terminal, session.account);
-  }
   readiness.armAgentReady(terminal);
 
   try {
@@ -2806,23 +2703,14 @@ async function launchResumeTerminal(
   );
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
 
-  const terminalId = terminals.nextId(plan.builtIn.prefix);
-  const title = buildTerminalTitle(agentConfig.title, undefined, context, plan.newSessionId);
-  const terminal = vscode.window.createTerminal({
-    iconPath: agentConfig.iconPath,
-    location: { viewColumn: vscode.ViewColumn.Active },
-    name: title,
-    env: buildAgentTerminalEnv(terminalId, plan.newSessionId, workspacePath),
-    isTransient: true,
+  const { terminal } = await openTrackedTab(context, {
+    agentConfig,
+    name: buildTerminalTitle(agentConfig.title, undefined, context, plan.newSessionId),
+    workspacePath,
+    agentKey: plan.stampAgentKey,
+    sessionId: plan.newSessionId,
+    host: plan.host,
   });
-
-  const pid = await terminal.processId;
-  terminals.register(terminal, terminalId, agentConfig, pid, context);
-  readiness.registerTerminal(terminal);
-  terminals.setSessionId(terminal, plan.newSessionId);
-  terminals.setAgentType(terminal, plan.stampAgentKey as SessionAgentType);
-  if (plan.host) terminals.setHost(terminal, plan.host);
-  startAutoLabelPollerForTerminal(terminal, context);
 
   // Always inline the central continue.md: it works in ANY harness, and we
   // can't know whether the target version's home has the /continue slash
@@ -2838,25 +2726,14 @@ async function launchResumeTerminal(
   }
   const resumeInput = buildResumeInput(plan.oldSessionId, false, centralContinueMdBody);
 
-  try {
-    await readiness.waitFor(terminal, 'promptReady');
-  } catch (err) {
-    console.warn(`[RESUME] promptReady wait FAILED: ${err} — sending launch anyway`);
-  }
-  terminal.sendText(buildAgentLaunchCommand(
+  await sendCommandWhenReady(terminal, buildAgentLaunchCommand(
     plan.runAgentKey, plan.runSessionId, undefined, undefined, undefined, undefined, undefined,
     { host: plan.runHost, local: !plan.runHost, cwd: workspacePath },
   ));
   readiness.armAgentReady(terminal);
   terminal.show();
 
-  // Type the payload, then Enter as a separate keystroke — Claude's Ink TUI
-  // needs the explicit `\r`, and multi-line input swallows a same-tick one.
-  const submitToTui = () => {
-    terminal.sendText(resumeInput, false);
-    setTimeout(() => terminal.sendText('\r', false), 300);
-  };
-  readiness.waitFor(terminal, 'agentReady').then(submitToTui).catch((err) => {
+  readiness.waitFor(terminal, 'agentReady').then(() => submitToTui(terminal, [resumeInput])).catch((err) => {
     console.error(`[RESUME] agentReady wait FAILED: ${err}`);
     vscode.window.showErrorMessage('Failed to resume: agent did not become ready.');
   });
@@ -2965,107 +2842,60 @@ export async function openSingleAgentWithQueue(
   // `cwd` starts the local terminal and, for an ordinary `host` launch, is sent
   // as portable `--cwd` for agents-cli to re-root. `remoteCwd` is already exact
   // on `host` and is reserved for a picked historical session.
-  // `viewColumn` places the new tab: `Active` (the default) takes over the
-  // current group, `Beside` splits so the launch sits next to what spawned it.
-  opts?: { cwd?: string; remoteCwd?: string; mode?: AgentLaunchMode; sessionId?: string; strategy?: RunStrategy; host?: string; local?: boolean; viewColumn?: vscode.ViewColumn }
-): Promise<{ terminalId: string; sessionId: string | null }> {
-  const editorLocation: vscode.TerminalEditorLocationOptions = {
-    viewColumn: opts?.viewColumn ?? vscode.ViewColumn.Active,
-    preserveFocus: false
-  };
-
+  opts?: { cwd?: string; remoteCwd?: string; strategy?: RunStrategy; host?: string; local?: boolean }
+): Promise<vscode.Terminal> {
   const workspaceFolder = getActiveWorkspaceFolder()?.uri.fsPath || process.cwd();
-  const terminalId = terminals.nextId(agentConfig.prefix);
   // An explicit cwd (task dispatch resolved the task's repo to a local clone)
   // pins the terminal there; otherwise use the workspace folder.
   const cwd = opts?.cwd ?? workspaceFolder;
 
-  // Determine agent key and handle session ID
   const builtInDef = getBuiltInByPrefix(agentConfig.prefix);
   const agentKey = builtInDef?.key as keyof AgentSettings['builtIn'] | undefined;
   const defaultModel = agentKey ? settingsStore.getDefaultModel(context, agentKey) : undefined;
 
-  let command = agentConfig.command;
-  let sessionId: string | null = null;
-  let opencodeSessionsBefore: string[] | null = null;
-
-  if (agentKey === 'opencode') {
-    opencodeSessionsBefore = await listOpencodeSessions(cwd);
-  }
+  const opencodeSessionsBefore = agentKey === 'opencode' ? await listOpencodeSessions(cwd) : null;
 
   // Route every agent runner through `agents run <agent> --interactive` so
   // `--strategy balanced --mode auto` applies uniformly (shell is the only
-  // non-runner). Claude gets a pre-generated session id for the resume flow; other
-  // agents discover their session post-spawn. opts?.mode defaults to 'auto'
-  // (writable-but-gated) inside buildAgentLaunchCommand when no mode is supplied.
+  // non-runner). Claude gets a pre-generated session id for the resume flow;
+  // other agents discover their session post-spawn.
   const targetHost = opts?.host && opts.host !== 'local' ? opts.host : undefined;
-  if (agentKey && isAgentRunner(agentKey)) {
-    if (agentKey === 'claude') {
-      // Claude: generate session ID at open time; others are discovered post-spawn.
-      // A caller (dispatch) may pre-supply the id so it can watch that exact
-      // session file for a plan / completion afterwards.
-      sessionId = opts?.sessionId ?? generateClaudeSessionId();
-      command = buildAgentLaunchCommand(agentKey, sessionId, defaultModel, undefined, undefined, opts?.strategy, opts?.mode, {
-        host: targetHost,
-        local: opts?.local,
-        cwd: opts?.remoteCwd ? undefined : cwd,
-        remoteCwd: opts?.remoteCwd,
-      });
-    } else {
-      command = buildAgentLaunchCommand(agentKey, null, defaultModel, undefined, undefined, opts?.strategy, opts?.mode, {
-        host: targetHost,
-        local: opts?.local,
-        cwd: opts?.remoteCwd ? undefined : cwd,
-        remoteCwd: opts?.remoteCwd,
-      });
-    }
-  }
+  const runner = agentKey && isAgentRunner(agentKey) ? agentKey : undefined;
+  const sessionId = runner === 'claude' ? generateClaudeSessionId() : null;
+  const command = runner
+    ? buildAgentLaunchCommand(runner, sessionId, defaultModel, undefined, undefined, opts?.strategy, undefined, {
+      host: targetHost,
+      local: opts?.local,
+      cwd: opts?.remoteCwd ? undefined : cwd,
+      remoteCwd: opts?.remoteCwd,
+    })
+    : agentConfig.command;
 
-  const title = buildTerminalTitle(agentConfig.title, undefined, context, sessionId);
-  const terminal = vscode.window.createTerminal({
-    iconPath: agentConfig.iconPath,
-    location: editorLocation,
-    name: title,
-    env: buildAgentTerminalEnv(terminalId, sessionId, cwd),
+  // Any known harness is tracked, not just the prewarm five (#1747): this feeds
+  // the persistence that restore and reopen read. The agent type goes on even
+  // without an id so a fresh rollout can be adopted (Codex 0.124+ dropped the
+  // id from its banner).
+  const { terminal } = await openTrackedTab(context, {
+    agentConfig,
+    name: buildTerminalTitle(agentConfig.title, undefined, context, sessionId),
+    location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+    workspacePath: cwd,
     cwd,
-    isTransient: true
+    userShell: agentKey === 'shell',
+    agentKey,
+    sessionId,
+    host: targetHost,
+    labelPoller: false,
   });
-
-  const pid = await terminal.processId;
-  terminals.register(terminal, terminalId, agentConfig, pid, context);
-  if (targetHost) terminals.setHost(terminal, targetHost);
-  readiness.registerTerminal(terminal);
-
-  // Track session ID and agent type. Any known harness is tracked, not just the
-  // prewarm five (#1747) — this feeds the persistence path that restore/reopen
-  // read, so grok/kimi/droid/antigravity tabs must be tracked here too or they
-  // have nothing to come back to.
-  const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
-  if (resumeKey) {
-    // Set agent type unconditionally so the sessionTracker fs watcher can adopt
-    // a session id when the CLI writes a fresh rollout/jsonl (Codex 0.124+
-    // dropped session id from the TUI banner so this is the only signal).
-    terminals.setAgentType(terminal, resumeKey);
-    if (sessionId) {
-      terminals.setSessionId(terminal, sessionId);
-    }
-  }
 
   // Pull focus from the webview so the terminal tab becomes the visible one.
   terminal.show(false);
 
-  // Queue messages
-  for (const msg of messages) {
-    terminals.queueMessage(terminal, msg);
-  }
-
   if (command) {
-    // Always an agent-terminal here, never a shell tab (isShell is always
-    // false). wrapNativeAgentCommand closes the tab on a clean exit, frames a
-    // dropped --device link as a recoverable reconnect (RUSH-3125 F6), and
-    // otherwise keeps it open with a readable status line on a launch failure
-    // (RUSH-2593).
-    await sendCommandWhenReady(terminal, wrapNativeAgentCommand(command, false));
+    // wrapNativeAgentCommand closes the tab on a clean exit, frames a dropped
+    // --device link as a recoverable reconnect (RUSH-3125 F6), and otherwise
+    // keeps it open with a readable status line on a launch failure (RUSH-2593).
+    await sendCommandWhenReady(terminal, wrapNativeAgentCommand(command, agentKey === 'shell'));
   }
 
   // Arm agentReady detection (process-state probe).
@@ -3075,34 +2905,24 @@ export async function openSingleAgentWithQueue(
     detectOpencodeSessionId(terminal, cwd, opencodeSessionsBefore, context);
   }
 
-  // Flush queued messages once the agent is ready to accept input.
-  // Ink TUIs (Claude) watch for `\r` as Enter; `sendText(text, true)` appends
-  // `\n` which types into the input but does NOT submit. See the resume flow
-  // around line 2086 for the same workaround.
-  // 45s hard-timeout fallback: if agentReady never fires (agent exits early,
-  // slow machine), we still attempt delivery so the user sees the prompt.
+  // Submit the prompts once the agent is ready to accept input. If agentReady
+  // never fires (agent exits early, slow machine) they still go after 45 s so
+  // the user sees the prompt.
   const AGENT_READY_FALLBACK_MS = 45_000;
-  const flushQueued = () => {
-    const queued = terminals.flushQueue(terminal);
-    queued.forEach((msg, i) => {
-      setTimeout(() => {
-        terminal.sendText(msg, false);
-        // Multi-line prompts go over the pty as a bracketed paste; a \r sent
-        // in the same tick gets consumed as paste content and the input never
-        // submits. Let the TUI finish ingesting the paste before Enter.
-        setTimeout(() => terminal.sendText('\r', false), 300);
-      }, i * 700);
-    });
+  let submitted = false;
+  const submit = () => {
+    if (submitted) return;
+    submitted = true;
+    submitToTui(terminal, messages);
   };
-  const fallbackHandle = setTimeout(flushQueued, AGENT_READY_FALLBACK_MS);
+  const fallbackHandle = setTimeout(submit, AGENT_READY_FALLBACK_MS);
   readiness.waitFor(terminal, 'agentReady').then(() => {
     clearTimeout(fallbackHandle);
-    flushQueued();
+    submit();
   }).catch(() => {
-    // waitFor rejects on timeout — fallback handle already scheduled
+    // waitFor rejects on timeout; the fallback is already scheduled.
   });
-
-  return { terminalId, sessionId };
+  return terminal;
 }
 
 async function openAgentTerminals(context: vscode.ExtensionContext) {
@@ -3113,19 +2933,11 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
     return;
   }
 
-  const editorLocation: vscode.TerminalEditorLocationOptions = {
-    viewColumn: vscode.ViewColumn.Active,
-    preserveFocus: false
-  };
-
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   let totalCount = 0;
 
   for (const agent of agents) {
     for (let i = 0; i < agent.count; i++) {
-      // Generate ID first for env var
-      const terminalId = terminals.nextId(agent.prefix);
-
       // Determine agent key and handle session ID
       const builtInDef = getBuiltInByPrefix(agent.prefix);
       const agentKey = builtInDef?.key as keyof AgentSettings['builtIn'] | undefined;
@@ -3145,45 +2957,21 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
       }
       const command = buildTabLaunchCommand(agentKey, { cwd, sessionId, defaultModel }) ?? agent.command;
 
-      const title = buildTerminalTitle(agent.title, undefined, context, sessionId);
-
-      const terminal = vscode.window.createTerminal({
-        iconPath: agent.iconPath,
-        location: editorLocation,
-        name: title,
-        env: buildAgentTerminalEnv(terminalId, sessionId, cwd),
-        isTransient: true
+      // Track session ID for any known harness, not just the prewarm five (#1747):
+      // the label poller hydrates the live session id, so a grok/kimi/droid/
+      // antigravity tab needs it too to be resumable.
+      const { terminal } = await openTrackedTab(context, {
+        agentConfig: agent,
+        name: buildTerminalTitle(agent.title, undefined, context, sessionId),
+        location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+        workspacePath: cwd,
+        userShell: agentKey === 'shell',
+        agentKey,
+        sessionId,
       });
 
-      const pid = await terminal.processId;
-      terminals.register(terminal, terminalId, agent, pid, context);
-      readiness.registerTerminal(terminal);
-
-      // Track session ID for any known harness, not just the prewarm five (#1747):
-      // this path also starts the label poller that hydrates the live session id,
-      // so a grok/kimi/droid/antigravity tab needs it too to be resumable.
-      const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
-      if (resumeKey) {
-        // Set agent type unconditionally so sessionTracker fs watcher can adopt
-        // a session id from the CLI's rollout file (Codex 0.124+ banner has none).
-        terminals.setAgentType(terminal, resumeKey);
-        if (sessionId) {
-          terminals.setSessionId(terminal, sessionId);
-        }
-        startAutoLabelPollerForTerminal(terminal, context);
-      }
-
       if (command) {
-        try {
-          await readiness.waitFor(terminal, 'promptReady');
-        } catch (err) {
-          console.warn(`[READINESS] promptReady wait failed: ${err}`);
-        }
-        if (terminal.shellIntegration) {
-          terminal.shellIntegration.executeCommand(command);
-        } else {
-          terminal.sendText(command);
-        }
+        await sendCommandWhenReady(terminal, command);
         readiness.armAgentReady(terminal);
       }
       if (agentKey === 'opencode' && opencodeSessionsBefore !== null) {
@@ -4010,7 +3798,7 @@ async function maybeRunFirstSetup(context: vscode.ExtensionContext, force = fals
       const status = await swarm.getSwarmStatus();
       const agentStatus = status.agents[cliAgent];
       if (agentStatus.cliAvailable && (!agentStatus.mcpEnabled || !agentStatus.commandInstalled)) {
-        await swarm.setupSwarmIntegrationForAgent(cliAgent, context);
+        await swarm.setupSwarmIntegrationForAgent(cliAgent);
       }
     }
   } catch {
@@ -4095,9 +3883,8 @@ async function spawnWithContext(context: vscode.ExtensionContext): Promise<void>
  * verb (`agents fork <id> [--device <host>]`). The tracked terminal's
  * AGENT_TERMINAL_ID env propagates into the verb's `agents run` child (the verb
  * inherits the env), so the sibling session publishes under this terminalId and
- * lineage / restore / stream tracking keep working. Mirrors the tracked-terminal
- * setup in openSingleAgentWithQueue — including arming agentReady — minus the
- * message queue and the up-front session id, which the fork verb mints itself.
+ * lineage / restore / stream tracking keep working. It has no session id up
+ * front: the fork verb mints its own.
  */
 async function openForkTerminal(
   context: vscode.ExtensionContext,
@@ -4108,22 +3895,16 @@ async function openForkTerminal(
   // Named after its source before it starts; the fork's own title replaces it
   // once the stream has one, and a failed fork verb says so (PHNX-4387).
   const label = forkTabLabel(opts.sourceTitle);
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  const terminalId = terminals.nextId(agentConfig.prefix);
-  const builtInDef = getBuiltInByPrefix(agentConfig.prefix);
-  const agentKey = builtInDef?.key;
-
-  const terminal = vscode.window.createTerminal({
-    iconPath: agentConfig.iconPath,
-    location: { viewColumn: opts.viewColumn ?? vscode.ViewColumn.Active, preserveFocus: false },
+  const { terminal } = await openTrackedTab(context, {
+    agentConfig,
     name: buildTerminalTitle(agentConfig.title, label, context, null),
-    env: buildAgentTerminalEnv(terminalId, null, workspaceFolder),
-    isTransient: true,
+    location: { viewColumn: opts.viewColumn ?? vscode.ViewColumn.Active, preserveFocus: false },
+    workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd(),
+    agentKey: getBuiltInByPrefix(agentConfig.prefix)?.key,
+    host: opts.forkHost,
+    autoLabel: label,
+    labelPoller: false,
   });
-
-  const pid = await terminal.processId;
-  terminals.register(terminal, terminalId, agentConfig, pid, context);
-  terminals.setAutoLabel(terminal, label);
   const watch = [
     vscode.window.onDidEndTerminalShellExecution((e) => {
       if (e.terminal !== terminal || !forkFailed(e.execution.commandLine.value, e.exitCode)) return;
@@ -4133,16 +3914,7 @@ async function openForkTerminal(
     }),
     vscode.window.onDidCloseTerminal((t) => { if (t === terminal) watch.forEach((d) => d.dispose()); }),
   ];
-  // Stamp the host so the label poller / remote id resolution reads the sibling
-  // from that box's active feed rather than looking it up locally.
-  if (opts.forkHost) terminals.setHost(terminal, opts.forkHost);
-  readiness.registerTerminal(terminal);
-  // Arm agentReady like the launcher this mirrors.
   readiness.armAgentReady(terminal);
-
-  const resumeKey = agentKey ? agentKeyFromSession(agentKey) : null;
-  if (resumeKey) terminals.setAgentType(terminal, resumeKey);
-
   terminal.show(false);
   await sendCommandWhenReady(terminal, wrapNativeAgentCommand(command, false));
 }
@@ -4432,8 +4204,9 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     let agentConfig: Omit<import('./agents.vscode').AgentConfig, 'count'>;
     let displayTitle: string;
 
+    const isShell = session.prefix.toLowerCase() === 'sh';
     const isOpaqueRecovery = session.prefix.toLowerCase() === RECOVERY_AGENT_PREFIX && Boolean(session.recoveryAgent);
-    if (session.prefix.toLowerCase() === 'sh') {
+    if (isShell) {
       agentConfig = createAgentConfig(context.extensionPath, 'SH', '', 'agents.png', 'sh');
       displayTitle = 'SH';
     } else if (isOpaqueRecovery) {
@@ -4463,62 +4236,35 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
       ? inTabResumeCommand(session.sessionId)
       : null;
 
-    const terminal = vscode.window.createTerminal({
-      iconPath: agentConfig.iconPath,
-      location: { viewColumn: vscode.ViewColumn.Active },
+    const { terminal } = await openTrackedTab(context, {
+      agentConfig,
+      terminalId: session.terminalId,
       name: title,
-      env: buildAgentTerminalEnv(session.terminalId, session.sessionId || null, workspacePath, session.version, { scrubSensitive: session.prefix.toLowerCase() !== 'sh', kind: session.prefix.toLowerCase() === 'sh' ? 'shell' : 'agent' }),
-      isTransient: true,
+      workspacePath,
       // Restore runs as the window opens, before the workbench can open a terminal
       // in an editor: an editor opened then is resolved as a text file and shows
       // "The editor could not be opened". Create it hidden and show it once its
       // process runs, when the terminal editor is ready.
       hideFromUser: true,
-      ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
+      command: resumeCmd ?? undefined,
+      userShell: isShell,
+      // Session tracking comes back only with the session it tracks.
+      agentKey: session.sessionId ? session.agentType : undefined,
+      recoveryAgent: session.sessionId && !session.agentType ? session.recoveryAgent : undefined,
+      sessionId: session.sessionId,
+      host: session.host,
+      version: session.version,
+      label: session.label,
+      autoLabel: session.autoLabel,
+      // Carry the tab's original creation time across the reload: the agent it is
+      // being restored onto is older than this widget (see register's createdAt).
+      createdAt: session.createdAt,
     });
-
-    const { pid } = await terminals.processIdWithin(terminal);
     terminal.show(true);
-    // Carry the tab's original creation time across the reload — the agent it is
-    // being restored onto is older than this widget (see register's createdAt).
-    terminals.register(terminal, session.terminalId, agentConfig, pid, context, session.label, session.createdAt);
-    if (session.autoLabel) terminals.setAutoLabel(terminal, session.autoLabel);
-    readiness.registerTerminal(terminal);
-
-    // Preserve the version pin across reloads. The env var above is belt; this
-    // is suspenders — without it, `resumeCurrentInBestProfile`'s "already on
-    // usable version" short-circuit sees `terminalEntry.version === undefined`
-    // and falls through to the full profile switch.
-    if (session.version) {
-      terminals.setVersion(terminal, session.version);
-    }
-
-    if (session.prefix.toLowerCase() === 'sh') {
-      armShellAdoptionForTerminal(terminal, context);
-    }
-
-    if (session.sessionId !== undefined) terminals.setSessionId(terminal, session.sessionId);
-    // The device survives every restore, not only one that resumes below, or the
-    // next persist writes the tab back without it.
-    if (session.host) terminals.setHost(terminal, session.host);
     const restoredEntry = terminals.getByTerminal(terminal);
     if (restoredEntry) restoredEntry.manualSessionOverride = session.manualSessionOverride;
-
-    // Restore session tracking metadata if present
-    if (session.sessionId && (session.agentType || session.recoveryAgent)) {
-      if (session.agentType) {
-        terminals.setAgentType(terminal, session.agentType as SessionAgentType);
-      } else if (session.recoveryAgent) {
-        terminals.setRecoveryAgent(terminal, session.recoveryAgent);
-      }
-      if (session.agentType) {
-        startAutoLabelPollerForTerminal(terminal, context);
-      }
-
-      if (resumeCmd && restoredAgentKey) {
-        readiness.armAgentReady(terminal);
-      }
-    }
+    if (isShell) armShellAdoptionForTerminal(terminal, context);
+    if (resumeCmd && restoredAgentKey) readiness.armAgentReady(terminal);
   };
 
   try {
@@ -4536,65 +4282,25 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
   console.log(`[RESTORE] Restored ${toRestore.length} agent terminal(s)`);
 }
 
-async function reopenLastClosedSession(context: vscode.ExtensionContext): Promise<void> {
+export async function reopenLastClosedSession(context: vscode.ExtensionContext): Promise<void> {
   const closed = terminals.popClosedSession();
   if (!closed) {
     vscode.window.showInformationMessage('No recently closed sessions to reopen.');
     return;
   }
-
-  if (!closed.agentConfig || !closed.sessionId) {
+  if (!closed.agentType) {
     vscode.window.showInformationMessage('Last closed session has no resumable session.');
     return;
   }
-
-  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
-  const title = buildTerminalTitle(
-    closed.agentConfig.title,
-    closed.label,
-    context,
-    closed.sessionId
-  );
-
-  const terminalId = terminals.nextId(closed.prefix);
-  const resumeCmd = closed.agentType && agentKeyFromSession(closed.agentType) ? inTabResumeCommand(closed.sessionId) : null;
-  const terminal = vscode.window.createTerminal({
-    iconPath: closed.agentConfig.iconPath,
-    location: { viewColumn: vscode.ViewColumn.Active },
-    name: title,
-    env: buildAgentTerminalEnv(terminalId, closed.sessionId, workspacePath, closed.version),
-    isTransient: true,
-    ...(resumeCmd ? agentTabShell(resumeCmd, process.env.SHELL) : {}),
+  await openAgentSessionTerminal(context, {
+    id: closed.sessionId,
+    shortId: closed.sessionId.slice(0, 8),
+    agent: closed.agentType,
+    version: closed.version,
+    account: closed.account,
+    host: closed.host,
+    label: closed.label,
   });
-
-  const { pid } = await terminals.processIdWithin(terminal);
-  terminals.register(terminal, terminalId, closed.agentConfig, pid, context, closed.label);
-  readiness.registerTerminal(terminal);
-
-  if (closed.sessionId && closed.agentType) {
-    terminals.setSessionId(terminal, closed.sessionId);
-    terminals.setAgentType(terminal, closed.agentType);
-    if (closed.version) {
-      terminals.setVersion(terminal, closed.version);
-    }
-    if (closed.account) {
-      terminals.setAccount(terminal, closed.account);
-    }
-    // Stamp the host before the poller starts so a reopened offloaded tab keeps
-    // resolving its label (and its resume) on the machine that owns it.
-    if (closed.host) {
-      terminals.setHost(terminal, closed.host);
-    }
-    startAutoLabelPollerForTerminal(terminal, context);
-
-    // Any known harness reopens, not just the prewarm five (#1747).
-    if (resumeCmd) {
-      readiness.armAgentReady(terminal);
-    }
-  }
-
-  terminal.show();
-  console.log(`[REOPEN] Reopened session: ${closed.sessionId} (${closed.agentType})`);
 }
 
 function initTerminalRegistry(context: vscode.ExtensionContext): void {

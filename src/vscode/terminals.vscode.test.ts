@@ -16,9 +16,6 @@ mock.module('vscode', () => vscodeDouble({
   TabInputTerminal: class {},
 }));
 
-mock.module('./agents.vscode', () => ({
-  getBuiltInByKey: () => undefined,
-}));
 
 
 
@@ -140,6 +137,40 @@ describe('reload scan ignores terminal editor ghosts', () => {
     expect(t.getByTerminal(slow)).toBeUndefined();
     expect((slow as unknown as { disposed: number }).disposed).toBe(0);
   }, 20_000);
+});
+
+describe('adopting a tab the editor opens after activation', () => {
+  function openedTerm(env: Record<string, string>): vscode.Terminal {
+    return {
+      name: 'CC',
+      processId: Promise.resolve(4321),
+      exitStatus: undefined,
+      creationOptions: { env },
+    } as unknown as vscode.Terminal;
+  }
+
+  test('the session id and version it was launched with come back from its env', async () => {
+    const term = openedTerm({ AGENT_TERMINAL_ID: 'CC-late-1', AGENT_SESSION_ID: 'session-from-env', AGENT_VERSION: '2.1.113' });
+
+    expect(await t.adopt(term, () => fakeAgentConfig(), { persistedSessions: [] })).toBe(true);
+
+    const entry = t.getByTerminal(term);
+    expect(entry?.id).toBe('CC-late-1');
+    expect(entry?.sessionId).toBe('session-from-env');
+    expect(entry?.version).toBe('2.1.113');
+    expect(entry?.agentType).toBe('claude');
+  });
+
+  test('a persisted rebinding is newer than the env and wins, with its host', async () => {
+    const term = openedTerm({ AGENT_TERMINAL_ID: 'CC-late-2', AGENT_SESSION_ID: 'session-from-env' });
+
+    await t.adopt(term, () => fakeAgentConfig(), {
+      persistedSessions: [{ terminalId: 'CC-late-2', prefix: 'cc', sessionId: 'session-rebound', host: 'yosemite-s0' }],
+    });
+
+    expect(t.getByTerminal(term)?.sessionId).toBe('session-rebound');
+    expect(t.getByTerminal(term)?.host).toBe('yosemite-s0');
+  });
 });
 
 describe('BUG A: startAutoLabelPoller guard blocks restart once autoLabel is set', () => {

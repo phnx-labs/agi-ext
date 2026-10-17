@@ -142,6 +142,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   and the GitHub and Linear marks are in `src/shared/sessionCards.ts`; harness logos come from
   `harnessLogoCss`. A webview script reuses a host function by interpolating it
   (`${relTime}`), never a copy.
+- Every agent tab is created by `openTrackedTab` (`src/vscode/extension.ts`): env, icon,
+  registry facts, readiness and a 10 s bounded pid wait in one place; the only other
+  `createTerminal` is the agents-cli installer. A tab the editor opened is registered by
+  `terminals.adopt` (`src/vscode/terminals.vscode.ts`), on activation and after it. A prompt
+  goes into a TUI only through `submitToTui` (typed, then `\r` as its own keystroke).
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
@@ -225,11 +230,10 @@ The thin-client violations still in the tree are listed with their fate in `docs
 `sessionParse.ts`, `readinessDetector.ts` (the one copy of every readiness probe; a window
 runs its own while the monitor is down). Touching one means
 deleting or shrinking it, never extending it.
-Five tests assert on source text (`autoLabelHydration`: stream rebind before the sidebars
+Four tests assert on source text (`autoLabelHydration`: stream rebind before the sidebars
 refresh; `statusBarIdentity.spawnStorm`: identity only from the store;
 `agentPanel.webview-syntax`: the sidebar script parses and uses theme tokens;
-`pollTimers.replacement`: no poll timer in the sidebar; `extension.vscode`: resume opens an
-editor tab); read what each protects first.
+`pollTimers.replacement`: no poll timer in the sidebar); read what each protects first.
 
 ## Conventions
 

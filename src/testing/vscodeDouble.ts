@@ -25,6 +25,7 @@ export const VSCODE_API_CONSTANTS = {
   TerminalExitReason: { Unknown: 0, Shutdown: 1, Process: 2, User: 3, Extension: 4 },
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
   QuickPickItemKind: { Separator: -1, Default: 0 },
+  ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2, Three: 3 },
   // Plain value classes (an icon id, a theme color id): a module that builds
   // QuickPick rows creates them at load, so every double must carry them.
   ThemeIcon: class ThemeIcon { constructor(readonly id: string, readonly color?: unknown) {} },
