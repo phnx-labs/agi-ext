@@ -17,7 +17,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   which agent it is, so the whole tab goes to the session's name. Until the session has a
   name, the tab says where the launch is: "Placing…" while agents-cli picks a machine,
   "Starting…" when it runs here or on a machine you chose, then "New session" once agents-cli
-  reports the agent running. Before, a new tab sat at "CC" with nothing else for as long as the launch took.
+  reports the agent running. Before, a new tab sat at "CC" with nothing else for as long as the
+  launch took. The Active Terminal sidebar's card says "New session" too, where it said "CC".
 - After a window reload, agent tabs still come back as Claude, Codex and the rest with their
   session, though the name no longer says which. A tab VS Code revives on its own comes back
   with only its name and its process, so the extension now finds that tab's record by its
