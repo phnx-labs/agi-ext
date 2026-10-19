@@ -4,6 +4,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.409] - 2026-10-18
+
+- A session that opened several PRs shows a chip for each on its card and a tile for each in
+  the Active Session sidebar; it showed only the newest. Needs agents-cli 1.23.30, whose rows
+  carry `prs` (phnx-labs/agi-cli#3989).
+
 ## [0.9.408] - 2026-10-18
 
 - The Project panel and the Active Session sidebar each have Move into New Window in their
