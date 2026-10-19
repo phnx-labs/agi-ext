@@ -11,7 +11,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   PR it opened is still open") or "Unverified" when nothing checkable backs it. It sits before
   the age on a card, right after the title on the pinned card, and in place of Idle on the
   Active Session sidebar's state line; no new row. Working, waiting and asking sessions are
-  unchanged. Settings > A card shows > Done verdict turns it off. Needs agents-cli's
+  unchanged. Settings > A card shows > Done verdict turns it off in both panels. Needs agents-cli's
   `doneVerdict` on the row; without it the card reads Idle.
 
 ## [0.9.411] - 2026-10-18
