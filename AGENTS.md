@@ -120,7 +120,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - The Active Session sidebar is the one preview: a Project panel session click sets its
   subject (`setAgentPanelSubjectFromProject`), brings the tab this window binds to the session
   forward wherever its agent runs (`select`; Settings > Card click "Only show it" keeps it; ⌘K
-  always fronts it), and spawns or resumes nothing. ⌘K is the Project panel's own overlay
+  always fronts it), and a click spawns or resumes nothing. ⌘K is the Project panel's own overlay
   (`ProjectView.openPalette`, `renderPalette`): sessions only, from the store's rows, any
   project, live and ended; it reads nothing, and its thumbnails are the request's pasted
   images looked up as above. Its Enter is a card's gesture made explicit (`paletteGo`, the
