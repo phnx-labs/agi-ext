@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { normalizeActiveSession, type RawActiveSession } from './remoteSessions';
-import { madeShelf, sessionCardFields } from './sessionCardFields';
+import { madeShelf, renderedHtmlCandidates, sessionCardFields } from './sessionCardFields';
 
 const HOME = '/home/u';
 const raw = (over: Partial<RawActiveSession> = {}): RawActiveSession => ({
@@ -98,4 +98,9 @@ describe('madeShelf', () => {
     expect(shelf.touchedPrs).toEqual([{ url: 'https://github.com/acme/atlas/pull/3', number: 3, action: 'merged' }]);
     expect(shelf.touchedTickets).toBeUndefined();
   });
+});
+
+test('a source renders beside itself or in its .artifacts/ folder; a page is its own', () => {
+  expect(renderedHtmlCandidates('/a/b/plan.md')).toEqual(['/a/b/plan.html', '/a/b/.artifacts/plan.html']);
+  expect(renderedHtmlCandidates('/a/b/page.html')).toEqual(['/a/b/page.html']);
 });

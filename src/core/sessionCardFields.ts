@@ -2,7 +2,6 @@ import * as path from 'path';
 import { displayPath, isInside } from './displayPath';
 import { extractLinearTicketId } from './utils';
 import { extractPrUrls, type PullRequestRef } from './panel.helpers';
-import { renderedHtmlCandidates } from './searchIndex';
 import type { RemoteSession, RemoteSessionArtifact, RemoteTouchedPr, RemoteTouchedTicket } from './remoteSessions';
 import { prRepo, prVerdict, type RemotePrStatus } from './prStatus';
 import { ticketFace, type TicketFace } from './ticketFaces';
@@ -19,6 +18,14 @@ export interface SessionCardFields {
   linearIssue?: string;
   needsYou?: { kind: string; text: string; openedAtMs?: number };
   sessionLocal: boolean;
+}
+
+/** Where `artifacts render` writes the page for a source: beside it, or in its `.artifacts/` folder. */
+export function renderedHtmlCandidates(sourcePath: string): string[] {
+  if (/\.html?$/i.test(sourcePath)) return [sourcePath];
+  const dir = sourcePath.replace(/[\\/][^\\/]*$/, '');
+  const stem = sourcePath.slice(dir.length + 1).replace(/\.[^.]*$/, '');
+  return [`${dir}/${stem}.html`, `${dir}/.artifacts/${stem}.html`];
 }
 
 /**
