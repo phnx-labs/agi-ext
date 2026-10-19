@@ -405,14 +405,16 @@ export function projectFallback(p: Pick<ProjectRef, 'name' | 'root' | 'repos'>, 
  *  until agents-cli resolves a project's old names, a session whose checkout is
  *  one of the project's repositories while the CLI filed it under no project or
  *  under a name no registered project has (a renamed project's old name). A
- *  session another live project claims stays there, even in a shared repository. */
-export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'> & { cwd?: string }>(rows: T[], project: string, fallback?: ProjectFallback): T[] {
+ *  session another live project claims stays there, even in a shared repository.
+ *  A session with a tab in this window (`tabHere`) is listed whatever its project:
+ *  the tab is a fact of this window, so attribution only decides the rest. */
+export function projectSessions<T extends Pick<SessionLike, 'confirmedProject' | 'lastActivityMs'> & { cwd?: string }>(rows: T[], project: string, fallback?: ProjectFallback, tabHere?: (r: T) => boolean): T[] {
   const want = project.toLowerCase();
   const repos = new Set((fallback?.repoPaths ?? []).map(homeless));
   const orphan = (r: T) => { const c = (r.confirmedProject || '').toLowerCase(); return !c || (!!fallback?.registered && !fallback.registered.has(c)); };
   const inRepo = (r: T) => repos.size > 0 && !!r.cwd && orphan(r) && repos.has(checkoutOf(r.cwd));
   return rows
-    .filter((r) => (r.confirmedProject || '').toLowerCase() === want || inRepo(r))
+    .filter((r) => (r.confirmedProject || '').toLowerCase() === want || inRepo(r) || !!tabHere?.(r))
     .sort((a, b) => b.lastActivityMs - a.lastActivityMs);
 }
 

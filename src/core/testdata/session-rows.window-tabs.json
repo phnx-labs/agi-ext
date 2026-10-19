@@ -1,0 +1,6 @@
+[
+ {"sessionId": "c106a56b-2ccb-46b0-9f6d-e192a1b04603", "host": "codium", "kind": "claude", "title": "Rush tab in another window", "label": "Rush tab in another window", "phase": "idle", "cwd": "/Users/example/src/agents", "lastActivityMs": 1792387225894, "windowId": "someValue.sessionId-80970", "tabIndex": 21, "confirmedProject": "rush"},
+ {"sessionId": "509fd525-5935-49cc-9a32-a86e076fd65e", "host": "codium", "kind": "claude", "title": "UI - Catch up", "label": "UI - Catch up", "phase": "idle", "cwd": "/Users/example/src/agi-ext", "lastActivityMs": 1792403100000, "windowId": "someValue.sessionId-47130", "tabIndex": 4, "confirmedProject": "agi-ui"},
+ {"sessionId": "6ba28438-9302-47c2-8ceb-4246d43a78c8", "host": "codium", "kind": "claude", "title": "Agent started outside the project", "label": "Agent started outside the project", "phase": "idle", "cwd": "/Users/example/src", "terminalId": "sh-1792394072958-2", "lastActivityMs": 1792400000000, "windowId": "someValue.sessionId-47130", "tabIndex": 1, "confirmedProject": null},
+ {"sessionId": "87975446-0000-4000-8000-000000000000", "host": "codium", "kind": "claude", "title": "No project, no tab", "label": "No project, no tab", "phase": "idle", "cwd": "/Users/example/src", "lastActivityMs": 1792402000000, "windowId": null, "tabIndex": null, "confirmedProject": null}
+]

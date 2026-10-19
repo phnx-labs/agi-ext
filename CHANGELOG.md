@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.416] - 2026-10-19
+
+- Open tabs lists every agent tab in this window, whatever project agents-cli filed its
+  session under. A tab whose session has no project (an agent started in a folder outside
+  the project) used to be missing from the list. Project attribution still decides which
+  sessions without a tab here are listed, and the resume picker is unchanged. Such a tab also
+  counts under a ticket's On it now and for Close all, like any tab in the list.
+
 ## [0.9.415] - 2026-10-19
 
 - An idle session whose done-check is unchecked reads plain Idle again; only "✓ Done" and
