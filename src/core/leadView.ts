@@ -140,7 +140,7 @@ export function renderLeadTab(m: LeadTabModel): string {
 
 export const LEAD_TAB_CSS = `
   .lead-speak svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
-  .lead-speak[aria-pressed="false"] { color: var(--r-faint); }
+  .lead-speak[aria-pressed="false"]:not(:hover) { color: var(--r-faint); }
   .lead { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 10px; }
   .lead-id { display: flex; align-items: center; gap: 6px; white-space: nowrap; font: 500 10.5px var(--r-sans); color: var(--r-caption); }
   .lead-id .who { color: var(--r-text); font-weight: 600; }
