@@ -90,7 +90,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   `linear projects --json` read when it opens: every live Linear project through the agents
   project that links it, then agents projects whose link is missing or gone (`projectMenu`);
   detection only checks a row, and the pick is remembered per workspace (the list is
-  cached a minute in `src/vscode/projectRegistry.vscode.ts`, also
+  reread at most once a minute in `src/vscode/projectRegistry.vscode.ts`, a stale list answering at
+  once while it rereads, so no draw or click waits on it; it also
   feeds the repository-path stopgap when Sessions or the resume picker first draws); Review reads `agents projects prs list <name> --json --repo <r>` per repository in
   parallel, drawn as each answers.
   The reply box's mic (and the Lead's, which reuses it) is the one place the extension runs

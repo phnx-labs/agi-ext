@@ -132,6 +132,24 @@ test('a PR chip or a card rings and says "Opening …" at once; the host\'s answ
   expect(toast().hidden).toBe(false);
 });
 
+test('a card click moves the selected rail at once; the host\'s redraw of the same selection keeps it', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  const listed = (id: string) => $$(`[data-group="here"] .card[data-session="${id}"]`)[0];
+  expect(listed('a').classList.contains('sel')).toBe(true);
+  listed('c').click();
+  // Before any host message: c carries the rail, a (still the front tab) lost it, the pinned copy kept its own.
+  expect(listed('c').classList.contains('sel')).toBe(true);
+  expect(listed('a').classList.contains('sel')).toBe(false);
+  expect($$('.front-pin .card[data-session="a"]').length).toBe(1);
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows, NOW, { selectedId: 'c', frontId: 'c', here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor }) });
+  expect($$('.card.sel').filter((c) => !c.closest('.front-pin')).map((c) => c.dataset.session)).toEqual(['c']);
+  // When the host still holds the old selection, its unchanged draw puts the rail back.
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  listed('c').click();
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  expect($$('.card.sel').filter((c) => !c.closest('.front-pin')).map((c) => c.dataset.session)).toEqual(['a']);
+});
+
 test('1-9 answers a selected starred session that asks, whose Favorites copy shows only the question', () => {
   const asking = (r: Row) => (r.sessionId === 'c' ? { ...r, phase: 'waiting' as const, liveStatus: 'waiting', attention: { key: 'k-c', kind: 'question', state: 'open', openedAt: new Date(NOW - 30_000).toISOString(), question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }, { id: 'n', label: 'No' }] } } : r);
   deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows.map(asking), NOW, { selectedId: 'c', frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, favorites: new Set(['c']) }) });
