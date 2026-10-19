@@ -514,6 +514,12 @@ test('the pinned card: an ask from its own agent comes first, then its state, Cl
   expect(plain).toContain('<div class="line said">Done with the docs.</div>')
 })
 
+test('a card\'s title is the row\'s title as the CLI made it, never a prompt or a request headline', () => {
+  expect(card(row({ title: 'Platform readiness for agents', topic: 'Please tell me what is the main progress' }))).toContain('<span class="ttl" title="Platform readiness for agents">')
+  const none = card(row({ title: '', label: 'old', topic: 'Please tell me what is the main progress', request: { headline: 'Please tell me' } }))
+  expect(none).toContain('<span class="ttl" title="Untitled">Untitled</span>')
+})
+
 test('a fork is marked with ⑂ beside its title, never with words', () => {
   const html = card(row({ title: 'Process - Podcasts', forkOf: '4aa3c855-eb2e-417c-8067-c7f079a5963f' }))
   expect(html).toContain('<span class="fork" title="Forked from 4aa3c855" aria-label="Fork">⑂</span><span class="ttl" title="Process - Podcasts">')
