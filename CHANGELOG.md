@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.413] - 2026-10-19
+
+- The Lead is a tab in the Project panel: ✳ Lead, after Sessions, Review and Issues. It is
+  the project's one Lead conversation (its history, then this window's turns): what you said
+  and what it answered, with the tickets, PRs and sessions it named as links. What it runs
+  to get there stays out of sight.
+- Anything the Lead would change waits for your ✓: answering another agent, typing into a tab,
+  starting an agent, acting on a PR, stopping a session. Each is a row with the exact words it
+  will send; several have ✓ Confirm all.
+- ⌥Space brings the Lead tab forward and starts or stops talking; the tab's reply box has the
+  same mic, and Enter asks. Every ask tells the Lead which tab is in front and which tabs are
+  open, so "this one" works, and the answer is read aloud (Settings: `agents.lead.speak`).
+- The Lead's quick-input overlay and its editor tab are gone; the status bar opens the panel's
+  Lead tab. Needs agents-cli with `agents lead ask --context/--speak` and the held Lead tools.
+
 ## [0.9.412] - 2026-10-18
 
 - A session whose turn finished says whether its work is done, in place of "Idle": a chip on

@@ -159,12 +159,15 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
 - The Lead is agents-cli's process; the extension is a thin client (`src/core/lead.ts`,
-  `src/vscode/lead.vscode.ts`, `src/vscode/leadTab.vscode.ts`). Ask and Confirm are each one
-  `agents lead ask|confirm --json` child, one turn at a time per window, killed after 120 s
-  of silence or 15 min, or when the window closes; Esc never stops a turn.
-  The Lead tab reads `agents lead history|status --json` when it opens and on Refresh, never
-  on a timer. `~/.agents/lead/surface.json` is shared with FastWispr: while it says
-  `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding); the extension
+  `src/vscode/lead.vscode.ts`, and the Project panel's ✳ Lead tab drawn by `renderLeadTab` in
+  `src/core/leadView.ts`). Ask and Confirm are each one `agents lead ask|confirm --json`
+  child, one turn at a time per window, killed after 120 s of silence or 15 min, or when the
+  window closes; nothing stops a turn. Whatever the Lead would change arrives held, as a row
+  with its own ✓ (✓ Confirm all runs them in turn); nothing in the tab acts without one.
+  The Lead tab reads `agents lead history|status --json` when it shows and on its ⟳, never
+  on a timer. An ask carries `--context` (front tab, agent tabs) and, with `agents.lead.speak`,
+  `--speak`; agents-cli does the speaking. `~/.agents/lead/surface.json` is shared with
+  FastWispr: while it says `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding); the extension
   never creates `~/.agents/lead` just to watch it. A held ⌥Space is one press (`PressGate`),
   and the Lead's mic never takes over the reply box's recording (`nextMic`,
   a pure transition in `src/core/leadInput.ts`). Tests run

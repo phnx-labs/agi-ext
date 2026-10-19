@@ -977,7 +977,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const params = new URLSearchParams(uri.query);
 
         if (uri.path === '/lead') {
-          // vscode://swarmify.swarm-ext/lead: the Lead tab (FastWispr's "Open conversation").
+          // vscode://swarmify.swarm-ext/lead: the Project panel's Lead tab (FastWispr's "Open conversation").
           await vscode.commands.executeCommand('agents.lead.open');
         } else if (uri.path === '/focus') {
           const terminalId = params.get('terminalId');

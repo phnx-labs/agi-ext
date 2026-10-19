@@ -4,9 +4,9 @@
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
     "commands": 123,
-    "settings": 10,
-    "keybindings": 52,
-    "menuItems": 19,
+    "settings": 11,
+    "keybindings": 51,
+    "menuItems": 18,
     "views": 2,
     "viewContainers": 2,
     "customEditors": 2,
@@ -564,7 +564,7 @@
       },
       {
         "command": "agents.lead.ask",
-        "title": "Ask the Lead",
+        "title": "Ask the Lead (open the Lead tab)",
         "category": "Lead",
         "icon": "$(comment-discussion)"
       },
@@ -586,7 +586,7 @@
       },
       {
         "command": "agents.lead.talk",
-        "title": "Talk (start or stop the microphone)",
+        "title": "Talk to the Lead (start or stop the microphone)",
         "category": "Lead",
         "icon": "$(mic)"
       },
@@ -697,6 +697,11 @@
           "type": "string",
           "default": "~/.cache/whisper-models/ggml-large-v3-turbo.bin",
           "markdownDescription": "The whisper.cpp model the reply box's mic transcribes with, on this machine. Needs `ffmpeg` and `whisper-cli` (`brew install ffmpeg whisper-cpp`)."
+        },
+        "agents.lead.speak": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "The Lead reads its answers aloud on this machine as they stream (`agents lead ask --speak`; agents-cli does the speaking)."
         }
       }
     },
@@ -704,7 +709,6 @@
       "terminal.integrated.confirmOnKill": "panel",
       "terminal.integrated.enablePersistentSessions": false,
       "terminal.integrated.commandsToSkipShell": [
-        "agents.lead.ask",
         "agents.lead.talk"
       ]
     },
@@ -1002,16 +1006,10 @@
         "mac": "cmd+alt+shift+9"
       },
       {
-        "command": "agents.lead.ask",
-        "key": "alt+space",
-        "mac": "alt+space",
-        "when": "!agents.lead.bubble && !agents.lead.overlayOpen"
-      },
-      {
         "command": "agents.lead.talk",
         "key": "alt+space",
         "mac": "alt+space",
-        "when": "agents.lead.overlayOpen"
+        "when": "!agents.lead.bubble"
       }
     ],
     "menus": {
@@ -1085,10 +1083,6 @@
         {
           "command": "agents.lead.float",
           "when": "!agents.lead.bubble"
-        },
-        {
-          "command": "agents.lead.talk",
-          "when": "agents.lead.overlayOpen"
         }
       ],
       "view/title": [

@@ -59,6 +59,8 @@ import { openListedArtifact } from './sessionCardActions';
 import { openLink, openWebviewUrl } from './webviewSecurity';
 import { MADE_CSS, MADE_SCRIPT, PATCH_SCRIPT, RUSH_THEME_CSS, THUMB_SCRIPT, escapeHtml } from '../shared/sessionCards';
 import { REPLY_BOX_CSS, REPLY_SCRIPT } from '../shared/replyBox';
+import { LEAD_TAB_CSS, renderLeadTab } from '../core/leadView';
+import { leadPanel } from './lead.vscode';
 import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
@@ -88,8 +90,8 @@ const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const REVIEW_PREFS_KEY = 'agents.projectPanel.reviewPrefs';
 const FRESH_MS = 60_000;
 
-type TabId = 'sessions' | 'tickets' | 'prs' | 'settings';
-const TABS: readonly TabId[] = ['sessions', 'tickets', 'prs', 'settings'];
+type TabId = 'sessions' | 'tickets' | 'prs' | 'lead' | 'settings';
+const TABS: readonly TabId[] = ['sessions', 'tickets', 'prs', 'lead', 'settings'];
 const DEFAULT_AGENT_KEY = 'agents.defaultAgentTitle';
 const SECONDARY_AGENT_KEY = 'agents.secondaryAgentTitle';
 const VIEW_ID = 'agentsProject.panel';
@@ -99,7 +101,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; step?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; step?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -113,6 +115,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   view: PanelHost | undefined;
   readonly dock = new PanelDock({ viewType: 'agents.project', command: 'agents.project.popOut', title: 'Project', attach: (host) => this.attach(host) });
   private active: TabId;
+  private leadProject: string | undefined;
+  private leadSub: vscode.Disposable | undefined;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
   constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
@@ -138,6 +142,13 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'refresh') this.controller.refresh();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
       else if (msg.type === 'open') openWebviewUrl(msg.url, msg.external === true);
+      // The Lead tab: each gesture is one bridge call, which is one `agents lead …` verb.
+      else if (msg.type === 'leadAsk' && typeof msg.text === 'string' && msg.text.trim()) void leadPanel()?.ask(msg.text.trim());
+      else if (msg.type === 'leadTalk') void leadPanel()?.talk();
+      else if (msg.type === 'leadConfirm' && typeof msg.key === 'string') void leadPanel()?.confirm(msg.key);
+      else if (msg.type === 'leadConfirmAll' && typeof msg.tokens === 'string') void leadPanel()?.confirmAll(msg.tokens.split(' ').filter(Boolean));
+      else if (msg.type === 'leadRef') void leadPanel()?.openRef(msg.ref, msg.external === true);
+      else if (msg.type === 'leadRefresh') void this.load('lead', true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
@@ -186,11 +197,20 @@ class ProjectView implements vscode.WebviewViewProvider {
       dispose: () => {
         onMessage.dispose();
         onVisible.dispose();
+        this.leadSub?.dispose();
+        this.leadSub = undefined;
         this.view = undefined;
         for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
         sessionStreamDemand.setProjectSessionsVisible(false);
       },
     };
+  }
+
+  /** The Lead tab, drawn again from the bridge whenever the Lead or its mic changes. */
+  private drawLead(): void {
+    const lead = leadPanel();
+    if (!lead || this.active !== 'lead' || !this.view?.visible) return;
+    this.post('lead', renderLeadTab(lead.model(this.leadProject)));
   }
 
   private syncDemand(): void {
@@ -252,6 +272,15 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.post(tab, '<div class="empty">No project found for this folder. <a href="#" data-pick>Pick a project</a></div>');
       return;
     }
+    if (tab === 'lead') {
+      const lead = leadPanel();
+      if (!lead) { this.post(tab, '<div class="err">The Lead is not loaded in this window.</div>'); return; }
+      this.leadProject = project.name;
+      if (!this.leadSub) this.leadSub = lead.onChange(() => this.drawLead());
+      this.drawLead();
+      void lead.load(project.name, force);
+      return;
+    }
     if (tab !== 'tickets' && this.controller.ticketsOnly(project)) {
       this.post(tab, `<div class="empty">${escapeHtml(project.name)} is a Linear project no agents project links, so it has tickets but no sessions or pull requests here.</div>`);
       return;
@@ -290,6 +319,8 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   /** The title bar's gear and ⌃1–⌃4: the panel comes up on that tab, through the page's own switch. */
   async open(tab: TabId): Promise<void> {
+    // Not drawn yet: its ready message asks for the tab, so that is the one it shows.
+    if (!this.view) { this.active = tab; void this.context.workspaceState.update(TAB_KEY, tab); }
     await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     void this.view?.webview.postMessage({ type: 'choose', tab });
   }
@@ -1209,6 +1240,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-reply .reply-box textarea { resize: none; min-height: 32px; border-radius: 8px; }
   .fc-reply .reply-box .reply-mic { top: 4px; right: 4px; }
 ${REPLY_BOX_CSS}
+${LEAD_TAB_CSS}
 ${MADE_CSS}
   .fc-made .made { margin: 7px -11px 0; }
   .fc-made .made.chips { margin: 0; }
@@ -1381,6 +1413,7 @@ ${MADE_CSS}
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
+  <button class="tab" role="tab" data-tab="lead" aria-selected="false" title="Lead: ask or tell this project's Lead, by voice (⌥Space) or text"><svg class="ti" viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6"/></svg><span class="lbl">Lead</span></button>
   <div class="sctl"></div>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
@@ -1516,6 +1549,18 @@ ${MADE_SCRIPT}
     const b = mergeBtn(key); if (!b) return;
     b.className = 'rs undo'; b.textContent = 'Undo · ' + left; b.title = 'Stop this merge';
   }
+  // The Lead tab's box is data-keep (what you type survives a redraw); its mic and busy
+  // state arrive as attributes on .lead-ask and are copied onto the box here.
+  function syncLeadBox() {
+    const ask = main.querySelector('.lead-ask'); if (!ask) return;
+    const box = ask.querySelector('.reply-box'); const mic = ask.dataset.mic || 'idle';
+    box.classList.toggle('listening', mic === 'listening'); box.classList.toggle('transcribing', mic === 'transcribing');
+    const d = box.querySelector('.dictation'); if (d) d.hidden = mic === 'idle';
+    const t = box.querySelector('.dict-t'); if (t) t.textContent = mic === 'transcribing' ? 'transcribing…' : '';
+    const b = box.querySelector('#lead-mic'); if (b) b.setAttribute('aria-pressed', String(mic === 'listening'));
+    const input = box.querySelector('#lead-input'); if (input) input.placeholder = ask.dataset.busy === 'true' ? 'The Lead is working…' : 'Ask the Lead… (Enter asks)';
+    main.scrollTop = main.scrollHeight;
+  }
   const tabs = [...document.querySelectorAll('.tab')];
   const scroll = {};
   let current = 'sessions';
@@ -1530,10 +1575,10 @@ ${MADE_SCRIPT}
   }
   // Settings > Tabs: Review and Issues can go. Sessions alone needs no tab to choose it
   // while it shows; from Settings it stays, as the way back.
-  let tabsShown = { prs: true, tickets: true };
+  let tabsShown = { prs: true, tickets: true, lead: true };
   function syncTabs() {
     for (const t of document.querySelectorAll('.tabs .tab')) {
-      t.hidden = t.dataset.tab === 'sessions' ? !tabsShown.prs && !tabsShown.tickets && current === 'sessions' : !tabsShown[t.dataset.tab];
+      t.hidden = t.dataset.tab === 'sessions' ? !tabsShown.prs && !tabsShown.tickets && !tabsShown.lead && current === 'sessions' : !tabsShown[t.dataset.tab];
     }
   }
   function choose(tab) {
@@ -1585,6 +1630,7 @@ ${MADE_SCRIPT}
       observeThumbs(main);
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
+      if (m.tab === 'lead') syncLeadBox();
       if (m.tab === 'sessions') {
         syncBulk(); syncFrontReply(typing); drawFrontMade();
         const box = activityBox();
@@ -1600,7 +1646,7 @@ ${MADE_SCRIPT}
       shownProject = m.name;
     }
     else if (m.type === 'tabs') {
-      tabsShown = { prs: m.prs, tickets: m.tickets };
+      tabsShown = { prs: m.prs, tickets: m.tickets, lead: true };
       if (!tabsShown[current] && current !== 'sessions' && current !== 'settings') choose('sessions');
       syncTabs();
     }
@@ -1673,6 +1719,16 @@ ${MADE_SCRIPT}
     card.appendChild(box);
   }
   document.addEventListener('click', (e) => {
+    if (current === 'lead' && e.target.closest) {
+      const ref = e.target.closest('[data-lead-ref]');
+      if (ref) { e.preventDefault(); vscode.postMessage({ type: 'leadRef', ref: JSON.parse(ref.dataset.leadRef), external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+      const one = e.target.closest('[data-lead-confirm]');
+      if (one && !one.disabled) { one.disabled = true; vscode.postMessage({ type: 'leadConfirm', key: one.dataset.leadConfirm }); return; }
+      const all = e.target.closest('[data-lead-confirm-all]');
+      if (all && !all.disabled) { all.disabled = true; vscode.postMessage({ type: 'leadConfirmAll', tokens: all.dataset.leadConfirmAll }); return; }
+      if (e.target.closest('#lead-mic')) { vscode.postMessage({ type: 'leadTalk' }); return; }
+      if (e.target.closest('[data-lead-refresh]')) { vscode.postMessage({ type: 'leadRefresh' }); return; }
+    }
     // A card's ⋯ menu: its summary toggles it; a click anywhere else closes it.
     main.querySelectorAll('.cmore[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
     // Copy, on a card or in its ⋯ menu: the text goes to the clipboard through the host.
@@ -1839,6 +1895,14 @@ ${MADE_SCRIPT}
     reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
+    if (e.target && e.target.id === 'lead-input') {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        const text = e.target.value.trim();
+        if (text && main.querySelector('.lead-ask')?.dataset.busy !== 'true') { e.target.value = ''; vscode.postMessage({ type: 'leadAsk', text }); }
+      }
+      return;
+    }
     // The reply box takes its own keys; the activity box scrolls with the arrow keys.
     if (e.target.closest && e.target.closest('.fc-reply, .fc-act ol')) return;
     // Other…: Enter sends what was typed (with the same Undo setting), Escape closes the box.

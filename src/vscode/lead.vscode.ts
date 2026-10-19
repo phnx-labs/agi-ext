@@ -1,8 +1,8 @@
-// The Lead in docked mode: ⌥Space opens VS Code's own quick input at the top
-// center for one turn, the last summary sits in the status bar, and the whole
-// conversation is an editor tab (src/vscode/leadTab.vscode.ts). Every gesture is
-// one `agents lead …` verb through src/core/lead.ts; agents-cli owns the Lead's
-// process, so closing the overlay (Esc) never stops a turn.
+// The Lead in the editor: the Project panel's ✳ Lead tab is the conversation
+// (src/core/leadView.ts draws it; src/vscode/projectPanel.vscode.ts hosts it), ⌥Space
+// opens that tab and talks, and the last summary sits in the status bar. Every gesture
+// is one `agents lead …` verb through src/core/lead.ts; agents-cli owns the Lead's
+// process, so nothing here ever stops a turn.
 //
 // When ~/.agents/lead/surface.json says "bubble", FastWispr owns ⌥Space: the
 // keybinding's `agents.lead.bubble` clause lets the key through, and only the
@@ -10,29 +10,23 @@
 
 import * as vscode from 'vscode';
 import {
-  LeadClient, ageText, isWebUrl, answerLines, readSurface, refDescription, refLabel, uniqueRefs, watchSurface, writeSurface,
-  type LeadRef, type LeadSnapshot, type LeadSurface, type LeadTurn,
+  LeadClient, ageText, isWebUrl, parseLeadRef, readSurface, refKey, watchSurface, writeSurface,
+  type LeadContext, type LeadHistoryTurn, type LeadRef, type LeadSnapshot, type LeadStatus, type LeadSurface,
 } from '../core/lead';
-import { MIC_IDLE, PressGate, nextMic, type MicEvent, type MicMachine, type MicOrigin, type MicUpdate } from '../core/leadInput';
+import { MIC_IDLE, PressGate, nextMic, type MicEvent, type MicMachine, type MicUpdate } from '../core/leadInput';
+import { mergeTurns, type LeadTabModel } from '../core/leadView';
 import { dictation } from './dictation.vscode';
-import { LeadTab } from './leadTab.vscode';
+import { frontTerminal, terminalTabNumbers } from './frontTab.vscode';
+import * as terminals from './terminals.vscode';
 import { openLink } from './webviewSecurity';
-
-type Row = vscode.QuickPickItem & { act?: () => unknown; confirm?: string; ref?: LeadRef };
-
-const MIC: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('mic'), tooltip: 'Talk: click (or ⌥Space) to start, again to send' };
-const MIC_ON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('mic-filled'), tooltip: 'Listening: click (or ⌥Space) to stop and send' };
-const OPEN_TAB: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('link-external'), tooltip: 'Open the whole conversation as a tab' };
-const CONFIRM: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('check'), tooltip: 'Confirm: run it' };
-const IN_LINEAR: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('link-external'), tooltip: 'Open in Linear' };
 
 /** A PR's page: its url from the Lead, else github.com/<repo>/pull/<n>. */
 function prUrl(r: Extract<LeadRef, { kind: 'pr' }>): string {
   return r.url && isWebUrl(r.url) ? r.url : `https://github.com/${r.repo}/pull/${r.number}`;
 }
 
-/** Open a ref: a ticket in Issues (its Linear page as a tab from the row's button), a PR's
- *  GitHub page as a tab, a session in its tab (or resumed). */
+/** Open a ref: a ticket in Issues (its Linear page with Alt), a PR's GitHub page as a tab,
+ *  a session in its tab (or resumed). */
 async function openLeadRef(r: LeadRef, external = false): Promise<void> {
   if (r.kind === 'ticket') {
     if (external && r.url && isWebUrl(r.url)) { await openLink(r.url); return; }
@@ -44,24 +38,45 @@ async function openLeadRef(r: LeadRef, external = false): Promise<void> {
   await resumeAndNotify({ sessionId: r.id, host: r.host ?? '', title: r.title ?? '' });
 }
 
-function refIcon(ext: vscode.Uri, r: LeadRef): vscode.Uri {
-  return vscode.Uri.joinPath(ext, 'assets', r.kind === 'ticket' ? 'linear.svg' : r.kind === 'pr' ? 'github.png' : 'claude.png');
+/** What the editor shows right now: the tab in front and every agent tab with its number. */
+function editorContext(): LeadContext {
+  const numbers = terminalTabNumbers();
+  const front = frontTerminal();
+  const tabs: LeadContext['tabs'] = [];
+  for (const [t, tab] of numbers) {
+    const sessionId = terminals.getByTerminal(t)?.sessionId;
+    if (sessionId) tabs.push({ sessionId, title: t.name, tab });
+  }
+  tabs.sort((a, b) => (a.tab ?? 0) - (b.tab ?? 0));
+  const frontId = front ? terminals.getByTerminal(front)?.sessionId : undefined;
+  const frontTab = frontId ? tabs.find((t) => t.sessionId === frontId) : undefined;
+  return { ...(frontTab ? { front: frontTab } : {}), tabs };
 }
 
-/** A row's identity: what it shows and whether it has a button. */
-const rowKey = (r: Row): string => [r.kind ?? 0, r.label, r.description ?? '', r.buttons?.length ?? 0, r.confirm ?? ''].join('\u0001');
+/** What the Project panel's Lead tab needs from the Lead, and the gestures it sends back. */
+export interface LeadPanelBridge {
+  model(project: string | undefined): LeadTabModel;
+  /** Read history and status: when the tab shows and on Refresh, never on a timer. */
+  load(project: string, force: boolean): Promise<void>;
+  onChange(fn: () => void): vscode.Disposable;
+  ask(text: string): Promise<void>;
+  talk(): Promise<void>;
+  confirm(token: string): Promise<void>;
+  confirmAll(tokens: string[]): Promise<void>;
+  /** Only a ref the tab was given opens; page text never becomes a target. */
+  openRef(ref: unknown, external: boolean): Promise<void>;
+}
 
-const toolRow = (t: LeadTurn['tools'][number]): Row => ({
-  label: `${t.state === 'run' ? '$(sync~spin)' : t.state === 'ok' ? '$(check)' : '$(error)'} ${t.label}`,
-  description: t.state === 'run' ? (t.cmd ?? '') : t.secs !== undefined ? `${t.secs < 0.05 ? '<0.05' : t.secs.toFixed(2)} s` : t.state === 'fail' ? 'failed' : '',
-  alwaysShow: true,
-});
+let bridge: LeadPanelBridge | undefined;
 
-class LeadController {
+/** The Lead tab's bridge, once the Lead is registered. */
+export function leadPanel(): LeadPanelBridge | undefined {
+  return bridge;
+}
+
+class LeadController implements LeadPanelBridge {
   readonly client = new LeadClient();
   private readonly status: vscode.StatusBarItem;
-  private qp: vscode.QuickPick<Row> | undefined;
-  private overlaySig = '';
   private surface: LeadSurface = readSurface();
   /** ⌥Space arrives as a stream of repeats while held; one press is one gesture. */
   private readonly keys = new PressGate();
@@ -69,23 +84,19 @@ class LeadController {
   private mic: MicMachine = MIC_IDLE;
   private readonly posts = new Map<number, (u: MicUpdate) => void>();
   private project: string | undefined;
-  private tab: LeadTab;
+  private history: LeadHistoryTurn[] = [];
+  private historyFor: string | undefined;
+  private leadStatus: LeadStatus | null = null;
+  private loading = false;
+  private loadError: string | undefined;
+  private shownRefs = new Map<string, LeadRef>();
+  private readonly changed = new vscode.EventEmitter<void>();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.status = vscode.window.createStatusBarItem('agents.lead', vscode.StatusBarAlignment.Left, 99);
     this.status.name = 'Lead';
     this.status.command = 'agents.lead.open';
-    this.tab = new LeadTab(context, this.client, {
-      project: () => this.resolveProject(),
-      openRef: (r, external) => openLeadRef(r, external),
-      ask: (text) => this.send(text),
-      talk: () => this.toggleMic('tab'),
-      mic: () => this.mic.phase,
-      confirm: (token) => this.confirm(token),
-      setSurface: (s) => this.setSurface(s),
-      surface: () => this.surface,
-    });
-    context.subscriptions.push(this.status, this.client.onChange((s) => this.render(s)), { dispose: () => this.client.dispose() });
+    context.subscriptions.push(this.status, this.changed, this.client.onChange((s) => this.render(s)), { dispose: () => this.client.dispose() });
     // The age in the status bar reads "5m", "1h"; redraw it, nothing else, twice a minute.
     const ageTimer = setInterval(() => this.renderStatus(this.client.snapshot()), 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(ageTimer) });
@@ -94,7 +105,6 @@ class LeadController {
       context.subscriptions.push(watchSurface((s) => {
         this.surface = s;
         void vscode.commands.executeCommand('setContext', 'agents.lead.bubble', s === 'bubble');
-        if (s === 'bubble') this.qp?.hide();
         this.render(this.client.snapshot());
       }));
     } catch (e) {
@@ -112,31 +122,34 @@ class LeadController {
 
   // ── Commands ──
 
-  /** `agents.lead.ask [text]`: open the overlay, and send `text` when given (for a caller such as a search row). */
-  async ask(text?: unknown): Promise<void> {
-    const sending = typeof text === 'string' && text.trim();
-    // Without text this is the key (or the palette): a held ⌥Space opens the overlay once.
-    if (!sending && !this.keys.press(Date.now())) return;
-    const project = await this.resolveProject();
-    if (!project) {
-      void vscode.window.showWarningMessage('The Lead works per project. Pick one in the Project panel first.', 'Switch Project')
-        .then((c) => c && vscode.commands.executeCommand('agents.project.pick'));
-      return;
-    }
-    this.openOverlay(project);
-    if (typeof text === 'string' && text.trim()) await this.send(text.trim());
+  /** The Lead tab in the Project panel, brought forward. */
+  async openTab(): Promise<void> {
+    await vscode.commands.executeCommand('agents.project.tab', 'lead');
   }
 
-  /** `agents.lead.talk`: ⌥Space while the overlay is open. A held key is one press. */
-  async talk(): Promise<void> {
+  /** `agents.lead.ask [text]`: open the Lead tab, and send `text` when given (for a caller such as a search row). */
+  async askCommand(text?: unknown): Promise<void> {
+    await this.openTab();
+    if (typeof text === 'string' && text.trim()) await this.ask(text.trim());
+  }
+
+  /** `agents.lead.talk` (⌥Space): open the Lead tab and start or stop talking. A held key is one press. */
+  async talkCommand(): Promise<void> {
     if (!this.keys.press(Date.now())) return;
-    await this.toggleMic('overlay');
+    await this.openTab();
+    await this.talk();
   }
 
-  async toggleMic(origin: MicOrigin): Promise<void> {
+  async talk(): Promise<void> {
     if (this.mic.phase === 'idle' && this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working on the last turn.'); return; }
+    if (this.mic.phase === 'idle' && !await this.resolveProject()) { this.needProject(); return; }
     // Busy with someone else's recording: the reply box's (ours is `active`).
-    await this.dispatch({ kind: 'toggle', origin, now: Date.now(), recorderBusy: this.mic.active === undefined && dictation.state() !== 'idle' });
+    await this.dispatch({ kind: 'toggle', origin: 'tab', now: Date.now(), recorderBusy: this.mic.active === undefined && dictation.state() !== 'idle' });
+  }
+
+  private needProject(): void {
+    void vscode.window.showWarningMessage('The Lead works per project. Pick one in the Project panel first.', 'Switch Project')
+      .then((c) => c && vscode.commands.executeCommand('agents.project.pick'));
   }
 
   private async dispatch(e: MicEvent): Promise<void> {
@@ -150,16 +163,12 @@ class LeadController {
         await dictation.start(post);
       } else if (fx.kind === 'stop') await dictation.stop();
       else if (fx.kind === 'cancel') { const post = this.posts.get(fx.id); if (post) dictation.cancelFor(post); }
-      else if (fx.kind === 'send') void this.send(fx.text, fx.secs);
+      else if (fx.kind === 'send') void this.ask(fx.text, fx.secs);
       else if (fx.kind === 'error') void vscode.window.showErrorMessage(fx.message);
     }
     // A finished or dropped recording's post is no longer needed.
     for (const id of [...this.posts.keys()]) if (id !== this.mic.active) this.posts.delete(id);
     this.render(this.client.snapshot());
-  }
-
-  async openTab(): Promise<void> {
-    await this.tab.show();
   }
 
   setSurface(s: LeadSurface): void {
@@ -170,140 +179,87 @@ class LeadController {
     // The watcher sees it too; apply now so the key clause flips at once.
     this.surface = s;
     void vscode.commands.executeCommand('setContext', 'agents.lead.bubble', s === 'bubble');
-    if (s === 'bubble') this.qp?.hide();
     this.render(this.client.snapshot());
     void vscode.window.showInformationMessage(s === 'bubble'
       ? 'The Lead floats as a bubble: ⌥Space now belongs to FastWispr. The status bar and the Lead tab stay here.'
-      : 'The Lead is docked: ⌥Space opens it at the top of this window.');
+      : 'The Lead is docked: ⌥Space opens the Lead tab in the Project panel and talks.');
   }
 
-  async send(text: string, voiceSecs?: number): Promise<void> {
+  // ── The Lead tab's bridge ──
+
+  async ask(text: string, voiceSecs?: number): Promise<void> {
     const project = this.project ?? await this.resolveProject();
-    if (!project) return;
+    if (!project) { this.needProject(); return; }
     if (this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working on the last turn.'); return; }
-    await this.client.ask(project, text, voiceSecs);
+    const speak = vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', true);
+    await this.client.ask(project, text, { ...(voiceSecs !== undefined ? { voiceSecs } : {}), context: editorContext(), speak });
   }
 
   async confirm(token: string): Promise<void> {
+    if (!this.client.hasOpenConfirm(token)) return;
     if (this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working; confirm once it finishes.'); return; }
     await this.client.confirm(token);
   }
 
-  // ── The overlay ──
+  async confirmAll(tokens: string[]): Promise<void> {
+    if (this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working; confirm once it finishes.'); return; }
+    await this.client.confirmAll(tokens.filter((t) => this.client.hasOpenConfirm(t)));
+  }
 
-  private openOverlay(project: string): void {
-    if (this.qp) { this.qp.show(); return; }
-    const qp = vscode.window.createQuickPick<Row>();
-    this.qp = qp;
-    qp.ignoreFocusOut = false;
-    qp.matchOnDescription = false;
-    qp.matchOnDetail = false;
-    qp.placeholder = 'Ask or tell the Lead… (⌥Space again to talk)';
-    qp.onDidChangeValue(() => this.renderOverlay(this.client.snapshot()));
-    qp.onDidTriggerButton((b) => {
-      if (b === OPEN_TAB) { qp.hide(); void this.openTab(); } else void this.toggleMic('overlay');
-    });
-    qp.onDidTriggerItemButton(({ item, button }) => {
-      if (button === CONFIRM && item.confirm) void this.confirm(item.confirm);
-      else if (button === IN_LINEAR && item.ref) void openLeadRef(item.ref, true);
-    });
-    qp.onDidAccept(() => {
-      const row = qp.activeItems[0];
-      if (row?.act) void row.act();
-      else if (qp.value.trim() && !this.client.busy) { const v = qp.value.trim(); qp.value = ''; void this.send(v); }
-    });
-    // Esc closes the overlay; the turn runs on and lands in the status bar.
-    qp.onDidHide(() => {
-      // Esc while talking drops the recording: nothing is sent.
-      void this.dispatch({ kind: 'cancel', origin: 'overlay' });
-      void vscode.commands.executeCommand('setContext', 'agents.lead.overlayOpen', false);
-      qp.dispose();
-      if (this.qp === qp) { this.qp = undefined; this.overlaySig = ''; }
-    });
+  async openRef(ref: unknown, external: boolean): Promise<void> {
+    const r = parseLeadRef(ref);
+    const shown = r ? this.shownRefs.get(refKey(r)) : undefined;
+    if (shown) await openLeadRef(shown, external);
+  }
+
+  onChange(fn: () => void): vscode.Disposable {
+    return this.changed.event(fn);
+  }
+
+  async load(project: string, force: boolean): Promise<void> {
+    if (!force && this.historyFor === project) return;
     this.project = project;
-    this.renderOverlay(this.client.snapshot());
-    void vscode.commands.executeCommand('setContext', 'agents.lead.overlayOpen', true);
-    qp.show();
+    this.historyFor = project;
+    this.loading = true;
+    this.changed.fire();
+    const [h, s] = await Promise.allSettled([this.client.history(project, 100), this.client.status(project)]);
+    if (project !== this.historyFor) return;
+    this.loading = false;
+    this.history = h.status === 'fulfilled' ? h.value : [];
+    this.leadStatus = s.status === 'fulfilled' ? s.value : null;
+    const errs = [h, s].filter((x): x is PromiseRejectedResult => x.status === 'rejected').map((x) => x.reason instanceof Error ? x.reason.message : String(x.reason));
+    this.loadError = errs[0];
+    const last = this.history[this.history.length - 1];
+    if (last?.summary && last.at) this.client.noteSummary(last.summary, last.at);
+    this.changed.fire();
   }
 
-  private stateWord(s: LeadSnapshot): string {
-    return this.mic.phase === 'listening' ? 'listening' : this.mic.phase === 'transcribing' ? 'transcribing' : s.busy ? 'busy' : s.engine ?? 'ready';
-  }
-
-  private renderOverlay(s: LeadSnapshot): void {
-    const qp = this.qp;
-    if (!qp) return;
-    qp.title = `Lead · ${this.project ?? s.project ?? 'no project'} · ${this.stateWord(s)}`;
-    qp.busy = s.busy || this.mic.phase === 'transcribing';
-    qp.buttons = [this.mic.phase === 'listening' ? MIC_ON : MIC, OPEN_TAB];
-    qp.enabled = true;
-    const rows: Row[] = [];
-    const typed = qp.value.trim();
-    if (typed) {
-      rows.push(s.busy
-        ? { label: '$(watch) The Lead is still working', description: 'send once this turn finishes', alwaysShow: true }
-        : { label: `$(send) Ask the Lead: “${typed}”`, alwaysShow: true, act: () => { qp.value = ''; return this.send(typed); } });
-    }
-    const t = s.current;
-    if (t) rows.push(...this.turnRows(t));
-    // A stream event that changes nothing visible must not move the selection; one that
-    // does keeps the row you were on when it is still there.
-    const sig = rows.map(rowKey).join('\u0002');
-    if (sig === this.overlaySig) return;
-    this.overlaySig = sig;
-    const active = qp.activeItems[0] ? rowKey(qp.activeItems[0]) : undefined;
-    qp.items = rows;
-    const keep = active !== undefined ? rows.find((r) => rowKey(r) === active) : undefined;
-    if (keep) qp.activeItems = [keep];
-  }
-
-  private turnRows(t: LeadTurn): Row[] {
-    const ext = this.context.extensionUri;
-    const rows: Row[] = [];
-    if (t.ask) rows.push({ kind: vscode.QuickPickItemKind.Separator, label: `${t.voiceSecs !== undefined ? '🎙' : '⌨'} ${t.ask}` });
-    else rows.push({ kind: vscode.QuickPickItemKind.Separator, label: 'Confirmed' });
-    rows.push(...t.tools.map(toolRow));
-    if (!t.finished && !t.text) {
-      const word = t.phase === 'booting' ? 'starting the Lead…' : t.phase === 'tool' ? 'running a tool…' : 'thinking…';
-      rows.push({ label: `$(loading~spin) ${word}`, alwaysShow: true });
-    }
-    const answer = answerLines(t.text);
-    answer.forEach((line, i) => rows.push({
-      label: i === 0 ? `$(comment) ${line}` : `      ${line}`,
-      alwaysShow: true,
-      act: () => { this.qp?.hide(); return this.openTab(); },
-    }));
-    if (t.error) rows.push({ label: `$(error) ${t.error}`, alwaysShow: true });
-    for (const c of t.confirms) {
-      rows.push({
-        label: `$(warning) ${c.label}`,
-        description: c.state === 'open' ? 'press ✓ to run it' : c.state === 'running' ? 'running…' : c.state === 'done' ? 'done' : `failed${c.message ? ': ' + c.message : ''}`,
-        alwaysShow: true,
-        ...(c.state === 'open' ? { buttons: [CONFIRM], confirm: c.token, act: () => this.confirm(c.token) } : {}),
-      });
-    }
-    const refs = uniqueRefs(t.refs);
-    if (refs.length) rows.push({ kind: vscode.QuickPickItemKind.Separator, label: 'Open' });
-    for (const r of refs) {
-      rows.push({
-        label: refLabel(r), description: refDescription(r), iconPath: refIcon(ext, r), alwaysShow: true, ref: r,
-        ...(r.kind === 'ticket' && r.url ? { buttons: [IN_LINEAR] } : {}),
-        act: () => { this.qp?.hide(); return openLeadRef(r); },
-      });
-    }
-    if (t.timing && t.finished) {
-      const parts = Object.entries(t.timing).filter(([, v]) => (v ?? 0) > 0).map(([k, v]) => `${k} ${(v as number).toFixed(2)}`);
-      if (parts.length) rows.push({ label: `$(clock) ${parts.join(' · ')} s`, alwaysShow: true });
-    }
-    return rows;
+  model(project: string | undefined): LeadTabModel {
+    const snap = this.client.snapshot();
+    const sameProject = !!project && this.historyFor === project;
+    const live = (snap.project === undefined || snap.project === project) ? [...snap.turns, ...(snap.current ? [snap.current] : [])] : [];
+    const turns = mergeTurns(sameProject ? this.history : [], live);
+    this.shownRefs = new Map(turns.flatMap((t) => [...t.refs, ...t.segments.flatMap((x) => x.kind === 'ref' ? [x.ref] : [])]).map((r) => [refKey(r), r]));
+    const st = sameProject ? this.leadStatus : null;
+    return {
+      project: project ?? '',
+      turns,
+      busy: snap.busy,
+      mic: this.mic.phase,
+      ...(st?.model ? { model: st.model } : {}),
+      ...(snap.engine ?? st?.state ? { state: snap.engine ?? st?.state } : {}),
+      ...(st?.host ? { host: st.host } : {}),
+      loading: sameProject && this.loading,
+      ...(sameProject && this.loadError ? { error: this.loadError } : {}),
+      now: Date.now(),
+    };
   }
 
   // ── The status bar ──
 
   private render(s: LeadSnapshot): void {
     this.renderStatus(s);
-    this.renderOverlay(s);
-    this.tab.update();
+    this.changed.fire();
   }
 
   private renderStatus(s: LeadSnapshot): void {
@@ -314,11 +270,11 @@ class LeadController {
         : s.last ? `✳ Lead · ${s.last.summary} · ${ageText(Date.now() - s.last.at)}`
           : bubble ? '✳ Lead · floating' : '✳ Lead · ⌥Space';
     const md = new vscode.MarkdownString(undefined, true);
-    md.isTrusted = { enabledCommands: ['agents.lead.open', 'agents.lead.ask', 'agents.lead.float', 'agents.lead.dock'] };
-    md.appendMarkdown(s.last ? 'Last update from the Lead. Click for the whole conversation.\n\n' : 'The Lead: one long-lived agent for this project.\n\n');
+    md.isTrusted = { enabledCommands: ['agents.lead.open', 'agents.lead.talk', 'agents.lead.float', 'agents.lead.dock'] };
+    md.appendMarkdown(s.last ? 'Last update from the Lead. Click for the conversation.\n\n' : 'The Lead: one long-lived agent for this project.\n\n');
     md.appendMarkdown(bubble
       ? '[Open the conversation](command:agents.lead.open) · [Dock into VSCodium](command:agents.lead.dock)'
-      : '[Ask](command:agents.lead.ask) (⌥Space) · [Open the conversation](command:agents.lead.open) · [Float as a bubble](command:agents.lead.float)');
+      : '[Talk](command:agents.lead.talk) (⌥Space) · [Open the conversation](command:agents.lead.open) · [Float as a bubble](command:agents.lead.float)');
     this.status.tooltip = md;
   }
 }
@@ -326,9 +282,11 @@ class LeadController {
 /** @public loaded with require('./lead.vscode') in extension.ts, which knip cannot see */
 export function registerLead(context: vscode.ExtensionContext): void {
   const lead = new LeadController(context);
+  bridge = lead;
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.lead.ask', (text?: unknown) => lead.ask(text)),
-    vscode.commands.registerCommand('agents.lead.talk', () => lead.talk()),
+    { dispose: () => { if (bridge === lead) bridge = undefined; } },
+    vscode.commands.registerCommand('agents.lead.ask', (text?: unknown) => lead.askCommand(text)),
+    vscode.commands.registerCommand('agents.lead.talk', () => lead.talkCommand()),
     vscode.commands.registerCommand('agents.lead.open', () => lead.openTab()),
     vscode.commands.registerCommand('agents.lead.float', () => lead.setSurface('bubble')),
     vscode.commands.registerCommand('agents.lead.dock', () => lead.setSurface('docked')),

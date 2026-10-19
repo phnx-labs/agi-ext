@@ -40,6 +40,11 @@ if (verb === 'ask') {
   out({ type: 'text', delta: reply.slice(0, 20) });
   out({ type: 'text', delta: reply.slice(20) });
   if (/stop/i.test(text)) out({ type: 'confirm', token: 'c_9', action: 'stop', sessionId: 'abc12345', label: 'Stop “E2B Pro upgrade”' });
+  if (/three things/i.test(text)) {
+    out({ type: 'confirm', token: 'c_a', action: 'send', sessionId: 'abc12345', label: 'Message “Automations”', detail: 'From now on, skip draft PRs.' });
+    out({ type: 'confirm', token: 'c_b', action: 'pr', label: 'Close phnx-labs/agents#4281', detail: 'WIP: blog draft' });
+    out({ type: 'confirm', token: /fails/i.test(text) ? 'c_x' : 'c_c', action: 'start', label: 'Start codex', detail: 'Fix the flaky console test' });
+  }
   out({
     type: 'done', turn: 't_1', text: reply, summary: 'Two sessions wait on you.',
     refs: [
@@ -51,6 +56,7 @@ if (verb === 'ask') {
   });
 } else if (verb === 'confirm') {
   const token = argv[2];
+  if (['c_a', 'c_b', 'c_c'].includes(token)) { out({ type: 'done', turn: `t_${token}`, text: `Did ${token}.`, summary: `Did ${token}.`, refs: [] }); return; }
   if (token !== 'c_9') { out({ type: 'error', message: `confirm token ${token} expired` }); process.exit(1); }
   out({ type: 'tool', id: 'u2', label: 'agents ps stop', cmd: 'agents ps stop abc12345', state: 'run' });
   out({ type: 'tool', id: 'u2', label: 'agents ps stop', state: 'ok', secs: 0.6 });
