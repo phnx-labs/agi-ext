@@ -1,5 +1,5 @@
-// The registered agents projects (`agents projects list --json`), cached for a
-// minute and shared by the Project panel and the resume picker. It feeds the
+// The registered agents projects (`agents projects list --json`), reread at most
+// once a minute and shared by the Project panel and the resume picker. It feeds the
 // repository-path stopgap (`projectFallback`, src/core/projectPanel.ts): a
 // session the CLI filed under a name no registered project has, working in one of
 // the project's repositories, is listed with that project until agents-cli maps a
@@ -17,9 +17,19 @@ export function registrySnapshot(): ProjectRef[] | null {
   return held?.list ?? null;
 }
 
-/** Read the list unless a read in the last minute answered; one read at a time. */
+/** The list as last read; one read at a time. A list older than a minute is still
+ *  answered at once while a read replaces it, so no draw or click waits on the CLI
+ *  (a click waited up to 3 s on a loaded machine; owner video, 2026-10-19 1:27 PM).
+ *  `force` (the project menu, a pick) waits for the new read. */
 export function readRegistry(force = false): Promise<ProjectRef[]> {
-  if (!force && held && Date.now() - held.at < FRESH_MS) return Promise.resolve(held.list);
+  if (!force && held) {
+    if (Date.now() - held.at >= FRESH_MS) void reread().catch(() => undefined);
+    return Promise.resolve(held.list);
+  }
+  return reread();
+}
+
+function reread(): Promise<ProjectRef[]> {
   if (reading) return reading;
   reading = runAgentsArgs(['projects', 'list', '--json'], { timeout: 30_000 })
     .then(({ stdout }) => { const list = parseProjectList(stdout); held = { at: Date.now(), list }; return list; })

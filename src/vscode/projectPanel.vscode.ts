@@ -305,7 +305,9 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.controller.warmTicketFaces(project);
       const { html, count } = this.controller.sessions(project, view.webview);
       void view.webview.postMessage({ type: 'count', tab: 'sessions', n: count.shown, asks: count.asks });
-      this.post(tab, html);
+      // Most stream facts are another project's: the page already shows this list, so a
+      // copy of it (hundreds of KB for hundreds of sessions) is neither sent nor parsed.
+      if (html !== state.html) this.post(tab, html);
       this.postPalette();
       return;
     }
@@ -329,8 +331,11 @@ class ProjectView implements vscode.WebviewViewProvider {
     this.post(tab, html);
   }
 
+  private readonly redraws = createTrailingCoalesce();
+
+  /** A burst of redraws (stream facts, a click, the tab it fronts) is one draw plus one catch-up. */
   redrawSessions(): Promise<void> {
-    return this.load('sessions', false);
+    return coalesceTrailing(this.redraws, 'sessions', () => this.load('sessions', false));
   }
 
   /** The title bar's gear and ⌃1–⌃4: the panel comes up on that tab, through the page's own switch. */
@@ -603,7 +608,8 @@ class ProjectPanelController {
 
   /** Open PRs per repository, drawn as each repository answers. */
   async reviewByRepo(p: ProjectRef, force: boolean, partial: (html: string) => void): Promise<string> {
-    const repos = (await this.projectList()).find((x) => x.name === p.name)?.repos ?? [];
+    // The list as last read: Review's first draw waited on a fresh `agents projects list` before any PR read.
+    const repos = (await readRegistry()).find((x) => x.name === p.name)?.repos ?? [];
     if (repos.length < 2) return this.render('prs', p, force);
     const done = new Map<string, PrsModel['repos'][number]>();
     const slugs = repos.map((r) => r.slug);
@@ -1016,9 +1022,10 @@ class ProjectPanelController {
    *  always front it. Nothing is resumed or spawned. */
   select(sessionId: string, host: string | undefined, front: 'card' | 'always' | 'no' = 'no'): void {
     setAgentPanelSubjectFromProject(sessionId, host);
-    void this.view.redrawSessions();
-    if (front === 'no' || (front === 'card' && cardSettings(getSettings(this.context).cards).click !== 'front')) return;
-    terminals.getBySessionId(sessionId)?.terminal.show(false);
+    const tab = front === 'no' || (front === 'card' && cardSettings(getSettings(this.context).cards).click !== 'front') ? undefined : terminals.getBySessionId(sessionId)?.terminal;
+    // A tab that comes forward redraws the list from its own event; drawing here too was a second full draw per click.
+    if (!tab || tab === frontTerminal()) void this.view.redrawSessions();
+    tab?.show(false);
   }
 
   /** ⌘K's rows: every session the store holds (live and ended, any project), with its
@@ -1087,7 +1094,6 @@ class ProjectPanelController {
 }
 
 let activeController: ProjectPanelController | undefined;
-const sessionsCoalesce = createTrailingCoalesce();
 
 /** Called by extension.ts when a session-stream fact changed the store; the
  *  Sessions tab redraws from memory (no subprocess).
@@ -1095,8 +1101,7 @@ const sessionsCoalesce = createTrailingCoalesce();
 export function notifyProjectPanelSessionUpdate(): void {
   const controller = activeController;
   if (!controller) return;
-  // A burst of facts collapses into one redraw plus one catch-up, as in the other sidebar.
-  void coalesceTrailing(sessionsCoalesce, 'projectSessions', () => controller.redrawSessions());
+  void controller.redrawSessions();
 }
 
 /** @public loaded with require('./projectPanel.vscode') in extension.ts, which knip cannot see */
@@ -1209,7 +1214,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .r-none .arc { stroke: transparent; animation: none; }
   .rmeta { display: inline-flex; align-items: center; gap: 4px; color: var(--r-caption); font-size: 11px; font-family: var(--vscode-editor-font-family); }
   .warn { color: var(--r-warn); padding: 6px 0; }
-  .err { color: var(--r-bad); white-space: pre-wrap; padding: 8px 0; }
+  .err { color: var(--r-bad); white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 0; }
   .empty { color: var(--r-caption); padding: 8px 0; }
   .empty a { color: var(--vscode-textLink-foreground); }
   html, body { height: 100%; }
@@ -2050,6 +2055,10 @@ ${MADE_SCRIPT}
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
       if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, place: placeOf(card), top: card.getBoundingClientRect().top, at: Date.now() };
       if (!card.closest('.front-pin')) opening(card, 'Opening ' + card.dataset.title + '…');
+      // The rail moves on the click. A card changed here loses its hash, so the host's next draw always patches it back to what the host holds.
+      const rail = (c, on) => { if (c.closest('.front-pin') || c.classList.contains('sel') === on) return; c.classList.toggle('sel', on); c.removeAttribute('data-h'); };
+      for (const c of main.querySelectorAll('.card.sel')) rail(c, false);
+      for (const c of cardsOf('session', card.dataset.session)) rail(c, true);
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });
       return;
     }
