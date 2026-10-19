@@ -10,7 +10,7 @@ import { CARD_PARTS, cardSettings, LIST_PARTS, getQuickLaunchSlot, MERGE_METHODS
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'autoLabelInTabTitles', label: 'Auto labels', sub: 'Use the CLI title once the stream has one' },
-  { key: 'showSessionIdInTitles', label: 'Session id', sub: 'Append the short id to the title' },
+  { key: 'showSessionIdInTitles', label: 'Session id', sub: 'The short id before the session name' },
 ];
 
 /** The Session cards pickers: each key, its words, and its choices in order. */
