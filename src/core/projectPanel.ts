@@ -1341,3 +1341,82 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
   return head + partial + readingLine + errors + body + none + mergedHtml + '<div class="toast" hidden></div>';
 }
+
+// ── ⌘K: the session palette ───────────────────────────────────────────────
+// Drawn by the Project panel's own page over its list (owner video, 2026-10-19
+// 1:42 AM): VS Code's QuickPick re-sorted rows by label and could neither align the
+// details right nor show a preview. Sessions only, from the rows the store holds.
+
+/** One session for ⌘K: its row (with its tab here, when it has one), what it made and
+ *  the images you attached. */
+export interface PaletteEntry {
+  row: SessionLike;
+  made: SessionMade | null;
+  images: CardThumb[];
+}
+
+/** Ended rows ⌘K keeps, newest first; every live one is kept. */
+const PALETTE_ENDED_MAX = 150;
+
+/** Favorites first; then asks (the CLI's urgency, then the longest wait), what runs or
+ *  waits, idle turns (newest first), and ended sessions last (newest first). */
+export function paletteOrder(entries: PaletteEntry[], favorites: ReadonlySet<string>): PaletteEntry[] {
+  const bucket = (s: SessionLike) => {
+    const st = sessionStateOf(s);
+    return st === 'asks' || st === 'stuck' ? 0 : st === 'working' || st === 'waiting' || st === 'unknown' ? 1 : st === 'ended' ? 3 : 2;
+  };
+  const urgency = (s: SessionLike) => urgencyRank(urgencyOf(s.attention?.state === 'open' ? s.attention : null));
+  const since = (s: SessionLike) => { const t = askedAt(s); return Number.isFinite(t) ? t : Infinity; };
+  const sorted = [...entries].sort((a, b) => Number(favorites.has(b.row.sessionId)) - Number(favorites.has(a.row.sessionId))
+    || bucket(a.row) - bucket(b.row)
+    || (bucket(a.row) === 0 ? urgency(a.row) - urgency(b.row) || since(a.row) - since(b.row) : 0)
+    || b.row.lastActivityMs - a.row.lastActivityMs);
+  let ended = 0;
+  return sorted.filter((e) => favorites.has(e.row.sessionId) || bucket(e.row) !== 3 || ended++ < PALETTE_ENDED_MAX);
+}
+
+/** The first sentence of its recap, else of its latest words. */
+function firstSentence(s: SessionLike): string {
+  const text = plain(s.recap?.text ?? '') || agentLine(s);
+  return (text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text).slice(0, 160);
+}
+
+/** ⌘K's rows, in `paletteOrder`: the harness logo, the title (★ for a favorite), then
+ *  right-aligned the state, machine, age and tab; under it the PRs and pages it made,
+ *  the images you attached (a click opens a quick look) and its recap's first sentence.
+ *  The page filters them as you type (`paletteMatch`), so each row carries its words. */
+export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>): string {
+  return paletteOrder(entries, favorites).map(({ row: s, made, images }) => {
+    const state = sessionStateOf(s);
+    const title = cardTitle(s);
+    const fav = favorites.has(s.sessionId);
+    const asked = askedAt(s);
+    const age = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now);
+    const meta = [shortDevice(s.host), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
+    const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
+    const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);
+    const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
+    const note = firstSentence(s);
+    const ids = [s.sessionId.replace(/^session_/, ''), s.sessionId.replace(/^session_/, '').slice(0, 8)].join(' ');
+    const words = [shortDevice(s.host), s.host, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
+    return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}">`
+      + `${harnessLogo(s.agentType)}<span class="kt">${fav ? '<span class="kfav" title="Favorite">★</span>' : ''}${escapeHtml(title)}</span>`
+      + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span>${meta}</span>`
+      + `<span class="ksub">${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span></div>`;
+  }).join('');
+}
+
+/** How well a row matches what was typed; lower is better, null for no match. An exact
+ *  session id first, then a title that starts with it, a title holding every word, then
+ *  any other words the row carries. Self-contained: the page's script interpolates it. */
+export function paletteMatch(doc: { ids: string; title: string; text: string }, query: string): number | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return 3;
+  if (doc.ids.toLowerCase().split(' ').some((i) => i === q || (q.length >= 6 && /^[0-9a-f-]+$/.test(q) && i.startsWith(q)))) return 0;
+  const title = doc.title.toLowerCase();
+  if (title.startsWith(q)) return 1;
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.every((w) => title.includes(w))) return 2;
+  const hay = title + ' ' + doc.text.toLowerCase() + ' ' + doc.ids.toLowerCase();
+  return words.every((w) => hay.includes(w)) ? 3 : null;
+}

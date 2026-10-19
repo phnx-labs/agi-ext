@@ -26,6 +26,8 @@ import {
   renderPrs,
   prFixPrompt,
   renderPrsProgress,
+  paletteMatch,
+  renderPalette,
   renderSessions,
   nextThatNeedsYou,
   renderTickets,
@@ -48,9 +50,8 @@ import {
   type Ticket,
   type TicketGroup,
 } from '../core/projectPanel';
-import { SESSION_STATE_WORD, relTime, sessionStateOf, sparkline, waitFor } from '../shared/sessionState';
+import { SESSION_STATE_WORD, relTime, sessionStateOf, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
-import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, followFrontTerminal, revealAgentPanel, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
 import { deliverReply, renameSession } from './sessionReply';
 import { dictationMessage } from './dictation.vscode';
@@ -105,7 +106,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; step?: unknown; back?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; here?: unknown; answer?: unknown; step?: unknown; back?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -119,6 +120,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   view: PanelHost | undefined;
   readonly dock = new PanelDock({ viewType: 'agents.project', command: 'agents.project.popOut', title: 'Project', attach: (host) => this.attach(host) });
   private active: TabId;
+  private paletteOpen = false;
   private leadProject: string | undefined;
   private leadSub: vscode.Disposable | undefined;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
@@ -163,7 +165,9 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'favorite' && typeof msg.sessionId === 'string' && typeof msg.value === 'boolean') void this.controller.setFavorite(msg.sessionId, msg.value);
       else if (msg.type === 'rename' && typeof msg.sessionId === 'string' && typeof msg.name === 'string') this.controller.rename(msg.sessionId, msg.name);
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
-      else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
+      else if (msg.type === 'search') void this.openPalette();
+      else if (msg.type === 'paletteClosed') this.paletteOpen = false;
+      else if (msg.type === 'paletteGo' && typeof msg.sessionId === 'string') opened(this.controller.paletteGo(msg.sessionId, host, msg.here === true));
       else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
       else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') opened(this.controller.goToSession(msg.sessionId, host));
       else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') opened(this.controller.openArtifact(msg.sessionId, host, msg.path));
@@ -235,6 +239,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     const cached = this.tabs.get(this.active)!.html;
     if (cached) this.post(this.active, cached);
     else void this.load(this.active, false);
+    this.postPalette();
   }
 
   /** Which of Review and Issues Settings shows beside Sessions. */
@@ -300,6 +305,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       const { html, count } = this.controller.sessions(project, view.webview);
       void view.webview.postMessage({ type: 'count', tab: 'sessions', n: count.shown, asks: count.asks });
       this.post(tab, html);
+      this.postPalette();
       return;
     }
     const fresh = state.loadedFor === project.name && Date.now() - state.loadedAt < FRESH_MS;
@@ -332,6 +338,24 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (!this.view) { this.active = tab; void this.context.workspaceState.update(TAB_KEY, tab); }
     await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     void this.view?.webview.postMessage({ type: 'choose', tab });
+  }
+
+  /** ⌘K: the panel comes up on Sessions (its own view or the window it popped out into)
+   *  and its page draws the session palette over the list; nothing else is opened. */
+  async openPalette(): Promise<void> {
+    this.paletteOpen = true;
+    if (this.view) this.view.show(false);
+    else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+    void this.view?.webview.postMessage({ type: 'choose', tab: 'sessions' });
+    this.postPalette();
+  }
+
+  /** While ⌘K is open its rows follow the stream, as the list does. */
+  private postPalette(): void {
+    const view = this.view;
+    if (!this.paletteOpen || !view) return;
+    const waiting = !sessionPresentationStore.hasSeenReset();
+    void view.webview.postMessage({ type: 'palette', html: waiting ? '' : this.controller.palette(view.webview), waiting });
   }
 
   /** Scroll the card for this session into view, once the list has it. */
@@ -448,12 +472,6 @@ class ProjectView implements vscode.WebviewViewProvider {
     this.tabs.get(tab)!.html = html;
     if (tab === this.active) void this.view?.webview.postMessage({ type: 'html', tab, html });
   }
-}
-
-/** The harness's own logo for a ⌘K row, as its tab carries it. */
-function harnessIcon(extensionPath: string, agentType: string): vscode.IconPath | undefined {
-  const icon = BUILT_IN_AGENTS.find((a) => a.key === agentType)?.icon;
-  return icon ? buildIconPath(extensionPath, icon) : undefined;
 }
 
 /** One `linear` call in a project's Linear workspace. An unset profile is `default`, so the
@@ -1002,41 +1020,27 @@ class ProjectPanelController {
     terminals.getBySessionId(sessionId)?.terminal.show(false);
   }
 
-  /** ⌘K: artifacts, sessions, tickets and PRs this window already holds, plus
-   *  the Lead (src/vscode/searchPalette.vscode.ts). Enter shows the session (an
-   *  artifact's maker included) and brings its tab forward when it has one here;
-   *  nothing is resumed. Tickets and PRs are what the panel already read. */
-  searchSessions(): void {
-    const rows = preferLive(this.presented());
-    const sessions: PaletteSession[] = rows.map((r) => {
-      const like = r as unknown as SessionLike;
-      const state = sessionStateOf(like);
-      const opened = r.attention?.state === 'open' && r.attention.openedAt ? Date.parse(r.attention.openedAt) : NaN;
+  /** ⌘K's rows: every session the store holds (live and ended, any project), with its
+   *  tab here, what it made and the images you attached (`renderPalette`). Nothing is read. */
+  palette(webview: vscode.Webview): string {
+    const tabNumbers = terminalTabNumbers();
+    const previewUri = (f: string) => webview.asWebviewUri(vscode.Uri.file(f)).toString();
+    const entries = preferLive(this.presented()).map((r) => {
       const tab = terminals.getBySessionId(r.sessionId);
-      return {
-        sessionId: r.sessionId,
-        host: r.host,
-        title: sessionTitle(like),
-        text: [[r.ticket, r.prStatus ? `#${r.prStatus.number}` : '', r.branch, r.model, tab ? 'tab here' : ''].filter(Boolean).join(' · '), r.request?.headline ?? r.topic].filter(Boolean).join('\n'),
-        cwd: r.cwd,
-        worktreePath: r.worktreePath,
-        lastActivityMs: r.lastActivityMs,
-        state,
-        stateWords: paletteStateWords(like) + (state === 'asks' && Number.isFinite(opened) ? ` · ${waitFor(Date.now() - opened)}` : ''),
-        local: !remoteDeviceArg(r.host),
-        spark: sparkline(r.activityHistogram?.buckets),
-        icon: harnessIcon(this.context.extensionPath, r.agentType),
-      };
+      const row = { ...(r as unknown as SessionLike), tabHere: !!tab, tabIndex: tab ? tabNumbers.get(tab.terminal) : undefined };
+      const remoteDevice = remoteDeviceArg(r.host);
+      const card = sessionCardFields(r, { sessionId: r.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri });
+      return { row, made: sessionMade(card), images: requestImageThumbs(r, { home: os.homedir(), remoteDevice, exists: (f) => fs.existsSync(f), previewUri }) };
     });
-    const tickets = this.ticketsSeen.flatMap((g) => g.tickets.map((t) => ({ identifier: t.identifier, title: t.title, state: g.state, delegate: t.delegate, assignee: t.assignee })));
-    const prs = [...(this.reviewSeen?.done.values() ?? [])].flatMap((r) => r.open.map((p) => ({ repo: r.slug, number: p.number, title: p.title, url: p.url, author: p.author, date: p.date, ciState: p.ciState, isDraft: p.isDraft })));
-    openSearchPalette({
-      sessions,
-      tickets,
-      prs,
-      goToSession: (sessionId, host) => { this.select(sessionId, host, 'always'); this.view.reveal(sessionId); },
-      openTicket: (id) => { void this.view.openTicketTab(id); },
-    });
+    return renderPalette(entries, Date.now(), this.favorites());
+  }
+
+  /** Enter in ⌘K: a session with a tab here comes forward as a card click does; any other
+   *  goes where its focus or resume icon would take it. */
+  paletteGo(sessionId: string, host: string | undefined, here: boolean): Promise<void> | void {
+    if (here) { this.select(sessionId, host, 'always'); this.view.reveal(sessionId); return; }
+    setAgentPanelSubjectFromProject(sessionId, host);
+    return this.goToSession(sessionId, host);
   }
 
   /** The focus and resume icons: its tab comes to the front, else the live agent
@@ -1109,7 +1113,7 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
       void vscode.window.showErrorMessage(`Could not list projects: ${errorText(e)}`);
     })),
     // Internal: the session panel's ticket tile opens the ticket here.
-    vscode.commands.registerCommand('agents.searchSessions', () => controller.searchSessions()),
+    vscode.commands.registerCommand('agents.searchSessions', () => controller.view.openPalette()),
     vscode.commands.registerCommand('agents.nextNeedsYou', () => controller.nextNeedsYou()),
     // The list follows the tab in front: switching tabs moves its selection (owner video,
     // 2026-10-12), on either tab event, never with a flash (PHNX-4387).
@@ -1477,6 +1481,29 @@ ${MADE_CSS}
   .settings .doff { color: var(--r-faint); font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .err { color: var(--r-bad); }
   .settings .rbtn { flex: none; font: inherit; font-size: 11.5px; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); cursor: pointer; } .settings .rbtn:hover { background: var(--r-glass-hover); }
+  /* ⌘K: the session palette, drawn over the list (owner video, 2026-10-19 1:42 AM). */
+  .kscrim { position: fixed; inset: 0; z-index: 30; background: color-mix(in srgb, var(--vscode-sideBar-background) 55%, transparent); display: flex; justify-content: center; align-items: flex-start; padding: 36px 8px 8px; }
+  .kscrim[hidden], .kql[hidden] { display: none; }
+  .kpal { width: 100%; max-width: 640px; max-height: calc(100vh - 52px); display: flex; flex-direction: column; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 16px 44px rgba(0,0,0,.35); overflow: hidden; }
+  .kpal input { flex: none; border: 0; border-bottom: 1px solid var(--r-edge); padding: 10px 12px; font: inherit; font-size: 13px; color: var(--vscode-input-foreground); background: transparent; outline: none; }
+  .klist { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 4px; }
+  .krow { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 7px; row-gap: 3px; align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+  .krow[hidden] { display: none; }
+  .krow:hover { background: var(--r-glass-hover); } .krow[aria-selected="true"] { background: var(--r-selected, var(--r-glass-hover)); box-shadow: inset 2px 0 0 var(--r-gold-line); }
+  .krow .hx { width: 14px; height: 14px; border-radius: 3px; grid-row: 1; }
+  .krow .kt { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 12.5px; }
+  .krow .kfav { color: var(--r-gold-line); margin-right: 4px; }
+  .krow .kmeta { grid-column: 3; display: flex; align-items: center; gap: 6px; justify-content: flex-end; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
+  .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--r-caption); }
+  .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .krow.ended { opacity: .55; }
+  .kth { display: block; width: 46px; height: 28px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); outline: 1.5px dashed var(--r-faint); outline-offset: 1px; background: var(--r-well); cursor: zoom-in; }
+  .kth img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .kfoot { flex: none; padding: 5px 12px; font-size: 10.5px; color: var(--r-faint); border-top: 1px solid var(--r-edge); }
+  .kempty { padding: 10px 8px; color: var(--r-caption); }
+  .kql { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
+  .kql figure { margin: 0; text-align: center; max-width: 94vw; } .kql img { max-width: 94vw; max-height: 82vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .kql figcaption { color: #fff; font-size: 11.5px; margin-top: 6px; }
   @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
@@ -1490,6 +1517,8 @@ ${MADE_CSS}
   <div class="sctl"></div>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
+<div class="kscrim" hidden><div class="kpal" role="dialog" aria-label="Search sessions"><input id="kq" placeholder="Search sessions" autocomplete="off" spellcheck="false" aria-controls="klist"><div class="klist" id="klist" role="listbox"></div><div class="kfoot">Favorites, then asks, running, idle; ended last · ↑↓ ↵ · esc</div></div></div>
+<div class="kql" hidden><figure><img alt=""><figcaption></figcaption></figure></div>
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
@@ -2050,6 +2079,8 @@ ${MADE_SCRIPT}
     reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
+    // While ⌘K is open no key reaches the list behind it; Esc closes it.
+    if (!kscrim.hidden) { if (e.key === 'Escape') kclose(); return; }
     if (e.target && e.target.id === 'lead-input') {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -2090,6 +2121,78 @@ ${MADE_SCRIPT}
     if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }
     const card = e.target.closest && e.target.closest('.card[data-session]');
     if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); card.click(); }
+  });
+  // ⌘K: the host sends the rows (\`renderPalette\`) when it opens and as the stream moves;
+  // the page filters them as you type and keeps what you typed and selected.
+  ${paletteMatch}
+  const kscrim = document.querySelector('.kscrim'), kq = document.getElementById('kq'), klist = document.getElementById('klist'), kql = document.querySelector('.kql');
+  let kpicked = null;
+  function krows() { return [...klist.querySelectorAll('.krow:not([hidden])')].sort((a, b) => (Number(a.style.order) || 0) - (Number(b.style.order) || 0)); }
+  function kmark() {
+    const rows = krows();
+    if (!rows.some((r) => r.dataset.session === kpicked)) kpicked = rows[0] ? rows[0].dataset.session : null;
+    for (const r of klist.querySelectorAll('.krow')) r.setAttribute('aria-selected', String(r.dataset.session === kpicked));
+  }
+  function kfilter() {
+    let n = 0;
+    for (const r of klist.querySelectorAll('.krow')) {
+      const t = paletteMatch({ ids: r.dataset.ids, title: r.dataset.title, text: r.dataset.text }, kq.value);
+      r.hidden = t === null || n >= 60;
+      if (!r.hidden) n++;
+      // An exact session id leads; otherwise the host's order holds.
+      r.style.order = t === 0 ? '-1' : '0';
+    }
+    const none = klist.querySelector('.kempty');
+    if (none) none.remove();
+    if (!n && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
+    kmark();
+  }
+  function kclose() { if (kscrim.hidden) return; kscrim.hidden = true; kql.hidden = true; vscode.postMessage({ type: 'paletteClosed' }); }
+  function kpick(row) {
+    if (!row) return;
+    opening(row, 'Opening ' + row.dataset.title + '\u2026');
+    kclose();
+    vscode.postMessage({ type: 'paletteGo', sessionId: row.dataset.session, host: row.dataset.host, here: row.dataset.here === '1' });
+  }
+  function kshow(html, waiting) {
+    const was = kscrim.hidden;
+    klist.dataset.waiting = waiting ? '1' : '';
+    klist.innerHTML = waiting ? '<div class="kempty">Waiting for the session stream\u2026</div>' : html;
+    observeThumbs(klist);
+    if (was) { kscrim.hidden = false; kq.value = ''; kpicked = null; }
+    kfilter();
+    if (was || document.activeElement !== kq) { kq.focus(); if (!was) kq.select(); }
+    const sel = klist.querySelector('.krow[aria-selected="true"]');
+    if (sel && was) sel.scrollIntoView({ block: 'nearest' });
+  }
+  window.addEventListener('message', (e) => { if (e.data && e.data.type === 'palette') kshow(e.data.html, e.data.waiting); });
+  kq.addEventListener('input', () => { kpicked = null; kfilter(); klist.scrollTop = 0; });
+  kq.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const rows = krows(); const i = rows.findIndex((r) => r.dataset.session === kpicked);
+      const next = rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+      if (next) { kpicked = next.dataset.session; kmark(); next.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); kpick(klist.querySelector('.krow[aria-selected="true"]')); }
+    else if (e.key === 'Escape') { e.preventDefault(); kclose(); }
+  });
+  // A thumbnail opens a quick look; space or esc (or a click) closes it.
+  document.addEventListener('keydown', (e) => {
+    if (!kql.hidden && (e.key === 'Escape' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); kql.hidden = true; kq.focus(); }
+  }, true);
+  kql.addEventListener('click', () => { kql.hidden = true; kq.focus(); });
+  kscrim.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (e.target === kscrim) { kclose(); return; }
+    const row = e.target.closest('.krow');
+    const ql = e.target.closest('[data-ql]');
+    if (ql) { e.preventDefault(); kql.querySelector('img').src = ql.dataset.ql; kql.querySelector('figcaption').textContent = ql.dataset.name + ' \u00b7 attached by you \u00b7 space or esc closes'; kql.hidden = false; return; }
+    const url = e.target.closest('[data-url]');
+    if (url) { e.preventDefault(); opening(url, 'Opening ' + named(url, url.dataset.url) + '\u2026'); kclose(); vscode.postMessage({ type: 'open', url: url.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+    const art = e.target.closest('[data-artifact]');
+    if (art && row) { e.preventDefault(); opening(art, 'Opening ' + art.dataset.artifact.split('/').pop() + '\u2026'); kclose(); vscode.postMessage({ type: 'artifact', sessionId: row.dataset.session, host: row.dataset.host, path: art.dataset.artifact }); return; }
+    if (row) kpick(row);
   });
   vscode.postMessage({ type: 'ready' });
 </script>

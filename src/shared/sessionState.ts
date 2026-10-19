@@ -115,18 +115,6 @@ export function waitFor(ms: number): string {
 
 const SPARK = '▁▂▃▄▅▆▇█';
 
-/** A session's activity as block characters, for a surface that draws only text (⌘K):
- *  the row's tool counts folded into `width` columns, scaled to the busiest one. Empty
- *  when the row has no histogram or no activity at all. */
-export function sparkline(buckets: readonly { tools: number }[] | undefined, width = 12): string {
-  if (!buckets?.length) return '';
-  const per = Math.ceil(buckets.length / width);
-  const cols: number[] = [];
-  for (let i = 0; i < buckets.length; i += per) cols.push(buckets.slice(i, i + per).reduce((n, b) => n + b.tools, 0));
-  const top = Math.max(...cols);
-  return top ? cols.map((n) => SPARK[Math.round((n / top) * (SPARK.length - 1))]).join('') : '';
-}
-
 // On screen they group by who has the ball (owner, 2026-10-13: "11 of 12 Your
 // move cards were idle"; only a real ask is your move):
 //   Your move — the agent does nothing until you act: a question, a permission,
