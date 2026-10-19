@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.417] - 2026-10-19
+
+- ☆ on a session card (it shows on hover, after the title) stars the session. A starred card
+  keeps ★ visible, and a Favorites group right under the pinned card lists every starred
+  session, each still in its own group too. Stars are yours, kept across reloads and windows.
+  Settings > Session list > Favorites group turns the group off.
+- A card whose agent has not said anything yet shows your prompt as "You: …", so it no longer
+  reads as the agent's words.
+- A click on the pinned card's title renames a Claude session: type the name, Enter types
+  `/rename <name>` into its tab and the title follows when the session reports it; Esc cancels.
+  Other harnesses have no rename, so their title says so instead. Agents: Rename Session now
+  presses Enter as its own keystroke too, so its `/rename` is submitted rather than left typed.
+- Clicking a card, a PR or ticket chip, a folder, an image or the pinned card's Made shelf
+  rings what you clicked and says "Opening …" at the bottom of the panel until it has opened.
+  The panel's notices (Undo included) no longer vanish when the session list redraws.
+- Settings > Session list > Show the session list: off leaves Sessions with only the front
+  tab's card and its ask; ⌘K finds every other session.
+
 ## [0.9.416] - 2026-10-19
 
 - Open tabs lists every agent tab in this window, whatever project agents-cli filed its

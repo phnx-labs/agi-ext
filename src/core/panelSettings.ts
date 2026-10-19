@@ -6,7 +6,7 @@
 import { escapeHtml } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
-import { CARD_PARTS, cardSettings, getQuickLaunchSlot, MERGE_METHODS, PANEL_TABS, panelTabs, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+import { CARD_PARTS, cardSettings, LIST_PARTS, getQuickLaunchSlot, MERGE_METHODS, PANEL_TABS, panelTabs, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'showLabelsInTitles', label: 'Labels in titles', sub: 'The tab title shows the session label' },
@@ -18,7 +18,7 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 ];
 
 /** The Session cards pickers: each key, its words, and its choices in order. */
-const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
+const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
   { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
   { key: 'arrows', label: '‹ › on the pinned card', sub: 'Next that needs you: asks first, then turns that finished since you looked; ‹ goes back', options: [{ value: 'tabs', label: 'Tab order' }, { value: 'needs', label: 'Next that needs you' }, { value: 'off', label: 'Off' }] },
   { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Either way the answer brings its agent’s tab forward; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
@@ -37,6 +37,12 @@ const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: 
   stateWord: { label: 'State word', sub: 'The color already says it: red asks, green working, yellow idle' },
   verdict: { label: 'Done verdict', sub: 'A finished turn shows ✓ Done or Not done beside its title' },
   firstMessage: { label: 'First message', sub: 'What the session was started with, when its title says something else' },
+};
+
+/** What Sessions lists under the pinned card. */
+const LIST_PART_ROWS: Record<(typeof LIST_PARTS)[number], { label: string; sub: string }> = {
+  list: { label: 'Show the session list', sub: 'Off leaves only the front tab’s card and its ask; ⌘K finds every other session' },
+  favorites: { label: 'Favorites group', sub: 'Sessions you starred (☆ on a card), on top as well as in their own group' },
 };
 
 const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -180,7 +186,7 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   if (card && card.options.some((o) => o.value === value)) {
     return { ...settings, cards: { ...cardSettings(settings.cards), [card.key]: value } };
   }
-  if (group === 'cards' && (CARD_PARTS as readonly string[]).includes(field) && typeof value === 'boolean') {
+  if (group === 'cards' && ([...CARD_PARTS, ...LIST_PARTS] as readonly string[]).includes(field) && typeof value === 'boolean') {
     return { ...settings, cards: { ...cardSettings(settings.cards), [field]: value } };
   }
   if (group === 'tabs' && (PANEL_TABS as readonly string[]).includes(field) && typeof value === 'boolean') {
@@ -235,6 +241,8 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   ${SLOTS.map(slot).join('')}
   <div class="sh">Pull requests</div>
   <label class="srow"><span><b>Merge with</b><small>One click on Merge uses this; a repository that does not allow it uses one it allows</small></span>${picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with')}</label>
+  <div class="sh">Session list</div>
+  ${LIST_PARTS.map((k) => toggle(`cards.${k}`, LIST_PART_ROWS[k].label, LIST_PART_ROWS[k].sub, cards[k])).join('')}
   <div class="sh">Session cards</div>
   ${CARD_ROWS.map((r) => `<label class="srow"><span><b>${escapeHtml(r.label)}</b><small>${escapeHtml(r.sub)}</small></span>${picker(`cards.${r.key}`, r.options, cards[r.key], r.label)}</label>`).join('')}
   <div class="sh">A card shows <span class="shsub">all off: logo and title on one line</span></div>

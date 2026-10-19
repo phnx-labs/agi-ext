@@ -52,7 +52,7 @@ import { SESSION_STATE_WORD, relTime, sessionStateOf, sparkline, waitFor } from 
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, followFrontTerminal, revealAgentPanel, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
-import { deliverReply } from './sessionReply';
+import { deliverReply, renameSession } from './sessionReply';
 import { dictationMessage } from './dictation.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
@@ -90,6 +90,8 @@ const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
 const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const REVIEW_PREFS_KEY = 'agents.projectPanel.reviewPrefs';
+/** Starred session ids: a per-user preference, kept across windows and reloads. */
+const FAVORITES_KEY = 'agents.projectPanel.favorites';
 const FRESH_MS = 60_000;
 
 type TabId = 'sessions' | 'tickets' | 'prs' | 'lead' | 'settings';
@@ -137,13 +139,15 @@ class ProjectView implements vscode.WebviewViewProvider {
     // under home, as in the session sidebar.
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'assets'), vscode.Uri.file(os.homedir()), ...IMAGE_DIRS().map((d) => vscode.Uri.file(d))] };
     view.webview.html = shell(view.webview.cspSource, harnessLogoCss(view.webview, this.context.extensionUri));
+    // A click that opens something says "Opening …" in the page until the host has acted.
+    const opened = (p: unknown) => { void Promise.resolve(p).finally(() => view.webview.postMessage({ type: 'opened' })); };
     const onMessage = view.webview.onDidReceiveMessage((msg: PanelMessage) => {
       const host = typeof msg.host === 'string' ? msg.host : undefined;
       const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
       if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'refresh') this.controller.refresh();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
-      else if (msg.type === 'open') openWebviewUrl(msg.url, msg.external === true);
+      else if (msg.type === 'open') opened(openWebviewUrl(msg.url, msg.external === true));
       // The Lead tab: each gesture is one bridge call, which is one `agents lead …` verb.
       else if (msg.type === 'leadAsk' && typeof msg.text === 'string' && msg.text.trim()) void leadPanel()?.ask(msg.text.trim());
       else if (msg.type === 'leadTalk') void leadPanel()?.talk();
@@ -152,15 +156,17 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'leadRef') void leadPanel()?.openRef(msg.ref, msg.external === true);
       else if (msg.type === 'leadRefresh') void this.load('lead', true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
-      else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
-      else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
+      else if (msg.type === 'ticketTab' && typeof msg.id === 'string') opened(this.openTicketTab(msg.id));
+      else if (msg.type === 'image' && typeof msg.path === 'string') opened(this.controller.openImage(msg.path));
       else if (msg.type === 'select' && typeof msg.sessionId === 'string' && msg.back === true) this.controller.back(msg.sessionId, host);
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true || msg.step === true ? 'always' : 'card') : 'no');
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') opened(this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true || msg.step === true ? 'always' : 'card') : 'no'));
+      else if (msg.type === 'favorite' && typeof msg.sessionId === 'string' && typeof msg.value === 'boolean') void this.controller.setFavorite(msg.sessionId, msg.value);
+      else if (msg.type === 'rename' && typeof msg.sessionId === 'string' && typeof msg.name === 'string') this.controller.rename(msg.sessionId, msg.name);
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
       else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
-      else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
-      else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') void this.controller.openArtifact(msg.sessionId, host, msg.path);
+      else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') opened(this.controller.goToSession(msg.sessionId, host));
+      else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') opened(this.controller.openArtifact(msg.sessionId, host, msg.path));
       else if (msg.type === 'close') void this.controller.closeSessions(targets);
       else if (msg.type === 'reopen') void this.controller.reopen(targets);
       else if (msg.type === 'hide') void this.controller.hide(targets, true);
@@ -832,6 +838,29 @@ class ProjectPanelController {
     await this.savePrefs(readSessionPrefs({ ...this.prefs(), [key]: value === 'true' ? true : value === 'false' ? false : value }));
   }
 
+  /** Sessions the viewer starred, by session id, in every window (globalState). */
+  favorites(): Set<string> {
+    const v = this.context.globalState.get<unknown>(FAVORITES_KEY);
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  }
+
+  async setFavorite(sessionId: string, on: boolean): Promise<void> {
+    const favs = this.favorites();
+    if (on) favs.add(sessionId); else favs.delete(sessionId);
+    await this.context.globalState.update(FAVORITES_KEY, [...favs]);
+    void this.view.redrawSessions();
+  }
+
+  /** The pinned card's title: Claude's own /rename, typed into that session's tab here.
+   *  The card and the tab change when the stream reports the new title. */
+  rename(sessionId: string, name: string): void {
+    const entry = terminals.getBySessionId(sessionId);
+    const row = this.presented().find((r) => r.sessionId === sessionId);
+    if (!entry || row?.agentType !== 'claude') { void this.view.notice('Rename needs this Claude session’s tab here.'); return; }
+    const typed = renameSession(entry.terminal, name);
+    if (typed) void this.view.notice(`Typed /rename ${typed} into its tab; the title changes when the session reports it.`);
+  }
+
   async toggleFold(group: string): Promise<void> {
     const prefs = this.prefs();
     const folded = prefs.folded.includes(group) ? prefs.folded.filter((g) => g !== group) : [...prefs.folded, group];
@@ -941,7 +970,7 @@ class ProjectPanelController {
     const here = this.here(webview);
     const subject = currentAgentPanelSubject();
     const count = sessionCount(rows, here, prefs, frontId);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards, memory: this.history }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards, memory: this.history, favorites: this.favorites() }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** Agents: Next Agent That Needs You: fronts the session tab › fronts in
@@ -1386,6 +1415,17 @@ ${MADE_CSS}
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
   .card .top .hx { width: 14px; height: 14px; border-radius: 3px; }
   .card .top .fork { flex: none; font-size: 12px; color: var(--r-caption); }
+  /* ☆ on hover, ★ kept on a favorite; it always holds its place, so the row never moves. */
+  .star { flex: none; width: 16px; height: 18px; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; line-height: 1; color: var(--r-caption); cursor: pointer; opacity: 0; }
+  .card:hover .star, .card:focus-within .star, .star:focus-visible, .star.on { opacity: 1; } .star.on { color: var(--r-gold-line); } .star:hover { color: var(--r-gold-line); }
+  .fav-ic { color: var(--r-gold-line); font-size: 13px; }
+  .card .line.said.you b { font-weight: 600; color: var(--r-caption); margin-right: 2px; }
+  /* The pinned card's title renames a Claude session on a click. */
+  .card.front .ttl.rn { cursor: text; border-radius: 4px; } .card.front .ttl.rn:hover { background: var(--r-glass-hover); }
+  .ttl-edit { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; font-size: 12.5px; padding: 0 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; outline: none; }
+  /* A click that opens something rings once, and the page says "Opening …" until the host acts. */
+  .opening { animation: opening .9s ease-out; }
+  @keyframes opening { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--r-gold-line) 70%, transparent); } 40% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--r-gold-line) 30%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
   ${logoCss}
   /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
   .tabs .sctl { margin-left: auto; position: relative; display: flex; align-items: center; min-width: 0; }
@@ -1440,7 +1480,7 @@ ${MADE_CSS}
   .settings .doff { color: var(--r-faint); font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .err { color: var(--r-bad); }
   .settings .rbtn { flex: none; font: inherit; font-size: 11.5px; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); cursor: pointer; } .settings .rbtn:hover { background: var(--r-glass-hover); }
-  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash, .opening { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1478,6 +1518,8 @@ ${MADE_SCRIPT}
   // (owner video, 2026-10-19 1:32 AM: "it just goes to the top").
   let anchor = null;
   function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
+  // A session can show three times: pinned, in Favorites and in its own group.
+  function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
   // On screen: at least a title row's height of it shows.
   function onScreen(el) { const r = el.getBoundingClientRect(), v = main.getBoundingClientRect(); return Math.min(r.bottom, v.bottom) - Math.max(r.top, v.top) >= 24; }
   // Scrolling yourself ends it: a later redraw never undoes your scroll.
@@ -1485,7 +1527,7 @@ ${MADE_SCRIPT}
   function holdAnchor() {
     if (!anchor) return;
     if (Date.now() - anchor.at > 2000) { anchor = null; return; }
-    const c = cardsOf('key', anchor.key).find((x) => !x.closest('.front-pin'));
+    const c = cardsOf('key', anchor.key).find((x) => placeOf(x) === anchor.place);
     if (c) main.scrollTop += c.getBoundingClientRect().top - anchor.top;
     if (main.querySelector('.front-pin .card')?.dataset.key === anchor.key) anchor = null;
   }
@@ -1662,32 +1704,33 @@ ${MADE_SCRIPT}
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       // Focus comes back to the same card in the same place (pinned or listed), without scrolling to it.
       const focusEl = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.key ? document.activeElement : null;
-      const focused = focusEl ? { key: focusEl.dataset.key, pinned: !!focusEl.closest('.front-pin') } : null;
+      const focused = focusEl ? { key: focusEl.dataset.key, place: placeOf(focusEl) } : null;
       const typingIn = same && document.hasFocus() && document.activeElement && document.activeElement.id === 'reply-input' ? document.activeElement : null;
       const typing = typingIn ? { id: typingIn.closest('.card').dataset.session, at: [typingIn.selectionStart, typingIn.selectionEnd] } : null;
       const actBox = activityBox();
       const actEnd = activityAtEnd(actBox);
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
-      const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
-      const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => { const card = c.closest('.card'); return [card.dataset.key, !!card.closest('.front-pin'), c]; }) : [];
+      // The patch would draw the toast hidden and empty again, so its words are put back after it.
+      const keepToast = same ? main.querySelector('.toast:not([hidden])')?.innerHTML ?? null : null;
+      const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => { const card = c.closest('.card'); return [card.dataset.key, placeOf(card), c]; }) : [];
       const menuOpen = same && ctl.querySelector('.menu') && !ctl.querySelector('.menu').hidden;
       // The tab's heading row (☀, search, ⇅ and its menu) goes into the tab row; the rest into main.
       const page = document.createElement('template'); page.innerHTML = m.html;
       const head = [...page.content.children].find((c) => c.classList.contains('shead')); if (head) head.remove();
       patchChildren(ctl, head ? head.outerHTML : '');
       if (same) patchChildren(main, page.innerHTML); else main.innerHTML = page.innerHTML;
-      if (keepToast) main.querySelector('.toast')?.replaceWith(keepToast);
-      for (const [key, pinned, box] of keepConfirm) cardsOf('key', key).find((c) => !!c.closest('.front-pin') === pinned)?.appendChild(box);
+      if (keepToast !== null) { const t = main.querySelector('.toast'); if (t) { t.innerHTML = keepToast; t.hidden = false; } }
+      for (const [key, place, box] of keepConfirm) cardsOf('key', key).find((c) => placeOf(c) === place)?.appendChild(box);
       if (menuOpen) { ctl.querySelector('.menu').hidden = false; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
       main.dataset.tab = m.tab;
       if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       observeThumbs(main);
       main.scrollTop = y;
       holdAnchor();
-      if (focused) { const el = cardsOf('key', focused.key).find((c) => !!c.closest('.front-pin') === focused.pinned); if (el) el.focus({ preventScroll: true }); }
+      if (focused) { const el = cardsOf('key', focused.key).find((c) => placeOf(c) === focused.place); if (el) el.focus({ preventScroll: true }); }
       if (m.tab === 'lead') { syncLeadBox(); if (!same || y + main.clientHeight >= main.scrollHeight - 80) main.scrollTop = main.scrollHeight; }
       if (m.tab === 'sessions') {
-        syncBulk(); syncFrontReply(typing); drawFrontMade();
+        syncBulk(); syncFrontReply(typing); drawFrontMade(); syncTitles();
         const box = activityBox();
         if (box && (box !== actBox || actEnd)) box.scrollTop = box.scrollHeight;
       }
@@ -1710,6 +1753,8 @@ ${MADE_SCRIPT}
     else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }
     else if (m.type === 'notice') toast(m.text);
+    // The status stays long enough to read, then goes once the host has acted.
+    else if (m.type === 'opened') { if (busyShown) { busyShown = false; clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, Math.max(0, 700 - (Date.now() - busySince))); } }
     else if (m.type === 'replyResult') showReplyError(main.querySelector('.card.front .reply-box'), m.ok ? '' : (m.error || 'Reply failed'));
     else if (m.type === 'dictation') {
       const box = main.querySelector('.card.front .reply-box');
@@ -1726,7 +1771,7 @@ ${MADE_SCRIPT}
       // included); only one off screen scrolls its listed card to the nearest edge.
       const all = cardsOf('session', m.sessionId);
       if (!all.length) return;
-      const c = all.find((x) => !x.closest('.front-pin')) || all[0];
+      const c = all.find((x) => placeOf(x) === 'list') || all[0];
       if (!all.some(onScreen)) c.scrollIntoView({ block: 'nearest' });
       if (m.flash) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
     }
@@ -1738,11 +1783,50 @@ ${MADE_SCRIPT}
   let toastTimer = 0;
   let undo = null;
   const target = (card) => ({ sessionId: card.dataset.session, host: card.dataset.host });
-  function toast(text, onUndo) {
+  let busyShown = false, busySince = 0;
+  function toast(text, onUndo, hold) {
     const el = main.querySelector('.toast'); if (!el) return;
     el.innerHTML = '<span></span>' + (onUndo ? '<button data-undo>Undo</button>' : '');
-    el.firstChild.textContent = text; el.hidden = false; undo = onUndo || null;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; undo = null; }, 6000);
+    el.firstChild.textContent = text; el.hidden = false; undo = onUndo || null; busyShown = !!hold; busySince = Date.now();
+    clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, hold ? 30000 : 6000);
+  }
+  // A redraw may have replaced the toast's node, so it is looked up when it goes.
+  function hideToast() { const el = main.querySelector('.toast'); if (el) el.hidden = true; undo = null; busyShown = false; }
+  // A click that opens something rings the thing clicked and says so at once; the host's
+  // 'opened' ends it, so nothing silently waits (owner video, 2026-10-19 12:58 AM).
+  function opening(el, words) {
+    el.classList.remove('opening'); void el.offsetWidth; el.classList.add('opening');
+    setTimeout(() => el.classList.remove('opening'), 900);
+    toast(words, null, true);
+  }
+  function named(el, fallback) { return (el.textContent || '').trim() || fallback; }
+  // The pinned card's title renames a Claude session: Enter types /rename into its tab, Esc
+  // or leaving the box cancels. The title is data-keep, so a stream update never takes the
+  // box away; the stream's title comes back from data-ttl once the edit ends, and the name
+  // typed shows until the stream reports it (30 s at most).
+  let renamed = null;
+  function syncTitles() {
+    const t = main.querySelector('.front-pin .ttl[data-ttl]');
+    if (!t || t.querySelector('input')) return;
+    const key = t.closest('.card').dataset.key;
+    if (renamed && (renamed.key !== key || t.dataset.ttl === renamed.name || Date.now() - renamed.at > 30000)) renamed = null;
+    const words = renamed ? renamed.name : t.dataset.ttl;
+    if (t.textContent !== words) t.textContent = words;
+  }
+  function editTitle(t) {
+    if (t.querySelector('input')) return;
+    const input = document.createElement('input');
+    input.className = 'ttl-edit'; input.value = t.textContent; input.setAttribute('aria-label', 'Rename this session');
+    t.replaceChildren(input); input.focus(); input.select();
+    let done = false;
+    const end = (save) => {
+      if (done) return; done = true;
+      const card = t.closest('.card'); const name = input.value.trim();
+      if (save && card && name && name !== t.dataset.ttl) { renamed = { key: card.dataset.key, name, at: Date.now() }; vscode.postMessage({ type: 'rename', sessionId: card.dataset.session, name }); }
+      t.replaceChildren(); syncTitles();
+    };
+    input.addEventListener('keydown', (k) => { k.stopPropagation(); if (k.key === 'Enter' && !k.isComposing) { k.preventDefault(); end(true); } else if (k.key === 'Escape') { k.preventDefault(); end(false); } });
+    input.addEventListener('blur', () => end(false));
   }
   function syncBulk() {
     main.querySelectorAll('.card').forEach((c) => c.classList.toggle('multi', multi.has(c.dataset.session)));
@@ -1789,6 +1873,19 @@ ${MADE_SCRIPT}
     }
     // A card's ⋯ menu: its summary toggles it; a click anywhere else closes it.
     main.querySelectorAll('.cmore[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+    // ☆/★: a favorite is this viewer's own; every copy of the card turns at once.
+    const fav = e.target.closest('[data-fav]');
+    if (fav) {
+      e.preventDefault(); e.stopPropagation();
+      const on = fav.getAttribute('aria-pressed') !== 'true';
+      main.querySelectorAll('[data-fav="' + CSS.escape(fav.dataset.fav) + '"]').forEach((b) => { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '\u2605' : '\u2606'; b.title = on ? 'Remove from Favorites' : 'Add to Favorites'; });
+      vscode.postMessage({ type: 'favorite', sessionId: fav.dataset.fav, value: on });
+      toast(on ? 'Added to Favorites' : 'Removed from Favorites');
+      return;
+    }
+    if (e.target.closest('.ttl-edit')) return;
+    const rn = e.target.closest('.front-pin .ttl[data-rename="1"]');
+    if (rn) { e.preventDefault(); editTitle(rn); return; }
     // Copy, on a card or in its ⋯ menu: the text goes to the clipboard through the host.
     const copy = e.target.closest('[data-copy]');
     if (copy) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); toast('Copied'); }
@@ -1805,14 +1902,14 @@ ${MADE_SCRIPT}
     if (step) { if (!step.disabled && step.dataset.session) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true, back: step.hasAttribute('data-back') }); return; }
     // The pinned card's Made shelf: a PR opens on GitHub, a ticket in Issues; files open below.
     const shelfLink = e.target.closest('.fc-made [data-url], .fc-made [data-ticket]');
-    if (shelfLink) { e.preventDefault(); e.stopPropagation(); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
+    if (shelfLink) { e.preventDefault(); e.stopPropagation(); opening(shelfLink, 'Opening ' + named(shelfLink, shelfLink.dataset.url || shelfLink.dataset.ticket) + '…'); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
     if (e.target.closest('[data-open-sidebar]')) { e.preventDefault(); vscode.postMessage({ type: 'openSidebar' }); return; }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
     // The project button: its menu lists every Linear project (read when it opens).
     // A ticket tile or chip peeks at its row in Issues and opens its Linear page.
     const tk = e.target.closest('[data-open-ticket]');
-    if (tk) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
+    if (tk) { e.preventDefault(); e.stopPropagation(); opening(tk, 'Opening ' + tk.dataset.openTicket + '…'); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
     const merge = e.target.closest('[data-merge-repo]');
     if (merge) {
       e.preventDefault(); e.stopPropagation();
@@ -1881,13 +1978,13 @@ ${MADE_SCRIPT}
     const act = e.target.closest('[data-act]');
     if (act && card) {
       const kind = act.dataset.act;
-      if (kind === 'focus' || kind === 'resume') vscode.postMessage({ type: kind, sessionId: card.dataset.session, host: card.dataset.host });
+      if (kind === 'focus' || kind === 'resume') { opening(card, (kind === 'resume' ? 'Resuming ' : 'Opening ') + card.dataset.title + '…'); vscode.postMessage({ type: kind, sessionId: card.dataset.session, host: card.dataset.host }); }
       else if (kind === 'close') { if (card.dataset.busy === '1') askClose(card); else closeCards([card]); }
       else if (kind === 'hide') closeCards([card]);
       return;
     }
     const th = e.target.closest('.th[data-path]');
-    if (th) { e.preventDefault(); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
+    if (th) { e.preventDefault(); opening(th, 'Opening the image…'); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
     // Tickets: a row opens its Linear page as a tab and unfolds its peek; a second click
     // folds it without opening the page again. ▶ starts an agent on it, once per click.
     const trow = e.target.closest('.trow[data-ticket]');
@@ -1910,12 +2007,13 @@ ${MADE_SCRIPT}
       return;
     }
     const art = e.target.closest('[data-artifact]');
-    if (art && card) { e.preventDefault(); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
+    if (art && card) { e.preventDefault(); opening(art, 'Opening ' + art.dataset.artifact.split('/').pop() + '…'); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
-    if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+    if (a && a.dataset.url) { e.preventDefault(); opening(a, 'Opening ' + named(a, a.dataset.url) + '…'); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
-      if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, top: card.getBoundingClientRect().top, at: Date.now() };
+      if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, place: placeOf(card), top: card.getBoundingClientRect().top, at: Date.now() };
+      if (!card.closest('.front-pin')) opening(card, 'Opening ' + card.dataset.title + '…');
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });
       return;
     }

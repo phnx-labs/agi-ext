@@ -29,12 +29,12 @@ export async function openLink(url: string, external = false): Promise<void> {
 // Open a webview-supplied URL, but only if it parses and carries an allowed scheme (see
 // src/core/webviewSecurity). Silently drops empty/non-string values; warns on a blocked
 // scheme so the drop is visible rather than mysterious.
-export function openWebviewUrl(rawUrl: unknown, external = false): void {
+export function openWebviewUrl(rawUrl: unknown, external = false): Promise<void> {
   if (!isAllowedExternalUrl(rawUrl)) {
     if (typeof rawUrl === 'string' && rawUrl) {
       void vscode.window.showWarningMessage('Blocked opening a URL with a disallowed scheme.');
     }
-    return;
+    return Promise.resolve();
   }
-  void openLink(rawUrl as string, external);
+  return openLink(rawUrl as string, external);
 }

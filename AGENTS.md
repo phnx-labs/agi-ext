@@ -140,7 +140,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`assignTabs`, `src/core/tabIndex.ts`), never by label alone.
 - A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, the
   status bar, the Active Session sidebar and the resume picker. The extension generates no
-  title and reports none back to the CLI; Rename Session types Claude's own `/rename`.
+  title and reports none back to the CLI; Rename Session and a click on the pinned card's
+  title type Claude's own `/rename` (`renameSession`, `src/vscode/sessionReply.ts`); no other
+  harness's title is editable.
   A card draws the row's `title` as it comes (`cardTitle`; final since agents-cli 1.23.31),
   never a prompt or request headline, ⑂ for a `forkOf` row; an editor tab shows at most 34
   characters of the name (`capTabName`).
@@ -154,7 +156,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   registry facts, readiness and a 10 s bounded pid wait in one place; the only other
   `createTerminal` is the agents-cli installer. A tab the editor opened is registered by
   `terminals.adopt` (`src/vscode/terminals.vscode.ts`), on activation and after it. A prompt
-  goes into a TUI only through `submitToTui` (typed, then `\r` as its own keystroke).
+  goes into a TUI only through `submitToTui` (`src/vscode/sessionReply.ts`; typed, then `\r`
+  as its own keystroke).
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
@@ -213,6 +216,11 @@ going on, where, and what came out of it" in one look; text explains only what a
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
   part off, down to the logo and title on one line (owner video, 2026-10-17).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
+  ☆ after the title is one of them; ★ stays on a favorite, and Favorites (the viewer's own,
+  `globalState` by session id) repeat under the pinned card above every group, each still
+  in its own group (owner video, 2026-10-19 1:42 AM). A card whose agent has not spoken
+  shows your prompt as "You: …", never as its words. Settings > Session list turns the
+  Favorites group and the whole list off (only the pinned card; ⌘K finds the rest).
   A finished turn the CLI's done-check judged carries ✓ Done or Not done on its
   title row (before the age; right after the title on the pinned card) in place of Idle
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
@@ -245,7 +253,9 @@ going on, where, and what came out of it" in one look; text explains only what a
   Gaps inside a card are at most half the gap between cards.
 - **Motion only for liveness and arrival.** The Working dot breathes, a question's dot rings
   slowly, and a question that just arrived glows three times; everything stops under
-  `prefers-reduced-motion`. Nothing flashes for as long as it waits.
+  `prefers-reduced-motion`. Nothing flashes for as long as it waits. The one answer to a
+  click: what was clicked to open rings once and "Opening …" shows until the host's
+  `opened` (owner video, 2026-10-19 12:58 AM); nothing silently waits.
 - **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu (Show: Open tabs,
   tabs with no agent, Ended; a tab that asks shows either way). Group headers carry
   the icon, a count and one dot per state, so a folded group still says what is inside.

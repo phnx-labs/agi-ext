@@ -7,6 +7,7 @@
 // card reply box both go through `deliverReply` instead of re-deriving the rule.
 
 import type * as vscode from 'vscode';
+import { sanitizeLabel } from '../core/utils';
 
 /** The minimum an agent terminal must expose to receive a reply. */
 export interface ReplyTerminal {
@@ -55,4 +56,32 @@ export function deliverReply(entry: ReplyTerminal | undefined, text: string): st
   } catch (err) {
     return err instanceof Error ? err.message : String(err);
   }
+}
+
+/**
+ * Type each prompt into the agent's TUI and submit it. Ink TUIs (Claude) take
+ * `\r` as Enter, and `sendText(text, true)` appends `\n`, which types but does
+ * not submit. A multi-line prompt arrives as a bracketed paste that swallows a
+ * `\r` sent in the same tick, so Enter follows once the paste is in.
+ */
+export function submitToTui(terminal: Pick<vscode.Terminal, 'sendText'>, prompts: readonly string[]): void {
+  prompts.forEach((prompt, i) => {
+    setTimeout(() => {
+      terminal.sendText(prompt, false);
+      setTimeout(() => terminal.sendText('\r', false), 300);
+    }, i * 700);
+  });
+}
+
+/**
+ * Rename a Claude session: its own `/rename`, typed into its tab, writes the name into
+ * the transcript; the CLI indexes it and the stream brings it back to the tab, the
+ * cards and the status bar. No other harness has a rename the CLI reads. The name
+ * typed, or null when nothing was left to send.
+ */
+export function renameSession(terminal: Pick<vscode.Terminal, 'sendText'>, raw: string): string | null {
+  const name = sanitizeLabel(raw.trim());
+  if (!name) return null;
+  submitToTui(terminal, [`/rename ${name}`]);
+  return name;
 }
