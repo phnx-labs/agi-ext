@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mergeTurns, renderLeadTab, type LeadTabModel, type TabTurn } from './leadView';
 import { newTurn, type LeadHistoryTurn } from './lead';
 
-const base: LeadTabModel = { project: 'agents', turns: [], busy: false, mic: 'idle', loading: false, now: 0 };
+const base: LeadTabModel = { project: 'agents', turns: [], busy: false, mic: 'idle', speak: false, loading: false, now: 0 };
 const turn = (over: Partial<TabTurn>): TabTurn => ({ key: 'k', ask: 'hi', segments: [], confirms: [], refs: [], live: false, ...over });
 
 describe('renderLeadTab', () => {

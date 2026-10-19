@@ -52,6 +52,8 @@ export interface LeadTabModel {
   turns: TabTurn[];
   busy: boolean;
   mic: 'idle' | 'listening' | 'transcribing';
+  /** `agents.lead.speak`: whether the next answer is read aloud. */
+  speak: boolean;
   /** The Lead's model and whether its process is warm, from `agents lead status --json`. */
   model?: string;
   state?: string;
@@ -125,7 +127,9 @@ function askBox(m: LeadTabModel): string {
 
 /** The whole tab: its heading row (into the tab row), the conversation, the box. */
 export function renderLeadTab(m: LeadTabModel): string {
-  const head = `<div class="shead"><span class="sum">${escapeHtml([m.model, m.busy ? 'working' : m.state].filter(Boolean).join(' · '))}</span><button class="icon" data-lead-refresh title="Read the Lead's history again" aria-label="Refresh">⟳</button></div>`;
+  const speaker = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/>${m.speak ? '<path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.5 6.5 0 0 1 0 9"/>' : '<path d="M10.5 6l4 4M14.5 6l-4 4"/>'}</svg>`;
+  const speak = `<button class="icon lead-speak" data-lead-speak aria-pressed="${m.speak}" title="${m.speak ? 'The Lead reads its answers aloud. Click to mute.' : 'The Lead is muted. Click to hear its answers.'}" aria-label="Read answers aloud">${speaker}</button>`;
+  const head = `<div class="shead"><span class="sum">${escapeHtml([m.model, m.busy ? 'working' : m.state].filter(Boolean).join(' · '))}</span>${speak}<button class="icon" data-lead-refresh title="Read the Lead's history again" aria-label="Refresh">⟳</button></div>`;
   const id = `<div class="lead-id" title="One Claude session for this project, kept across every question"><span class="live${m.state === 'warm' || m.busy ? ' on' : ''}"></span><span class="who">Lead · ${escapeHtml(m.project || 'no project')}</span>${m.host ? `<span class="sid">${escapeHtml(m.host)}</span>` : ''}</div>`;
   const body = m.turns.length
     ? m.turns.map((t) => turnHtml(t, m.busy)).join('')
@@ -135,6 +139,8 @@ export function renderLeadTab(m: LeadTabModel): string {
 }
 
 export const LEAD_TAB_CSS = `
+  .lead-speak svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
+  .lead-speak[aria-pressed="false"] { color: var(--r-faint); }
   .lead { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 10px; }
   .lead-id { display: flex; align-items: center; gap: 6px; white-space: nowrap; font: 500 10.5px var(--r-sans); color: var(--r-caption); }
   .lead-id .who { color: var(--r-text); font-weight: 600; }
