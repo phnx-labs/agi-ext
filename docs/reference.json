@@ -680,7 +680,7 @@
             "Open web links in your default browser."
           ],
           "default": "editor",
-          "markdownDescription": "Where the extension opens GitHub PRs, Linear tickets and other web links, including a link an agent prints in its tab. In the panels, a ⌘, Ctrl or ⌥ click always opens your default browser; in an agent tab, the terminal's own link click (⌘-click, or ⌥-click when `#editor.multiCursorModifier#` is `ctrlCmd`) opens it here. Sign in to GitHub and Linear once in the integrated browser; it keeps the sign-in across workspaces (`#workbench.browser.dataStorage#`)."
+          "markdownDescription": "Where the extension opens GitHub PRs, Linear tickets and other web links, including a link printed in a tab the extension opened (agent tabs then print links as plain text). In the panels, a ⌘, Ctrl or ⌥ click always opens your default browser; in such a tab, the terminal's own link click (⌘-click, or ⌥-click when `#editor.multiCursorModifier#` is `ctrlCmd`) opens it here. Sign in to GitHub and Linear once in the integrated browser; it keeps the sign-in across workspaces (`#workbench.browser.dataStorage#`)."
         },
         "agents.links.tabs": {
           "type": "string",

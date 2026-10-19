@@ -96,15 +96,18 @@ function isSensitiveEnvKey(key: string): boolean {
  *   their full environment (prompt theme, aliases, autojump, PATH). `AGENT_TERMINAL_ID`
  *   alone can't distinguish them — every tracked terminal carries it — so this
  *   is the signal an rc file should gate its fast-path on.
+ * @param options.plainLinks - Print web links as plain text (`FORCE_HYPERLINK=0`). The
+ *   terminal opens an OSC 8 hyperlink itself, outside the editor; a plain URL reaches the
+ *   extension's link provider, which opens it in the integrated browser.
  */
 export function buildAgentTerminalEnv(
   terminalId: string,
   sessionId: string | null | undefined,
   workspacePath: string | null | undefined = undefined,
   version: string | null | undefined = undefined,
-  options: { scrubSensitive?: boolean; kind?: 'agent' | 'shell' } = {}
+  options: { scrubSensitive?: boolean; kind?: 'agent' | 'shell'; plainLinks?: boolean } = {}
 ): Record<string, string | null> {
-  const { scrubSensitive = true, kind = 'agent' } = options;
+  const { scrubSensitive = true, kind = 'agent', plainLinks = false } = options;
 
   const env: Record<string, string | null> = {
     AGENT_TERMINAL_ID: terminalId,
@@ -113,7 +116,8 @@ export function buildAgentTerminalEnv(
     AGENT_WORKSPACE_DIR: workspacePath ?? '',
     AGENT_VERSION: version ?? '',
     DISABLE_AUTO_TITLE: 'true',
-    PROMPT_COMMAND: ''
+    PROMPT_COMMAND: '',
+    ...(plainLinks ? { FORCE_HYPERLINK: '0' } : {}),
   };
 
   if (!scrubSensitive) {
