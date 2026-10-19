@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { isAllowedExternalUrl, openWith, type LinkTabs, type LinkTarget } from '../core/webviewSecurity';
+import { isAllowedExternalUrl, openWith, webLinksIn, type LinkTabs, type LinkTarget, type TextLink } from '../core/webviewSecurity';
+import { isAgentTerminal } from './terminals.vscode';
 
 /** VS Code's integrated browser (1.10x+, VSCodium included): opens a page as an editor tab. */
 const BROWSER_OPEN = 'workbench.action.browser.open';
@@ -37,4 +38,20 @@ export function openWebviewUrl(rawUrl: unknown, external = false): Promise<void>
     return Promise.resolve();
   }
   return openLink(rawUrl as string, external);
+}
+
+/** Web links in an agent tab open the way the extension's own links do: a click with the
+ *  terminal's link modifier opens the page in the integrated browser. Extension link providers
+ *  run ahead of the editor's own URL detector, so ours wins on the same text. Plain shells, and
+ *  every tab while `agents.links.openIn` is `browser`, keep the editor's own handling. */
+export function registerTerminalLinks(): vscode.Disposable {
+  const provider: vscode.TerminalLinkProvider<vscode.TerminalLink & TextLink> = {
+    provideTerminalLinks(context) {
+      if (!isAgentTerminal(context.terminal)) return [];
+      if (vscode.workspace.getConfiguration('agents').get<LinkTarget>('links.openIn', 'editor') !== 'editor') return [];
+      return webLinksIn(context.line).map((l) => ({ ...l, tooltip: 'Open in the editor' }));
+    },
+    handleTerminalLink: (link) => openLink(link.url),
+  };
+  return vscode.window.registerTerminalLinkProvider(provider);
 }
