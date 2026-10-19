@@ -40,6 +40,14 @@ describe('sessionCardFields', () => {
     expect(card.pullRequests?.map((p) => p.number)).toEqual([509, 511]);
   });
 
+  test('the newest PR joins the earlier ones once, and an entry with no url is dropped', () => {
+    const prs = [{ url: 'https://github.com/acme/atlas/pull/509' }, null, { number: 3 }, { url: 'https://github.com/acme/atlas/pull/511' }];
+    const card = sessionCardFields(normalizeActiveSession(raw({ prs } as Partial<RawActiveSession>), 'this-mac', 0), { sessionId: 's-1', home: HOME });
+    expect(card.pullRequests?.map((p) => p.number)).toEqual([509, 511]);
+    const older = sessionCardFields(normalizeActiveSession(raw({ prs: [{ url: 'https://github.com/acme/atlas/pull/509' }] }), 'this-mac', 0), { sessionId: 's-1', home: HOME });
+    expect(older.pullRequests?.map((p) => p.number)).toEqual([509, 511]);
+  });
+
   test('a remote session gets no preview URI: its files open by a copy on click', () => {
     const live = normalizeActiveSession(raw(), 'yosemite-m2', 0);
     const card = sessionCardFields(live, { sessionId: 's-1', home: HOME, remoteDevice: 'yosemite-m2', previewUri: preview });
