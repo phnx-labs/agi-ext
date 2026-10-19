@@ -231,3 +231,54 @@ const ATTENTION_KIND_RANK: Record<AttentionKind, number> = {
 export function attentionRank(kind: string | undefined | null): number {
   return kind && kind in ATTENTION_KIND_RANK ? ATTENTION_KIND_RANK[kind as AttentionKind] : Number.MAX_SAFE_INTEGER;
 }
+
+/** The CLI's done-check for a session (agents-cli `doneVerdict` on the row): `done` when
+ *  its checks passed, `open` with the gaps that failed, `unchecked` when nothing
+ *  checkable backs it. `at` is ISO. Absent on an older CLI: nothing is drawn. */
+export interface DoneVerdict {
+  state: 'done' | 'open' | 'unchecked';
+  gaps: string[];
+  at: string;
+}
+
+/** Each gap the CLI names, in words; a gap this version does not know shows as the CLI wrote it. */
+const DONE_GAP_WORDS: Record<string, string> = {
+  'open-pr': 'a PR it opened is still open',
+  'keep-moving': 'its checklist has open items',
+  delivery: 'merge, release or install not verified',
+  'live-team': 'teammates still running',
+  'self-audit': 'its own audit failed',
+};
+
+export function doneGapWords(gaps: readonly string[]): string[] {
+  return gaps.map((g) => DONE_GAP_WORDS[g] ?? g);
+}
+
+/** What an idle card says in place of "Idle": tone (ok, bad, caption), its word and the
+ *  tooltip. Null unless the session is idle (working, waiting, an ask, review and ended
+ *  keep their own word) and the row carries a verdict (owner, 2026-10-18 8:59 PM: no
+ *  second idle label). */
+export interface VerdictChip {
+  tone: 'ok' | 'bad' | 'caption';
+  word: string;
+  why: string;
+}
+
+export function verdictChipOf(state: SessionStateKey, v: DoneVerdict | null | undefined): VerdictChip | null {
+  if (!v || state !== 'idle') return null;
+  if (v.state === 'done') return { tone: 'ok', word: '✓ Done', why: 'Idle · its done-check passed' };
+  if (v.state === 'open') {
+    const gaps = doneGapWords(v.gaps);
+    return { tone: 'bad', word: 'Not done', why: gaps.length ? `Idle · not done: ${gaps.join('; ')}` : 'Idle · its done-check did not pass' };
+  }
+  if (v.state === 'unchecked') return { tone: 'caption', word: 'Unverified', why: 'Idle · nothing checkable backs it yet' };
+  return null;
+}
+
+/** The verdict in the state's own slot, the size of the state pill. Self-contained, so the
+ *  Active Session sidebar's script carries this same function (`${verdictChipHtml}`). */
+export function verdictChipHtml(v: VerdictChip | null | undefined): string {
+  if (!v) return '';
+  const q = (t: string) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return '<span class="vchip v-' + v.tone + '" title="' + q(v.why) + '"><i></i>' + q(v.word) + '</span>';
+}

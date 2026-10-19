@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { sessionPathUriString } from '../core/sessionPath';
 import { MADE_SCRIPT, PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
-import { STATE_TONE } from '../shared/sessionState';
+import { STATE_TONE, verdictChipHtml } from '../shared/sessionState';
 import { REPLY_SCRIPT, replyBoxHtml } from '../shared/replyBox';
 
 // The Active-Terminal panel's webview is a large inline <script> assembled inside
@@ -40,7 +40,7 @@ test('renderShell webview script is syntactically valid JS (PHNX-3517)', () => {
   const fontJost = 'vscode-webview://fonts/jost-var.woff2';
   const fontInter = 'vscode-webview://fonts/InterVariable.woff2';
   // The shared session cards (script and stylesheet) are interpolated too.
-  void PATCH_SCRIPT; void THUMB_SCRIPT; void SESSION_CARDS_SCRIPT; void sessionPanelCss; void sessionPanelFontFaces; void STATE_TONE; void REPLY_SCRIPT; void MADE_SCRIPT; void replyBoxHtml;
+  void PATCH_SCRIPT; void THUMB_SCRIPT; void SESSION_CARDS_SCRIPT; void sessionPanelCss; void sessionPanelFontFaces; void STATE_TONE; void REPLY_SCRIPT; void MADE_SCRIPT; void replyBoxHtml; void verdictChipHtml;
   const html: string = eval('`' + body + '`');
 
   const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);

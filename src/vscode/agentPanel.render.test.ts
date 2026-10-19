@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test';
 import { vscodeDouble } from '../testing/vscodeDouble';
-import { STATE_TONE, relTime } from '../shared/sessionState';
+import { STATE_TONE, relTime, verdictChipHtml } from '../shared/sessionState';
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import { replyBoxHtml } from '../shared/replyBox';
 import * as fs from 'fs';
@@ -68,7 +68,7 @@ const CONSTS = ['HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE
 // doubled form for exactly that reason, so the extracted source has to undergo the
 // same collapse to be what the webview actually runs.
 // What the host interpolates into the script, as the shell emits it.
-const injected = `const esc = ${escapeHtml};\n${relTime}\n${replyBoxHtml}\nconst STATE_TONE = ${JSON.stringify(STATE_TONE)};\nconst APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};`;
+const injected = `const esc = ${escapeHtml};\n${relTime}\n${replyBoxHtml}\n${verdictChipHtml}\nconst STATE_TONE = ${JSON.stringify(STATE_TONE)};\nconst APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};`;
 const combined = injected + '\n' + [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
   .join('\n')
   .replace(/\\\\/g, '\\');
@@ -709,6 +709,12 @@ test('the state line says the shared state word and running time; a live agent p
   const ended = cards.renderSessionStats({ state: { key: 'ended', word: 'Ended' }, durationMs: 60_000 });
   expect(ended).toContain('Ended · ran');
   expect(ended).not.toContain('Done');
+  // An idle session's done verdict takes the state word's place, as on the cards; Idle without one.
+  const verdict = cards.renderSessionStats({ state: { key: 'idle', word: 'Idle' }, durationMs: 60_000, verdict: { tone: 'bad', word: 'Not done', why: 'Idle · not done: teammates still running' } });
+  expect(verdict).toContain('<span class="stats-text"><span class="vchip v-bad" title="Idle · not done: teammates still running"><i></i>Not done</span> · ran <b>');
+  expect(verdict).not.toContain('state-dot');
+  expect(verdict).not.toContain('>Idle');
+  expect(cards.renderSessionStats({ state: { key: 'idle', word: 'Idle' }, durationMs: 60_000, verdict: null })).toContain('Idle · ran');
   expect(cards.renderSessionStats({})).toBe('');
 });
 

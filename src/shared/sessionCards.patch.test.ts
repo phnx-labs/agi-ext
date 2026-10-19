@@ -179,3 +179,22 @@ test('a live line, an ask or a recap coming and going never rebuilds the Made sh
   expect(slot.textContent).toBe('drawn')
   expect(root.querySelector('.fc-act ol') === box).toBe(true)
 })
+
+test('a verdict that changes is patched into the same card node: Not done becomes ✓ Done in place', () => {
+  const root = document.createElement('main');
+  const at = '2026-10-12T23:55:00Z';
+  patchChildren(root, card(row({ sessionId: 'v', doneVerdict: { state: 'open', gaps: ['delivery'], at } })));
+  const live = root.querySelector('.card')!;
+  const meta = live.querySelector('.meta')!;
+  expect(live.querySelector('.vchip')!.textContent).toBe('Not done');
+  expect(live.querySelector('.vchip')!.getAttribute('title')).toBe('Idle · not done: merge, release or install not verified');
+  patchChildren(root, card(row({ sessionId: 'v', doneVerdict: { state: 'done', gaps: [], at } })));
+  expect(root.querySelector('.card') === live).toBe(true);
+  expect(live.querySelector('.meta') === meta).toBe(true);
+  expect(live.querySelector('.vchip')!.className).toBe('vchip v-ok');
+  expect(live.querySelector('.vchip')!.textContent).toBe('✓ Done');
+  // It starts working again: the chip goes, the card stays.
+  patchChildren(root, card(row({ sessionId: 'v', phase: 'running', liveStatus: 'running', doneVerdict: { state: 'done', gaps: [], at } })));
+  expect(root.querySelector('.card') === live).toBe(true);
+  expect(live.querySelector('.vchip')).toBeNull();
+});

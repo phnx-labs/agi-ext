@@ -70,7 +70,7 @@ import { shellQuote } from '../core/shellQuote';
 import { MADE_SCRIPT, PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { REPLY_SCRIPT, replyBoxHtml } from '../shared/replyBox';
 import { madeShelf, requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
-import { SESSION_STATE_WORD, STATE_TONE, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { SESSION_STATE_WORD, STATE_TONE, sessionStateOf, verdictChipHtml, verdictChipOf, type SessionPending, type SessionStateKey, type VerdictChip } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
@@ -169,6 +169,8 @@ interface PanelSnapshot {
   lastActivityMs?: number;
   /** The session's state and its word, from the shared mapping (`sessionStateOf`). */
   state?: { key: SessionStateKey; word: string };
+  /** An idle session's done verdict, drawn in place of its state word (`verdictChipOf`). */
+  verdict?: VerdictChip | null;
   // The open attention item in the harness's own words; absent when nothing waits on the user.
   needsYou?: { kind: string; text: string; openedAtMs?: number };
   failures?: RemoteFailure[];
@@ -997,6 +999,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.userTurns = live.userTurns;
         snapshot.updates = sessionUpdates(sessionPresentationStore.activityEvents(), live.sessionId);
         snapshot.blocked = blockedUpdate(snapshot.updates, live.userTurns?.length ? live.userTurns[live.userTurns.length - 1]!.atMs : undefined);
+        snapshot.verdict = snapshot.blocked ? null : verdictChipOf(stateKey, live.doneVerdict);
         snapshot.subagents = live.subagents;
         snapshot.pending = live.pending;
         if (live.subagents) snapshot.subAgentCount = live.subagents.length;
@@ -1104,6 +1107,7 @@ ${SESSION_CARDS_SCRIPT}
 ${MADE_SCRIPT}
 ${REPLY_SCRIPT}
 ${replyBoxHtml}
+${verdictChipHtml}
 const STATE_TONE = ${JSON.stringify(STATE_TONE)};
 function compactTokens(value) {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -1256,7 +1260,7 @@ function renderSessionStats(s) {
   // time is its tooltip. The account lives in the ⋯ menu.
   const live = st.cls === 'running' && s.lastActivityMs && Date.now() - s.lastActivityMs < 90000;
   const when = s.lastActivityMs ? 'Active ' + relTime(s.lastActivityMs) : '';
-  return '<div class="session-stats state-' + st.cls + (live ? ' live' : '') + '" title="' + esc(when) + '"><span class="state-dot"></span><span class="stats-text">' + esc(st.word) + ran + '</span></div>' +
+  return '<div class="session-stats state-' + st.cls + (live ? ' live' : '') + '" title="' + esc(when) + '">' + (s.verdict ? '' : '<span class="state-dot"></span>') + '<span class="stats-text">' + (s.verdict ? verdictChipHtml(s.verdict) : esc(st.word)) + ran + '</span></div>' +
     renderIdleWarning(s);
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { BALL_WORD, STATE_TONE, ageWords, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, sparkline, urgencyOf, urgencyRank, waitFor } from './sessionState';
+import { BALL_WORD, STATE_TONE, ageWords, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, sparkline, verdictChipHtml, verdictChipOf, urgencyOf, urgencyRank, waitFor } from './sessionState';
 
 test('a waiting phase is Needs you, not Working: input_required is a question or permission pending', () => {
   expect(sessionStateOf({ phase: 'waiting', liveStatus: 'input_required' })).toBe('asks');
@@ -106,3 +106,24 @@ test('the ⌘K activity line folds the row histogram into block characters scale
   expect(sparkline(undefined)).toBe('')
   expect(sparkline(Array.from({ length: 48 }, () => ({ tools: 0 })))).toBe('')
 })
+
+test('the done verdict takes an idle session\'s state word: ✓ Done, Not done with its gaps, Unverified; every other state keeps its own word', () => {
+  const at = '2026-10-18T20:00:00Z';
+  const done = { state: 'done' as const, gaps: [], at };
+  const open = { state: 'open' as const, gaps: ['open-pr', 'delivery', 'new-gap'], at };
+  const unchecked = { state: 'unchecked' as const, gaps: [], at };
+  expect(verdictChipOf('idle', done)).toEqual({ tone: 'ok', word: '✓ Done', why: 'Idle · its done-check passed' });
+  // Each gap in words; one this version does not know as the CLI wrote it.
+  expect(verdictChipOf('idle', open)).toEqual({ tone: 'bad', word: 'Not done', why: 'Idle · not done: a PR it opened is still open; merge, release or install not verified; new-gap' });
+  expect(verdictChipOf('idle', unchecked)).toMatchObject({ tone: 'caption', word: 'Unverified' });
+  for (const st of ['working', 'waiting', 'unknown', 'asks', 'stuck', 'review', 'ended'] as const) expect(verdictChipOf(st, done)).toBeNull();
+  expect(verdictChipOf('idle', undefined)).toBeNull();
+  expect(verdictChipOf('idle', null)).toBeNull();
+});
+
+test('the verdict escapes what the CLI wrote and carries no outside name, so a webview script can carry it', () => {
+  expect(verdictChipHtml({ tone: 'bad', word: 'Not done', why: 'Not done: <b>"x"</b> & y' })).toBe('<span class="vchip v-bad" title="Not done: &lt;b&gt;&quot;x&quot;&lt;/b&gt; &amp; y"><i></i>Not done</span>');
+  expect(verdictChipHtml(null)).toBe('');
+  const carried = new Function(`${verdictChipHtml}\nreturn verdictChipHtml;`)() as typeof verdictChipHtml;
+  expect(carried({ tone: 'ok', word: '✓ Done', why: 'ok' })).toBe('<span class="vchip v-ok" title="ok"><i></i>✓ Done</span>');
+});
