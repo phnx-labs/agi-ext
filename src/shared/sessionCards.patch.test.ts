@@ -161,3 +161,21 @@ test('a data-keep slot takes new attributes and keeps what the page drew inside 
   expect(slot.firstChild === drawn).toBe(true)
   expect(slot.getAttribute('data-made')).toContain('PHNX-2')
 })
+
+test('a live line, an ask or a recap coming and going never rebuilds the Made shelf or the activity box', () => {
+  const steps = { steps: [{ text: 'one', at: new Date(NOW - 60_000).toISOString() }] }
+  const shelf = { artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-1' } }
+  const front = (o: Partial<SessionLike>) => renderSessions([row({ sessionId: 'f', tabHere: true, tabIndex: 1, timeline: steps, ...o })], NOW, { selectedId: null, frontId: 'f', here: HERE, prefs: DEFAULT_SESSION_PREFS, shelfFor: () => shelf })
+  const root = document.createElement('main')
+  patchChildren(root, front({ phase: 'idle', liveStatus: 'idle' }))
+  const slot = root.querySelector('.fc-made')!
+  slot.innerHTML = '<div class="made">drawn</div>'
+  const box = root.querySelector('.fc-act ol')!
+  // It starts working (a live line), then asks, then gets a recap.
+  patchChildren(root, front({ phase: 'running', liveStatus: 'running', activity: 'Bash: bun test' }))
+  patchChildren(root, front({ phase: 'waiting', liveStatus: 'input_required', attention: { key: 'k', kind: 'question', state: 'open', question: { text: 'Ship?' } } }))
+  patchChildren(root, front({ phase: 'idle', liveStatus: 'idle', recap: { text: 'Done.', at: new Date(NOW - 1000).toISOString() } }))
+  expect(root.querySelector('.fc-made') === slot).toBe(true)
+  expect(slot.textContent).toBe('drawn')
+  expect(root.querySelector('.fc-act ol') === box).toBe(true)
+})

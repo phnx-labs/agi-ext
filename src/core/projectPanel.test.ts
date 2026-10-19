@@ -442,6 +442,10 @@ test('only a question is your move; an idle turn is in Idle; a crashed process i
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   expect([at('ask'), at('done'), at('run'), at('crash')]).toEqual([at('ask'), at('done'), at('run'), at('crash')].sort((x, y) => x - y))
   expect(html).toContain('<b>Your move</b> <span class="n">1</span>')
+  // A tab here that asks is Your move too, never under Open tabs (finished).
+  const here = renderSessions([row({ sessionId: 'tq', tabHere: true, tabIndex: 1, phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open' } }), row({ sessionId: 'tf', tabHere: true, tabIndex: 2, phase: 'idle', liveStatus: 'idle' })], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
+  expect(here.slice(here.indexOf('data-group="state:move"'), here.indexOf('data-group="state:here"'))).toContain('data-session="tq"')
+  expect(here.slice(here.indexOf('data-group="state:here"'))).not.toContain('data-session="tq"')
   expect(html).toContain('<b>Idle</b> <span class="n">1</span> <span class="gs">· finished, no tab here</span>')
 })
 

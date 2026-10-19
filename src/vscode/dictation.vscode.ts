@@ -114,11 +114,25 @@ class Dictation {
 
 export const dictation = new Dictation();
 
+/** The reply boxes' pages (the Active Session sidebar and the Project panel can both
+ *  show one): each hears where the mic stands; only the page that started a recording
+ *  gets its words and its error. A page that went away is dropped. */
+const replyPages = new Set<vscode.Webview>();
+let recordingPage: vscode.Webview | undefined;
+
+function tellReplyPages(update: DictationUpdate): void {
+  for (const page of replyPages) {
+    const mine = page === recordingPage;
+    const message = { type: 'dictation', state: update.state, ...(mine && update.text ? { text: update.text } : {}), ...(mine && update.error ? { error: update.error } : {}) };
+    try { Promise.resolve(page.postMessage(message)).catch(() => replyPages.delete(page)); } catch { replyPages.delete(page); }
+  }
+}
+
 /** A reply box's mic, from either sidebar: `dictationState` asks where a recording
- *  stands (a rebuilt box), `dictate` starts (`on: true`) or stops one. The words go
- *  back to the webview that started it. */
+ *  stands (a new or rebuilt box), `dictate` starts (`on: true`) or stops one. */
 export function dictationMessage(msg: { type?: unknown; on?: unknown }, webview: vscode.Webview): void {
+  replyPages.add(webview);
   if (msg.type === 'dictationState') void webview.postMessage({ type: 'dictation', state: dictation.state() });
-  else if (msg.type === 'dictate' && msg.on === true) void dictation.start((update) => { void webview.postMessage({ type: 'dictation', ...update }); });
+  else if (msg.type === 'dictate' && msg.on === true) { recordingPage = webview; void dictation.start(tellReplyPages); }
   else if (msg.type === 'dictate' && msg.on === false) void dictation.stop();
 }

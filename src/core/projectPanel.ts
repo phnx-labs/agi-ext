@@ -861,7 +861,7 @@ function activitySteps(s: SessionLike): string {
     return `<li class="${you ? 'user' : ''}${st.live ? ' live' : ''}"><time>${Number.isFinite(t) ? clock(t) : ''}</time><span class="fc-at">${you ? '<span class="fc-you">You</span> ' : ''}${escapeHtml(plain(st.text))}${now}</span></li>`;
   }).join('');
   const before = earlier ? `<li class="fc-earlier">${earlier} earlier step${earlier === 1 ? '' : 's'}</li>` : '';
-  return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div>${items ? `<ol tabindex="0" aria-label="Activity, newest last">${before}${items}</ol>` : ''}</div>`;
+  return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
 export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null }): string {
@@ -942,7 +942,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     // from the shelf's fields; data-keep keeps a scrolled shelf through every update.
     const madeBlock = opts.shelf ? `<div class="fc-made" data-keep data-made="${escapeHtml(JSON.stringify(opts.shelf))}"></div>` : '';
     // A question from this tab's own agent goes directly under the title, above the recap.
-    const detail = `${reason}${ask}<div class="fc-state">${statePill}<span>${where}</span></div>${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${madeBlock}${activitySteps(s)}`;
+    // Fixed wrappers, so an ask, a live line or a recap coming and going never shifts the
+    // Made shelf or the activity box to another position (the patch pairs by position).
+    const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-state">${statePill}<span>${where}</span></div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${activitySteps(s)}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
     return `${navButtons(opts.nav, s.tabIndex)}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
@@ -1065,9 +1067,9 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const devices = [...new Set(rest.map((x) => x.place.device))].sort((a, b) => Number(b === here.device) - Number(a === here.device) || a.localeCompare(b));
     groups = devices.map((d) => ({ key: `machine:${d}`, name: d, sub: d === here.device ? 'this machine' : '', icon: glyph('machine', 'gi'), items: rest.filter((x) => x.place.device === d) }));
   } else if (prefs.group === 'state') {
-    groups = (['move', 'running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : b === 'move' ? 'asks' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ball(x.row) === b && (b !== 'move' || !tabHere(x))) }));
+    groups = (['move', 'running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : b === 'move' ? 'asks' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ball(x.row) === b) }));
     // A finished turn whose tab is open here is neither running nor ended.
-    const finished = rest.filter((x) => tabHere(x) && ball(x.row) !== 'running' && ball(x.row) !== 'ended');
+    const finished = rest.filter((x) => tabHere(x) && ball(x.row) !== 'running' && ball(x.row) !== 'ended' && ball(x.row) !== 'move');
     const move = groups.shift()!;
     lead = move.items.length ? section(move) : '';
     groups.splice(1, 0, { key: 'state:here', name: 'Open tabs', sub: 'finished', icon: finished.length ? placeIcon(finished[0].place, here) : '', items: finished });
