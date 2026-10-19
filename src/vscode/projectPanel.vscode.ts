@@ -913,6 +913,8 @@ class ProjectPanelController {
     const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
     const front = frontTerminal();
     const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
+    // A tab whose session the stream bound after it came forward enters the history here.
+    this.history.front(frontId || undefined, Date.now());
     return { rows, byId, blockedIds, frontId, prefs: this.prefs() };
   }
 
@@ -1477,6 +1479,8 @@ ${MADE_SCRIPT}
   function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
   // On screen: at least a title row's height of it shows.
   function onScreen(el) { const r = el.getBoundingClientRect(), v = main.getBoundingClientRect(); return Math.min(r.bottom, v.bottom) - Math.max(r.top, v.top) >= 24; }
+  // Scrolling yourself ends it: a later redraw never undoes your scroll.
+  for (const ev of ['wheel', 'touchmove', 'keydown']) main.addEventListener(ev, () => { anchor = null; }, { passive: true });
   function holdAnchor() {
     if (!anchor) return;
     if (Date.now() - anchor.at > 2000) { anchor = null; return; }
@@ -1664,7 +1668,7 @@ ${MADE_SCRIPT}
       const actEnd = activityAtEnd(actBox);
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
       const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
-      const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => [c.closest('.card').dataset.session, c]) : [];
+      const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => { const card = c.closest('.card'); return [card.dataset.key, !!card.closest('.front-pin'), c]; }) : [];
       const menuOpen = same && ctl.querySelector('.menu') && !ctl.querySelector('.menu').hidden;
       // The tab's heading row (☀, search, ⇅ and its menu) goes into the tab row; the rest into main.
       const page = document.createElement('template'); page.innerHTML = m.html;
@@ -1672,7 +1676,7 @@ ${MADE_SCRIPT}
       patchChildren(ctl, head ? head.outerHTML : '');
       if (same) patchChildren(main, page.innerHTML); else main.innerHTML = page.innerHTML;
       if (keepToast) main.querySelector('.toast')?.replaceWith(keepToast);
-      for (const [id, box] of keepConfirm) main.querySelector('.card[data-session="' + CSS.escape(id) + '"]')?.appendChild(box);
+      for (const [key, pinned, box] of keepConfirm) cardsOf('key', key).find((c) => !!c.closest('.front-pin') === pinned)?.appendChild(box);
       if (menuOpen) { ctl.querySelector('.menu').hidden = false; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
       main.dataset.tab = m.tab;
       if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
@@ -1970,7 +1974,9 @@ ${MADE_SCRIPT}
     // 1-9 answer the selected card's ask with that option.
     if (current === 'sessions' && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target.closest && e.target.closest('input, textarea, select'))) {
       const held = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.card[data-session]') : null;
-      const ask = held?.querySelector('.ask[data-ask] .opts:not([hidden])') || main.querySelector('.card.sel .ask[data-ask] .opts:not([hidden])');
+      // A focused card answers its own ask; the front session's listed card answers through the pinned one.
+      const owner = held && !held.querySelector('.ask[data-ask]') && !held.closest('.front-pin') ? main.querySelector('.front-pin .card[data-key="' + CSS.escape(held.dataset.key) + '"]') : null;
+      const ask = (owner || held || main.querySelector('.card.sel'))?.querySelector('.ask[data-ask] .opts:not([hidden])');
       const opt = ask ? ask.querySelectorAll('.opt')[Number(e.key) - 1] : null;
       if (opt) { e.preventDefault(); opt.click(); return; }
     }

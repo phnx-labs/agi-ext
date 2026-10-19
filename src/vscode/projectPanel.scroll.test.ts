@@ -28,7 +28,7 @@ const { document } = window;
 const page = shell('vscode-webview:');
 document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<script'));
 const sent: { type: string; sessionId?: string }[] = [];
-const script = page.match(/<script[^>]*>([\s\S]*?)<\/script>/)![1];
+const script = page.match(/<script[^>]*>([\s\S]*?)<\/script[^>]*>/i)![1];
 const main = document.querySelector('main') as unknown as HTMLElement;
 
 // The geometry happy-dom lacks: a 600 px panel; a listed card is 80 px, the pinned
@@ -102,4 +102,14 @@ test('an arrow or the command fronting a tab keeps the scroll while a card of it
   deliver({ type: 'reveal', sessionId: 'c', flash: false });
   const top = (listed('c').getBoundingClientRect() as DOMRect).top;
   expect(top).toBe(0);
+});
+
+test('scrolling yourself right after a click ends the anchor: a redraw never undoes it', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw('a') });
+  scroll = 400;
+  listed('g').click();
+  main.dispatchEvent(new window.WheelEvent('wheel', { deltaY: 120 }) as unknown as Event);
+  scroll = 520;
+  deliver({ type: 'html', tab: 'sessions', html: draw('g') });
+  expect(scroll).toBe(520);
 });

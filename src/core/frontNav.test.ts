@@ -51,17 +51,30 @@ test('then a turn that finished after you last had it in front, newest first; th
 
 test('‹ goes back through the tabs you had in front, like Back in a browser, and going back is not a new step', () => {
   const h = new FrontHistory();
-  h.front('a', 1); h.front('b', 2); h.front(undefined, 3); h.front('c', 4);
+  const s = (n: number) => n * 2000;
+  h.front('a', s(1)); h.front('b', s(2)); h.front(undefined, s(3)); h.front('c', s(4));
   expect(h.backTrail()).toEqual(['b', 'a']);
-  h.goBack('b'); h.front('b', 5);
+  h.goBack('b'); h.front('b', s(5));
   expect(h.backTrail()).toEqual(['a']);
-  h.goBack('a'); h.front('a', 6);
+  h.goBack('a'); h.front('a', s(6));
   expect(h.backTrail()).toEqual([]);
   // The arrow names where it goes, skipping a session whose tab is gone.
-  h.front('b', 7); h.front('gone', 8); h.front('c', 9);
+  h.front('b', s(7)); h.front('gone', s(8)); h.front('c', s(9));
   const nav = frontNav('needs', [tab('a', 1), tab('b', 2), tab('c', 3)], tab('c', 3), h, (r) => r.title);
   expect(nav.prev).toEqual({ sessionId: 'b', host: 'zion', tip: 'Back: tab 2 · Task b' });
   expect(frontNav('needs', [tab('c', 3)], tab('c', 3), new FrontHistory(), (r) => r.title).prev).toEqual({ tip: 'Nothing to go back to' });
+});
+
+test('a tab passed through for under 1.5 s (restoring tabs at startup, a quick switch) is neither seen nor a step back', () => {
+  const h = new FrontHistory();
+  const tabs = [tab('a', 1, asking(min(-5))), tab('b', 2, { lastActivityMs: min(-3) }), tab('c', 3)];
+  // The editor restores three tabs, each in front for a moment.
+  h.front('a', min(0)); h.front('b', min(0) + 200); h.front('c', min(0) + 400);
+  expect(h.backTrail()).toEqual([]);
+  expect(nextNeedsYou(tabs, 'c', h)?.row.sessionId).toBe('a');
+  h.front('a', min(1)); h.front('c', min(2));
+  expect(h.backTrail()).toEqual(['a', 'c']);
+  expect(nextNeedsYou(tabs, 'c', h)?.row.sessionId).toBe('b');
 });
 
 test('the pinned card draws each Settings mode: Tab order, Next that needs you (with Back), Off (no arrows)', () => {
