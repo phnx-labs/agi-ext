@@ -999,7 +999,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.userTurns = live.userTurns;
         snapshot.updates = sessionUpdates(sessionPresentationStore.activityEvents(), live.sessionId);
         snapshot.blocked = blockedUpdate(snapshot.updates, live.userTurns?.length ? live.userTurns[live.userTurns.length - 1]!.atMs : undefined);
-        snapshot.verdict = snapshot.blocked ? null : verdictChipOf(stateKey, live.doneVerdict);
+        // Settings › A card shows › Done verdict covers this state line too.
+        const showVerdict = !this.context || cardSettings(getSettings(this.context).cards).verdict;
+        snapshot.verdict = snapshot.blocked || !showVerdict ? null : verdictChipOf(stateKey, live.doneVerdict);
         snapshot.subagents = live.subagents;
         snapshot.pending = live.pending;
         if (live.subagents) snapshot.subAgentCount = live.subagents.length;
