@@ -212,6 +212,7 @@ class ProjectView implements vscode.WebviewViewProvider {
         this.leadSub?.dispose();
         this.leadSub = undefined;
         this.view = undefined;
+        this.paletteOpen = false;
         for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
         sessionStreamDemand.setProjectSessionsVisible(false);
       },
@@ -1034,11 +1035,15 @@ class ProjectPanelController {
     return renderPalette(entries, Date.now(), this.favorites(), this.here(webview));
   }
 
-  /** Enter in ⌘K: a session with a tab here comes forward as a card click does; any other
-   *  goes where its focus or resume icon would take it. */
+  /** Enter in ⌘K (the approved prototype's kpick): a tab here comes forward as a card click
+   *  does; a live session elsewhere shows in the sidebar and comes forward where it runs, as
+   *  its ↗ does; an ended one resumes, as its ▶ does, unless the CLI says it cannot. */
   paletteGo(sessionId: string, host: string | undefined, here: boolean): Promise<void> | void {
     if (here) { this.select(sessionId, host, 'always'); this.view.reveal(sessionId); return; }
-    setAgentPanelSubjectFromProject(sessionId, host);
+    const row = preferLive(this.presented().filter((r) => r.sessionId === sessionId))[0];
+    this.select(sessionId, host, 'no');
+    this.view.reveal(sessionId);
+    if (row && sessionStateOf(row as unknown as SessionLike) === 'ended' && row.resumable === false) return;
     return this.goToSession(sessionId, host);
   }
 
@@ -2133,18 +2138,16 @@ ${MADE_SCRIPT}
     if (!rows.some((r) => r.dataset.session === kpicked)) kpicked = rows[0] ? rows[0].dataset.session : null;
     for (const r of klist.querySelectorAll('.krow')) r.setAttribute('aria-selected', String(r.dataset.session === kpicked));
   }
+  // Rows rank by how well they match (paletteMatch), then keep the host's order; the best
+  // 60 show, and the footer says how many more the words would need to narrow.
   function kfilter() {
-    let n = 0;
-    for (const r of klist.querySelectorAll('.krow')) {
-      const t = paletteMatch({ ids: r.dataset.ids, title: r.dataset.title, text: r.dataset.text }, kq.value);
-      r.hidden = t === null || n >= 60;
-      if (!r.hidden) n++;
-      // An exact session id leads; otherwise the host's order holds.
-      r.style.order = t === 0 ? '-1' : '0';
-    }
-    const none = klist.querySelector('.kempty:not(.kwait)');
-    if (none) none.remove();
-    if (!n && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
+    const ranked = [...klist.querySelectorAll('.krow')].map((r, i) => ({ r, i, t: paletteMatch({ ids: r.dataset.ids, title: r.dataset.title, text: r.dataset.text }, kq.value) }));
+    const hits = ranked.filter((x) => x.t !== null).sort((a, b) => a.t - b.t || a.i - b.i);
+    const shownSet = new Set(hits.slice(0, 60).map((x) => x.r));
+    for (const x of ranked) { x.r.hidden = !shownSet.has(x.r); x.r.style.order = String(x.t ?? 0); }
+    for (const el of klist.querySelectorAll('.kempty:not(.kwait), .kmore')) el.remove();
+    if (!hits.length && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
+    if (hits.length > 60) { const d = document.createElement('div'); d.className = 'kempty kmore'; d.style.order = '99'; d.textContent = (hits.length - 60) + ' more \u00b7 type to narrow'; klist.append(d); }
     kmark();
   }
   function kclose() { if (kscrim.hidden) return; kscrim.hidden = true; kql.hidden = true; vscode.postMessage({ type: 'paletteClosed' }); }
@@ -2161,7 +2164,7 @@ ${MADE_SCRIPT}
     observeThumbs(klist);
     if (was) { kscrim.hidden = false; kq.value = ''; kpicked = null; }
     kfilter();
-    if (was || document.activeElement !== kq) { kq.focus(); if (!was) kq.select(); }
+    if (was) kq.focus();
     const sel = klist.querySelector('.krow[aria-selected="true"]');
     if (sel && was) sel.scrollIntoView({ block: 'nearest' });
   }
@@ -2169,7 +2172,12 @@ ${MADE_SCRIPT}
   // ⌘K (Ctrl+K) inside the panel opens it here: the editor's own binding did not reach a
   // focused webview (it waited for a chord instead), so the page takes the key first.
   window.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'search' }); }
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault(); e.stopPropagation();
+      // Open already: back to the box with its words selected; nothing is sent again.
+      if (!kscrim.hidden) { kq.focus(); kq.select(); return; }
+      vscode.postMessage({ type: 'search' });
+    }
   }, true);
   kq.addEventListener('input', () => { kpicked = null; kfilter(); klist.scrollTop = 0; });
   kq.addEventListener('keydown', (e) => {

@@ -11,8 +11,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   favorites, then asks, running, idle, and ended sessions last, dimmed and marked Ended. Each
   row aligns its state, machine, age and tab to the right, and shows the PRs and pages the
   session made, the images you attached (click one for a quick look) and its recap's first
-  sentence instead of the model. ↑↓, Enter and Esc work as before. Artifacts, tickets and PRs
-  are no longer separate results.
+  sentence instead of the model. ↑↓ choose and Esc closes; Enter brings a tab here forward,
+  a session running elsewhere forward where it runs (as its ↗ does), and resumes an ended one
+  (as its ▶ does). Artifacts, tickets and PRs are no longer separate results.
 - ☆ on a session card (it shows on hover, after the title) stars the session. A starred card
   keeps ★ visible, and a Favorites group right under the pinned card lists every starred
   session, each still in its own group too. Stars are yours, kept across reloads and windows.
