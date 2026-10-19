@@ -1031,7 +1031,7 @@ class ProjectPanelController {
       const card = sessionCardFields(r, { sessionId: r.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri });
       return { row, made: sessionMade(card), images: requestImageThumbs(r, { home: os.homedir(), remoteDevice, exists: (f) => fs.existsSync(f), previewUri }) };
     });
-    return renderPalette(entries, Date.now(), this.favorites());
+    return renderPalette(entries, Date.now(), this.favorites(), this.here(webview));
   }
 
   /** Enter in ⌘K: a session with a tab here comes forward as a card click does; any other
@@ -1485,16 +1485,17 @@ ${MADE_CSS}
   .kscrim[hidden], .kql[hidden] { display: none; }
   .kpal { width: 100%; max-width: 640px; max-height: calc(100vh - 52px); display: flex; flex-direction: column; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 16px 44px rgba(0,0,0,.35); overflow: hidden; }
   .kpal input { flex: none; border: 0; border-bottom: 1px solid var(--r-edge); padding: 10px 12px; font: inherit; font-size: 13px; color: var(--vscode-input-foreground); background: transparent; outline: none; }
-  .klist { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 4px; }
-  .krow { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 7px; row-gap: 3px; align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+  .klist { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; padding: 4px; }
+  .krow { display: grid; grid-template-columns: 16px minmax(min(45%, 9em), 1fr) minmax(0, max-content); column-gap: 7px; min-width: 0; row-gap: 3px; align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
   .krow[hidden] { display: none; }
   .krow:hover { background: var(--r-glass-hover); } .krow[aria-selected="true"] { background: var(--r-selected, var(--r-glass-hover)); box-shadow: inset 2px 0 0 var(--r-gold-line); }
   .krow .hx { width: 14px; height: 14px; border-radius: 3px; grid-row: 1; }
   .krow .kt { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 12.5px; }
   .krow .kfav { color: var(--r-gold-line); margin-right: 4px; }
-  .krow .kmeta { grid-column: 3; display: flex; align-items: center; gap: 6px; justify-content: flex-end; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
+  .krow .kmeta { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; justify-self: end; max-width: 100%; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
   .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--r-caption); }
   .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow.ended { opacity: .55; }
   .kth { display: block; width: 46px; height: 28px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); outline: 1.5px dashed var(--r-faint); outline-offset: 1px; background: var(--r-well); cursor: zoom-in; }
   .kth img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -2165,6 +2166,11 @@ ${MADE_SCRIPT}
     if (sel && was) sel.scrollIntoView({ block: 'nearest' });
   }
   window.addEventListener('message', (e) => { if (e.data && e.data.type === 'palette') kshow(e.data.html, e.data.waiting); });
+  // ⌘K (Ctrl+K) inside the panel opens it here: the editor's own binding did not reach a
+  // focused webview (it waited for a chord instead), so the page takes the key first.
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'search' }); }
+  }, true);
   kq.addEventListener('input', () => { kpicked = null; kfilter(); klist.scrollTop = 0; });
   kq.addEventListener('keydown', (e) => {
     e.stopPropagation();
