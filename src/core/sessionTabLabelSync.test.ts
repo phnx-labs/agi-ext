@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { planSessionTabLabelUpdate, restoredSessionTabLabels } from './sessionTabLabelSync';
+import { planLaunchStage, planSessionTabLabelUpdate, restoredSessionTabLabels } from './sessionTabLabelSync';
 import { streamTitle } from './projectPanel';
 
 const row = (o: Partial<{ title: string; label: string; topic: string; cwd: string }>) => ({ title: '', label: '', topic: '', ...o });
@@ -51,5 +51,25 @@ describe('session tab label reconciliation', () => {
     expect(restoredSessionTabLabels('Release the project', {
       autoLabel: 'Release the project',
     })).toEqual({ manualLabel: undefined, autoLabel: 'Release the project' });
+  });
+});
+
+describe('planLaunchStage', () => {
+  const live = (id: string) => id === 'running';
+
+  test('an unnamed tab says New session once the stream lists its session running', () => {
+    expect(planLaunchStage({ stage: 'placing', sessionId: 'running' }, live)).toEqual({ stage: 'ready', rename: true });
+    expect(planLaunchStage({ stage: 'starting', sessionId: 'running' }, live)).toEqual({ stage: 'ready', rename: true });
+  });
+
+  test('stays where it is until then, and a tab with no session id waits for the stream to bind one', () => {
+    expect(planLaunchStage({ stage: 'placing', sessionId: 'still-placing' }, live)).toBeUndefined();
+    expect(planLaunchStage({ stage: 'starting' }, live)).toBeUndefined();
+  });
+
+  test('a name that arrived first wins; a tab with no stage or already ready is left alone', () => {
+    expect(planLaunchStage({ stage: 'starting', sessionId: 'running', autoLabel: 'Fix the auth bug' }, live)).toEqual({ stage: 'ready', rename: false });
+    expect(planLaunchStage({ sessionId: 'running' }, live)).toBeUndefined();
+    expect(planLaunchStage({ stage: 'ready', sessionId: 'running' }, live)).toBeUndefined();
   });
 });

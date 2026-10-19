@@ -31,6 +31,7 @@ import { registerTerminalLinks } from './webviewSecurity';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
+  planLaunchStage,
   planSessionTabLabelUpdate,
 } from '../core/sessionTabLabelSync';
 import { runRecapHeadless, isRecapSupported } from './recap.vscode';
@@ -493,13 +494,15 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   // agent, which is the opposite of the policy in core/terminals.ts.
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    name: buildTerminalTitle(undefined, context, sessionId ?? null, launchStage(!isLocal && !host)),
+    name: opts.agentKey === 'shell'
+      ? getExpandedAgentName(agentConfig.prefix)
+      : buildTerminalTitle(undefined, context, sessionId ?? null, launchStage(!isLocal && !host)),
     workspacePath: cwd,
     userShell: opts.agentKey === 'shell',
     agentKey: opts.agentKey,
     sessionId,
     host,
-    stage: launchStage(!isLocal && !host),
+    stage: opts.agentKey === 'shell' ? undefined : launchStage(!isLocal && !host),
   });
   terminal.show(false);
   // The harness is unknown until the runner starts, so let adoption re-key the
@@ -1919,9 +1922,10 @@ async function placeSpawnRequest(
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
   const cwd = req.cwd || workspaceFolder;
   const terminalId = terminals.nextId(agentConfig.prefix);
+  const isShell = def.key === 'shell';
   const title =
     req.title?.trim() ||
-    buildTerminalTitle(undefined, context, sessionId, 'starting');
+    (isShell ? getExpandedAgentName(agentConfig.prefix) : buildTerminalTitle(undefined, context, sessionId, 'starting'));
 
   const parent = req.split ? aliveSpawnParent() : undefined;
   const surface = resolveSpawnSurface({
@@ -1929,7 +1933,6 @@ async function placeSpawnRequest(
     hasParent: !!parent,
   });
 
-  const isShell = def.key === 'shell';
   const location: vscode.TerminalEditorLocationOptions | vscode.TerminalSplitLocationOptions =
     surface === 'native-split' && parent
       ? { parentTerminal: parent }
@@ -1946,6 +1949,7 @@ async function placeSpawnRequest(
     userShell: isShell,
     agentKey: detectedKey ?? undefined,
     sessionId,
+    stage: isShell || req.title?.trim() ? undefined : 'starting',
   });
   if (pid === undefined) return result('failed', { terminalId, title }, "the tab's shell did not start within 10s");
   if (isShell || !detectedKey || !agentKeyFromSession(detectedKey)) {
@@ -2994,11 +2998,10 @@ async function fetchAndSetAutoLabel(
  */
 async function advanceLaunchStages(context: vscode.ExtensionContext): Promise<void> {
   for (const entry of terminals.getAllTerminals()) {
-    if (!entry.stage || entry.stage === 'ready' || !entry.sessionId) continue;
-    if (!sessionPresentationStore.liveSession(entry.sessionId)) continue;
-    entry.stage = 'ready';
-    if (entry.label || entry.autoLabel) continue;
-    await terminals.renameTerminal(entry.terminal, buildTerminalTitle(undefined, context, entry.sessionId, 'ready'));
+    const plan = planLaunchStage(entry, (id) => !!sessionPresentationStore.liveSession(id));
+    if (!plan) continue;
+    entry.stage = plan.stage;
+    if (plan.rename) await terminals.renameTerminal(entry.terminal, buildTerminalTitle(undefined, context, entry.sessionId, 'ready'));
   }
 }
 
@@ -3026,11 +3029,10 @@ async function syncCanonicalSessionTabLabels(context: vscode.ExtensionContext): 
     }
     terminals.setAutoLabel(entry.terminal, update.label);
 
-    // Renaming briefly activates a terminal. Apply immediately only to the tab
-    // the user is already viewing; an inactive tab stores the new autoLabel and
-    // the existing focus handler renders it when that tab is next selected.
-    if (vscode.window.activeTerminal !== entry.terminal) continue;
-    updateStatusBarForTerminal(entry.terminal, context.extensionPath);
+    // renameTerminal renames only the tab in front; a background tab stores the
+    // name as its pending title, replacing a launch stage queued there, and takes
+    // it when it is next selected.
+    if (vscode.window.activeTerminal === entry.terminal) updateStatusBarForTerminal(entry.terminal, context.extensionPath);
     await terminals.renameTerminal(entry.terminal, buildTerminalTitle(update.label, context, entry.sessionId));
   }
 }

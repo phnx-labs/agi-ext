@@ -1,4 +1,4 @@
-import { capTabName, isTabStageName } from './utils';
+import { capTabName, isTabStageName, type TabStage } from './utils';
 
 export interface SessionTabLabelState {
   manualLabel?: string;
@@ -45,4 +45,17 @@ export function restoredSessionTabLabels(
   const manualLabel = persistedManualLabel
     || (visibleManualLabel && !automatic(visibleManualLabel) && !isTabStageName(visibleManualLabel) ? visibleManualLabel : undefined);
   return { manualLabel, autoLabel };
+}
+
+/**
+ * Whether an unnamed tab leaves its launch stage: once the stream lists its session
+ * running. `rename` is false when the tab already has a name, which wins.
+ */
+export function planLaunchStage(
+  tab: { stage?: TabStage; sessionId?: string; label?: string; autoLabel?: string },
+  sessionLive: (sessionId: string) => boolean,
+): { stage: 'ready'; rename: boolean } | undefined {
+  if (!tab.stage || tab.stage === 'ready' || !tab.sessionId) return undefined;
+  if (!sessionLive(tab.sessionId)) return undefined;
+  return { stage: 'ready', rename: !tab.label && !tab.autoLabel };
 }
