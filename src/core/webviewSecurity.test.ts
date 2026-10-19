@@ -95,6 +95,17 @@ describe('webLinksIn', () => {
       .toEqual(['https://linear.app/rush/issue/PHNX-12?x=1#c', 'http://localhost:5173/a.b']);
   });
 
+  it('keeps a balanced parenthesis, bracket or brace inside the link', () => {
+    expect(webLinksIn('see https://en.wikipedia.org/wiki/Function_(mathematics).').map((l) => l.url))
+      .toEqual(['https://en.wikipedia.org/wiki/Function_(mathematics)']);
+    expect(webLinksIn('https://x.dev/s?a[]=1&q={x}, done').map((l) => l.url)).toEqual(['https://x.dev/s?a[]=1&q={x}']);
+  });
+
+  it('finds every link on a line, and nothing in a bare scheme', () => {
+    expect(webLinksIn('https://a.dev/1 and https://b.dev/2; https://').map((l) => [l.startIndex, l.url]))
+      .toEqual([[0, 'https://a.dev/1'], [20, 'https://b.dev/2']]);
+  });
+
   it('ignores other schemes and bare hosts', () => {
     expect(webLinksIn('file:///etc/passwd github.com/x mailto:a@b.c ftp://x.y')).toEqual([]);
   });

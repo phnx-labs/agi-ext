@@ -373,7 +373,7 @@ async function openTrackedTab(
     env: buildAgentTerminalEnv(terminalId, spec.sessionId, spec.workspacePath, spec.version, {
       scrubSensitive: !spec.userShell,
       kind: spec.userShell ? 'shell' : 'agent',
-      plainLinks: !spec.userShell && vscode.workspace.getConfiguration('agents').get('links.openIn', 'editor') === 'editor',
+      plainLinks: vscode.workspace.getConfiguration('agents').get('links.openIn', 'editor') === 'editor',
     }),
     isTransient: true,
     hideFromUser: spec.hideFromUser,

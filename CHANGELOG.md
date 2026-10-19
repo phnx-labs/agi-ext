@@ -9,8 +9,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 - A link an agent prints in its tab now opens as a tab in the editor's browser, like the PRs
   and tickets in the panels, instead of your default browser. Use the terminal's usual link
   click: ⌘-click on a Mac, or ⌥-click when `editor.multiCursorModifier` is `ctrlCmd`. To make
-  this work, agent tabs started from now on print links as plain text, so a markdown link in
-  Claude's answer shows its URL in parentheses after the text. Terminals you open yourself
+  this work, tabs the extension starts from now on print links as plain text, so a markdown
+  link in Claude's answer shows its URL in parentheses after the text. Terminals you open yourself
   are unchanged, and `agents.links.openIn: browser` keeps today's behavior.
 
 ## [0.9.418] - 2026-10-19
