@@ -98,17 +98,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`src/vscode/dictation.vscode.ts`); nothing is sent anywhere.
   A request's pasted images are looked up by file name in this machine's
   `~/.agents/.history/attachments/`, where the CLI saved them.
-  An eighth: ⌘K's artifact index (`src/vscode/searchPalette.vscode.ts`) runs
-  `artifacts list --json`, reads the first 512 KB of the rendered HTML beside each source
-  (title and `agents://session/<id>`; re-read only on a new mtime) and `sessions artifacts <id> --json`
-  for this machine's newest sessions, in the background when the picker opens, at most
-  once a minute; the picker never waits on it.
-  A ninth: Settings > Devices is one `agents devices list --json` read when Settings shows
+  An eighth: Settings > Devices is one `agents devices list --json` read when Settings shows
   (at most once a minute), on Refresh, and after a checkbox or star; each checkbox or star is
   one `agents devices enable|disable` or `agents devices config <name> auto-launch.preferred`
   argv (`deviceSettingArgv`, `src/core/panelSettings.ts`). It draws the CLI's `autoSkip`; it
   never decides placement.
-  A tenth: Close Terminal With Recap finds the transcript with one `sessions <id> --json` read
+  A ninth: Close Terminal With Recap finds the transcript with one `sessions <id> --json` read
   when the command runs (`transcriptPathOf`, `src/vscode/recap.vscode.ts`), so it works while
   no view demands the stream; the extension reads no transcript itself.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
@@ -125,7 +120,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - The Active Session sidebar is the one preview: a Project panel session click sets its
   subject (`setAgentPanelSubjectFromProject`), brings the tab this window binds to the session
   forward wherever its agent runs (`select`; Settings > Card click "Only show it" keeps it; ⌘K
-  always fronts it), and spawns or resumes nothing. No per-selection fetch. A plain shell in
+  always fronts it), and spawns or resumes nothing. ⌘K is the Project panel's own overlay
+  (`ProjectView.openPalette`, `renderPalette`): sessions only, from the store's rows, any
+  project, live and ended; it reads nothing, and its thumbnails are the request's pasted
+  images looked up as above. No per-selection fetch. A plain shell in
   front clears the subject, so the sidebar names the shell (`followFrontTerminal`).
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`),
   `harnessLaunchRegistrations` and `buildTabLaunchCommand` (`src/core/launchTarget.ts`); no

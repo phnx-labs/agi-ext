@@ -75,7 +75,7 @@ export function pendingLines(p: SessionPending | null | undefined, now: number):
 }
 
 /** "45s", "6m", "2h", "3d": how long ago, in the fewest characters. */
-export function agoWords(ms: number): string {
+function agoWords(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;
   const m = Math.round(s / 60);
