@@ -1,8 +1,8 @@
 // The Lead client: one long-lived headless Claude per project that agents-cli owns
 // (`agents lead … --json`). The extension is a thin client: every gesture is one
 // `agents lead` verb, and what it shows is the NDJSON that verb prints. These are
-// the pure parts plus the process boundary; the overlay, status bar and tab live in
-// src/vscode/lead.vscode.ts and src/vscode/leadTab.vscode.ts.
+// the pure parts plus the process boundary; the status bar, ⌥Space and the mic live in
+// src/vscode/lead.vscode.ts, and the Project panel's Lead tab draws src/core/leadView.ts.
 
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
@@ -28,7 +28,7 @@ export type LeadEvent =
   | { type: 'status'; state: LeadPhase }
   | { type: 'tool'; id: string; label: string; cmd?: string; state: 'run' | 'ok' | 'fail'; secs?: number }
   | { type: 'text'; delta: string }
-  | { type: 'confirm'; token: string; action: string; sessionId?: string; label: string }
+  | { type: 'confirm'; token: string; action: string; sessionId?: string; label: string; detail?: string }
   | { type: 'done'; turn: string; text: string; summary: string; refs: LeadRef[]; timing?: LeadTiming }
   | { type: 'error'; message: string };
 
@@ -85,7 +85,7 @@ export function parseLeadLine(line: string): LeadEvent | null {
       return str(v.delta) ? { type: 'text', delta: v.delta } : null;
     case 'confirm':
       if (!str(v.token) || !v.token) return null;
-      return { type: 'confirm', token: v.token, action: str(v.action) ? v.action : '', label: str(v.label) ? v.label : 'Confirm', ...(str(v.sessionId) ? { sessionId: v.sessionId } : {}) };
+      return { type: 'confirm', token: v.token, action: str(v.action) ? v.action : '', label: str(v.label) ? v.label : 'Confirm', ...(str(v.sessionId) ? { sessionId: v.sessionId } : {}), ...(str(v.detail) && v.detail ? { detail: v.detail } : {}) };
     case 'done': {
       const text = str(v.text) ? v.text : '';
       return { type: 'done', turn: str(v.turn) ? v.turn : '', text, summary: str(v.summary) && v.summary ? v.summary : summaryOf(text), refs: parseRefs(v.refs), ...(parseTiming(v.timing) ? { timing: parseTiming(v.timing) } : {}) };
@@ -103,10 +103,34 @@ export function summaryOf(text: string): string {
   return first.length > 80 ? first.slice(0, 79) + '…' : first;
 }
 
+/** What the editor shows when you ask: the tab in front and the open tabs, so "this one" resolves. */
+export interface LeadContext {
+  front?: { sessionId: string; title: string; tab?: number };
+  tabs: { sessionId: string; title: string; tab?: number }[];
+}
+
+export interface LeadAskOptions {
+  /** The words were spoken: the recording's length in seconds. */
+  voiceSecs?: number;
+  context?: LeadContext;
+  /** agents-cli speaks the answer on this machine as it streams. */
+  speak?: boolean;
+}
+
+export function leadAskArgs(project: string, text: string, opts: LeadAskOptions = {}): string[] {
+  return [
+    'ask', '--project', project,
+    ...(opts.voiceSecs !== undefined ? ['--voice', opts.voiceSecs.toFixed(1)] : []),
+    ...(opts.context && (opts.context.front || opts.context.tabs.length) ? ['--context', JSON.stringify(opts.context)] : []),
+    ...(opts.speak ? ['--speak'] : []),
+    '--json', '--', text,
+  ];
+}
+
 // ── One turn, as the events build it ──
 
 interface LeadToolRow { id: string; label: string; cmd?: string; state: 'run' | 'ok' | 'fail'; secs?: number }
-interface LeadConfirmRow { token: string; action: string; sessionId?: string; label: string; state: 'open' | 'running' | 'done' | 'failed'; message?: string }
+interface LeadConfirmRow { token: string; action: string; sessionId?: string; label: string; detail?: string; state: 'open' | 'running' | 'done' | 'failed'; message?: string }
 
 export interface LeadTurn {
   /** The words you sent; empty for a turn a Confirm started. */
@@ -146,7 +170,7 @@ export function applyLeadEvent(t: LeadTurn, e: LeadEvent, now: number): LeadTurn
     }
     case 'text': t.text += e.delta; break;
     case 'confirm':
-      if (!t.confirms.some((c) => c.token === e.token)) t.confirms.push({ token: e.token, action: e.action, label: e.label, state: 'open', ...(e.sessionId ? { sessionId: e.sessionId } : {}) });
+      if (!t.confirms.some((c) => c.token === e.token)) t.confirms.push({ token: e.token, action: e.action, label: e.label, state: 'open', ...(e.sessionId ? { sessionId: e.sessionId } : {}), ...(e.detail ? { detail: e.detail } : {}) });
       break;
     case 'done':
       if (e.turn) t.turn = e.turn;
@@ -212,17 +236,6 @@ export function linkify(text: string, refs: readonly LeadRef[], knownPrefixes: r
   }
   if (at < text.length) out.push({ kind: 'text', text: text.slice(at) });
   return out;
-}
-
-/** What a ref row or link says about itself. */
-export function refLabel(r: LeadRef): string {
-  return r.kind === 'ticket' ? r.id : r.kind === 'pr' ? `#${r.number}` : (r.title || r.id.slice(0, 8));
-}
-
-export function refDescription(r: LeadRef): string {
-  return r.kind === 'ticket' ? 'ticket · opens in Issues'
-    : r.kind === 'pr' ? `${r.repo} · pull request`
-      : ['session', r.host].filter(Boolean).join(' · ') + ' · goes to its tab';
 }
 
 /** Ticket ids, PR numbers or session ids are the identity; one row per ref. */
@@ -593,11 +606,19 @@ export class LeadClient {
     this.emit();
   }
 
-  /** `agents lead ask --project <p> [--voice <secs>] --json <text>`; resolves when the turn ends. */
-  async ask(project: string, text: string, voiceSecs?: number): Promise<LeadTurn> {
+  /** `agents lead ask --project <p> [--voice <secs>] [--context <json>] [--speak] --json <text>`; resolves when the turn ends. */
+  async ask(project: string, text: string, opts: LeadAskOptions = {}): Promise<LeadTurn> {
     if (this.busy) throw new Error('The Lead is still working on the last turn.');
-    const args = ['ask', '--project', project, ...(voiceSecs !== undefined ? ['--voice', voiceSecs.toFixed(1)] : []), '--json', '--', text];
-    return this.run(project, newTurn(text, this.now(), voiceSecs), args);
+    return this.run(project, newTurn(text, this.now(), opts.voiceSecs), leadAskArgs(project, text, opts));
+  }
+
+  /** Every open Confirm of one turn, one `agents lead confirm` after another; stops at the first that fails. */
+  async confirmAll(tokens: readonly string[]): Promise<void> {
+    for (const token of tokens) {
+      if (!this.hasOpenConfirm(token)) continue;
+      const done = await this.confirm(token);
+      if (done.error) return;
+    }
   }
 
   /** `agents lead confirm <token> --json`: runs the gated action as its own turn. */

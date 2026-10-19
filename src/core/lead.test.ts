@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  leadAskArgs,
   LeadClient, ageText, answerLines, applyLeadEvent, linkify, newTurn, parseLeadHistory, parseLeadLine,
   isWebUrl, nextSurface, parseLeadStatus, parseSurface, readSurface, readSurfaceFile, summaryOf, uniqueRefs, watchSurface, writeSurface,
   type LeadEvent, type LeadRef,
@@ -270,7 +271,7 @@ describe('LeadClient against the fake `agents lead`', () => {
       const client = new LeadClient({ resolveBin: stubBin, now: () => 5000 });
       const busy: boolean[] = [];
       client.onChange((s) => busy.push(s.busy));
-      const turn = await client.ask('rush', '-what is waiting', 6);
+      const turn = await client.ask('rush', '-what is waiting', { voiceSecs: 6, context: { front: { sessionId: 's-1', title: 'Automations', tab: 10 }, tabs: [{ sessionId: 's-1', title: 'Automations', tab: 10 }] }, speak: true });
       expect(turn.error).toBeUndefined();
       expect(turn.finished).toBe(true);
       expect(turn.tools).toEqual([{ id: 'u1', label: 'agents ps', cmd: 'agents ps --json', state: 'ok', secs: 1.24 }]);
@@ -282,7 +283,9 @@ describe('LeadClient against the fake `agents lead`', () => {
       expect(busy[0]).toBe(true);
       expect(busy[busy.length - 1]).toBe(false);
       const argv = JSON.parse(fs.readFileSync(log, 'utf8').trim());
-      expect(argv).toEqual(['lead', 'ask', '--project', 'rush', '--voice', '6.0', '--json', '--', '-what is waiting']);
+      expect(argv).toEqual(['lead', 'ask', '--project', 'rush', '--voice', '6.0',
+        '--context', JSON.stringify({ front: { sessionId: 's-1', title: 'Automations', tab: 10 }, tabs: [{ sessionId: 's-1', title: 'Automations', tab: 10 }] }),
+        '--speak', '--json', '--', '-what is waiting']);
     });
   });
 
@@ -300,6 +303,30 @@ describe('LeadClient against the fake `agents lead`', () => {
       const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
       expect(calls[1]).toEqual(['lead', 'confirm', 'c_9', '--json']);
     });
+  });
+
+  test('Confirm all runs each held action in turn, with its detail on the row', async () => {
+    const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lead-log-')), 'argv');
+    await withEnv({ LEAD_STUB_LOG: log }, async () => {
+      const client = new LeadClient({ resolveBin: stubBin });
+      const asked = await client.ask('rush', 'three things please');
+      expect(asked.confirms.map((c) => [c.token, c.action, c.detail])).toEqual([['c_a', 'send', 'From now on, skip draft PRs.'], ['c_b', 'pr', 'WIP: blog draft'], ['c_c', 'start', 'Fix the flaky console test']]);
+      await client.confirmAll(['c_a', 'c_b', 'c_c']);
+      expect(asked.confirms.map((c) => c.state)).toEqual(['done', 'done', 'done']);
+      const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      expect(calls.slice(1).map((c: string[]) => c[2])).toEqual(['c_a', 'c_b', 'c_c']);
+    });
+  });
+
+  test('Confirm all stops at the first action that fails', async () => {
+    const client = new LeadClient({ resolveBin: stubBin });
+    const asked = await client.ask('rush', 'three things that fails');
+    await client.confirmAll(['c_x', 'c_a', 'c_b']);
+    expect(asked.confirms.map((c) => c.state)).toEqual(['open', 'open', 'failed']);
+  });
+
+  test('ask passes no --context when the editor shows no agent tab', () => {
+    expect(leadAskArgs('rush', 'hi', { context: { tabs: [] } })).toEqual(['ask', '--project', 'rush', '--json', '--', 'hi']);
   });
 
   test('an expired token fails its Confirm row with the CLI message', async () => {

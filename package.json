@@ -86,7 +86,6 @@
       "terminal.integrated.confirmOnKill": "panel",
       "terminal.integrated.enablePersistentSessions": false,
       "terminal.integrated.commandsToSkipShell": [
-        "agents.lead.ask",
         "agents.lead.talk"
       ]
     },
@@ -670,7 +669,7 @@
       },
       {
         "command": "agents.lead.ask",
-        "title": "Ask the Lead",
+        "title": "Ask the Lead (open the Lead tab)",
         "category": "Lead",
         "icon": "$(comment-discussion)"
       },
@@ -692,7 +691,7 @@
       },
       {
         "command": "agents.lead.talk",
-        "title": "Talk (start or stop the microphone)",
+        "title": "Talk to the Lead (start or stop the microphone)",
         "category": "Lead",
         "icon": "$(mic)"
       },
@@ -803,6 +802,11 @@
           "type": "string",
           "default": "~/.cache/whisper-models/ggml-large-v3-turbo.bin",
           "markdownDescription": "The whisper.cpp model the reply box's mic transcribes with, on this machine. Needs `ffmpeg` and `whisper-cli` (`brew install ffmpeg whisper-cpp`)."
+        },
+        "agents.lead.speak": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "The Lead reads its answers aloud on this machine as they stream (`agents lead ask --speak`; agents-cli does the speaking)."
         }
       }
     },
@@ -877,10 +881,6 @@
         {
           "command": "agents.lead.float",
           "when": "!agents.lead.bubble"
-        },
-        {
-          "command": "agents.lead.talk",
-          "when": "agents.lead.overlayOpen"
         }
       ],
       "view/title": [
@@ -1168,16 +1168,10 @@
         "mac": "cmd+alt+shift+9"
       },
       {
-        "command": "agents.lead.ask",
-        "key": "alt+space",
-        "mac": "alt+space",
-        "when": "!agents.lead.bubble && !agents.lead.overlayOpen"
-      },
-      {
         "command": "agents.lead.talk",
         "key": "alt+space",
         "mac": "alt+space",
-        "when": "agents.lead.overlayOpen"
+        "when": "!agents.lead.bubble"
       }
     ]
   },

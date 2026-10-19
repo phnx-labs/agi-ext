@@ -66,17 +66,17 @@ test('▶ on the row and Start in the peek each send one start; a second click, 
   expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2' }]);
 });
 
-test('Settings > Tabs hides Review and Issues; Sessions hides only while it shows, so Settings keeps a way back', () => {
+test('Settings > Tabs hides Review and Issues; Sessions stays as the way back from the Lead tab and Settings', () => {
   const hidden = () => [...document.querySelectorAll('.tabs .tab')].map((t) => `${(t as unknown as HTMLElement).dataset.tab}:${(t as unknown as HTMLElement).hidden}`).join(' ');
   sent.length = 0;
   deliver({ type: 'tabs', prs: false, tickets: false });
-  // Issues was showing and is gone: the panel goes back to Sessions, and Sessions needs no tab.
+  // Issues was showing and is gone: the panel goes back to Sessions.
   expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
-  expect(hidden()).toBe('sessions:true prs:true tickets:true');
+  expect(hidden()).toBe('sessions:false prs:true tickets:true lead:false');
   deliver({ type: 'choose', tab: 'settings' });
-  expect(hidden()).toBe('sessions:false prs:true tickets:true');
+  expect(hidden()).toBe('sessions:false prs:true tickets:true lead:false');
   deliver({ type: 'tabs', prs: true, tickets: false });
-  expect(hidden()).toBe('sessions:false prs:false tickets:true');
+  expect(hidden()).toBe('sessions:false prs:false tickets:true lead:false');
   // ⌃3 to Issues, which is off, lands on Sessions.
   sent.length = 0;
   deliver({ type: 'choose', tab: 'tickets' });

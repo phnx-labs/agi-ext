@@ -30,7 +30,7 @@ export class PressGate {
 
 type MicState = 'idle' | 'listening' | 'transcribing';
 export interface MicUpdate { state: MicState; text?: string; error?: string }
-export type MicOrigin = 'overlay' | 'tab';
+type MicOrigin = 'overlay' | 'tab';
 
 /**
  * The Lead's use of the shared microphone (the reply box's dictation), as a pure
