@@ -1423,9 +1423,6 @@ ${MADE_CSS}
   /* The pinned card's title renames a Claude session on a click. */
   .card.front .ttl.rn { cursor: text; border-radius: 4px; } .card.front .ttl.rn:hover { background: var(--r-glass-hover); }
   .ttl-edit { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; font-size: 12.5px; padding: 0 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; outline: none; }
-  /* A click that opens something rings once, and the page says "Opening …" until the host acts. */
-  .opening { animation: opening .9s ease-out; }
-  @keyframes opening { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--r-gold-line) 70%, transparent); } 40% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--r-gold-line) 30%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
   ${logoCss}
   /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
   .tabs .sctl { margin-left: auto; position: relative; display: flex; align-items: center; min-width: 0; }
@@ -1480,7 +1477,7 @@ ${MADE_CSS}
   .settings .doff { color: var(--r-faint); font-size: 11px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .err { color: var(--r-bad); }
   .settings .rbtn { flex: none; font: inherit; font-size: 11.5px; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); cursor: pointer; } .settings .rbtn:hover { background: var(--r-glass-hover); }
-  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash, .opening { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1794,9 +1791,14 @@ ${MADE_SCRIPT}
   function hideToast() { const el = main.querySelector('.toast'); if (el) el.hidden = true; undo = null; busyShown = false; }
   // A click that opens something rings the thing clicked and says so at once; the host's
   // 'opened' ends it, so nothing silently waits (owner video, 2026-10-19 12:58 AM).
+  // The ring is a Web Animation, not a class: the redraw a click causes rewrites the card's
+  // classes, and an animation on the node outlives that.
   function opening(el, words) {
-    el.classList.remove('opening'); void el.offsetWidth; el.classList.add('opening');
-    setTimeout(() => el.classList.remove('opening'), 900);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && el.animate) el.animate([
+      { boxShadow: '0 0 0 0 color-mix(in srgb, var(--r-gold-line) 70%, transparent)' },
+      { boxShadow: '0 0 0 4px color-mix(in srgb, var(--r-gold-line) 30%, transparent)', offset: 0.4 },
+      { boxShadow: '0 0 0 0 transparent' },
+    ], { duration: 900, easing: 'ease-out' });
     toast(words, null, true);
   }
   function named(el, fallback) { return (el.textContent || '').trim() || fallback; }
