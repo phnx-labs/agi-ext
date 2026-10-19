@@ -22,6 +22,9 @@ export interface FrontMemory {
 }
 
 const TRAIL_MAX = 50;
+/** A tab in front for less than this was passed through (a restore, a quick switch): it is
+ *  neither seen nor a step Back returns to. */
+const DWELL_MS = 1500;
 
 /** A window's own front-tab history: when each session was last in front, and the
  *  trail ‹ walks back, like Back in a browser. */
@@ -29,13 +32,14 @@ export class FrontHistory implements FrontMemory {
   private readonly seen = new Map<string, number>();
   private readonly trail: string[] = [];
   private current: string | undefined;
+  private since = 0;
   private returning: string | undefined;
 
   /** The front tab changed; `id` is its session, undefined for a tab with none. */
   front(id: string | undefined, now: number): void {
     if (id === this.current) return;
     const prev = this.current;
-    if (prev) {
+    if (prev && now - this.since >= DWELL_MS) {
       this.seen.set(prev, now);
       // ‹ itself is not a step forward, so going back never grows the trail.
       if (!(id && this.returning === id) && this.trail[this.trail.length - 1] !== prev) {
@@ -43,9 +47,9 @@ export class FrontHistory implements FrontMemory {
         if (this.trail.length > TRAIL_MAX) this.trail.shift();
       }
     }
-    if (id) this.seen.set(id, now);
     this.returning = undefined;
     this.current = id;
+    this.since = now;
   }
 
   /** ‹ was pressed for `id`: it and every newer step leave the trail. */
