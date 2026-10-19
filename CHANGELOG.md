@@ -6,10 +6,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.420] - 2026-10-19
 
-- When you ask the Lead something, the Lead tab scrolls down to your question and its answer
-  as before. It no longer stays put and leaves the newest turn hidden under the ask box
-  whenever the question plus its "Working…" card is taller than a few lines. If you have
-  scrolled up to read, it still leaves you where you are.
+- When you ask the Lead something, the Lead tab now always scrolls down to your question and
+  its answer. Before, when the question plus its "Working…" card was taller than 80 px, the
+  tab stayed put and the newest turn was hidden under the ask box. If you have scrolled up to
+  read, it still leaves you where you are.
 
 ## [0.9.419] - 2026-10-19
 

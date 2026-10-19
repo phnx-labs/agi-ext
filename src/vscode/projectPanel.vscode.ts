@@ -1742,7 +1742,7 @@ ${MADE_SCRIPT}
       const actBox = activityBox();
       const actEnd = activityAtEnd(actBox);
       // Measured before the patch: a new turn makes the page taller, so after it the viewer no longer looks at the end.
-      const leadEnd = same && main.scrollHeight - main.scrollTop - main.clientHeight < 80;
+      const leadEnd = m.tab === 'lead' && same && main.scrollHeight - main.scrollTop - main.clientHeight < 80;
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
       // The patch would draw the toast hidden and empty again, so its words are put back after it.
       const keepToast = same ? main.querySelector('.toast:not([hidden])')?.innerHTML ?? null : null;
