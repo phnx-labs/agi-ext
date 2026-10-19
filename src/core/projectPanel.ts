@@ -1385,14 +1385,15 @@ function firstSentence(s: SessionLike): string {
  *  right-aligned the state, machine, age and tab; under it the PRs and pages it made,
  *  the images you attached (a click opens a quick look) and its recap's first sentence.
  *  The page filters them as you type (`paletteMatch`), so each row carries its words. */
-export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>, here: SessionHere): string {
+export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>, here: Pick<SessionHere, 'device' | 'localHost'>): string {
   return paletteOrder(entries, favorites).map(({ row: s, made, images }) => {
     const state = sessionStateOf(s);
     const title = cardTitle(s);
     const fav = favorites.has(s.sessionId);
     const asked = askedAt(s);
     const age = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now);
-    const device = sessionPlace(s, here).device;
+    // This machine's rows carry the stream's local label; the row names the machine, as a card does.
+    const device = s.host === here.localHost ? here.device : s.host;
     const meta = [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
     const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
     const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);

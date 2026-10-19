@@ -1032,7 +1032,7 @@ class ProjectPanelController {
       const card = sessionCardFields(r, { sessionId: r.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri });
       return { row, made: sessionMade(card), images: requestImageThumbs(r, { home: os.homedir(), remoteDevice, exists: (f) => fs.existsSync(f), previewUri }) };
     });
-    return renderPalette(entries, Date.now(), this.favorites(), this.here(webview));
+    return renderPalette(entries, Date.now(), this.favorites(), { device: normalizeHost(os.hostname()), localHost: LOCAL_LABEL });
   }
 
   /** Enter in ⌘K (the approved prototype's kpick): a tab here comes forward as a card click
