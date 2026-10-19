@@ -17,7 +17,7 @@ const { document } = window;
 const page = shell('vscode-webview:');
 document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<script'));
 const sent: Record<string, unknown>[] = [];
-const script = page.match(/<script[^>]*>([\s\S]*?)<\/script>/)![1];
+const script = page.match(/<script[^>]*>([\s\S]*?)<\/script\s*>/i)![1];
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
   window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
