@@ -3,7 +3,7 @@ import { escapeHtml } from '../shared/sessionCards';
 // The goals the Project panel shows above its tabs (owner, 2026-10-12: "show the
 // company goal, then my goal: what I'm focusing on today; succinct, not a block").
 // Read from one `linear goals --json`: the company initiative, this week's cycle
-// goal, and my day goal (an issue). Two quiet lines; the week rides the tooltip.
+// goal, and my day goal (an issue). One quiet line; the week and the day ride the tooltip.
 
 export interface Goals {
   company?: { name: string; target?: string; url?: string };
@@ -34,15 +34,17 @@ function shortDate(iso: string | undefined): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-/** Two lines: ◎ the company goal (faint; the week's goal in its tooltip), then ☀ Today. */
+/** One quiet line on the panel's header row (owner video, 2026-10-18 8:59 PM: one row, not
+ *  two): ◎ the company goal with its date, the week's goal and my day goal in its tooltip;
+ *  with no company goal, ☀ Today. The ☀ filter on Sessions still finds today's sessions. */
 export function renderGoals(goals: Goals): string {
-  const lines: string[] = [];
+  const today = goals.today ? `Today · ${goals.today.id}: ${goals.today.title}` : '';
   if (goals.company) {
-    const tip = goals.week ? `Company goal · this week: ${goals.week}` : 'Company goal';
-    lines.push(`<a class="gl1" href="#"${goals.company.url ? ` data-url="${escapeHtml(goals.company.url)}"` : ''} title="${escapeHtml(tip)}"><span class="gk">◎</span><span class="gtx">${escapeHtml(goals.company.name)}</span><span class="gm">${escapeHtml(shortDate(goals.company.target))}</span></a>`);
+    const tip = ['Company goal', goals.week ? `this week: ${goals.week}` : '', today].filter(Boolean).join('\n');
+    return `<a class="gl1" href="#"${goals.company.url ? ` data-url="${escapeHtml(goals.company.url)}"` : ''} title="${escapeHtml(tip)}"><span class="gk">◎</span><span class="gtx">${escapeHtml(goals.company.name)}</span><span class="gm">${escapeHtml(shortDate(goals.company.target))}</span></a>`;
   }
   if (goals.today) {
-    lines.push(`<a class="gl2" href="#"${goals.today.url ? ` data-url="${escapeHtml(goals.today.url)}"` : ''} title="${escapeHtml(`Today's goal · ${goals.today.id}`)}"><span class="gk">☀</span><span class="gtx"><b>Today</b> ${escapeHtml(goals.today.title)}</span><span class="gm">${escapeHtml(goals.today.id)}</span></a>`);
+    return `<a class="gl2" href="#"${goals.today.url ? ` data-url="${escapeHtml(goals.today.url)}"` : ''} title="${escapeHtml(today)}"><span class="gk">☀</span><span class="gtx"><b>Today</b> ${escapeHtml(goals.today.title)}</span><span class="gm">${escapeHtml(goals.today.id)}</span></a>`;
   }
-  return lines.join('');
+  return '';
 }

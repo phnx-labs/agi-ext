@@ -57,7 +57,7 @@ const NAMES = [
   'compactTokens', 'prettyModel', 'clockTime', 'renderNeedsYou', 'renderSessionStats', 'renderFailures',
   'renderImageThumbs', 'renderSeekBar', 'currentFilter', 'renderFilterChips', 'filteredRows', 'renderFilteredBody',
   'renderSpawnedTeamCard', 'filterKey', 'requestTimelineFilter', 'applyTimelineFilter',
-  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'renderRelated', 'renderBlocked', 'renderLatestUpdate', 'renderUpdate', 'artifactItems',
+  'sessionState', 'seekSegments', 'currentRange', 'inRange', 'sectionCount', 'renderIdleWarning', 'renderMadeShelf', 'madeChips', 'renderRelated', 'renderBlocked', 'renderLatestUpdate', 'renderUpdate', 'artifactItems',
   'fileRow', 'fileTree', 'renderSubagentRow', 'renderRangeLane', 'renderNav',
   'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind', 'timelineShown',
@@ -443,6 +443,17 @@ test('Made: one sideways row — the PR with its checks opens GitHub, then other
   viewState.timelineRange = { made: [2_500, 4_000] };
   const ranged = cards.renderMadeShelf(snap, cards.currentRange(snap));
   expect((ranged.match(/mk mk-file out/g) || []).length).toBe(2);
+  // As chips (the pinned card's default, owner video 2026-10-18 8:59 PM): one row in the same
+  // order, the PR with its word, each file by name; what it only touched comes after, dashed.
+  const chips = cards.renderMadeShelf({ ...snap, chips: true, touchedPrs: [{ url: 'https://github.com/x/y/pull/9', number: 9, repo: 'x/y', action: 'merged' }] });
+  expect(chips).toContain('<div class="made chips"><div class="made-l">Made <span>6</span></div><div class="mk-row" data-strip="made">');
+  expect(chips).not.toContain('class="mk ');
+  expect(chips).toContain('class="mk-chip pr-tone-ok" data-url="https://github.com/phnx-labs/agi-ext/pull/103"');
+  expect(chips).toContain('<span>#103 Merged</span>');
+  expect(chips).toContain('data-artifact="/u/Downloads/New/index.html"');
+  const c = (needle: string) => chips.indexOf(needle);
+  expect([c('#103'), c('agi-cli #3716'), c('PHNX-4248'), c('index.html'), c('Launch hero'), c('a.png'), c('merged #9')]).toEqual([c('#103'), c('agi-cli #3716'), c('PHNX-4248'), c('index.html'), c('Launch hero'), c('a.png'), c('merged #9')].sort((x, y) => x - y));
+  expect(chips).toContain('class="mk-chip mk-tch" data-url="https://github.com/x/y/pull/9"');
   expect(cards.renderMadeShelf({})).toBe('');
   // Every ticket it created is a tile after the one it is on; what it only acted on
   // follows as compact chips with the action word.

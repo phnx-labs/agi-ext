@@ -105,12 +105,12 @@ test('a window VS Code restores after a restart is drawn into, not the sidebar',
   expect(view.webview.html).toContain('open in its own window');
 });
 
-test('a description names the project in the tab title', async () => {
+test('the title names the project in the tab title', async () => {
   created.length = 0;
   const { drawn } = setup();
   await commands.get('test.popOut')!();
-  (drawn[1]!.host as { description?: string }).description = 'rush';
-  expect(created[0]!.title).toBe('Project · rush');
+  (drawn[1]!.host as { title?: string }).title = 'rush';
+  expect(created[0]!.title).toBe('Project: rush');
 });
 
 test('a popped-out tab reports visibility only when it shows or hides, not on every focus change', async () => {

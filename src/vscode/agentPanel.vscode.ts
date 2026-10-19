@@ -65,7 +65,7 @@ import { canOfferMerge, prAction, prRepo, type PrAction, type PrTone, type Remot
 import { streamTitle } from '../core/projectPanel';
 import { mergeWithMenu } from './prMerge.vscode';
 import { getSettings } from './agentSettings.vscode';
-import { validMergeMethod } from '../core/settings';
+import { cardSettings, validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
 import { MADE_SCRIPT, PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { REPLY_SCRIPT, replyBoxHtml } from '../shared/replyBox';
@@ -918,8 +918,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           messageCount: 0,
           lastActivityMs: live.lastActivityMs || undefined,
         };
-        // What it made: the same shelf the Project panel's pinned card draws.
-        Object.assign(snapshot, madeShelf(live, card));
+        // What it made: the same shelf the Project panel's pinned card draws, as chips or
+        // previews by Settings › What it made.
+        Object.assign(snapshot, madeShelf(live, card), { chips: !!this.context && cardSettings(getSettings(this.context).cards).made === 'chips' });
 
         // Goal + Checklist (PHNX-3939) — synchronous field copies from the warm
         // row. NO await, NO fetch: the tab-switch path must stay instant, so these

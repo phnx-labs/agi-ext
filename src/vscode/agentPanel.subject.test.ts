@@ -50,7 +50,7 @@ win.onDidChangeActiveTerminal = (cb) => { onActiveTerminal = cb; return { dispos
 
 mock.module('vscode', () => vscodeDouble({
   window: win,
-  workspace: { workspaceFolders: undefined, createFileSystemWatcher: () => ({
+  workspace: { workspaceFolders: undefined, getConfiguration: () => ({ get: (_key: string, fallback?: unknown) => fallback }), createFileSystemWatcher: () => ({
     onDidChange() { /* noop */ }, onDidCreate() { /* noop */ }, onDidDelete() { /* noop */ }, dispose() { /* noop */ },
   }) },
   commands: {

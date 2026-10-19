@@ -288,7 +288,10 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   expect(html).toContain('agi-cli #3886')
   expect(html).toContain('data-open-ticket="PHNX-9"')
   expect(html).toContain('fill="#5E6AD2"')
-  expect(html).toContain('data-act="focus"')
+  // Its tab is here: the card's own click fronts it, so no ↗; Copy carries what another agent needs.
+  expect(html).not.toContain('data-act="focus"')
+  expect(card({ ...s, tabHere: false })).toContain('data-act="focus"')
+  expect(html).toContain('data-copy="Health\nSession s on yosemite-m6\nYour trusted publisher is set up correctly."')
   expect(html).toContain('data-act="close"')
   expect(html).toContain('data-here="1"')
   expect(html).toContain('card st-idle sel')
@@ -477,7 +480,9 @@ test('the front tab\'s card is pinned above the list, opened up, and drawn nowhe
   const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs({ folded: ['here'] }) })
   expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
-  expect(html).toContain('<span class="thistab">This tab · 1</span>')
+  // The tab, its machine and its age share the arrows' row; the state is the tint, its word the tooltip.
+  expect(html).toContain('<span class="thistab" title="Running">This tab · 1 · m6</span>')
+  expect(html).not.toContain('fc-state')
   expect(html.match(/data-session="live"/g)?.length).toBe(1)
   // Its only tab here: no group left to draw, and ‹ › have nowhere to go.
   expect(html).not.toContain('data-group="here"')
@@ -488,6 +493,17 @@ test('the front tab\'s card is pinned above the list, opened up, and drawn nowhe
   expect(other).toMatch(/class="card st-working sel"[^>]*data-session="b"/)
 })
 
+test('⇅ Show > Open tabs off lists a tab here only while it asks; ‹ › still walk every tab', () => {
+  const tab = (id: string, n: number, o: Partial<SessionLike> = {}) => row({ sessionId: id, tabHere: true, tabIndex: n, ...o })
+  const asking = { phase: 'waiting', liveStatus: 'input_required', attention: { key: 'k', kind: 'question', state: 'open', openedAt: new Date(NOW).toISOString(), question: { text: 'Ship?' } } } as Partial<SessionLike>
+  const html = renderSessions([tab('a', 1), tab('b', 2), tab('c', 3, asking), row({ sessionId: 'away' })], NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: prefs({ showOpen: false }) })
+  expect(html).toContain('data-session="c"')
+  expect(html).not.toMatch(/class="card[^"]*" [^>]*data-session="b"/)
+  expect(html).toContain('data-front-step="next" data-session="b"')
+  expect(html).toContain('data-pref="showOpen" data-value="true"')
+  expect(readSessionPrefs({}).showOpen).toBe(true)
+})
+
 test('‹ › on the pinned card name and front the session tabs before and after it, wrapping around', () => {
   const tab = (id: string, n: number) => row({ sessionId: id, title: `Task ${id}`, tabHere: true, tabIndex: n })
   const html = renderSessions([tab('c', 7), tab('a', 2), tab('b', 4), row({ sessionId: 'away' })], NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: prefs() })
@@ -496,14 +512,14 @@ test('‹ › on the pinned card name and front the session tabs before and afte
   expect(pin).toContain('data-front-step="next" data-session="b" data-host="yosemite-m6" title="Next tab: tab 4 · Task b"')
 })
 
-test('the pinned card: an ask from its own agent comes first, then its state, Claude\'s recap with its age, its Made shelf, every step in a box that scrolls, and a reply box', () => {
+test('the pinned card: an ask from its own agent comes first, then Claude\'s recap with its age, its Made shelf, every step in a box that scrolls, and a reply box', () => {
   const at = (min: number) => new Date(NOW - min * 60_000).toISOString()
   const steps = [1, 2, 3, 4, 5].map((i) => ({ text: `step ${i}`, at: at(10 - i), ...(i === 4 ? { source: 'user' } : {}) }))
   const asking = row({ sessionId: 'q', tabHere: true, tabIndex: 3, phase: 'waiting', liveStatus: 'input_required', recap: { text: 'Fixed the save error; next is the release.', at: at(20) }, userTurns: [{ atMs: NOW - 30 * 60_000 }],
     attention: { key: 'zion/q/1', kind: 'question', state: 'open', openedAt: at(5), question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] }, timeline: { steps, earlier: { steps: 12 } } })
   const shelf = { artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-1' } }
   const html = renderSessions([asking], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs(), shelfFor: (s) => (s.sessionId === 'q' ? shelf : null) })
-  const order = ['class="ttl"', 'data-ask="zion/q/1"', 'class="fc-state"', 'Recap · 20 min ago', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'Activity', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
+  const order = ['class="ttl"', 'data-ask="zion/q/1"', 'Recap · 20 min ago', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'Activity', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
   expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
   expect(html).toMatch(/class="card st-asks front"/)
   expect(html).toContain('data-choice="yes"')

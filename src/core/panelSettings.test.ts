@@ -19,6 +19,20 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
 
+test('Tabs: Review and Issues turn off on their own; Made is chips unless Settings asks for previews', () => {
+  const base = getDefaultSettings()
+  expect(applyPanelSetting(base, 'tabs.prs', false)?.tabs).toEqual({ prs: false, tickets: true })
+  expect(applyPanelSetting(base, 'tabs.sessions', false)).toBeNull()
+  expect(applyPanelSetting(base, 'tabs.tickets', 'off')).toBeNull()
+  expect(DEFAULT_CARD_SETTINGS.made).toBe('chips')
+  expect(applyPanelSetting(base, 'cards.made', 'previews')?.cards?.made).toBe('previews')
+  expect(applyPanelSetting(base, 'cards.made', 'tiles')).toBeNull()
+  const html = renderPanelSettings({ settings: { ...base, tabs: { prs: false, tickets: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  expect(html).toContain('<input type="checkbox" data-setting="tabs.prs">')
+  expect(html).toContain('<input type="checkbox" data-setting="tabs.tickets" checked>')
+  expect(html).toContain('data-setting="cards.made"')
+})
+
 test('Session cards: pickers and part toggles write cards.*; banners are the AGI Menu\'s, so there is no alert setting', () => {
   const base = getDefaultSettings()
   expect(applyPanelSetting(base, 'cards.asks', 'off')?.cards).toEqual({ ...DEFAULT_CARD_SETTINGS, asks: 'off' })
