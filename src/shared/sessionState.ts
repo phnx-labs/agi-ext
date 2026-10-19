@@ -254,12 +254,13 @@ function doneGapWords(gaps: readonly string[]): string[] {
   return gaps.map((g) => DONE_GAP_WORDS[g] ?? g);
 }
 
-/** What an idle card says in place of "Idle": tone (ok, bad, caption), its word and the
- *  tooltip. Null unless the session is idle (working, waiting, an ask, review and ended
- *  keep their own word) and the row carries a verdict (owner, 2026-10-18 8:59 PM: no
- *  second idle label). */
+/** What an idle card says in place of "Idle": tone (ok, bad), its word and the tooltip.
+ *  Null unless the session is idle (working, waiting, an ask, review and ended keep their
+ *  own word) and the CLI judged it done or not done (owner, 2026-10-18 8:59 PM: no second
+ *  idle label). An `unchecked` verdict reads plain Idle (owner, 2026-10-19 2:23 AM: 8 of
+ *  14 idle cards said "Unverified", which read as an alarm). */
 export interface VerdictChip {
-  tone: 'ok' | 'bad' | 'caption';
+  tone: 'ok' | 'bad';
   word: string;
   why: string;
 }
@@ -271,7 +272,6 @@ export function verdictChipOf(state: SessionStateKey, v: DoneVerdict | null | un
     const gaps = doneGapWords(v.gaps);
     return { tone: 'bad', word: 'Not done', why: gaps.length ? `Idle · not done: ${gaps.join('; ')}` : 'Idle · its done-check did not pass' };
   }
-  if (v.state === 'unchecked') return { tone: 'caption', word: 'Unverified', why: 'Idle · nothing checkable backs it yet' };
   return null;
 }
 

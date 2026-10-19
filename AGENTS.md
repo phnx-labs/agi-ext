@@ -210,7 +210,7 @@ going on, where, and what came out of it" in one look; text explains only what a
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
   part off, down to the logo and title on one line (owner video, 2026-10-17).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
-  A finished turn the CLI's done-check judged carries ✓ Done, Not done or Unverified on its
+  A finished turn the CLI's done-check judged carries ✓ Done or Not done on its
   title row (before the age; right after the title on the pinned card) in place of Idle
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
   waits or asks, nothing without `doneVerdict`.

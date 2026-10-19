@@ -906,7 +906,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     : '';
   // The card's tint says its state (red asks or blocked, green working, yellow idle); the
   // word stays in its tooltip and for screen readers, and on the card when Settings asks.
-  // A finished turn the CLI's done-check judged says ✓ Done, Not done or Unverified on the
+  // A finished turn the CLI's done-check judged says ✓ Done or Not done on the
   // title row, instead of Idle (owner video, 2026-10-18 8:59 PM: no second idle label, no new row).
   const verdict = opts.blocked || !cards.verdict ? null : verdictChipOf(state, s.doneVerdict);
   const word = opts.blocked ? 'Blocked' : verdict ? verdict.word : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
