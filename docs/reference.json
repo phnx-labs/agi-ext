@@ -704,8 +704,8 @@
         },
         "agents.lead.speak": {
           "type": "boolean",
-          "default": true,
-          "markdownDescription": "The Lead reads its answers aloud on this machine as they stream (`agents lead ask --speak`; agents-cli does the speaking)."
+          "default": false,
+          "markdownDescription": "The Lead reads its answers aloud on this machine as they stream (`agents lead ask --speak`; agents-cli does the speaking). The speaker in the Lead tab's header turns it on and off."
         }
       }
     },

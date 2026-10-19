@@ -4,6 +4,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.418] - 2026-10-19
+
+- The Lead no longer reads its answers aloud unless you ask it to. A speaker beside ⟳ in the
+  Lead tab's heading turns reading aloud on or off for every window, starting with the next
+  answer (`agents.lead.speak`, now off by default).
+
 ## [0.9.417] - 2026-10-19
 
 - ⌘K (and the search icon in Sessions) now opens a search drawn inside the Project panel

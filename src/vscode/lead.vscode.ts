@@ -63,11 +63,17 @@ export interface LeadPanelBridge {
   talk(): Promise<void>;
   confirm(token: string): Promise<void>;
   confirmAll(tokens: string[]): Promise<void>;
+  /** Flip `agents.lead.speak` for every window; the answer in flight keeps its choice. */
+  toggleSpeak(): Promise<void>;
   /** Only a ref the tab was given opens; page text never becomes a target. */
   openRef(ref: unknown, external: boolean): Promise<void>;
 }
 
 let bridge: LeadPanelBridge | undefined;
+
+function speakOn(): boolean {
+  return vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', false);
+}
 
 /** The Lead tab's bridge, once the Lead is registered. */
 export function leadPanel(): LeadPanelBridge | undefined {
@@ -110,8 +116,15 @@ class LeadController implements LeadPanelBridge {
     } catch (e) {
       console.warn('[lead] cannot watch ~/.agents/lead/surface.json:', e);
     }
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('agents.lead.speak')) this.changed.fire();
+    }));
     this.renderStatus(this.client.snapshot());
     this.status.show();
+  }
+
+  async toggleSpeak(): Promise<void> {
+    await vscode.workspace.getConfiguration('agents').update('lead.speak', !speakOn(), vscode.ConfigurationTarget.Global);
   }
 
   async resolveProject(): Promise<string | undefined> {
@@ -191,7 +204,7 @@ class LeadController implements LeadPanelBridge {
     const project = this.project ?? await this.resolveProject();
     if (!project) { this.needProject(); return; }
     if (this.client.busy) { void vscode.window.showInformationMessage('The Lead is still working on the last turn.'); return; }
-    const speak = vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', true);
+    const speak = speakOn();
     await this.client.ask(project, text, { ...(voiceSecs !== undefined ? { voiceSecs } : {}), context: editorContext(), speak });
   }
 
@@ -248,6 +261,7 @@ class LeadController implements LeadPanelBridge {
       turns,
       busy: snap.busy,
       mic: this.mic.phase,
+      speak: speakOn(),
       ...(st?.model ? { model: st.model } : {}),
       ...(snap.engine ?? st?.state ? { state: snap.engine ?? st?.state } : {}),
       ...(st?.host ? { host: st.host } : {}),

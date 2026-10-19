@@ -156,6 +156,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'leadConfirmAll' && typeof msg.tokens === 'string') void leadPanel()?.confirmAll(msg.tokens.split(' ').filter(Boolean));
       else if (msg.type === 'leadRef') void leadPanel()?.openRef(msg.ref, msg.external === true);
       else if (msg.type === 'leadRefresh') void this.load('lead', true);
+      else if (msg.type === 'leadSpeak') void leadPanel()?.toggleSpeak();
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') opened(this.openTicketTab(msg.id));
       else if (msg.type === 'image' && typeof msg.path === 'string') opened(this.controller.openImage(msg.path));
@@ -1902,6 +1903,7 @@ ${MADE_SCRIPT}
       if (all && !all.disabled) { all.disabled = true; vscode.postMessage({ type: 'leadConfirmAll', tokens: all.dataset.leadConfirmAll }); return; }
       if (e.target.closest('#lead-mic')) { vscode.postMessage({ type: 'leadTalk' }); return; }
       if (e.target.closest('[data-lead-refresh]')) { vscode.postMessage({ type: 'leadRefresh' }); return; }
+      if (e.target.closest('[data-lead-speak]')) { vscode.postMessage({ type: 'leadSpeak' }); return; }
     }
     // A card's ⋯ menu: its summary toggles it; a click anywhere else closes it.
     main.querySelectorAll('.cmore[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
