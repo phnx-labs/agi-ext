@@ -61,21 +61,21 @@ import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight
 import { sessionPathUriString } from '../core/sessionPath';
 import { deliverReply } from './sessionReply';
 import { runAgents, runCliArgs } from '../core/agentsBin';
-import { canOfferMerge, prAction, prRepo, prVerdict, type PrAction, type PrTone, type RemotePrStatus } from '../core/prStatus';
+import { canOfferMerge, prAction, prRepo, type PrAction, type PrTone, type RemotePrStatus } from '../core/prStatus';
 import { streamTitle } from '../core/projectPanel';
 import { mergeWithMenu } from './prMerge.vscode';
 import { getSettings } from './agentSettings.vscode';
 import { validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
-import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
+import { MADE_SCRIPT, PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
 import { REPLY_SCRIPT, replyBoxHtml } from '../shared/replyBox';
-import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
+import { madeShelf, requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
 import { SESSION_STATE_WORD, STATE_TONE, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
 import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
 import { blockedUpdate, sessionUpdates, type SessionUpdate } from '../core/sessionUpdates';
-import { ticketFace, type TicketFace } from '../core/ticketFaces';
+import type { TicketFace } from '../core/ticketFaces';
 import { dictation, dictationMessage } from './dictation.vscode';
 import { frontTerminal, onDidChangeFrontTab } from './frontTab.vscode';
 import { PanelDock, type PanelHost } from './panelDock.vscode';
@@ -918,7 +918,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           messageCount: 0,
           lastActivityMs: live.lastActivityMs || undefined,
         };
-        if (card.linearIssue) snapshot.ticket = ticketFace(card.linearIssue);
+        // What it made: the same shelf the Project panel's pinned card draws.
+        Object.assign(snapshot, madeShelf(live, card));
 
         // Goal + Checklist (PHNX-3939) — synchronous field copies from the warm
         // row. NO await, NO fetch: the tab-switch path must stay instant, so these
@@ -949,13 +950,9 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (todos) snapshot.todoProgress = todos;
 
         // PR: the CLI already extracted the url — structure it, don't re-scan.
-        if (card.pullRequests) snapshot.pullRequests = card.pullRequests;
         if (live.prStatus) {
-          snapshot.prStatus = live.prStatus;
-          snapshot.prVerdict = prVerdict(live.prStatus);
           snapshot.prAction = prAction(live.prStatus);
           snapshot.prCanMerge = canOfferMerge(live.prStatus);
-          snapshot.prRepo = prRepo(live.prStatus.url);
         }
 
         // A Project subject has no local tab, so the agent identity, cwd and host
@@ -978,8 +975,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.tokPerSec = live.tokPerSec;
         snapshot.subAgentCount = live.subAgentCount;
         snapshot.spawnedTeam = live.spawnedTeam || live.teamName || undefined;
-        snapshot.artifacts = card.artifacts;
-        if (card.plan) snapshot.plan = card.plan;
         snapshot.attachments = live.attachments;
         const remoteDevice = remoteDeviceArg(live.host);
         // The session's one name, as its tab, its card and the status bar show it.
@@ -988,7 +983,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         snapshot.model = live.model;
         snapshot.project = live.project || undefined;
         snapshot.hostLabel = remoteDevice || os.hostname().split('.')[0];
-        snapshot.sessionLocal = card.sessionLocal;
         snapshot.inWorktree = !!live.worktreeSlug;
         snapshot.startedAtMs = live.startedAtMs || undefined;
         snapshot.lastActivityMs = live.lastActivityMs || undefined;
@@ -1106,6 +1100,7 @@ const root = document.getElementById('root');
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
 ${SESSION_CARDS_SCRIPT}
+${MADE_SCRIPT}
 ${REPLY_SCRIPT}
 ${replyBoxHtml}
 const STATE_TONE = ${JSON.stringify(STATE_TONE)};
@@ -1418,24 +1413,6 @@ function renderRequestCard(s) {
 // per-check list folds under the bar. At most one action the host decided
 // (Merge, or Merge when green), which it confirms before running. The status
 // word is the host's prVerdict (src/core/prStatus.ts), the one the Project panel's card says.
-const PR_SEGMENT_ORDER = { passed: 0, running: 1, failed: 2, skipped: 3 };
-
-// One bar segment per check the row lists, greens first so the bar fills like
-// progress; a row with only the rolled-up verdict draws one segment for it.
-// passed/counted leave skipped checks out of the fraction.
-function prCheckSegments(pr) {
-  const items = pr.checkItems || [];
-  if (!items.length) {
-    const state = pr.checks === 'passing' ? 'passed' : pr.checks === 'failing' ? 'failed' : pr.checks === 'pending' ? 'running' : '';
-    return { segments: state ? [{ state: state, name: 'checks ' + pr.checks }] : [], passed: 0, running: 0, failed: 0, counted: 0 };
-  }
-  const segments = items.map((c, i) => ({ state: c.state, name: c.name, i: i }))
-    .sort((a, b) => (PR_SEGMENT_ORDER[a.state] - PR_SEGMENT_ORDER[b.state]) || (a.i - b.i))
-    .map((c) => ({ state: c.state, name: c.name }));
-  const count = (state) => items.filter((c) => c.state === state).length;
-  return { segments: segments, passed: count('passed'), running: count('running'), failed: count('failed'), counted: items.filter((c) => c.state !== 'skipped').length };
-}
-
 function prReviewGlyph(pr) {
   const review = pr.review;
   const tone = review === 'approved' ? 'ok' : review === 'changes_requested' ? 'bad' : 'idle';
@@ -1451,75 +1428,6 @@ function prMergeGlyph(pr) {
   return '<span class="pr-glyph ' + tone + '" role="img" title="' + esc(words) + '" aria-label="' + esc(words) + '">' +
     '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.7"/><circle cx="4.5" cy="12.5" r="1.7"/><circle cx="11.5" cy="8" r="1.7"/>' +
     '<path d="M4.5 5.2v5.6M4.5 5.6c.2 1.8 2 2.4 5.3 2.4"/></svg></span>';
-}
-
-// ── Made ────────────────────────────────────────────────────────────────────
-// What the session made, as one row of previews you scroll sideways (owner,
-// 2026-10-12: "artifacts are important; a PR is an artifact, and so is the
-// ticket"). The PR tile carries its checks as a bar and a count, and opens the PR
-// on GitHub; merging lives in the ⋯ menu (owner video, 2026-10-12: "show how many
-// pass here; clicking it takes us to the link"). The ticket is a tile that opens
-// the ticket to read. Then every artifact file, newest first; an image previews,
-// a page or doc shows its type, and a click opens it in the editor. A chosen
-// timeline range dims files changed outside it, without moving anything. Pages,
-// docs and images on this machine carry Share.
-const SHARE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2.5M5 5.5l3-3 3 3M3.5 8.5v4.5h9V8.5"/></svg>';
-const SHAREABLE = /^(html?|md|markdown|pdf|png|jpe?g|gif|webp|svg)$/;
-const busyArtifacts = new Set();
-
-function prChecksBar(pr) {
-  const bar = prCheckSegments(pr);
-  const words = bar.counted
-    ? bar.passed + ' of ' + bar.counted + ' checks passed' + (bar.running ? ', ' + bar.running + ' running' : '') + (bar.failed ? ', ' + bar.failed + ' failed' : '')
-    : pr.checks ? (pr.checks === 'passing' ? 'Checks passed' : pr.checks === 'failing' ? 'A check failed' : 'Checks running') : 'No checks reported';
-  const segs = bar.segments.map((c) => '<i class="seg ' + esc(c.state) + '"></i>').join('');
-  return '<span class="mk-checks" role="img" title="' + esc(words) + '" aria-label="' + esc(words) + '">' +
-    '<span class="pr-bar">' + (segs || '<i class="seg none"></i>') + '</span>' +
-    (bar.counted ? '<span class="pr-frac pr-tone-' + (bar.failed ? 'bad' : bar.passed === bar.counted ? 'ok' : 'warn') + '">' + bar.passed + '/' + bar.counted + '</span>' : '') +
-  '</span>';
-}
-
-function renderMadeShelf(s) {
-  const pr = s.prStatus;
-  const others = (s.pullRequests || []).filter((p) => !pr || p.url !== pr.url);
-  const files = [];
-  for (const it of artifactItems(s)) if (it.files) for (const f of it.files) files.push(f);
-  files.sort((a, b) => (b.editedAtMs || 0) - (a.editedAtMs || 0));
-  const tk = s.ticket;
-  if (!pr && !others.length && !tk && !files.length) return '';
-  const range = currentRange(s);
-  const tiles = [];
-  if (pr) {
-    const v = s.prVerdict;
-    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(pr.url) + '" title="' + esc('Open #' + pr.number + (pr.title ? ' ' + pr.title : '') + ' on GitHub') + '">' +
-      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(pr.number) + '</b><span class="mk-st pr-tone-' + v.tone + '">' + esc(v.word) + '</span></span>' +
-      '<span class="mk-t">' + esc(pr.title || s.prRepo || '') + '</span>' +
-      '<span class="mk-f">' + prChecksBar(pr) + '<span class="mk-go" aria-hidden="true">↗</span></span></button>');
-  }
-  for (const p of others) {
-    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(p.url) + '" title="' + esc('Open ' + p.url) + '">' +
-      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(p.number) + '</b></span><span class="mk-t">' + esc(p.ownerRepo) + '</span>' +
-      '<span class="mk-f"><span class="mk-go" aria-hidden="true">↗</span></span></button>');
-  }
-  if (tk) {
-    tiles.push('<button type="button" class="mk mk-pr mk-tk" data-ticket="' + esc(tk.id) + '" title="' + esc('Read ' + tk.id + (tk.title ? ' ' + tk.title : '')) + '">' +
-      '<span class="mk-h">' + APP_ICON.linear + '<b>' + esc(tk.id) + '</b>' + (tk.state ? '<span class="mk-st tk-st">' + esc(tk.state) + '</span>' : '') + '</span>' +
-      '<span class="mk-t">' + esc(tk.title || 'Linear ticket') + '</span>' +
-      '<span class="mk-f"><span class="mk-read">Read ›</span></span></button>');
-  }
-  for (const f of files) {
-    const kind = artifactKind(f);
-    const out = range && f.editedAtMs && !inRange(range, f.editedAtMs) ? ' out' : '';
-    const busy = busyArtifacts.has(f.path) ? ' busy' : '';
-    const face = f.uri ? '<span class="mk-img">' + thumbImg(f) + '</span>' : '<span class="mk-doc" aria-hidden="true">' + esc(FILE_GLYPH[kind] || kind.slice(0, 4).toUpperCase()) + '</span>';
-    const share = s.sessionLocal && SHAREABLE.test(kind)
-      ? '<button type="button" class="mk-share" data-share="' + esc(f.path) + '" title="Share as a Rush artifact" aria-label="' + esc('Share ' + f.name) + '">' + SHARE_ICON + '</button>'
-      : '';
-    tiles.push('<div class="mk mk-file' + out + busy + '"><button type="button" class="mk-open artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc('Open ' + f.path) + '">' + face +
-      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(busy ? 'opening…' : kind + (f.renderedFrom ? ' · from ' + f.renderedFrom : '') + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
-  }
-  return '<div class="made"><div class="made-l">Made <span>' + tiles.length + '</span></div>' +
-    '<div class="made-strip" data-strip="made">' + tiles.join('') + '</div></div>';
 }
 
 // ── From the agent ──────────────────────────────────────────────────────────
@@ -1824,7 +1732,7 @@ function render(snap) {
       renderLatestUpdate(snap) +
       renderPending(snap) +
       renderRequestCard(snap) +
-      renderMadeShelf(snap) +
+      renderMadeShelf(snap, currentRange(snap)) +
       renderRelated(snap) +
       renderTimelineCard(snap) +
     '</div>'

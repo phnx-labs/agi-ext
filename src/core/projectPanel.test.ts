@@ -492,18 +492,21 @@ test('‹ › on the pinned card name and front the session tabs before and afte
   expect(pin).toContain('data-front-step="next" data-session="b" data-host="yosemite-m6" title="Next tab: tab 4 · Task b"')
 })
 
-test('the pinned card: an ask from its own agent comes first, then its state, Claude\'s recap with its age, what it made, the last four steps, and a reply box', () => {
+test('the pinned card: an ask from its own agent comes first, then its state, Claude\'s recap with its age, its Made shelf, every step in a box that scrolls, and a reply box', () => {
   const at = (min: number) => new Date(NOW - min * 60_000).toISOString()
   const steps = [1, 2, 3, 4, 5].map((i) => ({ text: `step ${i}`, at: at(10 - i), ...(i === 4 ? { source: 'user' } : {}) }))
   const asking = row({ sessionId: 'q', tabHere: true, tabIndex: 3, phase: 'waiting', liveStatus: 'input_required', recap: { text: 'Fixed the save error; next is the release.', at: at(20) }, userTurns: [{ atMs: NOW - 30 * 60_000 }],
-    attention: { key: 'zion/q/1', kind: 'question', state: 'open', openedAt: at(5), question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] }, timeline: { steps } })
-  const html = renderSessions([asking], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs() })
-  const order = ['class="ttl"', 'data-ask="zion/q/1"', 'class="fc-state"', 'Recap · 20 min ago', 'Activity', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
+    attention: { key: 'zion/q/1', kind: 'question', state: 'open', openedAt: at(5), question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] }, timeline: { steps, earlier: { steps: 12 } } })
+  const shelf = { artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-1' } }
+  const html = renderSessions([asking], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs(), shelfFor: (s) => (s.sessionId === 'q' ? shelf : null) })
+  const order = ['class="ttl"', 'data-ask="zion/q/1"', 'class="fc-state"', 'Recap · 20 min ago', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'Activity', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
   expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
   expect(html).toMatch(/class="card st-asks front"/)
   expect(html).toContain('data-choice="yes"')
   expect(html).not.toContain('before your last message')
-  expect(html).not.toContain('step 1<')
+  // Every step, oldest first so the newest is at the bottom, after how many came before.
+  expect(html).toContain('<ol tabindex="0" aria-label="Activity, newest last"><li class="fc-earlier">12 earlier steps</li>')
+  expect([1, 2, 3, 4, 5].map((i) => html.indexOf(`step ${i}<`)).every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
   expect(html).toContain('<span class="fc-you">You</span> step 4')
   // You wrote after the recap: it says so.
   const stale = renderSessions([{ ...asking, userTurns: [{ atMs: NOW - 60_000 }] }], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs() })

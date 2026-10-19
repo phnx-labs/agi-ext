@@ -8,7 +8,7 @@ import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import { coalesceTrailing, createTrailingCoalesce } from '../core/cachedInFlight';
-import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
+import { madeShelf, requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
 import { frontTerminal, onDidChangeFrontTab, terminalTabNumbers } from './frontTab.vscode';
 import { normalizeHost } from '../shared/project';
 import type { RemoteSession } from '../core/remoteSessions';
@@ -47,7 +47,7 @@ import {
   type Ticket,
   type TicketGroup,
 } from '../core/projectPanel';
-import { SESSION_STATE_WORD, sessionStateOf, sparkline, waitFor } from '../shared/sessionState';
+import { SESSION_STATE_WORD, relTime, sessionStateOf, sparkline, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
 import { currentAgentPanelSubject, followFrontTerminal, revealAgentPanel, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
@@ -57,7 +57,7 @@ import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openLink, openWebviewUrl } from './webviewSecurity';
-import { PATCH_SCRIPT, RUSH_THEME_CSS, THUMB_SCRIPT, escapeHtml } from '../shared/sessionCards';
+import { MADE_CSS, MADE_SCRIPT, PATCH_SCRIPT, RUSH_THEME_CSS, THUMB_SCRIPT, escapeHtml } from '../shared/sessionCards';
 import { REPLY_BOX_CSS, REPLY_SCRIPT } from '../shared/replyBox';
 import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
@@ -880,12 +880,15 @@ class ProjectPanelController {
       const live = byId.get(s.sessionId);
       return live ? requestImageThumbs(live, { home: os.homedir(), remoteDevice: remoteDeviceArg(live.host), exists: (f) => fs.existsSync(f), previewUri }) : [];
     };
-    const madeFor = (s: SessionLike) => {
+    const fieldsFor = (s: SessionLike) => {
       const live = byId.get(s.sessionId);
       if (!live) return null;
       const remoteDevice = remoteDeviceArg(live.host);
-      return sessionMade(sessionCardFields(live, { sessionId: live.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri }));
+      return { live, card: sessionCardFields(live, { sessionId: live.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri }) };
     };
+    const madeFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? sessionMade(f.card) : null; };
+    // The pinned card's Made shelf is the Active Session sidebar's, with no Share (that lives there).
+    const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false } : null; };
     const here = this.here(webview);
     const prefs = this.prefs();
     const subject = currentAgentPanelSubject();
@@ -895,7 +898,7 @@ class ProjectPanelController {
     const cards = cardSettings(getSettings(this.context).cards);
     const front = frontTerminal();
     const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** Show the session in the sidebar; its tab in this window comes forward, wherever its
@@ -1225,6 +1228,13 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-reply .reply-box textarea { resize: none; min-height: 32px; border-radius: 8px; }
   .fc-reply .reply-box .reply-mic { top: 4px; right: 4px; }
 ${REPLY_BOX_CSS}
+${MADE_CSS}
+  .fc-made .made { margin: 7px -11px 0; }
+  .fc-made button.mk, .fc-made button.mk-open { color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .fc-made button.mk-open { background: transparent; border: 0; }
+  .fc-act ol { max-height: 150px; overflow-y: auto; scrollbar-width: thin; }
+  .fc-act ol:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .fc-act li.fc-earlier { display: block; font-size: 10.5px; color: var(--r-faint); }
   .card .started { margin-top: 2px; font-size: 10.5px; color: var(--r-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card.multi { border-color: var(--r-gold-line); }
   .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; }
@@ -1402,6 +1412,20 @@ ${REPLY_BOX_CSS}
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
 ${REPLY_SCRIPT}
+  ${relTime}
+${MADE_SCRIPT}
+  // The pinned card's Made shelf: drawn from its data-made when that changes; the
+  // patch keeps it otherwise (data-keep), so a scrolled shelf stays put.
+  function drawFrontMade() {
+    const slot = main.querySelector('.front-pin .fc-made[data-made]');
+    if (!slot || slot.__made === slot.dataset.made) return;
+    slot.__made = slot.dataset.made;
+    slot.innerHTML = renderMadeShelf(JSON.parse(slot.dataset.made), null);
+    observeThumbs(slot);
+  }
+  // The pinned card's activity box stays at its newest step unless you scrolled up in it.
+  function activityBox() { return main.querySelector('.front-pin .fc-act ol'); }
+  function activityAtEnd(box) { return !box || box.scrollHeight - box.scrollTop - box.clientHeight < 6; }
   // The front card's reply box: its session's draft, bound once per node, the mic as
   // it stands, and the caret back where it was if a move between groups rebuilt it.
   function syncFrontReply(typing) {
@@ -1547,6 +1571,8 @@ ${REPLY_SCRIPT}
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
       const typing = same && document.activeElement && document.activeElement.id === 'reply-input' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+      const actBox = activityBox();
+      const actEnd = activityAtEnd(actBox);
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
       const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
       const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => [c.closest('.card').dataset.session, c]) : [];
@@ -1564,7 +1590,11 @@ ${REPLY_SCRIPT}
       observeThumbs(main);
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
-      if (m.tab === 'sessions') { syncBulk(); syncFrontReply(typing); }
+      if (m.tab === 'sessions') {
+        syncBulk(); syncFrontReply(typing); drawFrontMade();
+        const box = activityBox();
+        if (box && (box !== actBox || actEnd)) box.scrollTop = box.scrollHeight;
+      }
       restoreLocal();
       document.body.classList.remove('loading');
     }
@@ -1671,6 +1701,9 @@ ${REPLY_SCRIPT}
     // ‹ › on the pinned card front the tab before or after this one, as a card click would.
     const step = e.target.closest('[data-front-step]');
     if (step) { if (!step.disabled) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true }); return; }
+    // The pinned card's Made shelf: a PR opens on GitHub, a ticket in Issues; files open below.
+    const shelfLink = e.target.closest('.fc-made [data-url], .fc-made [data-ticket]');
+    if (shelfLink) { e.preventDefault(); e.stopPropagation(); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
     if (e.target.closest('[data-open-sidebar]')) { e.preventDefault(); vscode.postMessage({ type: 'openSidebar' }); return; }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
@@ -1827,7 +1860,8 @@ ${REPLY_SCRIPT}
     reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
-    if (e.target.closest && e.target.closest('.fc-reply')) return;
+    // The reply box takes its own keys; the activity box scrolls with the arrow keys.
+    if (e.target.closest && e.target.closest('.fc-reply, .fc-act ol')) return;
     // Other…: Enter sends what was typed (with the same Undo setting), Escape closes the box.
     const input = e.target.closest && e.target.closest('[data-ask-input]');
     if (input) {

@@ -114,6 +114,12 @@ describe('resolveProject', () => {
     expect(at({}).recap).toBeUndefined();
     expect(at({ forkOf: '4aa3c855-eb2e' }).forkOf).toBe('4aa3c855-eb2e');
     expect(at({}).forkOf).toBeUndefined();
+    // Tickets it created, and what it only acted on: entries the CLI filled in, else absent.
+    expect(at({ createdTickets: ['PHNX-1', '', 'PHNX-2'] }).createdTickets).toEqual(['PHNX-1', 'PHNX-2']);
+    expect(at({ createdTickets: [] }).createdTickets).toBeUndefined();
+    expect(at({ touchedPrs: [{ url: 'https://github.com/o/r/pull/7', number: 7, repo: 'o/r', action: 'merged' }, { url: '', number: 8 }] }).touchedPrs).toEqual([{ url: 'https://github.com/o/r/pull/7', number: 7, repo: 'o/r', action: 'merged' }]);
+    expect(at({ touchedTickets: [{ id: 'PHNX-3', action: 'commented' }, { action: 'x' }] }).touchedTickets).toEqual([{ id: 'PHNX-3', action: 'commented' }]);
+    expect(at({ touchedPrs: [{ url: '' }] }).touchedPrs).toBeUndefined();
   });
 
   test('copies the glance fields verbatim and drops malformed entries', () => {

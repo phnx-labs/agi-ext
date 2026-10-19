@@ -113,7 +113,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   no view demands the stream; the extension reads no transcript itself.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once, and
-  the pinned front card's reply box is `data-keep` (a patch never rewrites it); both are
+  the pinned front card's reply box and Made shelf are `data-keep` (a patch updates their
+  attributes, never what is drawn inside); both reply boxes are
   `replyBoxHtml`/`REPLY_SCRIPT` (`src/shared/replyBox.ts`) sending through `deliverReply`; reassigning `root.innerHTML`
   per update made it jitter and erased what the owner was typing. A reused node keeps its
   listeners, so bindings go through `bindOnce` and read their data-* values on click.
@@ -208,7 +209,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
   The question opens to its full text on a click on it. The front tab's card is the one
   exception: pinned above everything and opened up (‹ › to the tabs beside it, its ask first,
-  state, Claude's recap, Made, the last four steps, a reply box; owner, 2026-10-18).
+  state, Claude's recap, the sidebar's own Made shelf, every step in a box that scrolls, a
+  reply box; owner, 2026-10-18).
   Everything else a session made lives in the Active Session sidebar.
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and

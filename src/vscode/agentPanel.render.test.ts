@@ -79,7 +79,7 @@ const cards = eval(`(function(){ const lastSnapshot = {}; ${combined}\n return {
   renderNeedsYou, renderSessionStats, renderFailures, renderSeekBar, renderSpawnedTeamCard, prettyModel, clockTime,
   prCheckSegments, renderNav,
 }; })()`) as {
-  renderMadeShelf: (s: unknown) => string;
+  renderMadeShelf: (s: unknown, range?: unknown) => string;
   renderRelated: (s: unknown) => string;
   renderBlocked: (s: unknown) => string;
   renderLatestUpdate: (s: unknown) => string;
@@ -441,9 +441,19 @@ test('Made: one sideways row — the PR with its checks opens GitHub, then other
   // Nothing dims until a range is chosen; then files changed outside it dim in place.
   expect(html).not.toContain('mk-file out');
   viewState.timelineRange = { made: [2_500, 4_000] };
-  const ranged = cards.renderMadeShelf(snap);
+  const ranged = cards.renderMadeShelf(snap, cards.currentRange(snap));
   expect((ranged.match(/mk mk-file out/g) || []).length).toBe(2);
   expect(cards.renderMadeShelf({})).toBe('');
+  // Every ticket it created is a tile after the one it is on; what it only acted on
+  // follows as compact chips with the action word.
+  const more = cards.renderMadeShelf({ ...snap, createdTickets: [{ id: 'PHNX-4248' }, { id: 'PHNX-4500', title: 'Follow-up' }], touchedPrs: [{ url: 'https://github.com/phnx-labs/agi-cli/pull/3995', number: 3995, action: 'merged' }], touchedTickets: [{ id: 'PHNX-4401', action: 'commented' }] });
+  expect(more.match(/data-ticket="PHNX-4248"/g)?.length).toBe(1);
+  expect(more.indexOf('PHNX-4248')).toBeLessThan(more.indexOf('PHNX-4500'));
+  expect(more).toContain('Made <span>7</span>');
+  expect(more).toContain('<div class="mk-touched"><span class="made-l">Touched</span><button type="button" class="mk-touch" data-url="https://github.com/phnx-labs/agi-cli/pull/3995" title="merged #3995">');
+  expect(more).toContain('merged #3995</button><button type="button" class="mk-touch" data-ticket="PHNX-4401" title="commented PHNX-4401">');
+  expect(more.indexOf('a.png')).toBeLessThan(more.indexOf('mk-touched'));
+  expect(cards.renderMadeShelf({ touchedTickets: [{ id: 'PHNX-1', action: 'updated' }] })).toContain('updated PHNX-1');
   for (const key of Object.keys(viewState)) delete viewState[key];
 });
 
