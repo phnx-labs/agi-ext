@@ -42,6 +42,11 @@ describe('session tab label reconciliation', () => {
     expect(restoredSessionTabLabels('Ship blocker', { autoLabel })).toEqual({ manualLabel: 'Ship blocker', autoLabel });
   });
 
+  test('a tab that showed only its launch stage restores with no name', () => {
+    expect(restoredSessionTabLabels('Starting…', undefined)).toEqual({ manualLabel: undefined, autoLabel: undefined });
+    expect(restoredSessionTabLabels('New session', {})).toEqual({ manualLabel: undefined, autoLabel: undefined });
+  });
+
   test('restores a generated title as automatic rather than manual', () => {
     expect(restoredSessionTabLabels('Release the project', {
       autoLabel: 'Release the project',

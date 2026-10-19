@@ -9,11 +9,7 @@ import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import { CARD_PARTS, cardSettings, LIST_PARTS, getQuickLaunchSlot, MERGE_METHODS, PANEL_TABS, panelTabs, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
-  { key: 'showLabelsInTitles', label: 'Labels in titles', sub: 'The tab title shows the session label' },
   { key: 'autoLabelInTabTitles', label: 'Auto labels', sub: 'Use the CLI title once the stream has one' },
-  { key: 'labelReplacesTitle', label: 'Replace base title', sub: 'The label replaces “CC -” instead of following it' },
-  { key: 'showLabelOnlyOnFocus', label: 'Hide labels off focus', sub: 'Background tabs show only the agent' },
-  { key: 'showFullAgentNames', label: 'Full agent names', sub: '“Claude” instead of “CC”' },
   { key: 'showSessionIdInTitles', label: 'Session id', sub: 'Append the short id to the title' },
 ];
 

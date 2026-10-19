@@ -16,7 +16,8 @@ import {
   getTerminalDisplayInfo,
   TerminalIdentificationOptions,
   prefixToAgentType,
-  SessionAgentType
+  SessionAgentType,
+  type TabStage,
 } from '../core/utils';
 
 // Per-terminal debug lines, gated behind an env flag so steady state stays quiet (#96).
@@ -86,6 +87,7 @@ export interface EditorTerminal {
   autoLabelPollerId?: NodeJS.Timeout; // Poller for auto-label fetch (cleared once label is set)
   appliedTitle?: string;    // Tab title showing now (creation name or last rename) — dedupe guard so an unchanged title is never re-applied (and never disturbs focus)
   pendingTitle?: string;    // Desired title for a tab that is NOT currently focused; applied on next focus. Renaming a background tab would steal focus, which we never do.
+  stage?: TabStage;         // Launch stage the tab shows until the session is named (`formatTerminalTitle`)
 }
 
 const STATUS_BAR_LABELS_KEY = 'agentStatusBarLabels';
@@ -745,14 +747,21 @@ export async function adopt(
   },
 ): Promise<boolean> {
   const identOpts = extractTerminalIdentificationOptions(terminal);
-  const info = getTerminalDisplayInfo(identOpts);
+  // A window reload revives a tab with only its name and its process: env and
+  // icon come back empty, and the name carries no harness. The shell pid is the
+  // same process the persisted entry recorded, so it finds that entry.
+  const pidWait = identOpts.terminalId ? undefined : await processIdWithin(terminal);
+  const byPid = pidWait?.pid !== undefined
+    ? opts.persistedSessions.find(p => p.agentPid === pidWait.pid)
+    : undefined;
+  const info = getTerminalDisplayInfo(byPid ? { ...identOpts, terminalId: byPid.terminalId } : identOpts);
   if (!info.isAgent || !info.prefix) return false;
 
   const agentConfig = inferAgentConfig(terminal.name, info.prefix);
   if (!agentConfig) return false;
 
-  const id = identOpts.terminalId || nextId(info.prefix);
-  const { pid, timedOut } = await processIdWithin(terminal);
+  const id = identOpts.terminalId || byPid?.terminalId || nextId(info.prefix);
+  const { pid, timedOut } = pidWait ?? await processIdWithin(terminal);
 
   // A terminal-editor input can survive a window reload after its backing
   // pseudo-terminal has gone away. VS Code still exposes that stale input in
@@ -772,7 +781,7 @@ export async function adopt(
 
   const persisted = identOpts.terminalId
     ? opts.persistedSessions.find(p => p.terminalId === identOpts.terminalId)
-    : undefined;
+    : byPid;
   const restoredLabels = restoredSessionTabLabels(info.label || undefined, persisted);
   register(terminal, id, agentConfig, pid, opts.context, restoredLabels.manualLabel);
   if (restoredLabels.autoLabel) setAutoLabel(terminal, restoredLabels.autoLabel);

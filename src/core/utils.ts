@@ -82,14 +82,6 @@ const NAME_TO_PREFIX: Record<string, string> = {
   'droid': DROID_TITLE
 };
 
-interface DisplayPreferences {
-  showFullAgentNames: boolean;
-  showLabelsInTitles: boolean;
-  showSessionIdInTitles: boolean;
-  labelReplacesTitle: boolean;
-  showLabelOnlyOnFocus: boolean;
-}
-
 export interface ParsedTerminalName {
   isAgent: boolean;
   prefix: string | null;
@@ -273,11 +265,29 @@ function getPrefixFromIconFilename(iconFilename: string): string | null {
   return ICON_TO_PREFIX[iconFilename] || null;
 }
 
+/**
+ * Where a launch is before its session has a name. The tab shows it in place of
+ * a title: `placing` while the CLI picks a machine (`--device auto`), `starting`
+ * until the harness draws, `ready` once it has and nothing is named yet.
+ */
+export type TabStage = 'placing' | 'starting' | 'ready';
+
+const TAB_STAGE_WORDS: Record<TabStage, string> = {
+  placing: 'Placing…',
+  starting: 'Starting…',
+  ready: 'New session',
+};
+
+/** A tab name that is only a launch stage, never a session's name. */
+export function isTabStageName(name: string | null | undefined): boolean {
+  const trimmed = name?.trim();
+  return !!trimmed && Object.values(TAB_STAGE_WORDS).includes(trimmed);
+}
+
 export interface TerminalTitleOptions {
-  display?: DisplayPreferences;
   label?: string | null;
+  stage?: TabStage;
   sessionChunk?: string | null;
-  isFocused?: boolean;  // When false and showLabelOnlyOnFocus=true, hide label
 }
 
 /**
@@ -348,43 +358,14 @@ export function capTabName(name: string): string {
 }
 
 /**
- * Build the terminal tab title based on display preferences.
- * Canonical prefix should be one of the KNOWN_PREFIXES.
- * When isFocused=false and showLabelOnlyOnFocus=true, label is hidden.
+ * An agent tab's name: the session's name, or its launch stage until it has one.
+ * The harness is the tab's logo, so no harness text is added (owner, 2026-10-19).
  */
-export function formatTerminalTitle(prefix: string, options?: TerminalTitleOptions): string {
-  let display = options?.display;
-
-  // If terminal is not focused and showLabelOnlyOnFocus is enabled, hide the label
-  if (options?.isFocused === false && display?.showLabelOnlyOnFocus) {
-    display = { ...display, showLabelsInTitles: false };
-  }
-
-  const base = display?.showFullAgentNames ? getExpandedAgentName(prefix) : prefix;
-  const sessionChunk = display?.showSessionIdInTitles ? options?.sessionChunk?.trim() : null;
-
-  // The bare `[host/<device>]` fallback is not a real title — drop it so the tab
-  // falls back to the agent base (`CC`); the host shows in the status bar.
-  const shown = presentableLabel(options?.label);
-  const label = shown && capTabName(shown);
-  if (sessionChunk) {
-    if (display?.showLabelsInTitles && label) {
-      return `${base} ${sessionChunk} - ${label}`;
-    }
-    return `${base} ${sessionChunk}`;
-  }
-
-  if (!display?.showLabelsInTitles || !label) {
-    return base;
-  }
-
-  // Check labelReplacesTitle setting
-  if (display?.labelReplacesTitle) {
-    return label;  // Replace mode: only the label
-  }
-
-  // Append mode: "Claude - auth feature"
-  return `${base} - ${label}`;
+export function formatTerminalTitle(options: TerminalTitleOptions = {}): string {
+  const shown = presentableLabel(options.label);
+  const name = shown ? capTabName(shown) : TAB_STAGE_WORDS[options.stage ?? 'ready'];
+  const chunk = options.sessionChunk?.trim();
+  return chunk ? `${chunk} ${name}` : name;
 }
 
 export interface TerminalDisplayInfo {
@@ -439,11 +420,14 @@ export function getTerminalDisplayInfo(options: TerminalIdentificationOptions): 
     return buildDisplayInfo(parsed.prefix, label, parsed.sessionChunk);
   }
 
+  // The name is the session's name, unless it is only a launch stage.
+  const nameLabel = isTabStageName(name) ? null : name.trim() || null;
+
   // Strategy 2: Extract prefix from AGENT_TERMINAL_ID env var
   if (terminalId) {
     const prefix = getPrefixFromTerminalId(terminalId);
     if (prefix && KNOWN_PREFIXES.includes(prefix)) {
-      return buildDisplayInfo(prefix, name.trim() || null, null);
+      return buildDisplayInfo(prefix, nameLabel, null);
     }
   }
 
@@ -451,7 +435,7 @@ export function getTerminalDisplayInfo(options: TerminalIdentificationOptions): 
   if (iconFilename) {
     const prefix = getPrefixFromIconFilename(iconFilename);
     if (prefix) {
-      return buildDisplayInfo(prefix, name.trim() || null, null);
+      return buildDisplayInfo(prefix, nameLabel, null);
     }
   }
 
@@ -489,13 +473,13 @@ function buildDisplayInfo(prefix: string, label: string | null, sessionChunk: st
  */
 export function getPrefixFromTerminalId(terminalId: string): string | null {
   const prefix = terminalId.split('-')[0];
-  // Backward compatibility: accept old 'CL' prefix
-  if (prefix === 'CL') {
-    return CLAUDE_TITLE;
-  }
-  // We don't strictly check KNOWN_PREFIXES here to allow custom agents 
-  // which might use their name as prefix.
-  return prefix || null;
+  if (!prefix) return null;
+  // Ids carry the config prefix (`cl-…`, generateTerminalId); older tabs carry the
+  // title (`CC-…`) or `CL-…`. A custom agent's id keeps its own name.
+  if (prefix === 'CL') return CLAUDE_TITLE;
+  const lower = prefix.toLowerCase();
+  const mapping = PREFIX_MAPPINGS.find(m => m.config === lower || m.canonical.toLowerCase() === lower);
+  return mapping?.canonical ?? prefix;
 }
 
 // === PROMPT UTILITIES ===

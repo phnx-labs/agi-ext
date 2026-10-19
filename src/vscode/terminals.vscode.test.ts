@@ -171,6 +171,45 @@ describe('adopting a tab the editor opens after activation', () => {
     expect(t.getByTerminal(term)?.sessionId).toBe('session-rebound');
     expect(t.getByTerminal(term)?.host).toBe('yosemite-s0');
   });
+
+  // A window reload revives a tab with its name and its process only: creationOptions
+  // comes back with no env and no icon (measured in VSCodium 1.135, 2026-10-19), and
+  // a tab named by its session carries no harness text.
+  function revivedTerm(name: string, pid: number): vscode.Terminal {
+    return { name, processId: Promise.resolve(pid), exitStatus: undefined, creationOptions: {} } as unknown as vscode.Terminal;
+  }
+
+  test('a revived tab is found by the shell pid its persisted entry recorded', async () => {
+    const term = revivedTerm('Fix the auth bug', 4321);
+    const adopted = await t.adopt(term, () => fakeAgentConfig(), {
+      persistedSessions: [{ terminalId: 'cl-1760900000000-3', prefix: 'cl', sessionId: 'session-7', host: 'yosemite-s0', autoLabel: 'Fix the auth bug', agentPid: 4321, createdAt: 1 }],
+    });
+
+    expect(adopted).toBe(true);
+    const entry = t.getByTerminal(term);
+    expect(entry?.id).toBe('cl-1760900000000-3');
+    expect(entry?.sessionId).toBe('session-7');
+    expect(entry?.host).toBe('yosemite-s0');
+    expect(entry?.agentType).toBe('claude');
+    expect(entry?.label).toBeUndefined();
+    expect(entry?.autoLabel).toBe('Fix the auth bug');
+  });
+
+  test('a revived tab showing a launch stage does not keep the stage as its name', async () => {
+    const term = revivedTerm('New session', 4322);
+    await t.adopt(term, () => fakeAgentConfig(), {
+      persistedSessions: [{ terminalId: 'cx-1760900000000-4', prefix: 'cx', agentPid: 4322, createdAt: 1 }],
+    });
+
+    expect(t.getByTerminal(term)?.label).toBeUndefined();
+  });
+
+  test('a revived plain terminal no persisted entry recorded is not an agent tab', async () => {
+    const term = revivedTerm('zsh', 999);
+    expect(await t.adopt(term, () => fakeAgentConfig(), {
+      persistedSessions: [{ terminalId: 'cl-1760900000000-3', prefix: 'cl', agentPid: 4321, createdAt: 1 }],
+    })).toBe(false);
+  });
 });
 
 describe('BUG A: startAutoLabelPoller guard blocks restart once autoLabel is set', () => {
