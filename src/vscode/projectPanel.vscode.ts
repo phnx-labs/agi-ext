@@ -1804,16 +1804,12 @@ ${MADE_SCRIPT}
   function named(el, fallback) { return (el.textContent || '').trim() || fallback; }
   // The pinned card's title renames a Claude session: Enter types /rename into its tab, Esc
   // or leaving the box cancels. The title is data-keep, so a stream update never takes the
-  // box away; the stream's title comes back from data-ttl once the edit ends, and the name
-  // typed shows until the stream reports it (30 s at most).
-  let renamed = null;
+  // box away; otherwise it always draws the stream's title (data-ttl), so a new name shows
+  // only once the session reports it.
   function syncTitles() {
     const t = main.querySelector('.front-pin .ttl[data-ttl]');
     if (!t || t.querySelector('input')) return;
-    const key = t.closest('.card').dataset.key;
-    if (renamed && (renamed.key !== key || t.dataset.ttl === renamed.name || Date.now() - renamed.at > 30000)) renamed = null;
-    const words = renamed ? renamed.name : t.dataset.ttl;
-    if (t.textContent !== words) t.textContent = words;
+    if (t.textContent !== t.dataset.ttl) t.textContent = t.dataset.ttl;
   }
   function editTitle(t) {
     if (t.querySelector('input')) return;
@@ -1824,7 +1820,7 @@ ${MADE_SCRIPT}
     const end = (save) => {
       if (done) return; done = true;
       const card = t.closest('.card'); const name = input.value.trim();
-      if (save && card && name && name !== t.dataset.ttl) { renamed = { key: card.dataset.key, name, at: Date.now() }; vscode.postMessage({ type: 'rename', sessionId: card.dataset.session, name }); }
+      if (save && card && name && name !== t.dataset.ttl) vscode.postMessage({ type: 'rename', sessionId: card.dataset.session, name });
       t.replaceChildren(); syncTitles();
     };
     input.addEventListener('keydown', (k) => { k.stopPropagation(); if (k.key === 'Enter' && !k.isComposing) { k.preventDefault(); end(true); } else if (k.key === 'Escape') { k.preventDefault(); end(false); } });
@@ -2075,9 +2071,11 @@ ${MADE_SCRIPT}
     // 1-9 answer the selected card's ask with that option.
     if (current === 'sessions' && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target.closest && e.target.closest('input, textarea, select'))) {
       const held = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.card[data-session]') : null;
-      // A focused card answers its own ask; the front session's listed card answers through the pinned one.
-      const owner = held && !held.querySelector('.ask[data-ask]') && !held.closest('.front-pin') ? main.querySelector('.front-pin .card[data-key="' + CSS.escape(held.dataset.key) + '"]') : null;
-      const ask = (owner || held || main.querySelector('.card.sel'))?.querySelector('.ask[data-ask] .opts:not([hidden])');
+      // A focused or selected card answers its session's ask through whichever of its cards
+      // carries the answers: the pinned one, or its own when a Favorites copy shows the question.
+      const opts = (c) => c && c.querySelector('.ask[data-ask] .opts:not([hidden])');
+      const answers = (c) => opts(c) || (c ? cardsOf('key', c.dataset.key).map(opts).find(Boolean) : null);
+      const ask = held ? answers(held) : [...main.querySelectorAll('.card.sel')].map(answers).find(Boolean);
       const opt = ask ? ask.querySelectorAll('.opt')[Number(e.key) - 1] : null;
       if (opt) { e.preventDefault(); opt.click(); return; }
     }

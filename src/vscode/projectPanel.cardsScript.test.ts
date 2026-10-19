@@ -74,8 +74,8 @@ test('the pinned title opens a rename box; a stream update keeps what is typed; 
   expect(input.value).toBe('Body alignment');
   input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event);
   expect(sent).toEqual([{ type: 'rename', sessionId: 'a', name: 'Body alignment' }]);
-  // The name typed shows until the stream reports it, then the stream's title is the one.
-  expect($('.front-pin .ttl').textContent).toBe('Body alignment');
+  // Nothing is shown as renamed until the stream reports it.
+  expect($('.front-pin .ttl').textContent).toBe('Task a');
   deliver({ type: 'html', tab: 'sessions', html: draw([], { title: 'Body alignment' }) });
   expect($('.front-pin .ttl').textContent).toBe('Body alignment');
   deliver({ type: 'html', tab: 'sessions', html: draw([], { title: 'Renamed again elsewhere' }) });
@@ -130,4 +130,14 @@ test('a PR chip or a card rings and says "Opening …" at once; the host\'s answ
   // With no answer from the host the status stays: nothing silently waits.
   await settle(750);
   expect(toast().hidden).toBe(false);
+});
+
+test('1-9 answers a selected starred session that asks, whose Favorites copy shows only the question', () => {
+  const asking = (r: Row) => (r.sessionId === 'c' ? { ...r, phase: 'waiting' as const, liveStatus: 'waiting', attention: { key: 'k-c', kind: 'question', state: 'open', openedAt: new Date(NOW - 30_000).toISOString(), question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }, { id: 'n', label: 'No' }] } } : r);
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows.map(asking), NOW, { selectedId: 'c', frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, favorites: new Set(['c']) }) });
+  expect($$('[data-group="favorites"] .card.sel[data-session="c"]')).toHaveLength(1);
+  sent.length = 0;
+  (document.activeElement as unknown as HTMLElement | null)?.blur?.();
+  document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: '2', bubbles: true }) as unknown as Event);
+  expect(sent).toContainEqual({ type: 'answer', key: 'k-c', choice: 'n', text: undefined });
 });
