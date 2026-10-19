@@ -50,12 +50,15 @@ import {
 import { SESSION_STATE_WORD, sessionStateOf, sparkline, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { openSearchPalette, paletteStateWords, type PaletteSession } from './searchPalette.vscode';
-import { currentAgentPanelSubject, followFrontTerminal, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
+import { currentAgentPanelSubject, followFrontTerminal, revealAgentPanel, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
+import { deliverReply } from './sessionReply';
+import { dictationMessage } from './dictation.vscode';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import * as terminals from './terminals.vscode';
 import { openListedArtifact } from './sessionCardActions';
 import { openLink, openWebviewUrl } from './webviewSecurity';
 import { PATCH_SCRIPT, RUSH_THEME_CSS, THUMB_SCRIPT, escapeHtml } from '../shared/sessionCards';
+import { REPLY_BOX_CSS, REPLY_SCRIPT } from '../shared/replyBox';
 import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
@@ -96,7 +99,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; step?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -140,7 +143,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
       else if (msg.type === 'pickProject' && typeof msg.name === 'string') void this.controller.pickByName(msg.name).catch((e) => { void vscode.window.showErrorMessage(`Could not switch project: ${errorText(e)}`); });
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true ? 'always' : 'card') : 'no');
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true || msg.step === true ? 'always' : 'card') : 'no');
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
       else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
@@ -156,6 +159,14 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
       else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
+      // The front card's reply box: its words go into that session's tab here, through
+      // the one reply rail; the mic is the Active Session sidebar's recorder.
+      else if (msg.type === 'reply' && typeof msg.sessionId === 'string' && typeof msg.text === 'string') {
+        const error = deliverReply(terminals.getBySessionId(msg.sessionId), msg.text);
+        void view.webview.postMessage({ type: 'replyResult', ok: !error, ...(error ? { error } : {}) });
+      }
+      else if (msg.type === 'dictate' || msg.type === 'dictationState') dictationMessage(msg, view.webview);
+      else if (msg.type === 'openSidebar') revealAgentPanel();
       else if (msg.type === 'answer' && typeof msg.key === 'string' && (typeof msg.choice === 'string' || typeof msg.text === 'string')) void this.answer(msg.key, typeof msg.choice === 'string' ? { choice: msg.choice } : { text: msg.text as string });
       else if (msg.type === 'merge' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.mergeRow(msg.repo, msg.number, typeof msg.sha === 'string' ? msg.sha : undefined);
       else if (msg.type === 'setting' && typeof msg.key === 'string') {
@@ -1175,6 +1186,45 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   /* Selected is its own look, not hover's: a gold rail inside the left edge. */
   .card.sel { background: var(--r-glass-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold-line); }
   .card .thistab { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-gold-line); line-height: 12px; margin-bottom: 2px; }
+  /* The front tab's card, pinned above the list (owner, 2026-10-18). */
+  .front-pin { margin: 2px 0 8px; }
+  .fc-nav { display: flex; align-items: center; gap: 4px; margin: -2px -2px 2px; }
+  .card .fc-nav .thistab { flex: 1; margin: 0; text-align: center; }
+  .fc-step { width: 22px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--r-text-2); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
+  .fc-step:hover:not([disabled]) { background: var(--r-well); color: var(--r-text); }
+  .fc-step:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  .fc-step[disabled] { opacity: .3; cursor: default; }
+  .card.front { cursor: default; }
+  .card.front.st-asks:hover, .card.front.st-stuck:hover, .card.front.st-blocked:hover, .card.front.st-working:hover, .card.front.st-waiting:hover, .card.front.st-idle:hover, .card.front.st-review:hover { filter: none; }
+  .card.front .acts { display: flex; } .card.front .age { display: none; }
+  .card.front .top { height: auto; min-height: 20px; align-items: flex-start; }
+  .card.front .top .hx { margin-top: 2px; }
+  .card.front .ttl { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 17px; }
+  .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
+  .fc-state { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; font-size: 11px; color: var(--r-caption); }
+  .fc-state > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
+  .fc-recap .fc-k { color: var(--r-gold-line); }
+  .fc-old { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); }
+  .fc-rt { font-size: 12px; line-height: 1.45; color: var(--r-text); }
+  .fc-recap.stale .fc-k { color: var(--r-caption); } .fc-recap.stale .fc-rt { color: var(--r-text-2); }
+  .card.front .ask, .card.front .line.said { margin-top: 6px; }
+  .fc-made, .fc-act { margin-top: 7px; }
+  .card .fc-made .cstrip, .card .fc-made .thumbs { margin-top: 0; } .fc-made .thumbs { margin-top: 4px; }
+  .fc-more { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--vscode-textLink-foreground); }
+  .fc-more:hover { text-decoration: underline; }
+  .fc-act ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+  .fc-act li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 6px; font-size: 11.5px; line-height: 1.35; color: var(--r-text-2); }
+  .fc-act li time { padding-top: 1px; font-family: var(--vscode-editor-font-family); font-size: 10px; color: var(--r-faint); white-space: nowrap; }
+  .fc-act li .fc-at { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .fc-act li.user .fc-at { font-style: italic; color: var(--r-caption); }
+  .fc-act li .fc-you { font-style: normal; font-weight: 600; color: var(--r-text); }
+  .fc-act li.live .fc-at { display: block; color: var(--r-text); }
+  .fc-now { display: block; margin-top: 1px; font-size: 11px; color: var(--r-ok); }
+  .fc-reply { margin-top: 8px; cursor: auto; }
+  .fc-reply .reply-box textarea { resize: none; min-height: 32px; border-radius: 8px; }
+  .fc-reply .reply-box .reply-mic { top: 4px; right: 4px; }
+${REPLY_BOX_CSS}
   .card .started { margin-top: 2px; font-size: 10.5px; color: var(--r-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card.multi { border-color: var(--r-gold-line); }
   .card .top { display: flex; align-items: center; gap: 6px; min-width: 0; height: 20px; }
@@ -1274,6 +1324,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .reveal { position: fixed; z-index: 20; pointer-events: none; border-radius: 8px; border: 1px solid var(--r-faint); background: var(--vscode-sideBar-background); padding: 3px; display: none; }
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
   .card .top .hx { width: 14px; height: 14px; border-radius: 3px; }
+  .card .top .fork { flex: none; font-size: 12px; color: var(--r-caption); }
   ${logoCss}
   /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
   .tabs .sctl { margin-left: auto; position: relative; display: flex; align-items: center; min-width: 0; }
@@ -1350,6 +1401,18 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   const ctl = document.querySelector('.tabs .sctl');
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
+${REPLY_SCRIPT}
+  // The front card's reply box: its session's draft, bound once per node, the mic as
+  // it stands, and the caret back where it was if a move between groups rebuilt it.
+  function syncFrontReply(typing) {
+    const box = main.querySelector('.card.front .reply-box');
+    if (!box) return;
+    if (showReplyDraft(box, box.closest('.card').dataset.session)) showReplyError(box, '');
+    drawDictation(box);
+    bindReplyBox(box, (text) => vscode.postMessage({ type: 'reply', sessionId: box.closest('.card').dataset.session, text }));
+    const input = box.querySelector('textarea');
+    if (typing && document.activeElement !== input) { input.focus(); input.setSelectionRange(typing[0], typing[1]); }
+  }
   // Questions the viewer opened, and Merge clicks still in their Undo window; both
   // survive a redraw of the list.
   const opened = new Set();
@@ -1483,6 +1546,7 @@ ${THUMB_SCRIPT}
       const open = new Set(same ? folds().filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
+      const typing = same && document.activeElement && document.activeElement.id === 'reply-input' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
       const keepToast = same ? main.querySelector('.toast:not([hidden])') : null;
       const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => [c.closest('.card').dataset.session, c]) : [];
@@ -1500,7 +1564,7 @@ ${THUMB_SCRIPT}
       observeThumbs(main);
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
-      if (m.tab === 'sessions') syncBulk();
+      if (m.tab === 'sessions') { syncBulk(); syncFrontReply(typing); }
       restoreLocal();
       document.body.classList.remove('loading');
     }
@@ -1528,6 +1592,12 @@ ${THUMB_SCRIPT}
     else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }
     else if (m.type === 'notice') toast(m.text);
+    else if (m.type === 'replyResult') showReplyError(main.querySelector('.card.front .reply-box'), m.ok ? '' : (m.error || 'Reply failed'));
+    else if (m.type === 'dictation') {
+      const box = main.querySelector('.card.front .reply-box');
+      setDictation(box, m.state, m.text);
+      if (m.error) showReplyError(box, m.error);
+    }
     else if (m.type === 'answered') {
       const p = pendingAnswer.get(m.key); if (!p) return;
       if (m.error) { p.state = 'error'; p.error = m.error; } else p.state = 'sent';
@@ -1596,6 +1666,12 @@ ${THUMB_SCRIPT}
       if (!e.target.closest('.cmenu [data-act]')) return;
       more.open = false;
     }
+    // The front card's reply box handles its own keys and mic; a click there selects nothing.
+    if (e.target.closest('.fc-reply')) return;
+    // ‹ › on the pinned card front the tab before or after this one, as a card click would.
+    const step = e.target.closest('[data-front-step]');
+    if (step) { if (!step.disabled) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true }); return; }
+    if (e.target.closest('[data-open-sidebar]')) { e.preventDefault(); vscode.postMessage({ type: 'openSidebar' }); return; }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
     // The project button: its menu lists every Linear project (read when it opens).
@@ -1751,6 +1827,7 @@ ${THUMB_SCRIPT}
     reveal.style.top = Math.min(e.clientY + 12, innerHeight - 200) + 'px';
   });
   document.addEventListener('keydown', (e) => {
+    if (e.target.closest && e.target.closest('.fc-reply')) return;
     // Other…: Enter sends what was typed (with the same Undo setting), Escape closes the box.
     const input = e.target.closest && e.target.closest('[data-ask-input]');
     if (input) {

@@ -9,7 +9,8 @@ import * as os from 'os';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, sessionStateOf, urgencyOf, urgencyRank, waitFor, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, waitFor, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { resolveProject } from '../shared/project';
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
@@ -284,7 +285,15 @@ export interface SessionLike {
   };
   question?: AskQuestion | null;
   request?: { headline?: string; attachments?: { kind: string; name: string }[] };
-  timeline?: { steps: { text: string }[] };
+  /** The CLI's step list, newest last: each step's words, ISO time, whose (`user` for
+   *  you), and on the live step what runs now. */
+  timeline?: { steps: { text: string; at?: string; source?: string; live?: boolean; now?: string }[] };
+  /** The session this one was forked from; the card marks a fork with ⑂, never words. */
+  forkOf?: string;
+  /** Claude's own newest recap (agents-cli `recap`), `at` ISO; absent for other harnesses. */
+  recap?: { text: string; at: string };
+  /** Your turns, oldest first; the last one dates a recap written before it. */
+  userTurns?: { atMs: number }[];
   lastResponse: string;
   activity: string;
   ticket: string | null;
@@ -668,6 +677,11 @@ export function ranFor(ms: number): string {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
+/** A time of day on a card: "5:43 PM". */
+function clock(t: number): string {
+  return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 /** When it ran, by day: "yesterday 6:50 PM → today 7:56 AM", "Oct 11 · 4:20 AM → 12:32 PM". */
 export function ranSpan(start: number, end: number, now: number): string {
   const day = (t: number) => new Date(t).toDateString();
@@ -676,7 +690,6 @@ export function ranSpan(start: number, end: number, now: number): string {
     if (day(t) === day(now - 86_400_000)) return 'yesterday';
     return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
-  const clock = (t: number) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   return day(start) === day(end)
     ? `${dayWord(start)} · ${clock(start)} → ${clock(end)}`
     : `${dayWord(start)} ${clock(start)} → ${dayWord(end)} ${clock(end)}`;
@@ -801,9 +814,48 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
   return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button>${close}</div></details>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings }): string {
+/** The tabs ‹ and › front from the pinned card: the session tab before and after it
+ *  in this window's tab order, wrapping around. */
+export interface FrontNav {
+  prev?: { sessionId: string; host: string; label: string };
+  next?: { sessionId: string; host: string; label: string };
+}
+
+function navButtons(nav: FrontNav | undefined, tab: number | undefined): string {
+  const btn = (dir: 'prev' | 'next', to: FrontNav['prev']) => to
+    ? `<button class="fc-step" data-front-step="${dir}" data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host)}" title="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}" aria-label="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}">${dir === 'prev' ? '‹' : '›'}</button>`
+    : `<button class="fc-step" disabled aria-label="${dir === 'prev' ? 'No previous tab' : 'No next tab'}">${dir === 'prev' ? '‹' : '›'}</button>`;
+  return `<div class="fc-nav">${btn('prev', nav?.prev)}<span class="thistab">This tab${tab ? ` · ${tab}` : ''}</span>${btn('next', nav?.next)}</div>`;
+}
+
+/** Claude's recap on the front card, with how old it is; dimmed with "before your
+ *  last message" once you have written since. '' without one. */
+function recapBlock(s: Pick<SessionLike, 'recap' | 'userTurns'>, now: number): string {
+  const at = s.recap ? Date.parse(s.recap.at) : NaN;
+  const text = plain(s.recap?.text ?? '');
+  if (!text || !Number.isFinite(at)) return '';
+  const turns = s.userTurns ?? [];
+  const stale = turns.length > 0 && turns[turns.length - 1]!.atMs > at;
+  return `<div class="fc-recap${stale ? ' stale' : ''}"><div class="fc-k">Recap · ${escapeHtml(relTime(at, now))}${stale ? '<span class="fc-old">before your last message</span>' : ''}</div><div class="fc-rt">${escapeHtml(text)}</div></div>`;
+}
+
+/** The front card's last four steps with their clock times, and the way to the
+ *  Active Session sidebar for everything else. */
+function recentSteps(s: SessionLike): string {
+  const steps = (s.timeline?.steps ?? []).filter((st) => plain(st.text)).slice(-4);
+  const items = steps.map((st) => {
+    const t = Date.parse(st.at ?? '');
+    const you = st.source === 'user';
+    const now = st.live && st.now ? `<span class="fc-now">${escapeHtml(plain(st.now))}</span>` : '';
+    return `<li class="${you ? 'user' : ''}${st.live ? ' live' : ''}"><time>${Number.isFinite(t) ? clock(t) : ''}</time><span class="fc-at">${you ? '<span class="fc-you">You</span> ' : ''}${escapeHtml(plain(st.text))}${now}</span></li>`;
+  }).join('');
+  return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div>${items ? `<ol>${items}</ol>` : ''}</div>`;
+}
+
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings; nav?: FrontNav }): string {
   const state = sessionStateOf(s);
-  const title = sessionTitle(s);
+  // The pinned card draws the CLI's title as it is (final since agents-cli 1.23.31).
+  const title = (opts.front && s.title.trim()) || sessionTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
   const ask = state === 'asks' && cards.asks !== 'off' ? askBlock(s, cards) : '';
   const said = agentLine(s);
@@ -862,8 +914,29 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
   const host = cards.machine ? `<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span>` : '';
-  const body = `
-    ${opts.front ? '<div class="thistab">This tab</div>' : ''}<div class="top">${harnessLogo(s.agentType)}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${age}<span class="acts">${cardMenu(s, place, opts)}${go}</span></div>
+  const fork = s.forkOf ? `<span class="fork" title="${escapeHtml(`Forked from ${s.forkOf.slice(0, 8)}`)}" aria-label="Fork">⑂</span>` : '';
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${age}<span class="acts">${cardMenu(s, place, opts)}${go}</span></div>`;
+  // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
+  // the tabs beside it, its ask under the title, its state and where it runs, Claude's
+  // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
+  // the reply box (data-keep) is never patched, so typing survives every update.
+  function frontBody(): string {
+    const ago = ageWords(s.lastActivityMs, now);
+    const since = waited >= 0 ? `waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ago === 'now' || !ago ? ago : `${ago} ago`;
+    const where = [since, state !== 'ended' && counts.total ? escapeHtml(pendingWords(s.pending)) : '', escapeHtml(shortDevice(place.device)), s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).join(' · ');
+    const statePill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>`;
+    const latest = recapBlock(s, now)
+      || (said ? `<div class="line said">${escapeHtml(said)}</div>` : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
+    const madeChips = [prs, ticketChip, folderChip].join('');
+    const madeBlock = madeChips || madeImages.length
+      ? `<div class="fc-made"><div class="fc-k">Made</div>${madeChips ? `<div class="cstrip">${madeChips}</div>` : ''}${madeImages.length ? `<div class="thumbs">${madeImages.join('')}</div>` : ''}</div>` : '';
+    // A question from this tab's own agent goes directly under the title, above the recap.
+    const detail = `${reason}${ask}<div class="fc-state">${statePill}<span>${where}</span></div>${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${madeBlock}${recentSteps(s)}`;
+    const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
+    return `${navButtons(opts.nav, s.tabIndex)}${top}<div class="fc-body">${detail}</div>${reply}`;
+  }
+  const body = opts.front ? frontBody() : `
+    ${top}
     ${meta ? `<div class="meta">${meta}</div>` : ''}${text}
     ${cards.chips && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
@@ -922,22 +995,32 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const ball = (r: SessionLike) => (blocked(r) ? 'move' : ballOf(sessionStateOf(r)));
   const urgency = (r: SessionLike) => urgencyOf(r.attention?.state === 'open' ? r.attention : null);
   const waitedSince = (r: SessionLike) => { const t = askedAt(r); return Number.isFinite(t) ? t : Infinity; };
-  // Urgency first; within it a blocked agent (it said it cannot go on), then the longest wait.
-  const mine = sortRows(all.filter(({ row }) => ball(row) === 'move'), prefs.sort)
-    .sort((a, b) => urgencyRank(urgency(a.row)) - urgencyRank(urgency(b.row)) || Number(blocked(b.row)) - Number(blocked(a.row))
-      || waitedSince(a.row) - waitedSince(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row)));
-  const pressing = mine.filter(({ row }) => urgencyRank(urgency(row)) <= urgencyRank('high'));
-  const asks = mine.filter(({ row }) => urgencyRank(urgency(row)) > urgencyRank('high'));
+  // Your move leads every group: urgency first; within it a blocked agent (it said it
+  // cannot go on), then the longest wait. The rest keep the viewer's sort.
+  const yourMove = (a: { row: SessionLike }, b: { row: SessionLike }) => urgencyRank(urgency(a.row)) - urgencyRank(urgency(b.row)) || Number(blocked(b.row)) - Number(blocked(a.row))
+    || waitedSince(a.row) - waitedSince(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row));
+  const ordered = (items: { row: SessionLike; place: SessionPlace }[]) => {
+    const sorted = sortRows(items, prefs.sort);
+    return [...sorted.filter((x) => ball(x.row) === 'move').sort(yourMove), ...sorted.filter((x) => ball(x.row) !== 'move')];
+  };
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
-  const rest = all.filter((x) => ball(x.row) === 'running' || ball(x.row) === 'ended' || (tabHere(x) && ball(x.row) !== 'move'));
+  // The front tab's session is pinned on top and listed nowhere else (PHNX-4387).
+  const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
+  const others = all.filter((x) => x !== front);
+  const quiet = (x: { row: SessionLike; place: SessionPlace }) => !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
+  const rest = others.filter((x) => !quiet(x));
+  // ‹ and › walk this window's session tabs in tab order, wrapping around.
+  const tabs = all.filter((x) => tabHere(x) && x.row.tabIndex).sort((a, b) => a.row.tabIndex! - b.row.tabIndex!);
+  const at = front ? tabs.indexOf(front) : -1;
+  const navTo = (x: { row: SessionLike } | undefined) => x && x !== front ? { sessionId: x.row.sessionId, host: x.row.host, label: `tab ${x.row.tabIndex} · ${sessionTitle(x.row)}` } : undefined;
+  const nav: FrontNav = at < 0 ? {} : { prev: navTo(tabs[(at - 1 + tabs.length) % tabs.length]), next: navTo(tabs[(at + 1) % tabs.length]) };
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, front: !!opts.frontId && row.sessionId === opts.frontId && place.kind === 'here', pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards,
+    selected: row.sessionId === opts.selectedId, front: !!front && row.sessionId === front.row.sessionId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards, nav,
   });
   // The tab already shows the count and the asks badge, so the header carries only its controls.
   const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  const pin = (cls: string, name: string, items: typeof mine) => items.length ? `<div class="pinned${cls}"><div class="ph">${name} <span class="n">${items.length}</span></div>${items.map((x) => card(x, true)).join('')}</div>` : '';
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string };
   const folded = new Set(prefs.folded);
   const section = (g: Group) => {
@@ -948,16 +1031,18 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
       <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b> <span class="n">${g.items.length}</span>${g.sub ? ` <span class="gs">· ${escapeHtml(g.sub)}</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span></div>
-      <div class="items">${closed ? '' : sortRows(g.items, prefs.sort).map((x) => card(x)).join('')}</div>
+      <div class="items">${closed ? '' : ordered(g.items).map((x) => card(x)).join('')}</div>
     </section>`;
   };
-  const byBall = (b: 'review' | 'idle') => all.filter((x) => ball(x.row) === b && !tabHere(x));
+  const byBall = (b: 'review' | 'idle') => others.filter((x) => quiet(x) && ball(x.row) === b);
   const ballIcon = (b: 'review' | 'idle') => `<span class="pill st-${b} solo"><i></i></span>`;
-  const pinned = pin(' now', 'Needs you now', pressing) + pin('', 'Asks', asks)
-    + [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
+  const pinned = front ? `<div class="front-pin">${card(front, true)}</div>` : '';
+  const quietGroups = [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
       { key: IDLE_GROUP, name: BALL_WORD.idle, sub: 'finished, no tab here', icon: ballIcon('idle'), items: byBall('idle') }]
       .filter((g) => g.items.length).map(section).join('');
   let groups: Group[];
+  // Grouped by state, Your move is a group of its own, above Review and Idle.
+  let lead = '';
   if (prefs.group === 'app') {
     const byKey = new Map<string, Group>();
     for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
@@ -969,14 +1054,16 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const devices = [...new Set(rest.map((x) => x.place.device))].sort((a, b) => Number(b === here.device) - Number(a === here.device) || a.localeCompare(b));
     groups = devices.map((d) => ({ key: `machine:${d}`, name: d, sub: d === here.device ? 'this machine' : '', icon: glyph('machine', 'gi'), items: rest.filter((x) => x.place.device === d) }));
   } else if (prefs.group === 'state') {
-    groups = (['running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ballOf(sessionStateOf(x.row)) === b) }));
+    groups = (['move', 'running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : b === 'move' ? 'asks' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ball(x.row) === b && (b !== 'move' || !tabHere(x))) }));
     // A finished turn whose tab is open here is neither running nor ended.
     const finished = rest.filter((x) => tabHere(x) && ball(x.row) !== 'running' && ball(x.row) !== 'ended');
+    const move = groups.shift()!;
+    lead = move.items.length ? section(move) : '';
     groups.splice(1, 0, { key: 'state:here', name: 'Open tabs', sub: 'finished', icon: finished.length ? placeIcon(finished[0].place, here) : '', items: finished });
   } else {
-    return head + pinned + `<div class="flat">${sortRows(rest, prefs.sort).map((x) => card(x)).join('')}</div>` + tail;
+    return head + pinned + quietGroups + `<div class="flat">${ordered(rest).map((x) => card(x)).join('')}</div>` + tail;
   }
-  return head + pinned + groups.filter((g) => g.items.length).map(section).join('') + tail;
+  return head + pinned + lead + quietGroups + groups.filter((g) => g.items.length).map(section).join('') + tail;
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */

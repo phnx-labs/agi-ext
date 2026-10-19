@@ -59,7 +59,7 @@ import type {
 import { normalizeHost } from '../core/remoteSessions';
 import { createTrailingCoalesce, coalesceTrailing } from '../core/cachedInFlight';
 import { sessionPathUriString } from '../core/sessionPath';
-import { sendReplyToTerminal } from './sessionReply';
+import { deliverReply } from './sessionReply';
 import { runAgents, runCliArgs } from '../core/agentsBin';
 import { canOfferMerge, prAction, prRepo, prVerdict, type PrAction, type PrTone, type RemotePrStatus } from '../core/prStatus';
 import { streamTitle } from '../core/projectPanel';
@@ -68,6 +68,7 @@ import { getSettings } from './agentSettings.vscode';
 import { validMergeMethod } from '../core/settings';
 import { shellQuote } from '../core/shellQuote';
 import { PATCH_SCRIPT, SESSION_CARDS_SCRIPT, THUMB_SCRIPT, sessionPanelCss, sessionPanelFontFaces } from '../shared/sessionCards';
+import { REPLY_SCRIPT, replyBoxHtml } from '../shared/replyBox';
 import { requestImageThumbs, sessionCardFields } from '../core/sessionCardFields';
 import { SESSION_STATE_WORD, STATE_TONE, sessionStateOf, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { VERB_FILTER_ROLES, fetchTimelineFilter, openSessionArtifact } from './sessionCardActions';
@@ -75,7 +76,7 @@ import { isInside } from '../core/displayPath';
 import { relatedSessions, type RelatedSession } from '../core/relatedSessions';
 import { blockedUpdate, sessionUpdates, type SessionUpdate } from '../core/sessionUpdates';
 import { ticketFace, type TicketFace } from '../core/ticketFaces';
-import { dictation } from './dictation.vscode';
+import { dictation, dictationMessage } from './dictation.vscode';
 import { frontTerminal, onDidChangeFrontTab } from './frontTab.vscode';
 import { PanelDock, type PanelHost } from './panelDock.vscode';
 
@@ -350,6 +351,11 @@ export function setAgentPanelSubjectFromProject(sessionId: string, host?: string
   void activeProvider?.refresh();
 }
 
+/** Bring the Active Session sidebar up (the Project panel's "Open the sidebar ›"). */
+export function revealAgentPanel(): void {
+  activeProvider?.reveal();
+}
+
 /**
  * Point the sidebar at the focused agent terminal (the other subject trigger).
  * A tab without a session id yet (Codex, Grok) still takes the subject: the
@@ -564,11 +570,8 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
         if (typeof msg.id === 'string' && msg.id) void vscode.commands.executeCommand('agents.project.openTicket', msg.id);
         return;
       case 'dictationState':
-        this.view?.webview.postMessage({ type: 'dictation', state: dictation.state() });
-        return;
       case 'dictate':
-        if (msg.on === true) void dictation.start((update) => this.view?.webview.postMessage({ type: 'dictation', ...update }));
-        else if (msg.on === false) void dictation.stop();
+        if (this.view) dictationMessage(msg, this.view.webview);
         return;
       case 'selectRelated':
         // A Related chip makes that session the subject, as a Project panel click does.
@@ -770,22 +773,10 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
    * no channel: say so inline rather than dropping the text silently.
    */
   private async replyToSession(text: string, terminalId: string | undefined): Promise<void> {
-    const body = text.trim();
-    const post = (ok: boolean, error?: string) =>
-      this.view?.webview.postMessage({ type: 'replyResult', ok, ...(error ? { error } : {}) });
-    if (!body) { post(false, 'Reply text is empty'); return; }
-    const entry = terminalId ? terminals.getById(terminalId) : undefined;
-    if (!entry) {
-      post(false, 'This session has no terminal here — press Focus first, then reply.');
-      return;
-    }
-    try {
-      sendReplyToTerminal(entry, body);
-      post(true);
-    } catch (err) {
-      post(false, err instanceof Error ? err.message : String(err));
-    }
+    const error = deliverReply(terminalId ? terminals.getById(terminalId) : undefined, text);
+    this.view?.webview.postMessage({ type: 'replyResult', ok: !error, ...(error ? { error } : {}) });
   }
+
 
   // Public so the extension can poke a refresh on terminal lifecycle events
   // (open / close / active change) without us subscribing to them here.
@@ -810,6 +801,13 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
   /** Show the sidebar without taking keyboard focus from whatever opened it. */
   revealPreservingFocus(): void {
     this.view?.show(true);
+  }
+
+  /** "Open the sidebar ›": wherever the panel draws (its bar, or its own window),
+   *  else its view, which VS Code resolves on the way. */
+  reveal(): void {
+    if (this.view) this.view.show(false);
+    else void vscode.commands.executeCommand(`${AGENT_PANEL_VIEW_ID}.focus`);
   }
 
   // Called from the session CLI stream fact handler (PHNX-2833) — skip the
@@ -1108,6 +1106,8 @@ const root = document.getElementById('root');
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
 ${SESSION_CARDS_SCRIPT}
+${REPLY_SCRIPT}
+${replyBoxHtml}
 const STATE_TONE = ${JSON.stringify(STATE_TONE)};
 function compactTokens(value) {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -1464,7 +1464,6 @@ function prMergeGlyph(pr) {
 // timeline range dims files changed outside it, without moving anything. Pages,
 // docs and images on this machine carry Share.
 const SHARE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2.5M5 5.5l3-3 3 3M3.5 8.5v4.5h9V8.5"/></svg>';
-const MIC_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>';
 const SHAREABLE = /^(html?|md|markdown|pdf|png|jpe?g|gif|webp|svg)$/;
 const busyArtifacts = new Set();
 
@@ -1784,19 +1783,14 @@ let lastSnapshot = null;
 
 // The reply box is built once and lives outside the patched card, so a stream
 // update never takes away the caret or what you are typing (owner video,
-// 2026-10-12). A draft belongs to its session: switching subjects puts it away
-// and brings back that session's own draft.
-const replyDrafts = {};
-let replySession = '';
+// 2026-10-12). Its drafts, mic and Enter are REPLY_SCRIPT's (src/shared/replyBox.ts).
 
 function render(snap) {
   lastSnapshot = snap;
   // The empty state is about having NO SUBJECT — not about having no terminal.
   // A session picked in the Project panel renders here with no local tab at all.
   if (!snap || !snap.hasSubject) {
-    // Put the draft away: the reply box is rebuilt when a session comes back.
-    const input = root.querySelector('#reply-input');
-    if (input) replyDrafts[replySession] = input.value;
+    // The draft stays in replyDrafts: the reply box is rebuilt when a session comes back.
     replySession = '';
     root.innerHTML = (
       '<div class="empty">' + (snap && snap.frontShell ? '<b>' + esc(snap.frontShell) + '</b> is a shell, not an agent session.' : 'No session selected.') + '<br><br>' +
@@ -1810,7 +1804,7 @@ function render(snap) {
     root.innerHTML = '<div id="panel-body"></div>' + renderReplyBox() +
       '<div class="footer"><button id="refresh-btn">Refresh</button></div>';
     body = root.querySelector('#panel-body');
-    bindReplyBox();
+    bindReplyRail();
     // A rebuilt box asks whether a recording is still running.
     vscode.postMessage({ type: 'dictationState' });
   }
@@ -1923,94 +1917,26 @@ function bindPanel() {
 // The mic dictates into the box: click to talk, click again to stop; the words
 // land in the box to edit before Enter sends them.
 function renderReplyBox() {
-  return (
-    '<div class="reply-box" hidden>' +
-      '<textarea id="reply-input" rows="1" placeholder="Reply to this session… (Enter to send)"></textarea>' +
-      '<div class="dictation" hidden><span class="dict-dot"></span><span class="dict-wave">' +
-        '<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="dict-t"></span></div>' +
-      '<button type="button" class="reply-mic" id="reply-mic" title="Dictate: click to talk, click again to stop" aria-label="Dictate" aria-pressed="false">' + MIC_ICON + '</button>' +
-      '<div class="reply-err" id="reply-err" hidden></div>' +
-    '</div>'
-  );
+  return replyBoxHtml('Reply to this session… (Enter to send)', true);
 }
 
 function syncReplyBox(s) {
   const box = root.querySelector('.reply-box');
-  const input = root.querySelector('#reply-input');
-  if (!box || !input) return;
+  if (!box) return;
   const id = s.fullSessionId || '';
-  if (id !== replySession) {
-    replyDrafts[replySession] = input.value;
-    input.value = replyDrafts[id] || '';
-    replySession = id;
-    showReplyError('');
-  }
+  if (showReplyDraft(box, id)) showReplyError(box, '');
   box.hidden = !id;
 }
 
-// The mic's state, as the host reports it. Listening shows a moving wave (CSS, no
-// timer: the sidebar keeps none); the words land in the box when transcribed.
-// The session the words were spoken for: they land in its draft even if the
-// subject changed while transcribing.
-let dictationSession = '';
-
-function setDictation(state, text) {
-  const box = root.querySelector('.reply-box');
-  if (!box) return;
-  if (state === 'listening' && !box.classList.contains('listening')) dictationSession = replySession;
-  const mic = box.querySelector('#reply-mic');
-  box.classList.toggle('listening', state === 'listening');
-  box.classList.toggle('transcribing', state === 'transcribing');
-  mic.setAttribute('aria-pressed', String(state === 'listening'));
-  mic.disabled = state === 'transcribing';
-  box.querySelector('.dictation').hidden = state === 'idle';
-  box.querySelector('.dict-t').textContent = state === 'transcribing' ? 'Transcribing…' : 'Listening · click the mic to stop';
-  if (text) {
-    const join = (draft) => draft ? draft.replace(/\\s+$/, '') + ' ' + text : text;
-    const input = box.querySelector('#reply-input');
-    if (dictationSession && dictationSession !== replySession) {
-      replyDrafts[dictationSession] = join(replyDrafts[dictationSession] || '');
-    } else {
-      input.value = join(input.value);
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
-  }
-}
-
-function bindReplyBox() {
-  const reply = root.querySelector('#reply-input');
-  reply.addEventListener('keydown', (e) => {
-    // Enter sends; Shift+Enter is a newline.
-    if (e.key !== 'Enter' || e.shiftKey) return;
-    e.preventDefault();
-    const text = reply.value.trim();
-    if (!text) return;
-    vscode.postMessage({
-      type: 'replyToSession',
-      text: text,
-      sessionId: lastSnapshot && lastSnapshot.fullSessionId,
-      terminalId: lastSnapshot && lastSnapshot.terminalId,
-    });
-    reply.value = '';
-    replyDrafts[replySession] = '';
-  });
-  const mic = root.querySelector('#reply-mic');
-  mic.addEventListener('click', () => {
-    showReplyError('');
-    vscode.postMessage({ type: 'dictate', on: mic.getAttribute('aria-pressed') !== 'true' });
-  });
+function bindReplyRail() {
+  bindReplyBox(root.querySelector('.reply-box'), (text) => vscode.postMessage({
+    type: 'replyToSession',
+    text: text,
+    sessionId: lastSnapshot && lastSnapshot.fullSessionId,
+    terminalId: lastSnapshot && lastSnapshot.terminalId,
+  }));
   const btn = root.querySelector('#refresh-btn');
   btn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-}
-
-// The host answers a reply with its outcome; show a failure inline (never a
-// toast) exactly where the user typed.
-function showReplyError(message) {
-  const box = root.querySelector('#reply-err');
-  if (!box) return;
-  box.textContent = message || '';
-  box.hidden = !message;
 }
 
 window.addEventListener('message', (e) => {
@@ -2023,10 +1949,10 @@ window.addEventListener('message', (e) => {
   else if (msg && msg.type === 'timelineFilter') {
     if (applyTimelineFilter(msg, lastSnapshot)) render(lastSnapshot);
   }
-  else if (msg && msg.type === 'replyResult') showReplyError(msg.ok ? '' : (msg.error || 'Reply failed'));
+  else if (msg && msg.type === 'replyResult') showReplyError(root.querySelector('.reply-box'), msg.ok ? '' : (msg.error || 'Reply failed'));
   else if (msg && msg.type === 'dictation') {
-    setDictation(msg.state, msg.text);
-    if (msg.error) showReplyError(msg.error);
+    setDictation(root.querySelector('.reply-box'), msg.state, msg.text);
+    if (msg.error) showReplyError(root.querySelector('.reply-box'), msg.error);
   }
   else if (msg && msg.type === 'artifactBusy') {
     if (msg.busy) busyArtifacts.add(msg.path); else busyArtifacts.delete(msg.path);

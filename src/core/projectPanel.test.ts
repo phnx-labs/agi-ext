@@ -331,7 +331,7 @@ test('the longest-waiting question leads its urgency', () => {
   expect(html.indexOf('data-session="old"')).toBeLessThan(html.indexOf('data-session="new"'))
 })
 
-test('your move is pinned above every grouping; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
+test('an ask leads its own group; group by app orders this window, other windows, Ghostty, background, then tabs with no agent', () => {
   const rows = [
     row({ sessionId: 'left', phase: 'done', liveStatus: 'closed', tabHere: true, lastResponse: 'Done.' }),
     row({ sessionId: 'bg', host: 'yosemite-m2', context: 'headless', lastResponse: 'Running.' }),
@@ -342,8 +342,10 @@ test('your move is pinned above every grouping; group by app orders this window,
   ]
   const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
-  expect(html.indexOf('class="pinned"')).toBeLessThan(html.indexOf('data-group='))
-  expect(at('ask')).toBeLessThan(at('mine'))
+  expect(html).not.toContain('class="pinned')
+  // The background ask stays in Background, ahead of the session running there.
+  expect(at('ask')).toBeLessThan(at('bg'))
+  expect(at('ask')).toBeGreaterThan(html.indexOf('data-group="background'))
   expect([at('mine'), at('win'), at('gh'), at('bg'), at('left')]).toEqual([at('mine'), at('win'), at('gh'), at('bg'), at('left')].sort((x, y) => x - y))
   expect(html).toContain('<b>Open tabs</b> <span class="n">1</span> <span class="gs">· agents</span>')
   expect(html).toContain('<b>agents-cli</b>')
@@ -439,11 +441,11 @@ test('only a question is your move; an idle turn is in Idle; a crashed process i
   ], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   expect([at('ask'), at('done'), at('run'), at('crash')]).toEqual([at('ask'), at('done'), at('run'), at('crash')].sort((x, y) => x - y))
-  expect(html).toContain('<div class="ph">Asks <span class="n">1</span></div>')
+  expect(html).toContain('<b>Your move</b> <span class="n">1</span>')
   expect(html).toContain('<b>Idle</b> <span class="n">1</span> <span class="gs">· finished, no tab here</span>')
 })
 
-test('every open tab keeps its card in Open tabs, in tab order, working or finished; only an ask leaves it (PHNX-4387)', () => {
+test('every open tab keeps its card in Open tabs, in tab order, working or finished; an ask leads it (PHNX-4387)', () => {
   const tab = (id: string, n: number, o: Partial<SessionLike> = {}) => row({ sessionId: id, tabHere: true, tabIndex: n, lastActivityMs: 100 - n, ...o })
   const html = renderSessions([
     tab('third', 3, { phase: 'idle', liveStatus: 'idle', lastActivityMs: 999 }),
@@ -454,8 +456,8 @@ test('every open tab keeps its card in Open tabs, in tab order, working or finis
   ], NOW, { selectedId: null, here: HERE, prefs: prefs() })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   const open = html.indexOf('data-group="here"')
-  // The ask is answered once, from the pinned group; its card is not repeated in Open tabs.
-  expect(at('asks')).toBeLessThan(open)
+  // The ask stays in Open tabs, first, and is drawn once.
+  expect([open, at('asks'), at('first')]).toEqual([open, at('asks'), at('first')].sort((x, y) => x - y))
   expect(html.match(/data-session="asks"/g)?.length).toBe(1)
   // Tab order, whatever moved last; the finished tab stays.
   expect([open, at('first'), at('third')]).toEqual([open, at('first'), at('third')].sort((x, y) => x - y))
@@ -466,16 +468,57 @@ test('every open tab keeps its card in Open tabs, in tab order, working or finis
   expect(at('away')).toBe(-1)
 })
 
-test('the selected card has its own look, the front tab says so, and a folded group holding it opens', () => {
+test('the front tab\'s card is pinned above the list, opened up, and drawn nowhere else', () => {
   const live = row({ sessionId: 'live', tabHere: true, tabIndex: 1 })
   const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs({ folded: ['here'] }) })
-  expect(html).toContain('class="grp" data-group="here"')
+  expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
-  expect(html).toContain('<div class="thistab">This tab</div>')
-  // Another session selected from the panel: the front tab keeps its marker, without the selection.
+  expect(html).toContain('<span class="thistab">This tab · 1</span>')
+  expect(html.match(/data-session="live"/g)?.length).toBe(1)
+  // Its only tab here: no group left to draw, and ‹ › have nowhere to go.
+  expect(html).not.toContain('data-group="here"')
+  expect(html).toContain('<button class="fc-step" disabled aria-label="No previous tab">‹</button>')
+  // Another session selected from the panel: the front tab stays pinned, without the selection.
   const other = renderSessions([live, row({ sessionId: 'b', tabHere: true, tabIndex: 2 })], NOW, { selectedId: 'b', frontId: 'live', here: HERE, prefs: prefs() })
   expect(other).toMatch(/class="card st-working front"[^>]*data-session="live"/)
   expect(other).toMatch(/class="card st-working sel"[^>]*data-session="b"/)
+})
+
+test('‹ › on the pinned card name and front the session tabs before and after it, wrapping around', () => {
+  const tab = (id: string, n: number) => row({ sessionId: id, title: `Task ${id}`, tabHere: true, tabIndex: n })
+  const html = renderSessions([tab('c', 7), tab('a', 2), tab('b', 4), row({ sessionId: 'away' })], NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: prefs() })
+  const pin = html.slice(html.indexOf('<div class="front-pin">'), html.indexOf('data-group='))
+  expect(pin).toContain('data-front-step="prev" data-session="c" data-host="yosemite-m6" title="Previous tab: tab 7 · Task c"')
+  expect(pin).toContain('data-front-step="next" data-session="b" data-host="yosemite-m6" title="Next tab: tab 4 · Task b"')
+})
+
+test('the pinned card: an ask from its own agent comes first, then its state, Claude\'s recap with its age, what it made, the last four steps, and a reply box', () => {
+  const at = (min: number) => new Date(NOW - min * 60_000).toISOString()
+  const steps = [1, 2, 3, 4, 5].map((i) => ({ text: `step ${i}`, at: at(10 - i), ...(i === 4 ? { source: 'user' } : {}) }))
+  const asking = row({ sessionId: 'q', tabHere: true, tabIndex: 3, phase: 'waiting', liveStatus: 'input_required', recap: { text: 'Fixed the save error; next is the release.', at: at(20) }, userTurns: [{ atMs: NOW - 30 * 60_000 }],
+    attention: { key: 'zion/q/1', kind: 'question', state: 'open', openedAt: at(5), question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] }, timeline: { steps } })
+  const html = renderSessions([asking], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs() })
+  const order = ['class="ttl"', 'data-ask="zion/q/1"', 'class="fc-state"', 'Recap · 20 min ago', 'Activity', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
+  expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
+  expect(html).toMatch(/class="card st-asks front"/)
+  expect(html).toContain('data-choice="yes"')
+  expect(html).not.toContain('before your last message')
+  expect(html).not.toContain('step 1<')
+  expect(html).toContain('<span class="fc-you">You</span> step 4')
+  // You wrote after the recap: it says so.
+  const stale = renderSessions([{ ...asking, userTurns: [{ atMs: NOW - 60_000 }] }], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs() })
+  expect(stale).toContain('<div class="fc-recap stale"><div class="fc-k">Recap · 20 min ago<span class="fc-old">before your last message</span>')
+  // No recap (another harness, or none yet): the agent's latest words, as on every card.
+  const plain = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1, lastResponse: 'Done with the docs.' })], NOW, { selectedId: null, frontId: 'p', here: HERE, prefs: prefs() })
+  expect(plain).not.toContain('fc-recap')
+  expect(plain).toContain('<div class="line said">Done with the docs.</div>')
+})
+
+test('a fork is marked with ⑂ beside its title, never with words', () => {
+  const html = card(row({ title: 'Process - Podcasts', forkOf: '4aa3c855-eb2e-417c-8067-c7f079a5963f' }))
+  expect(html).toContain('<span class="fork" title="Forked from 4aa3c855" aria-label="Fork">⑂</span><span class="ttl" title="Process - Podcasts">')
+  expect(html).not.toContain('fork of')
+  expect(card(row({ title: 'Solo' }))).not.toContain('class="fork"')
 })
 
 test('what a session was started with shows faintly under its title, only when it says something else', () => {

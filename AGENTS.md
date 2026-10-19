@@ -112,7 +112,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   when the command runs (`transcriptPathOf`, `src/vscode/recap.vscode.ts`), so it works while
   no view demands the stream; the extension reads no transcript itself.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
-  in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once; reassigning `root.innerHTML`
+  in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once, and
+  the pinned front card's reply box is `data-keep` (a patch never rewrites it); both are
+  `replyBoxHtml`/`REPLY_SCRIPT` (`src/shared/replyBox.ts`) sending through `deliverReply`; reassigning `root.innerHTML`
   per update made it jitter and erased what the owner was typing. A reused node keeps its
   listeners, so bindings go through `bindOnce` and read their data-* values on click.
   A card carries `data-key` (pairs it with its own node) and `data-h` (an unchanged hash is
@@ -138,6 +140,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, card,
   status bar, the Active Session sidebar and the resume picker. The extension generates no
   title and reports none back to the CLI; Rename Session types Claude's own `/rename`.
+  The pinned front card draws the row's `title` as it comes (final since agents-cli 1.23.31),
+  ⑂ for a `forkOf` row; an editor tab shows at most 34 characters of it (`capTabName`).
 - What a card says is computed once and both sidebars read it: a PR's word is `prVerdict`
   (`src/core/prStatus.ts`); a state's dot color `STATE_TONE` and the time words are in
   `src/shared/sessionState.ts`; the theme tokens and `.card` (`RUSH_THEME_CSS`), the escaper
@@ -201,8 +205,10 @@ going on, where, and what came out of it" in one look; text explains only what a
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
   part off, down to the logo and title on one line (owner video, 2026-10-17).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
-  The question opens to its full text on a click on it. Everything else a session made lives
-  in the Active Session sidebar.
+  The question opens to its full text on a click on it. The front tab's card is the one
+  exception: pinned above everything and opened up (‹ › to the tabs beside it, its ask first,
+  state, Claude's recap, Made, the last four steps, a reply box; owner, 2026-10-18).
+  Everything else a session made lives in the Active Session sidebar.
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and
   tickets, a tint for state. The tint is not the only signal: the word is in the card's
@@ -220,7 +226,9 @@ going on, where, and what came out of it" in one look; text explains only what a
   `prefers-reduced-motion`. Nothing flashes for as long as it waits.
 - **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu. Group headers carry
   the icon, a count and one dot per state, so a folded group still says what is inside.
-  Your move (asks · idle) is pinned above every grouping, a question first.
+  There is no group of asks: a session that asks is a red card leading its own group (Open
+  tabs for a tab here), by urgency, then wait; under the pinned card come Ready for review
+  and Idle (no tab here), then the grouping.
 - **Two header rows.** The Project panel's header is the project with its goal beside it, then
   the tabs with that tab's own controls (☀, search, ⇅) at the right; no heading row of its own.
   Settings is the gear in the view's title bar, Refresh lives in Settings, and ⌃1–⌃4 switch the

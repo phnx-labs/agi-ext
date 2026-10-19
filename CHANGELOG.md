@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.410] - 2026-10-18
+
+- The Project panel's Sessions tab pins the front tab's card on top, opened up (owner,
+  2026-10-18): ‹ › at its top bring the tab before or after it forward, its own agent's
+  question comes first with its answers, then its state, Claude's own recap ("Recap · 26 min
+  ago", dimmed with "before your last message" once you have written since), what it made,
+  its last four steps with their times, Open the sidebar ›, and a reply box with the mic.
+  The recap needs agents-cli 1.23.30 or later (`recap` on the row); without one the card
+  shows the agent's latest words.
+- There is no Asks group any more: a session that asks is a red card at the top of its own
+  group, Open tabs for a tab in this window, by urgency and then how long it has waited.
+- An editor tab shows at most 34 characters of the session's name, cut at a whole word with
+  "…"; the card and the status bar show the whole name.
+- A forked session has ⑂ beside its title (agents-cli 1.23.31 `forkOf`), never "fork of".
+
 ## [0.9.409] - 2026-10-18
 
 - A session that opened several PRs shows a chip for each on its card and a tile for each in

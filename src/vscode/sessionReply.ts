@@ -1,10 +1,10 @@
 // The one terminal-reply rail.
 //
 // Delivering text INTO a running agent through its editor-tab terminal has one
-// gotcha and two callers. The gotcha: Claude Code's Ink TUI ignores the newline
-// `sendText(_, true)` appends and needs an explicit carriage return, while every
-// other harness submits on the newline. The sidebar's reply field and its slash
-// chips both go through here instead of each re-deriving the rule.
+// gotcha: Claude Code's Ink TUI ignores the newline `sendText(_, true)` appends
+// and needs an explicit carriage return, while every other harness submits on the
+// newline. The Active Session sidebar's reply box and the Project panel's front
+// card reply box both go through `deliverReply` instead of re-deriving the rule.
 
 import type * as vscode from 'vscode';
 
@@ -21,7 +21,7 @@ export interface ReplyTerminal {
  * / AskUserQuestion), where the agent wants a SELECTION, not the option label it
  * would ignore: a digit picks then confirms, 'esc' cancels or denies with no CR.
  */
-export function sendReplyToTerminal(entry: ReplyTerminal, text: string, keystroke?: string): void {
+function sendReplyToTerminal(entry: ReplyTerminal, text: string, keystroke?: string): void {
   const term = entry.terminal;
   if (keystroke) {
     if (keystroke === 'esc') {
@@ -38,4 +38,21 @@ export function sendReplyToTerminal(entry: ReplyTerminal, text: string, keystrok
     term.sendText(text, true);
   }
   term.show();
+}
+
+/**
+ * A reply box's Enter: send the words into the session's tab, or say why not.
+ * null when they went. Both sidebars' reply boxes come here; a session with no
+ * tab in this window has no channel, which is said rather than dropped.
+ */
+export function deliverReply(entry: ReplyTerminal | undefined, text: string): string | null {
+  const body = text.trim();
+  if (!body) return 'Reply text is empty';
+  if (!entry) return 'This session has no terminal here — press Focus first, then reply.';
+  try {
+    sendReplyToTerminal(entry, body);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }

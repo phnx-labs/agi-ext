@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test';
 import { vscodeDouble } from '../testing/vscodeDouble';
 import { STATE_TONE, relTime } from '../shared/sessionState';
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
+import { replyBoxHtml } from '../shared/replyBox';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -61,13 +62,13 @@ const NAMES = [
   'prCheckSegments', 'prChecksBar', 'prReviewGlyph', 'prMergeGlyph',
   'artifactKind', 'timelineShown',
 ];
-const CONSTS = ['HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'STEP_CHOICES', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'MIC_ICON', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
+const CONSTS = ['HEAD_ICON', 'SHARE_ICON', 'SHAREABLE', 'SECTION_FILTERS', 'IDLE_WARN_MS', 'thumbCache', 'STEP_CHOICES', 'FILE_OP_SYMBOL', 'NEEDS_YOU_LABEL', 'TIMELINE_FILTERS', 'filterCache', 'pendingFilters', 'VERB_FILTERS', 'SUBAGENTS_FINISHED_SHOWN', 'busyArtifacts', 'LANE_BINS', 'PR_SEGMENT_ORDER', 'FILE_GLYPH'];
 // These functions live inside a template literal, which collapses `\\` to `\` when
 // the shell HTML is emitted. renderInlineMarkdown's regexes are written with the
 // doubled form for exactly that reason, so the extracted source has to undergo the
 // same collapse to be what the webview actually runs.
 // What the host interpolates into the script, as the shell emits it.
-const injected = `const esc = ${escapeHtml};\n${relTime}\nconst STATE_TONE = ${JSON.stringify(STATE_TONE)};\nconst APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};`;
+const injected = `const esc = ${escapeHtml};\n${relTime}\n${replyBoxHtml}\nconst STATE_TONE = ${JSON.stringify(STATE_TONE)};\nconst APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};`;
 const combined = injected + '\n' + [...CONSTS.map(extractConst), ...NAMES.map(extractFn)]
   .join('\n')
   .replace(/\\\\/g, '\\');

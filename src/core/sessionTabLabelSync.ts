@@ -1,3 +1,5 @@
+import { capTabName } from './utils';
+
 export interface SessionTabLabelState {
   manualLabel?: string;
   autoLabel?: string;
@@ -37,7 +39,9 @@ export function restoredSessionTabLabels(
   const autoLabel = persisted?.autoLabel?.trim() || undefined;
   const persistedManualLabel = persisted?.label?.trim() || undefined;
   const visibleManualLabel = visibleLabel?.trim();
+  // The tab shows the automatic name cut to its cap, which is still that name.
+  const automatic = (v: string) => !!autoLabel && (v === autoLabel || v === capTabName(autoLabel));
   const manualLabel = persistedManualLabel
-    || (visibleManualLabel && visibleManualLabel !== autoLabel ? visibleManualLabel : undefined);
+    || (visibleManualLabel && !automatic(visibleManualLabel) ? visibleManualLabel : undefined);
   return { manualLabel, autoLabel };
 }

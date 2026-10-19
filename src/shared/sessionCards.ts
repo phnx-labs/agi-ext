@@ -13,6 +13,7 @@
 // (their compiled source is inserted as is), so the host and the page say one thing.
 
 import { relTime } from './sessionState';
+import { REPLY_BOX_CSS } from './replyBox';
 
 /** HTML-escape any value; the host's renderers and both sidebars' scripts (as
  *  `esc`, from THUMB_SCRIPT) use this one. */
@@ -1076,32 +1077,11 @@ export function sessionPanelCss(fontFaces: string): string {
     white-space: normal;
   }
   /* ── Reply field ───────────────────────────────────────────────────────── */
+${REPLY_BOX_CSS}
   /* The reply box stays at the bottom of the sidebar, whatever the card's length
      (owner video, 2026-10-17); a short card leaves room above it instead. */
   #panel-body { min-height: calc(100vh - 128px); }
   .reply-box { position: sticky; bottom: 0; z-index: 2; margin-top: 14px; padding: 8px 0 10px; background: var(--vscode-sideBar-background); }
-  .reply-box textarea {
-    width: 100%;
-    box-sizing: border-box;
-    resize: vertical;
-    min-height: 30px;
-    background: var(--r-glass);
-    color: var(--r-text);
-    border: 1px solid var(--r-edge);
-    border-radius: 4px;
-    padding: 6px 8px;
-    font: inherit;
-    font-size: 11.5px;
-  }
-  .reply-box textarea:focus {
-    outline: 1px solid var(--r-focus);
-    outline-offset: -1px;
-  }
-  .reply-err {
-    color: var(--r-bad);
-    font-size: 10.5px;
-    margin-top: 4px;
-  }
   /* Header actions — Focus / Resume. */
   .head-actions {
     display: flex;
@@ -1479,27 +1459,7 @@ export function sessionPanelCss(fontFaces: string): string {
   .nav-btn[disabled] { opacity: 0.3; cursor: default; }
   .nav-crumb { border: 0; background: transparent; color: var(--r-caption); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nav-crumb:hover { color: var(--r-text); text-decoration: underline; }
-  /* Dictation in the reply box. */
-  .reply-box .reply-mic { position: absolute; right: 8px; top: 8px; width: 24px; height: 24px; border-radius: 999px; border: 0; background: transparent; color: var(--r-caption); cursor: pointer; display: grid; place-items: center; padding: 0; }
-  .reply-mic svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
-  .reply-mic:hover { background: var(--r-well); color: var(--r-text); }
-  .reply-box.listening .reply-mic { color: var(--r-bad); box-shadow: 0 0 0 1px var(--r-bad); }
-  .reply-box.listening .reply-mic rect { fill: currentColor; }
-  .reply-mic:disabled { opacity: 0.5; cursor: default; }
-  .dictation { position: absolute; left: 12px; right: 40px; top: 10px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
-  .dictation[hidden] { display: none; }
-  .reply-box.listening textarea, .reply-box.transcribing textarea { color: transparent; }
-  .reply-box.listening textarea::placeholder, .reply-box.transcribing textarea::placeholder { color: transparent; }
-  .dict-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--r-bad); animation: dict-pulse 1s infinite; flex: none; }
-  .dict-wave { display: flex; align-items: center; gap: 2px; height: 14px; flex: 1; }
-  .dict-wave i { width: 2px; height: 30%; background: var(--r-text-2); border-radius: 1px; animation: dict-wave .6s ease-in-out infinite alternate; }
-  .dict-wave i:nth-child(3n) { animation-delay: .2s; } .dict-wave i:nth-child(3n+1) { animation-delay: .4s; }
-  .reply-box.transcribing .dict-wave i { animation: none; opacity: 0.4; }
-  .reply-box.transcribing .dict-dot { background: var(--r-faint); animation: none; }
-  .dict-t { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); flex: none; }
-  @keyframes dict-wave { to { height: 100%; } }
-  @keyframes dict-pulse { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .dict-wave i, .dict-dot, .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }
   /* The agent's own status posts and its blocked strip. */
   /* The agent's own posts stand out in the feed: gold, with a faint gold ground. */
   .upd { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; padding: 5px 4px; margin: 0 -4px; border-radius: 6px; font-size: 12px; background: color-mix(in srgb, var(--r-gold-line) 9%, transparent); }
@@ -1537,8 +1497,6 @@ export function sessionPanelCss(fontFaces: string): string {
   .reply-box { position: sticky; bottom: 8px; z-index: 5; margin-top: 12px; border-radius: 12px; background: var(--r-glass-strong);
     box-shadow: inset 0 1px 0 var(--r-sheen), var(--r-float); }
   .reply-box:focus-within { transform: translateY(-1px); }
-  .reply-box textarea { padding-right: 38px; }
-  .reply-box[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .reply-box:focus-within { transform: none; } }`;
 }
 
@@ -1627,6 +1585,7 @@ export const PATCH_SCRIPT = `
 // thumbnail keeps the src the observer filled only while it shows the same image.
 // A node with data-key moves to its new position instead of being rewritten, and
 // one whose data-h (a hash of its markup) is unchanged is not touched at all.
+// One marked data-keep is left as the page made it.
 function nodeSig(n) {
   if (n.nodeType !== 1) return String(n.nodeType);
   const names = [];
@@ -1672,6 +1631,9 @@ function patchNode(live, next) {
       else if (x.nodeType === 1 && x.hasAttribute('data-key')) { live.insertBefore(y, x); continue; }
     }
     if (!x) { live.appendChild(y); continue; }
+    // A node marked data-keep is the page's own once drawn (the front card's reply
+    // box): a patch never rewrites it, so a draft, the caret and the mic's state stay.
+    if (y.nodeType === 1 && x.nodeType === 1 && x.hasAttribute('data-keep') && nodeSig(x) === nodeSig(y)) continue;
     // A card whose fields hash is unchanged is left exactly as it is, classes the
     // page added (selection, a flash) included.
     const h = y.nodeType === 1 ? y.getAttribute('data-h') : null;
