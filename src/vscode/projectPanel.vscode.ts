@@ -69,8 +69,7 @@ import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AG
 import { cardSettings, panelTabs, validMergeMethod } from '../core/settings';
 import { FrontHistory } from '../core/frontNav';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
-import { buildIconPath, harnessLogoCss } from './theme.vscode';
-import { BUILT_IN_AGENTS } from '../core/agents';
+import { harnessLogoCss } from './theme.vscode';
 import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
 import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
 import { PanelDock, type PanelHost } from './panelDock.vscode';
@@ -492,7 +491,7 @@ class ProjectPanelController {
   private detected: Promise<ProjectRef | null> | undefined;
   /** One `linear tasks` read feeds Issues (and a ticket's Start agent and peek). */
   private tickets: { project: string; at: number; groups: Promise<TicketGroup[]> } | undefined;
-  /** The last Issues read that answered, for ⌘K's Tickets section. */
+  /** The last Issues read that answered: Start and a ticket's page find a ticket in it. */
   private ticketsSeen: TicketGroup[] = [];
   readonly view: ProjectView;
   /** Which session tabs this window had in front, and when: Next that needs you and Back read it. */
@@ -1075,7 +1074,7 @@ class ProjectPanelController {
   refresh(projectChanged = false): void {
     this.tickets = undefined;
     this.detected = undefined;
-    // ⌘K's Tickets and Pull requests are the shown project's; a switch must not keep the last one's.
+    // Tickets and pull requests read are the shown project's; a switch must not keep the last one's.
     if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; }
     this.view.refresh();
   }
@@ -2142,7 +2141,7 @@ ${MADE_SCRIPT}
       // An exact session id leads; otherwise the host's order holds.
       r.style.order = t === 0 ? '-1' : '0';
     }
-    const none = klist.querySelector('.kempty');
+    const none = klist.querySelector('.kempty:not(.kwait)');
     if (none) none.remove();
     if (!n && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
     kmark();
@@ -2157,7 +2156,7 @@ ${MADE_SCRIPT}
   function kshow(html, waiting) {
     const was = kscrim.hidden;
     klist.dataset.waiting = waiting ? '1' : '';
-    klist.innerHTML = waiting ? '<div class="kempty">Waiting for the session stream\u2026</div>' : html;
+    klist.innerHTML = waiting ? '<div class="kempty kwait">Waiting for the session stream\u2026</div>' : html;
     observeThumbs(klist);
     if (was) { kscrim.hidden = false; kq.value = ''; kpicked = null; }
     kfilter();
