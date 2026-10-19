@@ -3,7 +3,9 @@
 // ended sessions last and dimmed; each row aligns its details right and shows what it
 // made and what you attached instead of the model.
 import { expect, test } from 'bun:test'
-import { paletteMatch, paletteOrder, renderPalette, type PaletteEntry, type SessionLike } from './projectPanel'
+import { paletteMatch, paletteOrder, renderPalette, type PaletteEntry, type SessionHere, type SessionLike } from './projectPanel'
+
+const HERE: SessionHere = { device: 'zion', localHost: 'this-mac', workspace: 'agi', editor: 'vscodium', editorName: 'VSCodium', icons: {} }
 
 const NOW = Date.parse('2026-10-19T02:00:00Z')
 const row = (o: Partial<SessionLike>): SessionLike => ({
@@ -37,11 +39,11 @@ test('a row: logo and title, then state, machine, age and tab on the right; PRs,
   }, {
     made: { prs: [{ label: '#4325', url: 'https://github.com/o/r/pull/4325' }], ticket: null, folders: [{ name: 'plan', display: '~/plan', files: [{ name: 'plan.html', path: '/h/plan/plan.html' }], images: [] }] },
     images: [{ uri: 'vscode-resource:/h/.agents/.history/attachments/a.png', path: '/h/.agents/.history/attachments/a.png', label: 'a.png' }],
-  })], NOW, new Set(['abcdef12-3456']))
+  })], NOW, new Set(['abcdef12-3456']), HERE)
   expect(html).toContain('data-here="1" data-title="Body alignment" data-ids="abcdef12-3456 abcdef12"')
   expect(html).toContain('<i class="hx hx-claude"')
   expect(html).toContain('<span class="kt"><span class="kfav" title="Favorite">★</span>Body alignment</span>')
-  expect(html).toContain('<span class="kmeta"><span class="pill st-idle"><i></i>Idle</span>s1 · 1m · tab 3</span>')
+  expect(html).toContain('<span class="kmeta"><span class="pill st-idle"><i></i>Idle</span><span class="kw">s1 · 1m · tab 3</span></span>')
   expect(html).toContain('data-url="https://github.com/o/r/pull/4325"')
   expect(html).toContain('data-artifact="/h/plan/plan.html"')
   expect(html).toContain('<a class="kth" href="#" data-ql="vscode-resource:/h/.agents/.history/attachments/a.png" data-name="a.png"')
@@ -50,10 +52,12 @@ test('a row: logo and title, then state, machine, age and tab on the right; PRs,
   // The model is not on the row.
   expect(html).not.toContain('claude-opus')
   // An ended session is dimmed and says so; an ask shows its wait.
-  const ended = renderPalette([entry({ sessionId: 'e', phase: 'done', liveStatus: 'closed' })], NOW, new Set())
+  const ended = renderPalette([entry({ sessionId: 'e', phase: 'done', liveStatus: 'closed' })], NOW, new Set(), HERE)
   expect(ended).toContain('<div class="krow ended"')
   expect(ended).toContain('<span class="pill st-ended"><i></i>Ended</span>')
-  expect(renderPalette([entry({ sessionId: 'q', ...ask('k', 'normal', 125_000) })], NOW, new Set())).toContain('Asks</span>s1 · 2m 05s')
+  expect(renderPalette([entry({ sessionId: 'q', ...ask('k', 'normal', 125_000) })], NOW, new Set(), HERE)).toContain('Asks</span><span class="kw">s1 · 2m 05s')
+  // This machine's rows name the machine, never the stream's local label.
+  expect(renderPalette([entry({ sessionId: 'l', host: 'this-mac' })], NOW, new Set(), HERE)).toContain('<i></i>Idle</span><span class="kw">zion · 1m')
 })
 
 test('matching: an exact id, then a title that starts with the words, a title holding them, then any other words', () => {

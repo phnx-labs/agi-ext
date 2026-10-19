@@ -1385,23 +1385,24 @@ function firstSentence(s: SessionLike): string {
  *  right-aligned the state, machine, age and tab; under it the PRs and pages it made,
  *  the images you attached (a click opens a quick look) and its recap's first sentence.
  *  The page filters them as you type (`paletteMatch`), so each row carries its words. */
-export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>): string {
+export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>, here: SessionHere): string {
   return paletteOrder(entries, favorites).map(({ row: s, made, images }) => {
     const state = sessionStateOf(s);
     const title = cardTitle(s);
     const fav = favorites.has(s.sessionId);
     const asked = askedAt(s);
     const age = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now);
-    const meta = [shortDevice(s.host), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
+    const device = sessionPlace(s, here).device;
+    const meta = [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
     const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
     const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);
     const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
     const note = firstSentence(s);
     const ids = [s.sessionId.replace(/^session_/, ''), s.sessionId.replace(/^session_/, '').slice(0, 8)].join(' ');
-    const words = [shortDevice(s.host), s.host, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
+    const words = [shortDevice(device), device, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
     return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}">`
       + `${harnessLogo(s.agentType)}<span class="kt">${fav ? '<span class="kfav" title="Favorite">★</span>' : ''}${escapeHtml(title)}</span>`
-      + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span>${meta}</span>`
+      + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span><span class="kw">${meta}</span></span>`
       + `<span class="ksub">${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span></div>`;
   }).join('');
 }

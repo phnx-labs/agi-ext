@@ -19,7 +19,7 @@ const HTML = renderPalette([
   { row: row('aaaaaaaa-1', { title: 'Body alignment', tabHere: true, tabIndex: 2 }), made: null, images: [{ uri: 'vscode-resource:/a.png', path: '/h/.agents/.history/attachments/a.png', label: 'a.png' }] },
   { row: row('bbbbbbbb-2', { title: 'MCP server plan', phase: 'running', liveStatus: 'running' }), made: null, images: [] },
   { row: row('cccccccc-3', { title: 'Old ended', phase: 'done', liveStatus: 'closed' }), made: null, images: [] },
-], NOW, new Set());
+], NOW, new Set(), { device: 'zion', localHost: 'this-mac', workspace: 'agi-ext', editor: 'vscodium', editorName: 'VSCodium', icons: {} });
 
 const window = new Window();
 afterAll(() => window.happyDOM.close());
@@ -107,4 +107,15 @@ test('before the stream has spoken it says so instead of an empty list', () => {
   deliver({ type: 'palette', html: '', waiting: true });
   expect($('.klist').textContent).toBe('Waiting for the session stream…');
   key('Escape');
+});
+
+test('⌘K or Ctrl+K inside the panel asks the host to open it, and goes no further', () => {
+  sent.length = 0;
+  const e = new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true, cancelable: true });
+  let reached = false;
+  window.addEventListener('keydown', () => { reached = true; });
+  document.body.dispatchEvent(e as unknown as Event);
+  expect(sent).toEqual([{ type: 'search' }]);
+  expect(e.defaultPrevented).toBe(true);
+  expect(reached).toBe(false);
 });
