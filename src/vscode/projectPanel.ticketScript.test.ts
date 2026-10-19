@@ -65,3 +65,16 @@ test('▶ on the row and Start in the peek each send one start; a second click, 
   el('.tpeek[data-peek="A-2"] [data-start-ticket="A-2"]').click();
   expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2' }]);
 });
+
+test('Settings > Tabs hides Review and Issues; Sessions hides only while it shows, so Settings keeps a way back', () => {
+  const hidden = () => [...document.querySelectorAll('.tabs .tab')].map((t) => `${(t as unknown as HTMLElement).dataset.tab}:${(t as unknown as HTMLElement).hidden}`).join(' ');
+  sent.length = 0;
+  deliver({ type: 'tabs', prs: false, tickets: false });
+  // Issues was showing and is gone: the panel goes back to Sessions, and Sessions needs no tab.
+  expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
+  expect(hidden()).toBe('sessions:true prs:true tickets:true');
+  deliver({ type: 'choose', tab: 'settings' });
+  expect(hidden()).toBe('sessions:false prs:true tickets:true');
+  deliver({ type: 'tabs', prs: true, tickets: false });
+  expect(hidden()).toBe('sessions:false prs:false tickets:true');
+});
