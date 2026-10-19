@@ -1183,10 +1183,10 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card.front .acts { display: flex; } .card.front .age { display: none; }
   .card.front .top { height: auto; min-height: 20px; align-items: flex-start; }
   .card.front .top .hx { margin-top: 2px; }
+  .card.front .top .vchip { margin-top: 1px; }
   .card.front .ttl { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 17px; }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
   .card .fc-nav .thistab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .card .fc-nav .thistab .vchip { display: inline-flex; vertical-align: middle; margin-right: 5px; letter-spacing: 0; text-transform: none; }
   .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
   .fc-recap .fc-k { color: var(--r-gold-line); }
   .fc-old { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); }

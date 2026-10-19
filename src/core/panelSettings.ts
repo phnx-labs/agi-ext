@@ -34,7 +34,7 @@ const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: 
   machine: { label: 'Machine', sub: 'Where the agent runs' },
   age: { label: 'Age', sub: 'Since the last activity, or how long an ask has waited' },
   stateWord: { label: 'State word', sub: 'The color already says it: red asks, green working, yellow idle' },
-  verdict: { label: 'Done verdict', sub: 'An idle card says ✓ Done, Not done or Unverified instead of Idle' },
+  verdict: { label: 'Done verdict', sub: 'A finished turn shows ✓ Done, Not done or Unverified beside its title' },
 };
 
 const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];

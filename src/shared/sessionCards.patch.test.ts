@@ -185,12 +185,12 @@ test('a verdict that changes is patched into the same card node: Not done become
   const at = '2026-10-12T23:55:00Z';
   patchChildren(root, card(row({ sessionId: 'v', doneVerdict: { state: 'open', gaps: ['delivery'], at } })));
   const live = root.querySelector('.card')!;
-  const meta = live.querySelector('.meta')!;
+  const top = live.querySelector('.top')!;
   expect(live.querySelector('.vchip')!.textContent).toBe('Not done');
   expect(live.querySelector('.vchip')!.getAttribute('title')).toBe('Idle · not done: merge, release or install not verified');
   patchChildren(root, card(row({ sessionId: 'v', doneVerdict: { state: 'done', gaps: [], at } })));
   expect(root.querySelector('.card') === live).toBe(true);
-  expect(live.querySelector('.meta') === meta).toBe(true);
+  expect(live.querySelector('.top') === top).toBe(true);
   expect(live.querySelector('.vchip')!.className).toBe('vchip v-ok');
   expect(live.querySelector('.vchip')!.textContent).toBe('✓ Done');
   // It starts working again: the chip goes, the card stays.

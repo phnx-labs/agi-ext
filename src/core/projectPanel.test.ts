@@ -541,18 +541,20 @@ test('the pinned card: an ask from its own agent comes first, then Claude\'s rec
   expect(plain).toContain('<div class="line said">Done with the docs.</div>')
 })
 
-test('an idle card says the CLI done verdict in its state slot instead of Idle; the pinned card leads its line with it and the gaps; nothing changes while it works or asks, or with no verdict', () => {
+test('a finished turn shows the CLI done verdict on the title row (before the age; right after the title on the pinned card), never a new row; nothing while it works or asks, or with no verdict', () => {
   const at = new Date(NOW - 5 * 60_000).toISOString()
   const open = { state: 'open' as const, gaps: ['open-pr', 'keep-moving'], at }
-  const idle = row({ sessionId: 'i', phase: 'idle', liveStatus: 'idle', doneVerdict: open })
+  const idle = row({ sessionId: 'i', phase: 'idle', liveStatus: 'idle', lastActivityMs: NOW - 5 * 60_000, doneVerdict: open })
   const html = card(idle)
-  // One slot: the verdict, the state pill's size, where Settings > State word puts Idle; no second label.
-  expect(html).toContain('<div class="meta"><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items"><i></i>Not done</span>')
-  expect(html).not.toContain('>Idle<')
+  expect(html).toContain('<span class="sr">Not done</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span><span class="age">5m</span>')
+  expect(html).not.toContain('class="meta"')
   expect(html).toMatch(/^<div class="card st-idle" title="Idle · not done: a PR it opened/)
-  expect(card(idle, { cards: { ...DEFAULT_CARD_SETTINGS, stateWord: true } }).match(/class="(pill|vchip)/g)).toEqual(['class="vchip'])
-  expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'done', gaps: [], at } }))).toContain('<span class="vchip v-ok" title="Idle · its done-check passed"><i></i>✓ Done</span>')
-  expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'unchecked', gaps: [], at } }))).toContain('class="vchip v-caption"')
+  // With Settings > State word on, the verdict still stands in for Idle: no second label.
+  const worded = card(idle, { cards: { ...DEFAULT_CARD_SETTINGS, stateWord: true } })
+  expect(worded).not.toContain('class="pill')
+  expect(worded.match(/vchip/g)?.length).toBe(1)
+  expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'done', gaps: [], at } }))).toContain('<span class="vchip v-ok" title="Idle · its done-check passed">✓ Done</span>')
+  expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'unchecked', gaps: [], at } }))).toContain('<span class="vchip v-caption"')
   // Working, asking, or no verdict on the row: the card as before.
   expect(card(row({ phase: 'running', liveStatus: 'running', doneVerdict: open }))).not.toContain('vchip')
   expect(card(row({ phase: 'waiting', liveStatus: 'input_required', doneVerdict: open, attention: { key: 'k', kind: 'question', state: 'open', question: { text: 'Ship?' } } }))).not.toContain('vchip')
@@ -561,13 +563,12 @@ test('an idle card says the CLI done verdict in its state slot instead of Idle; 
   const off = card(idle, { cards: { ...DEFAULT_CARD_SETTINGS, verdict: false } })
   expect(off).not.toContain('vchip')
   expect(off).toContain('<span class="sr">Idle</span>')
-  // The pinned card: no new row; the verdict leads the This tab line, the gaps follow it, the tooltip says both.
+  // The pinned card: right after the title, no new row; the gaps are its tooltip and the This tab line's.
   const front = (s: SessionLike) => renderSessions([s], NOW, { selectedId: null, frontId: s.sessionId, here: HERE, prefs: prefs() })
   const pinned = front({ ...idle, tabHere: true, tabIndex: 1 })
-  expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items"><span class="vchip v-bad"')
-  expect(pinned).toContain('Not done</span>This tab · 1 · m6 · a PR it opened is still open, its checklist has open items</span>')
-  expect(pinned).not.toContain('fc-done')
-  expect(front(row({ sessionId: 'w', tabHere: true, tabIndex: 1 }))).toContain('<span class="thistab" title="Running">This tab')
+  expect(pinned).toContain('<span class="ttl" title="T">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
+  expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items">This tab · 1 · m6 · 5m ago</span>')
+  expect(front(row({ sessionId: 'w', tabHere: true, tabIndex: 1 }))).not.toContain('vchip')
 })
 
 test('a card\'s title is the row\'s title as the CLI made it, never a prompt or a request headline', () => {
