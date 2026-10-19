@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { normalizeActiveSession, type RawActiveSession } from './remoteSessions';
-import { sessionCardFields } from './sessionCardFields';
+import { madeShelf, sessionCardFields } from './sessionCardFields';
 
 const HOME = '/home/u';
 const raw = (over: Partial<RawActiveSession> = {}): RawActiveSession => ({
@@ -82,5 +82,20 @@ describe('sessionCardFields', () => {
       ['map.html', 'map.md'],
     ]);
     expect(card.plan?.path).toBe(`${dir}/guard.html`);
+  });
+});
+
+describe('madeShelf', () => {
+  test('one shelf for both panels: PRs, the ticket it is on and the ones it created, files, and what it only acted on', () => {
+    const live = normalizeActiveSession(raw({ createdTickets: ['RUSH-900'], touchedPrs: [{ url: 'https://github.com/acme/atlas/pull/3', number: 3, action: 'merged' }] } as Partial<RawActiveSession>), 'this-mac', 0);
+    const card = sessionCardFields(live, { sessionId: 's-1', home: HOME, previewUri: preview });
+    const shelf = madeShelf(live, card);
+    expect(shelf.pullRequests?.map((p) => p.number)).toEqual([511]);
+    expect(shelf.ticket).toEqual({ id: 'RUSH-812' });
+    expect(shelf.createdTickets).toEqual([{ id: 'RUSH-900' }]);
+    expect(shelf.artifacts).toBe(card.artifacts);
+    expect(shelf.sessionLocal).toBe(true);
+    expect(shelf.touchedPrs).toEqual([{ url: 'https://github.com/acme/atlas/pull/3', number: 3, action: 'merged' }]);
+    expect(shelf.touchedTickets).toBeUndefined();
   });
 });

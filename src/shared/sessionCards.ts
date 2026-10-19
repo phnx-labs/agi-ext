@@ -155,9 +155,6 @@ function currentRange(s) {
   return { startMs: r[0], endMs: r[1] };
 }
 
-function inRange(range, ms) {
-  return !range || (Number.isFinite(ms) && ms >= range.startMs && ms < range.endMs);
-}
 
 function renderSeekBar(s) {
   const h = s.activityHistogram;
@@ -432,45 +429,6 @@ function renderTimelineCard(s) {
   return '<div class="feed">' + head + shown + more + pick + earlier + partial + '</div>';
 }
 
-// ── Artifacts ───────────────────────────────────────────────────────────────
-// Everything the session produced for a person, as the row carries it: the CLI's
-// artifact files grouped into folders, its PRs and its ticket. The Made shelf in
-// the sidebar draws them; these are the shared pieces (icons, kinds, thumbnails).
-const APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};
-function artifactItems(s) {
-  const files = (s.artifacts || []).slice();
-  if (s.plan && !files.some((a) => a.path === s.plan.path)) {
-    files.push({ path: s.plan.path, display: s.plan.display, basename: s.plan.display.split('/').pop(), bucket: 'plans' });
-  }
-  const folders = new Map();
-  for (const f of files) {
-    const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
-    let folder = folders.get(dir);
-    if (!folder) {
-      const cut = f.display.lastIndexOf('/');
-      const shown = cut < 0 ? '' : f.display.slice(0, cut);
-      folder = { app: 'finder', key: dir, name: dir.split('/').pop() || dir, display: shown, files: [], editedAtMs: 0 };
-      folders.set(dir, folder);
-    }
-    folder.files.push(Object.assign({ name: f.title || f.basename }, f));
-    folder.editedAtMs = Math.max(folder.editedAtMs, f.editedAtMs || 0);
-  }
-  return Array.from(folders.values());
-}
-
-const FILE_GLYPH = { md: '¶', markdown: '¶', txt: '¶', html: '‹/›', htm: '‹/›', json: '{ }', csv: '▦', pdf: '▤' };
-
-function artifactKind(f) {
-  const base = f.path.split('/').pop() || '';
-  const dot = base.lastIndexOf('.');
-  return dot > 0 ? base.slice(dot + 1).toLowerCase() : 'file';
-}
-
-// Wires the timeline and artifact cards rendered into root: their thumbnails,
-// filters, phases, seek bar, step folds and links. Reads the surface's own
-// root, viewState, vscode, lastSnapshot and render.
-// Drag across the strip's bars to choose a range; a click without a drag still
-// jumps to that moment. The range is remembered per session.
 let seekDragged = false;
 function bindSeekDrag() {
   const seek = root.querySelector('.seek');
@@ -612,6 +570,148 @@ function bindSessionCards() {
     });
   }
 }
+`;
+
+// The Made shelf as both panels draw it (the Active Session sidebar under its card,
+// the Project panel inside the pinned front card) from one MadeShelf
+// (src/core/sessionCardFields.ts). Plain webview JavaScript; it needs esc and
+// thumbImg (THUMB_SCRIPT) and relTime.
+export const MADE_SCRIPT = `
+function inRange(range, ms) {
+  return !range || (Number.isFinite(ms) && ms >= range.startMs && ms < range.endMs);
+}
+
+// ── Artifacts ───────────────────────────────────────────────────────────────
+// Everything the session produced for a person, as the row carries it: the CLI's
+// artifact files grouped into folders, its PRs and its ticket. The Made shelf in
+// the sidebar draws them; these are the shared pieces (icons, kinds, thumbnails).
+const APP_ICON = ${JSON.stringify({ github: serviceMark('github', 'art-icon'), linear: serviceMark('linear', 'art-icon') })};
+function artifactItems(s) {
+  const files = (s.artifacts || []).slice();
+  if (s.plan && !files.some((a) => a.path === s.plan.path)) {
+    files.push({ path: s.plan.path, display: s.plan.display, basename: s.plan.display.split('/').pop(), bucket: 'plans' });
+  }
+  const folders = new Map();
+  for (const f of files) {
+    const dir = f.path.slice(0, f.path.lastIndexOf('/')) || '/';
+    let folder = folders.get(dir);
+    if (!folder) {
+      const cut = f.display.lastIndexOf('/');
+      const shown = cut < 0 ? '' : f.display.slice(0, cut);
+      folder = { app: 'finder', key: dir, name: dir.split('/').pop() || dir, display: shown, files: [], editedAtMs: 0 };
+      folders.set(dir, folder);
+    }
+    folder.files.push(Object.assign({ name: f.title || f.basename }, f));
+    folder.editedAtMs = Math.max(folder.editedAtMs, f.editedAtMs || 0);
+  }
+  return Array.from(folders.values());
+}
+
+const FILE_GLYPH = { md: '¶', markdown: '¶', txt: '¶', html: '‹/›', htm: '‹/›', json: '{ }', csv: '▦', pdf: '▤' };
+
+function artifactKind(f) {
+  const base = f.path.split('/').pop() || '';
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : 'file';
+}
+
+// Wires the timeline and artifact cards rendered into root: their thumbnails,
+// filters, phases, seek bar, step folds and links. Reads the surface's own
+// root, viewState, vscode, lastSnapshot and render.
+// Drag across the strip's bars to choose a range; a click without a drag still
+// jumps to that moment. The range is remembered per session.
+const PR_SEGMENT_ORDER = { passed: 0, running: 1, failed: 2, skipped: 3 };
+
+// One bar segment per check the row lists, greens first so the bar fills like
+// progress; a row with only the rolled-up verdict draws one segment for it.
+// passed/counted leave skipped checks out of the fraction.
+function prCheckSegments(pr) {
+  const items = pr.checkItems || [];
+  if (!items.length) {
+    const state = pr.checks === 'passing' ? 'passed' : pr.checks === 'failing' ? 'failed' : pr.checks === 'pending' ? 'running' : '';
+    return { segments: state ? [{ state: state, name: 'checks ' + pr.checks }] : [], passed: 0, running: 0, failed: 0, counted: 0 };
+  }
+  const segments = items.map((c, i) => ({ state: c.state, name: c.name, i: i }))
+    .sort((a, b) => (PR_SEGMENT_ORDER[a.state] - PR_SEGMENT_ORDER[b.state]) || (a.i - b.i))
+    .map((c) => ({ state: c.state, name: c.name }));
+  const count = (state) => items.filter((c) => c.state === state).length;
+  return { segments: segments, passed: count('passed'), running: count('running'), failed: count('failed'), counted: items.filter((c) => c.state !== 'skipped').length };
+}
+
+// ── Made ────────────────────────────────────────────────────────────────────
+// What the session made, as one row of previews you scroll sideways (owner,
+// 2026-10-12: "artifacts are important; a PR is an artifact, and so is the
+// ticket"). The PR tile carries its checks as a bar and a count, and opens the PR
+// on GitHub; merging lives in the ⋯ menu (owner video, 2026-10-12: "show how many
+// pass here; clicking it takes us to the link"). The ticket is a tile that opens
+// the ticket to read. Then every artifact file, newest first; an image previews,
+// a page or doc shows its type, and a click opens it in the editor. A chosen
+// timeline range dims files changed outside it, without moving anything. Pages,
+// docs and images on this machine carry Share.
+const SHARE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10V2.5M5 5.5l3-3 3 3M3.5 8.5v4.5h9V8.5"/></svg>';
+const SHAREABLE = /^(html?|md|markdown|pdf|png|jpe?g|gif|webp|svg)$/;
+const busyArtifacts = new Set();
+
+function prChecksBar(pr) {
+  const bar = prCheckSegments(pr);
+  const words = bar.counted
+    ? bar.passed + ' of ' + bar.counted + ' checks passed' + (bar.running ? ', ' + bar.running + ' running' : '') + (bar.failed ? ', ' + bar.failed + ' failed' : '')
+    : pr.checks ? (pr.checks === 'passing' ? 'Checks passed' : pr.checks === 'failing' ? 'A check failed' : 'Checks running') : 'No checks reported';
+  const segs = bar.segments.map((c) => '<i class="seg ' + esc(c.state) + '"></i>').join('');
+  return '<span class="mk-checks" role="img" title="' + esc(words) + '" aria-label="' + esc(words) + '">' +
+    '<span class="pr-bar">' + (segs || '<i class="seg none"></i>') + '</span>' +
+    (bar.counted ? '<span class="pr-frac pr-tone-' + (bar.failed ? 'bad' : bar.passed === bar.counted ? 'ok' : 'warn') + '">' + bar.passed + '/' + bar.counted + '</span>' : '') +
+  '</span>';
+}
+
+function renderMadeShelf(s, range) {
+  const pr = s.prStatus;
+  const others = (s.pullRequests || []).filter((p) => !pr || p.url !== pr.url);
+  const files = [];
+  for (const it of artifactItems(s)) if (it.files) for (const f of it.files) files.push(f);
+  files.sort((a, b) => (b.editedAtMs || 0) - (a.editedAtMs || 0));
+  const tk = s.ticket;
+  const created = (s.createdTickets || []).filter((t) => !tk || t.id !== tk.id);
+  const touched = (s.touchedPrs || []).map((p) => ({ url: p.url, label: (p.action || 'touched') + ' #' + p.number, title: (p.action || 'Touched') + ' ' + (p.repo ? p.repo + '#' : '#') + p.number, icon: APP_ICON.github }))
+    .concat((s.touchedTickets || []).map((t) => ({ ticket: t.id, label: (t.action || 'touched') + ' ' + t.id, title: (t.action || 'Touched') + ' ' + t.id, icon: APP_ICON.linear })));
+  if (!pr && !others.length && !tk && !created.length && !files.length && !touched.length) return '';
+  const tiles = [];
+  if (pr) {
+    const v = s.prVerdict;
+    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(pr.url) + '" title="' + esc('Open #' + pr.number + (pr.title ? ' ' + pr.title : '') + ' on GitHub') + '">' +
+      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(pr.number) + '</b><span class="mk-st pr-tone-' + v.tone + '">' + esc(v.word) + '</span></span>' +
+      '<span class="mk-t">' + esc(pr.title || s.prRepo || '') + '</span>' +
+      '<span class="mk-f">' + prChecksBar(pr) + '<span class="mk-go" aria-hidden="true">↗</span></span></button>');
+  }
+  for (const p of others) {
+    tiles.push('<button type="button" class="mk mk-pr" data-url="' + esc(p.url) + '" title="' + esc('Open ' + p.url) + '">' +
+      '<span class="mk-h">' + APP_ICON.github + '<b>#' + esc(p.number) + '</b></span><span class="mk-t">' + esc(p.ownerRepo) + '</span>' +
+      '<span class="mk-f"><span class="mk-go" aria-hidden="true">↗</span></span></button>');
+  }
+  for (const t of tk ? [tk].concat(created) : created) {
+    tiles.push('<button type="button" class="mk mk-pr mk-tk" data-ticket="' + esc(t.id) + '" title="' + esc('Read ' + t.id + (t.title ? ' ' + t.title : '')) + '">' +
+      '<span class="mk-h">' + APP_ICON.linear + '<b>' + esc(t.id) + '</b>' + (t.state ? '<span class="mk-st tk-st">' + esc(t.state) + '</span>' : '') + '</span>' +
+      '<span class="mk-t">' + esc(t.title || 'Linear ticket') + '</span>' +
+      '<span class="mk-f"><span class="mk-read">Read ›</span></span></button>');
+  }
+  for (const f of files) {
+    const kind = artifactKind(f);
+    const out = range && f.editedAtMs && !inRange(range, f.editedAtMs) ? ' out' : '';
+    const busy = busyArtifacts.has(f.path) ? ' busy' : '';
+    const face = f.uri ? '<span class="mk-img">' + thumbImg(f) + '</span>' : '<span class="mk-doc" aria-hidden="true">' + esc(FILE_GLYPH[kind] || kind.slice(0, 4).toUpperCase()) + '</span>';
+    const share = s.sessionLocal && SHAREABLE.test(kind)
+      ? '<button type="button" class="mk-share" data-share="' + esc(f.path) + '" title="Share as a Rush artifact" aria-label="' + esc('Share ' + f.name) + '">' + SHARE_ICON + '</button>'
+      : '';
+    tiles.push('<div class="mk mk-file' + out + busy + '"><button type="button" class="mk-open artifact-open" data-artifact="' + esc(f.path) + '" title="' + esc('Open ' + f.path) + '">' + face +
+      '<span class="mk-n">' + esc(f.name) + '</span><span class="mk-m">' + esc(busy ? 'opening…' : kind + (f.renderedFrom ? ' · from ' + f.renderedFrom : '') + (f.editedAtMs ? ' · ' + relTime(f.editedAtMs) : '')) + '</span></button>' + share + '</div>');
+  }
+  // What it acted on without opening it (merged, reviewed, commented, updated): one
+  // compact chip each, after what it made.
+  const acted = touched.map((t) => '<button type="button" class="mk-touch"' + (t.url ? ' data-url="' + esc(t.url) + '"' : ' data-ticket="' + esc(t.ticket) + '"') + ' title="' + esc(t.title) + '">' + t.icon + esc(t.label) + '</button>').join('');
+  return '<div class="made"><div class="made-l">Made <span>' + tiles.length + '</span></div>' +
+    '<div class="made-strip" data-strip="made">' + tiles.join('') + (acted ? '<div class="mk-touched"><span class="made-l">Touched</span>' + acted + '</div>' : '') + '</div></div>';
+}
+
 `;
 
 /** The panel faces. A shadow root ignores @font-face, so a surface hosting the
@@ -761,6 +861,57 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
 /** The session panel stylesheet: Rush register tokens, cards, timeline, gallery.
  *  Tokens hang off `body` and its VS Code theme class, so a surface that hosts the
  *  cards in a shadow root gives them a `body` element carrying that class. */
+/** What a session made (the Made shelf) and the PR checks bar, as both panels draw them. */
+export const MADE_CSS = `
+  .art-icon { width: 14px; height: 14px; flex: none; }
+  /* Made: one row of previews, scrolled sideways. */
+  .made { margin: 9px -11px 0; }
+  .made-l { padding: 0 11px; font-family: var(--r-display); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }
+  .made-l span { letter-spacing: 0; color: var(--r-faint); }
+  .made-strip { display: flex; gap: 6px; overflow-x: auto; padding: 5px 11px 6px; scroll-snap-type: x proximity; scrollbar-width: thin;
+    -webkit-mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 20px), transparent); }
+  .mk { flex: none; width: 116px; height: 88px; border: 1px solid var(--r-edge); border-radius: 9px; background: var(--r-well); scroll-snap-align: start; position: relative; overflow: hidden; display: flex; flex-direction: column; text-align: left; }
+  .mk:hover { border-color: var(--r-edge-hi); }
+  .mk.on { border-color: var(--r-selected-edge); }
+  .mk.out { opacity: 0.32; }
+  .mk-pr { width: 148px; padding: 7px 8px; gap: 4px; }
+  .mk-h { display: flex; align-items: center; gap: 5px; font-size: 11px; min-width: 0; }
+  .mk-h b { font-family: var(--r-mono); font-size: 11px; white-space: nowrap; }
+  .mk-st { margin-left: auto; font-size: 10px; white-space: nowrap; }
+  .mk-t { font-size: 11.5px; color: var(--r-text-2); line-height: 1.3; max-height: 2.6em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: none; text-align: left; }
+  .mk-f { display: flex; gap: 6px; align-items: center; margin-top: auto; }
+  .mk-open { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; }
+  .mk-img, .mk-doc { display: block; height: 54px; flex: none; border-bottom: 1px solid var(--r-edge); overflow: hidden; }
+  .mk-img img { width: 100%; height: 100%; object-fit: cover; }
+  .mk-doc { display: grid; place-items: center; font-family: var(--r-mono); font-size: 14px; color: var(--r-caption); }
+  .mk-n { display: block; padding: 4px 7px 0; font-size: 11.5px; color: var(--r-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk-m { display: block; padding: 0 7px; font-size: 10px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk-share { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--r-glass-strong); border: 1px solid var(--r-edge-hi); color: var(--r-text); opacity: 0; cursor: pointer; padding: 0; }
+  .mk-share svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .mk-file:hover .mk-share, .mk-file:focus-within .mk-share { opacity: 1; }
+  .mk-checks { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
+  .mk-go, .mk-read { margin-left: auto; flex: none; font-size: 10.5px; color: var(--r-faint); }
+  .mk:hover .mk-go, .mk:hover .mk-read { color: var(--r-text); }
+  .tk-st { color: var(--r-caption); }
+  .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: mk-busy 1s ease-in-out infinite alternate; }
+  @keyframes mk-busy { to { opacity: 0.35; } }
+  .pr-tone-ok { color: var(--r-ok); }
+  .pr-tone-warn { color: var(--r-warn); }
+  .pr-tone-bad { color: var(--r-bad); }
+  .pr-bar { flex: 1; min-width: 0; display: flex; gap: 2px; height: 5px; border-radius: 3px; overflow: hidden; }
+  .pr-bar .seg { flex: 1; min-width: 2px; background: var(--r-edge-hi); }
+  .pr-bar .seg.passed { background: var(--r-ok); }
+  .pr-bar .seg.running { background: var(--r-warn); }
+  .pr-bar .seg.failed { background: var(--r-bad); }
+  .pr-bar .seg.skipped { background: var(--r-edge); }
+  .pr-frac { flex: none; font-family: var(--r-mono); font-size: 10px; font-weight: 600; color: var(--r-caption); }
+  .mk-touched { flex: none; display: flex; align-items: center; gap: 4px; padding-left: 4px; }
+  .mk-touched .made-l { padding: 0 2px 0 0; }
+  .mk-touch { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 1px solid var(--r-edge); border-radius: 999px; background: transparent; color: var(--r-text-2); font: inherit; font-size: 10.5px; white-space: nowrap; cursor: pointer; }
+  .mk-touch:hover { border-color: var(--r-edge-hi); color: var(--r-text); }
+  .mk-touch .art-icon { width: 11px; height: 11px; }
+  @media (prefers-reduced-motion: reduce) { .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }`;
+
 export function sessionPanelCss(fontFaces: string): string {
   return `${fontFaces}${RUSH_THEME_CSS}  :root {
     color-scheme: light dark;
@@ -886,7 +1037,6 @@ export function sessionPanelCss(fontFaces: string): string {
     padding-left: 10px;
     text-indent: -8px;
   }
-  .art-icon { width: 14px; height: 14px; flex: none; }
   .requester { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--r-caption); font-size: 11px; }
   .avatar {
     position: relative; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: none;
@@ -1287,16 +1437,6 @@ ${REPLY_BOX_CSS}
   .lane-tick.bad { background: var(--r-bad); height: 24px; }
   /* Pull request: one status word, a segmented check bar with its count, and
      the review and merge glyphs in the ⋯ menu. */
-  .pr-tone-ok { color: var(--r-ok); }
-  .pr-tone-warn { color: var(--r-warn); }
-  .pr-tone-bad { color: var(--r-bad); }
-  .pr-bar { flex: 1; min-width: 0; display: flex; gap: 2px; height: 5px; border-radius: 3px; overflow: hidden; }
-  .pr-bar .seg { flex: 1; min-width: 2px; background: var(--r-edge-hi); }
-  .pr-bar .seg.passed { background: var(--r-ok); }
-  .pr-bar .seg.running { background: var(--r-warn); }
-  .pr-bar .seg.failed { background: var(--r-bad); }
-  .pr-bar .seg.skipped { background: var(--r-edge); }
-  .pr-frac { flex: none; font-family: var(--r-mono); font-size: 10px; font-weight: 600; color: var(--r-caption); }
   .pr-glyph { flex: none; width: 16px; height: 16px; color: var(--r-faint); }
   .pr-glyph svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
   .pr-glyph.ok { color: var(--r-ok); }
@@ -1421,37 +1561,7 @@ ${REPLY_BOX_CSS}
   .goal-line .goal-txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
   .request-block { margin-top: 9px; }
   .request-block .request-headline { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  /* Made: one row of previews, scrolled sideways. */
-  .made { margin: 9px -11px 0; }
-  .made-l { padding: 0 11px; font-family: var(--r-display); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--r-caption); }
-  .made-l span { letter-spacing: 0; color: var(--r-faint); }
-  .made-strip { display: flex; gap: 6px; overflow-x: auto; padding: 5px 11px 6px; scroll-snap-type: x proximity; scrollbar-width: thin;
-    -webkit-mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, var(--r-text) calc(100% - 20px), transparent); }
-  .mk { flex: none; width: 116px; height: 88px; border: 1px solid var(--r-edge); border-radius: 9px; background: var(--r-well); scroll-snap-align: start; position: relative; overflow: hidden; display: flex; flex-direction: column; text-align: left; }
-  .mk:hover { border-color: var(--r-edge-hi); }
-  .mk.on { border-color: var(--r-selected-edge); }
-  .mk.out { opacity: 0.32; }
-  .mk-pr { width: 148px; padding: 7px 8px; gap: 4px; }
-  .mk-h { display: flex; align-items: center; gap: 5px; font-size: 11px; min-width: 0; }
-  .mk-h b { font-family: var(--r-mono); font-size: 11px; white-space: nowrap; }
-  .mk-st { margin-left: auto; font-size: 10px; white-space: nowrap; }
-  .mk-t { font-size: 11.5px; color: var(--r-text-2); line-height: 1.3; max-height: 2.6em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; flex: none; text-align: left; }
-  .mk-f { display: flex; gap: 6px; align-items: center; margin-top: auto; }
-  .mk-open { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; }
-  .mk-img, .mk-doc { display: block; height: 54px; flex: none; border-bottom: 1px solid var(--r-edge); overflow: hidden; }
-  .mk-img img { width: 100%; height: 100%; object-fit: cover; }
-  .mk-doc { display: grid; place-items: center; font-family: var(--r-mono); font-size: 14px; color: var(--r-caption); }
-  .mk-n { display: block; padding: 4px 7px 0; font-size: 11.5px; color: var(--r-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mk-m { display: block; padding: 0 7px; font-size: 10px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mk-share { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: var(--r-glass-strong); border: 1px solid var(--r-edge-hi); color: var(--r-text); opacity: 0; cursor: pointer; padding: 0; }
-  .mk-share svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .mk-file:hover .mk-share, .mk-file:focus-within .mk-share { opacity: 1; }
-  .mk-checks { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; }
-  .mk-go, .mk-read { margin-left: auto; flex: none; font-size: 10.5px; color: var(--r-faint); }
-  .mk:hover .mk-go, .mk:hover .mk-read { color: var(--r-text); }
-  .tk-st { color: var(--r-caption); }
-  .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: mk-busy 1s ease-in-out infinite alternate; }
-  @keyframes mk-busy { to { opacity: 0.35; } }
+${MADE_CSS}
   /* Back and forward through the sessions this panel showed. */
   .nav-row { display: flex; align-items: center; gap: 2px; margin: 0 2px 6px; min-width: 0; }
   .nav-btn { width: 22px; height: 22px; border: 0; border-radius: 5px; background: transparent; color: var(--r-text-2); font-size: 17px; line-height: 1; cursor: pointer; padding: 0; flex: none; }
@@ -1459,7 +1569,6 @@ ${REPLY_BOX_CSS}
   .nav-btn[disabled] { opacity: 0.3; cursor: default; }
   .nav-crumb { border: 0; background: transparent; color: var(--r-caption); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nav-crumb:hover { color: var(--r-text); text-decoration: underline; }
-  @media (prefers-reduced-motion: reduce) { .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }
   /* The agent's own status posts and its blocked strip. */
   /* The agent's own posts stand out in the feed: gold, with a faint gold ground. */
   .upd { display: grid; grid-template-columns: 10px 1fr auto; gap: 6px; padding: 5px 4px; margin: 0 -4px; border-radius: 6px; font-size: 12px; background: color-mix(in srgb, var(--r-gold-line) 9%, transparent); }
@@ -1585,7 +1694,7 @@ export const PATCH_SCRIPT = `
 // thumbnail keeps the src the observer filled only while it shows the same image.
 // A node with data-key moves to its new position instead of being rewritten, and
 // one whose data-h (a hash of its markup) is unchanged is not touched at all.
-// One marked data-keep is left as the page made it.
+// One marked data-keep keeps its children as the page made them.
 function nodeSig(n) {
   if (n.nodeType !== 1) return String(n.nodeType);
   const names = [];
@@ -1631,9 +1740,10 @@ function patchNode(live, next) {
       else if (x.nodeType === 1 && x.hasAttribute('data-key')) { live.insertBefore(y, x); continue; }
     }
     if (!x) { live.appendChild(y); continue; }
-    // A node marked data-keep is the page's own once drawn (the front card's reply
-    // box): a patch never rewrites it, so a draft, the caret and the mic's state stay.
-    if (y.nodeType === 1 && x.nodeType === 1 && x.hasAttribute('data-keep') && nodeSig(x) === nodeSig(y)) continue;
+    // A node marked data-keep keeps what the page drew inside it (the pinned card's
+    // reply box, its Made shelf): a patch updates its attributes only, so a draft,
+    // the caret, the mic's state and a scrolled shelf stay.
+    if (y.nodeType === 1 && x.nodeType === 1 && x.hasAttribute('data-keep') && nodeSig(x) === nodeSig(y)) { patchAttrs(x, y); continue; }
     // A card whose fields hash is unchanged is left exactly as it is, classes the
     // page added (selection, a flash) included.
     const h = y.nodeType === 1 ? y.getAttribute('data-h') : null;

@@ -3,7 +3,9 @@ import { displayPath, isInside } from './displayPath';
 import { extractLinearTicketId } from './utils';
 import { extractPrUrls, type PullRequestRef } from './panel.helpers';
 import { renderedHtmlCandidates } from './searchIndex';
-import type { RemoteSession, RemoteSessionArtifact } from './remoteSessions';
+import type { RemoteSession, RemoteSessionArtifact, RemoteTouchedPr, RemoteTouchedTicket } from './remoteSessions';
+import { prRepo, prVerdict, type RemotePrStatus } from './prStatus';
+import { ticketFace, type TicketFace } from './ticketFaces';
 
 /** Image files the session cards preview inline. */
 const THUMB_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
@@ -68,6 +70,39 @@ export function sessionCardFields(
     };
   }
   return fields;
+}
+
+/** What the Made shelf draws (`renderMadeShelf`, src/shared/sessionCards.ts), the same
+ *  for the Active Session sidebar and the Project panel's pinned card: the PRs the
+ *  session opened, the tickets it is on or created, its artifacts, and what it acted on. */
+export interface MadeShelf {
+  pullRequests?: PullRequestRef[];
+  prStatus?: RemotePrStatus;
+  prVerdict?: ReturnType<typeof prVerdict>;
+  prRepo?: string;
+  ticket?: TicketFace;
+  createdTickets?: TicketFace[];
+  artifacts: SessionCardFields['artifacts'];
+  plan?: SessionCardFields['plan'];
+  sessionLocal: boolean;
+  touchedPrs?: RemoteTouchedPr[];
+  touchedTickets?: RemoteTouchedTicket[];
+}
+
+export function madeShelf(live: Pick<RemoteSession, 'prStatus' | 'createdTickets' | 'touchedPrs' | 'touchedTickets'>, card: SessionCardFields): MadeShelf {
+  const shelf: MadeShelf = { artifacts: card.artifacts, sessionLocal: card.sessionLocal };
+  if (card.plan) shelf.plan = card.plan;
+  if (card.pullRequests) shelf.pullRequests = card.pullRequests;
+  if (live.prStatus) {
+    shelf.prStatus = live.prStatus;
+    shelf.prVerdict = prVerdict(live.prStatus);
+    shelf.prRepo = prRepo(live.prStatus.url);
+  }
+  if (card.linearIssue) shelf.ticket = ticketFace(card.linearIssue);
+  if (live.createdTickets?.length) shelf.createdTickets = live.createdTickets.map(ticketFace);
+  if (live.touchedPrs) shelf.touchedPrs = live.touchedPrs;
+  if (live.touchedTickets) shelf.touchedTickets = live.touchedTickets;
+  return shelf;
 }
 
 export interface RequestImageThumb {

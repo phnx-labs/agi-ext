@@ -289,6 +289,18 @@ export interface RemoteActivity {
   userAtMs: number[];
 }
 
+/** A PR the session acted on without opening it ("merged", "reviewed", …). */
+export interface RemoteTouchedPr { url: string; number: number; repo?: string; action: string }
+/** A ticket the session acted on without creating it. */
+export interface RemoteTouchedTicket { id: string; action: string }
+
+/** A list of touched PRs or tickets, keeping only entries the CLI filled in; absent when none. */
+function normalizeTouched<T>(raw: unknown, one: (o: Record<string, unknown>) => T | undefined): T[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw.flatMap((e) => { const v = e && typeof e === 'object' ? one(e as Record<string, unknown>) : undefined; return v ? [v] : []; });
+  return out.length ? out : undefined;
+}
+
 /** Claude's recap as the row carries it (agents-cli `SessionRecap`): `at` is ISO. */
 interface RemoteRecap {
   text: string;
@@ -442,6 +454,12 @@ export interface RemoteSession {
   recap?: RemoteRecap;
   /** The session this one was forked from (`agents fork`), by id; absent otherwise. */
   forkOf?: string;
+  /** Linear tickets the session created (CLI `createdTickets`), by id. */
+  createdTickets?: string[];
+  /** PRs and tickets it acted on without opening or creating them (merged, reviewed,
+   *  commented, updated); absent until agents-cli sends them. */
+  touchedPrs?: RemoteTouchedPr[];
+  touchedTickets?: RemoteTouchedTicket[];
   /** Model id of the latest assistant reply (e.g. `claude-opus-5-5`). Absent when unknown. */
   model?: string;
   /** Who the session runs for (the CLI's `owner`, an email); the sidebar shows their avatar on the request. */
@@ -528,6 +546,9 @@ export interface RawActiveSession {
   startedAs?: string;
   recap?: unknown;
   forkOf?: string;
+  createdTickets?: unknown;
+  touchedPrs?: unknown;
+  touchedTickets?: unknown;
   model?: string;
   owner?: string;
   failures?: unknown;
@@ -1256,6 +1277,9 @@ export function normalizeActiveSession(
     startedAs: asStr(raw.startedAs) || undefined,
     recap: normalizeRecap(raw.recap),
     forkOf: asStr(raw.forkOf) || undefined,
+    createdTickets: Array.isArray(raw.createdTickets) && raw.createdTickets.some((t) => asStr(t)) ? raw.createdTickets.map(asStr).filter(Boolean) : undefined,
+    touchedPrs: normalizeTouched(raw.touchedPrs, (o) => { const url = asStr(o.url); const number = Math.round(asNum(o.number)); return url && number > 0 ? { url, number, ...(asStr(o.repo) ? { repo: asStr(o.repo) } : {}), action: asStr(o.action) } : undefined; }),
+    touchedTickets: normalizeTouched(raw.touchedTickets, (o) => { const id = asStr(o.id); return id ? { id, action: asStr(o.action) } : undefined; }),
     model: asStr(raw.model) || undefined,
     owner: asStr(raw.owner) || undefined,
     failures: normalizeFailures(raw.failures),

@@ -287,7 +287,7 @@ export interface SessionLike {
   request?: { headline?: string; attachments?: { kind: string; name: string }[] };
   /** The CLI's step list, newest last: each step's words, ISO time, whose (`user` for
    *  you), and on the live step what runs now. */
-  timeline?: { steps: { text: string; at?: string; source?: string; live?: boolean; now?: string }[] };
+  timeline?: { steps: { text: string; at?: string; source?: string; live?: boolean; now?: string }[]; earlier?: { steps: number } };
   /** The session this one was forked from; the card marks a fork with ⑂, never words. */
   forkOf?: string;
   /** Claude's own newest recap (agents-cli `recap`), `at` ISO; absent for other harnesses. */
@@ -630,6 +630,8 @@ export interface SessionListOptions {
   project?: string;
   /** How a card shows an open ask (Settings, Session cards). */
   cards?: CardSettings;
+  /** The pinned front card's Made shelf (`madeShelf`, src/core/sessionCardFields.ts). */
+  shelfFor?: (s: SessionLike) => object | null;
 }
 
 const ACT_ICON = {
@@ -845,20 +847,24 @@ function recapBlock(s: Pick<SessionLike, 'recap' | 'userTurns'>, now: number): s
   return `<div class="fc-recap${stale ? ' stale' : ''}"><div class="fc-k">Recap · ${escapeHtml(relTime(at, now))}${stale ? '<span class="fc-old">before your last message</span>' : ''}</div><div class="fc-rt">${escapeHtml(text)}</div></div>`;
 }
 
-/** The front card's last four steps with their clock times, and the way to the
- *  Active Session sidebar for everything else. */
-function recentSteps(s: SessionLike): string {
-  const steps = (s.timeline?.steps ?? []).filter((st) => plain(st.text)).slice(-4);
+/** The pinned card's activity: every step the row carries with its clock time, newest
+ *  at the bottom, in a box of fixed height that scrolls on its own (the page keeps it at
+ *  the bottom unless you scrolled up); how many came before, and the way to the Active
+ *  Session sidebar for the rest. */
+function activitySteps(s: SessionLike): string {
+  const steps = (s.timeline?.steps ?? []).filter((st) => plain(st.text));
+  const earlier = s.timeline?.earlier?.steps ?? 0;
   const items = steps.map((st) => {
     const t = Date.parse(st.at ?? '');
     const you = st.source === 'user';
     const now = st.live && st.now ? `<span class="fc-now">${escapeHtml(plain(st.now))}</span>` : '';
     return `<li class="${you ? 'user' : ''}${st.live ? ' live' : ''}"><time>${Number.isFinite(t) ? clock(t) : ''}</time><span class="fc-at">${you ? '<span class="fc-you">You</span> ' : ''}${escapeHtml(plain(st.text))}${now}</span></li>`;
   }).join('');
-  return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div>${items ? `<ol>${items}</ol>` : ''}</div>`;
+  const before = earlier ? `<li class="fc-earlier">${earlier} earlier step${earlier === 1 ? '' : 's'}</li>` : '';
+  return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div>${items ? `<ol tabindex="0" aria-label="Activity, newest last">${before}${items}</ol>` : ''}</div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings; nav?: FrontNav }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
@@ -932,11 +938,11 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const statePill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>`;
     const latest = recapBlock(s, now)
       || (said ? `<div class="line said">${escapeHtml(said)}</div>` : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
-    const madeChips = [prs, ticketChip, folderChip].join('');
-    const madeBlock = madeChips || madeImages.length
-      ? `<div class="fc-made"><div class="fc-k">Made</div>${madeChips ? `<div class="cstrip">${madeChips}</div>` : ''}${madeImages.length ? `<div class="thumbs">${madeImages.join('')}</div>` : ''}</div>` : '';
+    // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
+    // from the shelf's fields; data-keep keeps a scrolled shelf through every update.
+    const madeBlock = opts.shelf ? `<div class="fc-made" data-keep data-made="${escapeHtml(JSON.stringify(opts.shelf))}"></div>` : '';
     // A question from this tab's own agent goes directly under the title, above the recap.
-    const detail = `${reason}${ask}<div class="fc-state">${statePill}<span>${where}</span></div>${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${madeBlock}${recentSteps(s)}`;
+    const detail = `${reason}${ask}<div class="fc-state">${statePill}<span>${where}</span></div>${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${madeBlock}${activitySteps(s)}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
     return `${navButtons(opts.nav, s.tabIndex)}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
@@ -1020,7 +1026,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const navTo = (x: { row: SessionLike } | undefined) => x && x !== front ? { sessionId: x.row.sessionId, host: x.row.host, label: `tab ${x.row.tabIndex} · ${cardTitle(x.row)}` } : undefined;
   const nav: FrontNav = at < 0 ? {} : { prev: navTo(tabs[(at - 1 + tabs.length) % tabs.length]), next: navTo(tabs[(at + 1) % tabs.length]) };
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, front: !!front && row.sessionId === front.row.sessionId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards, nav,
+    selected: row.sessionId === opts.selectedId, front: !!front && row.sessionId === front.row.sessionId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards, nav, shelf: front && row.sessionId === front.row.sessionId ? opts.shelfFor?.(row) : undefined,
   });
   // The tab already shows the count and the asks badge, so the header carries only its controls.
   const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;

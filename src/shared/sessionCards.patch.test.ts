@@ -145,3 +145,19 @@ test('the reply box keeps each session\'s draft across a rebuilt box and a moved
   ;(a.querySelector('.reply-mic') as unknown as { click: () => void }).click()
   expect(posted).toEqual([{ type: 'dictate', on: true }])
 })
+
+// The pinned card's Made shelf is drawn by the page into a data-keep slot: a patch
+// updates the slot's data-made (so the page knows to redraw) but never wipes what is
+// drawn, so a shelf scrolled sideways stays where it was.
+test('a data-keep slot takes new attributes and keeps what the page drew inside it', () => {
+  const front = (shelf: object) => renderSessions([row({ sessionId: 'f', tabHere: true, tabIndex: 1 })], NOW, { selectedId: null, frontId: 'f', here: HERE, prefs: DEFAULT_SESSION_PREFS, shelfFor: () => shelf })
+  const root = document.createElement('main')
+  patchChildren(root, front({ artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-1' } }))
+  const slot = root.querySelector('.fc-made')!
+  slot.innerHTML = '<div class="made">drawn</div>'
+  const drawn = slot.firstChild
+  patchChildren(root, front({ artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-2' } }))
+  expect(root.querySelector('.fc-made') === slot).toBe(true)
+  expect(slot.firstChild === drawn).toBe(true)
+  expect(slot.getAttribute('data-made')).toContain('PHNX-2')
+})
