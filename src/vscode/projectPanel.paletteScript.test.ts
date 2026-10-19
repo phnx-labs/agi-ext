@@ -119,3 +119,14 @@ test('⌘K or Ctrl+K inside the panel asks the host to open it, and goes no furt
   expect(e.defaultPrevented).toBe(true);
   expect(reached).toBe(false);
 });
+
+test('a title that starts with the words outranks one that only holds them elsewhere', () => {
+  deliver({ type: 'palette', html: HTML, waiting: false });
+  type('task');
+  // "Old ended" etc. carry "Task" nowhere in the title; a title prefix leads whatever the host order.
+  type('body');
+  expect(shown()[0]).toBe('Body alignment');
+  type('plan');
+  expect(shown()).toEqual(['MCP server plan']);
+  key('Escape');
+});
