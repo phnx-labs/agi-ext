@@ -232,6 +232,8 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (tab === 'settings') {
       this.post(tab, this.controller.settings(this.devices));
       void this.loadDevices(force);
+      // The view's title names the project on every tab, Settings included.
+      void this.controller.project().then((p) => { if (this.view === view) view.title = p?.name; }, () => undefined);
       return;
     }
     const gen = ++state.generation;
@@ -1525,6 +1527,14 @@ ${MADE_SCRIPT}
     const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
     return n;
   }
+  // Settings > Tabs: Review and Issues can go. Sessions alone needs no tab to choose it
+  // while it shows; from Settings it stays, as the way back.
+  let tabsShown = { prs: true, tickets: true };
+  function syncTabs() {
+    for (const t of document.querySelectorAll('.tabs .tab')) {
+      t.hidden = t.dataset.tab === 'sessions' ? !tabsShown.prs && !tabsShown.tickets && current === 'sessions' : !tabsShown[t.dataset.tab];
+    }
+  }
   function choose(tab) {
     if (tab === current) return;
     if (current === 'prs' && cancelMerges()) toast('Merge cancelled: you left Review before it started.');
@@ -1532,11 +1542,12 @@ ${MADE_SCRIPT}
     scroll[current] = main.scrollTop;
     current = tab;
     select(tab);
+    syncTabs();
     vscode.postMessage({ type: 'tab', tab });
   }
   window.addEventListener('message', (e) => {
     const m = e.data;
-    if (m.type === 'tab') { current = m.tab; select(m.tab); }
+    if (m.type === 'tab') { current = m.tab; select(m.tab); syncTabs(); }
     else if (m.type === 'choose') choose(m.tab);
     else if (m.type === 'count') {
       const c = document.querySelector('[data-cnt="sessions"]'); if (c) c.textContent = m.n ? String(m.n) : '';
@@ -1586,12 +1597,9 @@ ${MADE_SCRIPT}
       shownProject = m.name;
     }
     else if (m.type === 'tabs') {
-      // Settings > Tabs: Review and Issues can go; Sessions alone needs no tab to choose it.
-      const shown = { prs: m.prs, tickets: m.tickets };
-      for (const t of document.querySelectorAll('.tabs .tab')) t.hidden = t.dataset.tab !== 'sessions' && !shown[t.dataset.tab];
-      document.querySelector('.tabs [data-tab="sessions"]').hidden = !m.prs && !m.tickets;
-      const on = document.querySelector('.tabs .tab[aria-selected="true"]');
-      if (on && on.hidden && on.dataset.tab !== 'sessions') choose('sessions');
+      tabsShown = { prs: m.prs, tickets: m.tickets };
+      if (!tabsShown[current] && current !== 'sessions' && current !== 'settings') choose('sessions');
+      syncTabs();
     }
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
