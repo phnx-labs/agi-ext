@@ -22,7 +22,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   their session and machine. VS Code brings a tab back with only its name and its process, so
   the extension now finds the tab's record by that process.
 - Settings > Session titles drops Labels in titles, Replace base title, Hide labels off focus
-  and Full agent names. Each one only decided where the harness code went.
+  and Full agent names. Each one only decided where the harness code went. Session id (the
+  short id before the name) is off for new installs; your current setting is kept.
 
 ## [0.9.420] - 2026-10-19
 

@@ -214,7 +214,7 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
 
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
   autoLabelInTabTitles: true,
-  showSessionIdInTitles: true,
+  showSessionIdInTitles: false,
 };
 
 export const DEFAULT_QUICK_LAUNCH: QuickLaunchConfig = {
