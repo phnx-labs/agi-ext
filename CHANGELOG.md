@@ -18,9 +18,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   name, the tab says where the launch is: "Placing…" while agents-cli picks a machine,
   "Starting…" when it runs here or on a machine you chose, then "New session" once the agent
   is on screen. Before, a new tab sat at "CC" with nothing else for as long as the launch took.
-- After a window reload, agent tabs are still recognized as Claude, Codex and the rest and keep
-  their session and machine. VS Code brings a tab back with only its name and its process, so
-  the extension now finds the tab's record by that process.
+- After a window reload, agent tabs still come back as Claude, Codex and the rest with their
+  session, though the name no longer says which. A tab VS Code revives on its own comes back
+  with only its name and its process, so the extension now finds that tab's record by its
+  process.
 - Settings > Session titles drops Labels in titles, Replace base title, Hide labels off focus
   and Full agent names. Each one only decided where the harness code went. Session id (the
   short id before the name) is off for new installs; your current setting is kept.
