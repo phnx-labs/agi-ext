@@ -6,8 +6,7 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.421] - 2026-10-19
 
-- The Project panel responds at once. A card click moves the selection straight away and
-  draws the list once instead of twice. Clicks, tab switches and new session activity no
+- The Project panel responds at once. A card click moves the selection straight away. Clicks, tab switches and new session activity no
   longer stall for up to 3 seconds once a minute while the project list is reread; the list
   you had keeps showing and updates in the background. Review starts loading pull requests
   straight away instead of rereading the project list first. Activity in other projects no
