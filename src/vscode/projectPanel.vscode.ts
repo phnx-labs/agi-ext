@@ -1022,10 +1022,9 @@ class ProjectPanelController {
    *  always front it. Nothing is resumed or spawned. */
   select(sessionId: string, host: string | undefined, front: 'card' | 'always' | 'no' = 'no'): void {
     setAgentPanelSubjectFromProject(sessionId, host);
-    const tab = front === 'no' || (front === 'card' && cardSettings(getSettings(this.context).cards).click !== 'front') ? undefined : terminals.getBySessionId(sessionId)?.terminal;
-    // A tab that comes forward redraws the list from its own event; drawing here too was a second full draw per click.
-    if (!tab || tab === frontTerminal()) void this.view.redrawSessions();
-    tab?.show(false);
+    void this.view.redrawSessions();
+    if (front === 'no' || (front === 'card' && cardSettings(getSettings(this.context).cards).click !== 'front')) return;
+    terminals.getBySessionId(sessionId)?.terminal.show(false);
   }
 
   /** ⌘K's rows: every session the store holds (live and ended, any project), with its
@@ -2056,7 +2055,8 @@ ${MADE_SCRIPT}
       if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, place: placeOf(card), top: card.getBoundingClientRect().top, at: Date.now() };
       if (!card.closest('.front-pin')) opening(card, 'Opening ' + card.dataset.title + '…');
       // The rail moves on the click. A card changed here loses its hash, so the host's next draw always patches it back to what the host holds.
-      const rail = (c, on) => { if (c.closest('.front-pin') || c.classList.contains('sel') === on) return; c.classList.toggle('sel', on); c.removeAttribute('data-h'); };
+      // The pinned copy loses it too, so 1-9 never answers the session clicked away from.
+      const rail = (c, on) => { if (c.classList.contains('sel') === on) return; c.classList.toggle('sel', on); c.removeAttribute('data-h'); };
       for (const c of main.querySelectorAll('.card.sel')) rail(c, false);
       for (const c of cardsOf('session', card.dataset.session)) rail(c, true);
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });

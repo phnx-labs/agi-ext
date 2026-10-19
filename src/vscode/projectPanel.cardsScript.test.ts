@@ -137,17 +137,15 @@ test('a card click moves the selected rail at once; the host\'s redraw of the sa
   const listed = (id: string) => $$(`[data-group="here"] .card[data-session="${id}"]`)[0];
   expect(listed('a').classList.contains('sel')).toBe(true);
   listed('c').click();
-  // Before any host message: c carries the rail, a (still the front tab) lost it, the pinned copy kept its own.
-  expect(listed('c').classList.contains('sel')).toBe(true);
-  expect(listed('a').classList.contains('sel')).toBe(false);
-  expect($$('.front-pin .card[data-session="a"]').length).toBe(1);
+  // Before any host message: only c carries the rail; a lost it in the list and on the pinned card, so 1-9 cannot answer a.
+  expect($$('.card.sel').map((c) => c.dataset.session)).toEqual(['c']);
   deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows, NOW, { selectedId: 'c', frontId: 'c', here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor }) });
   expect($$('.card.sel').filter((c) => !c.closest('.front-pin')).map((c) => c.dataset.session)).toEqual(['c']);
-  // When the host still holds the old selection, its unchanged draw puts the rail back.
+  // When the host still holds the old selection, its unchanged draw puts the rail back, pinned copy included.
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   listed('c').click();
   deliver({ type: 'html', tab: 'sessions', html: draw() });
-  expect($$('.card.sel').filter((c) => !c.closest('.front-pin')).map((c) => c.dataset.session)).toEqual(['a']);
+  expect($$('.card.sel').map((c) => c.dataset.session)).toEqual(['a', 'a']);
 });
 
 test('1-9 answers a selected starred session that asks, whose Favorites copy shows only the question', () => {
