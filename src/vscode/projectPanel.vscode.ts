@@ -65,6 +65,7 @@ import { buildIconPath, harnessLogoCss } from './theme.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
 import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
 import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
+import { PanelDock, type PanelHost } from './panelDock.vscode';
 
 
 // The Project sidebar panel (PHNX-4289): one view with tabs (Sessions, Issues,
@@ -106,7 +107,8 @@ interface TabState {
 }
 
 class ProjectView implements vscode.WebviewViewProvider {
-  view: vscode.WebviewView | undefined;
+  view: PanelHost | undefined;
+  readonly dock = new PanelDock({ viewType: 'agents.project', command: 'agents.project.popOut', title: 'Project', attach: (host) => this.attach(host) });
   private active: TabId;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
@@ -116,12 +118,17 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
+    this.dock.resolveSidebar(view);
+  }
+
+  /** Draws the panel into the sidebar view or the tab it popped out into. */
+  private attach(view: PanelHost): vscode.Disposable {
     this.view = view;
     // The editor's app icons ship in assets/; artifact images the agent made live
     // under home, as in the session sidebar.
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'assets'), vscode.Uri.file(os.homedir()), ...IMAGE_DIRS().map((d) => vscode.Uri.file(d))] };
     view.webview.html = shell(view.webview.cspSource, harnessLogoCss(view.webview, this.context.extensionUri));
-    view.webview.onDidReceiveMessage((msg: PanelMessage) => {
+    const onMessage = view.webview.onDidReceiveMessage((msg: PanelMessage) => {
       const host = typeof msg.host === 'string' ? msg.host : undefined;
       const targets = Array.isArray(msg.targets) ? msg.targets.filter((x): x is SessionTarget => !!x && typeof x.sessionId === 'string' && typeof x.host === 'string') : [];
       if (msg.type === 'ready') this.onReady();
@@ -163,14 +170,18 @@ class ProjectView implements vscode.WebviewViewProvider {
         if (this.devices && 'rows' in this.devices && this.devices.rows.some((d) => d.name === name) && !name.startsWith('-')) void this.setDevice(name, msg.field, msg.value);
       }
     });
-    view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
-    view.onDidDispose(() => {
-      this.view = undefined;
-      for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
-      sessionStreamDemand.setProjectSessionsVisible(false);
-    });
+    const onVisible = view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
     this.syncDemand();
     void this.load(this.active, false);
+    return {
+      dispose: () => {
+        onMessage.dispose();
+        onVisible.dispose();
+        this.view = undefined;
+        for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
+        sessionStreamDemand.setProjectSessionsVisible(false);
+      },
+    };
   }
 
   private syncDemand(): void {
@@ -982,6 +993,7 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, controller.view, {
     webviewOptions: { retainContextWhenHidden: true },
   }));
+  controller.view.dock.register(context);
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.project.refresh', () => controller.refresh()),
     vscode.commands.registerCommand('agents.project.settings', () => controller.view.open('settings')),

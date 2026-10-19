@@ -234,6 +234,8 @@ Beside the project button, on the same row, the Project panel shows the goal lin
 
 What should happen: a slow read paints "Loading…" in its own view and never blocks the others; a failed read shows the CLI's error in that view; a project with no Linear project says how to link one.
 
+**Either panel in its own window.** The Project panel and the Active Session sidebar each have Move into New Window in their title bar (owner, 2026-10-18: on a laptop screen they took too much room; keep them on another monitor). VS Code moves only editor tabs into a new window, so the panel draws into an editor tab that VS Code's own Move into New Window carries out. It draws in one place at a time: its sidebar view then shows only Bring it back here, closing that window draws it in the sidebar again, and VS Code restores the window with the panel in it after a restart. A popped-out panel is the same panel: the same stream demand, selection and actions. Check: press it on each panel, move the window to the other monitor, click a card and answer an ask from there; close the window and the sidebar shows the panel again.
+
 ## Open a PR or ticket as a tab
 
 You click a PR or a ticket to act on it (review, merge, comment, change its status) and want to stay beside your agents rather than switch to another app.

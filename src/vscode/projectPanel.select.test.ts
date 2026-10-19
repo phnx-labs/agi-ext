@@ -11,6 +11,7 @@ const noop = { dispose() { /* noop */ } };
 mock.module('vscode', () => vscodeDouble({
   window: {
     registerWebviewViewProvider: (_id: string, p: typeof provider) => { provider = p; return noop; },
+    registerWebviewPanelSerializer: () => noop,
     onDidChangeActiveTerminal: () => noop,
     showErrorMessage: () => Promise.resolve(undefined),
     tabGroups: { all: [], onDidChangeTabs: () => noop, onDidChangeTabGroups: () => noop },
