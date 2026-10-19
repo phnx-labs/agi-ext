@@ -260,8 +260,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   tabs with no agent, Ended; a tab that asks shows either way). Group headers carry
   the icon, a count and one dot per state, so a folded group still says what is inside.
   There is no group of asks: a session that asks is a red card leading its own group (Open
-  tabs for a tab here), by urgency, then wait; under the pinned card come Ready for review
-  and Idle (no tab here), then the grouping.
+  tabs for a tab here), by urgency, then wait; under the pinned card come Favorites (when
+  any are starred), Ready for review and Idle (no tab here), then the grouping.
 - **One header row.** The project's name is the view's title ("PROJECT: RUSH"; ⇄ beside it
   switches it), so the Project panel's header is one row: the goal, then the tabs as icons and
   that tab's own controls (☀, search, ⇅). Settings > Tabs turns Review and Issues off. Settings
