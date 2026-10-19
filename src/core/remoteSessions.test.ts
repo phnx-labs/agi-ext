@@ -104,6 +104,18 @@ describe('resolveProject', () => {
     expect(normalizeActiveSession({ ...base, confirmedProject: null } as RawActiveSession, 'zion', FETCHED_AT).confirmedProject).toBeNull();
   });
 
+  test('carries Claude\'s recap with its time, without the CLI hint, only when it has words and a time; and forkOf', () => {
+    const base = { kind: 'claude', status: 'idle', cwd: '/x/y/agents', sessionFile: '/x/aaaaaaaa.jsonl' };
+    const at = (o: object) => normalizeActiveSession({ ...base, ...o } as RawActiveSession, 'zion', FETCHED_AT);
+    expect(at({ recap: { text: ' Next is the release. ', at: '2026-10-19T00:49:31.496Z' } }).recap).toEqual({ text: 'Next is the release.', at: '2026-10-19T00:49:31.496Z' });
+    expect(at({ recap: { text: 'x', at: 1792370971605 } }).recap).toEqual({ text: 'x', at: new Date(1792370971605).toISOString() });
+    expect(at({ recap: { text: '', at: '2026-10-19T00:49:31.496Z' } }).recap).toBeUndefined();
+    expect(at({ recap: { text: 'x', at: 'soon' } }).recap).toBeUndefined();
+    expect(at({}).recap).toBeUndefined();
+    expect(at({ forkOf: '4aa3c855-eb2e' }).forkOf).toBe('4aa3c855-eb2e');
+    expect(at({}).forkOf).toBeUndefined();
+  });
+
   test('copies the glance fields verbatim and drops malformed entries', () => {
     const s = normalizeActiveSession(
       {

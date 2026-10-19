@@ -1,7 +1,8 @@
 import { afterAll, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { PATCH_SCRIPT } from './sessionCards';
-import { renderSessionCard, sessionPlace, type SessionHere, type SessionLike } from '../core/projectPanel';
+import { REPLY_SCRIPT, replyBoxHtml } from './replyBox';
+import { DEFAULT_SESSION_PREFS, renderSessionCard, renderSessions, sessionPlace, type SessionHere, type SessionLike } from '../core/projectPanel';
 
 // The Project panel redraws its list on every stream tick. A card thumbnail used
 // to be a full-size <img src> that each redraw rewrote, so the browser decoded the
@@ -81,3 +82,66 @@ test('a redraw puts a clicked checkbox back to the stored value (Settings, a wri
   patchChildren(root, html.replace(' checked', ''));
   expect(box.checked).toBe(false);
 });
+
+// The front tab's card is pinned on top with a reply box inside it. A stream tick
+// patches the card (a new step, a new recap) while the owner types or dictates; the
+// box (data-keep) must be the same node with the same words and the mic's state.
+test('the pinned card takes a new recap and step while its reply box keeps the draft, the node and the mic state', () => {
+  const front = (o: Partial<SessionLike>) => renderSessions([row({ sessionId: 'f', tabHere: true, tabIndex: 2, agentType: 'claude', ...o })], NOW, { selectedId: null, frontId: 'f', here: HERE, prefs: DEFAULT_SESSION_PREFS })
+  const root = document.createElement('main')
+  patchChildren(root, front({ recap: { text: 'First recap.', at: new Date(NOW - 120_000).toISOString() }, timeline: { steps: [{ text: 'step one', at: new Date(NOW - 60_000).toISOString() }] } }))
+  const input = root.querySelector('.card.front textarea') as unknown as { value: string }
+  const box = root.querySelector('.card.front .reply-box')!
+  input.value = 'half a sentence'
+  box.classList.add('listening')
+  patchChildren(root, front({ recap: { text: 'Second recap.', at: new Date(NOW - 30_000).toISOString() }, timeline: { steps: [{ text: 'step one', at: new Date(NOW - 60_000).toISOString() }, { text: 'step two', at: new Date(NOW - 10_000).toISOString() }] } }))
+  expect(root.querySelector('.card.front textarea') === (input as unknown)).toBe(true)
+  expect(input.value).toBe('half a sentence')
+  expect(root.querySelector('.card.front .reply-box')!.classList.contains('listening')).toBe(true)
+  expect(root.querySelector('.fc-rt')!.textContent).toBe('Second recap.')
+  expect(root.querySelector('.fc-act')!.textContent).toContain('step two')
+})
+
+test('a recap older than your last message is dimmed and says so; a newer one is not', () => {
+  const html = (lastUser: number) => renderSessionCard(row({ sessionId: 'f', tabHere: true, recap: { text: 'R', at: new Date(NOW - 600_000).toISOString() }, userTurns: [{ atMs: lastUser }] }), sessionPlace(row({ tabHere: true }), HERE), NOW, { selected: false, front: true, pinned: true, thumbs: [], made: null, here: HERE })
+  const root = document.createElement('main')
+  patchChildren(root, html(NOW - 60_000))
+  expect(root.querySelector('.fc-recap')!.classList.contains('stale')).toBe(true)
+  expect(root.querySelector('.fc-recap .fc-k')!.textContent).toBe('Recap · 10 min agobefore your last message')
+  patchChildren(root, html(NOW - 900_000))
+  expect(root.querySelector('.fc-recap')!.classList.contains('stale')).toBe(false)
+  expect(root.querySelector('.fc-old')).toBeNull()
+})
+
+// REPLY_SCRIPT, as both panels run it: a draft belongs to its session, so a box the
+// list had to rebuild (the card moved between groups) gets the draft back, and the
+// mic's words land with the session they were spoken for.
+test('the reply box keeps each session\'s draft across a rebuilt box and a moved subject', () => {
+  const posted: unknown[] = []
+  const api = new Function('document', 'vscode', `${PATCH_SCRIPT}\n${REPLY_SCRIPT}\n${replyBoxHtml}\nreturn { showReplyDraft, setDictation, bindReplyBox, replyBoxHtml };`)(document, { postMessage: (m: unknown) => posted.push(m) }) as {
+    showReplyDraft: (box: unknown, id: string) => boolean; setDictation: (box: unknown, state: string, text?: string) => void; bindReplyBox: (box: unknown, send: (t: string) => void) => void; replyBoxHtml: (p: string, h: boolean) => string
+  }
+  const make = () => { const root = document.createElement('div'); root.innerHTML = api.replyBoxHtml('Reply…', false); return root.querySelector('.reply-box')! }
+  const sent: string[] = []
+  const a = make()
+  api.showReplyDraft(a, 's1'); api.bindReplyBox(a, (t) => sent.push(t))
+  const input = a.querySelector('textarea') as unknown as { value: string; dispatchEvent: (e: unknown) => void }
+  input.value = 'draft for s1'
+  input.dispatchEvent(new window.Event('input'))
+  const b = make()
+  expect(api.showReplyDraft(b, 's1')).toBe(false)
+  expect((b.querySelector('textarea') as unknown as { value: string }).value).toBe('draft for s1')
+  // Recording starts on s1, the front moves to s2 before the words arrive: they go to s1's draft.
+  api.setDictation(b, 'listening')
+  expect(b.classList.contains('listening')).toBe(true)
+  expect(api.showReplyDraft(b, 's2')).toBe(true)
+  expect((b.querySelector('textarea') as unknown as { value: string }).value).toBe('')
+  api.setDictation(b, 'idle', 'and the rest')
+  api.showReplyDraft(b, 's1')
+  expect((b.querySelector('textarea') as unknown as { value: string }).value).toBe('draft for s1 and the rest')
+  // Enter sends once and clears the draft; the mic asks the host.
+  input.value = 'go'; input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter' }))
+  expect(sent).toEqual(['go'])
+  ;(a.querySelector('.reply-mic') as unknown as { click: () => void }).click()
+  expect(posted).toEqual([{ type: 'dictate', on: true }])
+})

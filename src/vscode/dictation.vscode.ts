@@ -113,3 +113,12 @@ class Dictation {
 }
 
 export const dictation = new Dictation();
+
+/** A reply box's mic, from either sidebar: `dictationState` asks where a recording
+ *  stands (a rebuilt box), `dictate` starts (`on: true`) or stops one. The words go
+ *  back to the webview that started it. */
+export function dictationMessage(msg: { type?: unknown; on?: unknown }, webview: vscode.Webview): void {
+  if (msg.type === 'dictationState') void webview.postMessage({ type: 'dictation', state: dictation.state() });
+  else if (msg.type === 'dictate' && msg.on === true) void dictation.start((update) => { void webview.postMessage({ type: 'dictation', ...update }); });
+  else if (msg.type === 'dictate' && msg.on === false) void dictation.stop();
+}

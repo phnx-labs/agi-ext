@@ -5,6 +5,7 @@ import {
   getExpandedAgentName,
   getTerminalDisplayInfo,
   formatTerminalTitle,
+  capTabName,
   isHostFallbackLabel,
   presentableLabel,
   getSessionChunk,
@@ -154,6 +155,20 @@ describe('formatTerminalTitle', () => {
       display: { ...display, showFullAgentNames: false, showSessionIdInTitles: true },
       sessionChunk: 'a1b2c3d4'
     })).toBe('CC a1b2c3d4 - my-label');
+  });
+
+  test('a session name on its tab is cut at 34 characters on a word boundary with …; the label is never cut elsewhere', () => {
+    const long = 'Please tell me what is the main progress that we have made on basically getting our platform ready';
+    expect(capTabName(long)).toBe('Please tell me what is the main…');
+    expect(capTabName('Platform readiness for agents')).toBe('Platform readiness for agents');
+    expect(capTabName('x'.repeat(34))).toBe('x'.repeat(34));
+    // One word longer than the cap is cut inside it; punctuation before the cut goes.
+    expect(capTabName('y'.repeat(40))).toBe(`${'y'.repeat(33)}…`);
+    expect(capTabName('Release the agents CLI, then the menu bar app')).toBe('Release the agents CLI, then the…');
+    expect(capTabName('Release the agents-cli and AGI EXT, and ship')).toBe('Release the agents-cli and AGI…');
+    expect(capTabName(long).length).toBeLessThanOrEqual(34);
+    expect(formatTerminalTitle('CC', { label: long, display: { ...display, showFullAgentNames: false } })).toBe('CC - Please tell me what is the main…');
+    expect(formatTerminalTitle('CC', { label: long, display: { ...display, labelReplacesTitle: true } })).toBe('Please tell me what is the main…');
   });
 
   test('showLabelOnlyOnFocus hides the label only on an unfocused tab', () => {

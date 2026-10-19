@@ -289,6 +289,12 @@ export interface RemoteActivity {
   userAtMs: number[];
 }
 
+/** Claude's recap as the row carries it (agents-cli `SessionRecap`): `at` is ISO. */
+interface RemoteRecap {
+  text: string;
+  at: string;
+}
+
 /** One genuine user turn, oldest first (CLI `userTurns[]`). */
 export interface RemoteUserTurn {
   atMs: number;
@@ -431,6 +437,11 @@ export interface RemoteSession {
   title: string;
   /** What the session was started with ("/continue …"), when the CLI reports it. */
   startedAs?: string;
+  /** Claude's own newest recap of the session (`away_summary`), with when it wrote it.
+   *  Absent for another harness, a session with none yet, or an older CLI. */
+  recap?: RemoteRecap;
+  /** The session this one was forked from (`agents fork`), by id; absent otherwise. */
+  forkOf?: string;
   /** Model id of the latest assistant reply (e.g. `claude-opus-5-5`). Absent when unknown. */
   model?: string;
   /** Who the session runs for (the CLI's `owner`, an email); the sidebar shows their avatar on the request. */
@@ -515,6 +526,8 @@ export interface RawActiveSession {
   topic?: string;
   title?: string;
   startedAs?: string;
+  recap?: unknown;
+  forkOf?: string;
   model?: string;
   owner?: string;
   failures?: unknown;
@@ -929,6 +942,15 @@ function withoutEnvelopeTurns(h: RemoteActivity | undefined, turns: RemoteUserTu
   return { ...h, userAtMs };
 }
 
+/** The row's `recap`, kept only with words and a time it can be aged by. */
+function normalizeRecap(raw: unknown): RemoteRecap | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const v = raw as Record<string, unknown>;
+  const text = asStr(v.text).trim();
+  const at = asTimestamp(v.at);
+  return text && Number.isFinite(Date.parse(at)) ? { text, at } : undefined;
+}
+
 function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.flatMap((entry): RemoteUserTurn[] => {
@@ -1232,6 +1254,8 @@ export function normalizeActiveSession(
     topic: asStr(raw.topic) || asStr(raw.prompt) || asStr(raw.firstUserMessage) || asStr(raw.label),
     title: asStr(raw.title),
     startedAs: asStr(raw.startedAs) || undefined,
+    recap: normalizeRecap(raw.recap),
+    forkOf: asStr(raw.forkOf) || undefined,
     model: asStr(raw.model) || undefined,
     owner: asStr(raw.owner) || undefined,
     failures: normalizeFailures(raw.failures),

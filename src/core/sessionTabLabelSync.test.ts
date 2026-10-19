@@ -36,6 +36,12 @@ describe('session tab label reconciliation', () => {
     expect(planSessionTabLabelUpdate({ autoLabel: 'Release the project' }, 'Release the project')).toBeUndefined();
   });
 
+  test('a tab showing the generated title cut to its 34-character cap restores as automatic, not manual', () => {
+    const autoLabel = 'Please tell me what is the main progress that we have made';
+    expect(restoredSessionTabLabels('Please tell me what is the main…', { autoLabel })).toEqual({ manualLabel: undefined, autoLabel });
+    expect(restoredSessionTabLabels('Ship blocker', { autoLabel })).toEqual({ manualLabel: 'Ship blocker', autoLabel });
+  });
+
   test('restores a generated title as automatic rather than manual', () => {
     expect(restoredSessionTabLabels('Release the project', {
       autoLabel: 'Release the project',

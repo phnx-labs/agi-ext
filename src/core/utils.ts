@@ -332,6 +332,21 @@ export function presentableLabel(rawLabel: string | null | undefined): string | 
   return cleaned;
 }
 
+/** The longest session name an editor tab shows (owner video, 2026-10-18). */
+const TAB_NAME_MAX = 34;
+
+/**
+ * A session name as its editor tab shows it: whole up to TAB_NAME_MAX characters,
+ * else cut at the last word that fits, with "…" (34 characters at most). The card,
+ * the status bar and the sidebars keep the whole name.
+ */
+export function capTabName(name: string): string {
+  if (name.length <= TAB_NAME_MAX) return name;
+  const room = name.slice(0, TAB_NAME_MAX - 1);
+  const space = room.lastIndexOf(' ');
+  return `${(space > 0 ? room.slice(0, space) : room).replace(/[\s,;:.\-–—]+$/, '')}…`;
+}
+
 /**
  * Build the terminal tab title based on display preferences.
  * Canonical prefix should be one of the KNOWN_PREFIXES.
@@ -350,7 +365,8 @@ export function formatTerminalTitle(prefix: string, options?: TerminalTitleOptio
 
   // The bare `[host/<device>]` fallback is not a real title — drop it so the tab
   // falls back to the agent base (`CC`); the host shows in the status bar.
-  const label = presentableLabel(options?.label);
+  const shown = presentableLabel(options?.label);
+  const label = shown && capTabName(shown);
   if (sessionChunk) {
     if (display?.showLabelsInTitles && label) {
       return `${base} ${sessionChunk} - ${label}`;

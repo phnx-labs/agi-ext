@@ -15,16 +15,19 @@ const byId = (id: string) => ROWS.find((r) => r.sessionId === id)!
 const card = (id: string, cards: CardSettings = DEFAULT_CARD_SETTINGS) => renderSessionCard(byId(id), sessionPlace(byId(id), HERE), NOW, { selected: false, pinned: true, thumbs: [], made: null, here: HERE, cards })
 const between = (html: string, from: string, to: string) => html.slice(html.indexOf(from), to ? html.indexOf(to, html.indexOf(from) + 1) : undefined)
 
-test('only real asks are your move: urgent and high under Needs you now, the rest under Asks, by urgency then longest wait', () => {
+test('only real asks are your move, and they lead the list as red cards: by urgency, then longest wait; no Asks group of their own', () => {
   const html = list()
-  const now = between(html, '<div class="pinned now">', '<div class="pinned">')
-  const asks = between(html, '<div class="pinned">', '<section')
-  expect(now).toContain('<div class="ph">Needs you now <span class="n">2</span></div>')
-  expect(now.indexOf('data-session="9b1f0c2e-publish"')).toBeLessThan(now.indexOf('data-session="51ac77d0-secrets"'))
-  // Normal: the stall (33 min) before the question (4 min); then low.
-  expect(asks).toContain('<div class="ph">Asks <span class="n">3</span></div>')
-  const at = (id: string) => asks.indexOf(`data-session="${id}"`)
-  expect([at('3f9e2b10-stall'), at('e4d2a913-cards'), at('77c0d1aa-copy')].every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
+  expect(html).not.toContain('class="pinned')
+  expect(html).not.toContain('Needs you now')
+  // Flat, the order is plain: urgent, high, then normal (the 33 min stall before the 4 min question), then low.
+  const flat = renderSessions(ROWS, NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, group: 'none' } })
+  const at = (id: string) => flat.indexOf(`data-session="${id}"`)
+  const order = ['9b1f0c2e-publish', '51ac77d0-secrets', '3f9e2b10-stall', 'e4d2a913-cards', '77c0d1aa-copy', 'run-1'].map(at)
+  expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
+  expect(flat).toMatch(/class="card st-asks[^"]*"[^>]*data-session="9b1f0c2e-publish"/)
+  // Grouped, an ask leads its own group: the tab here asking is first in Open tabs.
+  const open = between(html, 'data-group="here"', '</section>')
+  expect(open.indexOf('data-session="51ac77d0-secrets"')).toBeLessThan(open.indexOf('data-session="run-1"'))
   // The badge counts the five asks, never an idle turn or a review.
   expect(sessionCount(ROWS, HERE).asks).toBe(5)
 })
