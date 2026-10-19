@@ -4,6 +4,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.415] - 2026-10-19
+
+- An idle session whose done-check is unchecked reads plain Idle again; only "✓ Done" and
+  "Not done" take Idle's place. "Unverified" is gone from the cards, the pinned card and the
+  Active Session sidebar.
+
 ## [0.9.414] - 2026-10-19
 
 - The tab in front keeps its card in Open tabs, with the gold selected rail, as well as on the

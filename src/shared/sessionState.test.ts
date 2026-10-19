@@ -107,7 +107,7 @@ test('the ⌘K activity line folds the row histogram into block characters scale
   expect(sparkline(Array.from({ length: 48 }, () => ({ tools: 0 })))).toBe('')
 })
 
-test('the done verdict takes an idle session\'s state word: ✓ Done, Not done with its gaps, Unverified; every other state keeps its own word', () => {
+test('the done verdict takes an idle session\'s state word: ✓ Done, Not done with its gaps; unchecked reads plain Idle; every other state keeps its own word', () => {
   const at = '2026-10-18T20:00:00Z';
   const done = { state: 'done' as const, gaps: [], at };
   const open = { state: 'open' as const, gaps: ['open-pr', 'delivery', 'new-gap'], at };
@@ -115,7 +115,7 @@ test('the done verdict takes an idle session\'s state word: ✓ Done, Not done w
   expect(verdictChipOf('idle', done)).toEqual({ tone: 'ok', word: '✓ Done', why: 'Idle · its done-check passed' });
   // Each gap in words; one this version does not know as the CLI wrote it.
   expect(verdictChipOf('idle', open)).toEqual({ tone: 'bad', word: 'Not done', why: 'Idle · not done: a PR it opened is still open; merge, release or install not verified; new-gap' });
-  expect(verdictChipOf('idle', unchecked)).toMatchObject({ tone: 'caption', word: 'Unverified' });
+  expect(verdictChipOf('idle', unchecked)).toBeNull();
   for (const st of ['working', 'waiting', 'unknown', 'asks', 'stuck', 'review', 'ended'] as const) expect(verdictChipOf(st, done)).toBeNull();
   expect(verdictChipOf('idle', undefined)).toBeNull();
   expect(verdictChipOf('idle', null)).toBeNull();

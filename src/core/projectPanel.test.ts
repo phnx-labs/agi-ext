@@ -566,7 +566,10 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   expect(worded).not.toContain('class="pill')
   expect(worded.match(/vchip/g)?.length).toBe(1)
   expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'done', gaps: [], at } }))).toContain('<span class="vchip v-ok" title="Idle · its done-check passed">✓ Done</span>')
-  expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'unchecked', gaps: [], at } }))).toContain('<span class="vchip v-caption"')
+  // Unchecked: plain Idle, exactly as with no verdict (owner, 2026-10-19 2:23 AM).
+  const unchecked = card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'unchecked', gaps: [], at } }))
+  expect(unchecked).not.toContain('vchip')
+  expect(unchecked).toBe(card(row({ phase: 'idle', liveStatus: 'idle' })))
   // Working, asking, or no verdict on the row: the card as before.
   expect(card(row({ phase: 'running', liveStatus: 'running', doneVerdict: open }))).not.toContain('vchip')
   expect(card(row({ phase: 'waiting', liveStatus: 'input_required', doneVerdict: open, attention: { key: 'k', kind: 'question', state: 'open', question: { text: 'Ship?' } } }))).not.toContain('vchip')
