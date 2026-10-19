@@ -25,6 +25,7 @@ function tab() {
   const t = {
     webview: webview(), visible: true, title: '', revealed: 0,
     reveal() { t.revealed++; },
+    viewState: state.fire,
     onDidChangeViewState: (l: Listener) => state.event(l),
     onDidDispose: dispose.event,
     dispose: () => dispose.fire(),
@@ -34,6 +35,7 @@ function tab() {
 
 const commands = new Map<string, () => unknown>();
 const ran: string[] = [];
+let failMove = false;
 let serializer: { deserializeWebviewPanel(t: unknown): Promise<void> } | undefined;
 const created: ReturnType<typeof tab>[] = [];
 mock.module('vscode', () => vscodeDouble({
@@ -43,7 +45,7 @@ mock.module('vscode', () => vscodeDouble({
   },
   commands: {
     registerCommand: (id: string, cb: () => unknown) => { commands.set(id, cb); return { dispose() { /* noop */ } }; },
-    executeCommand: async (id: string) => { ran.push(id); },
+    executeCommand: async (id: string) => { ran.push(id); if (failMove) throw new Error('no window'); },
   },
 }));
 
@@ -109,4 +111,39 @@ test('a description names the project in the tab title', async () => {
   await commands.get('test.popOut')!();
   (drawn[1]!.host as { description?: string }).description = 'rush';
   expect(created[0]!.title).toBe('Project · rush');
+});
+
+test('a popped-out tab reports visibility only when it shows or hides, not on every focus change', async () => {
+  created.length = 0;
+  const { drawn } = setup();
+  await commands.get('test.popOut')!();
+  const t = created[0]!;
+  let calls = 0;
+  (drawn[1]!.host as { onDidChangeVisibility: (l: () => void) => unknown }).onDidChangeVisibility(() => { calls++; });
+  t.viewState(); t.viewState();
+  expect(calls).toBe(0);
+  t.visible = false; t.viewState();
+  t.visible = true; t.viewState(); t.viewState();
+  expect(calls).toBe(2);
+});
+
+test('when the editor cannot open a window, the panel goes back to its sidebar', async () => {
+  created.length = 0; failMove = true;
+  const { drawn, view } = setup();
+  await commands.get('test.popOut')!();
+  failMove = false;
+  expect(drawn.at(-1)!.host).toBe(view);
+  expect(drawn.at(-1)!.stopped).toBe(false);
+});
+
+test('a second restored window replaces the first, which closes', async () => {
+  const { drawn } = setup();
+  const first = tab(); const second = tab();
+  let firstClosed = false;
+  first.onDidDispose(() => { firstClosed = true; });
+  await serializer!.deserializeWebviewPanel(first);
+  await serializer!.deserializeWebviewPanel(second);
+  expect(firstClosed).toBe(true);
+  expect(drawn.at(-1)!.host.webview).toBe(second.webview);
+  expect(drawn.at(-1)!.stopped).toBe(false);
 });

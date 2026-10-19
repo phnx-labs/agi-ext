@@ -28,7 +28,12 @@ function tabHost(tab: vscode.WebviewPanel, title: string): PanelHost {
     get description() { return description; },
     set description(d) { description = d; tab.title = d ? `${title} · ${d}` : title; },
     show: (preserveFocus) => tab.reveal(undefined, preserveFocus),
-    onDidChangeVisibility: (listener, thisArgs, disposables) => tab.onDidChangeViewState(() => listener.call(thisArgs), undefined, disposables),
+    // A tab's view state also changes when it gains or loses focus; a view's
+    // visibility event fires only when it shows or hides, so pass only that.
+    onDidChangeVisibility: (listener, thisArgs, disposables) => {
+      let shown = tab.visible;
+      return tab.onDidChangeViewState(() => { if (tab.visible !== shown) { shown = tab.visible; listener.call(thisArgs); } }, undefined, disposables);
+    },
   };
 }
 
@@ -74,11 +79,15 @@ export class PanelDock {
   private async popOut(): Promise<void> {
     if (this.tab) { this.tab.reveal(); return; }
     this.adopt(vscode.window.createWebviewPanel(this.o.viewType, this.o.title, vscode.ViewColumn.Active, { retainContextWhenHidden: true }));
-    await vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow');
+    // If the editor cannot open a window, the panel goes back where it was.
+    await Promise.resolve(vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow')).catch(() => this.tab?.dispose());
   }
 
   private adopt(tab: vscode.WebviewPanel): void {
+    // Two restored windows, or a restore racing a press: the panel has one tab.
+    const previous = this.tab;
     this.tab = tab;
+    previous?.dispose();
     tab.title = this.o.title;
     this.drawInto(tabHost(tab, this.o.title));
     if (this.sidebar) this.showPlaceholder(this.sidebar);
