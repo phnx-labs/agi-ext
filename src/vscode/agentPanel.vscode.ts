@@ -35,6 +35,7 @@ import * as os from 'os';
 import { displayPath } from '../core/displayPath';
 import * as terminals from './terminals.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
+import { getExpandedAgentName } from '../core/utils';
 import { harnessLogoCss } from './theme.vscode';
 import { openWebviewUrl } from './webviewSecurity';
 import { getNonce } from './htmlReader';
@@ -882,7 +883,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       hasSubject: true,
       subjectSource: subject.source,
       terminalId: entry?.id,
-      agentName: entry?.agentConfig?.title,
+      agentName: entry?.agentConfig ? getExpandedAgentName(entry.agentConfig.title) : undefined,
       agentType: entry?.agentType,
       agentLogo: BUILT_IN_AGENTS.find((a) => a.prefix.toUpperCase() === (entry?.agentConfig?.prefix ?? '').toUpperCase())?.key,
       sessionChunk,
@@ -964,7 +965,7 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
           snapshot.agentType = snapshot.agentType || live.agentType;
           const def = BUILT_IN_AGENTS.find((a) => a.key === live.agentType);
           if (def) {
-            snapshot.agentName = snapshot.agentName || def.title;
+            snapshot.agentName = snapshot.agentName || getExpandedAgentName(def.title);
             snapshot.agentLogo = snapshot.agentLogo || def.key;
           }
           if (!snapshot.cwd && live.cwd) {
@@ -1136,7 +1137,7 @@ function renderTerminalCard(s) {
     : '';
   // The title is WHAT the session is (the host's one name for it); the harness icon
   // already says which agent it is.
-  const title = s.title || s.agentName || 'Agent';
+  const title = s.title || 'New session';
   let usageBadge = '';
   if (s.usageStatus === 'out_of_credits') {
     usageBadge = '<span class="usage-badge usage-out">⚠ out of credits</span>';
