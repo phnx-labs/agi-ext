@@ -50,8 +50,16 @@ describe('mergeTurns', () => {
   test('history first, then live turns it does not hold; a turn a Confirm started draws nothing of its own', () => {
     const history: LeadHistoryTurn[] = [{ turn: 't_0', ask: 'old', text: 'Old answer.', summary: 'Old answer.', refs: [], tools: [] }];
     const asked = newTurn('new', 1);
-    const confirmed = newTurn('', 2);
+    const confirmed = { ...newTurn('', 2), text: 'Stopped it.', finished: true };
     const again = { ...newTurn('old', 3), turn: 't_0' };
     expect(mergeTurns(history, [again, asked, confirmed]).map((t) => t.ask)).toEqual(['old', 'new']);
+  });
+
+  test('a Confirm turn that failed, or that holds another action, still draws', () => {
+    const failed = { ...newTurn('', 1), error: 'confirm token c_1 expired', finished: true };
+    const holding = newTurn('', 2);
+    holding.confirms.push({ token: 'c_2', action: 'send', label: 'Message “x”', state: 'open' });
+    const turns = mergeTurns([], [failed, holding]);
+    expect(turns.map((t) => [t.error ?? '', t.confirms.length])).toEqual([['confirm token c_1 expired', 0], ['', 1]]);
   });
 });

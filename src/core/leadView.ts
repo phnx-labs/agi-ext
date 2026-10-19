@@ -35,11 +35,15 @@ const fromLive = (t: LeadTurn, i: number): TabTurn => ({
 });
 
 /** History first, then this window's turns that history does not already hold. A turn a
- *  Confirm started (no words of yours) folds into the row it confirmed, so it draws nothing. */
+ *  Confirm started (no words of yours) folds into the row it confirmed, which turns done or
+ *  failed; it draws only when it failed or holds another action that needs its own ✓. */
 export function mergeTurns(history: LeadHistoryTurn[], live: LeadTurn[]): TabTurn[] {
   const out = history.map(fromHistory);
   const seen = new Set(history.map((h) => h.turn).filter(Boolean));
-  live.forEach((t, i) => { if (t.ask && (!t.turn || !seen.has(t.turn))) out.push(fromLive(t, i)); });
+  live.forEach((t, i) => {
+    if (!t.ask && !t.error && !t.confirms.length) return;
+    if (!t.turn || !seen.has(t.turn)) out.push(fromLive(t, i));
+  });
   return out;
 }
 
