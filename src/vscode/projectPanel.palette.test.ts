@@ -29,6 +29,11 @@ const { registerProjectPanel } = await import('./projectPanel.vscode');
 const terminals = await import('./terminals.vscode');
 const { sessionPresentationStore } = await import('../core/sessionPresentationStore');
 const { getDefaultSettings } = await import('../core/settings');
+const { normalizeHost } = await import('../shared/project');
+const os = await import('os');
+// The rows run on the machine the test runs on, so they read the same on every box: the
+// stream's local label for the host, and this machine's own name on the row.
+const ME = normalizeHost(os.hostname());
 
 const memento = () => { const m = new Map<string, unknown>(); return { get: (k: string, d?: unknown) => (m.has(k) ? m.get(k) : d), update: (k: string, v: unknown) => { m.set(k, v); return Promise.resolve(); } }; };
 const globalState = memento();
@@ -55,8 +60,8 @@ provider!.resolveWebviewView({
 sessionPresentationStore.apply({
   v: 1, type: 'reset', streamId: 'palette', sequence: 1, capturedAt: 100, scope: 'zion',
   agents: [
-    { rowKey: 'a', sourceDevice: 'zion', machine: 'zion', sessionId: 'here-1', kind: 'claude', title: 'Tab here', startedAtMs: 100, status: 'idle', confirmedProject: 'agi' },
-    { rowKey: 'b', sourceDevice: 'zion', machine: 'zion', sessionId: 'other-project', kind: 'codex', title: 'Another project', startedAtMs: 100, status: 'idle', confirmedProject: 'rush' },
+    { rowKey: 'a', sourceDevice: ME, machine: ME, sessionId: 'here-1', kind: 'claude', title: 'Tab here', startedAtMs: 100, status: 'idle', confirmedProject: 'agi' },
+    { rowKey: 'b', sourceDevice: ME, machine: ME, sessionId: 'other-project', kind: 'codex', title: 'Another project', startedAtMs: 100, status: 'idle', confirmedProject: 'rush' },
   ],
   attention: [],
 } as never);
@@ -80,7 +85,8 @@ test('Search Sessions shows the panel on Sessions and sends every session the st
   // The store is the process's one store, so other files' rows may be there too.
   expect(titles[0]).toBe('Another project');
   expect(titles).toContain('Tab here');
-  expect(palette.html).toContain('data-session="here-1" data-host="zion" data-here="1"');
+  expect(palette.html).toContain('data-session="here-1" data-host="this-mac" data-here="1"');
+  expect(palette.html).toContain(`<span class="kw">${ME.replace(/^yosemite-/, '')}</span>`);
   // Nothing was read: no command but the view's own.
   expect(ran).toEqual([]);
 });
