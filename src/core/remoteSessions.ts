@@ -399,6 +399,8 @@ export interface RemoteSession {
   /** Attachment refs/names from the CLI payload, normalized for thumbnail + preview. */
   attachments: RemoteAttachment[];
   prUrl: string | null;
+  /** Every PR the session opened, oldest first; the CLI sends `prs` only when there is more than one. */
+  prUrls: string[];
   ticket: string | null;
   /** Team name this session SPAWNED via `agents teams create/add`; '' when none. */
   spawnedTeam: string;
@@ -603,6 +605,7 @@ export interface RawActiveSession {
   files?: unknown;
   attachments?: unknown[];
   pr?: ({ url?: string; number?: number } & Record<string, unknown>) | null;
+  prs?: unknown[];
   worktree?: { slug?: string; path?: string; branch?: string } | null;
   ticket?: string | { id?: string; url?: string } | null;
   /** Team the session SPAWNED, from the CLI session scan. */
@@ -1211,6 +1214,7 @@ export function normalizeActiveSession(
     // pr is a { url, number } object on the CLI payload; keep top-level prUrl as a
     // fallback for older shapes.
     prUrl: asStr(raw.prUrl) || asStr(raw.pr?.url) || null,
+    prUrls: Array.isArray(raw.prs) ? raw.prs.map((p) => asStr((p as { url?: unknown } | null)?.url)).filter(Boolean) : [],
     ticket: ticketMatch,
     spawnedTeam: asStr(raw.spawnedTeam),
     // The remote branch lives at worktree.branch; the top-level `branch` is usually

@@ -55,7 +55,8 @@ export function sessionCardFields(
     const page = renderedHtmlCandidates(live.planFile).find((p) => artifacts.some((a) => a.path === p)) ?? live.planFile;
     fields.plan = { path: page, display: displayPath(page, pathOptions) };
   }
-  if (live.prUrl) fields.pullRequests = extractPrUrls([live.prUrl]);
+  const prs = extractPrUrls([...live.prUrls, live.prUrl ?? '']);
+  if (prs.length) fields.pullRequests = prs;
   const linear = extractLinearTicketId(live.topic) || extractLinearTicketId(live.lastResponse);
   if (linear) fields.linearIssue = linear;
   if (live.attention && live.attention.state === 'open') {

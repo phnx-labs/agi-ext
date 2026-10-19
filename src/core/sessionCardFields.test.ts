@@ -34,6 +34,12 @@ describe('sessionCardFields', () => {
     expect(card.needsYou).toBeUndefined();
   });
 
+  test('a session that opened several PRs lists each, oldest first', () => {
+    const prs = [{ url: 'https://github.com/acme/atlas/pull/509', number: 509 }, { url: 'https://github.com/acme/atlas/pull/511', number: 511 }];
+    const card = sessionCardFields(normalizeActiveSession(raw({ prs }), 'this-mac', 0), { sessionId: 's-1', home: HOME });
+    expect(card.pullRequests?.map((p) => p.number)).toEqual([509, 511]);
+  });
+
   test('a remote session gets no preview URI: its files open by a copy on click', () => {
     const live = normalizeActiveSession(raw(), 'yosemite-m2', 0);
     const card = sessionCardFields(live, { sessionId: 's-1', home: HOME, remoteDevice: 'yosemite-m2', previewUri: preview });
