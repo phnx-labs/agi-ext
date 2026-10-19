@@ -40,10 +40,12 @@ export function openWebviewUrl(rawUrl: unknown, external = false): Promise<void>
   return openLink(rawUrl as string, external);
 }
 
-/** Web links in an agent tab open the way the extension's own links do: a click with the
- *  terminal's link modifier opens the page in the integrated browser. Extension link providers
- *  run ahead of the editor's own URL detector, so ours wins on the same text. Plain shells, and
- *  every tab while `agents.links.openIn` is `browser`, keep the editor's own handling. */
+/** Web links in a tab the extension opened (agents and its shell tabs) open the way the
+ *  extension's own links do: a click with the terminal's link modifier opens the page in the
+ *  integrated browser. Extension link providers run ahead of the editor's own URL detector,
+ *  so ours wins on the same text. Terminals the editor opened, and every tab while
+ *  `agents.links.openIn` is `browser`, keep the editor's own handling. Those tabs start with
+ *  `plainLinks` (see `openTrackedTab`), since an OSC 8 hyperlink never reaches a provider. */
 export function registerTerminalLinks(): vscode.Disposable {
   const provider: vscode.TerminalLinkProvider<vscode.TerminalLink & TextLink> = {
     provideTerminalLinks(context) {
