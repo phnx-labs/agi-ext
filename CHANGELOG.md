@@ -4,6 +4,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.420] - 2026-10-19
+
+- When you ask the Lead something, the Lead tab scrolls down to your question and its answer
+  as before. It no longer stays put and leaves the newest turn hidden under the ask box
+  whenever the question plus its "Working…" card is taller than a few lines. If you have
+  scrolled up to read, it still leaves you where you are.
+
 ## [0.9.419] - 2026-10-19
 
 - A link an agent prints in its tab now opens as a tab in the editor's browser, like the PRs
