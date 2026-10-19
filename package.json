@@ -345,6 +345,10 @@
         "title": "Agents: Search Sessions"
       },
       {
+        "command": "agents.nextNeedsYou",
+        "title": "Agents: Next Agent That Needs You"
+      },
+      {
         "command": "agents.detach",
         "title": "Agents: Detach (Send to Background)"
       },

@@ -12,6 +12,7 @@ import { ticketFace } from './ticketFaces';
 import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
+import { frontNav, nextNeedsYou, type FrontMemory, type FrontNav, type FrontStep } from './frontNav';
 import { resolveProject } from '../shared/project';
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
@@ -637,6 +638,8 @@ export interface SessionListOptions {
   cards?: CardSettings;
   /** The pinned front card's Made shelf (`madeShelf`, src/core/sessionCardFields.ts). */
   shelfFor?: (s: SessionLike) => object | null;
+  /** This window's front-tab history, which Next-that-needs-you reads (`FrontHistory`). */
+  memory?: FrontMemory;
 }
 
 const ACT_ICON = {
@@ -828,19 +831,14 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
   return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button>${close}</div></details>`;
 }
 
-/** The tabs ‹ and › front from the pinned card: the session tab before and after it
- *  in this window's tab order, wrapping around. */
-export interface FrontNav {
-  prev?: { sessionId: string; host: string; label: string };
-  next?: { sessionId: string; host: string; label: string };
-}
-
-/** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row. */
+/** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row.
+ *  Settings > ‹ › Off draws the row without arrows. In Next-that-needs-you, ‹ is Back. */
 function navButtons(nav: FrontNav | undefined, where: string, state: string): string {
-  const btn = (dir: 'prev' | 'next', to: FrontNav['prev']) => to
-    ? `<button class="fc-step" data-front-step="${dir}" data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host)}" title="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}" aria-label="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}">${dir === 'prev' ? '‹' : '›'}</button>`
-    : `<button class="fc-step" disabled aria-label="${dir === 'prev' ? 'No previous tab' : 'No next tab'}">${dir === 'prev' ? '‹' : '›'}</button>`;
-  return `<div class="fc-nav">${btn('prev', nav?.prev)}<span class="thistab" title="${escapeHtml(state)}">This tab${where ? ` · ${where}` : ''}</span>${btn('next', nav?.next)}</div>`;
+  const btn = (dir: 'prev' | 'next', to: FrontStep | undefined) => to?.sessionId
+    ? `<button class="fc-step" data-front-step="${dir}"${dir === 'prev' && nav?.mode === 'needs' ? ' data-back' : ''} data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host ?? '')}" title="${escapeHtml(to.tip)}" aria-label="${escapeHtml(to.tip)}">${dir === 'prev' ? '‹' : '›'}</button>`
+    : `<button class="fc-step" disabled title="${escapeHtml(to?.tip ?? '')}" aria-label="${escapeHtml(to?.tip ?? '')}">${dir === 'prev' ? '‹' : '›'}</button>`;
+  const arrows = nav && nav.mode !== 'off';
+  return `<div class="fc-nav${arrows ? '' : ' bare'}">${arrows ? btn('prev', nav.prev) : ''}<span class="thistab" title="${escapeHtml(state)}">This tab${where ? ` · ${where}` : ''}</span>${arrows ? btn('next', nav.next) : ''}</div>`;
 }
 
 /** Claude's recap on the front card, with how old it is; dimmed with "before your
@@ -930,7 +928,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const preview = ask
     || (said ? `<div class="line said">${escapeHtml(said)}</div>`
       : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
-  const started = s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(s.startedAs)}">started: ${escapeHtml(plain(s.startedAs))}</div>` : '';
+  // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
+  const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
   // Where it runs goes with Machine; its background work with Description.
   const meta = pill + (cards.description ? pendChips : '') + (cards.machine ? repoTag : '');
   const text = cards.description
@@ -1007,21 +1006,40 @@ function menuHtml(p: SessionListPrefs): string {
   </div>`;
 }
 
-/** The Sessions tab: a header with its controls, then what needs you, pinned above
- *  every grouping: Needs you now (urgent and high asks), Asks (normal and low), each
- *  by urgency, then longest wait. Then Ready for review, Idle (finished turns that
- *  asked nothing, folded by default), and the viewer's grouping of the rest.
+/** What the list draws before grouping: the viewer's Show choices, then ☀ only. */
+function listedSessions(rows: SessionLike[], opts: SessionListOptions): { row: SessionLike; place: SessionPlace }[] {
+  const visible = visibleSessions(rows, opts.here, opts.prefs);
+  return opts.prefs.todayOnly && opts.todayId ? visible.filter(({ row }) => onTicket(row, opts.todayId)) : visible;
+}
+
+const blockedBy = (opts: SessionListOptions) => (r: SessionLike) => !!opts.blockedIds?.has(r.sessionId.replace(/^session_/, ''));
+
+/** This window's session tabs, in tab order: what the arrows walk. */
+function sessionTabs(all: { row: SessionLike; place: SessionPlace }[]): SessionLike[] {
+  return all.filter((x) => x.place.kind === 'here' && x.row.tabIndex).sort((a, b) => a.row.tabIndex! - b.row.tabIndex!).map((x) => x.row);
+}
+
+/** Agents: Next Agent That Needs You: the session tab › would front in
+ *  Next-that-needs-you, from whatever is in front (a shell or an editor included). */
+export function nextThatNeedsYou(rows: SessionLike[], opts: SessionListOptions & { memory: FrontMemory }): { row: SessionLike; why: string } | undefined {
+  return nextNeedsYou(sessionTabs(listedSessions(rows, opts)), opts.frontId, opts.memory, blockedBy(opts));
+}
+
+/** The Sessions tab: a header with its controls, the front tab's card pinned on top,
+ *  then what needs you, Ready for review and Idle, and the viewer's grouping of the rest.
  *  A session with a tab in this window stays in Open tabs, in tab order, working or
- *  finished; only an ask leaves it, for the pinned group where it is answered
- *  (PHNX-4369), so its card and its answer buttons exist once (PHNX-4387). */
+ *  finished, the front one included (with the selected rail), so switching tabs never
+ *  moves or removes a card (owner video, 2026-10-19 1:32 AM). Its answer buttons are
+ *  on the pinned card only, so they exist once (PHNX-4387); the listed copy shows the
+ *  question. An ask leads its own group (PHNX-4369). */
 export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { here, prefs } = opts;
   const visible = visibleSessions(rows, here, prefs);
   const today = (r: SessionLike) => onTicket(r, opts.todayId);
   const onToday = visible.filter(({ row }) => today(row)).length;
-  const all = prefs.todayOnly && opts.todayId ? visible.filter(({ row }) => today(row)) : visible;
+  const all = listedSessions(rows, opts);
   const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
-  const blocked = (r: SessionLike) => !!opts.blockedIds?.has(r.sessionId.replace(/^session_/, ''));
+  const blocked = blockedBy(opts);
   const ball = (r: SessionLike) => (blocked(r) ? 'move' : ballOf(sessionStateOf(r)));
   const urgency = (r: SessionLike) => urgencyOf(r.attention?.state === 'open' ? r.attention : null);
   const waitedSince = (r: SessionLike) => { const t = askedAt(r); return Number.isFinite(t) ? t : Infinity; };
@@ -1034,19 +1052,19 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     return [...sorted.filter((x) => ball(x.row) === 'move').sort(yourMove), ...sorted.filter((x) => ball(x.row) !== 'move')];
   };
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
-  // The front tab's session is pinned on top and listed nowhere else (PHNX-4387).
+  // The front tab's session is pinned on top and keeps its own place in the list too.
   const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
   // Open tabs off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
-  const others = all.filter((x) => x !== front && (prefs.showOpen || !tabHere(x) || ball(x.row) === 'move'));
+  const others = all.filter((x) => prefs.showOpen || !tabHere(x) || ball(x.row) === 'move');
   const quiet = (x: { row: SessionLike; place: SessionPlace }) => !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
   const rest = others.filter((x) => !quiet(x));
-  // ‹ and › walk this window's session tabs in tab order, wrapping around.
-  const tabs = all.filter((x) => tabHere(x) && x.row.tabIndex).sort((a, b) => a.row.tabIndex! - b.row.tabIndex!);
-  const at = front ? tabs.indexOf(front) : -1;
-  const navTo = (x: { row: SessionLike } | undefined) => x && x !== front ? { sessionId: x.row.sessionId, host: x.row.host, label: `tab ${x.row.tabIndex} · ${cardTitle(x.row)}` } : undefined;
-  const nav: FrontNav = at < 0 ? {} : { prev: navTo(tabs[(at - 1 + tabs.length) % tabs.length]), next: navTo(tabs[(at + 1) % tabs.length]) };
+  const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
+  const nav = front ? frontNav(cards.arrows, sessionTabs(all), front.row, opts.memory, cardTitle, blocked) : undefined;
+  // The listed copy of the front session asks with its question only: its answers are on the pinned card.
+  const listedCards: CardSettings = { ...cards, asks: cards.asks === 'off' ? 'off' : 'question' };
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, front: !!front && row.sessionId === front.row.sessionId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards, nav, shelf: front && row.sessionId === front.row.sessionId ? opts.shelfFor?.(row) : undefined,
+    selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project,
+    cards: !pinned && front && row.sessionId === front.row.sessionId ? listedCards : cards, nav: pinned ? nav : undefined, shelf: pinned ? opts.shelfFor?.(row) : undefined,
   });
   // The tab already shows the count and the asks badge, so the header carries only its controls.
   const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;

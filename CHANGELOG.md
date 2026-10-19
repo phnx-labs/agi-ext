@@ -4,6 +4,25 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.414] - 2026-10-19
+
+- The tab in front keeps its card in Open tabs, with the gold selected rail, as well as on the
+  pinned card at the top, so switching tabs no longer reorders the list or makes a card vanish.
+  The pinned card carries the answer buttons when that session asks; its listed card shows the
+  question.
+- The Sessions list no longer jumps to the top when you switch tabs. A card you click stays
+  where it was on screen while the pinned card above it changes; a tab brought forward by the
+  arrows, the command or the editor scrolls into view only when none of its cards shows.
+- Settings > Session cards > "‹ › on the pinned card": Tab order (as before), Next that needs
+  you, or Off. In Next that needs you, › goes to an agent asking you that you have not looked at
+  since it asked, then one whose turn finished since you last had it in front, then the other
+  idle tabs in turn, never one that is working; ‹ goes back to the tab you were on, like Back
+  in a browser. Each arrow names its destination on hover.
+- Agents: Next Agent That Needs You does the same from anywhere. It has no default key because
+  Cmd/Ctrl+Shift+R is already Agents: Reload; bind it under Keyboard Shortcuts.
+- Cards no longer show a "started: …" line. Settings > A card shows > First message brings it
+  back, as the faint words alone.
+
 ## [0.9.413] - 2026-10-19
 
 - The Lead is a tab in the Project panel: ✳ Lead, after Sessions, Review and Issues. It is
