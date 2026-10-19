@@ -180,20 +180,28 @@ export interface CardSettings {
   verdict: boolean;
   /** What the session was started with, under the title; off by default (owner video, 2026-10-19 1:32 AM). */
   firstMessage: boolean;
+  /** Starred sessions repeated in a Favorites group under the pinned card (owner video, 2026-10-19 1:42 AM). */
+  favorites: boolean;
+  /** The session list under the pinned card; off leaves the front tab's card alone and ⌘K finds the rest. */
+  list: boolean;
 }
 
 /** The parts a card can leave out, as Settings lists them. */
 export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord', 'verdict', 'firstMessage'] as const;
 
+/** What Sessions lists under the pinned card, as Settings > Session list toggles it. */
+export const LIST_PARTS = ['list', 'favorites'] as const;
+
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
   asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
   description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true, firstMessage: false,
+  favorites: true, list: true,
 };
 
 /** The stored card settings with any value this version does not know read as its default. */
 export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings {
   const d = DEFAULT_CARD_SETTINGS;
-  const part = (k: (typeof CARD_PARTS)[number]) => (typeof v?.[k] === 'boolean' ? v[k] as boolean : d[k]);
+  const part = (k: (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]) => (typeof v?.[k] === 'boolean' ? v[k] as boolean : d[k]);
   return {
     asks: v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
     options: v?.options === 'details' ? 'details' : d.options,
@@ -203,6 +211,7 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     made: v?.made === 'previews' ? 'previews' : d.made,
     arrows: v?.arrows === 'needs' || v?.arrows === 'off' ? v.arrows : d.arrows,
     description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'), firstMessage: part('firstMessage'),
+    favorites: part('favorites'), list: part('list'),
   };
 }
 

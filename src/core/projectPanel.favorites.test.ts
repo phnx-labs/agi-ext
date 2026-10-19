@@ -1,0 +1,95 @@
+// The Sessions list after the owner's 2026-10-19 videos (12:58 and 1:42 AM): ★ favorites
+// on top and still in their own group, a prompt the agent has not answered marked
+// "You:", the pinned title renaming only a Claude tab here, and Settings > Show the
+// session list off leaving the front tab's card alone.
+import { expect, test } from 'bun:test'
+import { DEFAULT_CARD_SETTINGS, cardSettings } from './settings'
+import { DEFAULT_SESSION_PREFS, renderSessions, type SessionHere, type SessionLike } from './projectPanel'
+import { applyPanelSetting, renderPanelSettings } from './panelSettings'
+import { getDefaultSettings } from './settings'
+
+const NOW = Date.parse('2026-10-19T02:00:00Z')
+const HERE: SessionHere = { device: 'zion', localHost: 'this-mac', workspace: 'agents', editor: 'vscodium', editorName: 'VSCodium', icons: {} }
+const row = (o: Partial<SessionLike>): SessionLike => ({
+  sessionId: 's', host: 'this-mac', title: 'T', label: '', topic: '', phase: 'idle', liveStatus: 'idle', lastResponse: '', activity: '',
+  ticket: null, lastActivityMs: NOW - 60_000, confirmedProject: 'agi', agentType: 'claude', ...o,
+})
+const ROWS = [
+  row({ sessionId: 'front', title: 'Front tab', tabHere: true, tabIndex: 1, lastResponse: 'Merged it.' }),
+  row({ sessionId: 'starred', title: 'Starred one', tabHere: true, tabIndex: 2, lastResponse: 'Looking.' }),
+  row({ sessionId: 'asker', title: 'Asks you', tabHere: true, tabIndex: 3, phase: 'waiting', liveStatus: 'waiting',
+    attention: { key: 'k1', kind: 'question', state: 'open', openedAt: new Date(NOW - 30_000).toISOString(), question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }] } }),
+]
+const draw = (o: { favorites?: string[]; cards?: Partial<typeof DEFAULT_CARD_SETTINGS> } = {}) => renderSessions(ROWS, NOW, {
+  selectedId: 'front', frontId: 'front', here: HERE, prefs: DEFAULT_SESSION_PREFS, favorites: new Set(o.favorites ?? []), cards: { ...DEFAULT_CARD_SETTINGS, ...o.cards },
+})
+const sectionOf = (html: string, key: string) => html.slice(html.indexOf(`data-group="${key}"`), html.indexOf('</section>', html.indexOf(`data-group="${key}"`)))
+const ids = (html: string) => [...html.matchAll(/class="card [^"]*"[^>]*data-session="([^"]+)"/g)].map((m) => m[1])
+
+test('☆ sits on every title row; a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
+  const plain = draw()
+  expect(plain).toContain('<button class="star" data-fav="starred" aria-pressed="false" title="Add to Favorites"')
+  expect(plain).not.toContain('data-group="favorites"')
+  const html = draw({ favorites: ['starred', 'asker'] })
+  expect(html).toContain('<button class="star on" data-fav="starred" aria-pressed="true" title="Remove from Favorites"')
+  // Pinned card, then Favorites, then the grouping.
+  expect(html.indexOf('front-pin')).toBeLessThan(html.indexOf('data-group="favorites"'))
+  expect(html.indexOf('data-group="favorites"')).toBeLessThan(html.indexOf('data-group="here"'))
+  const favs = sectionOf(html, 'favorites')
+  expect(favs).toContain('<b>Favorites</b> <span class="n">2</span>')
+  // An ask leads, as in every group; a copy asks with its question only, so its answers exist once.
+  expect(ids(favs)).toEqual(['asker', 'starred'])
+  expect(favs).toContain('Ship it?')
+  expect(favs).not.toContain('data-choice')
+  expect(ids(sectionOf(html, 'here'))).toEqual(['asker', 'front', 'starred'])
+  expect(sectionOf(html, 'here')).toContain('data-choice="y"')
+  // Settings > Favorites group off: the stars stay, the group goes.
+  const off = draw({ favorites: ['starred'], cards: { favorites: false } })
+  expect(off).not.toContain('data-group="favorites"')
+  expect(off).toContain('class="star on" data-fav="starred"')
+})
+
+test('a card whose agent has not spoken yet marks your prompt "You:", on the list and on the pinned card', () => {
+  const quiet = row({ sessionId: 'new', title: 'New one', tabHere: true, tabIndex: 1, phase: 'running', liveStatus: 'running', request: { headline: 'Fix the **login** page' } })
+  const html = renderSessions([quiet], NOW, { selectedId: null, frontId: 'new', here: HERE, prefs: DEFAULT_SESSION_PREFS })
+  expect(html.match(/<div class="line said you"><b>You:<\/b> Fix the login page<\/div>/g)).toHaveLength(2)
+  // Once the agent says something, that is the line, unmarked.
+  const spoke = renderSessions([{ ...quiet, lastResponse: 'On it.' }], NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS })
+  expect(spoke).toContain('<div class="line said">On it.</div>')
+  expect(spoke).not.toContain('You:')
+})
+
+test('the pinned title renames a Claude session with a tab here; any other title says why it cannot', () => {
+  const pinned = (o: Partial<SessionLike>) => {
+    const html = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1, ...o })], NOW, { selectedId: null, frontId: 'p', here: HERE, prefs: DEFAULT_SESSION_PREFS })
+    return html.slice(html.indexOf('front-pin'), html.indexOf('data-group='))
+  }
+  expect(pinned({})).toContain('<span class="ttl rn" data-keep data-ttl="T" data-rename="1" title="T\nClick to rename (Claude /rename)">T</span>')
+  expect(pinned({ agentType: 'codex' })).toContain('data-rename="0" title="T\nCodex has no /rename, so its name comes from the session"')
+  // A listed card's title is never editable.
+  const listed = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1 })], NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS })
+  expect(listed).not.toContain('data-rename')
+})
+
+test('Show the session list off leaves the pinned card and its ask; with no agent tab in front it says where the rest are', () => {
+  const askFront = renderSessions(ROWS, NOW, { selectedId: null, frontId: 'asker', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, list: false } })
+  expect(ids(askFront)).toEqual(['asker'])
+  expect(askFront).toContain('data-choice="y"')
+  expect(askFront).not.toContain('<section')
+  const none = renderSessions(ROWS, NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, list: false } })
+  expect(ids(none)).toEqual([])
+  expect(none).toContain('The session list is off in Settings. ⌘K finds every session.')
+})
+
+test('Settings > Session list: both on by default, each a checkbox that writes its own key', () => {
+  expect(cardSettings(undefined)).toMatchObject({ list: true, favorites: true })
+  expect(cardSettings({ list: false } as never)).toMatchObject({ list: false, favorites: true })
+  const s = getDefaultSettings()
+  expect(applyPanelSetting(s, 'cards.list', false)?.cards).toMatchObject({ list: false, favorites: true })
+  expect(applyPanelSetting(s, 'cards.favorites', 'no')).toBeNull()
+  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧' })
+  expect(html).toContain('<div class="sh">Session list</div>')
+  expect(html).toContain('<b>Show the session list</b>')
+  expect(html).toContain('data-setting="cards.list" checked')
+  expect(html).toContain('data-setting="cards.favorites" checked')
+})

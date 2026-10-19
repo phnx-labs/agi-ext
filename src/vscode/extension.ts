@@ -53,7 +53,6 @@ import {
   getExpandedAgentName,
   getTerminalDisplayInfo,
   parseTerminalName,
-  sanitizeLabel,
   formatTerminalTitle,
   presentableLabel,
   getSessionChunk,
@@ -131,6 +130,7 @@ import { terminalPickFace } from '../core/terminalPicker';
 import * as handoff from '../core/handoff';
 import { decodeInjectQuery, selectInjectTarget } from '../core/inject';
 import { runMonitorHostOnLeader } from '../monitor/host';
+import { renameSession, submitToTui } from './sessionReply';
 
 // Settings types are now imported from ./settings
 // Settings functions are in ./agentSettings.vscode
@@ -1753,21 +1753,6 @@ async function sendCommandWhenReady(
   }
   terminal.sendText(command);
   console.log(`[SEND-CMD] ${elapsed()} sendText returned`);
-}
-
-/**
- * Type each prompt into the agent's TUI and submit it. Ink TUIs (Claude) take
- * `\r` as Enter, and `sendText(text, true)` appends `\n`, which types but does
- * not submit. A multi-line prompt arrives as a bracketed paste that swallows a
- * `\r` sent in the same tick, so Enter follows once the paste is in.
- */
-function submitToTui(terminal: vscode.Terminal, prompts: readonly string[]): void {
-  prompts.forEach((prompt, i) => {
-    setTimeout(() => {
-      terminal.sendText(prompt, false);
-      setTimeout(() => terminal.sendText('\r', false), 300);
-    }, i * 700);
-  });
 }
 
 async function openSingleAgent(
@@ -3557,9 +3542,7 @@ async function renameFrontSession(context: vscode.ExtensionContext): Promise<voi
     prompt: 'Rename this session (Claude /rename)',
     value: liveTitle(entry?.sessionId) ?? entry?.autoLabel ?? '',
   });
-  const name = sanitizeLabel(input?.trim() ?? '');
-  if (!name) return;
-  terminal.sendText(`/rename ${name}`, true);
+  renameSession(terminal, input ?? '');
 }
 
 async function clearActiveTerminal(context: vscode.ExtensionContext) {

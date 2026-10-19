@@ -581,7 +581,7 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   // The pinned card: right after the title, no new row; the gaps are its tooltip and the This tab line's.
   const front = (s: SessionLike) => renderSessions([s], NOW, { selectedId: null, frontId: s.sessionId, here: HERE, prefs: prefs() })
   const pinned = front({ ...idle, tabHere: true, tabIndex: 1 })
-  expect(pinned).toContain('<span class="ttl" title="T">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
+  expect(pinned).toContain('title="T\nThis harness has no /rename, so its name comes from the session">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
   expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items">This tab · 1 · m6 · 5m ago</span>')
   expect(front(row({ sessionId: 'w', tabHere: true, tabIndex: 1 }))).not.toContain('vchip')
 })
