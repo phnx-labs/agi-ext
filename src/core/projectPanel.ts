@@ -1091,8 +1091,11 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
-export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS): { shown: number; asks: number; tabs: number } {
-  const items = here ? visibleSessions(rows, here, prefs) : rows.map((row) => ({ row, place: null as SessionPlace | null }));
+export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS, frontId?: string | null): { shown: number; asks: number; tabs: number } {
+  // What the list draws: with Open tabs off, a tab here counts only while it asks or is the pinned front tab.
+  const items = here
+    ? visibleSessions(rows, here, prefs).filter(({ row, place }) => prefs.showOpen || place.kind !== 'here' || row.sessionId === frontId || ballOf(sessionStateOf(row)) === 'move')
+    : rows.map((row) => ({ row, place: null as SessionPlace | null }));
   return {
     shown: items.filter(({ row }) => sessionStateOf(row) !== 'ended').length,
     asks: items.filter(({ row }) => ballOf(sessionStateOf(row)) === 'move').length,

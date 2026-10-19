@@ -892,11 +892,11 @@ class ProjectPanelController {
     const here = this.here(webview);
     const prefs = this.prefs();
     const subject = currentAgentPanelSubject();
-    const count = sessionCount(rows, here, prefs);
     const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
     const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
     const front = frontTerminal();
     const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
+    const count = sessionCount(rows, here, prefs, frontId);
     return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
   }
 
@@ -1536,6 +1536,8 @@ ${MADE_SCRIPT}
     }
   }
   function choose(tab) {
+    // ⌃2/⌃3 to a tab Settings turned off land on Sessions.
+    if ((tab === 'prs' || tab === 'tickets') && !tabsShown[tab]) tab = 'sessions';
     if (tab === current) return;
     if (current === 'prs' && cancelMerges()) toast('Merge cancelled: you left Review before it started.');
     if (current === 'sessions' && cancelAnswers()) toast('Answer not sent: you left Sessions before it went.');

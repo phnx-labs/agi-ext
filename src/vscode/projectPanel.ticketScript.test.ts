@@ -77,4 +77,8 @@ test('Settings > Tabs hides Review and Issues; Sessions hides only while it show
   expect(hidden()).toBe('sessions:false prs:true tickets:true');
   deliver({ type: 'tabs', prs: true, tickets: false });
   expect(hidden()).toBe('sessions:false prs:false tickets:true');
+  // ⌃3 to Issues, which is off, lands on Sessions.
+  sent.length = 0;
+  deliver({ type: 'choose', tab: 'tickets' });
+  expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
 });
