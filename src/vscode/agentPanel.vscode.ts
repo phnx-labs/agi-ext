@@ -77,6 +77,7 @@ import { blockedUpdate, sessionUpdates, type SessionUpdate } from '../core/sessi
 import { ticketFace, type TicketFace } from '../core/ticketFaces';
 import { dictation } from './dictation.vscode';
 import { frontTerminal, onDidChangeFrontTab } from './frontTab.vscode';
+import { PanelDock, type PanelHost } from './panelDock.vscode';
 
 /** Where the CLI materializes pasted images; the only image root the webview may read. */
 const ATTACHMENT_CACHE_DIR = path.join(os.homedir(), '.agents', '.cache', 'attachments');
@@ -391,7 +392,8 @@ export function currentAgentPanelSubject():
 }
 
 class AgentPanelProvider implements vscode.WebviewViewProvider {
-  private view: vscode.WebviewView | undefined;
+  private view: PanelHost | undefined;
+  readonly dock = new PanelDock({ viewType: 'agents.activeSession', command: 'agents.activeSession.popOut', title: 'Active Session', attach: (host) => this.attach(host) });
   private snapshot: PanelSnapshot = { hasTerminal: false };
   // IN-FLIGHT GUARD (#71): overlapping refreshes (4s poll racing an event-driven
   // refresh, or a slow local-fallback `agents view`) coalesce onto one running
@@ -431,17 +433,18 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     }, 250);
   }
 
-  resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
-  ): void | Thenable<void> {
-    this.view = webviewView;
-    // Each fresh resolve gets a fresh iframe — its listener has not attached
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.dock.resolveSidebar(webviewView);
+  }
+
+  /** Draws the panel into the sidebar view or the tab it popped out into. */
+  private attach(host: PanelHost): vscode.Disposable {
+    this.view = host;
+    // Each fresh host gets a fresh iframe — its listener has not attached
     // yet, so any cached "ready" state from a previous mount is invalid.
     this.webviewReady = false;
 
-    webviewView.webview.options = {
+    host.webview.options = {
       enableScripts: true,
       // Pasted images live in the CLI's attachment cache; artifact thumbnails are
       // images under home that the stream row names. Roots are fixed here because
@@ -449,31 +452,35 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'assets'), vscode.Uri.file(ATTACHMENT_CACHE_DIR), vscode.Uri.file(os.homedir())],
     };
 
-    webviewView.webview.html = this.renderShell(webviewView.webview);
+    host.webview.html = this.renderShell(host.webview);
 
-    webviewView.webview.onDidReceiveMessage((msg) => this.handleMessage(msg));
+    const listeners = [
+      host.webview.onDidReceiveMessage((msg) => this.handleMessage(msg)),
+      host.onDidChangeVisibility(() => {
+        this.visible = host.visible;
+        // A visible active-session sidebar is demand for the canonical session
+        // stream (PHNX-3939) even with no terminals in this window.
+        sessionStreamDemand.setSidebarVisible(host.visible);
+        if (host.visible) void this.refresh();
+      }),
+    ];
 
-    webviewView.onDidChangeVisibility(() => {
-      this.visible = webviewView.visible;
-      // A visible active-session sidebar is demand for the canonical session
-      // stream (PHNX-3939) even with no terminals in this window.
-      sessionStreamDemand.setSidebarVisible(webviewView.visible);
-      if (webviewView.visible) void this.refresh();
-    });
-
-    webviewView.onDidDispose(() => {
-      this.disposePlanWatcher();
-      if (this.readyFallbackTimer) { clearTimeout(this.readyFallbackTimer); this.readyFallbackTimer = undefined; }
-      this.view = undefined;
-      this.visible = false;
-      sessionStreamDemand.setSidebarVisible(false);
-    });
-
-    this.visible = webviewView.visible;
-    sessionStreamDemand.setSidebarVisible(webviewView.visible);
+    this.visible = host.visible;
+    sessionStreamDemand.setSidebarVisible(host.visible);
     void this.refresh();
     // Guarantee a paint even if the webview's 'ready' handshake is lost.
     this.scheduleReadyFallback();
+
+    return {
+      dispose: () => {
+        for (const l of listeners) l.dispose();
+        this.disposePlanWatcher();
+        if (this.readyFallbackTimer) { clearTimeout(this.readyFallbackTimer); this.readyFallbackTimer = undefined; }
+        this.view = undefined;
+        this.visible = false;
+        sessionStreamDemand.setSidebarVisible(false);
+      },
+    };
   }
 
   private async handleMessage(msg: any): Promise<void> {
@@ -2173,6 +2180,7 @@ export function registerAgentPanel(context: vscode.ExtensionContext): AgentPanel
       webviewOptions: { retainContextWhenHidden: true },
     })
   );
+  provider.dock.register(context);
 
   // Re-render on terminal lifecycle events. refresh() -> buildSnapshot() spawns
   // git probes, so a burst of events — e.g. clicking

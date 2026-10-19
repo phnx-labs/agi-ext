@@ -20,6 +20,7 @@ const win: {
   onDidCloseTerminal: (cb: () => void) => { dispose(): void };
   onDidOpenTerminal: (cb: () => void) => { dispose(): void };
   registerWebviewViewProvider: (id: string, provider: unknown, opts?: unknown) => { dispose(): void };
+  registerWebviewPanelSerializer: () => { dispose(): void };
   createOutputChannel: (name: string) => unknown;
 } = {
   activeTerminal: undefined,
@@ -29,6 +30,7 @@ const win: {
   onDidCloseTerminal: () => ({ dispose() { /* noop */ } }),
   onDidOpenTerminal: () => ({ dispose() { /* noop */ } }),
   registerWebviewViewProvider: () => ({ dispose() { /* noop */ } }),
+  registerWebviewPanelSerializer: () => ({ dispose() { /* noop */ } }),
   createOutputChannel: () => ({ appendLine() { /* noop */ }, dispose() { /* noop */ } }),
 };
 
@@ -52,6 +54,7 @@ mock.module('vscode', () => vscodeDouble({
     onDidChange() { /* noop */ }, onDidCreate() { /* noop */ }, onDidDelete() { /* noop */ }, dispose() { /* noop */ },
   }) },
   commands: {
+    registerCommand: () => ({ dispose() { /* noop */ } }),
     executeCommand: (...args: unknown[]) => {
       commandCalls.push(args);
       return Promise.resolve(args[0] === 'agents.resumeSession'

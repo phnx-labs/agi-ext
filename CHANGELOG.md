@@ -4,6 +4,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [Unreleased]
+
+- The Project panel and the Active Session sidebar each have Move into New Window in their
+  title bar, so either can sit on another monitor (owner, 2026-10-18). Its sidebar shows
+  Bring it back here meanwhile, closing the window puts the panel back, and the window
+  comes back after a restart.
+
 ## [0.9.407] - 2026-10-17
 
 The owner's two videos from 2026-10-17 (3:08 and 4:39 AM) and the 5:18 AM screenshot, built from

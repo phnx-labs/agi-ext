@@ -695,6 +695,18 @@
         "title": "Talk (start or stop the microphone)",
         "category": "Lead",
         "icon": "$(mic)"
+      },
+      {
+        "command": "agents.activeSession.popOut",
+        "title": "Move into New Window",
+        "category": "Agents: Active Session",
+        "icon": "$(multiple-windows)"
+      },
+      {
+        "command": "agents.project.popOut",
+        "title": "Move into New Window",
+        "category": "Agents: Project",
+        "icon": "$(multiple-windows)"
       }
     ],
     "configuration": {
@@ -881,6 +893,16 @@
           "command": "agents.project.settings",
           "when": "view == agentsProject.panel",
           "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.popOut",
+          "when": "view == agentsProject.panel",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agents.activeSession.popOut",
+          "when": "view == agentsPanel.terminal",
+          "group": "navigation@1"
         }
       ]
     },

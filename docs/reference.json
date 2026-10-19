@@ -3,10 +3,10 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 121,
+    "commands": 123,
     "settings": 10,
     "keybindings": 52,
-    "menuItems": 17,
+    "menuItems": 19,
     "views": 2,
     "viewContainers": 2,
     "customEditors": 2,
@@ -589,6 +589,18 @@
         "title": "Talk (start or stop the microphone)",
         "category": "Lead",
         "icon": "$(mic)"
+      },
+      {
+        "command": "agents.activeSession.popOut",
+        "title": "Move into New Window",
+        "category": "Agents: Active Session",
+        "icon": "$(multiple-windows)"
+      },
+      {
+        "command": "agents.project.popOut",
+        "title": "Move into New Window",
+        "category": "Agents: Project",
+        "icon": "$(multiple-windows)"
       }
     ],
     "configuration": {
@@ -1089,6 +1101,16 @@
           "command": "agents.project.settings",
           "when": "view == agentsProject.panel",
           "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.popOut",
+          "when": "view == agentsProject.panel",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agents.activeSession.popOut",
+          "when": "view == agentsPanel.terminal",
+          "group": "navigation@1"
         }
       ]
     },
