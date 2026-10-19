@@ -94,3 +94,17 @@ test('the speaker beside ⟳ posts leadSpeak and shows whether answers are read 
   deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model({ speak: true })) });
   expect(el('[data-lead-speak]').getAttribute('aria-pressed')).toBe('true');
 });
+
+test('a new turn keeps the newest words in view when the viewer was at the end, and leaves a viewer who scrolled up', () => {
+  // happy-dom has no layout: each drawn turn adds 180 px, so the page grows only when the patch draws it.
+  const main = el('main');
+  Object.defineProperty(main, 'clientHeight', { configurable: true, get: () => 400 });
+  Object.defineProperty(main, 'scrollHeight', { configurable: true, get: () => 820 + 180 * main.querySelectorAll('.lt-lead').length });
+  const ask: TabTurn = { key: 't_4', ask: 'Wait, why are you asking it to redraw the screenshot?', at: Date.now(), segments: [], confirms: [], refs: [], live: true };
+  main.scrollTop = 600;
+  deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model({ turns: [held, ask], busy: true })) });
+  expect(main.scrollTop).toBe(1180);
+  main.scrollTop = 200;
+  deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model({ turns: [held, ask, { ...ask, key: 't_5' }], busy: true })) });
+  expect(main.scrollTop).toBe(200);
+});
