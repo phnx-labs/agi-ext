@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.419] - 2026-10-19
+
+- A link an agent prints in its tab now opens as a tab in the editor's browser, like the PRs
+  and tickets in the panels, instead of your default browser. Use the terminal's usual link
+  click: ⌘-click on a Mac, or ⌥-click when `editor.multiCursorModifier` is `ctrlCmd`. Plain
+  shells are unchanged, and `agents.links.openIn: browser` sends agent-tab links to your
+  default browser as before.
+
 ## [0.9.418] - 2026-10-19
 
 - The Lead no longer reads its answers aloud unless you ask it to. A speaker beside ⟳ in the

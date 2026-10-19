@@ -27,6 +27,7 @@ import { normalizeHost } from '../core/remoteSessions';
 import * as settingsStore from './agentSettings.vscode';
 import * as swarm from './swarm.vscode';
 import * as terminals from './terminals.vscode';
+import { registerTerminalLinks } from './webviewSecurity';
 import { LOCAL_LABEL, LOCAL_MACHINE_ID, remoteDeviceArg } from './remoteSessions.vscode';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
 import {
@@ -969,6 +970,8 @@ export async function activate(context: vscode.ExtensionContext) {
       });
     }
   });
+
+  context.subscriptions.push(registerTerminalLinks());
 
   // Register URI handler for notification callbacks
   context.subscriptions.push(

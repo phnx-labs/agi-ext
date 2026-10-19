@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { browserTabArgs, isAllowedExternalUrl, isAllowedWebviewCommand, openWith, type LinkOpeners } from './webviewSecurity';
+import { browserTabArgs, isAllowedExternalUrl, isAllowedWebviewCommand, openWith, webLinksIn, type LinkOpeners } from './webviewSecurity';
 import { isDeprecatedAgentKey } from './agents';
 
 describe('isAllowedExternalUrl', () => {
@@ -81,5 +81,21 @@ describe('openWith', () => {
       expect(await openWith(PR, 'editor', opener)).toBe('external');
       expect(calls).toEqual([`external ${PR}`]);
     }
+  });
+});
+
+describe('webLinksIn', () => {
+  it('finds a link in an agent\'s sentence and stops before its punctuation', () => {
+    const line = '  - Release workflow: succeeded, https://github.com/phnx-labs/browser-cli/actions/runs/39244608931. The release';
+    expect(webLinksIn(line)).toEqual([{ startIndex: 33, length: 65, url: 'https://github.com/phnx-labs/browser-cli/actions/runs/39244608931' }]);
+  });
+
+  it('keeps a query, fragment and inner dots; drops wrapping quotes and parentheses', () => {
+    expect(webLinksIn('see (https://linear.app/rush/issue/PHNX-12?x=1#c) and "http://localhost:5173/a.b"').map((l) => l.url))
+      .toEqual(['https://linear.app/rush/issue/PHNX-12?x=1#c', 'http://localhost:5173/a.b']);
+  });
+
+  it('ignores other schemes and bare hosts', () => {
+    expect(webLinksIn('file:///etc/passwd github.com/x mailto:a@b.c ftp://x.y')).toEqual([]);
   });
 });

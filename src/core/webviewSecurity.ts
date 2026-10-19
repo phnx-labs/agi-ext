@@ -65,3 +65,15 @@ export async function openWith(rawUrl: string, target: LinkTarget, io: LinkOpene
   await io.openExternal(url);
   return 'external';
 }
+
+/** A web page link in one terminal line: where it sits and what it opens. */
+export interface TextLink { startIndex: number; length: number; url: string }
+
+// A run of URL characters after http(s)://, ending on one that is not sentence punctuation,
+// so "…/runs/39244608931." and "(https://x.dev)" stop before the period and the parenthesis.
+const WEB_LINK = /https?:\/\/[^\s"'`<>()[\]{}]*[^\s"'`<>()[\]{}.,;:!?]/g;
+
+/** Every http(s) link in `line`, in order. */
+export function webLinksIn(line: string): TextLink[] {
+  return [...line.matchAll(WEB_LINK)].map((m) => ({ startIndex: m.index, length: m[0].length, url: m[0] }));
+}
