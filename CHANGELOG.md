@@ -6,12 +6,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.412] - 2026-10-18
 
-- An idle session says whether its work is done, in place of "Idle": "✓ Done", "Not done"
-  (hover for the gaps in words, such as "a PR it opened is still open"), or "Unverified" when
-  nothing checkable backs it. Same slot and size as the state, on cards, on the pinned card's
-  "This tab" line (with the gaps beside it) and in the Active Session sidebar. Working,
-  waiting and asking sessions are unchanged. Settings > A card shows > Done verdict turns it
-  off. Needs agents-cli's `doneVerdict` on the row; without it the card reads Idle.
+- A session whose turn finished says whether its work is done, in place of "Idle": a chip on
+  the card's title row reading "✓ Done", "Not done" (hover for the gaps in words, such as "a
+  PR it opened is still open") or "Unverified" when nothing checkable backs it. It sits before
+  the age on a card, right after the title on the pinned card, and in place of Idle on the
+  Active Session sidebar's state line; no new row. Working, waiting and asking sessions are
+  unchanged. Settings > A card shows > Done verdict turns it off. Needs agents-cli's
+  `doneVerdict` on the row; without it the card reads Idle.
 
 ## [0.9.411] - 2026-10-18
 

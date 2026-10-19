@@ -870,11 +870,10 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     background: var(--r-glass);
     box-shadow: inset 0 1px 0 var(--r-sheen);
   }
-  /* The done verdict in an idle session's state slot (verdictChipHtml), the state pill's size. */
-  .vchip { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; font-size: 10.5px; line-height: 16px; color: var(--r-caption); white-space: nowrap; }
-  .vchip i { width: 6px; height: 6px; border-radius: 50%; display: block; background: var(--r-faint); }
-  .vchip.v-ok { color: var(--r-ok); border-color: var(--r-ok); background: var(--r-ok-tint); } .vchip.v-ok i { background: var(--r-ok); }
-  .vchip.v-bad { color: var(--r-bad); border-color: var(--r-bad); background: var(--r-bad-tint); } .vchip.v-bad i { background: var(--r-bad); }
+  /* The done verdict on an idle card's title row (verdictChipHtml): ok, bad, or caption tone. */
+  .vchip { display: inline-flex; align-items: center; flex: none; font-size: 10px; font-weight: 600; line-height: 16px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--r-edge-hi); color: var(--r-caption); white-space: nowrap; }
+  .vchip.v-ok { color: var(--r-ok); border-color: var(--r-ok); background: var(--r-ok-tint); }
+  .vchip.v-bad { color: var(--r-bad); border-color: var(--r-bad); background: var(--r-bad-tint); }
   /* A harness logo: its .hx-<key> class (harnessLogoCss) sets the image. */
   .hx { display: inline-block; flex: none; background-position: center; background-size: contain; background-repeat: no-repeat; }
   @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }

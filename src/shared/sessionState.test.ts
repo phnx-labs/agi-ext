@@ -122,8 +122,8 @@ test('the done verdict takes an idle session\'s state word: ✓ Done, Not done w
 });
 
 test('the verdict escapes what the CLI wrote and carries no outside name, so a webview script can carry it', () => {
-  expect(verdictChipHtml({ tone: 'bad', word: 'Not done', why: 'Not done: <b>"x"</b> & y' })).toBe('<span class="vchip v-bad" title="Not done: &lt;b&gt;&quot;x&quot;&lt;/b&gt; &amp; y"><i></i>Not done</span>');
+  expect(verdictChipHtml({ tone: 'bad', word: 'Not done', why: 'Not done: <b>"x"</b> & y' })).toBe('<span class="vchip v-bad" title="Not done: &lt;b&gt;&quot;x&quot;&lt;/b&gt; &amp; y">Not done</span>');
   expect(verdictChipHtml(null)).toBe('');
   const carried = new Function(`${verdictChipHtml}\nreturn verdictChipHtml;`)() as typeof verdictChipHtml;
-  expect(carried({ tone: 'ok', word: '✓ Done', why: 'ok' })).toBe('<span class="vchip v-ok" title="ok"><i></i>✓ Done</span>');
+  expect(carried({ tone: 'ok', word: '✓ Done', why: 'ok' })).toBe('<span class="vchip v-ok" title="ok">✓ Done</span>');
 });

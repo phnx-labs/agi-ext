@@ -250,7 +250,7 @@ const DONE_GAP_WORDS: Record<string, string> = {
   'self-audit': 'its own audit failed',
 };
 
-export function doneGapWords(gaps: readonly string[]): string[] {
+function doneGapWords(gaps: readonly string[]): string[] {
   return gaps.map((g) => DONE_GAP_WORDS[g] ?? g);
 }
 
@@ -275,10 +275,10 @@ export function verdictChipOf(state: SessionStateKey, v: DoneVerdict | null | un
   return null;
 }
 
-/** The verdict in the state's own slot, the size of the state pill. Self-contained, so the
+/** The verdict chip on a card's title row. Self-contained, so the
  *  Active Session sidebar's script carries this same function (`${verdictChipHtml}`). */
 export function verdictChipHtml(v: VerdictChip | null | undefined): string {
   if (!v) return '';
   const q = (t: string) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  return '<span class="vchip v-' + v.tone + '" title="' + q(v.why) + '"><i></i>' + q(v.word) + '</span>';
+  return '<span class="vchip v-' + v.tone + '" title="' + q(v.why) + '">' + q(v.word) + '</span>';
 }

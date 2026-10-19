@@ -711,7 +711,7 @@ test('the state line says the shared state word and running time; a live agent p
   expect(ended).not.toContain('Done');
   // An idle session's done verdict takes the state word's place, as on the cards; Idle without one.
   const verdict = cards.renderSessionStats({ state: { key: 'idle', word: 'Idle' }, durationMs: 60_000, verdict: { tone: 'bad', word: 'Not done', why: 'Idle · not done: teammates still running' } });
-  expect(verdict).toContain('<span class="stats-text"><span class="vchip v-bad" title="Idle · not done: teammates still running"><i></i>Not done</span> · ran <b>');
+  expect(verdict).toContain('<span class="stats-text"><span class="vchip v-bad" title="Idle · not done: teammates still running">Not done</span> · ran <b>');
   expect(verdict).not.toContain('state-dot');
   expect(verdict).not.toContain('>Idle');
   expect(cards.renderSessionStats({ state: { key: 'idle', word: 'Idle' }, durationMs: 60_000, verdict: null })).toContain('Idle · ran');
