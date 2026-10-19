@@ -207,6 +207,9 @@ going on, where, and what came out of it" in one look; text explains only what a
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
   part off, down to the logo and title on one line (owner video, 2026-10-17).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
+  An idle session the CLI's done-check judged says ✓ Done, Not done or Unverified in the
+  state's own slot instead of Idle (`verdictChipOf`, `src/shared/sessionState.ts`; no second
+  label, no new row); every other state keeps its word, and a row without `doneVerdict` reads Idle.
   The question opens to its full text on a click on it. The front tab's card is the one
   exception: pinned above everything and opened up (‹ › to the tabs beside it with its tab,
   machine and age between them, its ask first, Claude's recap, the sidebar's own Made shelf,

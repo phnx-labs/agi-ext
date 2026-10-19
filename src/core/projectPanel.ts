@@ -9,7 +9,7 @@ import * as os from 'os';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, waitFor, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, doneGapWords, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { resolveProject } from '../shared/project';
@@ -292,6 +292,8 @@ export interface SessionLike {
   forkOf?: string;
   /** Claude's own newest recap (agents-cli `recap`), `at` ISO; absent for other harnesses. */
   recap?: { text: string; at: string };
+  /** The CLI's done-check (agents-cli `doneVerdict`); absent draws no verdict. */
+  doneVerdict?: DoneVerdict;
   /** Your turns, oldest first; the last one dates a recap written before it. */
   userTurns?: { atMs: number }[];
   lastResponse: string;
@@ -834,11 +836,11 @@ export interface FrontNav {
 }
 
 /** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row. */
-function navButtons(nav: FrontNav | undefined, where: string, state: string): string {
+function navButtons(nav: FrontNav | undefined, where: string, state: string, verdict = ''): string {
   const btn = (dir: 'prev' | 'next', to: FrontNav['prev']) => to
     ? `<button class="fc-step" data-front-step="${dir}" data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host)}" title="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}" aria-label="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}">${dir === 'prev' ? '‹' : '›'}</button>`
     : `<button class="fc-step" disabled aria-label="${dir === 'prev' ? 'No previous tab' : 'No next tab'}">${dir === 'prev' ? '‹' : '›'}</button>`;
-  return `<div class="fc-nav">${btn('prev', nav?.prev)}<span class="thistab" title="${escapeHtml(state)}">This tab${where ? ` · ${where}` : ''}</span>${btn('next', nav?.next)}</div>`;
+  return `<div class="fc-nav">${btn('prev', nav?.prev)}<span class="thistab" title="${escapeHtml(state)}">${verdict}This tab${where ? ` · ${where}` : ''}</span>${btn('next', nav?.next)}</div>`;
 }
 
 /** Claude's recap on the front card, with how old it is; dimmed with "before your
@@ -906,9 +908,13 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     : '';
   // The card's tint says its state (red asks or blocked, green working, yellow idle); the
   // word stays in its tooltip and for screen readers, and on the card when Settings asks.
-  const word = opts.blocked ? 'Blocked' : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
+  // An idle session the CLI's done-check judged says ✓ Done, Not done or Unverified in the
+  // state's own slot instead of Idle (owner video, 2026-10-18 8:59 PM: no second idle label).
+  const verdict = opts.blocked || !cards.verdict ? null : verdictChipOf(state, s.doneVerdict);
+  const word = opts.blocked ? 'Blocked' : verdict ? verdict.word : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
+  const tip = verdict ? verdict.why : word;
   const pillTitle = state === 'waiting' ? ` title="${escapeHtml(`Waiting on its own work: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
-  const pill = cards.stateWord ? `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>` : '';
+  const pill = verdict ? verdictChipHtml(verdict) : cards.stateWord ? `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
       : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;
@@ -944,8 +950,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const ago = ageWords(s.lastActivityMs, now);
     const since = waited >= 0 ? `waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ago === 'now' || !ago ? ago : `${ago} ago`;
     // No row of its own for the state: the tint says it, the word is the tooltip (owner video, 2026-10-18 8:59 PM).
-    const where = [s.tabIndex ? String(s.tabIndex) : '', escapeHtml(shortDevice(place.device)), since].filter(Boolean).join(' · ');
-    const stateWords = [word, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
+    // A verdict leads the line, in the state's place; what is not done follows in words.
+    const gaps = verdict && s.doneVerdict?.state === 'open' ? escapeHtml(doneGapWords(s.doneVerdict.gaps).join(', ')) : '';
+    const where = [s.tabIndex ? String(s.tabIndex) : '', escapeHtml(shortDevice(place.device)), since, gaps].filter(Boolean).join(' · ');
+    const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     const latest = recapBlock(s, now)
       || (said ? `<div class="line said">${escapeHtml(said)}</div>` : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
     // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
@@ -956,7 +964,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     // Made shelf or the activity box to another position (the patch pairs by position).
     const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${activitySteps(s)}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
-    return `${navButtons(opts.nav, where, stateWords)}${top}<div class="fc-body">${detail}</div>${reply}`;
+    return `${navButtons(opts.nav, where, stateWords, verdictChipHtml(verdict))}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
@@ -964,7 +972,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     ${cards.chips && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
   const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
-  const attrs = `title="${escapeHtml(word)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
+  const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
 }

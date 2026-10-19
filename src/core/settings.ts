@@ -171,14 +171,15 @@ export interface CardSettings {
   machine: boolean;
   age: boolean;
   stateWord: boolean;
+  verdict: boolean;
 }
 
 /** The parts a card can leave out, as Settings lists them. */
-export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord'] as const;
+export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord', 'verdict'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
   asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips',
-  description: true, chips: true, machine: true, age: true, stateWord: false,
+  description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true,
 };
 
 /** The stored card settings with any value this version does not know read as its default. */
@@ -192,7 +193,7 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     click: v?.click === 'show' ? 'show' : d.click,
     answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
     made: v?.made === 'previews' ? 'previews' : d.made,
-    description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'),
+    description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'),
   };
 }
 

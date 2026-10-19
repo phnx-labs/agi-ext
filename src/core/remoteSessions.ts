@@ -7,7 +7,7 @@
 import { resolveProject, normalizeHost, worktreeSlugOf } from '../shared/project';
 import { isHarnessEnvelope } from './harnessEnvelope';
 import { normalizePrStatus, type RemotePrStatus } from './prStatus';
-import type { PendingItem, SessionPending } from '../shared/sessionState';
+import type { DoneVerdict, PendingItem, SessionPending } from '../shared/sessionState';
 
 export { resolveProject, normalizeHost };
 
@@ -452,6 +452,9 @@ export interface RemoteSession {
   /** Claude's own newest recap of the session (`away_summary`), with when it wrote it.
    *  Absent for another harness, a session with none yet, or an older CLI. */
   recap?: RemoteRecap;
+  /** The CLI's done-check (agents-cli `doneVerdict`); absent on an older CLI or before
+   *  a check ran, and then a card draws no verdict. */
+  doneVerdict?: DoneVerdict;
   /** The session this one was forked from (`agents fork`), by id; absent otherwise. */
   forkOf?: string;
   /** Linear tickets the session created (CLI `createdTickets`), by id. */
@@ -545,6 +548,7 @@ export interface RawActiveSession {
   title?: string;
   startedAs?: string;
   recap?: unknown;
+  doneVerdict?: unknown;
   forkOf?: string;
   createdTickets?: unknown;
   touchedPrs?: unknown;
@@ -972,6 +976,19 @@ function normalizeRecap(raw: unknown): RemoteRecap | undefined {
   return text && Number.isFinite(Date.parse(at)) ? { text, at } : undefined;
 }
 
+const VERDICT_STATES = new Set(['done', 'open', 'unchecked']);
+
+/** The row's `doneVerdict`, kept only with a state this version draws and a time. */
+function normalizeDoneVerdict(raw: unknown): DoneVerdict | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const v = raw as Record<string, unknown>;
+  const state = asStr(v.state);
+  const at = asTimestamp(v.at);
+  if (!VERDICT_STATES.has(state) || !Number.isFinite(Date.parse(at))) return undefined;
+  const gaps = Array.isArray(v.gaps) ? v.gaps.map(asStr).filter(Boolean) : [];
+  return { state: state as DoneVerdict['state'], gaps, at };
+}
+
 function normalizeUserTurns(raw: unknown): RemoteUserTurn[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.flatMap((entry): RemoteUserTurn[] => {
@@ -1276,6 +1293,7 @@ export function normalizeActiveSession(
     title: asStr(raw.title),
     startedAs: asStr(raw.startedAs) || undefined,
     recap: normalizeRecap(raw.recap),
+    doneVerdict: normalizeDoneVerdict(raw.doneVerdict),
     forkOf: asStr(raw.forkOf) || undefined,
     createdTickets: Array.isArray(raw.createdTickets) && raw.createdTickets.some((t) => asStr(t)) ? raw.createdTickets.map(asStr).filter(Boolean) : undefined,
     touchedPrs: normalizeTouched(raw.touchedPrs, (o) => { const url = asStr(o.url); const number = Math.round(asNum(o.number)); return url && number > 0 ? { url, number, ...(asStr(o.repo) ? { repo: asStr(o.repo) } : {}), action: asStr(o.action) } : undefined; }),

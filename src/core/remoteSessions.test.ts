@@ -112,6 +112,12 @@ describe('resolveProject', () => {
     expect(at({ recap: { text: '', at: '2026-10-19T00:49:31.496Z' } }).recap).toBeUndefined();
     expect(at({ recap: { text: 'x', at: 'soon' } }).recap).toBeUndefined();
     expect(at({}).recap).toBeUndefined();
+    // The CLI's done-check: kept with a known state and a time; absent stays absent.
+    expect(at({ doneVerdict: { state: 'open', gaps: ['open-pr', '', 'delivery'], at: '2026-10-18T20:00:00Z' } }).doneVerdict).toEqual({ state: 'open', gaps: ['open-pr', 'delivery'], at: '2026-10-18T20:00:00Z' });
+    expect(at({ doneVerdict: { state: 'done', at: '2026-10-18T20:00:00Z' } }).doneVerdict).toEqual({ state: 'done', gaps: [], at: '2026-10-18T20:00:00Z' });
+    expect(at({ doneVerdict: { state: 'maybe', gaps: [], at: '2026-10-18T20:00:00Z' } }).doneVerdict).toBeUndefined();
+    expect(at({ doneVerdict: { state: 'done', gaps: [] } }).doneVerdict).toBeUndefined();
+    expect(at({}).doneVerdict).toBeUndefined();
     expect(at({ forkOf: '4aa3c855-eb2e' }).forkOf).toBe('4aa3c855-eb2e');
     expect(at({}).forkOf).toBeUndefined();
     // Tickets it created, and what it only acted on: entries the CLI filled in, else absent.
