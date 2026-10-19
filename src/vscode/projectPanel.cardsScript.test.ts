@@ -32,6 +32,9 @@ document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<
 const sent: { type: string; sessionId?: string; name?: string; value?: boolean; url?: string }[] = [];
 const script = page.match(/<script[^>]*>([\s\S]*?)<\/script[^>]*>/i)![1];
 const main = document.querySelector('main') as unknown as HTMLElement;
+// The ring is a Web Animation; happy-dom has none, so record which element rang.
+const rang: Element[] = [];
+(window.HTMLElement.prototype as unknown as { animate(): unknown }).animate = function (this: Element) { rang.push(this); return {}; };
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
   window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m), getState: () => ({}), setState: () => undefined }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* the thumbnails are not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
@@ -104,7 +107,7 @@ test('a PR chip or a card rings and says "Opening …" at once; the host\'s answ
   const card = $$('[data-group="here"] .card[data-session="c"]')[0];
   card.click();
   expect(sent.at(-1)).toMatchObject({ type: 'select', sessionId: 'c' });
-  expect(card.classList.contains('opening')).toBe(true);
+  expect(rang.at(-1)).toBe(card);
   expect(toast().hidden).toBe(false);
   expect(toast().textContent).toBe('Opening Task c…');
   // A redraw while it waits keeps the status.
@@ -117,12 +120,12 @@ test('a PR chip or a card rings and says "Opening …" at once; the host\'s answ
   sent.length = 0;
   pr.click();
   expect(sent).toEqual([{ type: 'open', url: 'https://github.com/me/x/pull/12', external: false }]);
-  expect(pr.classList.contains('opening')).toBe(true);
+  expect(rang.at(-1)).toBe(pr);
   expect(toast().textContent).toBe('Opening #12…');
   const page = $$('[data-group="here"] .card[data-session="b"] [data-artifact]')[0];
   page.click();
   expect(sent.at(-1)).toMatchObject({ type: 'artifact', sessionId: 'b', path: '/home/me/.agents/artifacts/plan/plan.html' });
-  expect(page.classList.contains('opening')).toBe(true);
+  expect(rang.at(-1)).toBe(page);
   expect(toast().textContent).toBe('Opening plan.html…');
   // With no answer from the host the status stays: nothing silently waits.
   await settle(750);
