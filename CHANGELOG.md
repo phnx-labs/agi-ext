@@ -8,8 +8,8 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 From the owner's 8:59 PM recording: the Project panel takes less room.
 - The project's name is the view's title ("PROJECT: RUSH"; ⇄ beside it switches it), so the
-  panel's header is one row: the goal (Rush Cloud – first paying customers · Dec 31; this
-  week's goal and today's goal in its tooltip), then the tabs as icons, search and ⇅.
+  panel's header is one row: the goal with its date (this week's goal and today's goal in
+  its tooltip), then the tabs as icons, search and ⇅.
   Settings › Tabs turns Review and Issues off.
 - The pinned card has no state row: "This tab · 2 · s1 · 5m ago" sits between ‹ and ›, and
   the state is the card's tint (its word in the tooltip).
