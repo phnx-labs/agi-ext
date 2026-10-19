@@ -145,14 +145,11 @@ interface EditorPreferences {
   markdownViewerEnabled: boolean;
 }
 
-// Display preferences for terminal titles and labels
+// Display preferences for terminal titles. A tab is named by its session alone; the
+// logo says which harness (owner, 2026-10-19).
 export interface DisplayPreferences {
-  showFullAgentNames: boolean;
-  showLabelsInTitles: boolean;
-  autoLabelInTabTitles: boolean;  // true = auto-label tab titles from first user message
+  autoLabelInTabTitles: boolean;  // true = the tab takes the CLI's title once the stream has one
   showSessionIdInTitles: boolean;
-  labelReplacesTitle: boolean;  // true = label replaces title, false = append with dash
-  showLabelOnlyOnFocus: boolean;  // true = hide label when terminal loses focus
 }
 
 /** Settings > Session cards > ‹ › on the pinned card: walk the tabs in order, go to
@@ -216,12 +213,8 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
 }
 
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
-  showFullAgentNames: true,
-  showLabelsInTitles: true,
   autoLabelInTabTitles: true,
   showSessionIdInTitles: true,
-  labelReplacesTitle: false,  // Default: append label (e.g., "Claude - label")
-  showLabelOnlyOnFocus: false  // Default: always show label
 };
 
 export const DEFAULT_QUICK_LAUNCH: QuickLaunchConfig = {

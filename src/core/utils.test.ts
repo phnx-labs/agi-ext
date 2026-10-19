@@ -5,6 +5,7 @@ import {
   getExpandedAgentName,
   getTerminalDisplayInfo,
   formatTerminalTitle,
+  isTabStageName,
   capTabName,
   isHostFallbackLabel,
   presentableLabel,
@@ -125,6 +126,11 @@ describe('getTerminalDisplayInfo', () => {
     });
   });
 
+  test('a tab showing only its launch stage has no label', () => {
+    expect(getTerminalDisplayInfo({ name: 'Starting…', terminalId: 'cl-1-1' })).toMatchObject({ prefix: 'CC', label: null, statusBarText: 'Claude' });
+    expect(getTerminalDisplayInfo({ name: 'New session', iconFilename: 'chatgpt.png' })).toMatchObject({ prefix: 'CX', label: null });
+  });
+
   test('a rescanned "CC - [host/<device>]" tab drops the host chip label', () => {
     const info = getTerminalDisplayInfo({ name: 'CC - [host/yosemite-m3]' });
     expect(info.isAgent).toBe(true);
@@ -140,21 +146,27 @@ describe('getPrefixFromTerminalId', () => {
     expect(getPrefixFromTerminalId('Claude')).toBe('Claude');
     expect(getPrefixFromTerminalId('')).toBeNull();
   });
+
+  test('reads the config prefix today\'s ids carry, so an unprefixed tab is still known by its env', () => {
+    expect(getPrefixFromTerminalId('cl-1760900000000-3')).toBe('CC');
+    expect(getPrefixFromTerminalId('cx-1760900000000-4')).toBe('CX');
+    expect(getPrefixFromTerminalId('sh-1760900000000-5')).toBe('SH');
+    expect(getTerminalDisplayInfo({ name: 'Fix the auth bug', terminalId: 'cl-1760900000000-3' })).toMatchObject({ isAgent: true, prefix: 'CC', label: 'Fix the auth bug' });
+  });
 });
 
 describe('formatTerminalTitle', () => {
-  const display = { showFullAgentNames: true, showLabelsInTitles: true, showSessionIdInTitles: false, labelReplacesTitle: false };
+  test('a tab is named by its session alone: no harness text, the logo says which (owner, 2026-10-19)', () => {
+    expect(formatTerminalTitle({ label: 'auth' })).toBe('auth');
+    expect(formatTerminalTitle({ label: 'my-label', sessionChunk: 'a1b2c3d4' })).toBe('a1b2c3d4 my-label');
+  });
 
-  test('composes chip or full name, session chunk and label as the display preferences say', () => {
-    expect(formatTerminalTitle('CX', { display: { ...display, showFullAgentNames: false } })).toBe('CX');
-    expect(formatTerminalTitle('CR', { label: 'auth', display })).toBe('Cursor - auth');
-    expect(formatTerminalTitle('CR', { label: 'auth', display: { ...display, labelReplacesTitle: true } })).toBe('auth');
-    expect(formatTerminalTitle('CR', { label: 'auth', display: { ...display, showLabelsInTitles: false } })).toBe('Cursor');
-    expect(formatTerminalTitle('CC', {
-      label: 'my-label',
-      display: { ...display, showFullAgentNames: false, showSessionIdInTitles: true },
-      sessionChunk: 'a1b2c3d4'
-    })).toBe('CC a1b2c3d4 - my-label');
+  test('an unnamed tab shows where its launch is, and a name replaces the stage', () => {
+    expect(formatTerminalTitle({ stage: 'placing' })).toBe('Placing…');
+    expect(formatTerminalTitle({ stage: 'starting' })).toBe('Starting…');
+    expect(formatTerminalTitle({ stage: 'ready' })).toBe('New session');
+    expect(formatTerminalTitle()).toBe('New session');
+    expect(formatTerminalTitle({ label: 'auth', stage: 'placing' })).toBe('auth');
   });
 
   test('a session name on its tab is cut at 34 characters on a word boundary with …; the label is never cut elsewhere', () => {
@@ -167,31 +179,19 @@ describe('formatTerminalTitle', () => {
     expect(capTabName('Release the agents CLI, then the menu bar app')).toBe('Release the agents CLI, then the…');
     expect(capTabName('Release the agents-cli and AGI EXT, and ship')).toBe('Release the agents-cli and AGI…');
     expect(capTabName(long).length).toBeLessThanOrEqual(34);
-    expect(formatTerminalTitle('CC', { label: long, display: { ...display, showFullAgentNames: false } })).toBe('CC - Please tell me what is the main…');
-    expect(formatTerminalTitle('CC', { label: long, display: { ...display, labelReplacesTitle: true } })).toBe('Please tell me what is the main…');
+    expect(formatTerminalTitle({ label: long })).toBe('Please tell me what is the main…');
   });
 
-  test('showLabelOnlyOnFocus hides the label only on an unfocused tab', () => {
-    const onFocus = { ...display, showLabelOnlyOnFocus: true };
-    expect(formatTerminalTitle('CC', { label: 'auth-feature', display: onFocus, isFocused: false })).toBe('Claude');
-    expect(formatTerminalTitle('CC', { label: 'auth-feature', display: onFocus, isFocused: true })).toBe('Claude - auth-feature');
-    expect(formatTerminalTitle('CC', { label: 'auth-feature', display: onFocus })).toBe('Claude - auth-feature');
-    expect(formatTerminalTitle('CC', { label: 'auth-feature', display: { ...onFocus, labelReplacesTitle: true }, isFocused: false })).toBe('Claude');
-    expect(formatTerminalTitle('CC', {
-      label: 'auth-feature',
-      display: { ...onFocus, showFullAgentNames: false, showSessionIdInTitles: true },
-      sessionChunk: 'a1b2c3d4',
-      isFocused: false
-    })).toBe('CC a1b2c3d4');
-    expect(formatTerminalTitle('CC', { label: 'auth-feature', display: { ...display, showLabelOnlyOnFocus: false }, isFocused: false })).toBe('Claude - auth-feature');
+  test('drops a bare [host/<device>] fallback label: the tab shows its stage (PHNX-3893)', () => {
+    expect(formatTerminalTitle({ label: '[host/yosemite-m3]', stage: 'starting' })).toBe('Starting…');
+    expect(formatTerminalTitle({ label: 'fix host resolver' })).toBe('fix host resolver');
   });
+});
 
-  test('drops a bare [host/<device>] fallback label — tab falls back to the base (PHNX-3893)', () => {
-    const short = { ...display, showFullAgentNames: false };
-    expect(formatTerminalTitle('CC', { label: '[host/yosemite-m3]', display: short })).toBe('CC');
-    // labelReplacesTitle must not leave an empty title either.
-    expect(formatTerminalTitle('CC', { label: '[host/yosemite-m3]', display: { ...short, labelReplacesTitle: true } })).toBe('CC');
-    expect(formatTerminalTitle('CC', { label: 'fix host resolver', display: short })).toBe('CC - fix host resolver');
+describe('isTabStageName', () => {
+  test('matches only the stage words, never a session name', () => {
+    for (const name of ['Placing…', 'Starting…', 'New session', '  New session ']) expect(isTabStageName(name)).toBe(true);
+    for (const name of ['New session for auth', 'Starting', 'auth', '', null, undefined]) expect(isTabStageName(name)).toBe(false);
   });
 });
 
@@ -234,10 +234,9 @@ describe('presentableLabel', () => {
 
   test('agrees with the tab title on what counts as a real label', () => {
     // Both label surfaces route through this function, so they cannot diverge.
-    const display = { showFullAgentNames: false, showLabelsInTitles: true, showSessionIdInTitles: false, labelReplacesTitle: false };
     for (const raw of ['[host/yosemite-m3]', 'auth refactor', '<acct>', 'fix host resolver']) {
       const shown = presentableLabel(raw);
-      expect(formatTerminalTitle('CC', { label: raw, display })).toBe(shown ? `CC - ${shown}` : 'CC');
+      expect(formatTerminalTitle({ label: raw })).toBe(shown ?? 'New session');
     }
   });
 });

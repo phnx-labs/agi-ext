@@ -1,4 +1,4 @@
-import { capTabName } from './utils';
+import { capTabName, isTabStageName } from './utils';
 
 export interface SessionTabLabelState {
   manualLabel?: string;
@@ -41,7 +41,8 @@ export function restoredSessionTabLabels(
   const visibleManualLabel = visibleLabel?.trim();
   // The tab shows the automatic name cut to its cap, which is still that name.
   const automatic = (v: string) => !!autoLabel && (v === autoLabel || v === capTabName(autoLabel));
+  // A launch stage ("Starting…", "New session") is where the tab was, not a name.
   const manualLabel = persistedManualLabel
-    || (visibleManualLabel && !automatic(visibleManualLabel) ? visibleManualLabel : undefined);
+    || (visibleManualLabel && !automatic(visibleManualLabel) && !isTabStageName(visibleManualLabel) ? visibleManualLabel : undefined);
   return { manualLabel, autoLabel };
 }

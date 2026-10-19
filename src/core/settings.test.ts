@@ -13,7 +13,7 @@ describe('getDefaultSettings', () => {
       expect(settings.builtIn[key]).toEqual({ login: false, instances: 2 });
     }
     expect(settings.custom).toEqual([]);
-    expect(settings.display).toMatchObject({ showFullAgentNames: true, showLabelsInTitles: true, autoLabelInTabTitles: true, showSessionIdInTitles: true });
+    expect(settings.display).toEqual({ autoLabelInTabTitles: true, showSessionIdInTitles: true });
     expect(settings.editor.markdownViewerEnabled).toBe(true);
   });
 });

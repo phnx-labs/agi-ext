@@ -8,7 +8,7 @@ import { AgentSettings, getDefaultSettings, PromptEntry, DEFAULT_DISPLAY_PREFERE
 import { readPromptsFromPath, writePromptsToPath } from '../core/prompts';
 import * as workbench from './workbench.vscode';
 import * as terminals from './terminals.vscode';
-import { formatTerminalTitle, getSessionChunk, parseTerminalName } from '../core/utils';
+import { formatTerminalTitle, getSessionChunk } from '../core/utils';
 
 // Data directory: ~/.agents/
 const AGENTS_CONFIG_DIR = path.join(homedir(), '.agents');
@@ -43,23 +43,11 @@ export function getSettings(context: vscode.ExtensionContext): AgentSettings {
       context.globalState.update('agentSettings', stored);
     } else {
       // Backfill any missing keys
-      if (stored.display.showFullAgentNames === undefined) {
-        stored.display.showFullAgentNames = DEFAULT_DISPLAY_PREFERENCES.showFullAgentNames;
-      }
-      if (stored.display.showLabelsInTitles === undefined) {
-        stored.display.showLabelsInTitles = DEFAULT_DISPLAY_PREFERENCES.showLabelsInTitles;
-      }
       if (stored.display.autoLabelInTabTitles === undefined) {
         stored.display.autoLabelInTabTitles = DEFAULT_DISPLAY_PREFERENCES.autoLabelInTabTitles;
       }
       if (stored.display.showSessionIdInTitles === undefined) {
         stored.display.showSessionIdInTitles = DEFAULT_DISPLAY_PREFERENCES.showSessionIdInTitles;
-      }
-      if (stored.display.labelReplacesTitle === undefined) {
-        stored.display.labelReplacesTitle = DEFAULT_DISPLAY_PREFERENCES.labelReplacesTitle;
-      }
-      if (stored.display.showLabelOnlyOnFocus === undefined) {
-        stored.display.showLabelOnlyOnFocus = DEFAULT_DISPLAY_PREFERENCES.showLabelOnlyOnFocus;
       }
       context.globalState.update('agentSettings', stored);
     }
@@ -160,11 +148,8 @@ export async function maybeUpdateTerminalTitles(oldSettings: AgentSettings, newS
   const newDisplay = newSettings.display ?? DEFAULT_DISPLAY_PREFERENCES;
 
   const changed =
-    oldDisplay.showFullAgentNames !== newDisplay.showFullAgentNames ||
-    oldDisplay.showLabelsInTitles !== newDisplay.showLabelsInTitles ||
     oldDisplay.autoLabelInTabTitles !== newDisplay.autoLabelInTabTitles ||
-    oldDisplay.showSessionIdInTitles !== newDisplay.showSessionIdInTitles ||
-    oldDisplay.labelReplacesTitle !== newDisplay.labelReplacesTitle;
+    oldDisplay.showSessionIdInTitles !== newDisplay.showSessionIdInTitles;
 
   if (!changed) return;
 
@@ -173,18 +158,10 @@ export async function maybeUpdateTerminalTitles(oldSettings: AgentSettings, newS
   const previouslyActive = vscode.window.activeTerminal;
 
   for (const entry of terminals.getAllTerminals()) {
-    const prefix = entry.agentConfig?.title || parseTerminalName(entry.terminal.name).prefix;
-    if (!prefix) continue;
-
-    const label = newDisplay.showLabelsInTitles
-      ? (entry.label || (newDisplay.autoLabelInTabTitles ? entry.autoLabel : null))
-      : null;
+    if (!entry.agentConfig) continue;
+    const label = entry.label || (newDisplay.autoLabelInTabTitles ? entry.autoLabel : null);
     const sessionChunk = newDisplay.showSessionIdInTitles ? getSessionChunk(entry.sessionId) : null;
-    const newTitle = formatTerminalTitle(prefix, {
-      label,
-      display: newDisplay,
-      sessionChunk: sessionChunk || null
-    });
+    const newTitle = formatTerminalTitle({ label, stage: entry.stage, sessionChunk });
     await terminals.renameTerminal(entry.terminal, newTitle);
   }
 

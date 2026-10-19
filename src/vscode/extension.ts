@@ -55,6 +55,7 @@ import {
   getTerminalDisplayInfo,
   parseTerminalName,
   formatTerminalTitle,
+  type TabStage,
   presentableLabel,
   getSessionChunk,
   truncateText,
@@ -160,15 +161,19 @@ function getDisplayPrefs(context: vscode.ExtensionContext) {
 }
 
 function buildTerminalTitle(
-  prefix: string,
   label: string | undefined | null,
   context: vscode.ExtensionContext,
   sessionId?: string | null,
-  isFocused?: boolean
+  stage?: TabStage,
 ): string {
   const display = getDisplayPrefs(context);
   const sessionChunk = display.showSessionIdInTitles ? getSessionChunk(sessionId || undefined) : null;
-  return formatTerminalTitle(prefix, { label: label || undefined, display, sessionChunk, isFocused });
+  return formatTerminalTitle({ label, stage, sessionChunk });
+}
+
+/** `placing` when the CLI picks the machine (`--device auto`), else `starting`. */
+function launchStage(placed: boolean): TabStage {
+  return placed ? 'placing' : 'starting';
 }
 
 // PATH augmented with the agents shim dirs — the extension-host PATH can omit them,
@@ -351,6 +356,8 @@ interface TrackedTabSpec {
   createdAt?: number;
   /** False keeps the auto-label poller off for this tab. */
   labelPoller?: boolean;
+  /** The launch stage the unnamed tab shows; it becomes `ready` when the harness draws. */
+  stage?: TabStage;
 }
 
 /**
@@ -383,6 +390,7 @@ async function openTrackedTab(
   terminals.register(terminal, terminalId, spec.agentConfig, pid, context, spec.label, spec.createdAt);
   if (spec.autoLabel) terminals.setAutoLabel(terminal, spec.autoLabel);
   readiness.registerTerminal(terminal);
+  if (spec.stage) followLaunchStage(terminal, spec.stage, context);
 
   const resumeKey = spec.agentKey ? agentKeyFromSession(spec.agentKey) : null;
   if (resumeKey) terminals.setAgentType(terminal, resumeKey);
@@ -405,6 +413,21 @@ async function openTrackedTab(
     }
   }
   return { terminal, terminalId, pid };
+}
+
+// An unnamed tab says where its launch is: the stage it opened with, then
+// "New session" once the harness draws. A name that arrives first wins.
+function followLaunchStage(terminal: vscode.Terminal, stage: TabStage, context: vscode.ExtensionContext): void {
+  const entry = terminals.getByTerminal(terminal);
+  if (!entry) return;
+  entry.stage = stage;
+  readiness.waitFor(terminal, 'agentReady').then(() => {
+    const cur = terminals.getByTerminal(terminal);
+    if (!cur) return;
+    cur.stage = 'ready';
+    if (cur.label || cur.autoLabel) return;
+    void terminals.renameTerminal(terminal, buildTerminalTitle(undefined, context, cur.sessionId, 'ready'));
+  }, () => { /* never drew within the wait; the tab keeps its stage */ });
 }
 
 // --- The one launch engine --------------------------------------------------
@@ -484,12 +507,13 @@ async function launchAgent(context: vscode.ExtensionContext, opts: NewAgentLaunc
   // agent, which is the opposite of the policy in core/terminals.ts.
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    name: automatic ? 'Agents Auto' : buildTerminalTitle(agentConfig.title, undefined, context, sessionId ?? null),
+    name: buildTerminalTitle(undefined, context, sessionId ?? null, launchStage(!isLocal && !host)),
     workspacePath: cwd,
     userShell: opts.agentKey === 'shell',
     agentKey: opts.agentKey,
     sessionId,
     host,
+    stage: launchStage(!isLocal && !host),
   });
   terminal.show(false);
   // The harness is unknown until the runner starts, so let adoption re-key the
@@ -548,40 +572,6 @@ async function detectOpencodeSessionId(
     updateStatusBarForTerminal(terminal, context.extensionPath);
     startAutoLabelPollerForTerminal(terminal, context);
   }
-}
-
-async function updateTerminalTitleOnFocus(
-  newTerminal: vscode.Terminal | undefined,
-  context: vscode.ExtensionContext
-): Promise<void> {
-  const display = getDisplayPrefs(context);
-
-  // Only update titles if showLabelOnlyOnFocus is enabled
-  if (!display.showLabelOnlyOnFocus) {
-    return;
-  }
-
-  // Update the newly focused terminal's title (with label)
-  if (newTerminal) {
-    const entry = terminals.getByTerminal(newTerminal);
-    if (entry?.agentConfig) {
-      const newTitle = buildTerminalTitle(
-        entry.agentConfig.prefix,
-        entry.label,
-        context,
-        entry.sessionId,
-        true  // isFocused = true
-      );
-      await terminals.renameTerminal(newTerminal, newTitle);
-    }
-  }
-
-  // NOTE: we deliberately do NOT rename the previously-focused tab here. Renaming
-  // a tab that is no longer active would require focusing it (renameWithArg only
-  // hits the active terminal), which steals focus back to a tab the user just
-  // left — the self-sustaining hop of #3019. The tab that lost focus keeps its
-  // current title; the newly-focused tab (renamed above, while it is active) is
-  // the only one we touch.
 }
 
 interface PromptQuickPickItem extends vscode.QuickPickItem {
@@ -1669,9 +1659,6 @@ export async function activate(context: vscode.ExtensionContext) {
       // Apply any title that resolved while this tab was in the background. It is
       // now the active terminal, so this renames without stealing focus.
       void terminals.applyPendingTitle(terminal);
-
-      // Update terminal titles based on focus state (for showLabelOnlyOnFocus feature)
-      updateTerminalTitleOnFocus(terminal, context);
     })
   );
 
@@ -1725,7 +1712,6 @@ export async function activate(context: vscode.ExtensionContext) {
         tryFetchLabelOnFocus(matchedTerminal, context);
         updateStatusBarForTerminal(matchedTerminal, context.extensionPath);
         void terminals.applyPendingTitle(matchedTerminal);
-        updateTerminalTitleOnFocus(matchedTerminal, context);
       }, 120);
     })
   );
@@ -1823,7 +1809,7 @@ async function openSingleAgent(
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
     terminalId,
-    name: buildTerminalTitle(agentConfig.title, undefined, context, sessionId),
+    name: agentKey === 'shell' ? getExpandedAgentName(agentConfig.prefix) : buildTerminalTitle(undefined, context, sessionId, 'starting'),
     location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
     workspacePath: cwd,
     cwd,
@@ -1832,6 +1818,7 @@ async function openSingleAgent(
     sessionId,
     host: targetHost,
     version: pinnedVersion,
+    stage: agentKey === 'shell' ? undefined : 'starting',
   });
 
   if (command) {
@@ -1948,7 +1935,7 @@ async function placeSpawnRequest(
   const terminalId = terminals.nextId(agentConfig.prefix);
   const title =
     req.title?.trim() ||
-    buildTerminalTitle(agentConfig.title, undefined, context, sessionId);
+    buildTerminalTitle(undefined, context, sessionId, 'starting');
 
   const parent = req.split ? aliveSpawnParent() : undefined;
   const surface = resolveSpawnSurface({
@@ -2471,9 +2458,10 @@ export async function openAgentSessionTerminal(
   const agentConfig = createAgentConfig(context.extensionPath, builtIn.title, builtIn.command, builtIn.icon, builtIn.prefix);
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    name: buildTerminalTitle(agentConfig.title, session.label, context, session.id),
+    name: buildTerminalTitle(session.label, context, session.id, 'starting'),
     workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd(),
     command: inTabResumeCommand(session.id),
+    stage: 'starting',
     agentKey: builtIn.key,
     sessionId: session.id,
     host: session.host,
@@ -2694,11 +2682,12 @@ async function launchResumeTerminal(
 
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    name: buildTerminalTitle(agentConfig.title, undefined, context, plan.newSessionId),
+    name: buildTerminalTitle(undefined, context, plan.newSessionId, launchStage(plan.host === 'auto')),
     workspacePath,
     agentKey: plan.stampAgentKey,
     sessionId: plan.newSessionId,
     host: plan.host,
+    stage: launchStage(plan.host === 'auto'),
   });
 
   // Always inline the central continue.md: it works in ANY harness, and we
@@ -2866,13 +2855,16 @@ export async function openSingleAgentWithQueue(
   // id from its banner).
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    name: buildTerminalTitle(agentConfig.title, undefined, context, sessionId),
+    name: agentKey === 'shell'
+      ? getExpandedAgentName(agentConfig.prefix)
+      : buildTerminalTitle(undefined, context, sessionId, launchStage(!opts?.local && !targetHost)),
     location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
     workspacePath: cwd,
     cwd,
     userShell: agentKey === 'shell',
     agentKey,
     sessionId,
+    stage: agentKey === 'shell' ? undefined : launchStage(!opts?.local && !targetHost),
     host: targetHost,
     labelPoller: false,
   });
@@ -2951,12 +2943,13 @@ async function openAgentTerminals(context: vscode.ExtensionContext) {
       // antigravity tab needs it too to be resumable.
       const { terminal } = await openTrackedTab(context, {
         agentConfig: agent,
-        name: buildTerminalTitle(agent.title, undefined, context, sessionId),
+        name: agentKey === 'shell' ? getExpandedAgentName(agent.prefix) : buildTerminalTitle(undefined, context, sessionId, 'starting'),
         location: { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
         workspacePath: cwd,
         userShell: agentKey === 'shell',
         agentKey,
         sessionId,
+        stage: agentKey === 'shell' ? undefined : 'starting',
       });
 
       if (command) {
@@ -3036,15 +3029,7 @@ async function syncCanonicalSessionTabLabels(context: vscode.ExtensionContext): 
     // the existing focus handler renders it when that tab is next selected.
     if (vscode.window.activeTerminal !== entry.terminal) continue;
     updateStatusBarForTerminal(entry.terminal, context.extensionPath);
-    if (display.showLabelsInTitles) {
-      const newTitle = buildTerminalTitle(
-        entry.agentConfig.title,
-        update.label,
-        context,
-        entry.sessionId,
-      );
-      await terminals.renameTerminal(entry.terminal, newTitle);
-    }
+    await terminals.renameTerminal(entry.terminal, buildTerminalTitle(update.label, context, entry.sessionId));
   }
 }
 
@@ -3170,10 +3155,8 @@ async function armAutoLabelPoller(
     // on the terminal already being active (same focus-safe guard as
     // tryFetchLabelOnFocus).
     const display = getDisplayPrefs(context);
-    if (display.showLabelsInTitles && display.autoLabelInTabTitles && cur.agentConfig) {
-      const newTitle = buildTerminalTitle(
-        cur.agentConfig.title,
-        autoLabel,
+    if (display.autoLabelInTabTitles && cur.agentConfig) {
+      const newTitle = buildTerminalTitle(autoLabel,
         context,
         cur.sessionId
       );
@@ -3231,7 +3214,7 @@ function armShellAdoptionForTerminal(terminal: vscode.Terminal, context: vscode.
 /**
  * Try to fetch and set the auto-label when terminal gains focus.
  * This provides immediate label update instead of waiting for the 5-minute poller.
- * Also updates the terminal tab title if showLabelsInTitles is enabled.
+ * Also updates the terminal tab title when auto labels are on.
  */
 async function tryFetchLabelOnFocus(
   terminal: vscode.Terminal,
@@ -3253,21 +3236,18 @@ async function tryFetchLabelOnFocus(
   // Update status bar
   updateStatusBarForTerminal(terminal, context.extensionPath);
 
-  // Update terminal tab title if showLabelsInTitles is enabled.
+  // Update the terminal tab title when auto labels are on.
   // Bail when the user has navigated away during the async LLM fetch — the
   // rename has to briefly activate this terminal, which switches the visible
   // editor tab. The label is already stored on the entry, so the next time
   // this terminal gets focus the title picks it up.
   const display = getDisplayPrefs(context);
   if (
-    display.showLabelsInTitles &&
     display.autoLabelInTabTitles &&
     entry.agentConfig &&
     vscode.window.activeTerminal === terminal
   ) {
-    const newTitle = buildTerminalTitle(
-      entry.agentConfig.title,
-      autoLabel,
+    const newTitle = buildTerminalTitle(autoLabel,
       context,
       entry.sessionId
     );
@@ -3614,12 +3594,13 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand('workbench.action.unpinEditor');
 
       // 7. Update title with new session ID chunk
-      const newTitle = buildTerminalTitle(agentConfig.title, null, context, newSessionId);
+      const newTitle = buildTerminalTitle(null, context, newSessionId, 'starting');
       await terminals.renameTerminal(terminal, newTitle);
 
       // 8. Restart agent with new session
       terminal.sendText('clear && ' + command);
       readiness.armAgentReady(terminal);
+      followLaunchStage(terminal, 'starting', context);
 
       // 9. Update status bar
       updateStatusBarForTerminal(terminal, context.extensionPath);
@@ -3884,7 +3865,7 @@ async function openForkTerminal(
   const label = forkTabLabel(opts.sourceTitle);
   const { terminal } = await openTrackedTab(context, {
     agentConfig,
-    name: buildTerminalTitle(agentConfig.title, label, context, null),
+    name: buildTerminalTitle(label, context, null),
     location: { viewColumn: opts.viewColumn ?? vscode.ViewColumn.Active, preserveFocus: false },
     workspacePath: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd(),
     agentKey: getBuiltInByPrefix(agentConfig.prefix)?.key,
@@ -3897,7 +3878,7 @@ async function openForkTerminal(
       if (e.terminal !== terminal || !forkFailed(e.execution.commandLine.value, e.exitCode)) return;
       const failed = forkTabLabel(opts.sourceTitle, true);
       terminals.setAutoLabel(terminal, failed);
-      void terminals.renameTerminal(terminal, buildTerminalTitle(agentConfig.title, failed, context, null));
+      void terminals.renameTerminal(terminal, buildTerminalTitle(failed, context, null));
     }),
     vscode.window.onDidCloseTerminal((t) => { if (t === terminal) watch.forEach((d) => d.dispose()); }),
   ];
@@ -4216,7 +4197,9 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
     }
 
     const titleLabel = session.label || session.autoLabel;
-    const title = buildTerminalTitle(displayTitle, titleLabel, context, session.sessionId || null);
+    const title = isShell
+      ? getExpandedAgentName(agentConfig.prefix)
+      : buildTerminalTitle(titleLabel, context, session.sessionId || null, 'starting');
     // The tab's process is the CLI's in-place resume, so the tab becomes the live agent.
     const restoredAgentKey = session.agentType ? agentKeyFromSession(session.agentType) : null;
     const resumeCmd = session.sessionId && (session.recoveryAgent || restoredAgentKey)
@@ -4246,6 +4229,7 @@ async function restoreAgentTerminals(context: vscode.ExtensionContext): Promise<
       // Carry the tab's original creation time across the reload: the agent it is
       // being restored onto is older than this widget (see register's createdAt).
       createdAt: session.createdAt,
+      stage: !isShell && resumeCmd ? 'starting' : undefined,
     });
     terminal.show(true);
     const restoredEntry = terminals.getByTerminal(terminal);

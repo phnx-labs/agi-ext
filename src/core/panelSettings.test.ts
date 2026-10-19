@@ -74,7 +74,11 @@ test('Devices: draws the CLI\'s placement verdict per device and keeps every oth
   // The settings that were there before are all still drawn, in order, above Devices.
   const order = ['Session titles', 'Shortcuts', 'Pull requests', 'Session cards', 'Reader', 'Devices'].map((h) => html.indexOf(`<div class="sh">${h}`))
   expect(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1]))).toBe(true)
-  expect(html).toContain('data-setting="display.showLabelsInTitles"')
+  expect(html).toContain('data-setting="display.autoLabelInTabTitles"')
+  // A tab is named by its session; no setting puts harness text back.
+  for (const gone of ['showLabelsInTitles', 'labelReplacesTitle', 'showLabelOnlyOnFocus', 'showFullAgentNames']) {
+    expect(html).not.toContain(`data-setting="display.${gone}"`)
+  }
   expect(html).toContain('data-setting="editor.markdownViewerEnabled"')
   // Preferred, eligible boxes lead; the CLI's reasons are drawn as words.
   expect(html.indexOf('<b>yosemite-s0</b>')).toBeLessThan(html.indexOf('<b>yosemite-m1</b>'))

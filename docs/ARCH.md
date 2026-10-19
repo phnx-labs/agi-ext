@@ -229,7 +229,12 @@ even when its pids are alive: live windows rewrite it every 4 minutes, and a rel
 writes under a new window id. Shell start time never proves session ownership.
 Reload restores a session id from the exact persisted terminal-id record before
 using the shell's frozen `AGENT_SESSION_ID`; it does not scan processes, read
-transcripts, or pick a recent same-prefix session. Focus hydration identifies
+transcripts, or pick a recent same-prefix session. A reload revives a tab with its
+name and its process only: `creationOptions` comes back with no env and no icon
+(measured in VSCodium 1.135, 2026-10-19), and a tab's name carries no harness text.
+So a revived tab with no `AGENT_TERMINAL_ID` finds its record by the shell pid the
+record saved (`agentPid`, the same process before and after the reload), which gives
+back its terminal id, harness, session and host (`adopt`, `src/vscode/terminals.vscode.ts`). Focus hydration identifies
 unresolved tabs; corrections to established bindings run on pushed stream facts.
 
 `agents.setSessionId` accepts `{ terminalId?: string }`, defaults to the active
