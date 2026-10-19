@@ -137,11 +137,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - The front tab and every tab number come from `src/vscode/frontTab.vscode.ts`: both tab
   events feed `onDidChangeFrontTab`, and a tab maps to its terminal by identity
   (`assignTabs`, `src/core/tabIndex.ts`), never by label alone.
-- A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, card,
+- A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, the
   status bar, the Active Session sidebar and the resume picker. The extension generates no
   title and reports none back to the CLI; Rename Session types Claude's own `/rename`.
-  The pinned front card draws the row's `title` as it comes (final since agents-cli 1.23.31),
-  ⑂ for a `forkOf` row; an editor tab shows at most 34 characters of it (`capTabName`).
+  A card draws the row's `title` as it comes (`cardTitle`; final since agents-cli 1.23.31),
+  never a prompt or request headline, ⑂ for a `forkOf` row; an editor tab shows at most 34
+  characters of the name (`capTabName`).
 - What a card says is computed once and both sidebars read it: a PR's word is `prVerdict`
   (`src/core/prStatus.ts`); a state's dot color `STATE_TONE` and the time words are in
   `src/shared/sessionState.ts`; the theme tokens and `.card` (`RUSH_THEME_CSS`), the escaper

@@ -727,6 +727,12 @@ export function sessionTitle(s: Pick<SessionLike, 'title' | 'topic' | 'label' | 
   return streamTitle(s) || 'Untitled';
 }
 
+/** A card's title: the row's `title` as the CLI made it (final since agents-cli 1.23.31,
+ *  never a prompt or a request headline), else Untitled. */
+function cardTitle(s: Pick<SessionLike, 'title'>): string {
+  return s.title.trim() || 'Untitled';
+}
+
 /** When the open question was asked, from the CLI's attention item; NaN when none. */
 function askedAt(s: SessionLike): number {
   return s.attention?.state === 'open' && s.attention.openedAt ? Date.parse(s.attention.openedAt) : NaN;
@@ -854,8 +860,7 @@ function recentSteps(s: SessionLike): string {
 
 export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings; nav?: FrontNav }): string {
   const state = sessionStateOf(s);
-  // The pinned card draws the CLI's title as it is (final since agents-cli 1.23.31).
-  const title = (opts.front && s.title.trim()) || sessionTitle(s);
+  const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
   const ask = state === 'asks' && cards.asks !== 'off' ? askBlock(s, cards) : '';
   const said = agentLine(s);
@@ -1012,7 +1017,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   // ‹ and › walk this window's session tabs in tab order, wrapping around.
   const tabs = all.filter((x) => tabHere(x) && x.row.tabIndex).sort((a, b) => a.row.tabIndex! - b.row.tabIndex!);
   const at = front ? tabs.indexOf(front) : -1;
-  const navTo = (x: { row: SessionLike } | undefined) => x && x !== front ? { sessionId: x.row.sessionId, host: x.row.host, label: `tab ${x.row.tabIndex} · ${sessionTitle(x.row)}` } : undefined;
+  const navTo = (x: { row: SessionLike } | undefined) => x && x !== front ? { sessionId: x.row.sessionId, host: x.row.host, label: `tab ${x.row.tabIndex} · ${cardTitle(x.row)}` } : undefined;
   const nav: FrontNav = at < 0 ? {} : { prev: navTo(tabs[(at - 1 + tabs.length) % tabs.length]), next: navTo(tabs[(at + 1) % tabs.length]) };
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, front: !!front && row.sessionId === front.row.sessionId, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, cards: opts.cards, nav,
