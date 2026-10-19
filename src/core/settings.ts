@@ -117,6 +117,20 @@ export interface AgentSettings {
   cards?: CardSettings;
   /** How every Merge button merges (Review rows, the session sidebar); squash when unset. */
   mergeMethod?: MergeMethod;
+  /** The Project panel's Review and Issues tabs; both shown when unset. */
+  tabs?: PanelTabs;
+}
+
+/** The Project panel tabs beside Sessions; with both off the tab row is the goal alone. */
+export interface PanelTabs {
+  prs: boolean;
+  tickets: boolean;
+}
+
+export const PANEL_TABS = ['prs', 'tickets'] as const;
+
+export function panelTabs(v: Partial<PanelTabs> | undefined): PanelTabs {
+  return { prs: v?.prs !== false, tickets: v?.tickets !== false };
 }
 
 export type MergeMethod = 'squash' | 'rebase' | 'merge';
@@ -150,6 +164,8 @@ export interface CardSettings {
   question: 'two' | 'full';
   click: 'front' | 'show';
   answerUndo: 'off' | 'five';
+  /** What the pinned card's Made row draws: one row of chips, or preview tiles. */
+  made: 'chips' | 'previews';
   description: boolean;
   chips: boolean;
   machine: boolean;
@@ -161,7 +177,7 @@ export interface CardSettings {
 export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
-  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off',
+  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips',
   description: true, chips: true, machine: true, age: true, stateWord: false,
 };
 
@@ -175,6 +191,7 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     question: v?.question === 'full' ? 'full' : d.question,
     click: v?.click === 'show' ? 'show' : d.click,
     answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
+    made: v?.made === 'previews' ? 'previews' : d.made,
     description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'),
   };
 }

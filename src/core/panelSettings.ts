@@ -6,7 +6,7 @@
 import { escapeHtml } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
-import { CARD_PARTS, cardSettings, getQuickLaunchSlot, MERGE_METHODS, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+import { CARD_PARTS, cardSettings, getQuickLaunchSlot, MERGE_METHODS, PANEL_TABS, panelTabs, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'showLabelsInTitles', label: 'Labels in titles', sub: 'The tab title shows the session label' },
@@ -21,6 +21,7 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
   { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
   { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Either way the answer brings its agent’s tab forward; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
+  { key: 'made', label: 'What it made', sub: 'PRs, tickets and files, on the pinned card and in the Active Session sidebar', options: [{ value: 'chips', label: 'Chips in one row' }, { value: 'previews', label: 'Previews' }] },
   { key: 'asks', label: 'Asks on cards', sub: 'Off leaves only the red card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
   { key: 'options', label: 'Answer options', sub: 'Each option’s description shows on hover either way', options: [{ value: 'titles', label: 'Titles only' }, { value: 'details', label: 'Titles and details' }] },
   { key: 'question', label: 'Question text', sub: 'The full question is on hover either way', options: [{ value: 'two', label: 'Two lines' }, { value: 'full', label: 'Full' }] },
@@ -179,6 +180,9 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   if (group === 'cards' && (CARD_PARTS as readonly string[]).includes(field) && typeof value === 'boolean') {
     return { ...settings, cards: { ...cardSettings(settings.cards), [field]: value } };
   }
+  if (group === 'tabs' && (PANEL_TABS as readonly string[]).includes(field) && typeof value === 'boolean') {
+    return { ...settings, tabs: { ...panelTabs(settings.tabs), [field]: value } };
+  }
   if (key === 'mergeMethod' && typeof value === 'string' && (MERGE_METHODS as readonly string[]).includes(value)) {
     return { ...settings, mergeMethod: value as AgentSettings['mergeMethod'] };
   }
@@ -216,6 +220,9 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   const cards = cardSettings(s.cards);
   return `<div class="settings">
   <div class="srow"><span><b>Refresh</b><small>Read issues, review, goals and devices again; sessions are already live</small></span><button class="rbtn" data-refresh>Refresh</button></div>
+  <div class="sh">Tabs <span class="shsub">Sessions is always there</span></div>
+  ${toggle('tabs.prs', 'Review', 'Pull requests waiting on review or merge', panelTabs(s.tabs).prs)}
+  ${toggle('tabs.tickets', 'Issues', 'The project’s Linear tickets', panelTabs(s.tabs).tickets)}
   <div class="sh">Session titles</div>
   ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}
   <div class="sh">Shortcuts</div>

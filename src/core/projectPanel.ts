@@ -476,6 +476,8 @@ export interface SessionListPrefs {
   sort: SessionSort;
   showLeftover: boolean;
   showEnded: boolean;
+  /** Open tabs below the pinned card; off keeps only the ones that ask (‹ › still walk them all). */
+  showOpen: boolean;
   folded: string[];
   hidden: Record<string, number>;
   /** Show only the sessions on today's goal (its ticket id in the title, topic or reply). */
@@ -489,7 +491,7 @@ const ENDED_GROUPS = ['ended', 'state:ended'];
 /** The Idle group's key: finished turns that asked nothing, folded by default. */
 const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, folded: [...ENDED_GROUPS, IDLE_GROUP], hidden: {}, todayOnly: false, v: 3 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, showOpen: true, folded: [...ENDED_GROUPS, IDLE_GROUP], hidden: {}, todayOnly: false, v: 3 };
 
 const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
 const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
@@ -515,6 +517,7 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     sort: SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort,
     showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
     showEnded: before ? foldable : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
+    showOpen: typeof o.showOpen === 'boolean' ? o.showOpen : DEFAULT_SESSION_PREFS.showOpen,
     folded: o.v === 3 ? folded : [...new Set([...kept, IDLE_GROUP])],
     hidden,
     todayOnly: o.todayOnly === true,
@@ -646,6 +649,7 @@ const ACT_ICON = {
   cloud: '<path d="M4.5 12h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.5 2.75 2.75 0 0 0 4.5 12z"/>',
   machine: '<rect x="2.5" y="3" width="11" height="7.5" rx="1"/><path d="M6 13.5h4M8 10.5v3"/>',
   state: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/>',
+  copy: '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/>',
   merge: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="8" r="1.5"/><path d="M4.5 5v6M4.5 5c0 3 3 3 5.5 3"/>',
 };
 function glyph(name: keyof typeof ACT_ICON, cls = 'ic'): string {
@@ -829,11 +833,12 @@ export interface FrontNav {
   next?: { sessionId: string; host: string; label: string };
 }
 
-function navButtons(nav: FrontNav | undefined, tab: number | undefined): string {
+/** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row. */
+function navButtons(nav: FrontNav | undefined, where: string, state: string): string {
   const btn = (dir: 'prev' | 'next', to: FrontNav['prev']) => to
     ? `<button class="fc-step" data-front-step="${dir}" data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host)}" title="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}" aria-label="${escapeHtml(`${dir === 'prev' ? 'Previous' : 'Next'} tab: ${to.label}`)}">${dir === 'prev' ? '‹' : '›'}</button>`
     : `<button class="fc-step" disabled aria-label="${dir === 'prev' ? 'No previous tab' : 'No next tab'}">${dir === 'prev' ? '‹' : '›'}</button>`;
-  return `<div class="fc-nav">${btn('prev', nav?.prev)}<span class="thistab">This tab${tab ? ` · ${tab}` : ''}</span>${btn('next', nav?.next)}</div>`;
+  return `<div class="fc-nav">${btn('prev', nav?.prev)}<span class="thistab" title="${escapeHtml(state)}">This tab${where ? ` · ${where}` : ''}</span>${btn('next', nav?.next)}</div>`;
 }
 
 /** Claude's recap on the front card, with how old it is; dimmed with "before your
@@ -874,9 +879,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const made = opts.made;
   const busy = state === 'working' || state === 'waiting' || state === 'asks';
   const hasTab = place.kind === 'here' || place.kind === 'leftover';
+  // A tab here is fronted by the card's own click, so it has no ↗ (owner video, 2026-10-18 8:59 PM).
   const go = state === 'ended'
     ? (s.resumable === false ? '' : `<button class="act" data-act="resume" title="Resume the agent${hasTab ? ' in its tab' : ''}">${glyph('resume')}</button>`)
-    : `<button class="act" data-act="focus" title="Focus ${escapeHtml(place.kind === 'here' ? (s.tabIndex ? `tab ${s.tabIndex} in this window` : 'its tab in this window') : place.kind === 'window' ? `its tab in ${place.name}` : place.kind === 'ghostty' ? 'its Ghostty window' : 'it')}">${glyph('focus')}</button>`;
+    : place.kind === 'here' ? '' : `<button class="act" data-act="focus" title="Focus ${escapeHtml(place.kind === 'window' ? `its tab in ${place.name}` : place.kind === 'ghostty' ? 'its Ghostty window' : 'it')}">${glyph('focus')}</button>`;
   const ticketId = made?.ticket ?? s.ticket ?? '';
   const ticket = ticketId ? ticketFace(ticketId) : null;
   const ticketChip = ticketId ? `<a class="chip" href="#" data-open-ticket="${escapeHtml(ticketId)}" title="${escapeHtml(ticket?.title ? `${ticketId}: ${ticket.title}` : `Read ${ticketId}`)}">${LINEAR_MARK}${escapeHtml(ticketId)}</a>` : '';
@@ -926,7 +932,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
   const host = cards.machine ? `<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span>` : '';
   const fork = s.forkOf ? `<span class="fork" title="${escapeHtml(`Forked from ${s.forkOf.slice(0, 8)}`)}" aria-label="Fork">⑂</span>` : '';
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${age}<span class="acts">${cardMenu(s, place, opts)}${go}</span></div>`;
+  // Copy: what another agent or a message needs to pick this session up.
+  const brief = [title, `Session ${s.sessionId} on ${place.device}${s.cwd ? ` in ${displayHome(s.cwd)}` : ''}`, plain(s.recap?.text ?? '') || said].filter(Boolean).join('\n');
+  const copy = `<button class="act" data-copy="${escapeHtml(brief)}" title="Copy its title, session id, machine and recap" aria-label="Copy session details">${glyph('copy')}</button>`;
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
@@ -934,8 +943,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   function frontBody(): string {
     const ago = ageWords(s.lastActivityMs, now);
     const since = waited >= 0 ? `waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ago === 'now' || !ago ? ago : `${ago} ago`;
-    const where = [since, state !== 'ended' && counts.total ? escapeHtml(pendingWords(s.pending)) : '', escapeHtml(shortDevice(place.device)), s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).join(' · ');
-    const statePill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>`;
+    // No row of its own for the state: the tint says it, the word is the tooltip (owner video, 2026-10-18 8:59 PM).
+    const where = [s.tabIndex ? String(s.tabIndex) : '', escapeHtml(shortDevice(place.device)), since].filter(Boolean).join(' · ');
+    const stateWords = [word, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     const latest = recapBlock(s, now)
       || (said ? `<div class="line said">${escapeHtml(said)}</div>` : s.request?.headline ? `<div class="line said">${escapeHtml(plain(s.request.headline))}</div>` : '');
     // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
@@ -944,9 +954,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     // A question from this tab's own agent goes directly under the title, above the recap.
     // Fixed wrappers, so an ask, a live line or a recap coming and going never shifts the
     // Made shelf or the activity box to another position (the patch pairs by position).
-    const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-state">${statePill}<span>${where}</span></div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${activitySteps(s)}`;
+    const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${activitySteps(s)}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
-    return `${navButtons(opts.nav, s.tabIndex)}${top}<div class="fc-body">${detail}</div>${reply}`;
+    return `${navButtons(opts.nav, where, stateWords)}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
@@ -985,7 +995,7 @@ function menuHtml(p: SessionListPrefs): string {
   const item = (on: boolean, label: string, key: string, value: string, ic = '') => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${ic}${label}</button>`;
   return `<div class="menu" role="menu" hidden>
     <div class="sec">Sort</div>${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}<hr>
-    <div class="sec">Show</div>${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
+    <div class="sec">Show</div>${item(p.showOpen, 'Open tabs', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
     <div class="sec">Group</div>${item(p.group === 'app', 'App', 'group', 'app', glyph('terminal', 'mi'))}${item(p.group === 'machine', 'Machine', 'group', 'machine', glyph('machine', 'mi'))}${item(p.group === 'state', 'State', 'group', 'state', glyph('state', 'mi'))}${item(p.group === 'none', 'None', 'group', 'none')}
   </div>`;
 }
@@ -1019,7 +1029,8 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
   // The front tab's session is pinned on top and listed nowhere else (PHNX-4387).
   const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
-  const others = all.filter((x) => x !== front);
+  // Open tabs off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
+  const others = all.filter((x) => x !== front && (prefs.showOpen || !tabHere(x) || ball(x.row) === 'move'));
   const quiet = (x: { row: SessionLike; place: SessionPlace }) => !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
   const rest = others.filter((x) => !quiet(x));
   // ‹ and › walk this window's session tabs in tab order, wrapping around.

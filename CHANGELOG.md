@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.411] - 2026-10-18
+
+From the owner's 8:59 PM recording: the Project panel takes less room.
+- The project's name is the view's title ("PROJECT: RUSH"; ⇄ beside it switches it), so the
+  panel's header is one row: the goal (Rush Cloud – first paying customers · Dec 31; this
+  week's goal and today's goal in its tooltip), then the tabs as icons, search and ⇅.
+  Settings › Tabs turns Review and Issues off.
+- The pinned card has no state row: "This tab · 2 · s1 · 5m ago" sits between ‹ and ›, and
+  the state is the card's tint (its word in the tooltip).
+- Made is one row of chips by default; Settings › What it made › Previews brings back the
+  tiles. The same setting applies to the Active Session sidebar.
+- ⇅ › Show › Open tabs hides the tabs open in this window; one that asks still shows.
+- Every card has Copy (its title, session id, machine and folder, and its recap). A card whose
+  tab is in this window has no ↗: its click already brings the tab forward.
+
 ## [0.9.410] - 2026-10-18
 
 - The Project panel's Sessions tab pins the front tab's card on top, opened up (owner,

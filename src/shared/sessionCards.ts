@@ -664,6 +664,22 @@ function prChecksBar(pr) {
   '</span>';
 }
 
+// The same as one row of chips that scrolls sideways (owner video, 2026-10-18 8:59 PM: the
+// tiles are too big): PRs it opened, tickets it is on or made, its files, then what it touched.
+function madeChips(s, pr, others, tickets, files, touched) {
+  const chip = (attrs, icon, label, title, tone) => '<button type="button" class="mk-chip' + (tone ? ' ' + tone : '') + '" ' + attrs + ' title="' + esc(title) + '">' + icon + '<span>' + esc(label) + '</span></button>';
+  const out = [];
+  if (pr) out.push(chip('data-url="' + esc(pr.url) + '"', APP_ICON.github, '#' + pr.number + ' ' + s.prVerdict.word, 'Open #' + pr.number + (pr.title ? ' ' + pr.title : '') + ' on GitHub', 'pr-tone-' + s.prVerdict.tone));
+  for (const p of others) out.push(chip('data-url="' + esc(p.url) + '"', APP_ICON.github, p.ownerRepo.split('/').pop() + ' #' + p.number, 'Open ' + p.url));
+  for (const t of tickets) out.push(chip('data-ticket="' + esc(t.id) + '"', APP_ICON.linear, t.id, 'Read ' + t.id + (t.title ? ' ' + t.title : '')));
+  for (const f of files) {
+    const kind = artifactKind(f);
+    out.push(chip('data-artifact="' + esc(f.path) + '"', '<span class="mk-cg" aria-hidden="true">' + esc(FILE_GLYPH[kind] || '▢') + '</span>', f.name, 'Open ' + f.path + (f.renderedFrom ? ' (from ' + f.renderedFrom + ')' : ''), 'artifact-open'));
+  }
+  for (const t of touched) out.push('<button type="button" class="mk-chip mk-tch"' + (t.url ? ' data-url="' + esc(t.url) + '"' : ' data-ticket="' + esc(t.ticket) + '"') + ' title="' + esc(t.title) + '">' + t.icon + '<span>' + esc(t.label) + '</span></button>');
+  return '<div class="made chips"><div class="made-l">Made <span>' + (out.length - touched.length) + '</span></div><div class="mk-row" data-strip="made">' + out.join('') + '</div></div>';
+}
+
 function renderMadeShelf(s, range) {
   const pr = s.prStatus;
   const others = (s.pullRequests || []).filter((p) => !pr || p.url !== pr.url);
@@ -675,6 +691,7 @@ function renderMadeShelf(s, range) {
   const touched = (s.touchedPrs || []).map((p) => ({ url: p.url, label: (p.action || 'touched') + ' #' + p.number, title: (p.action || 'Touched') + ' ' + (p.repo ? p.repo + '#' : '#') + p.number, icon: APP_ICON.github }))
     .concat((s.touchedTickets || []).map((t) => ({ ticket: t.id, label: (t.action || 'touched') + ' ' + t.id, title: (t.action || 'Touched') + ' ' + t.id, icon: APP_ICON.linear })));
   if (!pr && !others.length && !tk && !created.length && !files.length && !touched.length) return '';
+  if (s.chips) return madeChips(s, pr, others, tk ? [tk].concat(created) : created, files, touched);
   const tiles = [];
   if (pr) {
     const v = s.prVerdict;
@@ -910,6 +927,17 @@ export const MADE_CSS = `
   .mk-touch { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 1px solid var(--r-edge); border-radius: 999px; background: transparent; color: var(--r-text-2); font: inherit; font-size: 10.5px; white-space: nowrap; cursor: pointer; }
   .mk-touch:hover { border-color: var(--r-edge-hi); color: var(--r-text); }
   .mk-touch .art-icon { width: 11px; height: 11px; }
+  /* Made as chips (Settings › What it made): one row, the cards' chip shape, scrolled sideways. */
+  .made.chips { display: flex; align-items: center; gap: 6px; margin: 9px 0 0; min-width: 0; }
+  .made.chips .made-l { padding: 0; flex: none; }
+  .mk-row { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .mk-row::-webkit-scrollbar { display: none; }
+  .mk-chip { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; max-width: 180px; padding: 0 6px 0 5px; border: 1px solid var(--r-edge); border-radius: 5px; background: transparent; color: var(--r-text-2); font-family: var(--r-mono); font-size: 10.5px; white-space: nowrap; cursor: pointer; }
+  .mk-chip:hover { border-color: var(--r-edge-hi); color: var(--r-text); }
+  .mk-chip span { overflow: hidden; text-overflow: ellipsis; }
+  .mk-chip .art-icon { width: 11px; height: 11px; }
+  .mk-cg { font-size: 9.5px; color: var(--r-faint); flex: none; }
+  .mk-tch { border-style: dashed; }
   @media (prefers-reduced-motion: reduce) { .mk-file.busy .mk-doc, .mk-file.busy .mk-img { animation: none; } }`;
 
 export function sessionPanelCss(fontFaces: string): string {

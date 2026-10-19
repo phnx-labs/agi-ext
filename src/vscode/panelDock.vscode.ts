@@ -14,19 +14,20 @@ import * as vscode from 'vscode';
 export interface PanelHost {
   readonly webview: vscode.Webview;
   readonly visible: boolean;
-  /** Beside the view's name; in a tab, after its title. */
-  description?: string;
+  /** The view's title (VS Code draws "PROJECT: RUSH"); in a tab, after the tab's name.
+   *  A view's description is never drawn while it is its bar's only view. */
+  title?: string;
   show(preserveFocus?: boolean): void;
   readonly onDidChangeVisibility: vscode.Event<void>;
 }
 
 function tabHost(tab: vscode.WebviewPanel, title: string): PanelHost {
-  let description: string | undefined;
+  let named: string | undefined;
   return {
     webview: tab.webview,
     get visible() { return tab.visible; },
-    get description() { return description; },
-    set description(d) { description = d; tab.title = d ? `${title} · ${d}` : title; },
+    get title() { return named; },
+    set title(d) { named = d; tab.title = d ? `${title}: ${d}` : title; },
     show: (preserveFocus) => tab.reveal(undefined, preserveFocus),
     // A tab's view state also changes when it gains or loses focus; a view's
     // visibility event fires only when it shows or hides, so pass only that.

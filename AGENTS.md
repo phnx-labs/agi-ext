@@ -208,9 +208,11 @@ going on, where, and what came out of it" in one look; text explains only what a
   part off, down to the logo and title on one line (owner video, 2026-10-17).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
   The question opens to its full text on a click on it. The front tab's card is the one
-  exception: pinned above everything and opened up (‹ › to the tabs beside it, its ask first,
-  state, Claude's recap, the sidebar's own Made shelf, every step in a box that scrolls, a
-  reply box; owner, 2026-10-18).
+  exception: pinned above everything and opened up (‹ › to the tabs beside it with its tab,
+  machine and age between them, its ask first, Claude's recap, the sidebar's own Made shelf,
+  every step in a box that scrolls, a reply box; owner, 2026-10-18). No row only for its
+  state: the tint says it (owner video, 2026-10-18 8:59 PM). Made is one row of chips or the
+  preview tiles, by Settings > What it made, in both panels; no chip row ever wraps.
   Everything else a session made lives in the Active Session sidebar.
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and
@@ -227,18 +229,21 @@ going on, where, and what came out of it" in one look; text explains only what a
 - **Motion only for liveness and arrival.** The Working dot breathes, a question's dot rings
   slowly, and a question that just arrived glows three times; everything stops under
   `prefers-reduced-motion`. Nothing flashes for as long as it waits.
-- **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu. Group headers carry
+- **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu (Show: Open tabs,
+  tabs with no agent, Ended; a tab that asks shows either way). Group headers carry
   the icon, a count and one dot per state, so a folded group still says what is inside.
   There is no group of asks: a session that asks is a red card leading its own group (Open
   tabs for a tab here), by urgency, then wait; under the pinned card come Ready for review
   and Idle (no tab here), then the grouping.
-- **Two header rows.** The Project panel's header is the project with its goal beside it, then
-  the tabs with that tab's own controls (☀, search, ⇅) at the right; no heading row of its own.
-  Settings is the gear in the view's title bar, Refresh lives in Settings, and ⌃1–⌃4 switch the
-  tabs (owner video and screenshot, 2026-10-17).
+- **One header row.** The project's name is the view's title ("PROJECT: RUSH"; ⇄ beside it
+  switches it), so the Project panel's header is one row: the goal, then the tabs as icons and
+  that tab's own controls (☀, search, ⇅). Settings > Tabs turns Review and Issues off. Settings
+  is the gear in the view's title bar, Refresh lives in Settings, and ⌃1–⌃4 switch the tabs
+  (owner videos, 2026-10-17 and 2026-10-18 8:59 PM).
 - **A click selects and brings its tab forward; it never resumes.** A card click shows the
   session and fronts its tab when the tab is in this window; switching tabs moves the
-  selection back. Anything else is an explicit icon: focus (↗) or resume (▶); Close the tab
+  selection back. Anything else is an explicit icon: focus (↗, only where the click cannot
+  front it: another window, Ghostty), resume (▶), Copy (title, session id, machine, recap); Close the tab
   is in ⋯, out of a stray click's way (with Undo; it asks first only when the agent is working
   or waiting), and multi-select closes several.
 - **Prototype first, with real data.** A visual change starts as a prototype built from the

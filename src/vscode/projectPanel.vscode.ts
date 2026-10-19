@@ -62,7 +62,7 @@ import { REPLY_BOX_CSS, REPLY_SCRIPT } from '../shared/replyBox';
 import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
-import { cardSettings, validMergeMethod } from '../core/settings';
+import { cardSettings, panelTabs, validMergeMethod } from '../core/settings';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
 import { buildIconPath, harnessLogoCss } from './theme.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
@@ -139,9 +139,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
       else if (msg.type === 'open') openWebviewUrl(msg.url, msg.external === true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
-      else if (msg.type === 'projects') void this.listProjects();
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
-      else if (msg.type === 'pickProject' && typeof msg.name === 'string') void this.controller.pickByName(msg.name).catch((e) => { void vscode.window.showErrorMessage(`Could not switch project: ${errorText(e)}`); });
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true || msg.step === true ? 'always' : 'card') : 'no');
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
@@ -173,7 +171,7 @@ class ProjectView implements vscode.WebviewViewProvider {
         // Redraw either way, so a write that failed shows the stored value again.
         void this.controller.setSetting(msg.key, msg.value)
           .catch((e) => { void vscode.window.showErrorMessage(`Could not save the setting: ${errorText(e)}`); })
-          .finally(() => this.post('settings', this.controller.settings(this.devices)));
+          .finally(() => { this.post('settings', this.controller.settings(this.devices)); this.postTabs(); });
       }
       else if (msg.type === 'device' && typeof msg.name === 'string' && (msg.field === 'enabled' || msg.field === 'preferred') && typeof msg.value === 'boolean') {
         const name = msg.name;
@@ -203,10 +201,16 @@ class ProjectView implements vscode.WebviewViewProvider {
    *  draw can be lost; the script says when it is ready and gets the tab again. */
   private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
+    this.postTabs();
     void this.loadGoals(false);
     const cached = this.tabs.get(this.active)!.html;
     if (cached) this.post(this.active, cached);
     else void this.load(this.active, false);
+  }
+
+  /** Which of Review and Issues Settings shows beside Sessions. */
+  private postTabs(): void {
+    void this.view?.webview.postMessage({ type: 'tabs', ...panelTabs(getSettings(this.context).tabs) });
   }
 
   private async show(tab: TabId): Promise<void> {
@@ -239,7 +243,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       return;
     }
     if (gen !== state.generation) return;
-    view.description = project?.name;
+    // The project's name is the view's title, "PROJECT: RUSH"; ⇄ beside it switches it.
+    view.title = project?.name;
     void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
     if (!project) {
       this.post(tab, '<div class="empty">No project found for this folder. <a href="#" data-pick>Pick a project</a></div>');
@@ -292,15 +297,6 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (this.active === 'sessions') void this.view?.webview.postMessage({ type: 'reveal', sessionId, flash });
   }
 
-  /** The project menu, read each time it opens. */
-  private async listProjects(): Promise<void> {
-    try {
-      const list = await this.controller.menu();
-      void this.view?.webview.postMessage({ type: 'projectList', ...list });
-    } catch (e) {
-      void this.view?.webview.postMessage({ type: 'projectList', error: errorText(e) });
-    }
-  }
 
   /** A ticket tile, here or in the session panel: its row peeks in Issues and its Linear
    *  page opens as a tab. */
@@ -887,15 +883,16 @@ class ProjectPanelController {
       return { live, card: sessionCardFields(live, { sessionId: live.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri }) };
     };
     const madeFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? sessionMade(f.card) : null; };
-    // The pinned card's Made shelf is the Active Session sidebar's, with no Share (that lives there).
-    const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false } : null; };
+    const cards = cardSettings(getSettings(this.context).cards);
+    // The pinned card's Made shelf is the Active Session sidebar's, with no Share (that lives
+    // there), drawn as one row of chips unless Settings asks for previews.
+    const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false, chips: cards.made === 'chips' } : null; };
     const here = this.here(webview);
     const prefs = this.prefs();
     const subject = currentAgentPanelSubject();
     const count = sessionCount(rows, here, prefs);
     const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
     const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
-    const cards = cardSettings(getSettings(this.context).cards);
     const front = frontTerminal();
     const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
     return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
@@ -1110,33 +1107,17 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .empty a { color: var(--vscode-textLink-foreground); }
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; padding: 0; }
-  .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--r-edge); flex: none; }
+  .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 4px 10px; border-bottom: 1px solid var(--r-edge); flex: none; min-width: 0; }
+  .tab[hidden] { display: none; }
   .shead .today { margin-left: 6px; flex: none; font: 500 10.5px var(--r-sans); color: var(--r-text-2); border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px; background: transparent; cursor: pointer; }
   .shead .today.on { border-color: var(--r-selected-edge); background: var(--r-selected); color: var(--r-text); }
   .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
-  /* Goals: two quiet lines above the tabs, never a block. */
-  .proj { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; flex: none; min-width: 0; }
-  .proj[hidden] { display: none; }
-  .pp { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--r-edge); background: var(--r-glass); border-radius: 6px; padding: 2px 7px; font: inherit; font-size: 11.5px; color: var(--r-text); cursor: pointer; flex: none; }
-  .pp:hover { background: var(--r-glass-hover); }
-  .pp .ti { width: 12px; height: 12px; }
-  .pp b { font-weight: 600; }
-  .pp .car { color: var(--r-faint); font-size: 9px; }
-  .pmenu { position: absolute; z-index: 30; top: 100%; left: 8px; right: 8px; margin-top: 4px; background: var(--vscode-menu-background, var(--r-glass)); border: 1px solid var(--r-edge); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; }
-  .pmenu[hidden] { display: none; }
-  .pms { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); padding: 6px 8px 4px; }
-  .pms.err { text-transform: none; letter-spacing: 0; color: var(--r-bad); }
-  .pmenu button { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: transparent; text-align: left; font: inherit; font-size: 12px; color: var(--r-text); padding: 5px 8px; border-radius: 5px; cursor: pointer; }
-  .pmenu button:hover { background: var(--r-glass-hover); }
-  .pmenu .ck { width: 12px; flex: none; color: var(--r-text-2); }
-  .pmenu .pn { display: flex; flex-direction: column; min-width: 0; }
-  .pmenu .pn small { color: var(--r-caption); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pmenu hr { border: 0; border-top: 1px solid var(--r-edge); margin: 4px 0; }
-  .pmenu .pfound { font-style: normal; font-weight: 400; font-size: 10.5px; color: var(--r-caption); margin-left: 4px; }
   .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
-  /* The goal sits on the project row, beside the project (owner video, 2026-10-17). */
-  .goals { flex: 1; min-width: 0; }
+  /* One header row: the goal, then the tabs as icons and their controls (owner video,
+     2026-10-18 8:59 PM); the project's name is the view's title. */
+  .goals { flex: 1; min-width: 0; margin-right: 4px; }
+  .goals[hidden] { display: none; }
   .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
   .goals a:hover .gtx { color: var(--r-text); }
   .goals .gl2 { color: var(--r-text-2); }
@@ -1145,16 +1126,14 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .goals .gtx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .goals .gm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); }
   .goals .gerr { font-size: 11px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tab { height: 26px; padding: 0 8px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
+  .tab { height: 26px; padding: 0 6px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
   .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
   .tab:hover { background: var(--r-glass-hover); }
   .tab[aria-selected="true"] { background: var(--r-glass-hover); color: var(--r-text); font-weight: 600; }
-  .tab[aria-selected="true"] .lbl { display: inline; }
   .tab:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   .tab .ti { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; flex: none; }
   .tab .cnt { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); font-weight: 400; }
   .tab .dot { position: absolute; top: -1px; right: -2px; min-width: 14px; height: 14px; line-height: 14px; border-radius: 7px; background: var(--r-warn-tint); color: var(--r-warn); font-size: 9.5px; font-weight: 700; text-align: center; padding: 0 3px; box-sizing: border-box; transform: scale(.85); }
-  .tab[aria-selected="true"] .dot { position: static; transform: none; }
   .tab .dot:empty { display: none; }
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
   /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
@@ -1204,8 +1183,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card.front .top .hx { margin-top: 2px; }
   .card.front .ttl { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 17px; }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
-  .fc-state { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 4px; font-size: 11px; color: var(--r-caption); }
-  .fc-state > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .card .fc-nav .thistab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
   .fc-recap .fc-k { color: var(--r-gold-line); }
   .fc-old { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); }
@@ -1230,6 +1208,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
 ${REPLY_BOX_CSS}
 ${MADE_CSS}
   .fc-made .made { margin: 7px -11px 0; }
+  .fc-made .made.chips { margin: 0; }
   .fc-made button.mk, .fc-made button.mk-open { color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .fc-made button.mk-open { background: transparent; border: 0; }
   .fc-act ol { max-height: 150px; overflow-y: auto; scrollbar-width: thin; }
@@ -1394,12 +1373,8 @@ ${MADE_CSS}
 </style>
 </head>
 <body>
-<div class="proj" hidden>
-  <button class="pp" data-proj-menu aria-haspopup="menu" aria-expanded="false" title="Show another project"><svg class="ti" viewBox="0 0 16 16"><path d="M2 4.5h4l1.2 1.3H14v6.7H2z"/></svg><b class="ppn"></b><span class="car">▾</span></button>
-  <div class="goals" hidden></div>
-  <div class="pmenu" role="menu" hidden></div>
-</div>
 <div class="tabs" role="tablist" aria-label="Project">
+  <div class="goals" hidden></div>
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
@@ -1609,19 +1584,14 @@ ${MADE_SCRIPT}
       if (shownProject !== undefined && m.name !== shownProject && cancelMerges()) toast('Merge cancelled: the project changed before it started.');
       if (shownProject !== undefined && m.name !== shownProject) peeked = null;
       shownProject = m.name;
-      const row = document.querySelector('.proj');
-      // Always shown: with nothing found, the menu is how a project gets picked.
-      row.hidden = false;
-      row.querySelector('.ppn').textContent = m.name || 'No project';
-      row.querySelector('.pp').title = (m.picked ? 'Picked for this window' : m.name ? 'Found from this folder' : 'None found from this folder') + ' · show another project';
     }
-    else if (m.type === 'projectList') {
-      const pmenu = document.querySelector('.pmenu');
-      if (m.error) { pmenu.innerHTML = '<div class="pms err">' + esc(m.error) + '</div>'; return; }
-      pmenu.innerHTML = '<div class="pms">' + (m.linearError ? 'Projects' : 'Linear projects') + '</div>' +
-        (m.linearError ? '<div class="pms err">Linear projects could not be read: ' + esc(m.linearError) + '</div>' : '') +
-        m.rows.map((r) => '<button role="menuitemradio" aria-checked="' + r.current + '" data-proj-pick="' + esc(r.pick) + '"><span class="ck">' + (r.current ? '✓' : '') + '</span><span class="pn"><b>' + esc(r.label) + (r.found ? ' <i class="pfound">found from this folder</i>' : '') + '</b><small>' + esc(r.detail) + '</small></span></button>').join('') +
-        (m.picked ? '<hr><button data-proj-pick=""><span class="ck"></span>Use detection again</button>' : '');
+    else if (m.type === 'tabs') {
+      // Settings > Tabs: Review and Issues can go; Sessions alone needs no tab to choose it.
+      const shown = { prs: m.prs, tickets: m.tickets };
+      for (const t of document.querySelectorAll('.tabs .tab')) t.hidden = t.dataset.tab !== 'sessions' && !shown[t.dataset.tab];
+      document.querySelector('.tabs [data-tab="sessions"]').hidden = !m.prs && !m.tickets;
+      const on = document.querySelector('.tabs .tab[aria-selected="true"]');
+      if (on && on.hidden && on.dataset.tab !== 'sessions') choose('sessions');
     }
     else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
     else if (m.type === 'loading') document.body.classList.add('loading');
@@ -1694,10 +1664,13 @@ ${MADE_SCRIPT}
   document.addEventListener('click', (e) => {
     // A card's ⋯ menu: its summary toggles it; a click anywhere else closes it.
     main.querySelectorAll('.cmore[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+    // Copy, on a card or in its ⋯ menu: the text goes to the clipboard through the host.
+    const copy = e.target.closest('[data-copy]');
+    if (copy) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); toast('Copied'); }
     const more = e.target.closest('.cmore');
+    if (copy && !more) return;
     if (more) {
-      const copy = e.target.closest('[data-copy]');
-      if (copy) { vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); more.open = false; }
+      if (copy) more.open = false;
       // Close and Hide live in ⋯; they run below, as the card's own [data-act].
       if (!e.target.closest('.cmenu [data-act]')) return;
       more.open = false;
@@ -1712,17 +1685,6 @@ ${MADE_SCRIPT}
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
     // The project button: its menu lists every Linear project (read when it opens).
-    const pmenu = document.querySelector('.pmenu');
-    if (e.target.closest('[data-proj-menu]')) {
-      const opening = pmenu.hidden;
-      pmenu.hidden = !opening;
-      document.querySelector('[data-proj-menu]').setAttribute('aria-expanded', String(opening));
-      if (opening) { pmenu.innerHTML = '<div class="pms">Reading projects…</div>'; vscode.postMessage({ type: 'projects' }); }
-      return;
-    }
-    const pick = e.target.closest('[data-proj-pick]');
-    if (pick) { pmenu.hidden = true; vscode.postMessage({ type: 'pickProject', name: pick.dataset.projPick }); return; }
-    if (!pmenu.hidden && !e.target.closest('.pmenu')) { pmenu.hidden = true; document.querySelector('[data-proj-menu]').setAttribute('aria-expanded', 'false'); }
     // A ticket tile or chip peeks at its row in Issues and opens its Linear page.
     const tk = e.target.closest('[data-open-ticket]');
     if (tk) { e.preventDefault(); e.stopPropagation(); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
