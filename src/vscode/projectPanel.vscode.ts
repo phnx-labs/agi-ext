@@ -806,12 +806,13 @@ class ProjectPanelController {
   }
 
   /** The project's sessions: the CLI's own project, plus (until agents-cli maps a
-   *  project's old names) a session whose checkout is one of its repositories. */
+   *  project's old names) a session whose checkout is one of its repositories, plus
+   *  every session with a tab in this window, whatever its project. */
   private projectRows(p: ProjectRef): SessionLike[] {
     const registry = registrySnapshot();
     // The registry answers once; the list redraws then. Until it has, only rows the CLI filed under no project fall back.
     if (!registry) void readRegistry().then(() => this.view.redrawSessions(), () => undefined);
-    return projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name, projectFallback(p, registry));
+    return projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name, projectFallback(p, registry), (r) => !!terminals.getBySessionId(r.sessionId));
   }
 
   private presented(): RemoteSession[] {

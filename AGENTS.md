@@ -190,6 +190,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   paths is listed too, only when its `confirmedProject` is empty or no registered project's
   name (`projectFallback`); a session another live project claims stays there. The Project
   panel and the resume picker apply the same rule. Delete it when the feed resolves old names.
+  Attribution only decides sessions with no tab here: a session with a tab in this window is
+  in Open tabs whatever its project (`projectSessions`' `tabHere`, from
+  `terminals.getBySessionId`; owner video, 2026-10-19 12:58 AM); the resume picker passes none.
 - One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
   and exec path for `agents`, the standalone `sessions`/`secrets` it installs, and `linear`
   (`resolveAgentsBin`, `runCliArgs`, `runAgents`, `src/core/agentsBin.ts`).
