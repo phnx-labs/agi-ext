@@ -502,6 +502,10 @@ test('⇅ Show > Open tabs off lists a tab here only while it asks; ‹ › stil
   expect(html).toContain('data-front-step="next" data-session="b"')
   expect(html).toContain('data-pref="showOpen" data-value="true"')
   expect(readSessionPrefs({}).showOpen).toBe(true)
+  // The tab's count is what the list draws: the front tab and the asking tab, not b.
+  const rows = [tab('a', 1), tab('b', 2), tab('c', 3, asking)]
+  expect(sessionCount(rows, HERE, prefs({ showOpen: false }), 'a').shown).toBe(2)
+  expect(sessionCount(rows, HERE, prefs(), 'a').shown).toBe(3)
 })
 
 test('‹ › on the pinned card name and front the session tabs before and after it, wrapping around', () => {
