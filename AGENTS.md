@@ -215,9 +215,16 @@ going on, where, and what came out of it" in one look; text explains only what a
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
   waits or asks, nothing without `doneVerdict`.
   The question opens to its full text on a click on it. The front tab's card is the one
-  exception: pinned above everything and opened up (‹ › to the tabs beside it with its tab,
-  machine and age between them, its ask first, Claude's recap, the sidebar's own Made shelf,
-  every step in a box that scrolls, a reply box; owner, 2026-10-18). No row only for its
+  exception: pinned above everything and opened up (‹ › with its tab, machine and age between
+  them, its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
+  scrolls, a reply box; owner, 2026-10-18), and its card still keeps its place in Open tabs
+  with the selected rail (answers only on the pinned one), so switching tabs never reorders or
+  removes a card, and the list never jumps: a clicked card stays where it was on screen
+  (owner video, 2026-10-19 1:32 AM). Settings > ‹ › on the pinned card: Tab order, Next that
+  needs you (`nextNeedsYou`, `src/core/frontNav.ts`: an unseen ask, then a turn finished since
+  you looked, then the rest round-robin; ‹ is Back), or Off. The window remembers only which
+  tabs were in front and when (`FrontHistory`). What a session was started with is a card
+  part, First message, off by default and with no "started:" word. No row only for its
   state: the tint says it (owner video, 2026-10-18 8:59 PM). Made is one row of chips or the
   preview tiles, by Settings > What it made, in both panels; no chip row ever wraps.
   Everything else a session made lives in the Active Session sidebar.

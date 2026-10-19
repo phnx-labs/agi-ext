@@ -27,6 +27,7 @@ import {
   prFixPrompt,
   renderPrsProgress,
   renderSessions,
+  nextThatNeedsYou,
   renderTickets,
   readSessionPrefs,
   readReviewPrefs,
@@ -65,6 +66,7 @@ import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
 import { cardSettings, panelTabs, validMergeMethod } from '../core/settings';
+import { FrontHistory } from '../core/frontNav';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
 import { buildIconPath, harnessLogoCss } from './theme.vscode';
 import { BUILT_IN_AGENTS } from '../core/agents';
@@ -101,7 +103,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; step?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; answer?: unknown; step?: unknown; back?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -152,6 +154,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') void this.openTicketTab(msg.id);
       else if (msg.type === 'image' && typeof msg.path === 'string') void this.controller.openImage(msg.path);
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string' && msg.back === true) this.controller.back(msg.sessionId, host);
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true || msg.step === true ? 'always' : 'card') : 'no');
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void vscode.commands.executeCommand('agents.searchSessions');
@@ -468,6 +471,8 @@ class ProjectPanelController {
   /** The last Issues read that answered, for ⌘K's Tickets section. */
   private ticketsSeen: TicketGroup[] = [];
   readonly view: ProjectView;
+  /** Which session tabs this window had in front, and when: Next that needs you and Back read it. */
+  readonly history = new FrontHistory();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.view = new ProjectView(this, context);
@@ -879,10 +884,10 @@ class ProjectPanelController {
     await openListedArtifact(sessionId, host, filePath, this.presented());
   }
 
-  private here(webview: vscode.Webview): SessionHere {
+  private here(webview?: vscode.Webview): SessionHere {
     const app = vscode.env.appName;
     const editor: SessionHere['editor'] = /codium/i.test(app) ? 'vscodium' : /cursor/i.test(app) ? 'cursor' : 'vscode';
-    const asset = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'assets', ...p)).toString();
+    const asset = (...p: string[]) => webview ? webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'assets', ...p)).toString() : '';
     return {
       device: normalizeHost(os.hostname()),
       localHost: LOCAL_LABEL,
@@ -894,8 +899,8 @@ class ProjectPanelController {
     };
   }
 
-  sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
-    if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
+  /** The project's rows with this window's tabs on them, and what the list reads beside them. */
+  private sessionFacts(p: ProjectRef) {
     const tabNumbers = terminalTabNumbers();
     const rows = this.projectRows(p)
       .map((r) => {
@@ -904,6 +909,16 @@ class ProjectPanelController {
         return { ...r, tabHere: !!tab, tabIndex: tab ? tabNumbers.get(tab.terminal) : undefined, account: who?.accountLabel ?? who?.account ?? undefined };
       });
     const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
+    const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
+    const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
+    const front = frontTerminal();
+    const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
+    return { rows, byId, blockedIds, frontId, prefs: this.prefs() };
+  }
+
+  sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
+    if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
+    const { rows, byId, blockedIds, frontId, prefs } = this.sessionFacts(p);
     const previewUri = (f: string) => webview.asWebviewUri(vscode.Uri.file(f)).toString();
     const thumbsFor = (s: SessionLike) => {
       const live = byId.get(s.sessionId);
@@ -921,14 +936,28 @@ class ProjectPanelController {
     // there), drawn as one row of chips unless Settings asks for previews.
     const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false, chips: cards.made === 'chips' } : null; };
     const here = this.here(webview);
-    const prefs = this.prefs();
     const subject = currentAgentPanelSubject();
-    const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
-    const blockedIds = new Set(blockedSessions(sessionPresentationStore.activityEvents(), lastUserAt).keys());
-    const front = frontTerminal();
-    const frontId = front ? terminals.getByTerminal(front)?.sessionId || null : null;
     const count = sessionCount(rows, here, prefs, frontId);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards, memory: this.history }), count: { shown: count.shown, asks: count.asks } };
+  }
+
+  /** Agents: Next Agent That Needs You: fronts the session tab › fronts in
+   *  Next-that-needs-you (an ask, then a turn that finished since you looked, then the
+   *  other idle tabs), from any tab or editor in front. */
+  async nextNeedsYou(): Promise<void> {
+    const p = await this.project().catch(() => null);
+    const next = p && sessionPresentationStore.hasSeenReset() ? (() => {
+      const { rows, blockedIds, frontId, prefs } = this.sessionFacts(p);
+      return nextThatNeedsYou(rows, { selectedId: null, frontId, here: this.here(), prefs, todayId: this.todayId, blockedIds, memory: this.history });
+    })() : undefined;
+    if (!next) { vscode.window.setStatusBarMessage(p ? 'Nothing needs you: every other agent is working' : 'No project in this window', 4000); return; }
+    this.select(next.row.sessionId, next.row.host, 'always');
+  }
+
+  /** ‹ in Next-that-needs-you: back to the session tab in front before, like Back in a browser. */
+  back(sessionId: string, host: string | undefined): void {
+    this.history.goBack(sessionId);
+    this.select(sessionId, host, 'always');
   }
 
   /** Show the session in the sidebar; its tab in this window comes forward, wherever its
@@ -1038,6 +1067,8 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
     webviewOptions: { retainContextWhenHidden: true },
   }));
   controller.view.dock.register(context);
+  const atStart = frontTerminal();
+  controller.history.front(atStart ? terminals.getByTerminal(atStart)?.sessionId || undefined : undefined, Date.now());
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.project.refresh', () => controller.refresh()),
     vscode.commands.registerCommand('agents.project.settings', () => controller.view.open('settings')),
@@ -1047,11 +1078,13 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
     })),
     // Internal: the session panel's ticket tile opens the ticket here.
     vscode.commands.registerCommand('agents.searchSessions', () => controller.searchSessions()),
+    vscode.commands.registerCommand('agents.nextNeedsYou', () => controller.nextNeedsYou()),
     // The list follows the tab in front: switching tabs moves its selection (owner video,
     // 2026-10-12), on either tab event, never with a flash (PHNX-4387).
     // A tab with no session yet (a new agent, a shell) still moves THIS TAB and the sidebar.
     onDidChangeFrontTab((t) => {
       const id = t ? terminals.getByTerminal(t)?.sessionId : undefined;
+      controller.history.front(id || undefined, Date.now());
       followFrontTerminal();
       void controller.redrawSessions().then(() => { if (id) controller.view.reveal(id, false); });
     }),
@@ -1436,6 +1469,21 @@ ${MADE_SCRIPT}
     observeThumbs(slot);
   }
   // The pinned card's activity box stays at its newest step unless you scrolled up in it.
+  // A card click keeps the clicked card where it was on screen: the pinned card above
+  // it changes height when its tab comes forward, so each redraw for the next 2 s moves
+  // the scroll by as much as the card moved, until the pinned card is the clicked one
+  // (owner video, 2026-10-19 1:32 AM: "it just goes to the top").
+  let anchor = null;
+  function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
+  // On screen: at least a title row's height of it shows.
+  function onScreen(el) { const r = el.getBoundingClientRect(), v = main.getBoundingClientRect(); return Math.min(r.bottom, v.bottom) - Math.max(r.top, v.top) >= 24; }
+  function holdAnchor() {
+    if (!anchor) return;
+    if (Date.now() - anchor.at > 2000) { anchor = null; return; }
+    const c = cardsOf('key', anchor.key).find((x) => !x.closest('.front-pin'));
+    if (c) main.scrollTop += c.getBoundingClientRect().top - anchor.top;
+    if (main.querySelector('.front-pin .card')?.dataset.key === anchor.key) anchor = null;
+  }
   function activityBox() { return main.querySelector('.front-pin .fc-act ol'); }
   function activityAtEnd(box) { return !box || box.scrollHeight - box.scrollTop - box.clientHeight < 6; }
   // The front card's reply box: its session's draft, bound once per node, the mic as
@@ -1607,7 +1655,9 @@ ${MADE_SCRIPT}
       const folds = () => [...main.querySelectorAll('details:not(.cmore)')];
       const open = new Set(same ? folds().filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
-      const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
+      // Focus comes back to the same card in the same place (pinned or listed), without scrolling to it.
+      const focusEl = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.key ? document.activeElement : null;
+      const focused = focusEl ? { key: focusEl.dataset.key, pinned: !!focusEl.closest('.front-pin') } : null;
       const typingIn = same && document.hasFocus() && document.activeElement && document.activeElement.id === 'reply-input' ? document.activeElement : null;
       const typing = typingIn ? { id: typingIn.closest('.card').dataset.session, at: [typingIn.selectionStart, typingIn.selectionEnd] } : null;
       const actBox = activityBox();
@@ -1628,7 +1678,8 @@ ${MADE_SCRIPT}
       if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       observeThumbs(main);
       main.scrollTop = y;
-      if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
+      holdAnchor();
+      if (focused) { const el = cardsOf('key', focused.key).find((c) => !!c.closest('.front-pin') === focused.pinned); if (el) el.focus({ preventScroll: true }); }
       if (m.tab === 'lead') { syncLeadBox(); if (!same || y + main.clientHeight >= main.scrollHeight - 80) main.scrollTop = main.scrollHeight; }
       if (m.tab === 'sessions') {
         syncBulk(); syncFrontReply(typing); drawFrontMade();
@@ -1666,9 +1717,12 @@ ${MADE_SCRIPT}
       drawAsk(m.key);
     }
     else if (m.type === 'reveal') {
-      const c = main.querySelector('.card[data-session="' + CSS.escape(m.sessionId) + '"]');
-      if (!c) return;
-      c.scrollIntoView({ block: 'nearest' });
+      // The list stays where it is while any card of the session shows (the pinned one
+      // included); only one off screen scrolls its listed card to the nearest edge.
+      const all = cardsOf('session', m.sessionId);
+      if (!all.length) return;
+      const c = all.find((x) => !x.closest('.front-pin')) || all[0];
+      if (!all.some(onScreen)) c.scrollIntoView({ block: 'nearest' });
       if (m.flash) { c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
     }
   });
@@ -1743,7 +1797,7 @@ ${MADE_SCRIPT}
     }
     // ‹ › on the pinned card front the tab before or after this one, as a card click would.
     const step = e.target.closest('[data-front-step]');
-    if (step) { if (!step.disabled) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true }); return; }
+    if (step) { if (!step.disabled && step.dataset.session) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true, back: step.hasAttribute('data-back') }); return; }
     // The pinned card's Made shelf: a PR opens on GitHub, a ticket in Issues; files open below.
     const shelfLink = e.target.closest('.fc-made [data-url], .fc-made [data-ticket]');
     if (shelfLink) { e.preventDefault(); e.stopPropagation(); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
@@ -1856,6 +1910,7 @@ ${MADE_SCRIPT}
     if (a && a.dataset.url) { e.preventDefault(); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
+      if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, top: card.getBoundingClientRect().top, at: Date.now() };
       vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' });
       return;
     }
@@ -1915,7 +1970,7 @@ ${MADE_SCRIPT}
     // 1-9 answer the selected card's ask with that option.
     if (current === 'sessions' && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target.closest && e.target.closest('input, textarea, select'))) {
       const held = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.card[data-session]') : null;
-      const ask = (held || main.querySelector('.card.sel'))?.querySelector('.ask[data-ask] .opts:not([hidden])');
+      const ask = held?.querySelector('.ask[data-ask] .opts:not([hidden])') || main.querySelector('.card.sel .ask[data-ask] .opts:not([hidden])');
       const opt = ask ? ask.querySelectorAll('.opt')[Number(e.key) - 1] : null;
       if (opt) { e.preventDefault(); opt.click(); return; }
     }

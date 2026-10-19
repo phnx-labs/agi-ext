@@ -155,6 +155,10 @@ export interface DisplayPreferences {
   showLabelOnlyOnFocus: boolean;  // true = hide label when terminal loses focus
 }
 
+/** Settings > Session cards > ‹ › on the pinned card: walk the tabs in order, go to
+ *  the next session that needs you (and back), or draw no arrows. */
+export type ArrowMode = 'tabs' | 'needs' | 'off';
+
 /** Session cards in the Project panel: whether an ask shows its answers, how much
  *  of each option and of the question, what a click does, whether an answer waits
  *  for an Undo, and which parts each card shows (all of them down to logo and title). */
@@ -166,20 +170,24 @@ export interface CardSettings {
   answerUndo: 'off' | 'five';
   /** What the pinned card's Made row draws: one row of chips, or preview tiles. */
   made: 'chips' | 'previews';
+  /** What ‹ › on the pinned card do: walk the tabs, go to the next that needs you, or nothing. */
+  arrows: ArrowMode;
   description: boolean;
   chips: boolean;
   machine: boolean;
   age: boolean;
   stateWord: boolean;
   verdict: boolean;
+  /** What the session was started with, under the title; off by default (owner video, 2026-10-19 1:32 AM). */
+  firstMessage: boolean;
 }
 
 /** The parts a card can leave out, as Settings lists them. */
-export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord', 'verdict'] as const;
+export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord', 'verdict', 'firstMessage'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
-  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips',
-  description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true,
+  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
+  description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true, firstMessage: false,
 };
 
 /** The stored card settings with any value this version does not know read as its default. */
@@ -193,7 +201,8 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     click: v?.click === 'show' ? 'show' : d.click,
     answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
     made: v?.made === 'previews' ? 'previews' : d.made,
-    description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'),
+    arrows: v?.arrows === 'needs' || v?.arrows === 'off' ? v.arrows : d.arrows,
+    description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'), firstMessage: part('firstMessage'),
   };
 }
 

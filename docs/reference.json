@@ -3,7 +3,7 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 123,
+    "commands": 124,
     "settings": 11,
     "keybindings": 51,
     "menuItems": 18,
@@ -238,6 +238,10 @@
       {
         "command": "agents.searchSessions",
         "title": "Agents: Search Sessions"
+      },
+      {
+        "command": "agents.nextNeedsYou",
+        "title": "Agents: Next Agent That Needs You"
       },
       {
         "command": "agents.detach",

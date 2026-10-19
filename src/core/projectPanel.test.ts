@@ -475,22 +475,34 @@ test('every open tab keeps its card in Open tabs, in tab order, working or finis
   expect(at('away')).toBe(-1)
 })
 
-test('the front tab\'s card is pinned above the list, opened up, and drawn nowhere else', () => {
+test('the front tab\'s card is pinned above the list, opened up, and keeps its own card in Open tabs (owner video, 2026-10-19 1:32 AM)', () => {
   const live = row({ sessionId: 'live', tabHere: true, tabIndex: 1 })
-  const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs({ folded: ['here'] }) })
+  const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs() })
   expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
   // The tab, its machine and its age share the arrows' row; the state is the tint, its word the tooltip.
   expect(html).toContain('<span class="thistab" title="Running">This tab · 1 · m6</span>')
   expect(html).not.toContain('fc-state')
-  expect(html.match(/data-session="live"/g)?.length).toBe(1)
-  // Its only tab here: no group left to draw, and ‹ › have nowhere to go.
-  expect(html).not.toContain('data-group="here"')
-  expect(html).toContain('<button class="fc-step" disabled aria-label="No previous tab">‹</button>')
+  // Pinned, and still in Open tabs with the selected rail, so switching tabs moves no card.
+  expect(html.match(/data-session="live"/g)?.length).toBe(2)
+  expect(html.slice(html.indexOf('data-group="here"'))).toMatch(/class="card st-working sel"[^>]*data-session="live"/)
+  // Its only tab here: ‹ › have nowhere to go.
+  expect(html).toContain('<button class="fc-step" disabled title="No previous tab" aria-label="No previous tab">‹</button>')
   // Another session selected from the panel: the front tab stays pinned, without the selection.
   const other = renderSessions([live, row({ sessionId: 'b', tabHere: true, tabIndex: 2 })], NOW, { selectedId: 'b', frontId: 'live', here: HERE, prefs: prefs() })
   expect(other).toMatch(/class="card st-working front"[^>]*data-session="live"/)
   expect(other).toMatch(/class="card st-working sel"[^>]*data-session="b"/)
+  // Switching the front tab leaves Open tabs in the same order with the same cards.
+  const listed = (front: string) => { const h = renderSessions([live, row({ sessionId: 'b', tabHere: true, tabIndex: 2 })], NOW, { selectedId: front, frontId: front, here: HERE, prefs: prefs() }); return [...h.slice(h.indexOf('data-group="here"')).matchAll(/data-key="([^"]+)"/g)].map((m) => m[1]) }
+  expect(listed('live')).toEqual(listed('b'))
+})
+
+test('the front session asking: its answers are on the pinned card only; its listed card shows the question', () => {
+  const asking = row({ sessionId: 'q', tabHere: true, tabIndex: 1, phase: 'waiting', liveStatus: 'input_required', attention: { key: 'zion/q/1', kind: 'question', state: 'open', question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] } })
+  const html = renderSessions([asking], NOW, { selectedId: 'q', frontId: 'q', here: HERE, prefs: prefs() })
+  expect(html.match(/data-ask="zion\/q\/1"/g)?.length).toBe(1)
+  expect(html.match(/data-choice="yes"/g)?.length).toBe(1)
+  expect(html.match(/Release now\?<\/div>/g)?.length).toBe(2)
 })
 
 test('⇅ Show > Open tabs off lists a tab here only while it asks; ‹ › still walk every tab', () => {
@@ -584,9 +596,13 @@ test('a fork is marked with ⑂ beside its title, never with words', () => {
   expect(card(row({ title: 'Solo' }))).not.toContain('class="fork"')
 })
 
-test('what a session was started with shows faintly under its title, only when it says something else', () => {
-  expect(card(row({ title: 'Fix fork across devices', startedAs: '/continue abc --device yosemite-m5' }))).toContain('<div class="started" title="/continue abc --device yosemite-m5">started: /continue abc --device yosemite-m5</div>')
-  expect(card(row({ title: 'Fix it', startedAs: 'Fix it' }))).not.toContain('class="started"')
+test('what a session was started with is a card part, off by default; on, it shows faintly under the title without a "started:" word, only when it says something else', () => {
+  const r = row({ title: 'Fix fork across devices', startedAs: '/continue abc --device yosemite-m5' })
+  expect(card(r)).not.toContain('class="started"')
+  expect(card(r)).not.toContain('started:')
+  const on = { cards: { ...DEFAULT_CARD_SETTINGS, firstMessage: true } }
+  expect(card(r, on)).toContain('<div class="started" title="Started with: /continue abc --device yosemite-m5">/continue abc --device yosemite-m5</div>')
+  expect(card(row({ title: 'Fix it', startedAs: 'Fix it' }), on)).not.toContain('class="started"')
 })
 
 test('needs you orders by the CLI attention kind: a question before a permission before a stall', () => {
