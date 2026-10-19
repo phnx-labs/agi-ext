@@ -1233,6 +1233,7 @@ ${MADE_CSS}
   .fc-made button.mk, .fc-made button.mk-open { color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .fc-made button.mk-open { background: transparent; border: 0; }
   .fc-act ol { max-height: 150px; overflow-y: auto; scrollbar-width: thin; }
+  .fc-act ol[hidden] { display: none; }
   .fc-act ol:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .fc-act li.fc-earlier { display: block; font-size: 10.5px; color: var(--r-faint); }
   .card .started { margin-top: 2px; font-size: 10.5px; color: var(--r-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1427,15 +1428,19 @@ ${MADE_SCRIPT}
   function activityBox() { return main.querySelector('.front-pin .fc-act ol'); }
   function activityAtEnd(box) { return !box || box.scrollHeight - box.scrollTop - box.clientHeight < 6; }
   // The front card's reply box: its session's draft, bound once per node, the mic as
-  // it stands, and the caret back where it was if a move between groups rebuilt it.
+  // it stands (a new box asks the host), and the caret back where it was if a move
+  // between groups rebuilt the box of the session you were typing to, while this page
+  // has the focus.
   function syncFrontReply(typing) {
     const box = main.querySelector('.card.front .reply-box');
     if (!box) return;
-    if (showReplyDraft(box, box.closest('.card').dataset.session)) showReplyError(box, '');
+    const id = box.closest('.card').dataset.session;
+    if (showReplyDraft(box, id)) showReplyError(box, '');
     drawDictation(box);
+    if (!box.__asked) { box.__asked = true; vscode.postMessage({ type: 'dictationState' }); }
     bindReplyBox(box, (text) => vscode.postMessage({ type: 'reply', sessionId: box.closest('.card').dataset.session, text }));
     const input = box.querySelector('textarea');
-    if (typing && document.activeElement !== input) { input.focus(); input.setSelectionRange(typing[0], typing[1]); }
+    if (typing && typing.id === id && document.hasFocus() && document.activeElement !== input) { input.focus(); input.setSelectionRange(typing.at[0], typing.at[1]); }
   }
   // Questions the viewer opened, and Merge clicks still in their Undo window; both
   // survive a redraw of the list.
@@ -1570,7 +1575,8 @@ ${MADE_SCRIPT}
       const open = new Set(same ? folds().filter((d) => d.open).map((d, i) => d.querySelector('summary')?.textContent || i) : []);
       const y = same ? main.scrollTop : (scroll[m.tab] || 0);
       const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.session : null;
-      const typing = same && document.activeElement && document.activeElement.id === 'reply-input' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+      const typingIn = same && document.hasFocus() && document.activeElement && document.activeElement.id === 'reply-input' ? document.activeElement : null;
+      const typing = typingIn ? { id: typingIn.closest('.card').dataset.session, at: [typingIn.selectionStart, typingIn.selectionEnd] } : null;
       const actBox = activityBox();
       const actEnd = activityAtEnd(actBox);
       // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
@@ -1696,8 +1702,6 @@ ${MADE_SCRIPT}
       if (!e.target.closest('.cmenu [data-act]')) return;
       more.open = false;
     }
-    // The front card's reply box handles its own keys and mic; a click there selects nothing.
-    if (e.target.closest('.fc-reply')) return;
     // ‹ › on the pinned card front the tab before or after this one, as a card click would.
     const step = e.target.closest('[data-front-step]');
     if (step) { if (!step.disabled) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true }); return; }
@@ -1769,6 +1773,8 @@ ${MADE_SCRIPT}
     const pref = e.target.closest('[data-pref]');
     if (pref) { vscode.postMessage({ type: 'prefs', key: pref.dataset.pref, value: pref.dataset.value }); return; }
     if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
+    // The front card's reply box handles its own keys and mic; a click there selects nothing.
+    if (e.target.closest('.fc-reply')) return;
     if (e.target.closest('[data-undo]')) { const u = undo; undo = null; main.querySelector('.toast').hidden = true; if (u) u(); return; }
     const bulk = e.target.closest('[data-bulk]');
     if (bulk) {
