@@ -17,6 +17,11 @@ describe('generateTerminalId', () => {
 });
 
 describe('buildAgentTerminalEnv', () => {
+  test('asks for plain-text links only when told to', () => {
+    expect(buildAgentTerminalEnv('CC-123', null, null, undefined, { plainLinks: true }).FORCE_HYPERLINK).toBe('0');
+    expect('FORCE_HYPERLINK' in buildAgentTerminalEnv('CC-123', null, null)).toBe(false);
+  });
+
   test('carries the tracking ids, empty when absent, and marks the tab an agent', () => {
     expect(buildAgentTerminalEnv('CC-123', 'session-abc', '/path/to/workspace', '2.1.113')).toMatchObject({
       AGENT_TERMINAL_ID: 'CC-123',
