@@ -218,6 +218,8 @@ class LeadController implements LeadPanelBridge {
 
   async load(project: string, force: boolean): Promise<void> {
     if (!force && this.historyFor === project) return;
+    // Another project: nothing of the last one may show (or open) while the reads run.
+    if (this.historyFor !== project) { this.history = []; this.leadStatus = null; this.loadError = undefined; }
     this.project = project;
     this.historyFor = project;
     this.loading = true;

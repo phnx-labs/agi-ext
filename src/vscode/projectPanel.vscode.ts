@@ -1559,7 +1559,6 @@ ${MADE_SCRIPT}
     const t = box.querySelector('.dict-t'); if (t) t.textContent = mic === 'transcribing' ? 'transcribing…' : '';
     const b = box.querySelector('#lead-mic'); if (b) b.setAttribute('aria-pressed', String(mic === 'listening'));
     const input = box.querySelector('#lead-input'); if (input) input.placeholder = ask.dataset.busy === 'true' ? 'The Lead is working…' : 'Ask the Lead… (Enter asks)';
-    main.scrollTop = main.scrollHeight;
   }
   const tabs = [...document.querySelectorAll('.tab')];
   const scroll = {};
@@ -1573,12 +1572,12 @@ ${MADE_SCRIPT}
     const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
     return n;
   }
-  // Settings > Tabs: Review and Issues can go. Sessions alone needs no tab to choose it
-  // while it shows; from Settings it stays, as the way back.
+  // Settings > Tabs: Review and Issues can go. Sessions always stays: the Lead tab and
+  // Settings need a way back.
   let tabsShown = { prs: true, tickets: true, lead: true };
   function syncTabs() {
     for (const t of document.querySelectorAll('.tabs .tab')) {
-      t.hidden = t.dataset.tab === 'sessions' ? !tabsShown.prs && !tabsShown.tickets && !tabsShown.lead && current === 'sessions' : !tabsShown[t.dataset.tab];
+      t.hidden = t.dataset.tab !== 'sessions' && !tabsShown[t.dataset.tab];
     }
   }
   function choose(tab) {
@@ -1630,7 +1629,7 @@ ${MADE_SCRIPT}
       observeThumbs(main);
       main.scrollTop = y;
       if (focused) { const el = main.querySelector('[data-session="' + CSS.escape(focused) + '"]'); if (el) el.focus(); }
-      if (m.tab === 'lead') syncLeadBox();
+      if (m.tab === 'lead') { syncLeadBox(); if (!same || y + main.clientHeight >= main.scrollHeight - 80) main.scrollTop = main.scrollHeight; }
       if (m.tab === 'sessions') {
         syncBulk(); syncFrontReply(typing); drawFrontMade();
         const box = activityBox();
