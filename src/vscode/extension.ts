@@ -390,7 +390,8 @@ async function openTrackedTab(
   terminals.register(terminal, terminalId, spec.agentConfig, pid, context, spec.label, spec.createdAt);
   if (spec.autoLabel) terminals.setAutoLabel(terminal, spec.autoLabel);
   readiness.registerTerminal(terminal);
-  if (spec.stage) followLaunchStage(terminal, spec.stage, context);
+  const staged = spec.stage && terminals.getByTerminal(terminal);
+  if (staged) staged.stage = spec.stage;
 
   const resumeKey = spec.agentKey ? agentKeyFromSession(spec.agentKey) : null;
   if (resumeKey) terminals.setAgentType(terminal, resumeKey);
@@ -413,21 +414,6 @@ async function openTrackedTab(
     }
   }
   return { terminal, terminalId, pid };
-}
-
-// An unnamed tab says where its launch is: the stage it opened with, then
-// "New session" once the harness draws. A name that arrives first wins.
-function followLaunchStage(terminal: vscode.Terminal, stage: TabStage, context: vscode.ExtensionContext): void {
-  const entry = terminals.getByTerminal(terminal);
-  if (!entry) return;
-  entry.stage = stage;
-  readiness.waitFor(terminal, 'agentReady').then(() => {
-    const cur = terminals.getByTerminal(terminal);
-    if (!cur) return;
-    cur.stage = 'ready';
-    if (cur.label || cur.autoLabel) return;
-    void terminals.renameTerminal(terminal, buildTerminalTitle(undefined, context, cur.sessionId, 'ready'));
-  }, () => { /* never drew within the wait; the tab keeps its stage */ });
 }
 
 // --- The one launch engine --------------------------------------------------
@@ -3001,6 +2987,22 @@ async function fetchAndSetAutoLabel(
 }
 
 /**
+ * An unnamed tab says where its launch is until the stream lists its session. The
+ * CLI lists it the moment the harness runs (`agent.upsert`, before any prompt;
+ * 3.7 s for a local Claude, measured 2026-10-19); the shell's own process state
+ * settles while `agents run` is still placing, so it cannot say this.
+ */
+async function advanceLaunchStages(context: vscode.ExtensionContext): Promise<void> {
+  for (const entry of terminals.getAllTerminals()) {
+    if (!entry.stage || entry.stage === 'ready' || !entry.sessionId) continue;
+    if (!sessionPresentationStore.liveSession(entry.sessionId)) continue;
+    entry.stage = 'ready';
+    if (entry.label || entry.autoLabel) continue;
+    await terminals.renameTerminal(entry.terminal, buildTerminalTitle(undefined, context, entry.sessionId, 'ready'));
+  }
+}
+
+/**
  * Apply harness-owned names from the canonical fleet stream to editor tabs.
  * The stream is already elected once per editor process; this is presentation
  * reconciliation only, never another query or lifecycle loop.
@@ -3600,7 +3602,8 @@ async function clearActiveTerminal(context: vscode.ExtensionContext) {
       // 8. Restart agent with new session
       terminal.sendText('clear && ' + command);
       readiness.armAgentReady(terminal);
-      followLaunchStage(terminal, 'starting', context);
+      const cleared = terminals.getByTerminal(terminal);
+      if (cleared) cleared.stage = 'starting';
 
       // 9. Update status bar
       updateStatusBarForTerminal(terminal, context.extensionPath);
@@ -4436,6 +4439,7 @@ function initMonitorFollower(context: vscode.ExtensionContext): void {
           // Activity/attention facts cannot change identity and skip this scan.
           syncTerminalSessionBindingsFromStream();
         }
+        void advanceLaunchStages(context);
         void syncCanonicalSessionTabLabels(context);
         const { notifyAgentPanelSessionUpdate } = require('./agentPanel.vscode') as typeof import('./agentPanel.vscode');
         notifyAgentPanelSessionUpdate();
