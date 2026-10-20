@@ -78,6 +78,6 @@ test('a row whose agent the CLI saw alive carries the running dot; an ended one 
     entry({ sessionId: 'gone', title: 'Gone', host: 'yosemite-s0', phase: 'done', liveStatus: 'closed' }),
   ], NOW, new Set(), HERE)
   const rowOf = (id: string) => html.split('<div class="krow').find((r) => r.includes(`data-session="${id}"`)) ?? ''
-  expect(rowOf('live-ask')).toContain('<i class="run" aria-hidden="true"></i>s0')
+  expect(rowOf('live-ask')).toContain('<i class="run" role="img" title="Running on yosemite-s0" aria-label="Running on yosemite-s0"></i>s0')
   expect(rowOf('gone')).not.toContain('class="run"')
 })
