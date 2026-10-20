@@ -67,10 +67,11 @@ export function deliverReply(entry: ReplyTerminal | undefined, text: string): st
 export function submitToTui(terminal: Pick<vscode.Terminal, 'sendText'>, prompts: readonly string[]): Promise<void> {
   return new Promise((done) => {
     if (prompts.length === 0) { done(); return; }
+    const send = (text: string) => { try { terminal.sendText(text, false); } catch { /* a closed tab */ } };
     prompts.forEach((prompt, i) => {
       setTimeout(() => {
-        terminal.sendText(prompt, false);
-        setTimeout(() => { terminal.sendText('\r', false); if (i === prompts.length - 1) done(); }, 300);
+        send(prompt);
+        setTimeout(() => { send('\r'); if (i === prompts.length - 1) done(); }, 300);
       }, i * 700);
     });
   });
