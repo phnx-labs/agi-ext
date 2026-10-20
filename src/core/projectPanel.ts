@@ -288,7 +288,7 @@ export interface SessionLike {
     draft?: { text?: string; choiceId?: string; label: string };
   };
   question?: AskQuestion | null;
-  request?: { headline?: string; attachments?: { kind: string; name: string }[] };
+  request?: { text?: string; headline?: string; attachments?: { kind: string; name: string }[] };
   /** The CLI's step list, newest last: each step's words, ISO time, whose (`user` for
    *  you), and on the live step what runs now. */
   timeline?: { steps: { text: string; at?: string; source?: string; live?: boolean; now?: string }[]; earlier?: { steps: number } };
@@ -1399,6 +1399,27 @@ function firstSentence(s: SessionLike): string {
   return (text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text).slice(0, 160);
 }
 
+/** What ⌘K also searches beyond the title and metadata: your latest and first prompts,
+ *  the question, the full recap, then the newest steps and reply. The row already carries
+ *  every one, so nothing is read; each piece and the whole are capped because the page is
+ *  posted again on every stream update while ⌘K is open. */
+const PALETTE_SAID_PIECE = 300;
+const PALETTE_SAID_MAX = 1500;
+function paletteSaid(s: SessionLike): string {
+  const q = s.attention?.state === 'open' ? s.attention.question : s.question;
+  const steps = (s.timeline?.steps ?? []).slice(-4).reverse().map((st) => st.text);
+  const pieces = [s.request?.text || s.request?.headline, s.startedAs, q?.text, ...(q?.options ?? []).map((o) => o.label), s.recap?.text, ...steps, s.lastResponse];
+  const seen = new Set<string>();
+  let out = '';
+  for (const p of pieces) {
+    const t = plain(p ?? '').slice(0, PALETTE_SAID_PIECE);
+    if (!t || seen.has(t) || out.length + t.length > PALETTE_SAID_MAX) continue;
+    seen.add(t);
+    out += (out ? ' · ' : '') + t;
+  }
+  return out;
+}
+
 /** ⌘K's rows, in `paletteOrder`: the harness logo, the title (★ for a favorite), then
  *  right-aligned the state, machine, age and tab; under it the PRs and pages it made,
  *  the images you attached (a click opens a quick look) and its recap's first sentence.
@@ -1419,7 +1440,7 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     const note = firstSentence(s);
     const ids = [s.sessionId.replace(/^session_/, ''), s.sessionId.replace(/^session_/, '').slice(0, 8)].join(' ');
     const words = [shortDevice(device), device, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
-    return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}">`
+    return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}" data-said="${escapeHtml(paletteSaid(s))}">`
       + `${harnessLogo(s.agentType)}<span class="kt">${fav ? '<span class="kfav" title="Favorite">★</span>' : ''}${escapeHtml(title)}</span>`
       + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span><span class="kw">${meta}</span></span>`
       + `<span class="ksub">${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span></div>`;
@@ -1427,9 +1448,10 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
 }
 
 /** How well a row matches what was typed; lower is better, null for no match. An exact
- *  session id first, then a title that starts with it, a title holding every word, then
- *  any other words the row carries. Self-contained: the page's script interpolates it. */
-export function paletteMatch(doc: { ids: string; title: string; text: string }, query: string): number | null {
+ *  session id first, then a title that starts with it, a title holding every word, any
+ *  other words the row carries, and last what was said in it (`paletteSaid`).
+ *  Self-contained: the page's script interpolates it. */
+export function paletteMatch(doc: { ids: string; title: string; text: string; said?: string }, query: string): number | null {
   const q = query.trim().toLowerCase();
   if (!q) return 3;
   if (doc.ids.toLowerCase().split(' ').some((i) => i === q || (q.length >= 6 && /^[0-9a-f-]+$/.test(q) && i.startsWith(q)))) return 0;
@@ -1438,5 +1460,26 @@ export function paletteMatch(doc: { ids: string; title: string; text: string }, 
   const words = q.split(/\s+/).filter(Boolean);
   if (words.every((w) => title.includes(w))) return 2;
   const hay = title + ' ' + doc.text.toLowerCase() + ' ' + doc.ids.toLowerCase();
-  return words.every((w) => hay.includes(w)) ? 3 : null;
+  if (words.every((w) => hay.includes(w))) return 3;
+  const said = hay + ' ' + (doc.said ?? '').toLowerCase();
+  return words.every((w) => said.includes(w)) ? 4 : null;
+}
+
+/** The words around what was typed in what was said, so a row matched only there shows
+ *  why: the whole phrase when it is there, else its longest word. Self-contained: the
+ *  page's script interpolates it. */
+export function saidSnippet(said: string, query: string): { before: string; hit: string; after: string } | null {
+  const lower = said.toLowerCase();
+  const q = query.trim().toLowerCase().replace(/\s+/g, ' ');
+  for (const w of [q, ...q.split(' ').sort((a, b) => b.length - a.length)].filter(Boolean)) {
+    const at = lower.indexOf(w);
+    if (at < 0) continue;
+    // Only the piece it is in (`paletteSaid` joins them with " · "), cut at a word.
+    const piece = said.lastIndexOf(' \u00b7 ', at) + 1 && said.lastIndexOf(' \u00b7 ', at) + 3;
+    const end = said.indexOf(' \u00b7 ', at + w.length);
+    const from = Math.max(piece, at - 40);
+    const start = from > piece ? Math.min(said.indexOf(' ', from) + 1 || at, at) : piece;
+    return { before: (start > piece ? '\u2026' : '') + said.slice(start, at), hit: said.slice(at, at + w.length), after: said.slice(at + w.length, Math.min(end < 0 ? said.length : end, at + w.length + 160)) };
+  }
+  return null;
 }

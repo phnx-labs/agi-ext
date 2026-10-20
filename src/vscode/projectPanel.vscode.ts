@@ -27,6 +27,7 @@ import {
   prFixPrompt,
   renderPrsProgress,
   paletteMatch,
+  saidSnippet,
   renderPalette,
   renderSessions,
   nextThatNeedsYou,
@@ -1510,6 +1511,7 @@ ${MADE_CSS}
   .krow .kmeta { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; justify-self: end; max-width: 100%; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
   .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--r-caption); }
   .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .krow .knote mark { background: none; color: var(--r-gold); font-weight: 600; }
   .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow.ended { opacity: .55; }
   .kth { display: block; width: 46px; height: 28px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); outline: 1.5px dashed var(--r-faint); outline-offset: 1px; background: var(--r-well); cursor: zoom-in; }
@@ -2150,6 +2152,7 @@ ${MADE_SCRIPT}
   // ⌘K: the host sends the rows (\`renderPalette\`) when it opens and as the stream moves;
   // the page filters them as you type and keeps what you typed and selected.
   ${paletteMatch}
+  ${saidSnippet}
   const kscrim = document.querySelector('.kscrim'), kq = document.getElementById('kq'), klist = document.getElementById('klist'), kql = document.querySelector('.kql');
   let kpicked = null;
   function krows() { return [...klist.querySelectorAll('.krow:not([hidden])')].sort((a, b) => (Number(a.style.order) || 0) - (Number(b.style.order) || 0)); }
@@ -2161,14 +2164,29 @@ ${MADE_SCRIPT}
   // Rows rank by how well they match (paletteMatch), then keep the host's order; the best
   // 60 show, and the footer says how many more the words would need to narrow.
   function kfilter() {
-    const ranked = [...klist.querySelectorAll('.krow')].map((r, i) => ({ r, i, t: paletteMatch({ ids: r.dataset.ids, title: r.dataset.title, text: r.dataset.text }, kq.value) }));
+    const ranked = [...klist.querySelectorAll('.krow')].map((r, i) => ({ r, i, t: paletteMatch({ ids: r.dataset.ids, title: r.dataset.title, text: r.dataset.text, said: r.dataset.said }, kq.value) }));
     const hits = ranked.filter((x) => x.t !== null).sort((a, b) => a.t - b.t || a.i - b.i);
     const shownSet = new Set(hits.slice(0, 60).map((x) => x.r));
-    for (const x of ranked) { x.r.hidden = !shownSet.has(x.r); x.r.style.order = String(x.t ?? 0); }
+    for (const x of ranked) { x.r.hidden = !shownSet.has(x.r); x.r.style.order = String(x.t ?? 0); ksaid(x.r, x.t === 4 && !x.r.hidden ? kq.value : ''); }
     for (const el of klist.querySelectorAll('.kempty:not(.kwait), .kmore')) el.remove();
     if (!hits.length && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
     if (hits.length > 60) { const d = document.createElement('div'); d.className = 'kempty kmore'; d.style.order = '99'; d.textContent = (hits.length - 60) + ' more \u00b7 type to narrow'; klist.append(d); }
     kmark();
+  }
+  // A row matched only by what was said in it shows those words, the match marked, where
+  // its recap line sits; it gets its own line back when the words change.
+  function ksaid(r, q) {
+    const cut = q ? saidSnippet(r.dataset.said || '', q) : null;
+    let n = r.querySelector('.knote');
+    if (!cut) {
+      if (n && n.dataset.was !== undefined) { n.textContent = n.dataset.was; delete n.dataset.was; if (!n.textContent) n.remove(); }
+      return;
+    }
+    if (!n) { n = document.createElement('span'); n.className = 'knote'; r.querySelector('.ksub').append(n); }
+    if (n.dataset.was === undefined) n.dataset.was = n.textContent;
+    const m = document.createElement('mark');
+    m.textContent = cut.hit;
+    n.replaceChildren(cut.before, m, cut.after);
   }
   function kclose() { if (kscrim.hidden) return; kscrim.hidden = true; kql.hidden = true; vscode.postMessage({ type: 'paletteClosed' }); }
   function kpick(row) {

@@ -4,6 +4,13 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.425] - 2026-10-19
+
+- ⌘K finds a session by what was said in it, not only its title: your latest and first
+  prompts, the question it asks, its recap and its newest steps and reply. A row found that
+  way shows the words around the match, the match in gold. Title matches still come first,
+  and nothing new is read: the words are already on the session's row.
+
 ## [0.9.424] - 2026-10-19
 
 - ⌘V, ⌘C and ⌘X work in the ⌘K search box and in the box that renames a session. Both boxes

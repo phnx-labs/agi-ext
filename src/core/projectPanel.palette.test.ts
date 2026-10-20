@@ -3,7 +3,7 @@
 // ended sessions last and dimmed; each row aligns its details right and shows what it
 // made and what you attached instead of the model.
 import { expect, test } from 'bun:test'
-import { paletteMatch, paletteOrder, renderPalette, type PaletteEntry, type SessionHere, type SessionLike } from './projectPanel'
+import { paletteMatch, paletteOrder, renderPalette, saidSnippet, type PaletteEntry, type SessionHere, type SessionLike } from './projectPanel'
 
 const HERE: SessionHere = { device: 'zion', localHost: 'this-mac', workspace: 'agi', editor: 'vscodium', editorName: 'VSCodium', icons: {} }
 
@@ -69,6 +69,36 @@ test('matching: an exact id, then a title that starts with the words, a title ho
   expect(paletteMatch(doc('Rush plan', '', 's1 #4325 Fixed the hips.'), '4325 hips')).toBe(3)
   expect(paletteMatch(doc('Rush plan'), 'mcp')).toBeNull()
   expect(paletteMatch(doc('Rush plan'), '   ')).toBe(3)
+})
+
+// Owner screenshot, 2026-10-19 11:32 PM: "intuit" found nothing while the front tab's agent
+// was talking about Intuit. What was said in a session matches too, after everything else.
+test('what was said matches last; the row carries your prompts, the question, the recap and the newest steps', () => {
+  expect(paletteMatch({ ids: '', title: 'Clean services', text: 's1', said: 'Trying Intuit\'s older app dashboard.' }, 'intuit')).toBe(4)
+  expect(paletteMatch({ ids: '', title: 'Clean services', text: 's1', said: 'QuickBooks' }, 'clean quickbooks')).toBe(4)
+  expect(paletteMatch({ ids: '', title: 'Clean services', text: 's1', said: 'QuickBooks' }, 'intuit')).toBeNull()
+  const html = renderPalette([entry({
+    sessionId: 'said', title: 'fork of Platform usability', startedAs: 'Add **QuickBooks** to Rush', request: { headline: 'It\'s clicked' },
+    recap: { text: 'We are adding QuickBooks. The Intuit app is half set up.', at: '2026-10-19T01:00:00Z' },
+    timeline: { steps: [{ text: 'oldest step' }, ...['a', 'b', 'c'].map((t) => ({ text: `step ${t}` })), { text: 'Trying [Intuit](https://x)\'s older app dashboard.' }] },
+    lastResponse: 'Trying [Intuit](https://x)\'s older app dashboard.',
+  })], NOW, new Set(), HERE)
+  const said = html.match(/data-said="([^"]*)"/)![1]
+  expect(said).toBe('It&#39;s clicked · Add QuickBooks to Rush · We are adding QuickBooks. The Intuit app is half set up. · Trying Intuit&#39;s older app dashboard. · step c · step b · step a')
+  // Each piece and the whole are capped.
+  const long = renderPalette([entry({ timeline: { steps: Array.from({ length: 4 }, (_, i) => ({ text: String(i).repeat(900) })) }, recap: { text: 'r'.repeat(900), at: '' } })], NOW, new Set(), HERE)
+  expect(long.match(/data-said="([^"]*)"/)![1].length).toBeLessThanOrEqual(1500)
+})
+
+test('a snippet starts at a word boundary near the first match and marks it', () => {
+  const said = 'The workspace card says it has one app, but the Apps tab says none. Trying Intuit older app dashboard.'
+  expect(saidSnippet(said, 'intuit')).toEqual({ before: '\u2026but the Apps tab says none. Trying ', hit: 'Intuit', after: ' older app dashboard.' })
+  expect(saidSnippet('Intuit first', 'intuit')).toEqual({ before: '', hit: 'Intuit', after: ' first' })
+  expect(saidSnippet(said, 'zzz')).toBeNull()
+  // The whole phrase before its longest word.
+  expect(saidSnippet('~/.agents/x · the three agents finished', 'three  agents')?.hit).toBe('three agents')
+  // Never across the pieces' separator.
+  expect(saidSnippet('Shipped it · Trying Intuit now · step b', 'intuit')).toEqual({ before: 'Trying ', hit: 'Intuit', after: ' now' })
 })
 
 // Owner video, 2026-10-19: "it does say asks, but it doesn't tell me if the session is on".
