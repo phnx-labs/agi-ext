@@ -51,6 +51,8 @@ interface RemoteAttention {
   /** How soon it needs a person, and why, as agents-cli computed it (absent on an older CLI). */
   urgency?: 'urgent' | 'high' | 'normal' | 'low';
   urgencyReason?: string;
+  /** The project Lead's suggested answer, attached by agents-cli on the machine the Lead runs on. */
+  draft?: { text?: string; choiceId?: string; label: string; at: string };
 }
 
 interface RemotePullRequest {

@@ -283,6 +283,8 @@ export interface SessionLike {
   attention?: {
     key?: string; kind: string; state: string; openedAt?: string; urgency?: string; urgencyReason?: string;
     question?: AskQuestion; choices?: { id: string; label: string; description?: string }[];
+    /** The project Lead's suggested answer (agents-cli `draft`): a choice id or words, with what to show. */
+    draft?: { text?: string; choiceId?: string; label: string };
   };
   question?: AskQuestion | null;
   request?: { headline?: string; attachments?: { kind: string; name: string }[] };
@@ -802,6 +804,15 @@ function askChoices(s: SessionLike): { id?: string; label: string; description?:
   return (q?.options ?? []).flatMap((o) => (o.label ? [{ id: o.id, label: o.label, description: o.description }] : []));
 }
 
+/** The Lead's draft under the question: its words, Send (the same `feed answer` a button
+ *  sends) and, for words, Edit, which opens Other… holding them. The Lead sends nothing. */
+function leadDraft(d: { text?: string; choiceId?: string; label: string } | undefined): string {
+  if (!d?.label || (!d.text && !d.choiceId)) return '';
+  const sends = d.choiceId ? `data-choice="${escapeHtml(d.choiceId)}"` : `data-ask-text="${escapeHtml(d.text!)}"`;
+  const edit = d.text ? `<button class="lnk" data-ask-edit="${escapeHtml(d.text)}">Edit</button>` : '';
+  return `<div class="draft"><span class="dl">Lead</span><span class="dt" title="${escapeHtml(d.label)}">${escapeHtml(d.label)}</span><span class="da"><button class="lnk" ${sends} data-label="${escapeHtml(d.label)}">Send</button>${edit}</span></div>`;
+}
+
 /** The ask on a card: its header and question, and, with answers on, one compact
  *  button per choice (keys 1–9), Other… and Try another way. Every button carries
  *  what it sends; the page holds it 5 s with Undo before one `feed answer`. */
@@ -822,7 +833,7 @@ function askBlock(s: SessionLike, cards: CardSettings): string {
     return `<button class="opt" ${sends} data-label="${escapeHtml(c.label)}"${c.description ? ` title="${escapeHtml(c.description)}"` : ''}>${i < 9 ? `<span class="k">${i + 1}</span>` : ''}<span class="ol">${escapeHtml(c.label)}</span>${detail}</button>`;
   };
   const opts = askChoices(s).map(opt).join('');
-  return `<div class="ask" data-ask="${escapeHtml(key)}" data-undo="${cards.answerUndo === 'five' ? 5 : 0}">${head}${question}${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button></div><div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div></div>`;
+  return `<div class="ask" data-ask="${escapeHtml(key)}" data-undo="${cards.answerUndo === 'five' ? 5 : 0}">${head}${question}${leadDraft(a?.draft)}${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button></div><div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div></div>`;
 }
 
 /** A thumbnail's markup: no `src` until the webview's cache holds a 480 px copy

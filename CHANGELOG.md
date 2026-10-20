@@ -4,6 +4,24 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.423] - 2026-10-19
+
+- A card asks when the agent really asks. With agents-cli PHNX-4439, a Claude card turns red
+  on any question the agent leaves you ("Tell me which ones to cancel" no longer reads Idle),
+  or headed Not done when it stopped waiting on nothing that will wake it, and it stays red
+  until someone answers instead of fading after 30 minutes. The question's own options show
+  as buttons.
+- The project Lead's suggested reply shows under the question as Lead … Send · Edit. Send is
+  the same answer a button sends; Edit opens Other… holding its words. The Lead sends nothing
+  on its own.
+- An answer from a card, or `agents send`, now reaches a VSCodium tab whose agent runs on
+  another machine. agents-cli puts the text on the session's row, the window that holds the
+  tab types it, and the answer reports Sent only once the agent took it; otherwise the card
+  says it was not delivered. Several lines go in as one paste. The `swarm-ext://…/inject`
+  URI is gone.
+- A reply from the reply box to Claude presses Enter only after the text is in, so a long
+  reply is no longer cut at the first line.
+
 ## [0.9.422] - 2026-10-19
 
 - Agent tabs no longer start with "CC", "CX" or another harness code: the logo already says
