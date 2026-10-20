@@ -1399,23 +1399,25 @@ function firstSentence(s: SessionLike): string {
   return (text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text).slice(0, 160);
 }
 
-/** What ⌘K also searches beyond the title and metadata: your latest and first prompts,
- *  the question, the full recap, then the newest steps and reply. The row already carries
- *  every one, so nothing is read; each piece and the whole are capped because the page is
- *  posted again on every stream update while ⌘K is open. */
+/** What ⌘K also searches beyond the title and metadata, newest first so the cap drops
+ *  the oldest: the agent's latest reply and steps, the question, the recap, then your
+ *  latest and first prompts. The row already carries every one, so nothing is read; each
+ *  piece is cut to 300 characters and the whole to 1,500, because the page is posted
+ *  again on every stream update while ⌘K is open. */
 const PALETTE_SAID_PIECE = 300;
 const PALETTE_SAID_MAX = 1500;
 function paletteSaid(s: SessionLike): string {
   const q = s.attention?.state === 'open' ? s.attention.question : s.question;
   const steps = (s.timeline?.steps ?? []).slice(-4).reverse().map((st) => st.text);
-  const pieces = [s.request?.text || s.request?.headline, s.startedAs, q?.text, ...(q?.options ?? []).map((o) => o.label), s.recap?.text, ...steps, s.lastResponse];
+  const pieces = [s.lastResponse, ...steps, q?.text, ...(q?.options ?? []).map((o) => o.label), s.recap?.text, s.request?.text || s.request?.headline, s.startedAs];
   const seen = new Set<string>();
   let out = '';
   for (const p of pieces) {
     const t = plain(p ?? '').slice(0, PALETTE_SAID_PIECE);
-    if (!t || seen.has(t) || out.length + t.length > PALETTE_SAID_MAX) continue;
+    if (!t || seen.has(t)) continue;
     seen.add(t);
-    out += (out ? ' · ' : '') + t;
+    out += (out ? ' \u00b7 ' : '') + t;
+    if (out.length >= PALETTE_SAID_MAX) return out.slice(0, PALETTE_SAID_MAX);
   }
   return out;
 }
@@ -1475,7 +1477,8 @@ export function saidSnippet(said: string, query: string): { before: string; hit:
     const at = lower.indexOf(w);
     if (at < 0) continue;
     // Only the piece it is in (`paletteSaid` joins them with " · "), cut at a word.
-    const piece = said.lastIndexOf(' \u00b7 ', at) + 1 && said.lastIndexOf(' \u00b7 ', at) + 3;
+    const sep = said.lastIndexOf(' \u00b7 ', at);
+    const piece = sep < 0 ? 0 : sep + 3;
     const end = said.indexOf(' \u00b7 ', at + w.length);
     const from = Math.max(piece, at - 40);
     const start = from > piece ? Math.min(said.indexOf(' ', from) + 1 || at, at) : piece;

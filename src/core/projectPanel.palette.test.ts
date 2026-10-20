@@ -84,10 +84,13 @@ test('what was said matches last; the row carries your prompts, the question, th
     lastResponse: 'Trying [Intuit](https://x)\'s older app dashboard.',
   })], NOW, new Set(), HERE)
   const said = html.match(/data-said="([^"]*)"/)![1]
-  expect(said).toBe('It&#39;s clicked · Add QuickBooks to Rush · We are adding QuickBooks. The Intuit app is half set up. · Trying Intuit&#39;s older app dashboard. · step c · step b · step a')
-  // Each piece and the whole are capped.
-  const long = renderPalette([entry({ timeline: { steps: Array.from({ length: 4 }, (_, i) => ({ text: String(i).repeat(900) })) }, recap: { text: 'r'.repeat(900), at: '' } })], NOW, new Set(), HERE)
-  expect(long.match(/data-said="([^"]*)"/)![1].length).toBeLessThanOrEqual(1500)
+  expect(said).toBe('Trying Intuit&#39;s older app dashboard. · step c · step b · step a · We are adding QuickBooks. The Intuit app is half set up. · It&#39;s clicked · Add QuickBooks to Rush')
+  // Each piece and the whole are capped, the oldest dropped first: the latest reply stays.
+  const long = renderPalette([entry({ lastResponse: 'newest Intuit', timeline: { steps: Array.from({ length: 4 }, (_, i) => ({ text: String(i).repeat(900) })) }, recap: { text: 'r'.repeat(900), at: '' }, startedAs: 'first prompt' })], NOW, new Set(), HERE)
+  const longSaid = long.match(/data-said="([^"]*)"/)![1]
+  expect(longSaid.length).toBe(1500)
+  expect(longSaid.startsWith('newest Intuit · ')).toBe(true)
+  expect(longSaid).not.toContain('first prompt')
 })
 
 test('a snippet starts at a word boundary near the first match and marks it', () => {
