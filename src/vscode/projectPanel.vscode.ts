@@ -1406,6 +1406,10 @@ ${MADE_CSS}
   .card .opt .ol { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .opt small { flex-basis: 100%; padding-left: 13px; color: var(--r-caption); font-size: 11px; }
   .card .alt { display: flex; gap: 12px; margin-top: 4px; }
+  .card .draft { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; padding: 4px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); font-size: 11.5px; }
+  .card .draft .dl { flex: none; padding-top: 1px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-caption); }
+  .card .draft .dt { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .draft .da { flex: none; display: flex; gap: 10px; }
   .card .lnk { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--vscode-textLink-foreground); cursor: pointer; } .card .lnk:hover { text-decoration: underline; }
   .card .aother input { width: 100%; box-sizing: border-box; margin-top: 5px; font: inherit; font-size: 11.5px; padding: 3px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; }
   .card .asend { margin-top: 5px; font-size: 11.5px; color: var(--r-text-2); } .card .asend.err { color: var(--r-bad); }
@@ -1636,7 +1640,7 @@ ${MADE_SCRIPT}
     const p = pendingAnswer.get(key);
     const busy = !!p && p.state !== 'error';
     el.querySelector('.aother').hidden = busy || !otherOpen.has(key);
-    el.querySelectorAll('.opts, .alt').forEach((x) => { x.hidden = busy; });
+    el.querySelectorAll('.opts, .alt, .draft').forEach((x) => { x.hidden = busy; });
     const send = el.querySelector('.asend');
     send.hidden = !p;
     if (!p) return;
@@ -1984,6 +1988,8 @@ ${MADE_SCRIPT}
       const opt = e.target.closest('[data-choice], [data-ask-text]');
       if (opt) { e.stopPropagation(); answerAsk(key, opt.dataset.label, opt.dataset.choice ? { choice: opt.dataset.choice } : { text: opt.dataset.askText }); return; }
       if (e.target.closest('[data-ask-other]')) { otherOpen.add(key); drawAsk(key); askBox.querySelector('[data-ask-input]').focus(); return; }
+      const draftEdit = e.target.closest('[data-ask-edit]');
+      if (draftEdit) { e.stopPropagation(); otherOpen.add(key); drawAsk(key); const input = askBox.querySelector('[data-ask-input]'); input.value = draftEdit.dataset.askEdit; input.focus(); return; }
       if (e.target.closest('[data-ask-undo]')) { const p = pendingAnswer.get(key); if (p) clearInterval(p.timer); pendingAnswer.delete(key); drawAsk(key); return; }
       if (e.target.closest('.aother, .asend')) return;
     }

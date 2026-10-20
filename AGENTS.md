@@ -158,7 +158,12 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   `createTerminal` is the agents-cli installer. A tab the editor opened is registered by
   `terminals.adopt` (`src/vscode/terminals.vscode.ts`), on activation and after it. A prompt
   goes into a TUI only through `submitToTui` (`src/vscode/sessionReply.ts`; typed, then `\r`
-  as its own keystroke).
+  as its own keystroke). The extension types text it was not given by a gesture only when
+  agents-cli puts it on the session's row (`delivery`, from `agents feed answer` or
+  `agents send`): the window whose registry binds that session types it once, within 15 s
+  of when it was written (`typeTabDeliveries` in `src/vscode/extension.ts`, `DeliveryGate`
+  in `src/core/tabDelivery.ts`); agents-cli decides and confirms by the agent's next prompt.
+  There is no `/inject` URI.
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
   (`src/vscode/terminals.vscode.ts`, `src/core/remoteSessions.ts`).
@@ -187,7 +192,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - A card answers an ask with one `agents feed answer <attention.key> --choice|--text … --json`
   at once, or after a 5 s Undo in the page when Settings > Undo asks for it (`answerArgv`,
   `src/core/projectPanel.ts`; `data-undo` on the ask), only for a key the stream shows open; the
-  same click fronts that agent's tab through the card's own `select`. The extension posts no notifications of its own; banners are the AGI Menu's.
+  same click fronts that agent's tab through the card's own `select`. The project Lead's
+  `draft` on an ask is one more such button, Send, and Edit opens Other… holding its words
+  (`leadDraft`); the Lead sends nothing itself. The extension posts no notifications of its own; banners are the AGI Menu's.
 - Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
   `src/core/projectPanel.ts`); the extension never guesses a project from a cwd. One stopgap
   until agents-cli aliases ship: a row whose checkout is one of the project's own repository

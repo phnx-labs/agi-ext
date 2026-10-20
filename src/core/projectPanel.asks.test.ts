@@ -90,3 +90,17 @@ test('an answer is one `agents feed answer` argv; what the CLI says about a fail
   expect(answerFailure('{"status":"failed","reason":"no rail"}')).toBe('Not delivered: no rail')
   expect(answerFailure('{"status":"unknown"}')).toBe('Delivery unconfirmed: no receipt yet')
 })
+
+test('the Lead\'s draft shows under the question with Send (the same feed answer a button sends) and, for words, Edit', () => {
+  const asking = byId('51ac77d0-secrets')
+  const withDraft = (draft: NonNullable<SessionLike['attention']>['draft']): SessionLike => ({ ...asking, attention: { ...asking.attention!, draft } })
+  const render = (s: SessionLike) => renderSessionCard(s, sessionPlace(s, HERE), NOW, { selected: false, pinned: true, thumbs: [], made: null, here: HERE, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'answers' } })
+  const words = render(withDraft({ text: 'Use the staging bundle', label: 'Use the staging bundle' }))
+  expect(words).toContain('<div class="draft"><span class="dl">Lead</span>')
+  expect(words).toContain('data-ask-text="Use the staging bundle" data-label="Use the staging bundle">Send</button>')
+  expect(words).toContain('data-ask-edit="Use the staging bundle">Edit</button>')
+  const choice = render(withDraft({ choiceId: 'approve', label: 'Approve' }))
+  expect(choice).toContain('data-choice="approve" data-label="Approve">Send</button>')
+  expect(choice).not.toContain('data-ask-edit')
+  expect(render(asking)).not.toContain('class="draft"')
+})

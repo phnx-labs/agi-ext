@@ -111,3 +111,19 @@ test('Close and Hide in a card\'s ⋯ menu do what the old × did, and the menu 
   expect(more.open).toBe(false);
 });
 
+
+test('the Lead\'s draft: Send answers with its words like any button; Edit opens Other… holding them', () => {
+  const rows = ROWS.map((r: { sessionId: string; attention?: object }) => r.sessionId === 'e4d2a913-cards'
+    ? { ...r, attention: { ...r.attention, draft: { text: 'Wait for CI, then publish from zion', label: 'Wait for CI, then publish from zion' } } } : r);
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: DEFAULT_CARD_SETTINGS }) });
+  const box = () => document.querySelector('.ask[data-ask="yosemite-m6/e4d2a913-cards/b-5a01"]')!;
+  const draft = box().querySelector('.draft')!;
+  (draft.querySelector('[data-ask-edit]') as unknown as HTMLElement).click();
+  const input = box().querySelector('[data-ask-input]') as unknown as HTMLInputElement;
+  expect((box().querySelector('.aother') as unknown as HTMLElement).hidden).toBe(false);
+  expect(input.value).toBe('Wait for CI, then publish from zion');
+  const from = sent.length;
+  (draft.querySelector('[data-ask-text]') as unknown as HTMLElement).click();
+  expect(sent.slice(from).filter((m) => m.type === 'answer')).toEqual([{ type: 'answer', key: 'yosemite-m6/e4d2a913-cards/b-5a01', choice: undefined, text: 'Wait for CI, then publish from zion' }]);
+  expect((box().querySelector('.draft') as unknown as HTMLElement).hidden).toBe(true);
+});

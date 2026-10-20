@@ -1,7 +1,7 @@
 // The one terminal-reply rail: a prompt goes into a TUI typed, then Enter as its own
 // keystroke after the paste is in; a rename is Claude's own /rename through it.
 import { expect, test } from 'bun:test';
-import { renameSession, submitToTui } from './sessionReply';
+import { deliverReply, renameSession, submitToTui, typeDelivery } from './sessionReply';
 
 const tab = () => { const sent: [string, boolean | undefined][] = []; return { sent, sendText: (t: string, nl?: boolean) => { sent.push([t, nl]); } }; };
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -19,4 +19,20 @@ test('renameSession types /rename with the cleaned name, and nothing for an empt
   expect(renameSession(t, '   ')).toBeNull();
   await settle(400);
   expect(t.sent).toEqual([['/rename Body alignment', false], ['\r', false]]);
+});
+
+test('a delivery from agents-cli is typed through submitToTui, or left in the prompt when it asks for no Enter', async () => {
+  const t = tab();
+  typeDelivery(t, { id: 'a', sessionId: 's', text: 'Merge when green', enter: true, at: new Date().toISOString() });
+  typeDelivery(t, { id: 'b', sessionId: 's', text: '2', enter: false, at: new Date().toISOString() });
+  await settle(400);
+  expect(t.sent).toEqual([['2', false], ['Merge when green', false], ['\r', false]]);
+});
+
+test('a reply box reply to Claude goes through submitToTui: Enter only after the text is in', async () => {
+  const t = { ...tab(), show: () => {} };
+  expect(deliverReply({ terminal: t, agentType: 'claude' }, ' yes ')).toBeNull();
+  expect(t.sent).toEqual([]);
+  await settle(400);
+  expect(t.sent).toEqual([['yes', false], ['\r', false]]);
 });

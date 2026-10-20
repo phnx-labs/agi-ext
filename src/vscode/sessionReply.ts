@@ -8,6 +8,7 @@
 
 import type * as vscode from 'vscode';
 import { sanitizeLabel } from '../core/utils';
+import { deliveryKeystrokes, type TabDelivery } from '../core/tabDelivery';
 
 /** The minimum an agent terminal must expose to receive a reply. */
 export interface ReplyTerminal {
@@ -32,9 +33,8 @@ function sendReplyToTerminal(entry: ReplyTerminal, text: string, keystroke?: str
       term.sendText('\r', false);
     }
   } else if (entry.agentType === 'claude') {
-    // Ink needs the explicit CR; the appended newline alone is swallowed.
-    term.sendText(text, false);
-    term.sendText('\r', false);
+    // Ink needs the explicit CR, as its own keystroke after the text is in.
+    submitToTui(term, [text]);
   } else {
     term.sendText(text, true);
   }
@@ -84,4 +84,12 @@ export function renameSession(terminal: Pick<vscode.Terminal, 'sendText'>, raw: 
   if (!name) return null;
   submitToTui(terminal, [`/rename ${name}`]);
   return name;
+}
+
+/** Type what agents-cli handed this tab (`delivery` on its row): submitted through
+ *  `submitToTui`, or left in the prompt when the CLI asked for no Enter (a picker key). */
+export function typeDelivery(terminal: Pick<vscode.Terminal, 'sendText'>, delivery: TabDelivery): void {
+  const { text, submit } = deliveryKeystrokes(delivery);
+  if (submit) submitToTui(terminal, [text]);
+  else terminal.sendText(text, false);
 }
