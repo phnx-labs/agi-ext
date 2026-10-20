@@ -18,7 +18,7 @@ const row = (id: string, o: Partial<Row> = {}): Row => ({
 const HTML = renderPalette([
   { row: row('aaaaaaaa-1', { title: 'Body alignment', tabHere: true, tabIndex: 2 }), made: null, images: [{ uri: 'vscode-resource:/a.png', path: '/h/.agents/.history/attachments/a.png', label: 'a.png' }] },
   { row: row('bbbbbbbb-2', { title: 'MCP server plan', phase: 'running', liveStatus: 'running' }), made: null, images: [] },
-  { row: row('cccccccc-3', { title: 'Old ended', phase: 'done', liveStatus: 'closed' }), made: null, images: [] },
+  { row: row('cccccccc-3', { title: 'Old ended', phase: 'done', liveStatus: 'closed', recap: { text: 'Shipped it.', at: '' }, lastResponse: 'The Apps tab says none, so trying Intuit\'s older app dashboard.' }), made: null, images: [] },
 ], NOW, new Set(), { device: 'zion', localHost: 'this-mac', workspace: 'agi-ext', editor: 'vscodium', editorName: 'VSCodium', icons: {} });
 
 const window = new Window();
@@ -128,5 +128,21 @@ test('a title that starts with the words outranks one that only holds them elsew
   expect(shown()[0]).toBe('Body alignment');
   type('plan');
   expect(shown()).toEqual(['MCP server plan']);
+  key('Escape');
+});
+
+// Owner screenshot, 2026-10-19 11:32 PM: a word the agent said finds its session, and the
+// row shows those words with the match marked in place of its recap line until they change.
+test('a word only said in the session finds it and shows where; clearing gives the row its line back', () => {
+  deliver({ type: 'palette', html: HTML, waiting: false });
+  type('intuit');
+  expect(shown()).toEqual(['Old ended']);
+  const note = $('.krow[data-title="Old ended"] .knote');
+  expect(note.textContent).toBe('The Apps tab says none, so trying Intuit\'s older app dashboard.');
+  expect(note.querySelector('mark')!.textContent).toBe('Intuit');
+  type('mcp');
+  type('');
+  expect($('.krow[data-title="Old ended"] .knote').textContent).toBe('Shipped it.');
+  expect($('.krow[data-title="Old ended"] mark')).toBeNull();
   key('Escape');
 });
