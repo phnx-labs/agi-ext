@@ -70,3 +70,14 @@ test('matching: an exact id, then a title that starts with the words, a title ho
   expect(paletteMatch(doc('Rush plan'), 'mcp')).toBeNull()
   expect(paletteMatch(doc('Rush plan'), '   ')).toBe(3)
 })
+
+// Owner video, 2026-10-19: "it does say asks, but it doesn't tell me if the session is on".
+test('a row whose agent the CLI saw alive carries the running dot; an ended one does not', () => {
+  const html = renderPalette([
+    entry({ sessionId: 'live-ask', title: 'Merged changes verification', host: 'yosemite-s0', pidAlive: true, ...ask('k9', 'normal', 60_000) }),
+    entry({ sessionId: 'gone', title: 'Gone', host: 'yosemite-s0', phase: 'done', liveStatus: 'closed' }),
+  ], NOW, new Set(), HERE)
+  const rowOf = (id: string) => html.split('<div class="krow').find((r) => r.includes(`data-session="${id}"`)) ?? ''
+  expect(rowOf('live-ask')).toContain('<i class="run" aria-hidden="true"></i>s0')
+  expect(rowOf('gone')).not.toContain('class="run"')
+})

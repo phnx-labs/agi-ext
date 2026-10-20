@@ -326,6 +326,21 @@ export class SessionPresentationStore {
     return undefined;
   }
 
+  /** The machine where this session's agent runs (`pidAlive`) when no tab on `device`
+   *  shows it (`observerTerminals`), else null. */
+  runningUnshown(sessionId: string, device: string): string | null {
+    const wanted = sessionId.trim();
+    const mine = (o: unknown) => !!o && typeof o === 'object' && normalizeHost(String((o as { device?: unknown }).device ?? '')) === normalizeHost(device);
+    for (const value of this.sessions()) {
+      if (!value || typeof value !== 'object') continue;
+      const row = value as { sessionId?: unknown; pidAlive?: unknown; machine?: unknown; host?: unknown; observerTerminals?: unknown };
+      if (row.sessionId !== wanted || row.pidAlive !== true) continue;
+      if (Array.isArray(row.observerTerminals) && row.observerTerminals.some(mine)) return null;
+      return String(row.machine || row.host || 'another machine');
+    }
+    return null;
+  }
+
   private rowKeyOf(value: unknown): string | undefined {
     if (!value || typeof value !== 'object') return undefined;
     const rowKey = (value as { rowKey?: unknown }).rowKey;

@@ -278,6 +278,7 @@ export interface SessionLike {
   model?: string;
   phase: 'running' | 'idle' | 'waiting' | 'failed' | 'done';
   liveStatus: string;
+  pidAlive?: boolean;
   /** The CLI's open attention item: its key answers it (`agents feed answer`); urgency
    *  and its reason come from agents-cli (absent on an older CLI: normal). */
   attention?: {
@@ -868,6 +869,16 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
 
 /** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row.
  *  Settings > ‹ › Off draws the row without arrows. In Next-that-needs-you, ‹ is Back. */
+/** A red card says what it asks, not whether its agent still runs: a green dot before
+ *  the machine says the CLI saw the process alive (`pidAlive`; owner video, 2026-10-19). */
+function runMark(s: Pick<SessionLike, 'pidAlive'>): string {
+  return s.pidAlive ? '<i class="run" aria-hidden="true"></i>' : '';
+}
+
+function machineTip(s: Pick<SessionLike, 'pidAlive'>, device: string): string {
+  return s.pidAlive ? `Running on ${device}` : device;
+}
+
 function navButtons(nav: FrontNav | undefined, where: string, state: string): string {
   const btn = (dir: 'prev' | 'next', to: FrontStep | undefined) => to?.sessionId
     ? `<button class="fc-step" data-front-step="${dir}"${dir === 'prev' && nav?.mode === 'needs' ? ' data-back' : ''} data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host ?? '')}" title="${escapeHtml(to.tip)}" aria-label="${escapeHtml(to.tip)}">${dir === 'prev' ? '‹' : '›'}</button>`
@@ -969,7 +980,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
-  const host = cards.machine ? `<span class="hst" title="Machine">${escapeHtml(shortDevice(place.device))}</span>` : '';
+  const host = cards.machine ? `<span class="hst" title="${escapeHtml(machineTip(s, place.device))}">${runMark(s)}${escapeHtml(shortDevice(place.device))}</span>` : '';
   const fork = s.forkOf ? `<span class="fork" title="${escapeHtml(`Forked from ${s.forkOf.slice(0, 8)}`)}" aria-label="Fork">⑂</span>` : '';
   // Copy: what another agent or a message needs to pick this session up.
   const brief = [title, `Session ${s.sessionId} on ${place.device}${s.cwd ? ` in ${displayHome(s.cwd)}` : ''}`, plain(s.recap?.text ?? '') || said].filter(Boolean).join('\n');
@@ -991,7 +1002,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const ago = ageWords(s.lastActivityMs, now);
     const since = waited >= 0 ? `waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ago === 'now' || !ago ? ago : `${ago} ago`;
     // No row of its own for the state: the tint says it, the word is the tooltip (owner video, 2026-10-18 8:59 PM).
-    const where = [s.tabIndex ? String(s.tabIndex) : '', escapeHtml(shortDevice(place.device)), since].filter(Boolean).join(' · ');
+    const where = [s.tabIndex ? String(s.tabIndex) : '', `<span title="${escapeHtml(machineTip(s, place.device))}">${runMark(s)}${escapeHtml(shortDevice(place.device))}</span>`, since].filter(Boolean).join(' · ');
     const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     const latest = recapBlock(s, now) || saidLine(s, said);
     // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
@@ -1405,7 +1416,7 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     const age = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now);
     // This machine's rows carry the stream's local label; the row names the machine, as a card does.
     const device = s.host === here.localHost ? here.device : s.host;
-    const meta = [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
+    const meta = runMark(s) + [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
     const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
     const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);
     const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);

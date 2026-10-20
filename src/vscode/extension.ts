@@ -1298,6 +1298,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!live) terminals.closeTabs(dead);
         return live && { terminalId: live.id, focus: () => live.terminal.show() };
       },
+      runningUnshown: (id) => sessionPresentationStore.runningUnshown(id, os.hostname()),
       runResume: (id) => {
         const live = sessionPresentationStore.liveSession(id);
         return resumeInProjectWindow({ id, agent: live?.agent ?? '', cwd: live?.cwd ?? '', remote: !!remoteDeviceArg(live?.machine) });

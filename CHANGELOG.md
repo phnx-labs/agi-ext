@@ -4,6 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.424] - 2026-10-19
+
+- ⌘V, ⌘C and ⌘X work in the ⌘K search box and in the box that renames a session. Both boxes
+  kept every key to themselves, so the editor's paste never saw ⌘V.
+- A card and a ⌘K row show a green dot before the machine while the session's agent is
+  running ("Running on yosemite-s0" on hover), so a red card that asks also says whether the
+  agent behind it is still there.
+- Clicking, pressing Enter in ⌘K or ↗ on a session that is still running somewhere with no
+  tab on this machine no longer resumes it. Resuming started a second agent on the same
+  conversation; now a notice says where it runs and nothing starts.
+
 ## [0.9.423] - 2026-10-19
 
 - A card asks when the agent really asks. With agents-cli PHNX-4439, a Claude card turns red
