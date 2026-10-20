@@ -64,12 +64,15 @@ export function deliverReply(entry: ReplyTerminal | undefined, text: string): st
  * not submit. A multi-line prompt arrives as a bracketed paste that swallows a
  * `\r` sent in the same tick, so Enter follows once the paste is in.
  */
-export function submitToTui(terminal: Pick<vscode.Terminal, 'sendText'>, prompts: readonly string[]): void {
-  prompts.forEach((prompt, i) => {
-    setTimeout(() => {
-      terminal.sendText(prompt, false);
-      setTimeout(() => terminal.sendText('\r', false), 300);
-    }, i * 700);
+export function submitToTui(terminal: Pick<vscode.Terminal, 'sendText'>, prompts: readonly string[]): Promise<void> {
+  return new Promise((done) => {
+    if (prompts.length === 0) { done(); return; }
+    prompts.forEach((prompt, i) => {
+      setTimeout(() => {
+        terminal.sendText(prompt, false);
+        setTimeout(() => { terminal.sendText('\r', false); if (i === prompts.length - 1) done(); }, 300);
+      }, i * 700);
+    });
   });
 }
 
@@ -96,12 +99,10 @@ const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export function typeDelivery(terminal: Pick<vscode.Terminal, 'sendText'>, delivery: TabDelivery): Promise<void> {
   const { text, submit } = deliveryKeystrokes(delivery);
   const next = (deliveryQueues.get(terminal) ?? Promise.resolve()).then(async () => {
-    terminal.sendText(text, false);
-    if (!submit) return;
-    await pause(300);
-    terminal.sendText('\r', false);
+    if (!submit) { terminal.sendText(text, false); return; }
+    await submitToTui(terminal, [text]);
     await pause(400);
-  });
+  }).catch(() => { /* a closed tab; the CLI reports it undelivered and the next delivery still goes */ });
   deliveryQueues.set(terminal, next);
   return next;
 }
