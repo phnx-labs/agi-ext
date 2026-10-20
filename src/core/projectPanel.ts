@@ -299,7 +299,7 @@ export interface SessionLike {
   /** The CLI's done-check (agents-cli `doneVerdict`); absent draws no verdict. */
   doneVerdict?: DoneVerdict;
   /** Your turns, oldest first; the last one dates a recap written before it. */
-  userTurns?: { atMs: number }[];
+  userTurns?: { atMs: number; text?: string }[];
   lastResponse: string;
   activity: string;
   ticket: string | null;
@@ -1400,20 +1400,26 @@ function firstSentence(s: SessionLike): string {
 }
 
 /** What ⌘K also searches beyond the title and metadata, newest first so the cap drops
- *  the oldest: the agent's latest reply and steps, the question, the recap, then your
- *  latest and first prompts. The row already carries every one, so nothing is read; each
- *  piece is cut to 300 characters and the whole to 1,500, because the page is posted
- *  again on every stream update while ⌘K is open. */
+ *  the oldest: the agent's latest reply (up to 1,000 characters), the question it asks,
+ *  your last four messages, its newest steps, the recap, then what you started it with. The row
+ *  already carries every one, so nothing is read; the other pieces are cut to 300
+ *  characters and the whole to 2,000, because the page is posted again on every stream
+ *  update while ⌘K is open. */
 const PALETTE_SAID_PIECE = 300;
-const PALETTE_SAID_MAX = 1500;
+const PALETTE_SAID_REPLY = 1000;
+const PALETTE_SAID_MAX = 2000;
 function paletteSaid(s: SessionLike): string {
   const q = s.attention?.state === 'open' ? s.attention.question : s.question;
   const steps = (s.timeline?.steps ?? []).slice(-4).reverse().map((st) => st.text);
-  const pieces = [s.lastResponse, ...steps, q?.text, ...(q?.options ?? []).map((o) => o.label), s.recap?.text, s.request?.text || s.request?.headline, s.startedAs];
+  const yours = (s.userTurns ?? []).slice(-4).reverse().map((t) => t.text);
+  const pieces: [string | undefined, number][] = [
+    [s.lastResponse, PALETTE_SAID_REPLY],
+    ...[q?.text, ...(q?.options ?? []).map((o) => o.label), s.request?.text || s.request?.headline, ...yours, ...steps, s.recap?.text, s.startedAs].map((t): [string | undefined, number] => [t, PALETTE_SAID_PIECE]),
+  ];
   const seen = new Set<string>();
   let out = '';
-  for (const p of pieces) {
-    const t = plain(p ?? '').slice(0, PALETTE_SAID_PIECE);
+  for (const [p, cap] of pieces) {
+    const t = plain(p ?? '').slice(0, cap);
     if (!t || seen.has(t)) continue;
     seen.add(t);
     out += (out ? ' \u00b7 ' : '') + t;

@@ -84,13 +84,26 @@ test('what was said matches last; the row carries your prompts, the question, th
     lastResponse: 'Trying [Intuit](https://x)\'s older app dashboard.',
   })], NOW, new Set(), HERE)
   const said = html.match(/data-said="([^"]*)"/)![1]
-  expect(said).toBe('Trying Intuit&#39;s older app dashboard. · step c · step b · step a · We are adding QuickBooks. The Intuit app is half set up. · It&#39;s clicked · Add QuickBooks to Rush')
+  expect(said).toBe('Trying Intuit&#39;s older app dashboard. · It&#39;s clicked · step c · step b · step a · We are adding QuickBooks. The Intuit app is half set up. · Add QuickBooks to Rush')
   // Each piece and the whole are capped, the oldest dropped first: the latest reply stays.
-  const long = renderPalette([entry({ lastResponse: 'newest Intuit', timeline: { steps: Array.from({ length: 4 }, (_, i) => ({ text: String(i).repeat(900) })) }, recap: { text: 'r'.repeat(900), at: '' }, startedAs: 'first prompt' })], NOW, new Set(), HERE)
+  const long = renderPalette([entry({ lastResponse: 'newest Intuit', timeline: { steps: Array.from({ length: 4 }, (_, i) => ({ text: String(i).repeat(900) })) }, recap: { text: 'r'.repeat(900), at: '' }, userTurns: Array.from({ length: 4 }, (_, i) => ({ atMs: i, text: 'u' + String(i).repeat(900) })), startedAs: 'first prompt' })], NOW, new Set(), HERE)
   const longSaid = long.match(/data-said="([^"]*)"/)![1]
-  expect(longSaid.length).toBe(1500)
+  expect(longSaid.length).toBe(2000)
   expect(longSaid.startsWith('newest Intuit · ')).toBe(true)
   expect(longSaid).not.toContain('first prompt')
+})
+
+// Live yosemite-m1 row, 2026-10-20: "intuit" was in your own earlier message and 796
+// characters into the agent's reply, past a 300-character cut.
+test('your last messages and a long latest reply are searched too', () => {
+  const docOf = (o: Partial<SessionLike>) => {
+    const m = renderPalette([entry(o)], NOW, new Set(), HERE).match(/data-title="([^"]*)" data-ids="([^"]*)" data-text="([^"]*)" data-said="([^"]*)"/)!
+    return { title: m[1], ids: m[2], text: m[3], said: m[4] }
+  }
+  const turns = ['first', 'Wait for the intuit. I put the client ID in 1Password.', 'go', 'ok', 'yes'].map((text, i) => ({ atMs: i, text }))
+  expect(paletteMatch(docOf({ userTurns: turns }), 'intuit')).toBe(4)
+  expect(paletteMatch(docOf({ userTurns: turns.concat(turns.slice(2)) }), 'intuit')).toBeNull()
+  expect(paletteMatch(docOf({ lastResponse: 'x '.repeat(398) + 'Intuit side is done.' }), 'intuit')).toBe(4)
 })
 
 test('a snippet starts at a word boundary near the first match and marks it', () => {
