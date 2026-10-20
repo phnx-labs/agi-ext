@@ -809,7 +809,7 @@ function askChoices(s: SessionLike): { id?: string; label: string; description?:
 function leadDraft(d: { text?: string; choiceId?: string; label: string } | undefined): string {
   if (!d?.label || (!d.text && !d.choiceId)) return '';
   const sends = d.choiceId ? `data-choice="${escapeHtml(d.choiceId)}"` : `data-ask-text="${escapeHtml(d.text!)}"`;
-  const edit = d.text ? `<button class="lnk" data-ask-edit="${escapeHtml(d.text)}">Edit</button>` : '';
+  const edit = d.choiceId ? '' : `<button class="lnk" data-ask-edit="${escapeHtml(d.text!)}">Edit</button>`;
   return `<div class="draft"><span class="dl">Lead</span><span class="dt" title="${escapeHtml(d.label)}">${escapeHtml(d.label)}</span><span class="da"><button class="lnk" ${sends} data-label="${escapeHtml(d.label)}">Send</button>${edit}</span></div>`;
 }
 
