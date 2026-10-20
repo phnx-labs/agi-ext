@@ -12,8 +12,10 @@ export interface TabDelivery {
   at: string;
 }
 
-/** agents-cli drops an unreceipted delivery after this; a window never types one older. */
+/** agents-cli drops an unreceipted delivery after 15 s and the row loses it; `at` comes from
+ *  the agent's machine, so a window allows that clock a minute of skew before refusing it. */
 export const TAB_DELIVERY_TTL_MS = 15_000;
+const CLOCK_SKEW_MS = 60_000;
 
 function asDelivery(row: unknown): TabDelivery | undefined {
   const d = (row as { delivery?: Partial<TabDelivery> } | null)?.delivery;
@@ -35,9 +37,9 @@ export class DeliveryGate {
   private readonly typed = new Map<string, number>();
 
   take(d: TabDelivery, nowMs: number): boolean {
-    for (const [id, at] of this.typed) if (nowMs - at > 2 * TAB_DELIVERY_TTL_MS) this.typed.delete(id);
+    for (const [id, at] of this.typed) if (nowMs - at > 2 * (TAB_DELIVERY_TTL_MS + CLOCK_SKEW_MS)) this.typed.delete(id);
     const age = nowMs - Date.parse(d.at);
-    if (!(age <= TAB_DELIVERY_TTL_MS) || this.typed.has(d.id)) return false;
+    if (!(age <= TAB_DELIVERY_TTL_MS + CLOCK_SKEW_MS) || this.typed.has(d.id)) return false;
     this.typed.set(d.id, nowMs);
     return true;
   }
@@ -48,6 +50,7 @@ const PASTE_END = '\u001b[201~';
 
 /** What to write: several lines go in as one bracketed paste so the TUI does not submit at the first line. */
 export function deliveryKeystrokes(d: TabDelivery): { text: string; submit: boolean } {
-  const text = d.text.includes('\n') ? `${PASTE_START}${d.text}${PASTE_END}` : d.text;
+  const clean = d.text.split(PASTE_END).join('');
+  const text = clean.includes('\n') ? `${PASTE_START}${clean}${PASTE_END}` : clean;
   return { text, submit: d.enter };
 }

@@ -20,8 +20,13 @@ test('each delivery is typed once, however often the stream repeats the row', ()
   expect(gate.take(d({ id: 'tab-2' }), AT + 700)).toBe(true);
 });
 
-test('a delivery older than agents-cli waits is never typed, so a late window cannot type an abandoned one', () => {
-  expect(new DeliveryGate().take(d(), AT + TAB_DELIVERY_TTL_MS + 1)).toBe(false);
+test('a delivery long past agents-cli\'s wait is never typed, with a minute allowed for the agent machine\'s clock', () => {
+  expect(new DeliveryGate().take(d(), AT + TAB_DELIVERY_TTL_MS + 30_000)).toBe(true);
+  expect(new DeliveryGate().take(d(), AT + TAB_DELIVERY_TTL_MS + 60_001)).toBe(false);
+});
+
+test('a paste cannot be ended early by the text it carries', () => {
+  expect(deliveryKeystrokes(d({ text: 'a\u001b[201~\nb' })).text).toBe('\u001b[200~a\nb\u001b[201~');
 });
 
 test('several lines go in as one bracketed paste; a picker key is left unsubmitted', () => {

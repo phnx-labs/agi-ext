@@ -21,12 +21,11 @@ test('renameSession types /rename with the cleaned name, and nothing for an empt
   expect(t.sent).toEqual([['/rename Body alignment', false], ['\r', false]]);
 });
 
-test('a delivery from agents-cli is typed through submitToTui, or left in the prompt when it asks for no Enter', async () => {
+test('deliveries to one tab go in order, text then its own Enter, or left in the prompt when they ask for no Enter', async () => {
   const t = tab();
   typeDelivery(t, { id: 'a', sessionId: 's', text: 'Merge when green', enter: true, at: new Date().toISOString() });
-  typeDelivery(t, { id: 'b', sessionId: 's', text: '2', enter: false, at: new Date().toISOString() });
-  await settle(400);
-  expect(t.sent).toEqual([['2', false], ['Merge when green', false], ['\r', false]]);
+  await typeDelivery(t, { id: 'b', sessionId: 's', text: '2', enter: false, at: new Date().toISOString() });
+  expect(t.sent).toEqual([['Merge when green', false], ['\r', false], ['2', false]]);
 });
 
 test('a reply box reply to Claude goes through submitToTui: Enter only after the text is in', async () => {

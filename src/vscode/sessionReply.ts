@@ -88,8 +88,20 @@ export function renameSession(terminal: Pick<vscode.Terminal, 'sendText'>, raw: 
 
 /** Type what agents-cli handed this tab (`delivery` on its row): submitted through
  *  `submitToTui`, or left in the prompt when the CLI asked for no Enter (a picker key). */
-export function typeDelivery(terminal: Pick<vscode.Terminal, 'sendText'>, delivery: TabDelivery): void {
+const deliveryQueues = new WeakMap<object, Promise<void>>();
+const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Deliveries to one tab go in the order they came, each finished (text, then its Enter)
+ *  before the next starts. */
+export function typeDelivery(terminal: Pick<vscode.Terminal, 'sendText'>, delivery: TabDelivery): Promise<void> {
   const { text, submit } = deliveryKeystrokes(delivery);
-  if (submit) submitToTui(terminal, [text]);
-  else terminal.sendText(text, false);
+  const next = (deliveryQueues.get(terminal) ?? Promise.resolve()).then(async () => {
+    terminal.sendText(text, false);
+    if (!submit) return;
+    await pause(300);
+    terminal.sendText('\r', false);
+    await pause(400);
+  });
+  deliveryQueues.set(terminal, next);
+  return next;
 }

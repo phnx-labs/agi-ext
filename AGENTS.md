@@ -162,7 +162,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   agents-cli puts it on the session's row (`delivery`, from `agents feed answer` or
   `agents send`): the window whose registry binds that session types it once, within 15 s
   of when it was written (`typeTabDeliveries` in `src/vscode/extension.ts`, `DeliveryGate`
-  in `src/core/tabDelivery.ts`); agents-cli decides and confirms by the agent's next prompt.
+  in `src/core/tabDelivery.ts`; deliveries to one tab go in order), even into a prompt you
+  have half-typed there, since each one is your own Send; agents-cli decides and confirms by
+  the agent's next prompt.
   There is no `/inject` URI.
 - Terminal rebind runs only on pushed reset/row facts, scoped to observer device and host;
   start time is not ownership; a `previous: true` row cannot reclaim a tab
