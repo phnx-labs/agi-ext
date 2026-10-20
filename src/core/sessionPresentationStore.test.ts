@@ -334,3 +334,19 @@ describe('SessionPresentationStore', () => {
     });
   });
 });
+
+// The rows of the owner's 2026-10-19 video: 880c8e40 ran on yosemite-s0 with no zion tab
+// after its reconnect; its closed twin and a session shown in a zion tab are not that.
+test('runningUnshown: a live agent no tab on this machine shows, and nothing else', () => {
+  const store = new SessionPresentationStore();
+  store.apply({ v: 1, type: 'reset', streamId: 's', sequence: 1, capturedAt: 1, scope: 'yosemite-s0', attention: [], agents: [
+    { rowKey: 'old', sessionId: '880c8e40', machine: 'yosemite-s0', pidAlive: false, previous: true },
+    { rowKey: 'live', sessionId: '880c8e40', machine: 'yosemite-s0', pidAlive: true, observerTerminals: null },
+    { rowKey: 'tab', sessionId: '1a54d491', machine: 'yosemite-s0', pidAlive: true, observerTerminals: [{ device: 'zion', terminalId: 'cl-1792195106138-18' }] },
+    { rowKey: 'ended', sessionId: '72ef0a21', machine: 'yosemite-s0', pidAlive: false },
+  ] });
+  expect(store.runningUnshown('880c8e40', 'zion')).toBe('yosemite-s0');
+  expect(store.runningUnshown('1a54d491', 'Zion.local')).toBeNull();
+  expect(store.runningUnshown('1a54d491', 'pinnacles')).toBe('yosemite-s0');
+  expect(store.runningUnshown('72ef0a21', 'zion')).toBeNull();
+});

@@ -363,6 +363,8 @@ export interface RemoteSession {
    *  detached-but-alive session into the "needs reconnecting" band. '' when the
    *  CLI supplied no status. */
   liveStatus: string;
+  /** The CLI saw the agent's process alive (`pidAlive`); absent on a closed row or an older CLI. */
+  pidAlive?: boolean;
   /** Live now-line for the card (the CLI's `preview` while the agent is working). */
   activity: string;
   /** Output-token throughput from the CLI payload (`ActiveSession.tokPerSec`), rounded. */
@@ -584,6 +586,7 @@ export interface RawActiveSession {
   /** The terminal-emulator name the process runs under ("ghostty"). */
   host?: string;
   observerTerminals?: unknown;
+  pidAlive?: unknown;
   /** The CLI emits these NESTED objects on `sessions watch --json` (agents-cli
    *  ActiveSession: preview / pr / worktree / ticket). Earlier this shape declared
    *  none of them, so normalizeActiveSession silently dropped the worktree slug, the
@@ -1238,6 +1241,7 @@ export function normalizeActiveSession(
     phase,
     // Raw lifecycle word kept verbatim (phase loses orphaned/crashed). Absent -> ''.
     liveStatus: (status || '').toLowerCase(),
+    ...(raw.pidAlive === true ? { pidAlive: true } : {}),
     // The now-line is live only while the CLI says the agent is working; an idle
     // or waiting session must not keep showing its last tool action as current.
     activity: raw.activity === 'working' && !isHarnessEnvelope(preview) ? preview : '',

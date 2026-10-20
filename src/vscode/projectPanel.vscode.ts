@@ -1356,6 +1356,7 @@ ${MADE_CSS}
   .fx .fast { color: var(--r-warn); } .fx .hi { color: var(--r-info); }
   .cbot { display: flex; align-items: flex-end; gap: 6px; margin-top: 6px; min-width: 0; } .card .cbot .cstrip { margin-top: 0; flex: 1; min-width: 0; }
   .cbot .hst { margin-left: auto; flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); opacity: .8; }
+  i.run { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--r-ok); margin-right: 4px; vertical-align: 1px; }
   .cmore { position: relative; } .cmore > summary { list-style: none; font-size: 13px; line-height: 18px; text-align: center; } .cmore > summary::-webkit-details-marker { display: none; }
   .card:has(.cmore[open]) .acts { display: flex; } .card:has(.cmore[open]) .age { display: none; }
   .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
@@ -1868,7 +1869,7 @@ ${MADE_SCRIPT}
       if (save && card && name && name !== t.dataset.ttl) vscode.postMessage({ type: 'rename', sessionId: card.dataset.session, name });
       t.replaceChildren(); syncTitles();
     };
-    input.addEventListener('keydown', (k) => { k.stopPropagation(); if (k.key === 'Enter' && !k.isComposing) { k.preventDefault(); end(true); } else if (k.key === 'Escape') { k.preventDefault(); end(false); } });
+    input.addEventListener('keydown', (k) => { if (k.metaKey || k.ctrlKey) return; k.stopPropagation(); if (k.key === 'Enter' && !k.isComposing) { k.preventDefault(); end(true); } else if (k.key === 'Escape') { k.preventDefault(); end(false); } });
     input.addEventListener('blur', () => end(false));
   }
   function syncBulk() {
@@ -2200,6 +2201,8 @@ ${MADE_SCRIPT}
   }, true);
   kq.addEventListener('input', () => { kpicked = null; kfilter(); klist.scrollTop = 0; });
   kq.addEventListener('keydown', (e) => {
+    // ⌘/Ctrl keys go on to the webview host, which runs copy, paste and cut for the page.
+    if (e.metaKey || e.ctrlKey) return;
     e.stopPropagation();
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();

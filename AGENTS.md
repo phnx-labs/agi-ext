@@ -126,7 +126,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   project, live and ended; it reads nothing, and its thumbnails are the request's pasted
   images looked up as above. Its Enter is a card's gesture made explicit (`paletteGo`, the
   approved prototype's kpick): a tab here comes forward, a live session elsewhere comes
-  forward where it runs as its ↗ does, and only an ended one resumes, as its ▶ does. No per-selection fetch. A plain shell in
+  forward where it runs as its ↗ does, and only an ended one resumes, as its ▶ does. A session
+  whose agent the CLI sees running (`pidAlive`) with no tab on this machine is never resumed:
+  `resumeSessionTab` says where it runs and starts nothing (`runningUnshown`), since `agents run
+  --resume` would start a second agent on it (owner video, 2026-10-19). No per-selection fetch. A plain shell in
   front clears the subject, so the sidebar names the shell (`followFrontTerminal`).
 - Launch composition lives in `buildAgentLaunchCommand` (`src/core/agents.ts`),
   `harnessLaunchRegistrations` and `buildTabLaunchCommand` (`src/core/launchTarget.ts`); no

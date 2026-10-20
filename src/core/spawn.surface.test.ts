@@ -90,6 +90,7 @@ describe('agents.resumeSession', () => {
     let ran = 0;
     const result = await resumeSessionTab('s1', {
       liveTab: async (id) => (id === 's1' ? { terminalId: 'cl-1', focus: () => { focused++; } } : undefined),
+      runningUnshown: () => 'yosemite-s0',
       runResume: async () => { ran++; return { ok: true, output: '' }; },
     });
     expect({ result, focused, ran }).toEqual({ result: { status: 'focused-existing', terminalId: 'cl-1', reason: null }, focused: 1, ran: 0 });
@@ -97,10 +98,26 @@ describe('agents.resumeSession', () => {
 
   test('otherwise the CLI decides the window, and its exit code is the answer', async () => {
     const liveTab = async () => undefined;
-    expect(await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "Already open → focused tab \\"CC - x\\" in window \\"projB\\""') }))
+    const runningUnshown = () => null;
+    expect(await resumeSessionTab('s2', { liveTab, runningUnshown, runResume: runCli('echo "Already open → focused tab \\"CC - x\\" in window \\"projB\\""') }))
       .toEqual({ status: 'focused-existing', terminalId: null, reason: 'Already open → focused tab "CC - x" in window "projB"' });
-    expect((await resumeSessionTab('s2', { liveTab, runResume: runCli('echo "no ack" >&2; exit 1') })).status).toBe('failed');
-    expect((await resumeSessionTab('', { liveTab, runResume: runCli('exit 0') })).reason).toBe('no session id');
+    expect((await resumeSessionTab('s2', { liveTab, runningUnshown, runResume: runCli('echo "no ack" >&2; exit 1') })).status).toBe('failed');
+    expect((await resumeSessionTab('', { liveTab, runningUnshown, runResume: runCli('exit 0') })).reason).toBe('no session id');
+  });
+
+  // Owner video, 2026-10-19: ⌘K on a running session whose reconnect lost its tab ran
+  // `agents run --resume`, and a second Claude started on the same conversation.
+  test('a running session no tab here shows is never resumed', async () => {
+    let ran = 0;
+    const result = await resumeSessionTab('880c8e40', {
+      liveTab: async () => undefined,
+      runningUnshown: () => 'yosemite-s0',
+      runResume: async () => { ran++; return { ok: true, output: '' }; },
+    });
+    expect({ result, ran }).toEqual({
+      result: { status: 'failed', terminalId: null, reason: 'it is still running on yosemite-s0 and no tab here shows it, so nothing was started' },
+      ran: 0,
+    });
   });
 
 });

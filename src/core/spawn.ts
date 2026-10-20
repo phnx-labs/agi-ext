@@ -214,12 +214,17 @@ export function cliResumeOutcome(exitOk: boolean, output: string): { status: Spa
 /**
  * `agents.resumeSession`: show this session. A tab already showing it in this
  * window is focused; otherwise `projectWindowResume` opens it in the window that
- * owns its project, which runs decideSpawn there.
+ * owns its project, which runs decideSpawn there. A session whose agent is still
+ * running and that no tab on this machine shows is left alone: `agents run
+ * --resume` would start a second agent on the same conversation (owner video,
+ * 2026-10-19).
  */
 export async function resumeSessionTab(
   sessionId: string,
   deps: {
     liveTab(sessionId: string): Promise<{ terminalId: string; focus(): void } | undefined>;
+    /** The machine its agent is running on, when no tab on this machine shows it. */
+    runningUnshown(sessionId: string): string | null;
     runResume(sessionId: string): Promise<{ ok: boolean; output: string }>;
   },
 ): Promise<{ status: SpawnAckStatus; terminalId: string | null; reason: string | null }> {
@@ -229,6 +234,8 @@ export async function resumeSessionTab(
     live.focus();
     return { status: 'focused-existing', terminalId: live.terminalId, reason: null };
   }
+  const machine = deps.runningUnshown(sessionId);
+  if (machine) return { status: 'failed', terminalId: null, reason: `it is still running on ${machine} and no tab here shows it, so nothing was started` };
   const { ok, output } = await deps.runResume(sessionId);
   return { ...cliResumeOutcome(ok, output), terminalId: null };
 }
