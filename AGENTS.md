@@ -208,7 +208,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   name (`projectFallback`); a session another live project claims stays there. The Project
   panel and the resume picker apply the same rule. Delete it when the feed resolves old names.
   Attribution only decides sessions with no tab here: a session with a tab in this window is
-  in this window's group ("VSCodium agi-ext") whatever its project (`projectSessions`' `tabHere`, from
+  in this window's group ("agi-ext" beside the VSCodium icon) whatever its project (`projectSessions`' `tabHere`, from
   `terminals.getBySessionId`; owner video, 2026-10-19 12:58 AM); the resume picker passes none.
 - One shell quoter (`shellQuote`, `src/core/shellQuote.ts`) and one binary resolver
   and exec path for `agents`, the standalone `sessions`/`secrets` it installs, and `linear`
@@ -241,8 +241,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
   waits or asks, nothing without `doneVerdict`.
   The question opens to its full text on a click on it. The front tab's card is the one
-  exception: pinned above everything and opened up (⇤ ‹ › ⇥ with its host, its place among
-  the tabs (2/10) and its age between them, its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
+  exception: pinned above everything and opened up (one header row: ⇤ ‹, the title and state, its host,
+  its place among the tabs (2/10) and its age, › ⇥; owner, 2026-10-22 1:01 PM; its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
   scrolls, a reply box; owner, 2026-10-18), and its card still keeps its place in this window's group
   with the selected rail (answers only on the pinned one), so switching tabs never reorders or
   removes a card, and the list never jumps: a clicked card stays where it was on screen
@@ -272,11 +272,12 @@ going on, where, and what came out of it" in one look; text explains only what a
   `prefers-reduced-motion`. Nothing flashes for as long as it waits. The one answer to a
   click: what was clicked to open rings once and "Opening …" shows until the host's
   `opened` (owner video, 2026-10-19 12:58 AM); nothing silently waits.
-- **Filter, then sort, in one ⇅ menu** on the list's first group header, with checkmarks,
-  as in the AGI Menu (Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
+- **View, filter, then sort, in one ⇅ menu** on the list's first group header, with checkmarks,
+  as in the AGI Menu (View: Default or Compact, where a listed card is its title row, the
+  agent's latest line and what it made, owner, 2026-10-22 1:02 PM; Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
   either way; then Sort: Tab order, Last active, Newest, Name). No grouping choice: sessions
-  group by where they live, this window's tabs headed by the editor and workspace
-  ("VSCodium agi-ext 5"). Group headers carry the icon, a count and one dot per state, so a
+  group by where they live, this window's tabs headed by the editor's icon and the
+  workspace ("agi-ext 5"; owner, 2026-10-22 1:01 PM). Group headers carry the icon, a count and one dot per state, so a
   folded group still says what is inside. There is no group of asks: a session that asks is
   a red card leading its own group, by urgency, then wait; then finished turns, then what
   works, then what ended (`TIER`; Name and this window's group under Tab order keep their

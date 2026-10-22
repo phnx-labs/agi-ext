@@ -243,7 +243,7 @@ const card = (s: SessionLike, o: { thumbs?: { uri: string; path: string; label: 
 
 test('a session lives where its tab is: this window, another window by its workspace, Ghostty, the background, or a tab its agent left', () => {
   const place = (o: Partial<SessionLike>) => sessionPlace(row(o), HERE)
-  expect(place({ host: 'yosemite-m5', tabHere: true, tabIndex: 32 })).toMatchObject({ kind: 'here', key: 'here', name: 'VSCodium', sub: 'agents', where: 'm5 · tab 32' })
+  expect(place({ host: 'yosemite-m5', tabHere: true, tabIndex: 32 })).toMatchObject({ kind: 'here', key: 'here', name: 'agents', sub: '', where: 'm5 · tab 32' })
   expect(place({ host: 'yosemite-m6', observers: [{ device: 'zion', viewingIn: 'VSCodium tab 4', workspaceDir: '/Users/me/src/agents-cli' }] }))
     .toMatchObject({ kind: 'window', key: 'window:agents-cli', name: 'agents-cli', where: 'm6 · tab 4' })
   expect(place({ host: 'this-mac', terminalApp: 'ghostty', context: 'terminal', presence: 'attached' })).toMatchObject({ kind: 'ghostty', where: 'zion' })
@@ -357,8 +357,8 @@ test('an ask leads its own group; group by app orders this window, other windows
   expect(at('ask')).toBeLessThan(at('bg'))
   expect(at('ask')).toBeGreaterThan(html.indexOf('data-group="background'))
   expect([at('mine'), at('win'), at('gh'), at('bg'), at('left')]).toEqual([at('mine'), at('win'), at('gh'), at('bg'), at('left')].sort((x, y) => x - y))
-  // This window's tabs are named as its tab bar is: the editor, the workspace, the count; ⇅ sits on the first group.
-  expect(html).toContain('<b>VSCodium</b> <span class="gs">agents</span> <span class="n">1</span>')
+  // This window's tabs are named by the workspace beside the editor's icon, then the count (owner, 2026-10-22 1:01 PM); ⇅ sits on the first group.
+  expect(html).toContain('alt="VSCodium"></span><span class="gname"><b>agents</b> <span class="n">1</span>')
   expect(html.indexOf('data-menu')).toBeGreaterThan(html.indexOf('data-group="here"'))
   expect(html.match(/data-menu/g)).toHaveLength(1)
   expect(html).toContain('<b>agents-cli</b>')
@@ -493,7 +493,7 @@ test('the front tab\'s card is pinned above the list, opened up, and keeps its o
   const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs() })
   expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
-  // Where it runs, its place among the tabs and its age share the arrows' row; the state is the tint, its word the tooltip.
+  // The title, where it runs, its place among the tabs and its age share the arrows' one row.
   expect(html).toContain('<span class="thistab" title="Running">m6 · 1/1</span>')
   // One tab: no ⇤ ⇥.
   expect(html).not.toContain('data-front-step="first"')
@@ -596,7 +596,7 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   const front = (s: SessionLike) => renderSessions([s], NOW, { selectedId: null, frontId: s.sessionId, here: HERE, prefs: prefs() })
   const pinned = front({ ...idle, tabHere: true, tabIndex: 1 })
   expect(pinned).toContain('title="T\nThis harness has no /rename, so its name comes from the session">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
-  expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items">m6 · 1/1 · 5m ago</span>')
+  expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items">m6 · 1/1 · 5m</span>')
   expect(front(row({ sessionId: 'w', tabHere: true, tabIndex: 1 }))).not.toContain('vchip')
 })
 

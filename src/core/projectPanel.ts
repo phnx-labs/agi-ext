@@ -509,6 +509,8 @@ export interface SessionListPrefs {
   hidden: Record<string, number>;
   /** Show only the sessions on today's goal (its ticket id in the title, topic or reply). */
   todayOnly: boolean;
+  /** Compact cards are the title row, the agent's latest line and what it made (owner, 2026-10-22 1:02 PM). */
+  view: 'default' | 'compact';
   /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded; 4 once Tab order is a sort. */
   v: 4;
 }
@@ -517,7 +519,7 @@ const ENDED_GROUP = 'ended';
 /** The Idle group's key (Settings > Ready for review and Idle groups), folded by default. */
 const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, showEnded: true, showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, v: 4 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, showEnded: true, showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', v: 4 };
 
 const SORTS: readonly SessionSort[] = ['tab', 'last', 'newest', 'name'];
 
@@ -544,6 +546,7 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     folded: o.v === 3 || o.v === 4 ? folded : [...new Set([...kept, IDLE_GROUP])],
     hidden,
     todayOnly: o.todayOnly === true,
+    view: o.view === 'compact' ? 'compact' : 'default',
     v: 4,
   };
 }
@@ -601,9 +604,9 @@ export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
   const where = [shortDevice(device), tab ? `tab ${tab}` : ''].filter(Boolean).join(' · ');
   const place = (kind: PlaceKind, key: string, name: string, sub: string, w = where): SessionPlace => ({ kind, key, name, sub, where: w, device });
   if (state === 'ended') return s.tabHere ? place('leftover', 'leftover', 'Tabs with no agent', here.workspace) : place('ended', 'ended', 'Ended', '');
-  // This window's tabs, named the way its tab bar is: the editor, then the workspace (owner video, 2026-10-22 6:42 AM).
-  if (s.tabHere) return place('here', 'here', here.editorName, here.workspace);
-  if (editorTab) { const ws = baseName(editorTab.workspaceDir); return place('window', `window:${ws}`, ws, here.editorName); }
+  // A window's tabs are named by its workspace; the editor's icon beside it says which app (owner, 2026-10-22 1:01 PM).
+  if (s.tabHere) return place('here', 'here', here.workspace || here.editorName, '');
+  if (editorTab) { const ws = baseName(editorTab.workspaceDir); return place('window', `window:${ws}`, ws, ''); }
   if (ghosttyTab || /ghostty/i.test(s.terminalApp ?? '')) return place('ghostty', 'ghostty', 'Ghostty', shortDevice(device));
   const bg = backgroundKind(s);
   if (bg) return place('background', 'background', 'Background', '', [shortDevice(device), bg].join(' · '));
@@ -868,8 +871,6 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
   return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${close}</div></details>`;
 }
 
-/** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row.
- *  Settings > ‹ › Off draws the row without arrows. In Next-that-needs-you, ‹ is Back. */
 /** A red card says what it asks, not whether its agent still runs: a green dot before
  *  the machine says the CLI saw the process alive (`pidAlive`; owner video, 2026-10-19). */
 function runMark(s: Pick<SessionLike, 'pidAlive'>, device: string): string {
@@ -878,15 +879,15 @@ function runMark(s: Pick<SessionLike, 'pidAlive'>, device: string): string {
 
 const STEP_MARK = { first: '⇤', prev: '‹', next: '›', last: '⇥' } as const;
 
-/** ⇤ ‹ ● s0 · 2/10 · 4m ago › ⇥ : where it runs, its place among the tabs and its age between
- *  the arrows (owner video, 2026-10-22 6:42 AM). Settings turns ⇤ ⇥ off, and ‹ › Off draws none. */
-function navButtons(nav: FrontNav | undefined, where: string, state: string, ends: boolean): string {
+/** ⇤ ‹ title · state · ● s0 · 2/10 · 4m › ⇥ : the pinned card's one header row (owner, 2026-10-22
+ *  1:01 PM). Settings turns ⇤ ⇥ off, and ‹ › Off draws none. In Next-that-needs-you, ‹ is Back. */
+function navButtons(nav: FrontNav | undefined, top: string, ends: boolean): string {
   const btn = (dir: keyof typeof STEP_MARK, to: FrontStep | undefined) => to?.sessionId
     ? `<button class="fc-step${dir === 'first' || dir === 'last' ? ' end' : ''}" data-front-step="${dir}"${dir === 'prev' && nav?.mode === 'needs' ? ' data-back' : ''} data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host ?? '')}" title="${escapeHtml(to.tip)}" aria-label="${escapeHtml(to.tip)}">${STEP_MARK[dir]}</button>`
     : `<button class="fc-step${dir === 'first' || dir === 'last' ? ' end' : ''}" disabled title="${escapeHtml(to?.tip ?? '')}" aria-label="${escapeHtml(to?.tip ?? '')}">${STEP_MARK[dir]}</button>`;
   const arrows = nav && nav.mode !== 'off';
   const both = arrows && ends && nav.count > 1;
-  return `<div class="fc-nav${arrows ? '' : ' bare'}">${both ? btn('first', nav.first) : ''}${arrows ? btn('prev', nav.prev) : ''}<span class="thistab" title="${escapeHtml(state)}">${where}</span>${arrows ? btn('next', nav.next) : ''}${both ? btn('last', nav.last) : ''}</div>`;
+  return `<div class="fc-nav${arrows ? '' : ' bare'}">${both ? btn('first', nav.first) : ''}${arrows ? btn('prev', nav.prev) : ''}${top}${arrows ? btn('next', nav.next) : ''}${both ? btn('last', nav.last) : ''}</div>`;
 }
 
 /** Claude's recap on the front card, with how old it is; dimmed with "before your
@@ -917,7 +918,7 @@ function activitySteps(s: SessionLike): string {
   return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null; favorite?: boolean }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null; favorite?: boolean; compact?: boolean }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
@@ -974,7 +975,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
   const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
   const meta = cards.machine ? repoTag : '';
-  const text = cards.description
+  const text = opts.compact ? (cards.description ? preview : '') : cards.description
     ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
@@ -991,18 +992,21 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const ttl = rename
     ? `<span class="ttl${rename.can ? ' rn' : ''}" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\n${rename.tip}`)}">${escapeHtml(title)}</span>`
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${opts.front ? vchip : ''}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${opts.front ? '' : vchip}${pill}${age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
+  // The pinned card says where it runs, its place among the tabs and its age where a listed card has its age.
+  function frontWhere(): string {
+    const ago = ageWords(s.lastActivityMs, now);
+    const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ago;
+    const at = opts.nav?.at ? `${opts.nav.at}/${opts.nav.count}` : s.tabIndex ? String(s.tabIndex) : '';
+    const where = [`${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}`, at, since].filter(Boolean).join(' · ');
+    const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
+    return `<span class="thistab" title="${escapeHtml(stateWords)}">${where}</span>`;
+  }
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${opts.front ? vchip : ''}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${opts.front ? '' : vchip}${pill}${opts.front ? frontWhere() : age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
   // the reply box (data-keep) is never patched, so typing survives every update.
   function frontBody(): string {
-    const ago = ageWords(s.lastActivityMs, now);
-    const since = waited >= 0 ? `waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ago === 'now' || !ago ? ago : `${ago} ago`;
-    // No row of its own for the state: the tint says it, the word is the tooltip (owner video, 2026-10-18 8:59 PM).
-    const at = opts.nav?.at ? `${opts.nav.at}/${opts.nav.count}` : s.tabIndex ? String(s.tabIndex) : '';
-    const where = [`${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}`, at, since].filter(Boolean).join(' · ');
-    const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     const latest = recapBlock(s, now) || saidLine(s, said);
     // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
     // from the shelf's fields; data-keep keeps a scrolled shelf through every update.
@@ -1012,14 +1016,14 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     // Made shelf or the activity box to another position (the patch pairs by position).
     const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${cards.activity ? activitySteps(s) : ''}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
-    return `${navButtons(opts.nav, where, stateWords, cards.ends)}${top}<div class="fc-body">${detail}</div>${reply}`;
+    return `${navButtons(opts.nav, top, cards.ends)}<div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
     ${meta ? `<div class="meta">${meta}</div>` : ''}${text}
     ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
-  const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
+  const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
@@ -1056,12 +1060,13 @@ function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: Sess
 function menuHtml(p: SessionListPrefs): string {
   const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
   return `<div class="menu" role="menu" hidden>
+    <div class="sec">View</div>${item(p.view === 'default', 'Default', 'view', 'default')}${item(p.view === 'compact', 'Compact', 'view', 'compact')}<hr>
     <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
     <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
   </div>`;
 }
 
-const menuButton = (p: SessionListPrefs) => `<button class="icon gmenu" data-menu aria-haspopup="menu" aria-expanded="false" title="Filter and sort" aria-label="Filter and sort">${glyph('sort')}</button>${menuHtml(p)}`;
+const menuButton = (p: SessionListPrefs) => `<button class="icon gmenu" data-menu aria-haspopup="menu" aria-expanded="false" title="View, filter and sort" aria-label="View, filter and sort">${glyph('sort')}</button>${menuHtml(p)}`;
 
 /** What the list draws before grouping: the viewer's Show choices, then ☀ only. */
 function listedSessions(rows: SessionLike[], opts: SessionListOptions): { row: SessionLike; place: SessionPlace }[] {
@@ -1118,12 +1123,14 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const rest = others.filter((x) => !quiet(x));
   const nav = front ? frontNav(cards.arrows, sessionTabs(all), front.row, opts.memory, cardTitle, blocked) : undefined;
   // The listed copy of the front session asks with its question only: its answers are on the pinned card.
-  const listedCards: CardSettings = { ...cards, asks: cards.asks === 'off' ? 'off' : 'question' };
+  // Compact: the title row, the agent's latest line and what it made; no ask box, no previews.
+  const shown: CardSettings = prefs.view === 'compact' ? { ...cards, asks: 'off', previews: false, firstMessage: false, command: false } : cards;
+  const listedCards: CardSettings = { ...shown, asks: shown.asks === 'off' ? 'off' : 'question' };
   // A Favorites copy also asks with its question only: the answers stay on its own card.
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false, copy = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, linearName: opts.linearName,
     // The pinned card is where an ask is answered, so it keeps its answers whatever the list shows (owner video, 2026-10-22 8:50 AM).
-    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : cards, nav: pinned ? nav : undefined, shelf: pinned ? opts.shelfFor?.(row) : undefined,
+    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, nav: pinned ? nav : undefined, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId),
   });
   // The tab already shows the count and the asks badge, so the header carries only search and ☀;

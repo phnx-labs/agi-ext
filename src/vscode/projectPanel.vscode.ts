@@ -1298,18 +1298,21 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   /* The front tab's card, pinned above the list (owner, 2026-10-18). */
   .front-pin { margin: 2px 0 8px; }
   .fc-nav { display: flex; align-items: center; gap: 4px; margin: -2px -2px 2px; }
-  .card .fc-nav .thistab { flex: 1; margin: 0; text-align: center; }
   .fc-step { width: 22px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--r-text-2); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
   .fc-step:hover:not([disabled]) { background: var(--r-well); color: var(--r-text); }
   .fc-step:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   .fc-step[disabled] { opacity: .3; cursor: default; }
   .card.front { cursor: default; }
   .card.front.st-asks:hover, .card.front.st-stuck:hover, .card.front.st-blocked:hover, .card.front.st-working:hover, .card.front.st-waiting:hover, .card.front.st-idle:hover, .card.front.st-review:hover { filter: none; }
-  .card.front .acts { display: flex; } .card.front .age { display: none; }
+  .card.front:not(:hover):not(:focus-within):not(:has(.cmore[open])) .acts { display: none; } .card.front:is(:hover, :focus-within) .top .thistab { display: none; } .card.front .age { display: none; }
   .card.front .top { height: auto; min-height: 20px; align-items: flex-start; }
   .card.front .top .hx { margin-top: 2px; }
   .card.front .top .vchip { margin-top: 1px; }
-  .card.front .ttl { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 17px; }
+  /* One header row: ⇤ ‹ title, state, where it runs, its tab and age › ⇥ (owner, 2026-10-22 1:01 PM). */
+  .card.front .fc-nav .top { flex: 1; min-width: 0; }
+  .card.front .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 17px; }
+  .card.front .top { align-items: center; }
+  .card.front .top .thistab { flex: none; max-width: 38%; margin: 0; letter-spacing: 0; text-transform: none; font-size: 10.5px; font-weight: 500; font-family: var(--vscode-editor-font-family); }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
   .card .fc-nav .thistab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
@@ -1413,6 +1416,7 @@ ${MADE_CSS}
   .ic.mark { width: 11px; height: 11px; }
   .card .line { color: var(--r-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   .card .line.said { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .card.compact .line.said { -webkit-line-clamp: 1; } .card.compact .ask, .card.compact .line.said { margin-top: 3px; }
   .card .line.live { color: var(--r-caption); margin-top: 3px; } .card .line .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; } .card .line .tool { font-weight: 600; font-size: 11px; }
   .card .why { margin-top: 2px; font-size: 11px; color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .why.u-urgent, .card .why.u-high { color: var(--r-bad); } .card .why [data-since] { font-variant-numeric: tabular-nums; }

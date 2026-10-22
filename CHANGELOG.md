@@ -21,6 +21,11 @@ From the owner's 8:50 AM video on the Project panel:
   Settings > A card shows > State turns the pill off.
 - Image previews have their own switch in Settings > A card shows, apart from PRs, tickets and
   folders.
+- ⇅ on the list has a View choice: Default, or Compact, where each listed card is three rows
+  (the title with its state and age, the agent's latest line, what it made).
+- The pinned card's header is one row: ⇤ ‹, the title and state, where it runs, its place among
+  the tabs and its age, › ⇥. Copy and ⋯ show on hover.
+- This window's group is named by its workspace ("agi-ext 5"); the icon already says VSCodium.
 - A filter bar at the top of Sessions filters the list as you type; ⌘K still searches every
   project.
 - The pinned card is about a sixth shorter: a two-line recap with the full text on hover, and a
