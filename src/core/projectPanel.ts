@@ -499,11 +499,11 @@ type SessionSort = 'tab' | 'last' | 'newest' | 'name';
 /** What the viewer chose in the ⇅ menu, plus folded groups and sessions they hid
  *  (each hidden until it moves past the activity it had when hidden). */
 export interface SessionListPrefs {
-  /** Tab order keeps Open tabs as the editor's tab bar has them; every other group reads it as Last active. */
+  /** Tab order keeps this window's tabs as its tab bar has them; every other group reads it as Last active. */
   sort: SessionSort;
   showLeftover: boolean;
   showEnded: boolean;
-  /** Open tabs below the pinned card; off keeps only the ones that ask (‹ › still walk them all). */
+  /** This window's tabs below the pinned card; off keeps only the ones that ask (‹ › still walk them all). */
   showOpen: boolean;
   folded: string[];
   hidden: Record<string, number>;
@@ -525,7 +525,7 @@ const SORTS: readonly SessionSort[] = ['tab', 'last', 'newest', 'name'];
  *  before v2 saved Ended off as the old default, not as a choice, so they get the
  *  new default: Ended shown and folded. Turning it on was a choice and is kept.
  *  Prefs from before v3 get the Idle group folded. Before v4, Last active still kept
- *  Open tabs in tab order, which is now the Tab order sort. */
+ *  this window's tabs in tab order, which is now the Tab order sort. */
 export function readSessionPrefs(v: unknown): SessionListPrefs {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const hidden: Record<string, number> = {};
@@ -1044,7 +1044,7 @@ function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionL
 const TIER: Record<SessionStateKey, number> = { asks: 0, stuck: 0, review: 1, idle: 1, working: 2, waiting: 2, unknown: 2, ended: 3 };
 
 function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: SessionSort): { row: SessionLike; place: SessionPlace }[] {
-  // Tab order keeps Open tabs as the tab bar has them; a panel terminal (no tab number) follows.
+  // Tab order keeps this window's tabs as the tab bar has them; a panel terminal (no tab number) follows.
   if (sort === 'tab' && items.length && items.every(({ place }) => place.kind === 'here')) {
     return [...items].sort((a, b) => (a.row.tabIndex ?? Infinity) - (b.row.tabIndex ?? Infinity) || b.row.lastActivityMs - a.row.lastActivityMs);
   }
@@ -1053,14 +1053,14 @@ function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: Sess
     : sort === 'newest' ? (a: SessionLike, b: SessionLike) => (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0)
       : (a: SessionLike, b: SessionLike) => b.lastActivityMs - a.lastActivityMs;
   const tier = (r: SessionLike) => TIER[sessionStateOf(r)];
-  return [...items].sort((a, b) => tier(a.row) - tier(b.row) || by(a.row, b.row));
+  return [...items].sort((a, b) => (sort === 'name' ? 0 : tier(a.row) - tier(b.row)) || by(a.row, b.row));
 }
 
 /** Filter, then sort (owner video, 2026-10-22 6:42 AM: on the list's own header, no grouping). */
 function menuHtml(p: SessionListPrefs): string {
   const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
   return `<div class="menu" role="menu" hidden>
-    <div class="sec">Show</div>${item(p.showOpen, 'Open tabs', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
+    <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
     <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
   </div>`;
 }
@@ -1088,7 +1088,7 @@ export function nextThatNeedsYou(rows: SessionLike[], opts: SessionListOptions &
 
 /** The Sessions tab: a header with its controls, the front tab's card pinned on top,
  *  then what needs you, Ready for review and Idle, and the viewer's grouping of the rest.
- *  A session with a tab in this window stays in Open tabs, in tab order, working or
+ *  A session with a tab in this window stays in this window's group, in tab order, working or
  *  finished, the front one included (with the selected rail), so switching tabs never
  *  moves or removes a card (owner video, 2026-10-19 1:32 AM). Its answer buttons are
  *  on the pinned card only, so they exist once (PHNX-4387); the listed copy shows the
@@ -1115,7 +1115,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
   // The front tab's session is pinned on top and keeps its own place in the list too.
   const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
-  // Open tabs off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
+  // Tabs in this window off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
   const others = all.filter((x) => prefs.showOpen || !tabHere(x) || ball(x.row) === 'move');
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
   const quiet = (x: { row: SessionLike; place: SessionPlace }) => cards.finishedGroups && !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
@@ -1131,10 +1131,14 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   });
   // The tab already shows the count and the asks badge, so the header carries only search and ☀;
   // filter and sort sit on the list's first group, so the header row never changes.
-  const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button></div>`;
+  // With no group drawn (Show hid everything, or only grouped finished sessions are left) ⇅ stays in the header, so Show can be turned back on.
+  const headWith = (menu: boolean) => `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button>${menu ? menuButton(prefs) : ''}</div>`;
+  const head = headWith(false);
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
-  if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean; menu?: boolean };
+  if (all.length === 0) return `${headWith(true)}<div class="empty">No sessions on this project right now.</div>${tail}`;
+  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean };
+  // ⇅ rides the first group header drawn, Favorites included.
+  let menuPlaced = false;
   const folded = new Set(prefs.folded);
   const section = (g: Group) => {
     const counts = new Map<SessionStateKey, number>();
@@ -1142,8 +1146,10 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const dots = [...counts].map(([k, n]) => `<i class="d-${STATE_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
     // A folded group opens while it holds the selected session (the front tab included).
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
+    const menuHere = !menuPlaced;
+    menuPlaced = true;
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span>${g.menu ? menuButton(prefs) : ''}</div>
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span>${menuHere ? menuButton(prefs) : ''}</div>
       <div class="items">${closed ? '' : ordered(g.items).map((x) => card(x, false, g.copy)).join('')}</div>
     </section>`;
   };
@@ -1158,19 +1164,19 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const quietGroups = [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
       { key: IDLE_GROUP, name: BALL_WORD.idle, sub: 'finished, no tab here', icon: ballIcon('idle'), items: byBall('idle') }]
       .filter((g) => g.items.length).map(section).join('');
+  const groups = (m: Map<string, Group>) => [...m.values()].map(section).join('');
   const byKey = new Map<string, Group>();
   for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
     const g = byKey.get(x.place.key) ?? { key: x.place.key, name: x.place.name, sub: x.place.sub, icon: placeIcon(x.place, here), items: [], action: x.place.kind === 'leftover' ? 'close-all' : undefined };
     g.items.push(x); byKey.set(x.place.key, g);
   }
-  const groups = [...byKey.values()];
-  if (groups[0]) groups[0].menu = true;
-  return head + pinned + favs + quietGroups + groups.map(section).join('') + tail;
+  const listed = groups(byKey);
+  return (menuPlaced ? head : headWith(true)) + pinned + favs + quietGroups + listed + tail;
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
 export function sessionCount(rows: SessionLike[], here?: SessionHere, prefs: SessionListPrefs = DEFAULT_SESSION_PREFS, frontId?: string | null): { shown: number; asks: number; tabs: number } {
-  // What the list draws: with Open tabs off, a tab here counts only while it asks or is the pinned front tab.
+  // What the list draws: with Tabs in this window off, a tab here counts only while it asks or is the pinned front tab.
   const items = here
     ? visibleSessions(rows, here, prefs).filter(({ row, place }) => prefs.showOpen || place.kind !== 'here' || row.sessionId === frontId || ballOf(sessionStateOf(row)) === 'move')
     : rows.map((row) => ({ row, place: null as SessionPlace | null }));
