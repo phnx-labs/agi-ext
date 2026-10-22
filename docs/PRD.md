@@ -113,7 +113,7 @@ Open the editor, press one chord, and an agent starts on the right machine with 
 
 **No second platform.** The extension does not score devices or accounts, resolve project paths, decide fork identity, or reproduce resume compatibility. Each of those has one owner in the CLI and the extension calls it.
 
-**No second session preview.** The Project panel is a list whose cards select; the Active Session sidebar is the one session preview. The deleted Fleet dashboard's persisted detail-rail preference produced a blank third-width column on open, and two previews of one session drifted.
+**No second session preview.** The Project panel is a list whose cards select; the Active Session sidebar is the one session preview. A card click points that preview at the session; it never opens the sidebar, so a closed one stays closed and shows the session when opened. The deleted Fleet dashboard's persisted detail-rail preference produced a blank third-width column on open, and two previews of one session drifted.
 
 **No Gemini integration.** The extension has no Gemini launch definition, installer, watchdog registration, prewarm configuration, transcript parser, or context-file alias target. Opening a workspace never creates `GEMINI.md`, even when an old explicit alias mapping requests it. Existing files remain untouched. Other configured aliases still work. The CLI catalog snapshot retains legacy ids solely to match the CLI protocol, not to install or offer the retired harness.
 

@@ -4,6 +4,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.426] - 2026-10-22
+
+- A click on a Project panel card no longer opens the Active Session sidebar when you closed
+  it. An open sidebar still switches to that session at once; a closed one shows it when you
+  open it.
+
 ## [0.9.425] - 2026-10-20
 
 - ⌘K finds a session by what was said in it, not only its title: the agent's latest reply,

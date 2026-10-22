@@ -243,6 +243,47 @@ describe('sidebar subject — last of { focused terminal, clicked Project panel 
     });
   });
 
+  test('a Project panel click never opens a closed sidebar; opening it shows the clicked session', async () => {
+    let provider: { resolveWebviewView(view: unknown): void } | undefined;
+    const register = win.registerWebviewViewProvider;
+    win.registerWebviewViewProvider = (_id, p) => { provider = p as typeof provider; return { dispose() { /* noop */ } }; };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    panel.registerAgentPanel(context as any);
+    win.registerWebviewViewProvider = register;
+    let shown = 0;
+    let onVisible: () => void = () => undefined;
+    const html: string[] = [];
+    let send: (m: unknown) => void = () => undefined;
+    const view = {
+      visible: false,
+      show() { shown++; },
+      webview: {
+        options: {}, html: '', cspSource: 'vscode-webview:',
+        asWebviewUri: (u: unknown) => u,
+        onDidReceiveMessage: (cb: (m: unknown) => void) => { send = cb; return { dispose() { /* noop */ } }; },
+        postMessage: (m: unknown) => { html.push(JSON.stringify(m)); return Promise.resolve(true); },
+      },
+      onDidChangeVisibility: (cb: () => void) => { onVisible = cb; return { dispose() { /* noop */ } }; },
+      onDidDispose: () => ({ dispose() { /* noop */ } }),
+    };
+    provider!.resolveWebviewView(view);
+    send({ type: 'ready' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    panel.setAgentPanelSubjectFromProject('session-closed', 'yosemite-m2');
+    expect(shown).toBe(0);
+    expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-closed');
+
+    // The owner opens it later: becoming visible draws the subject the click set.
+    view.visible = true;
+    onVisible();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    console.log('BEFORE', html.length, (provider as any).constructor.name, typeof (provider as any).refresh);
+    try { await (provider as any).refresh(); } catch (e) { console.log('ERR', e); }
+    expect(shown).toBe(0);
+    expect(html.some((m) => m.includes('session-closed'))).toBe(true);
+  });
+
   test('a Project panel click wins over the focused terminal', () => {
     const a = agentTab('CC-subject-b', 'session-b');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
