@@ -70,6 +70,7 @@ mock.module('vscode', () => vscodeDouble({
 const terminals = await import('./terminals.vscode');
 const panel = await import('./agentPanel.vscode');
 const { sessionPresentationStore } = await import('../core/sessionPresentationStore');
+const { sessionStreamDemand } = await import('../monitor/sessionDemand');
 const { planSessionStreamRebinds } = await import('../core/sessionIdHydrate');
 const { formatAgentStatusBarText } = await import('../core/statusIdentity');
 
@@ -297,6 +298,11 @@ describe('sidebar subject — last of { focused terminal, clicked Project panel 
     await settle();
     expect(shown).toBe(0);
     expect(posts.some((m) => m.includes('session-closed'))).toBe(true);
+
+    // A visible sidebar is stream demand for the whole process; leave none behind.
+    view.visible = false;
+    onVisible();
+    expect(sessionStreamDemand.demand).toBe(false);
   });
 
   test('a Project panel click wins over the focused terminal', () => {
