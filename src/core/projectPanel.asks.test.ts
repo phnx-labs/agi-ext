@@ -12,7 +12,7 @@ const NOW = Date.parse('2026-10-14T01:37:00Z')
 const HERE: SessionHere = { device: 'zion', localHost: 'this-mac', workspace: 'agents', editor: 'vscodium', editorName: 'VSCodium', icons: {} }
 const list = (cards?: CardSettings, folded = DEFAULT_SESSION_PREFS.folded) => renderSessions(ROWS, NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, folded }, cards })
 const byId = (id: string) => ROWS.find((r) => r.sessionId === id)!
-const card = (id: string, cards: CardSettings = DEFAULT_CARD_SETTINGS) => renderSessionCard(byId(id), sessionPlace(byId(id), HERE), NOW, { selected: false, pinned: true, thumbs: [], made: null, here: HERE, cards })
+const card = (id: string, cards: CardSettings = { ...DEFAULT_CARD_SETTINGS, asks: 'answers' }) => renderSessionCard(byId(id), sessionPlace(byId(id), HERE), NOW, { selected: false, pinned: true, thumbs: [], made: null, here: HERE, cards })
 const between = (html: string, from: string, to: string) => html.slice(html.indexOf(from), to ? html.indexOf(to, html.indexOf(from) + 1) : undefined)
 
 test('only real asks are your move, and they lead the list as red cards: by urgency, then longest wait; no Asks group of their own', () => {

@@ -42,7 +42,9 @@ test('☆ sits on every title row; a favorite shows ★ and leads the list under
   expect(favs).toContain('Ship it?')
   expect(favs).not.toContain('data-choice')
   expect(ids(sectionOf(html, 'here'))).toEqual(['asker', 'front', 'starred'])
-  expect(sectionOf(html, 'here')).toContain('data-choice="y"')
+  // Listed cards show the question only by default; Settings > Asks on listed cards puts the answers back.
+  expect(sectionOf(html, 'here')).not.toContain('data-choice="y"')
+  expect(sectionOf(draw({ favorites: ['starred', 'asker'], cards: { asks: 'answers' } }), 'here')).toContain('data-choice="y"')
   // Settings > Favorites group off: the stars stay, the group goes.
   const off = draw({ favorites: ['starred'], cards: { favorites: false } })
   expect(off).not.toContain('data-group="favorites"')
@@ -92,4 +94,18 @@ test('Settings > Session list: both on by default, each a checkbox that writes i
   expect(html).toContain('<b>Show the session list</b>')
   expect(html).toContain('data-setting="cards.list" checked')
   expect(html).toContain('data-setting="cards.favorites" checked')
+})
+
+test('Settings round-trip every Asks choice and the list style; Rows draws a listed session as ⌘K does (owner video, 2026-10-22 8:50 AM)', () => {
+  expect(cardSettings(undefined)).toMatchObject({ asks: 'question', style: 'cards' })
+  for (const asks of ['answers', 'question', 'off'] as const) expect(cardSettings({ asks }).asks).toBe(asks)
+  expect(cardSettings({ style: 'rows' }).style).toBe('rows')
+  expect(applyPanelSetting(getDefaultSettings(), 'cards.style', 'rows')?.cards).toMatchObject({ style: 'rows' })
+  const rows = renderSessions(ROWS, NOW, { selectedId: null, frontId: 'front', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, style: 'rows' } })
+  const listed = rows.slice(rows.indexOf('data-group="here"'))
+  expect(listed).toContain('class="card st-asks krowcard')
+  expect(listed).toMatch(/<span class="kmeta"><span class="pill st-asks"><i><\/i>Asks<\/span><span class="kw">/)
+  expect(listed).toContain('<span class="knote">Ship it?</span>')
+  // The pinned card is still the full card.
+  expect(rows.slice(0, rows.indexOf('data-group'))).not.toContain('krowcard')
 })

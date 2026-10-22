@@ -79,3 +79,22 @@ test('a value in ⋯ copies quietly: the host gets it, "copied" shows on it, and
   expect(more.open).toBe(true);
   expect(el('.toast').hidden).toBe(true);
 });
+
+test('the filter bar keeps only the listed cards that match every word typed, survives a redraw, and Esc clears it (owner video, 2026-10-22 8:50 AM)', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw({}, [row('a', 1), row('b', 2)]) });
+  const box = el('[data-find]') as unknown as HTMLInputElement;
+  const shown = () => [...document.querySelectorAll('main .grp .items .card')].filter((c) => (c as unknown as HTMLElement).style.display !== 'none').map((c) => (c as unknown as HTMLElement).dataset.session);
+  box.value = 'task b';
+  box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
+  expect(shown()).toEqual(['b']);
+  // A stream tick redraws the list; what was typed still filters it.
+  deliver({ type: 'html', tab: 'sessions', html: draw({}, [row('a', 1), row('b', 2), row('c', 3)]) });
+  expect((el('[data-find]') as unknown as HTMLInputElement).value).toBe('task b');
+  expect(shown()).toEqual(['b']);
+  box.value = 'nothing like this';
+  box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
+  expect(el('.nofind').hidden).toBe(false);
+  box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
+  expect(box.value).toBe('');
+  expect(shown()).toEqual(['a', 'b', 'c']);
+});

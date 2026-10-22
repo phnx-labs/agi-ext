@@ -4,6 +4,25 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.428] - 2026-10-22
+
+From the owner's 8:50 AM video on the Project panel:
+
+- Three states you can tell apart at a glance: Asks is amber with its slow ring, Blocked (an
+  agent that says it is blocked, or one the CLI saw stall) is red with the same ring, and
+  Running is green and breathes. An agent waiting on its own background work now reads
+  Running, not a blue Waiting. Idle and ready-for-review cards lose their yellow tint, so amber
+  only ever means an ask.
+- Listed cards show an ask's question without its answer buttons; the pinned card keeps them.
+  Settings > Asks on listed cards > With answers brings them back (that choice was also
+  impossible to keep before: the setting read it back as the default).
+- Settings > Session list style > Rows draws listed sessions as ⌘K's compact line: title, state,
+  host, age and tab, then what it made and its latest words.
+- A filter bar at the top of Sessions filters the list as you type; ⌘K still searches every
+  project.
+- The pinned card is about a sixth shorter: a two-line recap with the full text on hover, and a
+  shorter Activity box, so more of the list shows under it.
+
 ## [0.9.427] - 2026-10-22
 
 From the owner's 6:42 AM video on the Project panel:

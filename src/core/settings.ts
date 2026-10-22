@@ -211,7 +211,7 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
   const d = DEFAULT_CARD_SETTINGS;
   const part = (k: (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]) => (typeof v?.[k] === 'boolean' ? v[k] as boolean : d[k]);
   return {
-    asks: v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
+    asks: v?.asks === 'answers' || v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
     options: v?.options === 'details' ? 'details' : d.options,
     question: v?.question === 'full' ? 'full' : d.question,
     click: v?.click === 'show' ? 'show' : d.click,

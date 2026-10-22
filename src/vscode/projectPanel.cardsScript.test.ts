@@ -9,6 +9,7 @@ import { vscodeDouble } from '../testing/vscodeDouble';
 mock.module('vscode', () => vscodeDouble());
 const { shell } = await import('./projectPanel.vscode');
 const { DEFAULT_SESSION_PREFS, renderSessions } = await import('../core/projectPanel');
+const { cardSettings } = await import('../core/settings');
 type Row = import('../core/projectPanel').SessionLike;
 
 const NOW = Date.parse('2026-10-19T02:00:00Z');
@@ -150,7 +151,7 @@ test('a card click moves the selected rail at once; the host\'s redraw of the sa
 
 test('1-9 answers a selected starred session that asks, whose Favorites copy shows only the question', () => {
   const asking = (r: Row) => (r.sessionId === 'c' ? { ...r, phase: 'waiting' as const, liveStatus: 'waiting', attention: { key: 'k-c', kind: 'question', state: 'open', openedAt: new Date(NOW - 30_000).toISOString(), question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }, { id: 'n', label: 'No' }] } } : r);
-  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows.map(asking), NOW, { selectedId: 'c', frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, favorites: new Set(['c']) }) });
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows.map(asking), NOW, { selectedId: 'c', frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, favorites: new Set(['c']), cards: cardSettings({ asks: 'answers' }) }) });
   expect($$('[data-group="favorites"] .card.sel[data-session="c"]')).toHaveLength(1);
   sent.length = 0;
   (document.activeElement as unknown as HTMLElement | null)?.blur?.();

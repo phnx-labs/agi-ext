@@ -688,11 +688,11 @@ test('a session whose agent posted blocked leads its urgency, as Blocked', () =>
 
 const SHELL = { id: 'b1', description: 'Poll prod until the segment closes', startedAtMs: NOW - 6 * 60_000 }
 
-test('Waiting: an idle session with background work shows a blue pill, a chip per kind with the list on hover, and is not Your move', () => {
+test('an idle session with background work reads Running (owner video, 2026-10-22 8:50 AM), with a chip per kind and the list on hover, and is not Your move', () => {
   const waiting = row({ sessionId: 'w', phase: 'idle', liveStatus: 'idle', pending: { shells: [SHELL], subagents: [{ id: 'a', description: 'Watch reels' }] } })
   const html = card(waiting)
   expect(html).toMatch(/^<div class="card st-waiting"/)
-  expect(html).toContain('<span class="sr">Waiting</span>')
+  expect(html).toContain('<span class="sr">Running</span>')
   expect(html).toContain('>⑂ 1</span>')
   expect(html).toContain('>▸ 1</span>')
   expect(html).not.toContain('>◉')
@@ -786,7 +786,7 @@ test('a card can shrink to its logo and title: every part turns off on its own (
   expect(line).not.toContain('class="age')
   expect(line).toContain('class="ttl" title="Linear">Linear<')
   // An ask still shows its question and answers with the description off: that is what it needs from you.
-  const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { key: 'k', kind: 'question', state: 'open', question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }] } }), { cards: { ...DEFAULT_CARD_SETTINGS, description: false } })
+  const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { key: 'k', kind: 'question', state: 'open', question: { text: 'Ship it?' }, choices: [{ id: 'y', label: 'Yes' }] } }), { cards: { ...DEFAULT_CARD_SETTINGS, asks: 'answers', description: false } })
   expect(ask).toContain('data-ask="k" data-undo="0"')
   expect(ask).toContain('data-choice="y"')
 })
