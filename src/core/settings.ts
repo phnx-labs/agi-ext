@@ -169,6 +169,8 @@ export interface CardSettings {
   made: 'chips' | 'previews';
   /** What ‹ › on the pinned card do: walk the tabs, go to the next that needs you, or nothing. */
   arrows: ArrowMode;
+  /** Listed sessions as cards, or as ⌘K's compact rows (owner video, 2026-10-22 8:50 AM). */
+  style: 'cards' | 'rows';
   description: boolean;
   chips: boolean;
   machine: boolean;
@@ -199,7 +201,7 @@ export const CARD_PARTS = ['description', 'command', 'chips', 'machine', 'age', 
 export const LIST_PARTS = ['list', 'favorites', 'finishedGroups'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
-  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
+  asks: 'question', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs', style: 'cards',
   description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true, firstMessage: false,
   command: false, activity: true, ends: true, favorites: true, list: true, finishedGroups: false,
 };
@@ -216,6 +218,7 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
     made: v?.made === 'previews' ? 'previews' : d.made,
     arrows: v?.arrows === 'needs' || v?.arrows === 'off' ? v.arrows : d.arrows,
+    style: v?.style === 'rows' ? 'rows' : d.style,
     description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'), firstMessage: part('firstMessage'),
     command: part('command'), activity: part('activity'), ends: part('ends'),
     favorites: part('favorites'), list: part('list'), finishedGroups: part('finishedGroups'),

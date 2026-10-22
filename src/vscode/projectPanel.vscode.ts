@@ -1260,6 +1260,10 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
   /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
+  .sfind { position: sticky; top: 0; z-index: 3; margin: 2px 0 6px; padding: 4px 0; background: var(--vscode-sideBar-background); }
+  .sfind input { width: 100%; box-sizing: border-box; height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); font: inherit; font-size: 12px; outline: none; }
+  .sfind input:focus { border-color: var(--vscode-focusBorder); }
+  .nofind { margin: 10px 6px; color: var(--r-faint); font-size: 11.5px; }
   .more-drafts { display: block; margin: 6px 4px; padding: 2px 6px; border: 0; border-radius: 5px; background: none; color: var(--r-faint); font: inherit; font-size: 11.5px; cursor: pointer; } .more-drafts:hover { color: var(--r-text); background: var(--r-glass-hover); }
   .icon { width: 24px; height: 22px; display: grid; place-items: center; border-radius: 5px; border: 1px solid transparent; background: none; color: var(--r-caption); cursor: pointer; padding: 0; flex: none; }
   .icon:hover, .icon[aria-expanded="true"] { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
@@ -1311,7 +1315,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
   .fc-recap .fc-k { color: var(--r-gold-line); }
   .fc-old { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); }
-  .fc-rt { font-size: 12px; line-height: 1.45; color: var(--r-text); }
+  .fc-rt { font-size: 12px; line-height: 1.4; color: var(--r-text); }
   .fc-recap.stale .fc-k { color: var(--r-caption); } .fc-recap.stale .fc-rt { color: var(--r-text-2); }
   .card.front .ask, .card.front .line.said { margin-top: 6px; }
   .fc-made, .fc-act { margin-top: 7px; }
@@ -1336,7 +1340,9 @@ ${MADE_CSS}
   .fc-made .made.chips { margin: 0; }
   .fc-made button.mk, .fc-made button.mk-open { color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .fc-made button.mk-open { background: transparent; border: 0; }
-  .fc-act ol { max-height: 150px; overflow-y: auto; scrollbar-width: thin; }
+  .fc-act ol { max-height: 96px; overflow-y: auto; scrollbar-width: thin; }
+  /* About a quarter shorter than it was, so more of the list shows under it (owner video, 2026-10-22 8:50 AM); the recap's full text is its tooltip. */
+  .fc-rt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .fc-act ol[hidden] { display: none; }
   .fc-act ol:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .fc-act li.fc-earlier { display: block; font-size: 10.5px; color: var(--r-faint); }
@@ -1357,11 +1363,11 @@ ${MADE_CSS}
   .pill.solo { padding: 0 4px; border: 0; }
   .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-move { background: var(--r-warn) !important; }
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-running { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
-  .st-stuck.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-stuck i { background: var(--r-warn) !important; }
+  .st-stuck.pill { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-stuck i { background: var(--r-bad) !important; }
   .pill.st-review i, .d-review { background: var(--r-info) !important; }
   /* Waiting on its own work: a blue dot that breathes slowly, and a chip per kind. */
-  .st-waiting.pill { color: var(--r-wait); border-color: color-mix(in srgb, var(--r-wait) 45%, transparent); } .pill.st-waiting i, .d-waiting { background: var(--r-wait) !important; }
-  .st-waiting.pill i { animation: waitbreathe 2.2s ease-in-out infinite; }
+  .st-waiting.pill { color: var(--r-ok); } .pill.st-waiting i, .d-waiting { background: var(--r-ok) !important; }
+  .st-waiting.pill i { animation: breathe 1.6s ease-in-out infinite; }
   .pc { display: inline-flex; align-items: center; gap: 3px; flex: none; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); color: var(--r-wait); border-radius: 4px; padding: 0 4px; font-family: var(--vscode-editor-font-family); font-size: 10.5px; line-height: 15px; cursor: default; }
   .meta .repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .fx { display: inline-flex; gap: 2px; flex: none; } .fx span { font-size: 10.5px; line-height: 1; padding: 2px 3px; border-radius: 4px; background: var(--r-well); }
@@ -1387,14 +1393,17 @@ ${MADE_CSS}
   .cstrip::-webkit-scrollbar { display: none; } .cstrip > * { flex: none; }
   .cbot .cstrip { flex: 1; min-width: 0; }
   /* The card's tint is its state: red asks or blocked, green working, yellow idle. */
-  .card.st-asks, .card.st-stuck, .card.st-blocked { background: color-mix(in srgb, var(--r-bad) 14%, transparent); border-color: color-mix(in srgb, var(--r-bad) 45%, transparent); }
+  .card.st-stuck, .card.st-blocked { background: color-mix(in srgb, var(--r-bad) 14%, transparent); border-color: color-mix(in srgb, var(--r-bad) 45%, transparent); }
+  .card.st-asks { background: color-mix(in srgb, var(--r-warn) 12%, transparent); border-color: color-mix(in srgb, var(--r-warn) 45%, transparent); }
   .card.st-working, .card.st-waiting { background: color-mix(in srgb, var(--r-ok) 9%, transparent); border-color: color-mix(in srgb, var(--r-ok) 32%, transparent); }
-  .card.st-idle, .card.st-review { background: color-mix(in srgb, var(--r-idle) 8%, transparent); border-color: color-mix(in srgb, var(--r-idle) 30%, transparent); }
+  /* Amber is only for an ask now, so a finished turn is the plain card (owner video, 2026-10-22 8:50 AM). */
+  .card.st-idle, .card.st-review { background: var(--r-glass); border-color: var(--r-edge); }
   .card.st-asks:hover, .card.st-stuck:hover, .card.st-blocked:hover, .card.st-working:hover, .card.st-waiting:hover, .card.st-idle:hover, .card.st-review:hover { filter: brightness(1.15); }
   .card .age.wait { color: var(--r-bad); font-variant-numeric: tabular-nums; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .pill .wait { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .pill.st-asks i { position: relative; overflow: visible; }
+  .pill.st-asks i, .pill.st-stuck i, .pill.st-blocked i { position: relative; overflow: visible; }
+  .pill.st-stuck i::after, .pill.st-blocked i::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--r-bad); opacity: 0; animation: askring 2.4s ease-out infinite; }
   .pill.st-asks i::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--r-warn); opacity: 0; animation: askring 2.4s ease-out infinite; }
   @keyframes askring { 0% { transform: scale(.4); opacity: .7; } 70%, 100% { transform: scale(1.5); opacity: 0; } }
   /* A question that just arrived: the card glows three times, then rests. */
@@ -1526,6 +1535,15 @@ ${MADE_CSS}
   .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow .knote mark { background: none; color: var(--r-gold); font-weight: 600; }
   .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* Settings > Session list style > Rows: a listed session as ⌘K draws it. */
+  .card.krowcard { padding: 6px 9px; }
+  .card.krowcard .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .card.krowcard .ttl { flex: 1 1 auto; min-width: 0; }
+  .card.krowcard .kmeta { flex: none; display: flex; align-items: center; gap: 6px; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); max-width: 60%; overflow: hidden; }
+  .card.krowcard .kmeta .pill { flex: none; } .card.krowcard .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .card.krowcard:hover .kmeta { display: none; }
+  .card.krowcard .rsub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; white-space: nowrap; overflow: hidden; font-size: 11.5px; color: var(--r-text-2); }
+  .card.krowcard .rsub > * { flex: none; } .card.krowcard .rsub .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow.ended { opacity: .55; }
   .kth { display: block; width: 46px; height: 28px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); outline: 1.5px dashed var(--r-faint); outline-offset: 1px; background: var(--r-well); cursor: zoom-in; }
   .kth img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1534,7 +1552,7 @@ ${MADE_CSS}
   .kql { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
   .kql figure { margin: 0; text-align: center; max-width: 94vw; } .kql img { max-width: 94vw; max-height: 82vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
   .kql figcaption { color: #fff; font-size: 11.5px; margin-top: 6px; }
-  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .pill.st-stuck i::after, .pill.st-blocked i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1573,6 +1591,28 @@ ${MADE_SCRIPT}
   // the scroll by as much as the card moved, until the pinned card is the clicked one
   // (owner video, 2026-10-19 1:32 AM: "it just goes to the top").
   let anchor = null;
+  // The filter bar over the Sessions list: every word typed must appear in a listed card's
+  // title or words; groups with none left fold away. The pinned card always stays.
+  function applyFind() {
+    const box = main.querySelector('[data-find]');
+    const words = (box ? box.value : '').toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    for (const grp of main.querySelectorAll('.grp')) {
+      let left = 0;
+      for (const c of grp.querySelectorAll('.items .card')) {
+        const hay = ((c.dataset.title || '') + ' ' + c.textContent).toLowerCase();
+        const hit = words.every((w) => hay.includes(w));
+        c.style.display = hit ? '' : 'none';
+        if (hit) left++;
+      }
+      grp.style.display = words.length && !left && !grp.classList.contains('closed') ? 'none' : '';
+      shown += left;
+    }
+    const none = main.querySelector('.nofind');
+    if (none) none.hidden = !words.length || shown > 0;
+  }
+  main.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('[data-find]')) applyFind(); });
+  main.addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-find]')) { e.target.value = ''; applyFind(); e.stopPropagation(); } });
   // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
   function anyMenu() { return ctl.querySelector('.menu') || main.querySelector('.menu'); }
   function openMenu() { const mm = anyMenu(); return mm && !mm.hidden ? mm : null; }
@@ -1786,6 +1826,7 @@ ${MADE_SCRIPT}
       main.dataset.tab = m.tab;
       if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       observeThumbs(main);
+      applyFind();
       main.scrollTop = y;
       holdAnchor();
       if (focused) { const el = cardsOf('key', focused.key).find((c) => placeOf(c) === focused.place); if (el) el.focus({ preventScroll: true }); }
@@ -2135,8 +2176,8 @@ ${MADE_SCRIPT}
       }
       return;
     }
-    // The reply box takes its own keys; the activity box scrolls with the arrow keys.
-    if (e.target.closest && e.target.closest('.fc-reply, .fc-act ol')) return;
+    // The reply box and the filter bar take their own keys; the activity box scrolls with the arrow keys.
+    if (e.target.closest && e.target.closest('.fc-reply, .fc-act ol, .sfind')) return;
     // Other…: Enter sends what was typed (with the same Undo setting), Escape closes the box.
     const input = e.target.closest && e.target.closest('[data-ask-input]');
     if (input) {

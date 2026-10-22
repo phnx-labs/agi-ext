@@ -137,18 +137,19 @@ export function ballOf(key: SessionStateKey): SessionBall {
 /** The words a state shows. */
 export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
   asks: 'Asks',
-  stuck: 'Stuck',
+  stuck: 'Blocked',
   review: 'Ready for review',
   idle: 'Idle',
   working: 'Running',
-  waiting: 'Waiting',
+  waiting: 'Running',
   unknown: 'Running · no transcript',
   ended: 'Ended',
 };
 
 /** The color a state's dot takes on every surface (a card's group dots, the sidebar's
- *  state line and Related chips): your move amber, running green, waiting on its own
- *  work blue, ready for review indigo; idle and ended stay quiet. */
+ *  state line and Related chips): your move amber, running green (waiting on its own
+ *  work included: it is the agent's ball; owner video, 2026-10-22 8:50 AM), ready for
+ *  review indigo; idle and ended stay quiet. */
 export type StateTone = 'move' | 'running' | 'waiting' | 'review' | 'quiet';
 
 export const STATE_TONE: Record<SessionStateKey, StateTone> = {
@@ -157,7 +158,7 @@ export const STATE_TONE: Record<SessionStateKey, StateTone> = {
   review: 'review',
   idle: 'quiet',
   working: 'running',
-  waiting: 'waiting',
+  waiting: 'running',
   unknown: 'running',
   ended: 'quiet',
 };

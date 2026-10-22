@@ -15,11 +15,12 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 
 /** The Session cards pickers: each key, its words, and its choices in order. */
 const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
+  { key: 'style', label: 'Session list style', sub: 'Rows are ⌘K’s compact lines: title, state, host, age and tab, then what it made and its latest words', options: [{ value: 'cards', label: 'Cards' }, { value: 'rows', label: 'Rows' }] },
   { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
   { key: 'arrows', label: '‹ › on the pinned card', sub: 'Next that needs you: asks first, then turns that finished since you looked; ‹ goes back', options: [{ value: 'tabs', label: 'Tab order' }, { value: 'needs', label: 'Next that needs you' }, { value: 'off', label: 'Off' }] },
   { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Either way the answer brings its agent’s tab forward; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
   { key: 'made', label: 'What it made', sub: 'PRs, tickets and files, on the pinned card and in the Active Session sidebar', options: [{ value: 'chips', label: 'Chips in one row' }, { value: 'previews', label: 'Previews' }] },
-  { key: 'asks', label: 'Asks on cards', sub: 'Off leaves only the red card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
+  { key: 'asks', label: 'Asks on listed cards', sub: 'The pinned card always has the answers; Off leaves only the card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
   { key: 'options', label: 'Answer options', sub: 'Each option’s description shows on hover either way', options: [{ value: 'titles', label: 'Titles only' }, { value: 'details', label: 'Titles and details' }] },
   { key: 'question', label: 'Question text', sub: 'The full question is on hover either way', options: [{ value: 'two', label: 'Two lines' }, { value: 'full', label: 'Full' }] },
 ];
