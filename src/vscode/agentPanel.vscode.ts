@@ -346,12 +346,9 @@ export function setAgentPanelSubjectFromProject(sessionId: string, host?: string
   const id = (sessionId || '').trim();
   if (!id) return;
   moveSubject({ sessionId: id, source: 'project', ...(host ? { host } : {}) });
-  // Reveal WITHOUT stealing focus, so the click keeps the user in the Project panel
-  // while the preview updates beside it. A direct user action gets a direct
-  // refresh (one shot, no timer) rather than the stream-fact coalescer, which
-  // would skip entirely while the view was hidden.
-  activeProvider?.revealPreservingFocus();
-  void activeProvider?.refresh();
+  // A click never opens the sidebar (owner video, 2026-10-22): an open one redraws at
+  // once, a closed one draws this subject when it is next shown.
+  void activeProvider?.refreshIfVisible();
 }
 
 /** Bring the Active Session sidebar up (the Project panel's "Open the sidebar ›"). */
@@ -799,11 +796,6 @@ class AgentPanelProvider implements vscode.WebviewViewProvider {
     const s = this.snapshot;
     if (!sessionId || s.fullSessionId !== sessionId) return undefined;
     return s.title || s.agentName;
-  }
-
-  /** Show the sidebar without taking keyboard focus from whatever opened it. */
-  revealPreservingFocus(): void {
-    this.view?.show(true);
   }
 
   /** "Open the sidebar ›": wherever the panel draws (its bar, or its own window),

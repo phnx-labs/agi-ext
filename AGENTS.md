@@ -119,7 +119,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   cache, never a full-size `src` (the flicker in the 2026-10-13 video;
   `sessionCards.patch.test.ts` runs the real patch in happy-dom).
 - The Active Session sidebar is the one preview: a Project panel session click sets its
-  subject (`setAgentPanelSubjectFromProject`), brings the tab this window binds to the session
+  subject (`setAgentPanelSubjectFromProject`; it redraws an open sidebar and never opens a
+  closed one, owner video, 2026-10-22), brings the tab this window binds to the session
   forward wherever its agent runs (`select`; Settings > Card click "Only show it" keeps it; ⌘K
   always fronts it), and a click spawns or resumes nothing. ⌘K is the Project panel's own overlay
   (`ProjectView.openPalette`, `renderPalette`): sessions only, from the store's rows, any
