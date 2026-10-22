@@ -243,45 +243,60 @@ describe('sidebar subject — last of { focused terminal, clicked Project panel 
     });
   });
 
-  test('a Project panel click never opens a closed sidebar; opening it shows the clicked session', async () => {
+  test('a Project panel click never opens the sidebar: an open one redraws, a closed one draws it when shown', async () => {
     let provider: { resolveWebviewView(view: unknown): void } | undefined;
     const register = win.registerWebviewViewProvider;
     win.registerWebviewViewProvider = (_id, p) => { provider = p as typeof provider; return { dispose() { /* noop */ } }; };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    panel.registerAgentPanel(context as any);
-    win.registerWebviewViewProvider = register;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      panel.registerAgentPanel(context as any);
+    } finally {
+      win.registerWebviewViewProvider = register;
+    }
     let shown = 0;
     let onVisible: () => void = () => undefined;
-    const html: string[] = [];
     let send: (m: unknown) => void = () => undefined;
+    const posts: string[] = [];
     const view = {
-      visible: false,
+      visible: true,
       show() { shown++; },
       webview: {
         options: {}, html: '', cspSource: 'vscode-webview:',
         asWebviewUri: (u: unknown) => u,
         onDidReceiveMessage: (cb: (m: unknown) => void) => { send = cb; return { dispose() { /* noop */ } }; },
-        postMessage: (m: unknown) => { html.push(JSON.stringify(m)); return Promise.resolve(true); },
+        postMessage: (m: unknown) => { posts.push(JSON.stringify(m)); return Promise.resolve(true); },
       },
       onDidChangeVisibility: (cb: () => void) => { onVisible = cb; return { dispose() { /* noop */ } }; },
       onDidDispose: () => ({ dispose() { /* noop */ } }),
     };
+    const settle = () => new Promise((r) => setTimeout(r, 50));
     provider!.resolveWebviewView(view);
     send({ type: 'ready' });
-    await new Promise((r) => setTimeout(r, 50));
+    await settle();
 
-    panel.setAgentPanelSubjectFromProject('session-closed', 'yosemite-m2');
+    // Open: the click redraws it with the clicked session.
+    posts.length = 0;
+    panel.setAgentPanelSubjectFromProject('session-open', 'yosemite-m2');
+    await settle();
     expect(shown).toBe(0);
-    expect(panel.currentAgentPanelSubject()?.sessionId).toBe('session-closed');
+    expect(posts.some((m) => m.includes('session-open'))).toBe(true);
 
-    // The owner opens it later: becoming visible draws the subject the click set.
+    // Closed: the click leaves it closed and draws nothing.
+    view.visible = false;
+    onVisible();
+    await settle();
+    posts.length = 0;
+    panel.setAgentPanelSubjectFromProject('session-closed', 'yosemite-m2');
+    await settle();
+    expect(shown).toBe(0);
+    expect(posts).toEqual([]);
+
+    // The owner opens it: becoming visible draws the session the click chose.
     view.visible = true;
     onVisible();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    console.log('BEFORE', html.length, (provider as any).constructor.name, typeof (provider as any).refresh);
-    try { await (provider as any).refresh(); } catch (e) { console.log('ERR', e); }
+    await settle();
     expect(shown).toBe(0);
-    expect(html.some((m) => m.includes('session-closed'))).toBe(true);
+    expect(posts.some((m) => m.includes('session-closed'))).toBe(true);
   });
 
   test('a Project panel click wins over the focused terminal', () => {
