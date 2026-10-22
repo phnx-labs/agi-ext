@@ -91,3 +91,18 @@ test('the pinned card draws each Settings mode: Tab order, Next that needs you (
   // The command picks what › names, from a shell or editor in front too.
   expect(nextThatNeedsYou(rows, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, memory: h })?.row.sessionId).toBe('c');
 });
+
+test('the pinned card says its place among the tabs (2/3) and ⇤ ⇥ front the first and the last tab; Settings turns ⇤ ⇥ off (owner video, 2026-10-22 6:42 AM)', () => {
+  const tabs = [tab('a', 1), tab('b', 2), tab('c', 3)];
+  const nav = frontNav('tabs', tabs, tabs[1], undefined, (r) => r.title);
+  expect(nav).toMatchObject({ at: 2, count: 3, first: { sessionId: 'a' }, last: { sessionId: 'c' } });
+  // From an end, that end's button has nowhere to go.
+  expect(frontNav('needs', tabs, tabs[0], new FrontHistory(), (r) => r.title).first).toEqual({ tip: 'This is the first tab' });
+  expect(frontNav('off', tabs, tabs[2], undefined, (r) => r.title)).toEqual({ mode: 'off', at: 3, count: 3 });
+  const draw = (ends: boolean) => renderSessions(tabs, T, { selectedId: 'b', frontId: 'b', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, ends } });
+  const html = draw(true);
+  expect(html).toContain('<span class="thistab" title="Idle">zion · 2/3 · now</span>');
+  expect(html).toContain('data-front-step="first" data-session="a"');
+  expect(html).toContain('data-front-step="last" data-session="c"');
+  expect(draw(false)).not.toContain('data-front-step="first"');
+});

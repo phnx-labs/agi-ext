@@ -177,22 +177,31 @@ export interface CardSettings {
   verdict: boolean;
   /** What the session was started with, under the title; off by default (owner video, 2026-10-19 1:32 AM). */
   firstMessage: boolean;
+  /** The shell command a working agent runs, under its words; off by default (owner video, 2026-10-22 6:42 AM). */
+  command: boolean;
+  /** The pinned card's Activity box. */
+  activity: boolean;
+  /** ⇤ ⇥ beside ‹ › on the pinned card: the first and the last tab. */
+  ends: boolean;
   /** Starred sessions repeated in a Favorites group under the pinned card (owner video, 2026-10-19 1:42 AM). */
   favorites: boolean;
   /** The session list under the pinned card; off leaves the front tab's card alone and ⌘K finds the rest. */
   list: boolean;
+  /** Ready for review and Idle sessions with no tab here in groups of their own; off lists
+   *  them in their place, after what asks and before what works (owner video, 2026-10-22 6:42 AM). */
+  finishedGroups: boolean;
 }
 
 /** The parts a card can leave out, as Settings lists them. */
-export const CARD_PARTS = ['description', 'chips', 'machine', 'age', 'stateWord', 'verdict', 'firstMessage'] as const;
+export const CARD_PARTS = ['description', 'command', 'chips', 'machine', 'age', 'stateWord', 'verdict', 'firstMessage', 'activity', 'ends'] as const;
 
 /** What Sessions lists under the pinned card, as Settings > Session list toggles it. */
-export const LIST_PARTS = ['list', 'favorites'] as const;
+export const LIST_PARTS = ['list', 'favorites', 'finishedGroups'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
   asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
   description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true, firstMessage: false,
-  favorites: true, list: true,
+  command: false, activity: true, ends: true, favorites: true, list: true, finishedGroups: false,
 };
 
 /** The stored card settings with any value this version does not know read as its default. */
@@ -208,7 +217,8 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     made: v?.made === 'previews' ? 'previews' : d.made,
     arrows: v?.arrows === 'needs' || v?.arrows === 'off' ? v.arrows : d.arrows,
     description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'), firstMessage: part('firstMessage'),
-    favorites: part('favorites'), list: part('list'),
+    command: part('command'), activity: part('activity'), ends: part('ends'),
+    favorites: part('favorites'), list: part('list'), finishedGroups: part('finishedGroups'),
   };
 }
 

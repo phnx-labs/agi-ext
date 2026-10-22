@@ -19,12 +19,12 @@ test('only real asks are your move, and they lead the list as red cards: by urge
   const html = list()
   expect(html).not.toContain('class="pinned')
   expect(html).not.toContain('Needs you now')
-  // Flat, the order is plain: urgent, high, then normal (the 33 min stall before the 4 min question), then low.
-  const flat = renderSessions(ROWS, NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, group: 'none' } })
-  const at = (id: string) => flat.indexOf(`data-session="${id}"`)
-  const order = ['9b1f0c2e-publish', '51ac77d0-secrets', '3f9e2b10-stall', 'e4d2a913-cards', '77c0d1aa-copy', 'run-1'].map(at)
+  // Within a group the order is plain: urgent, then normal, then low, and only then what runs.
+  const terms = between(html, 'data-group="terminal"', '</section>')
+  const at = (id: string) => terms.indexOf(`data-session="${id}"`)
+  const order = ['9b1f0c2e-publish', 'e4d2a913-cards', '77c0d1aa-copy'].map(at)
   expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
-  expect(flat).toMatch(/class="card st-asks[^"]*"[^>]*data-session="9b1f0c2e-publish"/)
+  expect(html).toMatch(/class="card st-asks[^"]*"[^>]*data-session="9b1f0c2e-publish"/)
   // Grouped, an ask leads its own group: the tab here asking is first in Open tabs.
   const open = between(html, 'data-group="here"', '</section>')
   expect(open.indexOf('data-session="51ac77d0-secrets"')).toBeLessThan(open.indexOf('data-session="run-1"'))
@@ -32,16 +32,18 @@ test('only real asks are your move, and they lead the list as red cards: by urge
   expect(sessionCount(ROWS, HERE).asks).toBe(5)
 })
 
-test('a finished turn that asked nothing is in Idle, folded with its count, unless its tab is open here; a review request is Ready for review', () => {
-  const html = list()
+test('with Settings > Ready for review and Idle groups on, a finished turn that asked nothing is in Idle, folded with its count, unless its tab is open here; a review request is Ready for review', () => {
+  const html = list({ ...DEFAULT_CARD_SETTINGS, finishedGroups: true })
+  // Off (the default), neither group is drawn.
+  expect(list()).not.toContain('data-group="idle"')
   expect(html).toContain('<section class="grp closed" data-group="idle">')
-  expect(html).toContain('<b>Idle</b> <span class="n">3</span> <span class="gs">· finished, no tab here</span>')
+  expect(html).toContain('<b>Idle</b> <span class="gs">finished, no tab here</span> <span class="n">3</span>')
   for (let i = 1; i < 4; i++) expect(html).not.toContain(`data-session="idle-${i}"`)
   // idle-0's tab is open in this window: it keeps its card in Open tabs (PHNX-4387).
   expect(between(html, 'data-group="here"', '</section>')).toContain('data-session="idle-0"')
   expect(between(html, 'data-group="review"', '</section>')).toContain('data-session="a81c55e2-review"')
   expect(html.indexOf('data-group="review"')).toBeLessThan(html.indexOf('data-group="idle"'))
-  expect(list(undefined, [])).toContain('data-session="idle-1"')
+  expect(list({ ...DEFAULT_CARD_SETTINGS, finishedGroups: true }, [])).toContain('data-session="idle-1"')
   // Running, Waiting and Ended keep the viewer's grouping below.
   expect(html.indexOf('data-group="idle"')).toBeLessThan(html.indexOf('data-session="run-1"'))
 })

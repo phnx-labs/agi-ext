@@ -494,13 +494,12 @@ function agentLine(s: SessionLike): string {
 
 // ── Session list: place, outputs, grouping ────────────────────────────────
 
-type SessionGroupBy = 'app' | 'machine' | 'state' | 'none';
-type SessionSort = 'last' | 'newest' | 'name';
+type SessionSort = 'tab' | 'last' | 'newest' | 'name';
 
 /** What the viewer chose in the ⇅ menu, plus folded groups and sessions they hid
  *  (each hidden until it moves past the activity it had when hidden). */
 export interface SessionListPrefs {
-  group: SessionGroupBy;
+  /** Tab order keeps Open tabs as the editor's tab bar has them; every other group reads it as Last active. */
   sort: SessionSort;
   showLeftover: boolean;
   showEnded: boolean;
@@ -510,25 +509,23 @@ export interface SessionListPrefs {
   hidden: Record<string, number>;
   /** Show only the sessions on today's goal (its ticket id in the title, topic or reply). */
   todayOnly: boolean;
-  /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded. */
-  v: 3;
+  /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded; 4 once Tab order is a sort. */
+  v: 4;
 }
 
-/** The Ended group's key under App and under State; Machine and None have no Ended group. */
-const ENDED_GROUPS = ['ended', 'state:ended'];
-/** The Idle group's key: finished turns that asked nothing, folded by default. */
+const ENDED_GROUP = 'ended';
+/** The Idle group's key (Settings > Ready for review and Idle groups), folded by default. */
 const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { group: 'app', sort: 'last', showLeftover: true, showEnded: true, showOpen: true, folded: [...ENDED_GROUPS, IDLE_GROUP], hidden: {}, todayOnly: false, v: 3 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, showEnded: true, showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, v: 4 };
 
-const GROUPS: readonly SessionGroupBy[] = ['app', 'machine', 'state', 'none'];
-const SORTS: readonly SessionSort[] = ['last', 'newest', 'name'];
+const SORTS: readonly SessionSort[] = ['tab', 'last', 'newest', 'name'];
 
 /** A stored preference object, keeping only values this version knows. Prefs stored
  *  before v2 saved Ended off as the old default, not as a choice, so they get the
- *  new default: Ended shown and folded. Turning it on was a choice and is kept, and
- *  a Machine or None grouping, which has no Ended group to fold, keeps Ended off.
- *  Prefs from before v3 get the Idle group folded. */
+ *  new default: Ended shown and folded. Turning it on was a choice and is kept.
+ *  Prefs from before v3 get the Idle group folded. Before v4, Last active still kept
+ *  Open tabs in tab order, which is now the Tab order sort. */
 export function readSessionPrefs(v: unknown): SessionListPrefs {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const hidden: Record<string, number> = {};
@@ -536,20 +533,18 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     for (const [id, ms] of Object.entries(o.hidden as Record<string, unknown>)) if (typeof ms === 'number') hidden[id] = ms;
   }
   const folded = Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [];
-  const group = GROUPS.includes(o.group as SessionGroupBy) ? (o.group as SessionGroupBy) : DEFAULT_SESSION_PREFS.group;
-  const before = o.v !== 2 && o.v !== 3 && o.showEnded !== true;
-  const kept = before ? [...folded, ...ENDED_GROUPS] : folded;
-  const foldable = group === 'app' || group === 'state';
+  const before = o.v !== 2 && o.v !== 3 && o.v !== 4 && o.showEnded !== true;
+  const kept = before ? [...folded, ENDED_GROUP] : folded;
+  const sort = SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort;
   return {
-    group,
-    sort: SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort,
+    sort: o.v !== 4 && sort === 'last' ? 'tab' : sort,
     showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
-    showEnded: before ? foldable : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
+    showEnded: before ? true : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
     showOpen: typeof o.showOpen === 'boolean' ? o.showOpen : DEFAULT_SESSION_PREFS.showOpen,
-    folded: o.v === 3 ? folded : [...new Set([...kept, IDLE_GROUP])],
+    folded: o.v === 3 || o.v === 4 ? folded : [...new Set([...kept, IDLE_GROUP])],
     hidden,
     todayOnly: o.todayOnly === true,
-    v: 3,
+    v: 4,
   };
 }
 
@@ -589,7 +584,8 @@ export interface SessionPlace {
   device: string;
 }
 
-const shortDevice = (d: string) => d.replace(/^yosemite-/, '');
+const HOST_MAX = 14;
+const shortDevice = (d: string) => { const h = d.replace(/^yosemite-/, ''); return h.length > HOST_MAX ? `${h.slice(0, HOST_MAX - 1)}…` : h; };
 const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
 
 export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
@@ -605,7 +601,8 @@ export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
   const where = [shortDevice(device), tab ? `tab ${tab}` : ''].filter(Boolean).join(' · ');
   const place = (kind: PlaceKind, key: string, name: string, sub: string, w = where): SessionPlace => ({ kind, key, name, sub, where: w, device });
   if (state === 'ended') return s.tabHere ? place('leftover', 'leftover', 'Tabs with no agent', here.workspace) : place('ended', 'ended', 'Ended', '');
-  if (s.tabHere) return place('here', 'here', 'Open tabs', here.workspace);
+  // This window's tabs, named the way its tab bar is: the editor, then the workspace (owner video, 2026-10-22 6:42 AM).
+  if (s.tabHere) return place('here', 'here', here.editorName, here.workspace);
   if (editorTab) { const ws = baseName(editorTab.workspaceDir); return place('window', `window:${ws}`, ws, here.editorName); }
   if (ghosttyTab || /ghostty/i.test(s.terminalApp ?? '')) return place('ghostty', 'ghostty', 'Ghostty', shortDevice(device));
   const bg = backgroundKind(s);
@@ -659,6 +656,8 @@ export interface SessionListOptions {
   searchKey?: string;
   /** The project shown, so a card filed under another name says so in its ⋯ menu. */
   project?: string;
+  /** The project's Linear project, named in a card's ⋯ menu. */
+  linearName?: string;
   /** How a card shows an open ask (Settings, Session cards). */
   cards?: CardSettings;
   /** The pinned front card's Made shelf (`madeShelf`, src/core/sessionCardFields.ts). */
@@ -849,22 +848,24 @@ function thumbImg(uri: string, path: string, alt: string): string {
 
 /** The card's ⋯ menu: what used to crowd its meta row (tab, model, folder, session
  *  id, account), each on its own line. */
-function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string; here: SessionHere }): string {
+function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string; linearName?: string; here: SessionHere }): string {
   const tab = place.where.match(/tab \d+/)?.[0];
-  const rows: [string, string][] = [
-    ['Tab', s.tabHere ? (tab ? `${tab} in this window` : 'in this window') : tab ? `${tab} in ${place.name}` : 'none'],
-    ['Model', [s.model, s.effort ? `${s.effort} effort` : '', s.fast ? 'fast' : ''].filter(Boolean).join(' · ') || 'not reported'],
-    ['Machine', place.device === opts.here.device ? `${place.device} (this one)` : place.device],
-    ...(s.cwd ? [['Folder', displayHome(s.cwd)] as [string, string]] : []),
-    ['Session', s.sessionId],
-    ...(s.account ? [['Account', s.account] as [string, string]] : []),
-    ...(opts.project && s.confirmedProject && s.confirmedProject.toLowerCase() !== opts.project.toLowerCase()
-      ? [['Project', `${opts.project} (the CLI said ${s.confirmedProject})`] as [string, string]] : []),
+  const other = opts.project && s.confirmedProject && s.confirmedProject.toLowerCase() !== opts.project.toLowerCase();
+  const project = opts.project ? [opts.project, opts.linearName ? `Linear: ${opts.linearName}` : '', other ? `the CLI said ${s.confirmedProject}` : ''].filter(Boolean).join(' · ') : '';
+  // Each value copies on a click (owner video, 2026-10-22 6:42 AM); the shown words and the copied text can differ.
+  const rows: [string, string, string][] = [
+    ['Tab', s.tabHere ? (tab ? `${tab} in this window` : 'in this window') : tab ? `${tab} in ${place.name}` : 'none', ''],
+    ['Model', [s.model, s.effort ? `${s.effort} effort` : '', s.fast ? 'fast' : ''].filter(Boolean).join(' · ') || 'not reported', s.model ?? ''],
+    ['Host', place.device === opts.here.device ? `${place.device} (this one)` : place.device, place.device],
+    ...(s.cwd ? [['Folder', displayHome(s.cwd), s.cwd] as [string, string, string]] : []),
+    ['Session', s.sessionId, s.sessionId],
+    ...(s.account ? [['Account', s.account, s.account] as [string, string, string]] : []),
+    ...(project ? [['Project', project, opts.project!] as [string, string, string]] : []),
   ];
   // Close (or Hide, for a card with no tab) lives here, out of a stray click's way (owner video, 2026-10-17).
   const hasTab = place.kind === 'here' || place.kind === 'leftover';
   const close = hasTab ? '<button class="danger" data-act="close">Close the tab</button>' : '<button data-act="hide">Hide until it does something new</button>';
-  return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl><button data-copy="${escapeHtml(s.sessionId)}">Copy session ID</button>${close}</div></details>`;
+  return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${close}</div></details>`;
 }
 
 /** ‹ This tab · 2 · s1 · 4m ago › : the tab, where it runs and its age share the arrows' row.
@@ -875,12 +876,17 @@ function runMark(s: Pick<SessionLike, 'pidAlive'>, device: string): string {
   return s.pidAlive ? `<i class="run" role="img" title="Running on ${escapeHtml(device)}" aria-label="Running on ${escapeHtml(device)}"></i>` : '';
 }
 
-function navButtons(nav: FrontNav | undefined, where: string, state: string): string {
-  const btn = (dir: 'prev' | 'next', to: FrontStep | undefined) => to?.sessionId
-    ? `<button class="fc-step" data-front-step="${dir}"${dir === 'prev' && nav?.mode === 'needs' ? ' data-back' : ''} data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host ?? '')}" title="${escapeHtml(to.tip)}" aria-label="${escapeHtml(to.tip)}">${dir === 'prev' ? '‹' : '›'}</button>`
-    : `<button class="fc-step" disabled title="${escapeHtml(to?.tip ?? '')}" aria-label="${escapeHtml(to?.tip ?? '')}">${dir === 'prev' ? '‹' : '›'}</button>`;
+const STEP_MARK = { first: '⇤', prev: '‹', next: '›', last: '⇥' } as const;
+
+/** ⇤ ‹ ● s0 · 2/10 · 4m ago › ⇥ : where it runs, its place among the tabs and its age between
+ *  the arrows (owner video, 2026-10-22 6:42 AM). Settings turns ⇤ ⇥ off, and ‹ › Off draws none. */
+function navButtons(nav: FrontNav | undefined, where: string, state: string, ends: boolean): string {
+  const btn = (dir: keyof typeof STEP_MARK, to: FrontStep | undefined) => to?.sessionId
+    ? `<button class="fc-step${dir === 'first' || dir === 'last' ? ' end' : ''}" data-front-step="${dir}"${dir === 'prev' && nav?.mode === 'needs' ? ' data-back' : ''} data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host ?? '')}" title="${escapeHtml(to.tip)}" aria-label="${escapeHtml(to.tip)}">${STEP_MARK[dir]}</button>`
+    : `<button class="fc-step${dir === 'first' || dir === 'last' ? ' end' : ''}" disabled title="${escapeHtml(to?.tip ?? '')}" aria-label="${escapeHtml(to?.tip ?? '')}">${STEP_MARK[dir]}</button>`;
   const arrows = nav && nav.mode !== 'off';
-  return `<div class="fc-nav${arrows ? '' : ' bare'}">${arrows ? btn('prev', nav.prev) : ''}<span class="thistab" title="${escapeHtml(state)}">This tab${where ? ` · ${where}` : ''}</span>${arrows ? btn('next', nav.next) : ''}</div>`;
+  const both = arrows && ends && nav.count > 1;
+  return `<div class="fc-nav${arrows ? '' : ' bare'}">${both ? btn('first', nav.first) : ''}${arrows ? btn('prev', nav.prev) : ''}<span class="thistab" title="${escapeHtml(state)}">${where}</span>${arrows ? btn('next', nav.next) : ''}${both ? btn('last', nav.last) : ''}</div>`;
 }
 
 /** Claude's recap on the front card, with how old it is; dimmed with "before your
@@ -911,13 +917,13 @@ function activitySteps(s: SessionLike): string {
   return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null; favorite?: boolean }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null; favorite?: boolean }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
   const ask = state === 'asks' && cards.asks !== 'off' ? askBlock(s, cards) : '';
   const said = agentLine(s);
-  const live = state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
+  const live = cards.command && state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
   const made = opts.made;
   const busy = state === 'working' || state === 'waiting' || state === 'asks';
   const hasTab = place.kind === 'here' || place.kind === 'leftover';
@@ -976,7 +982,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
-  const host = cards.machine ? `<span class="hst" title="Machine">${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}</span>` : '';
+  const host = cards.machine ? `<span class="hst" title="Host">${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}</span>` : '';
   const fork = s.forkOf ? `<span class="fork" title="${escapeHtml(`Forked from ${s.forkOf.slice(0, 8)}`)}" aria-label="Fork">⑂</span>` : '';
   // Copy: what another agent or a message needs to pick this session up.
   const brief = [title, `Session ${s.sessionId} on ${place.device}${s.cwd ? ` in ${displayHome(s.cwd)}` : ''}`, plain(s.recap?.text ?? '') || said].filter(Boolean).join('\n');
@@ -998,7 +1004,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const ago = ageWords(s.lastActivityMs, now);
     const since = waited >= 0 ? `waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ago === 'now' || !ago ? ago : `${ago} ago`;
     // No row of its own for the state: the tint says it, the word is the tooltip (owner video, 2026-10-18 8:59 PM).
-    const where = [s.tabIndex ? String(s.tabIndex) : '', `${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}`, since].filter(Boolean).join(' · ');
+    const at = opts.nav?.at ? `${opts.nav.at}/${opts.nav.count}` : s.tabIndex ? String(s.tabIndex) : '';
+    const where = [`${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}`, at, since].filter(Boolean).join(' · ');
     const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     const latest = recapBlock(s, now) || saidLine(s, said);
     // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
@@ -1007,9 +1014,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     // A question from this tab's own agent goes directly under the title, above the recap.
     // Fixed wrappers, so an ask, a live line or a recap coming and going never shifts the
     // Made shelf or the activity box to another position (the patch pairs by position).
-    const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${activitySteps(s)}`;
+    const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${cards.activity ? activitySteps(s) : ''}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
-    return `${navButtons(opts.nav, where, stateWords)}${top}<div class="fc-body">${detail}</div>${reply}`;
+    return `${navButtons(opts.nav, where, stateWords, cards.ends)}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
@@ -1032,26 +1039,33 @@ function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionL
     .filter(({ place }) => (place.kind !== 'leftover' || prefs.showLeftover) && (place.kind !== 'ended' || prefs.showEnded));
 }
 
+/** Finished turns come before the agents still at work, and those before the ended
+ *  (owner video, 2026-10-22 6:42 AM: red on top, idle just below, green at the bottom). */
+const TIER: Record<SessionStateKey, number> = { asks: 0, stuck: 0, review: 1, idle: 1, working: 2, waiting: 2, unknown: 2, ended: 3 };
+
 function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: SessionSort): { row: SessionLike; place: SessionPlace }[] {
-  // Open tabs keep the tab order, whatever the sort; a panel terminal (no tab number) follows.
-  if (items.length && items.every(({ place }) => place.kind === 'here')) {
+  // Tab order keeps Open tabs as the tab bar has them; a panel terminal (no tab number) follows.
+  if (sort === 'tab' && items.length && items.every(({ place }) => place.kind === 'here')) {
     return [...items].sort((a, b) => (a.row.tabIndex ?? Infinity) - (b.row.tabIndex ?? Infinity) || b.row.lastActivityMs - a.row.lastActivityMs);
   }
   const by = sort === 'name'
     ? (a: SessionLike, b: SessionLike) => streamTitle(a).localeCompare(streamTitle(b))
     : sort === 'newest' ? (a: SessionLike, b: SessionLike) => (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0)
       : (a: SessionLike, b: SessionLike) => b.lastActivityMs - a.lastActivityMs;
-  return [...items].sort((a, b) => (sort === 'name' ? 0 : Number(sessionStateOf(b.row) === 'working') - Number(sessionStateOf(a.row) === 'working')) || by(a.row, b.row));
+  const tier = (r: SessionLike) => TIER[sessionStateOf(r)];
+  return [...items].sort((a, b) => tier(a.row) - tier(b.row) || by(a.row, b.row));
 }
 
+/** Filter, then sort (owner video, 2026-10-22 6:42 AM: on the list's own header, no grouping). */
 function menuHtml(p: SessionListPrefs): string {
-  const item = (on: boolean, label: string, key: string, value: string, ic = '') => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${ic}${label}</button>`;
+  const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
   return `<div class="menu" role="menu" hidden>
-    <div class="sec">Sort</div>${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}<hr>
     <div class="sec">Show</div>${item(p.showOpen, 'Open tabs', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
-    <div class="sec">Group</div>${item(p.group === 'app', 'App', 'group', 'app', glyph('terminal', 'mi'))}${item(p.group === 'machine', 'Machine', 'group', 'machine', glyph('machine', 'mi'))}${item(p.group === 'state', 'State', 'group', 'state', glyph('state', 'mi'))}${item(p.group === 'none', 'None', 'group', 'none')}
+    <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
   </div>`;
 }
+
+const menuButton = (p: SessionListPrefs) => `<button class="icon gmenu" data-menu aria-haspopup="menu" aria-expanded="false" title="Filter and sort" aria-label="Filter and sort">${glyph('sort')}</button>${menuHtml(p)}`;
 
 /** What the list draws before grouping: the viewer's Show choices, then ☀ only. */
 function listedSessions(rows: SessionLike[], opts: SessionListOptions): { row: SessionLike; place: SessionPlace }[] {
@@ -1103,23 +1117,24 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
   // Open tabs off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
   const others = all.filter((x) => prefs.showOpen || !tabHere(x) || ball(x.row) === 'move');
-  const quiet = (x: { row: SessionLike; place: SessionPlace }) => !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
-  const rest = others.filter((x) => !quiet(x));
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
+  const quiet = (x: { row: SessionLike; place: SessionPlace }) => cards.finishedGroups && !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
+  const rest = others.filter((x) => !quiet(x));
   const nav = front ? frontNav(cards.arrows, sessionTabs(all), front.row, opts.memory, cardTitle, blocked) : undefined;
   // The listed copy of the front session asks with its question only: its answers are on the pinned card.
   const listedCards: CardSettings = { ...cards, asks: cards.asks === 'off' ? 'off' : 'question' };
   // A Favorites copy also asks with its question only: the answers stay on its own card.
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false, copy = false) => renderSessionCard(row, place, now, {
-    selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project,
+    selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, linearName: opts.linearName,
     cards: copy || (!pinned && front && row.sessionId === front.row.sessionId) ? listedCards : cards, nav: pinned ? nav : undefined, shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId),
   });
-  // The tab already shows the count and the asks badge, so the header carries only its controls.
-  const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Sort, show and group" aria-label="Sort, show and group">${glyph('sort')}</button>${menuHtml(prefs)}</div>`;
+  // The tab already shows the count and the asks badge, so the header carries only search and ☀;
+  // filter and sort sit on the list's first group, so the header row never changes.
+  const head = `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button></div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean };
+  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean; menu?: boolean };
   const folded = new Set(prefs.folded);
   const section = (g: Group) => {
     const counts = new Map<SessionStateKey, number>();
@@ -1128,7 +1143,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     // A folded group opens while it holds the selected session (the front tab included).
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b> <span class="n">${g.items.length}</span>${g.sub ? ` <span class="gs">· ${escapeHtml(g.sub)}</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span></div>
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span>${g.menu ? menuButton(prefs) : ''}</div>
       <div class="items">${closed ? '' : ordered(g.items).map((x) => card(x, false, g.copy)).join('')}</div>
     </section>`;
   };
@@ -1143,30 +1158,14 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const quietGroups = [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
       { key: IDLE_GROUP, name: BALL_WORD.idle, sub: 'finished, no tab here', icon: ballIcon('idle'), items: byBall('idle') }]
       .filter((g) => g.items.length).map(section).join('');
-  let groups: Group[];
-  // Grouped by state, Your move is a group of its own, above Review and Idle.
-  let lead = '';
-  if (prefs.group === 'app') {
-    const byKey = new Map<string, Group>();
-    for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
-      const g = byKey.get(x.place.key) ?? { key: x.place.key, name: x.place.name, sub: x.place.sub, icon: placeIcon(x.place, here), items: [], action: x.place.kind === 'leftover' ? 'close-all' : undefined };
-      g.items.push(x); byKey.set(x.place.key, g);
-    }
-    groups = [...byKey.values()];
-  } else if (prefs.group === 'machine') {
-    const devices = [...new Set(rest.map((x) => x.place.device))].sort((a, b) => Number(b === here.device) - Number(a === here.device) || a.localeCompare(b));
-    groups = devices.map((d) => ({ key: `machine:${d}`, name: d, sub: d === here.device ? 'this machine' : '', icon: glyph('machine', 'gi'), items: rest.filter((x) => x.place.device === d) }));
-  } else if (prefs.group === 'state') {
-    groups = (['move', 'running', 'ended'] as const).map((b) => ({ key: `state:${b}`, name: BALL_WORD[b], sub: '', icon: `<span class="pill st-${b === 'running' ? 'working' : b === 'move' ? 'asks' : 'ended'} solo"><i></i></span>`, items: rest.filter((x) => ball(x.row) === b) }));
-    // A finished turn whose tab is open here is neither running nor ended.
-    const finished = rest.filter((x) => tabHere(x) && ball(x.row) !== 'running' && ball(x.row) !== 'ended' && ball(x.row) !== 'move');
-    const move = groups.shift()!;
-    lead = move.items.length ? section(move) : '';
-    groups.splice(1, 0, { key: 'state:here', name: 'Open tabs', sub: 'finished', icon: finished.length ? placeIcon(finished[0].place, here) : '', items: finished });
-  } else {
-    return head + pinned + favs + quietGroups + `<div class="flat">${ordered(rest).map((x) => card(x)).join('')}</div>` + tail;
+  const byKey = new Map<string, Group>();
+  for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
+    const g = byKey.get(x.place.key) ?? { key: x.place.key, name: x.place.name, sub: x.place.sub, icon: placeIcon(x.place, here), items: [], action: x.place.kind === 'leftover' ? 'close-all' : undefined };
+    g.items.push(x); byKey.set(x.place.key, g);
   }
-  return head + pinned + favs + lead + quietGroups + groups.filter((g) => g.items.length).map(section).join('') + tail;
+  const groups = [...byKey.values()];
+  if (groups[0]) groups[0].menu = true;
+  return head + pinned + favs + quietGroups + groups.map(section).join('') + tail;
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
@@ -1332,7 +1331,9 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   const all = m.repos.flatMap((r) => r.open.map((p) => ({ p, slug: r.slug })));
   const shown = all.filter(({ p }) => prefs.showDrafts || !p.isDraft);
   const hidden = all.length - shown.length;
-  const head = `<div class="shead"><span class="sum">${shown.length} open${hidden ? ` · ${hidden} draft${hidden === 1 ? '' : 's'} hidden` : ''}</span><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Group and show" aria-label="Group and show">${glyph('sort')}</button>${reviewMenu(prefs)}</div>`;
+  // The tab row holds only the menu, so it never grows when the list arrives (owner video, 2026-10-22 6:42 AM);
+  // hidden drafts are one quiet line under the list instead.
+  const head = `<div class="shead"><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Group and show" aria-label="Group and show">${glyph('sort')}</button>${reviewMenu(prefs)}</div>`;
   const partial = m.partial ? '<div class="warn">Some repositories could not be read; this list is incomplete.</div>' : '';
   const readingLine = reading.length ? `<div class="reading">Reading ${reading.map((w) => escapeHtml(w.split('/').pop() ?? w)).join(', ')}…</div>` : '';
   const errors = m.repos.filter((r) => r.error).map((r) => `<div class="err">${escapeHtml(r.slug)}: could not read: ${escapeHtml(r.error!)}</div>`).join('');
@@ -1357,7 +1358,8 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   const merged = prefs.showMerged ? m.repos.flatMap((r) => r.merged.map((p) => ({ p, slug: r.slug }))).sort((a, b) => Date.parse(b.p.date) - Date.parse(a.p.date)) : [];
   const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
-  return head + partial + readingLine + errors + body + none + mergedHtml + '<div class="toast" hidden></div>';
+  const drafts = hidden ? `<button class="more-drafts" data-pref="showDrafts" data-value="true" title="Show the drafts (the ⇅ menu hides them again)">+${hidden} draft${hidden === 1 ? '' : 's'}</button>` : '';
+  return head + partial + readingLine + errors + body + none + drafts + mergedHtml + '<div class="toast" hidden></div>';
 }
 
 // ── ⌘K: the session palette ───────────────────────────────────────────────
