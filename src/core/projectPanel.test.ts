@@ -268,11 +268,16 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   const made = sessionMade({ artifacts: [{ path: '/h/.agents/artifacts/2026-10-10/covers/a.png', basename: 'a.png', bucket: 'artifacts', display: '~/.agents/artifacts/2026-10-10/covers/a.png', uri: 'vscode-resource:/a.png' }], pullRequests: [{ ownerRepo: 'phnx-labs/agi-cli', number: 3886, url: 'https://github.com/phnx-labs/agi-cli/pull/3886' }] })
   const html = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], selected: true })
   expect(html).toContain('class="ttl" title="Health">Health<')
-  // The tint says the state; the word is for screen readers, on the card only when Settings asks.
+  // The tint says the state and ⌘K's pill sits before the age (owner, 2026-10-22 12:30 PM); Settings > State off leaves the word to screen readers.
   expect(html).toMatch(/^<div class="card st-idle sel"/)
-  expect(html).toContain('<span class="sr">Idle</span>')
-  expect(html).not.toContain('class="pill')
-  expect(card(s, { cards: { ...DEFAULT_CARD_SETTINGS, stateWord: true } })).toContain('class="pill st-idle"><i></i>Idle<')
+  expect(html).toContain('<span class="pill st-idle"><i></i>Idle</span><span class="age">')
+  const quiet = card(s, { cards: { ...DEFAULT_CARD_SETTINGS, state: false } })
+  expect(quiet).toContain('<span class="sr">Idle</span>')
+  expect(quiet).not.toContain('class="pill')
+  // Previews and chips are separate parts.
+  const noPreviews = card(s, { made, thumbs: [{ uri: 'vscode-resource:/in.png', path: '/h/.agents/.history/attachments/in.png', label: 'in.png' }], cards: { ...DEFAULT_CARD_SETTINGS, previews: false } })
+  expect(noPreviews).not.toContain('class="thumbs"')
+  expect(noPreviews).toContain('class="cstrip"')
   // Close is in ⋯, out of a stray click's way.
   expect(html).not.toContain('class="act x"')
   expect(html).toContain('<button class="danger" data-act="close">Close the tab</button></div></details>')
@@ -571,10 +576,9 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   expect(html).toContain('<span class="sr">Not done</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span><span class="age">5m</span>')
   expect(html).not.toContain('class="meta"')
   expect(html).toMatch(/^<div class="card st-idle" title="Idle · not done: a PR it opened/)
-  // With Settings > State word on, the verdict still stands in for Idle: no second label.
-  const worded = card(idle, { cards: { ...DEFAULT_CARD_SETTINGS, stateWord: true } })
-  expect(worded).not.toContain('class="pill')
-  expect(worded.match(/vchip/g)?.length).toBe(1)
+  // The verdict stands in for the Idle pill: no second label.
+  expect(html).not.toContain('class="pill')
+  expect(html.match(/vchip/g)?.length).toBe(1)
   expect(card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'done', gaps: [], at } }))).toContain('<span class="vchip v-ok" title="Idle · its done-check passed">✓ Done</span>')
   // Unchecked: plain Idle, exactly as with no verdict (owner, 2026-10-19 2:23 AM).
   const unchecked = card(row({ phase: 'idle', liveStatus: 'idle', doneVerdict: { state: 'unchecked', gaps: [], at } }))
@@ -587,7 +591,7 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   // Settings > A card shows > Done verdict off: Idle again.
   const off = card(idle, { cards: { ...DEFAULT_CARD_SETTINGS, verdict: false } })
   expect(off).not.toContain('vchip')
-  expect(off).toContain('<span class="sr">Idle</span>')
+  expect(off).toContain('<span class="pill st-idle"><i></i>Idle</span>')
   // The pinned card: right after the title, no new row; the gaps are its tooltip and the This tab line's.
   const front = (s: SessionLike) => renderSessions([s], NOW, { selectedId: null, frontId: s.sessionId, here: HERE, prefs: prefs() })
   const pinned = front({ ...idle, tabHere: true, tabIndex: 1 })
@@ -682,21 +686,18 @@ test('a session whose agent posted blocked leads its urgency, as Blocked', () =>
   const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), blockedIds: new Set(['stuck']) })
   expect(html.indexOf('data-session="session_stuck"')).toBeLessThan(html.indexOf('data-session="ask"'))
   expect(html).toMatch(/class="card st-blocked"[^>]*data-session="session_stuck"/)
-  expect(html).toContain('<span class="sr">Blocked</span>')
+  expect(html).toContain('<span class="pill st-blocked"><i></i>Blocked</span>')
   expect(renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })).not.toContain('st-blocked')
 })
 
 const SHELL = { id: 'b1', description: 'Poll prod until the segment closes', startedAtMs: NOW - 6 * 60_000 }
 
-test('an idle session with background work reads Running (owner video, 2026-10-22 8:50 AM), with a chip per kind and the list on hover, and is not Your move', () => {
+test('an idle session with background work reads Running (owner video, 2026-10-22 8:50 AM), names its work on the pill hover with no row of chips (12:30 PM), and is not Your move', () => {
   const waiting = row({ sessionId: 'w', phase: 'idle', liveStatus: 'idle', pending: { shells: [SHELL], subagents: [{ id: 'a', description: 'Watch reels' }] } })
   const html = card(waiting)
   expect(html).toMatch(/^<div class="card st-waiting"/)
-  expect(html).toContain('<span class="sr">Running</span>')
-  expect(html).toContain('>⑂ 1</span>')
-  expect(html).toContain('>▸ 1</span>')
-  expect(html).not.toContain('>◉')
-  expect(html).toContain('▸ Poll prod until the segment closes · 6m')
+  expect(html).toContain('<span class="pill st-waiting" title="Running, with its own work running: 1 subagent, 1 shell\n⑂ Watch reels\n▸ Poll prod until the segment closes · 6m"><i></i>Running</span>')
+  expect(html).not.toContain('class="meta"')
   expect(html).toContain('data-busy="1"')
   const idle = row({ sessionId: 'y', phase: 'idle', liveStatus: 'idle' })
   expect(sessionCount([waiting, idle]).asks).toBe(0)

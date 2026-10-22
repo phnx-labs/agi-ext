@@ -257,7 +257,8 @@ going on, where, and what came out of it" in one look; text explains only what a
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and
   tickets, a tint for state. The tint is not the only signal: the word is in the card's
-  tooltip and read to screen readers, and Settings > State word puts it back on the card.
+  tooltip and read to screen readers, and ⌘K's pill says it beside the age (Settings > State;
+  owner, 2026-10-22 12:30 PM). Background work is named on the pill's hover, never its own row.
 - **Inputs are not outputs.** What the user attached is part of their message and is marked
   "attached". Artifacts are what the agent made: PRs, folders under `.agents/artifacts/`,
   plans, pages, rendered images. A count of edited files is neither.

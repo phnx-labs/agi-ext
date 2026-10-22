@@ -9,7 +9,7 @@ import * as os from 'os';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, PENDING_KINDS, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { frontNav, nextNeedsYou, type FrontMemory, type FrontNav, type FrontStep } from './frontNav';
@@ -946,12 +946,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const chips = [prs, ticketChip, folderChip].join('');
   const asked = askedAt(s);
   const waited = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? Math.max(0, now - asked) : -1;
-  // Waiting names its work on hover; its chips count each kind (⑂ subagents, ▸ shells, ◉ monitors).
+  // Background work is named on the pill's hover, never a row of its own (owner, 2026-10-22 12:30 PM).
   const pendHover = pendingLines(s.pending, now).join('\n');
   const counts = pendingCounts(s.pending);
-  const pendChips = state !== 'ended' && counts.total
-    ? PENDING_KINDS.filter((k) => counts[k.key]).map((k) => `<span class="pc" title="${escapeHtml(pendHover)}">${k.mark} ${counts[k.key]}</span>`).join('')
-    : '';
   // The card's tint says its state (red asks or blocked, green working, yellow idle); the
   // word stays in its tooltip and for screen readers, and on the card when Settings asks.
   // A finished turn the CLI's done-check judged says ✓ Done or Not done on the
@@ -959,9 +956,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const verdict = opts.blocked || !cards.verdict ? null : verdictChipOf(state, s.doneVerdict);
   const word = opts.blocked ? 'Blocked' : verdict ? verdict.word : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
   const tip = verdict ? verdict.why : word;
-  const pillTitle = state === 'waiting' ? ` title="${escapeHtml(`Waiting on its own work: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
+  const pillTitle = state !== 'ended' && counts.total ? ` title="${escapeHtml(`${word}, with its own work running: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
   const vchip = verdictChipHtml(verdict);
-  const pill = !verdict && cards.stateWord ? `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>` : '';
+  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
       : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;
@@ -976,8 +973,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const preview = ask || saidLine(s, said);
   // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
   const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
-  // Where it runs goes with Machine; its background work with Description.
-  const meta = pill + (cards.description ? pendChips : '') + (cards.machine ? repoTag : '');
+  const meta = cards.machine ? repoTag : '';
   const text = cards.description
     ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
     : ask;
@@ -995,7 +991,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const ttl = rename
     ? `<span class="ttl${rename.can ? ' rn' : ''}" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\n${rename.tip}`)}">${escapeHtml(title)}</span>`
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${opts.front ? vchip : ''}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${opts.front ? '' : vchip}${age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${opts.front ? vchip : ''}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${opts.front ? '' : vchip}${pill}${age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
@@ -1018,21 +1014,12 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
     return `${navButtons(opts.nav, where, stateWords, cards.ends)}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
-  // Rows: ⌘K's compact line for a listed session (owner video, 2026-10-22 8:50 AM: "this view is actually pretty good").
-  function rowBody(): string {
-    const q = s.attention?.state === 'open' ? plain(s.attention.question?.text ?? '') : '';
-    const note = q || plain(said);
-    const tab = s.tabHere && s.tabIndex ? ` · tab ${s.tabIndex}` : '';
-    const rowPill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(opts.blocked ? 'Blocked' : SESSION_STATE_WORD[state])}</span>`;
-    const where = `<span class="kw">${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))} · ${waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : escapeHtml(ageWords(s.lastActivityMs, now))}${tab}</span>`;
-    return `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}<span class="kmeta">${rowPill}${where}</span><span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div><div class="rsub">${cards.chips ? chips : ''}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</div>`;
-  }
-  const body = opts.front ? frontBody() : cards.style === 'rows' ? rowBody() : `
+  const body = opts.front ? frontBody() : `
     ${top}
     ${meta ? `<div class="meta">${meta}</div>` : ''}${text}
-    ${cards.chips && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
+    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
-  const cls = `card st-${opts.blocked ? 'blocked' : state}${!opts.front && cards.style === 'rows' ? ' krowcard' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
+  const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;

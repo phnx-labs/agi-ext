@@ -1365,10 +1365,9 @@ ${MADE_CSS}
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-running { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
   .st-stuck.pill { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-stuck i { background: var(--r-bad) !important; }
   .pill.st-review i, .d-review { background: var(--r-info) !important; }
-  /* Waiting on its own work: a blue dot that breathes slowly, and a chip per kind. */
+  /* Waiting on its own work reads Running: green and breathing. */
   .st-waiting.pill { color: var(--r-ok); } .pill.st-waiting i, .d-waiting { background: var(--r-ok) !important; }
   .st-waiting.pill i { animation: breathe 1.6s ease-in-out infinite; }
-  .pc { display: inline-flex; align-items: center; gap: 3px; flex: none; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); color: var(--r-wait); border-radius: 4px; padding: 0 4px; font-family: var(--vscode-editor-font-family); font-size: 10.5px; line-height: 15px; cursor: default; }
   .meta .repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .fx { display: inline-flex; gap: 2px; flex: none; } .fx span { font-size: 10.5px; line-height: 1; padding: 2px 3px; border-radius: 4px; background: var(--r-well); }
   .fx .fast { color: var(--r-warn); } .fx .hi { color: var(--r-info); }
@@ -1536,14 +1535,6 @@ ${MADE_CSS}
   .krow .knote mark { background: none; color: var(--r-gold); font-weight: 600; }
   .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* Settings > Session list style > Rows: a listed session as ⌘K draws it. */
-  .card.krowcard { padding: 6px 9px; }
-  .card.krowcard .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .card.krowcard .ttl { flex: 1 1 auto; min-width: 0; }
-  .card.krowcard .kmeta { flex: none; display: flex; align-items: center; gap: 6px; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); max-width: 60%; overflow: hidden; }
-  .card.krowcard .kmeta .pill { flex: none; } .card.krowcard .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .card.krowcard:hover .kmeta { display: none; }
-  .card.krowcard .rsub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; white-space: nowrap; overflow: hidden; font-size: 11.5px; color: var(--r-text-2); }
-  .card.krowcard .rsub > * { flex: none; } .card.krowcard .rsub .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow.ended { opacity: .55; }
   .kth { display: block; width: 46px; height: 28px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); outline: 1.5px dashed var(--r-faint); outline-offset: 1px; background: var(--r-well); cursor: zoom-in; }
   .kth img { width: 100%; height: 100%; object-fit: cover; display: block; }

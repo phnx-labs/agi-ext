@@ -96,16 +96,9 @@ test('Settings > Session list: both on by default, each a checkbox that writes i
   expect(html).toContain('data-setting="cards.favorites" checked')
 })
 
-test('Settings round-trip every Asks choice and the list style; Rows draws a listed session as ⌘K does (owner video, 2026-10-22 8:50 AM)', () => {
-  expect(cardSettings(undefined)).toMatchObject({ asks: 'question', style: 'cards' })
+test('Settings round-trip every Asks choice; previews and the state pill are parts of their own, on by default (owner, 2026-10-22 12:30 PM)', () => {
+  expect(cardSettings(undefined)).toMatchObject({ asks: 'question', previews: true, state: true })
   for (const asks of ['answers', 'question', 'off'] as const) expect(cardSettings({ asks }).asks).toBe(asks)
-  expect(cardSettings({ style: 'rows' }).style).toBe('rows')
-  expect(applyPanelSetting(getDefaultSettings(), 'cards.style', 'rows')?.cards).toMatchObject({ style: 'rows' })
-  const rows = renderSessions(ROWS, NOW, { selectedId: null, frontId: 'front', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, style: 'rows' } })
-  const listed = rows.slice(rows.indexOf('data-group="here"'))
-  expect(listed).toContain('class="card st-asks krowcard')
-  expect(listed).toMatch(/<span class="kmeta"><span class="pill st-asks"><i><\/i>Asks<\/span><span class="kw">/)
-  expect(listed).toContain('<span class="knote">Ship it?</span>')
-  // The pinned card is still the full card.
-  expect(rows.slice(0, rows.indexOf('data-group'))).not.toContain('krowcard')
+  expect(applyPanelSetting(getDefaultSettings(), 'cards.previews', false)?.cards).toMatchObject({ previews: false })
+  expect(applyPanelSetting(getDefaultSettings(), 'cards.state', false)?.cards).toMatchObject({ state: false })
 })
