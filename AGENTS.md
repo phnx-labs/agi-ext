@@ -224,8 +224,9 @@ The owner runs hundreds of sessions and catches up by glancing. Every surface an
 going on, where, and what came out of it" in one look; text explains only what a picture can't.
 
 - **Glance, then detail, with nothing moving.** A card always shows the same preview: the
-  harness logo and title, its state as the card's tint (red asks or blocked, green working or
-  waiting, yellow idle or review; a question's wait ticks where the age sits), where it runs,
+  harness logo and title, its state as the card's tint (amber asks, red blocked or stuck, green
+  working or waiting on its own work, a plain card when idle or ready for review; owner video,
+  2026-10-22 8:50 AM; a question's wait ticks where the age sits), where it runs,
   the question or the agent's latest words in two lines, previews of images, and one row of
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
   part off, down to the logo and title on one line (owner video, 2026-10-17).

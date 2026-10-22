@@ -91,8 +91,8 @@ test('one family of time words: a card age, a sidebar time, and a wait that tick
   expect(waitFor(51 * 3_600_000)).toBe('2d 3h');
 });
 
-test('every state has one tone: your move, running, waiting on its own work, review, or quiet', () => {
-  expect(STATE_TONE).toEqual({ asks: 'move', stuck: 'move', review: 'review', idle: 'quiet', working: 'running', waiting: 'waiting', unknown: 'running', ended: 'quiet' });
+test('every state has one tone: your move, running (waiting on its own work included), review, or quiet', () => {
+  expect(STATE_TONE).toEqual({ asks: 'move', stuck: 'move', review: 'review', idle: 'quiet', working: 'running', waiting: 'running', unknown: 'running', ended: 'quiet' });
 });
 
 test('the done verdict takes an idle session\'s state word: ✓ Done, Not done with its gaps; unchecked reads plain Idle; every other state keeps its own word', () => {
