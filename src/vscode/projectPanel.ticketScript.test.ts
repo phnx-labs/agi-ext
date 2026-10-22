@@ -72,11 +72,11 @@ test('Settings > Tabs hides Review and Issues; Sessions stays as the way back fr
   deliver({ type: 'tabs', prs: false, tickets: false });
   // Issues was showing and is gone: the panel goes back to Sessions.
   expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
-  expect(hidden()).toBe('sessions:false prs:true tickets:true lead:false');
+  expect(hidden()).toBe('lead:false sessions:false prs:true tickets:true');
   deliver({ type: 'choose', tab: 'settings' });
-  expect(hidden()).toBe('sessions:false prs:true tickets:true lead:false');
+  expect(hidden()).toBe('lead:false sessions:false prs:true tickets:true');
   deliver({ type: 'tabs', prs: true, tickets: false });
-  expect(hidden()).toBe('sessions:false prs:false tickets:true lead:false');
+  expect(hidden()).toBe('lead:false sessions:false prs:false tickets:true');
   // ⌃3 to Issues, which is off, lands on Sessions.
   sent.length = 0;
   deliver({ type: 'choose', tab: 'tickets' });

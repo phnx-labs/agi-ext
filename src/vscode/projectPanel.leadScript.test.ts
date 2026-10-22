@@ -40,9 +40,9 @@ const model = (over: Partial<LeadTabModel> = {}): LeadTabModel => ({ project: 'a
 deliver({ type: 'tab', tab: 'lead' });
 deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model()) });
 
-test('the Lead tab sits after Issues and is always shown', () => {
+test('the Lead tab comes first and is always shown (owner video, 2026-10-22 6:42 AM)', () => {
   const tabs = [...document.querySelectorAll('.tabs .tab')].map((t) => (t as unknown as HTMLElement).dataset.tab);
-  expect(tabs).toEqual(['sessions', 'prs', 'tickets', 'lead']);
+  expect(tabs).toEqual(['lead', 'sessions', 'prs', 'tickets']);
   deliver({ type: 'tabs', prs: false, tickets: false });
   expect(el('.tab[data-tab="lead"]').hidden).toBe(false);
   expect(el('.tab[data-tab="lead"]').getAttribute('aria-selected')).toBe('true');

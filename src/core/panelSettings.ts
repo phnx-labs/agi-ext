@@ -27,18 +27,22 @@ const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number] 
 /** What a card shows; turning everything off leaves the harness logo and the title. */
 const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: string }> = {
   description: { label: 'Description', sub: 'The agent’s latest words, or what it asks' },
+  command: { label: 'Command', sub: 'The shell command a working agent runs, under its words' },
   chips: { label: 'PRs, tickets, folders', sub: 'One row that scrolls sideways' },
-  machine: { label: 'Machine', sub: 'Where the agent runs' },
+  machine: { label: 'Host', sub: 'Where the agent runs' },
   age: { label: 'Age', sub: 'Since the last activity, or how long an ask has waited' },
   stateWord: { label: 'State word', sub: 'The color already says it: red asks, green working, yellow idle' },
   verdict: { label: 'Done verdict', sub: 'A finished turn shows ✓ Done or Not done beside its title' },
   firstMessage: { label: 'First message', sub: 'What the session was started with, when its title says something else' },
+  activity: { label: 'Activity on the pinned card', sub: 'Its steps with their times, in a box that scrolls' },
+  ends: { label: '⇤ ⇥ on the pinned card', sub: 'Jump to the first and the last tab, beside ‹ ›' },
 };
 
 /** What Sessions lists under the pinned card. */
 const LIST_PART_ROWS: Record<(typeof LIST_PARTS)[number], { label: string; sub: string }> = {
   list: { label: 'Show the session list', sub: 'Off leaves only the front tab’s card and its ask; ⌘K finds every other session' },
   favorites: { label: 'Favorites group', sub: 'Sessions you starred (☆ on a card), on top as well as in their own group' },
+  finishedGroups: { label: 'Ready for review and Idle groups', sub: 'Finished sessions with no tab here in groups of their own; off lists them in their place, after what asks' },
 };
 
 const SLOTS: QuickLaunchSlotKey[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];

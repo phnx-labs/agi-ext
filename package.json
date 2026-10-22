@@ -896,12 +896,12 @@
         {
           "command": "agents.project.settings",
           "when": "view == agentsProject.panel",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "agents.project.popOut",
           "when": "view == agentsProject.panel",
-          "group": "navigation@3"
+          "group": "navigation@2"
         },
         {
           "command": "agents.activeSession.popOut",

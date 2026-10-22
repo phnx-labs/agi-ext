@@ -4,6 +4,34 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.427] - 2026-10-22
+
+From the owner's 6:42 AM video on the Project panel:
+
+- The pinned card's header reads "● s0 · 2/10 · 4m ago": where it runs, its place among this
+  window's tabs and its age, without the words "This tab". ⇤ and ⇥ beside ‹ › jump to the
+  first and the last tab; Settings > ⇤ ⇥ on the pinned card turns them off. A long host name
+  is trimmed to 14 characters.
+- A card's ⋯ menu copies any value on a click, with a faint "copied" beside it and the menu
+  left open. It says Host instead of Machine, the account's full email, and the project with
+  its Linear project.
+- The shell command a working agent runs is no longer under its words by default; Settings >
+  Command brings it back. The pinned card's Activity box can be turned off (Settings >
+  Activity on the pinned card).
+- No separate Idle and Ready for review groups: a finished session with no tab here stays in
+  its place, after what asks and before what works. Settings > Ready for review and Idle
+  groups brings them back.
+- The list's ⇅ menu sits on its first group header and holds Show, then Sort (Tab order, the
+  default, Last active, Newest, Name); there is no grouping choice. This window's tabs are
+  headed by the editor and workspace ("VSCodium agi-ext 5").
+- The header row shows the project's next Linear milestone with its date and progress
+  ("0.2.1 - Stable for running agents · Oct 23 · 12%"), the company goal in its tooltip. The
+  goal line no longer goes blank after the panel is moved or popped out: the rebuilt page gets
+  the last line at once.
+- ✳ Lead is the first tab. Settings is the last of the panel's title icons.
+- Review: the header no longer grows "1 open · 9 drafts hidden" when the list arrives; hidden
+  drafts are a "+9 drafts" line under the list.
+
 ## [0.9.426] - 2026-10-22
 
 - A click on a Project panel card no longer opens the Active Session sidebar when you closed

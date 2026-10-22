@@ -240,8 +240,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
   waits or asks, nothing without `doneVerdict`.
   The question opens to its full text on a click on it. The front tab's card is the one
-  exception: pinned above everything and opened up (‹ › with its tab, machine and age between
-  them, its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
+  exception: pinned above everything and opened up (⇤ ‹ › ⇥ with its host, its place among
+  the tabs (2/10) and its age between them, its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
   scrolls, a reply box; owner, 2026-10-18), and its card still keeps its place in Open tabs
   with the selected rail (answers only on the pinned one), so switching tabs never reorders or
   removes a card, and the list never jumps: a clicked card stays where it was on screen
@@ -270,17 +270,23 @@ going on, where, and what came out of it" in one look; text explains only what a
   `prefers-reduced-motion`. Nothing flashes for as long as it waits. The one answer to a
   click: what was clicked to open rings once and "Opening …" shows until the host's
   `opened` (owner video, 2026-10-19 12:58 AM); nothing silently waits.
-- **Sort, show, group in one ⇅ menu** with checkmarks, as in the AGI Menu (Show: Open tabs,
-  tabs with no agent, Ended; a tab that asks shows either way). Group headers carry
-  the icon, a count and one dot per state, so a folded group still says what is inside.
-  There is no group of asks: a session that asks is a red card leading its own group (Open
-  tabs for a tab here), by urgency, then wait; under the pinned card come Favorites (when
-  any are starred), Ready for review and Idle (no tab here), then the grouping.
-- **One header row.** The project's name is the view's title ("PROJECT: RUSH"; ⇄ beside it
-  switches it), so the Project panel's header is one row: the goal, then the tabs as icons and
-  that tab's own controls (☀, search, ⇅). Settings > Tabs turns Review and Issues off. Settings
-  is the gear in the view's title bar, Refresh lives in Settings, and ⌃1–⌃4 switch the tabs
-  (owner videos, 2026-10-17 and 2026-10-18 8:59 PM).
+- **Filter, then sort, in one ⇅ menu** on the list's first group header, with checkmarks,
+  as in the AGI Menu (Show: Open tabs, tabs with no agent, Ended; a tab that asks shows
+  either way; then Sort: Tab order, Last active, Newest, Name). No grouping choice: sessions
+  group by where they live, this window's tabs headed by the editor and workspace
+  ("VSCodium agi-ext 5"). Group headers carry the icon, a count and one dot per state, so a
+  folded group still says what is inside. There is no group of asks: a session that asks is
+  a red card leading its own group, by urgency, then wait; then finished turns, then what
+  works, then what ended (`TIER`). Under the pinned card come Favorites (when any are
+  starred), then the groups; Settings > Ready for review and Idle groups (off) brings back
+  those two groups for sessions with no tab here (owner video, 2026-10-22 6:42 AM).
+- **One header row.** The project's name is the view's title ("PROJECT: RUSH"; VS Code adds
+  the container's "PROJECT:" and no API removes it; ⇄ beside it switches it), so the Project
+  panel's header is one row: the goal (the project's next milestone, else the company goal),
+  then the tabs as icons, ✳ Lead first, and that tab's own controls (☀ and search; Review's
+  ⇅), none of which grow when a list arrives. Settings > Tabs turns Review and Issues off.
+  Settings is the gear, last of the panel's title icons; Refresh lives in Settings, and ⌃1–⌃4
+  switch the tabs (owner videos, 2026-10-17, 2026-10-18 8:59 PM and 2026-10-22 6:42 AM).
 - **A click selects and brings its tab forward; it never resumes.** A card click shows the
   session and fronts its tab when the tab is in this window; switching tabs moves the
   selection back. Anything else is an explicit icon: focus (↗, only where the click cannot

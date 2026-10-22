@@ -10,8 +10,9 @@ import { attentionRank, ballOf, sessionStateOf, urgencyOf, urgencyRank } from '.
 /** One arrow: the session it fronts and its tooltip, or only a tooltip when there is nowhere to go. */
 export interface FrontStep { sessionId?: string; host?: string; tip: string }
 
-/** What the pinned card's arrows do; `off` draws none. */
-export interface FrontNav { mode: ArrowMode; prev?: FrontStep; next?: FrontStep }
+/** What the pinned card's arrows do; `off` draws none. `at` is the front tab's place
+ *  among `count` session tabs (2/10); `first` and `last` are the ends ⇤ ⇥ jump to. */
+export interface FrontNav { mode: ArrowMode; prev?: FrontStep; next?: FrontStep; at?: number; count: number; first?: FrontStep; last?: FrontStep }
 
 /** What a window remembers of its front tabs, as the arrows read it. */
 export interface FrontMemory {
@@ -98,15 +99,17 @@ export function nextNeedsYou(tabs: SessionLike[], frontId: string | null | undef
  *  one, wrapping around. Next that needs you: › is `nextNeedsYou`, ‹ the last session
  *  in front that still has its tab here. `tabs` are this window's session tabs in tab order. */
 export function frontNav(mode: ArrowMode, tabs: SessionLike[], front: SessionLike, memory: FrontMemory | undefined, label: (r: SessionLike) => string, blocked?: (r: SessionLike) => boolean): FrontNav {
-  if (mode === 'off') return { mode };
+  const at = tabs.findIndex((r) => r.sessionId === front.sessionId);
+  const place = { at: at < 0 ? undefined : at + 1, count: tabs.length };
+  if (mode === 'off') return { mode, ...place };
   const step = (r: SessionLike | undefined, words: string, none: string): FrontStep => r && r.sessionId !== front.sessionId
     ? { sessionId: r.sessionId, host: r.host, tip: `${words}: tab ${r.tabIndex} · ${label(r)}` }
     : { tip: none };
+  const ends = { first: step(tabs[0], 'First tab', 'This is the first tab'), last: step(tabs[tabs.length - 1], 'Last tab', 'This is the last tab') };
   if (mode === 'tabs') {
-    const at = tabs.findIndex((r) => r.sessionId === front.sessionId);
-    if (at < 0) return { mode, prev: { tip: 'No previous tab' }, next: { tip: 'No next tab' } };
+    if (at < 0) return { mode, ...place, ...ends, prev: { tip: 'No previous tab' }, next: { tip: 'No next tab' } };
     return {
-      mode,
+      mode, ...place, ...ends,
       prev: step(tabs[(at - 1 + tabs.length) % tabs.length], 'Previous tab', 'No previous tab'),
       next: step(tabs[(at + 1) % tabs.length], 'Next tab', 'No next tab'),
     };
@@ -115,7 +118,7 @@ export function frontNav(mode: ArrowMode, tabs: SessionLike[], front: SessionLik
   const back = mem.backTrail().map((id) => tabs.find((r) => r.sessionId === id)).find((r) => r && r.sessionId !== front.sessionId);
   const next = nextNeedsYou(tabs, front.sessionId, mem, blocked);
   return {
-    mode,
+    mode, ...place, ...ends,
     prev: step(back, 'Back', 'Nothing to go back to'),
     next: step(next?.row, 'Next that needs you', 'Nothing needs you: every other agent is working'),
   };

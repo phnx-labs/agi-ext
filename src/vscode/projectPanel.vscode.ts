@@ -237,6 +237,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
     this.postTabs();
+    if (this.goalsHtml) void this.view?.webview.postMessage({ type: 'goals', html: this.goalsHtml });
     void this.loadGoals(false);
     const cached = this.tabs.get(this.active)!.html;
     if (cached) this.post(this.active, cached);
@@ -424,6 +425,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   private goalsAt = 0;
+  /** The last goals line drawn: a page the editor rebuilt (moved, popped out) gets it again on ready. */
+  private goalsHtml = '';
 
   /** The two goal lines above the tabs; a failed read says so on one faint line. */
   private async loadGoals(force: boolean): Promise<void> {
@@ -438,6 +441,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.goalsAt = 0;
       html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
     }
+    this.goalsHtml = html;
     void this.view?.webview.postMessage({ type: 'goals', html });
     // Today's ticket marks its sessions with ☀; redraw the list when it changes.
     if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
@@ -709,7 +713,7 @@ class ProjectPanelController {
     const { stdout } = await runLinear(['goals', '--json'], project?.linearProfile ?? null, 30_000);
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
-    return renderGoals(goals);
+    return renderGoals(goals, project?.linearName);
   }
 
   private ticketById(id: string): Ticket | undefined {
@@ -962,7 +966,7 @@ class ProjectPanelController {
       .map((r) => {
         const tab = terminals.getBySessionId(r.sessionId);
         const who = sessionPresentationStore.liveSession(r.sessionId);
-        return { ...r, tabHere: !!tab, tabIndex: tab ? tabNumbers.get(tab.terminal) : undefined, account: who?.accountLabel ?? who?.account ?? undefined };
+        return { ...r, tabHere: !!tab, tabIndex: tab ? tabNumbers.get(tab.terminal) : undefined, account: who?.account ?? who?.accountLabel ?? undefined };
       });
     const byId = new Map(this.presented().map((r) => [r.sessionId, r]));
     const lastUserAt = (id: string) => { const live = byId.get(id) ?? byId.get('session_' + id); const turns = live?.userTurns ?? []; return turns.length ? turns[turns.length - 1]!.atMs : undefined; };
@@ -996,7 +1000,7 @@ class ProjectPanelController {
     const here = this.here(webview);
     const subject = currentAgentPanelSubject();
     const count = sessionCount(rows, here, prefs, frontId);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, cards, memory: this.history, favorites: this.favorites() }), count: { shown: count.shown, asks: count.asks } };
+    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites() }), count: { shown: count.shown, asks: count.asks } };
   }
 
   /** Agents: Next Agent That Needs You: fronts the session tab › fronts in
@@ -1250,7 +1254,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
   /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
-  .shead .sum { margin-left: auto; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .more-drafts { display: block; margin: 6px 4px; padding: 2px 6px; border: 0; border-radius: 5px; background: none; color: var(--r-faint); font: inherit; font-size: 11.5px; cursor: pointer; } .more-drafts:hover { color: var(--r-text); background: var(--r-glass-hover); }
   .icon { width: 24px; height: 22px; display: grid; place-items: center; border-radius: 5px; border: 1px solid transparent; background: none; color: var(--r-caption); cursor: pointer; padding: 0; flex: none; }
   .icon:hover, .icon[aria-expanded="true"] { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .icon .ic { width: 14px; height: 14px; }
@@ -1264,7 +1268,8 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .pinned .ph { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-warn); padding: 5px 4px 4px; }
   .pinned.now { background: var(--r-bad-tint); } .pinned.now .ph { color: var(--r-bad); }
   .grp { margin-top: 8px; }
-  .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; }
+  .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; position: relative; }
+  .gh .gmenu { width: 22px; height: 20px; margin-left: 2px; } .gh .menu { top: 24px; cursor: default; }
   .gh:hover { background: var(--r-glass-hover); }
   .gh .car { width: 10px; color: var(--r-faint); font-size: 10px; transition: transform .15s; } .grp.closed .car { transform: rotate(-90deg); }
   .gi-box { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
@@ -1363,6 +1368,8 @@ ${MADE_CSS}
   .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
   .cmenu dl { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 3px 8px; margin: 0; font-size: 11px; } .cmenu dt { color: var(--r-faint); } .cmenu dd { margin: 0; overflow-wrap: anywhere; }
   .cmenu button { display: block; width: 100%; margin-top: 6px; padding: 3px 4px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-glass-hover); }
+  .cmenu .cpv { display: inline; width: auto; margin: 0; padding: 0; border: 0; border-radius: 3px; font-size: 11px; text-align: left; overflow-wrap: anywhere; }
+  .cmenu .cpv.copied::after { content: ' copied'; color: var(--r-faint); }
   .pill.st-blocked { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-blocked i { background: var(--r-bad) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
@@ -1527,10 +1534,10 @@ ${MADE_CSS}
 <body>
 <div class="tabs" role="tablist" aria-label="Project">
   <div class="goals" hidden></div>
+  <button class="tab" role="tab" data-tab="lead" aria-selected="false" title="Lead: ask or tell this project's Lead, by voice (⌥Space) or text"><svg class="ti" viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6"/></svg><span class="lbl">Lead</span></button>
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
-  <button class="tab" role="tab" data-tab="lead" aria-selected="false" title="Lead: ask or tell this project's Lead, by voice (⌥Space) or text"><svg class="ti" viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6"/></svg><span class="lbl">Lead</span></button>
   <div class="sctl"></div>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
@@ -1560,6 +1567,9 @@ ${MADE_SCRIPT}
   // the scroll by as much as the card moved, until the pinned card is the clicked one
   // (owner video, 2026-10-19 1:32 AM: "it just goes to the top").
   let anchor = null;
+  // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
+  function anyMenu() { return ctl.querySelector('.menu') || main.querySelector('.menu'); }
+  function openMenu() { const mm = anyMenu(); return mm && !mm.hidden ? mm : null; }
   function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
   // A session can show three times: pinned, in Favorites and in its own group.
   function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
@@ -1758,7 +1768,7 @@ ${MADE_SCRIPT}
       // The patch would draw the toast hidden and empty again, so its words are put back after it.
       const keepToast = same ? main.querySelector('.toast:not([hidden])')?.innerHTML ?? null : null;
       const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => { const card = c.closest('.card'); return [card.dataset.key, placeOf(card), c]; }) : [];
-      const menuOpen = same && ctl.querySelector('.menu') && !ctl.querySelector('.menu').hidden;
+      const menuOpen = same && openMenu();
       // The tab's heading row (☀, search, ⇅ and its menu) goes into the tab row; the rest into main.
       const page = document.createElement('template'); page.innerHTML = m.html;
       const head = [...page.content.children].find((c) => c.classList.contains('shead')); if (head) head.remove();
@@ -1766,7 +1776,7 @@ ${MADE_SCRIPT}
       if (same) patchChildren(main, page.innerHTML); else main.innerHTML = page.innerHTML;
       if (keepToast !== null) { const t = main.querySelector('.toast'); if (t) { t.innerHTML = keepToast; t.hidden = false; } }
       for (const [key, place, box] of keepConfirm) cardsOf('key', key).find((c) => placeOf(c) === place)?.appendChild(box);
-      if (menuOpen) { ctl.querySelector('.menu').hidden = false; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); }
+      if (menuOpen) { const mm = anyMenu(); if (mm) { mm.hidden = false; mm.parentElement.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); } }
       main.dataset.tab = m.tab;
       if (same) folds().forEach((d, i) => { const k = d.querySelector('summary')?.textContent || i; if (open.has(k)) d.open = true; });
       observeThumbs(main);
@@ -1935,6 +1945,8 @@ ${MADE_SCRIPT}
     if (rn) { e.preventDefault(); editTitle(rn); return; }
     // Copy, on a card or in its ⋯ menu: the text goes to the clipboard through the host.
     const copy = e.target.closest('[data-copy]');
+    // A value in ⋯ copies quietly: a faint "copied" beside it for a moment, the menu stays open.
+    if (copy && copy.hasAttribute('data-quiet')) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); copy.classList.add('copied'); setTimeout(() => copy.classList.remove('copied'), 1200); return; }
     if (copy) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); toast('Copied'); }
     const more = e.target.closest('.cmore');
     if (copy && !more) return;
@@ -2001,11 +2013,12 @@ ${MADE_SCRIPT}
     const goal = e.target.closest('.goals [data-url]');
     if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
-    const menu = ctl.querySelector('.menu');
+    const menu = menuBtn ? menuBtn.parentElement.querySelector(':scope > .menu') : openMenu();
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
     const pref = e.target.closest('[data-pref]');
     if (pref) { vscode.postMessage({ type: 'prefs', key: pref.dataset.pref, value: pref.dataset.value }); return; }
-    if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; ctl.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
+    if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; menu.parentElement.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
+    if (e.target.closest('.menu')) return;
     // The front card's reply box handles its own keys and mic; a click there selects nothing.
     if (e.target.closest('.fc-reply')) return;
     if (e.target.closest('[data-undo]')) { const u = undo; undo = null; main.querySelector('.toast').hidden = true; if (u) u(); return; }
@@ -2142,7 +2155,7 @@ ${MADE_SCRIPT}
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
       next.focus(); choose(next.dataset.tab); return;
     }
-    if (e.key === 'Escape') { const m = ctl.querySelector('.menu'); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
+    if (e.key === 'Escape') { const m = openMenu(); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
     if (e.target.closest && e.target.closest('a, button, summary')) return;
     const gh = e.target.closest && e.target.closest('.gh');
     if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }

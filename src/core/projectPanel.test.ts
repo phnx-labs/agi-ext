@@ -125,8 +125,10 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   const html = renderPrs(model, now, OPTS)
   expect(html).toContain('this list is incomplete')
   expect(html).toContain('o/broken: could not read: HTTP 502')
-  // Drafts are hidden by default and counted in the header.
-  expect(html).toContain('0 open · 1 draft hidden')
+  // Drafts are hidden by default: one quiet line under the list shows them; the tab row stays the menu alone.
+  expect(html).toContain('<button class="more-drafts" data-pref="showDrafts" data-value="true"')
+  expect(html).toContain('>+1 draft</button>')
+  expect(html).not.toContain('class="sum"')
   expect(html).not.toContain('feat: x')
   const all = renderPrs(model, now, { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true, showMerged: true } })
   expect(all).toContain('class="rs draft">Draft<')
@@ -241,7 +243,7 @@ const card = (s: SessionLike, o: { thumbs?: { uri: string; path: string; label: 
 
 test('a session lives where its tab is: this window, another window by its workspace, Ghostty, the background, or a tab its agent left', () => {
   const place = (o: Partial<SessionLike>) => sessionPlace(row(o), HERE)
-  expect(place({ host: 'yosemite-m5', tabHere: true, tabIndex: 32 })).toMatchObject({ kind: 'here', key: 'here', name: 'Open tabs', sub: 'agents', where: 'm5 · tab 32' })
+  expect(place({ host: 'yosemite-m5', tabHere: true, tabIndex: 32 })).toMatchObject({ kind: 'here', key: 'here', name: 'VSCodium', sub: 'agents', where: 'm5 · tab 32' })
   expect(place({ host: 'yosemite-m6', observers: [{ device: 'zion', viewingIn: 'VSCodium tab 4', workspaceDir: '/Users/me/src/agents-cli' }] }))
     .toMatchObject({ kind: 'window', key: 'window:agents-cli', name: 'agents-cli', where: 'm6 · tab 4' })
   expect(place({ host: 'this-mac', terminalApp: 'ghostty', context: 'terminal', presence: 'attached' })).toMatchObject({ kind: 'ghostty', where: 'zion' })
@@ -276,7 +278,7 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   expect(html).toContain('<button class="danger" data-act="close">Close the tab</button></div></details>')
   // The tab and machine moved: the machine sits dimmed at the bottom right, the tab in ⋯.
   expect(html).not.toContain('class="where"')
-  expect(html).toContain('<span class="hst" title="Machine">m6</span></div>')
+  expect(html).toContain('<span class="hst" title="Host">m6</span></div>')
   expect(html).toContain('<dt>Tab</dt><dd>tab 3 in this window</dd>')
   expect(html).toContain('class="line said">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
@@ -350,7 +352,10 @@ test('an ask leads its own group; group by app orders this window, other windows
   expect(at('ask')).toBeLessThan(at('bg'))
   expect(at('ask')).toBeGreaterThan(html.indexOf('data-group="background'))
   expect([at('mine'), at('win'), at('gh'), at('bg'), at('left')]).toEqual([at('mine'), at('win'), at('gh'), at('bg'), at('left')].sort((x, y) => x - y))
-  expect(html).toContain('<b>Open tabs</b> <span class="n">1</span> <span class="gs">· agents</span>')
+  // This window's tabs are named as its tab bar is: the editor, the workspace, the count; ⇅ sits on the first group.
+  expect(html).toContain('<b>VSCodium</b> <span class="gs">agents</span> <span class="n">1</span>')
+  expect(html.indexOf('data-menu')).toBeGreaterThan(html.indexOf('data-group="here"'))
+  expect(html.match(/data-menu/g)).toHaveLength(1)
   expect(html).toContain('<b>agents-cli</b>')
   expect(html).toContain('src="vscode-resource:/assets/apps/ghostty.png"')
   expect(html).toContain('data-act="close-all"')
@@ -379,20 +384,18 @@ test('show, hide and fold: leftover tabs and ended sessions follow Show, a hidde
   expect(draw({ hidden: { live: 50 }, showLeftover: false })).toContain('<div class="toast" hidden></div>')
 })
 
-test('group by machine, by state, or not at all', () => {
-  const rows = [row({ sessionId: 'a', host: 'yosemite-m5', tabHere: true }), row({ sessionId: 'b', host: 'this-mac', phase: 'idle', liveStatus: 'idle', tabHere: true })]
-  const byMachine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'machine' }) })
-  expect(byMachine.indexOf('data-group="machine:zion"')).toBeLessThan(byMachine.indexOf('data-group="machine:yosemite-m5"'))
-  const byState = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state' }) })
-  // The finished session keeps its tab here, so it stays out of Idle: Running, then Open tabs (finished).
-  expect(byState).not.toContain('data-group="idle"')
-  expect(byState.indexOf('data-group="state:running"')).toBeLessThan(byState.indexOf('data-session="a"'))
-  expect(byState.indexOf('data-session="a"')).toBeLessThan(byState.indexOf('data-group="state:here"'))
-  expect(byState.indexOf('data-group="state:here"')).toBeLessThan(byState.indexOf('data-session="b"'))
-  // None: no group at all; both tabs are listed.
-  const flat = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'none' }) })
-  expect(flat.match(/data-group="[^"]*"/g)).toBeNull()
-  expect(flat).toContain('data-session="b"')
+test('the ⇅ menu filters, then sorts; Tab order keeps the tab bar, any other sort puts what asks, then what finished, then what works (owner video, 2026-10-22 6:42 AM)', () => {
+  const rows = [
+    row({ sessionId: 'w', tabHere: true, tabIndex: 1, lastActivityMs: NOW - 1_000 }),
+    row({ sessionId: 'i', tabHere: true, tabIndex: 2, phase: 'idle', liveStatus: 'idle', lastActivityMs: NOW - 5_000 }),
+    row({ sessionId: 'a', tabHere: true, tabIndex: 3, phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open' }, lastActivityMs: NOW - 9_000 }),
+  ]
+  const draw = (sort: SessionListPrefs['sort']) => { const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ sort }) }); return ['a', 'i', 'w'].sort((x, y) => html.indexOf(`data-session="${x}"`) - html.indexOf(`data-session="${y}"`)) }
+  expect(draw('tab')).toEqual(['a', 'w', 'i'])
+  expect(draw('last')).toEqual(['a', 'i', 'w'])
+  const menu = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  expect(menu.indexOf('<div class="sec">Show</div>')).toBeLessThan(menu.indexOf('<div class="sec">Sort</div>'))
+  expect(menu).not.toContain('<div class="sec">Group</div>')
 })
 
 test('what the agent made groups by folder; only images this machine can show get a thumbnail', () => {
@@ -409,47 +412,44 @@ test('what the agent made groups by folder; only images this machine can show ge
   expect(made.ticket).toBe('PHNX-1')
 })
 
-test('stored preferences keep only values this version knows; older ones get Ended shown and folded, and Idle folded', () => {
-  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' }, v: 3 }))
+test('stored preferences keep only values this version knows; older ones get Ended shown and folded, Idle folded, and Last active as Tab order', () => {
+  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' }, v: 4 }))
     .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', showEnded: true, folded: ['here'], hidden: { a: 5 } })
   expect(readSessionPrefs(undefined)).toEqual(DEFAULT_SESSION_PREFS)
   // Before v2, Ended off was the old default, not a choice.
-  expect(readSessionPrefs({ group: 'app', showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended', 'state:ended', 'idle'], v: 3 })
+  expect(readSessionPrefs({ showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended', 'idle'], v: 4 })
   // v2 folds Idle once; after that, unfolding it is a choice that stays.
-  expect(readSessionPrefs({ group: 'app', showEnded: true, folded: ['ended'], v: 2 }).folded).toEqual(['ended', 'idle'])
-  expect(readSessionPrefs({ group: 'app', showEnded: true, folded: ['ended'], v: 3 }).folded).toEqual(['ended'])
-  // Machine grouping has no Ended group to fold, so Ended stays off rather than flooding the list.
-  expect(readSessionPrefs({ group: 'machine', showEnded: false })).toMatchObject({ showEnded: false })
-  const byState = renderSessions([row({ sessionId: 'gone', phase: 'done', liveStatus: 'closed' })], NOW, { selectedId: null, here: HERE, prefs: readSessionPrefs({ group: 'state' }) })
-  expect(byState).toContain('class="grp closed" data-group="state:ended"')
+  expect(readSessionPrefs({ showEnded: true, folded: ['ended'], v: 2 }).folded).toEqual(['ended', 'idle'])
+  expect(readSessionPrefs({ showEnded: true, folded: ['ended'], v: 3 }).folded).toEqual(['ended'])
   expect(readSessionPrefs({ showEnded: false, folded: [], v: 3 })).toMatchObject({ showEnded: false, folded: [] })
+  // Before v4, Last active still kept Open tabs in tab order: that is the Tab order sort now.
+  expect(readSessionPrefs({ sort: 'last', v: 3 }).sort).toBe('tab')
+  expect(readSessionPrefs({ sort: 'last', v: 4 }).sort).toBe('last')
 })
 
 test('a card leads with its harness logo; the model the CLI reported lives in its ⋯ menu', () => {
   const html = card(row({ agentType: 'claude', model: 'claude-opus-5-5' }))
   expect(html).toContain('<div class="top"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i><span class="ttl" title="T">')
   expect(html).not.toContain('class="mdl"')
-  expect(html).toContain('<dt>Model</dt><dd>claude-opus-5-5</dd>')
+  expect(html).toContain('<dt>Model</dt><dd><button class="cpv" data-copy="claude-opus-5-5" data-quiet title="Copy claude-opus-5-5">claude-opus-5-5</button></dd>')
   const bare = card(row({ agentType: 'amp' }))
   expect(bare).not.toContain('class="hx')
   expect(bare).toContain('<dt>Model</dt><dd>not reported</dd>')
 })
 
-test('only a question is your move; an idle turn is in Idle; a crashed process is Ended', () => {
+test('only a question is your move; an idle turn sits after it and before what works; a crashed process is Ended', () => {
   const html = renderSessions([
     row({ sessionId: 'done', phase: 'idle', liveStatus: 'idle', lastActivityMs: 9 }),
     row({ sessionId: 'crash', phase: 'failed', liveStatus: 'crashed', lastActivityMs: 8, tabHere: true }),
     row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', lastActivityMs: 1, attention: { kind: 'question', state: 'open' } }),
     row({ sessionId: 'run', phase: 'running', liveStatus: 'running', lastActivityMs: 10 }),
-  ], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
+  ], NOW, { selectedId: null, here: HERE, prefs: prefs({ folded: [] }) })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   expect([at('ask'), at('done'), at('run'), at('crash')]).toEqual([at('ask'), at('done'), at('run'), at('crash')].sort((x, y) => x - y))
-  expect(html).toContain('<b>Your move</b> <span class="n">1</span>')
-  // A tab here that asks is Your move too, never under Open tabs (finished).
-  const here = renderSessions([row({ sessionId: 'tq', tabHere: true, tabIndex: 1, phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open' } }), row({ sessionId: 'tf', tabHere: true, tabIndex: 2, phase: 'idle', liveStatus: 'idle' })], NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'state', folded: [] }) })
-  expect(here.slice(here.indexOf('data-group="state:move"'), here.indexOf('data-group="state:here"'))).toContain('data-session="tq"')
-  expect(here.slice(here.indexOf('data-group="state:here"'))).not.toContain('data-session="tq"')
-  expect(html).toContain('<b>Idle</b> <span class="n">1</span> <span class="gs">· finished, no tab here</span>')
+  // No Idle group unless Settings asks for it (owner video, 2026-10-22 6:42 AM).
+  expect(html).not.toContain('data-group="idle"')
+  const grouped = renderSessions([row({ sessionId: 'done', phase: 'idle', liveStatus: 'idle' })], NOW, { selectedId: null, here: HERE, prefs: prefs({ folded: [] }), cards: { ...DEFAULT_CARD_SETTINGS, finishedGroups: true } })
+  expect(grouped).toContain('<b>Idle</b> <span class="gs">finished, no tab here</span> <span class="n">1</span>')
 })
 
 test('every open tab keeps its card in Open tabs, in tab order, working or finished; an ask leads it (PHNX-4387)', () => {
@@ -470,9 +470,9 @@ test('every open tab keeps its card in Open tabs, in tab order, working or finis
   expect([open, at('first'), at('third')]).toEqual([open, at('first'), at('third')].sort((x, y) => x - y))
   // The tab number lives on the editor tab and in ⋯, not on the card (owner video, 2026-10-17).
   expect(html).not.toContain('class="tabn"')
-  // Idle holds only the finished session with no tab here.
-  expect(html).toContain('<b>Idle</b> <span class="n">1</span>')
-  expect(at('away')).toBe(-1)
+  // The finished session with no tab here sits in its own place, not in an Idle group.
+  expect(html).not.toContain('data-group="idle"')
+  expect(at('away')).toBeGreaterThan(at('third'))
 })
 
 test('the front tab\'s card is pinned above the list, opened up, and keeps its own card in Open tabs (owner video, 2026-10-19 1:32 AM)', () => {
@@ -480,8 +480,10 @@ test('the front tab\'s card is pinned above the list, opened up, and keeps its o
   const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs() })
   expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
-  // The tab, its machine and its age share the arrows' row; the state is the tint, its word the tooltip.
-  expect(html).toContain('<span class="thistab" title="Running">This tab · 1 · m6</span>')
+  // Where it runs, its place among the tabs and its age share the arrows' row; the state is the tint, its word the tooltip.
+  expect(html).toContain('<span class="thistab" title="Running">m6 · 1/1</span>')
+  // One tab: no ⇤ ⇥.
+  expect(html).not.toContain('data-front-step="first"')
   expect(html).not.toContain('fc-state')
   // Pinned, and still in Open tabs with the selected rail, so switching tabs moves no card.
   expect(html.match(/data-session="live"/g)?.length).toBe(2)
@@ -582,7 +584,7 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   const front = (s: SessionLike) => renderSessions([s], NOW, { selectedId: null, frontId: s.sessionId, here: HERE, prefs: prefs() })
   const pinned = front({ ...idle, tabHere: true, tabIndex: 1 })
   expect(pinned).toContain('title="T\nThis harness has no /rename, so its name comes from the session">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
-  expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items">This tab · 1 · m6 · 5m ago</span>')
+  expect(pinned).toContain('<span class="thistab" title="Idle · not done: a PR it opened is still open; its checklist has open items">m6 · 1/1 · 5m ago</span>')
   expect(front(row({ sessionId: 'w', tabHere: true, tabIndex: 1 }))).not.toContain('vchip')
 })
 
@@ -628,7 +630,10 @@ test('a live tool call reads as the command it runs, never as a "Tool: args" lab
   expect(activityLine('Bash: agents ssh zion ls')).toBe('<span class="cmd">$ agents ssh zion ls</span>')
   expect(activityLine('Read: src/a.ts')).toBe('<span class="tool">Read</span> <span class="cmd">src/a.ts</span>')
   expect(activityLine('thinking about it')).toBe('thinking about it')
-  const html = card(row({ activity: 'Bash: cd /tmp && ls', lastResponse: 'Checking the tree.' }))
+  // Off by default (owner video, 2026-10-22 6:42 AM); Settings > Command puts it back.
+  const live = row({ activity: 'Bash: cd /tmp && ls', lastResponse: 'Checking the tree.' })
+  expect(card(live)).not.toContain('class="cmd"')
+  const html = card(live, { cards: { ...DEFAULT_CARD_SETTINGS, command: true } })
   expect(html).toContain('<span class="cmd">$ cd /tmp &amp;&amp; ls</span>')
   expect(html).not.toContain('Bash:')
 })
@@ -687,7 +692,7 @@ test('Waiting: an idle session with background work shows a blue pill, a chip pe
   expect(html).toContain('data-busy="1"')
   const idle = row({ sessionId: 'y', phase: 'idle', liveStatus: 'idle' })
   expect(sessionCount([waiting, idle]).asks).toBe(0)
-  const list = renderSessions([waiting, idle], NOW, { selectedId: null, here: HERE, prefs: prefs({ folded: [] }) })
+  const list = renderSessions([waiting, idle], NOW, { selectedId: null, here: HERE, prefs: prefs({ folded: [] }), cards: { ...DEFAULT_CARD_SETTINGS, finishedGroups: true } })
   const idleGroup = list.slice(list.indexOf('data-group="idle"'), list.indexOf('data-group="background"'))
   expect(idleGroup).toContain('data-session="y"')
   expect(idleGroup).not.toContain('data-session="w"')
@@ -698,15 +703,16 @@ test('Waiting: an idle session with background work shows a blue pill, a chip pe
 test('a quieter card: the repository only when it is not this window\'s, the machine bottom right, ⚡ and ◆, details in ⋯', () => {
   const ours = card(row({ cwd: '/Users/me/src/agents/.agents/worktrees/x', host: 'yosemite-m5' }))
   expect(ours).not.toContain('class="repo"')
-  expect(ours).toContain('<span class="hst" title="Machine">m5</span>')
+  expect(ours).toContain('<span class="hst" title="Host">m5</span>')
   expect(card(row({ cwd: '/Users/me/src/agents-cli' }))).toContain('<span class="repo" title="/Users/me/src/agents-cli">agents-cli</span>')
   const fx = card(row({ fast: true, effort: 'max', model: 'claude-opus-5-5', account: 'claude#work', cwd: '/home/me/src/agents' }))
   expect(fx).toContain('<span class="fx"><span class="fast" title="Fast mode">⚡</span><span class="hi" title="max reasoning effort">◆</span></span>')
-  expect(fx).toContain('<dt>Model</dt><dd>claude-opus-5-5 · max effort · fast</dd>')
-  expect(fx).toContain('<dt>Account</dt><dd>claude#work</dd>')
-  expect(fx).toContain('<dt>Session</dt><dd>s</dd>')
-  expect(fx).toContain('<dt>Folder</dt><dd>/home/me/src/agents</dd>')
-  expect(fx).toContain('data-copy="s"')
+  // Every value copies on a click; what is copied is the value itself.
+  expect(fx).toContain('<dt>Model</dt><dd><button class="cpv" data-copy="claude-opus-5-5" data-quiet title="Copy claude-opus-5-5">claude-opus-5-5 · max effort · fast</button></dd>')
+  expect(fx).toContain('<dt>Account</dt><dd><button class="cpv" data-copy="claude#work" data-quiet title="Copy claude#work">claude#work</button></dd>')
+  expect(fx).toContain('<dt>Session</dt><dd><button class="cpv" data-copy="s" data-quiet title="Copy s">s</button></dd>')
+  expect(fx).toContain('<dt>Folder</dt><dd><button class="cpv" data-copy="/home/me/src/agents" data-quiet title="Copy /home/me/src/agents">/home/me/src/agents</button></dd>')
+  expect(fx).toContain('<dt>Host</dt><dd><button class="cpv" data-copy="yosemite-m6" data-quiet title="Copy yosemite-m6">yosemite-m6</button></dd>')
   expect(card(row({ effort: 'medium' }))).not.toContain('class="fx"')
   expect(card(row({ effort: 'xhigh' }))).toContain('title="xhigh reasoning effort">◆')
 })
@@ -737,7 +743,7 @@ test('until the CLI maps old project names, a session in one of the project\'s r
   // Without repository paths, only the CLI's word counts, as before.
   expect(projectSessions([misc, mine], 'rush').map((r) => r.sessionId)).toEqual(['r'])
   const html = renderSessionCard(misc, sessionPlace(misc, HERE), NOW, { selected: false, pinned: false, here: HERE, thumbs: [], made: null, project: 'rush' })
-  expect(html).toContain('<dt>Project</dt><dd>rush (the CLI said prix)</dd>')
+  expect(html).toContain('<dt>Project</dt><dd><button class="cpv" data-copy="rush" data-quiet title="Copy rush">rush · the CLI said prix</button></dd>')
 })
 
 test('two live projects sharing a repository keep their own sessions; only an unregistered or missing project falls back', () => {

@@ -29,3 +29,21 @@ test('goals render as one quiet line for the header row; the week and the day ri
   expect(day).toContain('data-url="https://linear.app/x/issue/PHNX-4353"');
   expect(renderGoals({})).toBe('');
 });
+
+test("the project's next unfinished milestone leads the line, with its date and progress; the company goal moves to the tooltip (owner video, 2026-10-22 6:42 AM)", () => {
+  const raw = JSON.parse(RAW);
+  raw.company.milestones = [
+    { name: '0.2.2 - Better and safer integrations', project: 'Rush', targetDate: '2026-10-26', progress: 2 },
+    { name: '0.2.0 - Done already', project: 'Rush', targetDate: '2026-10-01', progress: 100 },
+    { name: '0.2.1 - Stable for running agents', project: 'Rush', targetDate: '2026-10-23', progress: 12 },
+    { name: 'Other project', project: 'AGI UI', targetDate: '2026-10-20', progress: 0 },
+  ];
+  const goals = parseGoals(JSON.stringify(raw));
+  expect(goals.milestones).toHaveLength(4);
+  const html = renderGoals(goals, 'rush');
+  expect(html).toContain('<span class="gk">◇</span><span class="gtx">0.2.1 - Stable for running agents</span><span class="gm">Oct 23 · 12%</span>');
+  expect(html).toContain('Company goal: Rush Cloud - first paying customers');
+  // A project with no milestone, or no Linear project, keeps the company goal.
+  expect(renderGoals(goals, 'Nothing here')).toContain('<span class="gtx">Rush Cloud - first paying customers</span>');
+  expect(renderGoals(goals)).toContain('<span class="gtx">Rush Cloud - first paying customers</span>');
+});
