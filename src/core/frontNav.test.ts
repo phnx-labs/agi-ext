@@ -87,7 +87,8 @@ test('the pinned card draws each Settings mode: Tab order, Next that needs you (
   expect(draw('needs')).toContain('data-front-step="next" data-session="c" data-host="zion" title="Next that needs you: tab 3 · Task c"');
   expect(draw('needs')).toContain('data-front-step="prev" data-back data-session="a" data-host="zion" title="Back: tab 1 · Task a"');
   expect(draw('off')).not.toContain('fc-step');
-  expect(draw('off')).toContain('<div class="fc-nav bare"><span class="thistab"');
+  // Off: no arrows; the title row, with where it runs, is the header alone.
+  expect(draw('off')).toContain('<div class="fc-nav bare"><div class="top">');
   // The command picks what › names, from a shell or editor in front too.
   expect(nextThatNeedsYou(rows, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, memory: h })?.row.sessionId).toBe('c');
 });
