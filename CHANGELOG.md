@@ -16,8 +16,11 @@ From the owner's 8:50 AM video on the Project panel:
 - Listed cards show an ask's question without its answer buttons; the pinned card keeps them.
   Settings > Asks on listed cards > With answers brings them back (that choice was also
   impossible to keep before: the setting read it back as the default).
-- Settings > Session list style > Rows draws listed sessions as ⌘K's compact line: title, state,
-  host, age and tab, then what it made and its latest words.
+- Every card carries ⌘K's state pill beside its age (Asks, Blocked, Running, Idle), and the
+  separate row of ▸ ⑂ ◉ background-work counts is gone: hover the pill to see that work.
+  Settings > A card shows > State turns the pill off.
+- Image previews have their own switch in Settings > A card shows, apart from PRs, tickets and
+  folders.
 - A filter bar at the top of Sessions filters the list as you type; ⌘K still searches every
   project.
 - The pinned card is about a sixth shorter: a two-line recap with the full text on hover, and a

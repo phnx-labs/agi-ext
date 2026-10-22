@@ -40,8 +40,8 @@ export interface SessionPending {
   monitors?: PendingItem[];
 }
 
-/** The three kinds, in the order the chips and the list show them, with their marks. */
-export const PENDING_KINDS = [
+/** The three kinds, in the order a hover lists them, with their marks. */
+const PENDING_KINDS = [
   { key: 'subagents', mark: '⑂', one: 'subagent', many: 'subagents' },
   { key: 'shells', mark: '▸', one: 'shell', many: 'shells' },
   { key: 'monitors', mark: '◉', one: 'monitor', many: 'monitors' },

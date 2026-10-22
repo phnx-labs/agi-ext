@@ -15,7 +15,6 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 
 /** The Session cards pickers: each key, its words, and its choices in order. */
 const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
-  { key: 'style', label: 'Session list style', sub: 'Rows are ⌘K’s compact lines: title, state, host, age and tab, then what it made and its latest words', options: [{ value: 'cards', label: 'Cards' }, { value: 'rows', label: 'Rows' }] },
   { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
   { key: 'arrows', label: '‹ › on the pinned card', sub: 'Next that needs you: asks first, then turns that finished since you looked; ‹ goes back', options: [{ value: 'tabs', label: 'Tab order' }, { value: 'needs', label: 'Next that needs you' }, { value: 'off', label: 'Off' }] },
   { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Either way the answer brings its agent’s tab forward; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
@@ -30,9 +29,10 @@ const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: 
   description: { label: 'Description', sub: 'The agent’s latest words, or what it asks' },
   command: { label: 'Command', sub: 'The shell command a working agent runs, under its words' },
   chips: { label: 'PRs, tickets, folders', sub: 'One row that scrolls sideways' },
+  previews: { label: 'Image previews', sub: 'What you attached and what the agent made, three at most' },
   machine: { label: 'Host', sub: 'Where the agent runs' },
   age: { label: 'Age', sub: 'Since the last activity, or how long an ask has waited' },
-  stateWord: { label: 'State word', sub: 'The color already says it: red asks, green working, yellow idle' },
+  state: { label: 'State', sub: 'Asks, Blocked, Running or Idle beside the age; hover names any background work' },
   verdict: { label: 'Done verdict', sub: 'A finished turn shows ✓ Done or Not done beside its title' },
   firstMessage: { label: 'First message', sub: 'What the session was started with, when its title says something else' },
   activity: { label: 'Activity on the pinned card', sub: 'Its steps with their times, in a box that scrolls' },
