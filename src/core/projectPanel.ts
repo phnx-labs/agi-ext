@@ -897,7 +897,7 @@ function recapBlock(s: Pick<SessionLike, 'recap' | 'userTurns'>, now: number): s
   if (!text || !Number.isFinite(at)) return '';
   const turns = s.userTurns ?? [];
   const stale = turns.length > 0 && turns[turns.length - 1]!.atMs > at;
-  return `<div class="fc-recap${stale ? ' stale' : ''}"><div class="fc-k">Recap · ${escapeHtml(relTime(at, now))}${stale ? '<span class="fc-old">before your last message</span>' : ''}</div><div class="fc-rt">${escapeHtml(text)}</div></div>`;
+  return `<div class="fc-recap${stale ? ' stale' : ''}"><div class="fc-k">Recap · ${escapeHtml(relTime(at, now))}${stale ? '<span class="fc-old">before your last message</span>' : ''}</div><div class="fc-rt" title="${escapeHtml(text)}">${escapeHtml(text)}</div></div>`;
 }
 
 /** The pinned card's activity: every step the row carries with its clock time, newest
@@ -1018,12 +1018,21 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
     return `${navButtons(opts.nav, where, stateWords, cards.ends)}${top}<div class="fc-body">${detail}</div>${reply}`;
   }
-  const body = opts.front ? frontBody() : `
+  // Rows: ⌘K's compact line for a listed session (owner video, 2026-10-22 8:50 AM: "this view is actually pretty good").
+  function rowBody(): string {
+    const q = s.attention?.state === 'open' ? plain(s.attention.question?.text ?? '') : '';
+    const note = q || plain(said);
+    const tab = s.tabHere && s.tabIndex ? ` · tab ${s.tabIndex}` : '';
+    const rowPill = `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(opts.blocked ? 'Blocked' : SESSION_STATE_WORD[state])}</span>`;
+    const where = `<span class="kw">${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))} · ${waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : escapeHtml(ageWords(s.lastActivityMs, now))}${tab}</span>`;
+    return `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}<span class="kmeta">${rowPill}${where}</span><span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div><div class="rsub">${cards.chips ? chips : ''}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</div>`;
+  }
+  const body = opts.front ? frontBody() : cards.style === 'rows' ? rowBody() : `
     ${top}
     ${meta ? `<div class="meta">${meta}</div>` : ''}${text}
     ${cards.chips && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
-  const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
+  const cls = `card st-${opts.blocked ? 'blocked' : state}${!opts.front && cards.style === 'rows' ? ' krowcard' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
@@ -1126,7 +1135,8 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   // A Favorites copy also asks with its question only: the answers stay on its own card.
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false, copy = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, linearName: opts.linearName,
-    cards: copy || (!pinned && front && row.sessionId === front.row.sessionId) ? listedCards : cards, nav: pinned ? nav : undefined, shelf: pinned ? opts.shelfFor?.(row) : undefined,
+    // The pinned card is where an ask is answered, so it keeps its answers whatever the list shows (owner video, 2026-10-22 8:50 AM).
+    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : cards, nav: pinned ? nav : undefined, shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId),
   });
   // The tab already shows the count and the asks badge, so the header carries only search and ☀;
@@ -1134,8 +1144,10 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   // With no group drawn (Show hid everything, or only grouped finished sessions are left) ⇅ stays in the header, so Show can be turned back on.
   const headWith = (menu: boolean) => `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button>${menu ? menuButton(prefs) : ''}</div>`;
   const head = headWith(false);
+  // Always there, under the header: typing filters the list in place; ⌘K still opens the full search (owner video, 2026-10-22 8:50 AM).
+  const find = `<div class="sfind" data-keep><input type="search" data-find placeholder="Filter sessions · ${escapeHtml(opts.searchKey ?? '⌘K')} searches every project" aria-label="Filter sessions" spellcheck="false" autocomplete="off"></div>`;
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
-  if (all.length === 0) return `${headWith(true)}<div class="empty">No sessions on this project right now.</div>${tail}`;
+  if (all.length === 0) return `${headWith(true)}${find}<div class="empty">No sessions on this project right now.</div>${tail}`;
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean };
   // ⇅ rides the first group header drawn, Favorites included.
   let menuPlaced = false;
@@ -1171,7 +1183,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     g.items.push(x); byKey.set(x.place.key, g);
   }
   const listed = groups(byKey);
-  return (menuPlaced ? head : headWith(true)) + pinned + favs + quietGroups + listed + tail;
+  return (menuPlaced ? head : headWith(true)) + find + pinned + favs + quietGroups + listed + '<div class="nofind" hidden>No session here matches. ⌘K searches every project.</div>' + tail;
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
