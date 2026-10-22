@@ -4,7 +4,7 @@
 // session list off leaving the front tab's card alone.
 import { expect, test } from 'bun:test'
 import { DEFAULT_CARD_SETTINGS, cardSettings } from './settings'
-import { DEFAULT_SESSION_PREFS, renderSessions, type SessionHere, type SessionLike } from './projectPanel'
+import { DEFAULT_SESSION_PREFS, readSessionPrefs, renderSessions, type SessionHere, type SessionLike } from './projectPanel'
 import { applyPanelSetting, renderPanelSettings } from './panelSettings'
 import { getDefaultSettings } from './settings'
 
@@ -42,7 +42,9 @@ test('☆ sits on every title row; a favorite shows ★ and leads the list under
   expect(favs).toContain('Ship it?')
   expect(favs).not.toContain('data-choice')
   expect(ids(sectionOf(html, 'here'))).toEqual(['asker', 'front', 'starred'])
-  expect(sectionOf(html, 'here')).toContain('data-choice="y"')
+  // Listed cards show the question only by default; Settings > Asks on listed cards puts the answers back.
+  expect(sectionOf(html, 'here')).not.toContain('data-choice="y"')
+  expect(sectionOf(draw({ favorites: ['starred', 'asker'], cards: { asks: 'answers' } }), 'here')).toContain('data-choice="y"')
   // Settings > Favorites group off: the stars stay, the group goes.
   const off = draw({ favorites: ['starred'], cards: { favorites: false } })
   expect(off).not.toContain('data-group="favorites"')
@@ -92,4 +94,30 @@ test('Settings > Session list: both on by default, each a checkbox that writes i
   expect(html).toContain('<b>Show the session list</b>')
   expect(html).toContain('data-setting="cards.list" checked')
   expect(html).toContain('data-setting="cards.favorites" checked')
+})
+
+test('Settings round-trip every Asks choice; previews and the state pill are parts of their own, on by default (owner, 2026-10-22 12:30 PM)', () => {
+  expect(cardSettings(undefined)).toMatchObject({ asks: 'question', previews: true, state: true })
+  for (const asks of ['answers', 'question', 'off'] as const) expect(cardSettings({ asks }).asks).toBe(asks)
+  expect(applyPanelSetting(getDefaultSettings(), 'cards.previews', false)?.cards).toMatchObject({ previews: false })
+  expect(applyPanelSetting(getDefaultSettings(), 'cards.state', false)?.cards).toMatchObject({ state: false })
+})
+
+test('⇅ > View > Compact draws listed cards as the title row, the latest line and what it made; Default keeps the rest (owner, 2026-10-22 1:02 PM)', () => {
+  expect(readSessionPrefs(undefined).view).toBe('default')
+  expect(readSessionPrefs({ view: 'compact', v: 4 }).view).toBe('compact')
+  const thumbs = () => [{ uri: 'data:x', path: '/a.png', label: 'a.png' }]
+  const at = (view: 'default' | 'compact') => renderSessions(ROWS, NOW, { selectedId: 'front', frontId: 'front', here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, view }, cards: DEFAULT_CARD_SETTINGS, thumbsFor: thumbs })
+  const compact = at('compact')
+  expect(compact).toContain('data-pref="view" data-value="compact"><span class="ck">✓</span>Compact')
+  const listed = compact.slice(compact.indexOf('data-group="here"'))
+  expect(listed).toMatch(/class="card st-asks compact/)
+  expect(listed).not.toContain('class="thumbs"')
+  expect(listed).not.toContain('class="ask')
+  expect(listed).toContain('<span class="pill st-asks"><i></i>Asks</span>')
+  // The pinned card is never compact and keeps its answers.
+  expect(compact.slice(0, compact.indexOf('data-group'))).not.toContain(' compact')
+  const full = at('default')
+  expect(full.slice(full.indexOf('data-group="here"'))).toContain('class="thumbs"')
+  expect(full).not.toMatch(/class="card [^"]*compact/)
 })

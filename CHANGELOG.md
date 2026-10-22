@@ -4,6 +4,33 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.428] - 2026-10-22
+
+From the owner's 8:50 AM video on the Project panel:
+
+- Three states you can tell apart at a glance: Asks is amber with its slow ring, Blocked (an
+  agent that says it is blocked, or one the CLI saw stall) is red with the same ring, and
+  Running is green and breathes. An agent waiting on its own background work now reads
+  Running, not a blue Waiting. Idle and ready-for-review cards lose their yellow tint, so amber
+  only ever means an ask.
+- Listed cards show an ask's question without its answer buttons; the pinned card keeps them.
+  Settings > Asks on listed cards > With answers brings them back (that choice was also
+  impossible to keep before: the setting read it back as the default).
+- Every card carries ⌘K's state pill beside its age (Asks, Blocked, Running, Idle), and the
+  separate row of ▸ ⑂ ◉ background-work counts is gone: hover the pill to see that work.
+  Settings > A card shows > State turns the pill off.
+- Image previews have their own switch in Settings > A card shows, apart from PRs, tickets and
+  folders.
+- ⇅ on the list has a View choice: Default, or Compact, where each listed card is three rows
+  (the title with its state and age, the agent's latest line, what it made).
+- The pinned card's header is one row: ⇤ ‹, the title and state, where it runs, its place among
+  the tabs and its age, › ⇥. Copy and ⋯ show on hover.
+- This window's group is named by its workspace ("agi-ext 5"); the icon already says VSCodium.
+- A filter bar at the top of Sessions filters the list as you type; ⌘K still searches every
+  project.
+- The pinned card is about a sixth shorter: a two-line recap with the full text on hover, and a
+  shorter Activity box, so more of the list shows under it.
+
 ## [0.9.427] - 2026-10-22
 
 From the owner's 6:42 AM video on the Project panel:

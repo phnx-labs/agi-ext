@@ -171,9 +171,12 @@ export interface CardSettings {
   arrows: ArrowMode;
   description: boolean;
   chips: boolean;
+  /** Images you attached and images the agent made, three at most. */
+  previews: boolean;
   machine: boolean;
   age: boolean;
-  stateWord: boolean;
+  /** ⌘K's state pill on the title row: Asks and Blocked ring, Running breathes (owner, 2026-10-22 12:30 PM). */
+  state: boolean;
   verdict: boolean;
   /** What the session was started with, under the title; off by default (owner video, 2026-10-19 1:32 AM). */
   firstMessage: boolean;
@@ -193,14 +196,14 @@ export interface CardSettings {
 }
 
 /** The parts a card can leave out, as Settings lists them. */
-export const CARD_PARTS = ['description', 'command', 'chips', 'machine', 'age', 'stateWord', 'verdict', 'firstMessage', 'activity', 'ends'] as const;
+export const CARD_PARTS = ['description', 'command', 'chips', 'previews', 'machine', 'age', 'state', 'verdict', 'firstMessage', 'activity', 'ends'] as const;
 
 /** What Sessions lists under the pinned card, as Settings > Session list toggles it. */
 export const LIST_PARTS = ['list', 'favorites', 'finishedGroups'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
-  asks: 'answers', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
-  description: true, chips: true, machine: true, age: true, stateWord: false, verdict: true, firstMessage: false,
+  asks: 'question', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
+  description: true, chips: true, previews: true, machine: true, age: true, state: true, verdict: true, firstMessage: false,
   command: false, activity: true, ends: true, favorites: true, list: true, finishedGroups: false,
 };
 
@@ -209,14 +212,14 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
   const d = DEFAULT_CARD_SETTINGS;
   const part = (k: (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]) => (typeof v?.[k] === 'boolean' ? v[k] as boolean : d[k]);
   return {
-    asks: v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
+    asks: v?.asks === 'answers' || v?.asks === 'question' || v?.asks === 'off' ? v.asks : d.asks,
     options: v?.options === 'details' ? 'details' : d.options,
     question: v?.question === 'full' ? 'full' : d.question,
     click: v?.click === 'show' ? 'show' : d.click,
     answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
     made: v?.made === 'previews' ? 'previews' : d.made,
     arrows: v?.arrows === 'needs' || v?.arrows === 'off' ? v.arrows : d.arrows,
-    description: part('description'), chips: part('chips'), machine: part('machine'), age: part('age'), stateWord: part('stateWord'), verdict: part('verdict'), firstMessage: part('firstMessage'),
+    description: part('description'), chips: part('chips'), previews: part('previews'), machine: part('machine'), age: part('age'), state: part('state'), verdict: part('verdict'), firstMessage: part('firstMessage'),
     command: part('command'), activity: part('activity'), ends: part('ends'),
     favorites: part('favorites'), list: part('list'), finishedGroups: part('finishedGroups'),
   };

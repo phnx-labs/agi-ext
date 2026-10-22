@@ -12,7 +12,7 @@ mock.module('vscode', () => vscodeDouble());
 const { shell } = await import('./projectPanel.vscode');
 const { DEFAULT_SESSION_PREFS, renderSessions } = await import('../core/projectPanel');
 const { DEFAULT_CARD_SETTINGS } = await import('../core/settings');
-const UNDO = { ...DEFAULT_CARD_SETTINGS, answerUndo: 'five' as const };
+const UNDO = { ...DEFAULT_CARD_SETTINGS, asks: 'answers' as const, answerUndo: 'five' as const };
 
 const ROWS = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '..', 'core', 'testdata', 'session-rows.asks.json'), 'utf8'));
 const NOW = Date.parse('2026-10-14T01:37:00Z');
@@ -89,7 +89,7 @@ test('an answer whose card leaves the list before its 5 s is not sent', async ()
 }, 15_000);
 
 test('by default an answer goes at once, and its agent comes to the front through the card\'s own select', () => {
-  deliver({ type: 'html', tab: 'sessions', html: draw(null, DEFAULT_CARD_SETTINGS) });
+  deliver({ type: 'html', tab: 'sessions', html: draw(null, { ...DEFAULT_CARD_SETTINGS, asks: 'answers' }) });
   const from = sent.length;
   (ask().querySelector('[data-choice="yes-publish-from-zion"]') as unknown as HTMLElement).click();
   const card = ask().closest('.card') as unknown as HTMLElement;
@@ -115,7 +115,7 @@ test('Close and Hide in a card\'s ⋯ menu do what the old × did, and the menu 
 test('the Lead\'s draft: Send answers with its words like any button; Edit opens Other… holding them', () => {
   const rows = ROWS.map((r: { sessionId: string; attention?: object }) => r.sessionId === 'e4d2a913-cards'
     ? { ...r, attention: { ...r.attention, draft: { text: 'Wait for CI, then publish from zion', label: 'Wait for CI, then publish from zion' } } } : r);
-  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: DEFAULT_CARD_SETTINGS }) });
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'answers' } }) });
   const box = () => document.querySelector('.ask[data-ask="yosemite-m6/e4d2a913-cards/b-5a01"]')!;
   const draft = box().querySelector('.draft')!;
   (draft.querySelector('[data-ask-edit]') as unknown as HTMLElement).click();

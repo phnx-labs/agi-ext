@@ -43,7 +43,7 @@ test('Session cards: pickers and part toggles write cards.*; banners are the AGI
   expect(applyPanelSetting(base, 'cards.answerUndo', 'five')?.cards?.answerUndo).toBe('five')
   // Each part of a card turns off on its own; a part takes only a boolean.
   expect(applyPanelSetting(base, 'cards.description', false)?.cards?.description).toBe(false)
-  expect(applyPanelSetting(base, 'cards.stateWord', true)?.cards?.stateWord).toBe(true)
+  expect(applyPanelSetting(base, 'cards.state', false)?.cards?.state).toBe(false)
   expect(applyPanelSetting(base, 'cards.description', 'no')).toBeNull()
   expect(applyPanelSetting(base, 'cards.title', false)).toBeNull()
   expect(applyPanelSetting(base, 'cards.options', 'details')?.cards?.options).toBe('details')
