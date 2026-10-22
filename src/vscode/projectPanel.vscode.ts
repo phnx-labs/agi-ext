@@ -394,8 +394,10 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   /** Refresh rereads what is shown. */
-  refresh(): void {
+  refresh(projectChanged = false): void {
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
+    // Another project's milestone never stays up while this one's is read.
+    if (projectChanged) { this.goalsHtml = ''; void this.view?.webview.postMessage({ type: 'goals', html: '' }); }
     void this.loadGoals(true);
   }
 
@@ -427,12 +429,14 @@ class ProjectView implements vscode.WebviewViewProvider {
   private goalsAt = 0;
   /** The last goals line drawn: a page the editor rebuilt (moved, popped out) gets it again on ready. */
   private goalsHtml = '';
+  private goalsGen = 0;
 
   /** The two goal lines above the tabs; a failed read says so on one faint line. */
   private async loadGoals(force: boolean): Promise<void> {
     if (!this.view?.visible) return;
     if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
     this.goalsAt = Date.now();
+    const gen = ++this.goalsGen;
     let html: string;
     const before = this.controller.todayId;
     try {
@@ -441,6 +445,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.goalsAt = 0;
       html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
     }
+    // A read overtaken by a newer one (a project switch while it ran) is dropped.
+    if (gen !== this.goalsGen) return;
     this.goalsHtml = html;
     void this.view?.webview.postMessage({ type: 'goals', html });
     // Today's ticket marks its sessions with ☀; redraw the list when it changes.
@@ -1093,7 +1099,7 @@ class ProjectPanelController {
     this.detected = undefined;
     // Tickets and pull requests read are the shown project's; a switch must not keep the last one's.
     if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; }
-    this.view.refresh();
+    this.view.refresh(projectChanged);
   }
 }
 

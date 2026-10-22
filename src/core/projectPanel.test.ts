@@ -396,6 +396,14 @@ test('the ⇅ menu filters, then sorts; Tab order keeps the tab bar, any other s
   const menu = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })
   expect(menu.indexOf('<div class="sec">Show</div>')).toBeLessThan(menu.indexOf('<div class="sec">Sort</div>'))
   expect(menu).not.toContain('<div class="sec">Group</div>')
+  // Name is the names alone; what asks still leads.
+  const named = renderSessions([row({ sessionId: 'z', title: 'Zed', tabHere: false }), row({ sessionId: 'y', title: 'Alpha', phase: 'idle', liveStatus: 'idle', tabHere: false })], NOW, { selectedId: null, here: HERE, prefs: prefs({ sort: 'name' }) })
+  expect(named.indexOf('data-session="y"')).toBeLessThan(named.indexOf('data-session="z"'))
+  // ⇅ rides the first header drawn: Favorites when it shows.
+  const fav = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), favorites: new Set(['w']) })
+  expect(fav.indexOf('data-menu')).toBeGreaterThan(fav.indexOf('data-group="favorites"'))
+  expect(fav.indexOf('data-menu')).toBeLessThan(fav.indexOf('data-group="here"'))
+  expect(fav.match(/data-menu/g)).toHaveLength(1)
 })
 
 test('what the agent made groups by folder; only images this machine can show get a thumbnail', () => {

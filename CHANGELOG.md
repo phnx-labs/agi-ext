@@ -21,13 +21,15 @@ From the owner's 6:42 AM video on the Project panel:
 - No separate Idle and Ready for review groups: a finished session with no tab here stays in
   its place, after what asks and before what works. Settings > Ready for review and Idle
   groups brings them back.
-- The list's ⇅ menu sits on its first group header and holds Show, then Sort (Tab order, the
+- The list's ⇅ menu sits on its first group header (in the header row when nothing is
+  listed, so Show can always be turned back on) and holds Show, then Sort (Tab order, the
   default, Last active, Newest, Name); there is no grouping choice. This window's tabs are
-  headed by the editor and workspace ("VSCodium agi-ext 5").
+  headed by the editor and workspace ("VSCodium agi-ext 5"), and Show calls them "Tabs in
+  this window".
 - The header row shows the project's next Linear milestone with its date and progress
   ("0.2.1 - Stable for running agents · Oct 23 · 12%"), the company goal in its tooltip. The
   goal line no longer goes blank after the panel is moved or popped out: the rebuilt page gets
-  the last line at once.
+  the last line at once; after a project switch the old project's line is cleared at once.
 - ✳ Lead is the first tab. Settings is the last of the panel's title icons.
 - Review: the header no longer grows "1 open · 9 drafts hidden" when the list arrives; hidden
   drafts are a "+9 drafts" line under the list.
