@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PHNX-3938 · Project command center prototype</title>
+  <link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="activity-rail"><div class="brand-mark">A</div><a class="rail-icon active" href="index.html"><svg viewBox="0 0 24 24"><path d="M4 18V9l8-4 8 4v9M8 18v-5h8v5M3 18h18"/></svg></a><span class="rail-icon rail-bottom"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg></span></aside>
+    <header class="topbar"><span class="product">AGI EXT</span><span class="crumb"><a href="index.html">AGI</a><span>›</span><strong>PHNX-3938</strong></span><div class="top-spacer"></div><div class="search"><span>⌕</span><span>Search project…</span><span class="kbd">⌘K</span></div></header>
+    <aside class="sidebar">
+      <div class="nav-heading">AGI</div><a class="nav-item" href="index.html"><span class="nav-icon">←</span><span>Project overview</span></a>
+      <div class="nav-heading">Milestone</div><div class="nav-item active"><span class="nav-icon">◉</span><span>Ship the benchmark</span><span class="nav-count">4/7</span></div>
+      <div class="nav-heading">Issue</div><div class="nav-item"><span class="nav-icon">◫</span><span>Sub-issues</span><span class="nav-count">4</span></div><div class="nav-item"><span class="nav-icon">◇</span><span>Agent runs</span><span class="nav-count">1</span></div><div class="nav-item"><span class="nav-icon">↗</span><span>Artifacts</span><span class="nav-count">1</span></div>
+    </aside>
+    <main class="main">
+      <div class="main-inner">
+        <div class="task-layout">
+          <section class="panel task-card">
+            <div class="task-id mono">PHNX-3938 · High priority</div>
+            <h1>AGI extension — Fleet view: fix empty panels, attribution &amp; chrome</h1>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span class="state doing">Doing</span><span class="label" style="color:var(--blue)">engineering</span><span style="color:var(--text-3)">in Ship the benchmark</span></div>
+            <p>Make the Fleet view useful as a project command center. A project should expose its current milestone, the work inside it, the human accountable for the outcome, and the agent currently executing each issue.</p>
+            <div class="detail-section"><h2>Acceptance criteria</h2><div class="check-row"><span class="check done">✓</span><span>Projects are a first-class navigation level</span></div><div class="check-row"><span class="check done">✓</span><span>Current milestone and progress appear before activity</span></div><div class="check-row"><span class="check"> </span><span>Issues show both accountable human and execution agent</span></div><div class="check-row"><span class="check"> </span><span>Empty states explain missing source data and next action</span></div></div>
+            <div class="detail-section"><h2>Current agent run</h2><div class="callout"><strong style="color:var(--text)">Codex is building the prototype</strong><br>Inspecting the current ProjectsPane, designing the project-first hierarchy, then rendering and checking the result.</div></div>
+          </section>
+          <aside>
+            <section class="panel"><div class="panel-head"><h2>Ownership</h2></div><div class="side-body"><dl class="meta-list"><dt>Human</dt><dd><span class="avatar human" style="vertical-align:middle;margin-right:7px">MN</span>Muqsit Nawaz</dd><dt>Agent</dt><dd><span class="avatar agent" style="vertical-align:middle;margin-right:7px">X</span>Codex · active</dd><dt>Project</dt><dd><a class="linked" href="index.html">AGI</a></dd><dt>Milestone</dt><dd>Ship the benchmark</dd><dt>State</dt><dd><span class="state doing">Doing</span></dd></dl></div></section>
+            <section class="panel"><div class="panel-head"><h2>Delivery</h2></div><div class="side-body"><dl class="meta-list"><dt>Branch</dt><dd class="mono">codex-…1877692</dd><dt>Artifact</dt><dd class="linked">Prototype HTML</dd><dt>Review</dt><dd>Not requested yet</dd></dl></div></section>
+          </aside>
+        </div>
+      </div>
+    </main>
+    <footer class="statusbar"><span class="status-ok">● agent active</span><span>Codex · yosemite-s1</span><span class="spacer"></span><a href="index.html">Back to AGI</a></footer>
+  </div>
+</body>
+</html>
