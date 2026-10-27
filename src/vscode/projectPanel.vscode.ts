@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
 import { AvatarCache } from '../core/avatarCache';
-import { nextMilestone, openMilestones, parseGoals, renderGoals, type Goals } from '../core/goals';
+import { goalTitle, issuesMenu, nextMilestone, openMilestones, parseGoals, type Goals } from '../core/goals';
 import { resolveLaunchTarget, type LaunchTarget } from '../core/launchTarget';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
@@ -240,7 +240,6 @@ class ProjectView implements vscode.WebviewViewProvider {
   private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
     this.postTabs();
-    if (this.goalsHtml) void this.view?.webview.postMessage({ type: 'goals', html: this.goalsHtml });
     void this.loadGoals(false);
     const cached = this.tabs.get(this.active)!.html;
     if (cached) this.post(this.active, cached);
@@ -272,9 +271,8 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (tab === 'settings') {
       this.post(tab, this.controller.settings(this.devices));
       void this.loadDevices(force);
-      // The view's title names the project on every tab, Settings included.
-      // The bar says only PROJECT (VS Code joins the container's name and the view's); the name is the panel's own ⌄ (owner video, 2026-10-27 1:19 PM).
-      view.title = '';
+      // The view's title names the project and its milestone on every tab, Settings included.
+      this.setTitle();
       return;
     }
     const gen = ++state.generation;
@@ -286,8 +284,9 @@ class ProjectView implements vscode.WebviewViewProvider {
       return;
     }
     if (gen !== state.generation) return;
-    // The project's name is the view's title, "PROJECT: RUSH"; ⇄ beside it switches it.
-    view.title = '';
+    // "AGI: RUSH / 0.2.1 - …": VS Code's top row names the project and its milestone (owner, 2026-10-27 1:26 PM); ⇄ beside it switches the project.
+    this.projectName = project?.name ?? '';
+    this.setTitle();
     void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
     if (!project) {
       this.post(tab, '<div class="empty">No project found for this folder. <a href="#" data-pick>Pick a project</a></div>');
@@ -401,7 +400,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   refresh(projectChanged = false): void {
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
     // Another project's milestone never stays up while this one's is read.
-    if (projectChanged) { this.goalsHtml = ''; void this.view?.webview.postMessage({ type: 'goals', html: '' }); }
+    if (projectChanged) { this.goalText = ''; this.setTitle(); }
     void this.loadGoals(true);
   }
 
@@ -438,17 +437,20 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   private goalsAt = 0;
-  /** The last goals line drawn: a page the editor rebuilt (moved, popped out) gets it again on ready. */
-  private goalsHtml = '';
   private goalsGen = 0;
+  /** The project and the milestone (else the company goal) the view's title names. */
+  private projectName = '';
+  private goalText = '';
+  private setTitle(): void {
+    if (this.view) this.view.title = [this.projectName, this.goalText].filter(Boolean).join(' / ');
+  }
 
-  /** The two goal lines above the tabs; a failed read says so on one faint line. */
-  /** A pick in the header's milestone menu: the header names it and Issues lists only its tickets. */
+  /** A pick in Issues' ⇅: the title names that milestone and Issues lists only its tickets. */
   private async pickMilestone(name: string): Promise<void> {
-    const html = await this.controller.pickMilestone(name);
-    if (html === undefined) return;
-    this.goalsHtml = html;
-    void this.view?.webview.postMessage({ type: 'goals', html });
+    const text = await this.controller.pickMilestone(name);
+    if (text === undefined) return;
+    this.goalText = text;
+    this.setTitle();
     if (this.active === 'tickets') void this.load('tickets', false);
   }
 
@@ -457,18 +459,19 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
     this.goalsAt = Date.now();
     const gen = ++this.goalsGen;
-    let html: string;
+    let text: string;
     const before = this.controller.todayId;
     try {
-      html = await this.controller.goals();
-    } catch (e) {
+      text = await this.controller.goals();
+    } catch {
+      // An unread goal leaves the title at the project's name until the next read.
       this.goalsAt = 0;
-      html = `<div class="gerr" title="${escapeHtml(errorText(e))}">Goals could not be read: ${escapeHtml(errorText(e).split('\n')[0] ?? '')}</div>`;
+      text = '';
     }
     // A read overtaken by a newer one (a project switch while it ran) is dropped.
     if (gen !== this.goalsGen) return;
-    this.goalsHtml = html;
-    void this.view?.webview.postMessage({ type: 'goals', html });
+    this.goalText = text;
+    this.setTitle();
     // Today's ticket marks its sessions with ☀; redraw the list when it changes.
     if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
   }
@@ -745,7 +748,8 @@ class ProjectPanelController {
     const chosen = this.chosenMilestone(p.name);
     const groups = all.map((g) => ({ ...g, tickets: chosen ? g.tickets.filter((t) => t.milestone === chosen) : g.tickets })).filter((g) => g.tickets.length);
     const where = resolveLaunchTarget(vscode.workspace.getConfiguration('agents').get<string>('launch.defaultTarget'));
-    return renderTickets(groups, (t) => this.ticketRow(p, t), this.headMilestone, where);
+    const seen = this.goalsSeen?.project === p.name ? this.goalsSeen : undefined;
+    return renderTickets(groups, (t) => this.ticketRow(p, t), this.headMilestone, where, seen ? issuesMenu(seen.goals, seen.linearName, chosen) : null);
   }
 
   /** The PRs last read, so a ⇅ change redraws Review without reading GitHub again. */
@@ -796,7 +800,7 @@ class ProjectPanelController {
   private goalsLine(seen: NonNullable<ProjectPanelController['goalsSeen']>): string {
     const chosen = this.chosenMilestone(seen.project);
     this.headMilestone = chosen ?? nextMilestone(seen.goals, seen.linearName)?.name;
-    return renderGoals(seen.goals, seen.linearName, chosen);
+    return goalTitle(seen.goals, seen.linearName, chosen);
   }
 
   /** Company and today's goal of the project's Linear workspace: one `linear goals` read. */
@@ -1354,23 +1358,10 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
   /* One header row: the goal, then the tabs as icons and their controls (owner video,
      2026-10-18 8:59 PM); the project's name is the view's title. */
-  .goals { flex: 1; min-width: 0; overflow: hidden; }
-  .goals[hidden] { display: none; }
-  .goals .gl1 { width: 100%; border: 0; background: none; padding: 2px 4px; margin-left: -4px; border-radius: 6px; font: inherit; cursor: pointer; text-align: left; }
-  .goals .gl1:hover, .goals .gl1[aria-expanded="true"] { background: var(--r-glass-hover); } .goals .gl1:hover .gtx { color: var(--r-text); }
-  .goals .gcar { font-size: 9px; color: var(--r-faint); flex: none; }
   .gmenu-pop { position: fixed; left: 8px; right: auto; top: 34px; min-width: 250px; max-width: calc(100vw - 16px); }
   .menu .mn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .menu .mm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); } .menu .hx { width: 14px; height: 14px; flex: none; }
   .tpick { position: relative; display: inline-flex; } .tcar { opacity: 0; width: 14px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--r-caption); font-size: 9px; cursor: pointer; margin: 0 2px 0 -2px; }
   .tli:hover .tcar, .tcar[aria-expanded="true"] { opacity: 1; } .tcar:hover { background: var(--r-glass-hover); color: var(--r-text); }
-  .goals .gl1, .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
-  .goals a:hover .gtx { color: var(--r-text); }
-  .goals .gl2 { color: var(--r-text-2); }
-  .goals .gl2 b { font-weight: 600; margin-right: 3px; }
-  .goals .gk { width: 13px; text-align: center; flex: none; }
-  .goals .gtx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .goals .gm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); }
-  .goals .gerr { font-size: 11px; color: var(--r-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tab { height: 26px; padding: 0 6px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
   .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
   .tab:hover { background: var(--r-glass-hover); }
@@ -1383,13 +1374,12 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
   /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
-  /* The filter is a field in the tab row, between the tabs and ⇅: one row on every tab (owner, 2026-10-27 1:19 PM). */
-  .hfind { flex: 1; min-width: 60px; margin: 0 2px 0 6px; position: relative; display: flex; align-items: center; }
-  .hfind svg { position: absolute; left: 7px; width: 12px; height: 12px; fill: none; stroke: var(--r-faint); stroke-width: 1.5; pointer-events: none; }
-  /* Option B: the search icon alone; a click turns the row into the field until Esc or the field empties and loses focus. */
-  body.find-icon .hfind { flex: 0 0 26px; min-width: 26px; margin-left: auto; cursor: pointer; } body.find-icon .tabs .sctl { margin-left: 0; } body.find-icon .hfind input { padding: 0; width: 26px; border-color: transparent; background: none; color: transparent; cursor: pointer; } body.find-icon .hfind input::placeholder { color: transparent; }
-  body.find-icon .hfind svg { left: 7px; stroke: var(--r-caption); }
-  body.find-icon .tabs.finding .tab { display: none; } body.find-icon .tabs.finding .hfind { flex: 1; margin-left: 0; } body.find-icon .tabs.finding .hfind input { width: 100%; padding: 0 9px 0 24px; border-color: var(--r-edge); background: var(--r-glass); color: var(--r-text); cursor: text; } body.find-icon .tabs.finding .hfind input::placeholder { color: var(--r-faint); }
+  /* 🔍 beside ⇅; a click turns the tab row into the filter field until Esc, or until it is left empty
+     (owner, 2026-10-27 1:19 PM: one row, the same on every tab). */
+  .hfind { flex: 0 0 26px; min-width: 26px; margin-left: auto; position: relative; display: flex; align-items: center; cursor: pointer; }
+  .hfind svg { position: absolute; left: 7px; width: 12px; height: 12px; fill: none; stroke: var(--r-caption); stroke-width: 1.5; pointer-events: none; }
+  .tabs:not(.finding) .hfind input { padding: 0; width: 26px; border-color: transparent; background: none; color: transparent; cursor: pointer; } .tabs:not(.finding) .hfind input::placeholder { color: transparent; }
+  .tabs.finding .tab { display: none; } .tabs.finding .hfind { flex: 1; margin-left: 0; } .tabs.finding .hfind svg { stroke: var(--r-faint); }
   .hfind input { width: 100%; box-sizing: border-box; height: 24px; padding: 0 9px 0 24px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); font: inherit; font-size: 12px; outline: none; }
   .hfind input:focus { border-color: var(--vscode-focusBorder); }
   .nofind { margin: 10px 6px; color: var(--r-faint); font-size: 11.5px; }
@@ -1594,7 +1584,7 @@ ${MADE_CSS}
   .ttl-edit { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; font-size: 12.5px; padding: 0 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; outline: none; }
   ${logoCss}
   /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
-  .tabs .sctl { margin-left: auto; position: relative; display: flex; align-items: center; min-width: 0; }
+  .tabs .sctl { position: relative; display: flex; align-items: center; min-width: 0; }
   .tabs .sctl .shead { margin: 0; gap: 4px; }
   /* Ticket detail and Settings (PHNX-4329). */
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; font: inherit; font-weight: 600; align-self: flex-start; }
@@ -2032,7 +2022,6 @@ ${MADE_SCRIPT}
       if (!tabsShown[current] && current !== 'sessions' && current !== 'settings') choose('sessions');
       syncTabs();
     }
-    else if (m.type === 'goals') { /* The goal is the view's title now (Rush / milestone), not a line in the page. */ }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }

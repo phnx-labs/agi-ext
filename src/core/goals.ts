@@ -56,7 +56,7 @@ export function nextMilestone(goals: Goals, linearName: string | null | undefine
 
 const msMeta = (m: Milestone) => [shortDate(m.target), m.progress !== undefined ? `${m.progress}%` : ''].filter(Boolean).join(' · ');
 
-/** The milestone menu the header's milestone opens (owner video, 2026-10-27 5:48 AM):
+/** The milestone menu Issues' ⇅ opens (owner videos, 2026-10-27 5:48 AM and 1:19 PM):
  *  the project's open milestones, ✓ on the one Issues shows, All milestones, and the
  *  Linear page. A pick is one `milestone` message; the host remembers it per project. */
 function milestoneMenu(all: Milestone[], chosen: string | undefined, url: string | undefined): string {
@@ -64,31 +64,18 @@ function milestoneMenu(all: Milestone[], chosen: string | undefined, url: string
   return `<div class="menu gmenu-pop" role="menu" hidden><div class="sec">Issues shows</div>${item('', 'All milestones', '')}${all.map((m) => item(m.name, m.name, msMeta(m))).join('')}${url ? `<hr><button data-url="${escapeHtml(url)}"><span class="ck"></span><span class="mn">Open goals in Linear</span><span class="mm">↗</span></button>` : ''}</div>`;
 }
 
-/** One quiet line on the panel's header row (owner video, 2026-10-18 8:59 PM: one row, not
- *  two): the project's next milestone with its date and progress (owner video, 2026-10-22
- *  6:42 AM), else ◎ the company goal with its date; the rest in its tooltip; with neither,
- *  ☀ Today. The ☀ filter on Sessions still finds today's sessions. */
-/** Issues' ⇅: which milestone it lists (the menu the goal line used to open). */
+/** What follows the project in the view's title, "Rush / 0.2.1 - Stable for running agents"
+ *  (owner video, 2026-10-27 1:19 PM: the project and its milestone in the top row, no row of
+ *  its own): the milestone Issues shows, else the next unfinished one, else the company goal,
+ *  else today's ticket; '' with none. */
+export function goalTitle(goals: Goals, linearName?: string | null, chosen?: string): string {
+  const all = openMilestones(goals, linearName);
+  const ms = all.find((m) => m.name === chosen) ?? all[0];
+  return ms?.name ?? goals.company?.name ?? goals.today?.title ?? '';
+}
+
+/** Issues' ⇅: which milestone it lists; null for a project with no open milestone. */
 export function issuesMenu(goals: Goals, linearName?: string | null, chosen?: string): string | null {
   const all = openMilestones(goals, linearName);
   return all.length ? milestoneMenu(all, all.find((m) => m.name === chosen)?.name, goals.company?.url) : null;
-}
-
-export function renderGoals(goals: Goals, linearName?: string | null, chosen?: string): string {
-  const today = goals.today ? `Today · ${goals.today.id}: ${goals.today.title}` : '';
-  const all = openMilestones(goals, linearName);
-  const picked = all.find((m) => m.name === chosen);
-  const ms = picked ?? all[0];
-  if (ms) {
-    const tip = [`${ms.project} milestone${ms.progress !== undefined ? ` · ${ms.progress}% done` : ''}`, 'Click to pick the milestone Issues shows', goals.company ? `Company goal: ${goals.company.name}` : '', goals.week ? `this week: ${goals.week}` : '', today].filter(Boolean).join('\n');
-    return `<button class="gl1" data-menu aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(tip)}"><span class="gk">◇</span><span class="gtx">${escapeHtml(ms.name)}</span><span class="gm">${escapeHtml(msMeta(ms))}</span><span class="gcar">▾</span></button>${milestoneMenu(all, picked?.name, goals.company?.url)}`;
-  }
-  if (goals.company) {
-    const tip = ['Company goal', goals.week ? `this week: ${goals.week}` : '', today].filter(Boolean).join('\n');
-    return `<a class="gl1" href="#"${goals.company.url ? ` data-url="${escapeHtml(goals.company.url)}"` : ''} title="${escapeHtml(tip)}"><span class="gk">◎</span><span class="gtx">${escapeHtml(goals.company.name)}</span><span class="gm">${escapeHtml(shortDate(goals.company.target))}</span></a>`;
-  }
-  if (goals.today) {
-    return `<a class="gl2" href="#"${goals.today.url ? ` data-url="${escapeHtml(goals.today.url)}"` : ''} title="${escapeHtml(today)}"><span class="gk">☀</span><span class="gtx"><b>Today</b> ${escapeHtml(goals.today.title)}</span><span class="gm">${escapeHtml(goals.today.id)}</span></a>`;
-  }
-  return '';
 }

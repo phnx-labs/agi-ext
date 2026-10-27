@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { parseGoals, renderGoals } from './goals';
+import { goalTitle, issuesMenu, parseGoals } from './goals';
 
 // The shape `linear goals --json` returns (2026-10-12), trimmed to what the panel reads.
 const RAW = JSON.stringify({
@@ -18,19 +18,7 @@ test('goals: the company initiative, the week and my day goal, from linear goals
   expect(parseGoals(JSON.stringify({ company: { initiative: { name: 'C' } }, me: { dayGoal: null } }))).toEqual({ company: { name: 'C', target: undefined, url: undefined } });
 });
 
-test('goals render as one quiet line for the header row; the week and the day ride the tooltip', () => {
-  const html = renderGoals(parseGoals(RAW));
-  expect(html).toContain('class="gl1"');
-  expect(html).toContain('title="Company goal\nthis week: Launch gate green on all three harnesses\nToday · PHNX-4353: Make the Rush Cloud infrastructure work with secrets"');
-  expect((html.match(/<a class="gl/g) || []).length).toBe(1);
-  // No company goal: the day goal is the line.
-  const day = renderGoals({ today: { id: 'PHNX-4353', title: 'Ship it', url: 'https://linear.app/x/issue/PHNX-4353' } });
-  expect(day).toContain('<b>Today</b> Ship it');
-  expect(day).toContain('data-url="https://linear.app/x/issue/PHNX-4353"');
-  expect(renderGoals({})).toBe('');
-});
-
-test("the project's next unfinished milestone leads the line, with its date and progress; the company goal moves to the tooltip (owner video, 2026-10-22 6:42 AM)", () => {
+test("the view's title names the next unfinished milestone, else the company goal, else today's ticket (owner, 2026-10-27 1:26 PM)", () => {
   const raw = JSON.parse(RAW);
   raw.company.milestones = [
     { name: '0.2.2 - Better and safer integrations', project: 'Rush', targetDate: '2026-10-26', progress: 2 },
@@ -40,10 +28,18 @@ test("the project's next unfinished milestone leads the line, with its date and 
   ];
   const goals = parseGoals(JSON.stringify(raw));
   expect(goals.milestones).toHaveLength(4);
-  const html = renderGoals(goals, 'rush');
-  expect(html).toContain('<span class="gk">◇</span><span class="gtx">0.2.1 - Stable for running agents</span><span class="gm">Oct 23 · 12%</span>');
-  expect(html).toContain('Company goal: Rush Cloud - first paying customers');
-  // A project with no milestone, or no Linear project, keeps the company goal.
-  expect(renderGoals(goals, 'Nothing here')).toContain('<span class="gtx">Rush Cloud - first paying customers</span>');
-  expect(renderGoals(goals)).toContain('<span class="gtx">Rush Cloud - first paying customers</span>');
+  expect(goalTitle(goals, 'rush')).toBe('0.2.1 - Stable for running agents');
+  // The milestone picked in Issues' ⇅ is the one named.
+  expect(goalTitle(goals, 'rush', '0.2.2 - Better and safer integrations')).toBe('0.2.2 - Better and safer integrations');
+  // A project with no milestone, or no Linear project, keeps the company goal; with none, today's ticket; else nothing.
+  expect(goalTitle(goals, 'Nothing here')).toBe('Rush Cloud - first paying customers');
+  expect(goalTitle(goals)).toBe('Rush Cloud - first paying customers');
+  expect(goalTitle({ today: { id: 'PHNX-4353', title: 'Ship it', url: 'https://linear.app/x/issue/PHNX-4353' } })).toBe('Ship it');
+  expect(goalTitle({})).toBe('');
+  // Issues' ⇅ lists the open milestones, ✓ on the one shown; a project with none has no menu.
+  const menu = issuesMenu(goals, 'rush', '0.2.2 - Better and safer integrations')!;
+  expect(menu).toContain('data-milestone="0.2.1 - Stable for running agents"');
+  expect(menu).toContain('aria-checked="true" data-milestone="0.2.2 - Better and safer integrations"');
+  expect(menu).not.toContain('Done already');
+  expect(issuesMenu(goals, 'Nothing here')).toBeNull();
 });

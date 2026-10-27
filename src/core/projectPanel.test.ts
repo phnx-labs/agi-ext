@@ -393,16 +393,17 @@ test('an ask leads its own group; group by app orders this window, other windows
   expect(at('ask')).toBeLessThan(at('bg'))
   expect(at('ask')).toBeGreaterThan(html.indexOf('data-group="background'))
   expect([at('mine'), at('win'), at('gh'), at('bg'), at('left')]).toEqual([at('mine'), at('win'), at('gh'), at('bg'), at('left')].sort((x, y) => x - y))
-  // This window's tabs are named by the workspace beside the editor's icon, then the count (owner, 2026-10-22 1:01 PM); ⇅ sits on the first group.
-  expect(html).toContain('alt="VSCodium"></span><span class="gname"><b>agents</b> <span class="n">1</span>')
-  expect(html.indexOf('data-menu')).toBeGreaterThan(html.indexOf('data-group="here"'))
+  // This window's tabs are named by the workspace beside the editor's icon, then the count (owner, 2026-10-22 1:01 PM);
+  // ⇅ is the tab row's, ahead of every group (owner video, 2026-10-27 1:19 PM).
+  expect(html).toContain('alt="VSCodium"></span><span class="gname"><b>agents</b> <span class="n">1</span></span></div>')
+  expect(html.indexOf('data-menu')).toBeLessThan(html.indexOf('data-group='))
   expect(html.match(/data-menu/g)).toHaveLength(1)
   expect(html).toContain('<b>agents-cli</b>')
   expect(html).toContain('src="vscode-resource:/assets/apps/ghostty.png"')
   expect(html).toContain('data-act="close-all"')
-  // The header carries only its controls; the tab already counts.
+  // The header carries only ⇅; the tab already counts, and search is the page's own field in the tab row.
   expect(html).not.toContain('your move</span>')
-  expect(html).toContain('data-search')
+  expect(html).not.toContain('data-search')
   expect(html.match(/data-group=/g)?.length).toBe(5)
 })
 
@@ -440,10 +441,9 @@ test('the ⇅ menu filters, then sorts; Tab order keeps the tab bar, any other s
   // Name is the names alone; what asks still leads.
   const named = renderSessions([row({ sessionId: 'z', title: 'Zed', tabHere: false }), row({ sessionId: 'y', title: 'Alpha', phase: 'idle', liveStatus: 'idle', tabHere: false })], NOW, { selectedId: null, here: HERE, prefs: prefs({ sort: 'name' }) })
   expect(named.indexOf('data-session="y"')).toBeLessThan(named.indexOf('data-session="z"'))
-  // ⇅ rides the first header drawn: Favorites when it shows.
+  // With Favorites shown, ⇅ is still the tab row's alone.
   const fav = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), favorites: new Set(['w']) })
-  expect(fav.indexOf('data-menu')).toBeGreaterThan(fav.indexOf('data-group="favorites"'))
-  expect(fav.indexOf('data-menu')).toBeLessThan(fav.indexOf('data-group="here"'))
+  expect(fav.indexOf('data-menu')).toBeLessThan(fav.indexOf('data-group="favorites"'))
   expect(fav.match(/data-menu/g)).toHaveLength(1)
 })
 
@@ -692,14 +692,13 @@ test('a live tool call reads as the command it runs, never as a "Tool: args" lab
 })
 
 
-test("today's goal: its sessions carry ☀, the header counts them, and the toggle shows only them", () => {
+test("today's goal: its sessions carry ☀, ⇅ counts them, and Only today's goal shows only them", () => {
   const rows = [
     row({ sessionId: 'goal', title: 'Secrets in cloud runs', topic: 'Work on PHNX-4353: make the Rush Cloud infrastructure work with secrets', tabHere: true }),
     row({ sessionId: 'other', title: 'Landing page hero', topic: 'PHNX-4290 landing page', tabHere: true }),
   ]
   const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs(), todayId: 'PHNX-4353' })
-  expect(html).toContain('data-pref="todayOnly" data-value="true" aria-pressed="false"')
-  expect(html).toContain('☀ 1 on today</button>')
+  expect(html).toContain('<button role="menuitemcheckbox" aria-checked="false" data-pref="todayOnly" data-value="true"><span class="ck"></span>Only today\'s goal (PHNX-4353, 1)</button>')
   const goalCard = html.slice(html.indexOf('data-session="goal"'), html.indexOf('data-session="goal"') + 600)
   expect(goalCard).toContain('<span class="tday" title="On today\'s goal">☀</span>')
   const only = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ todayOnly: true }), todayId: 'PHNX-4353' })
@@ -707,7 +706,7 @@ test("today's goal: its sessions carry ☀, the header counts them, and the togg
   expect(only).not.toContain('data-session="other"')
   // No goal read yet: no toggle, no marks, nothing filtered.
   const none = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ todayOnly: true }) })
-  expect(none).not.toContain('on today')
+  expect(none).not.toContain('todayOnly')
   expect(none).toContain('data-session="other"')
   expect(readSessionPrefs({ todayOnly: true }).todayOnly).toBe(true)
   expect(readSessionPrefs({}).todayOnly).toBe(false)

@@ -77,7 +77,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   Comments live on the Linear page; the extension has no comment box. Every `linear` call
   (`runLinear`) sets `LINEAR_PROFILE` to the project's `linear.profile` (`default` when it has
   none) and names the Linear project by id (`--project <id>`), so no folder picks the workspace.
-  A fourth: the Project panel's goal lines are one `linear goals --json` read
+  A fourth: the milestone in the Project panel's title is one `linear goals --json` read
   when the panel shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never
   per tab or per click.
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
@@ -281,7 +281,7 @@ going on, where, and what came out of it" in one look; text explains only what a
   `prefers-reduced-motion`. Nothing flashes for as long as it waits. The one answer to a
   click: what was clicked to open rings once and "Opening …" shows until the host's
   `opened` (owner video, 2026-10-19 12:58 AM); nothing silently waits.
-- **View, filter, then sort, in one ⇅ menu** on the list's first group header, with checkmarks,
+- **View, filter, then sort, in one ⇅ menu** at the end of the tab row, with checkmarks,
   as in the AGI Menu (View: Default or Compact, where a listed card is its title row, the
   agent's latest line and what it made, owner, 2026-10-22 1:02 PM; Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
   either way; then Sort: Tab order, Last active, Newest, Name). No grouping choice: sessions
@@ -294,11 +294,16 @@ going on, where, and what came out of it" in one look; text explains only what a
   own order after the asks). Under the pinned card come Favorites (when any are
   starred), then the groups; Settings > Ready for review and Idle groups (off) brings back
   those two groups for sessions with no tab here (owner video, 2026-10-22 6:42 AM).
-- **One header row.** The project's name is the view's title ("PROJECT: RUSH"; VS Code adds
-  the container's "PROJECT:" and no API removes it; ⇄ beside it switches it), so the Project
-  panel's header is one row: the goal (the project's next milestone, else the company goal),
-  then the tabs as icons, ✳ Lead first, and that tab's own controls (☀ and search; Review's
-  ⇅), none of which grow when a list arrives. Settings > Tabs turns Review and Issues off.
+- **One header row, the same on every tab.** VS Code's top row names the project and its
+  milestone, "AGI: RUSH / 0.2.1 - Stable for running agents": the view's title is "<project> /
+  <milestone>" (else the company goal; `goalTitle`), the container is named AGI because VS Code
+  always writes the container's name first and drops a view's description in a one-view sidebar,
+  and ⇄ beside it switches the project. The panel's own header is one row: the tabs as icons,
+  ✳ Lead first, then 🔍 and ⇅ in the same place on every tab (owner video, 2026-10-27 1:19 PM:
+  "the view changes … the search is even gone … the placement of the icon also changes"). 🔍
+  turns the row into the filter field for that tab's list until Esc (each tab keeps its words);
+  ⇅ is dimmed on a tab with nothing to sort and on Issues picks the milestone it lists (`tabHead`,
+  `issuesMenu`). No goal line and no filter row: the list starts under the one row. Settings > Tabs turns Review and Issues off.
   Settings is the gear, last of the panel's title icons; Refresh lives in Settings, and ⌃1–⌃4
   switch the tabs (owner videos, 2026-10-17, 2026-10-18 8:59 PM and 2026-10-22 6:42 AM).
 - **A click selects and brings its tab forward; it never resumes.** A card click shows the

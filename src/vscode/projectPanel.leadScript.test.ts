@@ -86,9 +86,10 @@ test('a session the Lead named opens through the host', () => {
   expect(sent.filter((m) => m.type === 'leadRef')).toEqual([{ type: 'leadRef', ref: { kind: 'session', id: 'c106a56b-2ccb', title: 'Rush account creation' }, external: false }]);
 });
 
-test('the Lead puts nothing on the tab row: no speaker, no ⟳', () => {
+test('the Lead adds nothing to the tab row: no speaker, no ⟳, only the dimmed ⇅ every tab keeps in place', () => {
   deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model()) });
-  expect(el('.tabs .sctl').innerHTML).toBe('');
+  expect(el('.tabs .sctl').querySelectorAll('button').length).toBe(1);
+  expect(el('.tabs .sctl button').hasAttribute('disabled')).toBe(true);
   expect(document.querySelector('[data-lead-speak], [data-lead-refresh]')).toBeNull();
 });
 

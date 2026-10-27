@@ -38,24 +38,24 @@ const click = (sel: string) => el(sel).dispatchEvent(new window.MouseEvent('clic
 deliver({ type: 'tab', tab: 'sessions' });
 deliver({ type: 'html', tab: 'sessions', html: draw() });
 
-test('⇅ sits on the first group header; a click in its menu never folds the group, and the menu survives a redraw', () => {
-  expect(el('.tabs .sctl [data-menu]')).toBeNull();
-  expect(el('.grp[data-group="here"] .gh [data-menu]')).not.toBeNull();
-  click('.grp .gh [data-menu]');
-  expect(el('.grp .gh .menu').hidden).toBe(false);
+test('⇅ sits in the tab row on every tab (owner video, 2026-10-27 1:19 PM); a click in its menu never folds a group, and the menu survives a redraw', () => {
+  expect(el('.grp .gh [data-menu]')).toBeNull();
+  expect(el('.tabs .sctl [data-menu]')).not.toBeNull();
+  click('.tabs .sctl [data-menu]');
+  expect(el('.tabs .sctl .menu').hidden).toBe(false);
   sent.length = 0;
-  click('.grp .gh .menu .sec');
+  click('.tabs .sctl .menu .sec');
   expect(sent.filter((m) => m.type === 'fold')).toEqual([]);
-  expect(el('.grp .gh .menu').hidden).toBe(false);
+  expect(el('.tabs .sctl .menu').hidden).toBe(false);
   // A stream tick redraws the list; the open menu stays open.
   deliver({ type: 'html', tab: 'sessions', html: draw({}, [row('a', 1), row('b', 2), row('c', 3)]) });
-  expect(el('.grp .gh .menu').hidden).toBe(false);
-  click('.grp .gh .menu [data-pref="sort"][data-value="name"]');
+  expect(el('.tabs .sctl .menu').hidden).toBe(false);
+  click('.tabs .sctl .menu [data-pref="sort"][data-value="name"]');
   expect(sent).toContainEqual({ type: 'prefs', key: 'sort', value: 'name' });
   expect(sent.filter((m) => m.type === 'fold')).toEqual([]);
-  // A click outside closes it; a click on the header itself still folds.
+  // A click outside closes it; a click on a group header still folds.
   click('.grp .gh .gname');
-  expect(el('.grp .gh .menu').hidden).toBe(true);
+  expect(el('.tabs .sctl .menu').hidden).toBe(true);
   expect(sent.at(-1)).toEqual({ type: 'fold', group: 'here' });
 });
 
@@ -97,4 +97,22 @@ test('the filter bar keeps only the listed cards that match every word typed, su
   box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
   expect(box.value).toBe('');
   expect(shown()).toEqual(['a', 'b', 'c']);
+});
+
+test('the tab row is the same on every tab (owner video, 2026-10-27 1:19 PM): 🔍 opens the filter in the row, Esc gives the tabs back, and a tab with nothing to sort keeps a dimmed ⇅ in place', () => {
+  const box = el('.tabs .hfind [data-find]') as unknown as HTMLInputElement;
+  box.focus();
+  expect(el('.tabs').classList.contains('finding')).toBe(true);
+  box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
+  expect(el('.tabs').classList.contains('finding')).toBe(false);
+  // Issues and Lead send no controls of their own: the row still ends in ⇅, dimmed.
+  deliver({ type: 'tab', tab: 'tickets' });
+  deliver({ type: 'html', tab: 'tickets', html: '<div class="empty">No open tickets in this project.</div>' });
+  expect(el('.tabs .sctl [disabled]')).not.toBeNull();
+  expect(el('.tabs .hfind [data-find]')).toBe(box as unknown as HTMLElement);
+  expect(box.placeholder).toBe('Filter');
+  deliver({ type: 'tab', tab: 'sessions' });
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  expect(el('.tabs .sctl [data-menu]')).not.toBeNull();
+  expect(box.placeholder).toBe('Filter · ⌘K all');
 });
