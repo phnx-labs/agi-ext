@@ -51,6 +51,7 @@ describe('a pinned page gets its icon', () => {
         const { pathname } = new URL(req.url);
         if (pathname === '/declares') return new Response('<html><head><link rel="icon" href="/assets/mark.png"></head></html>', { headers: { 'content-type': 'text/html' } });
         if (pathname === '/assets/mark.png' || pathname === '/favicon.ico') return new Response(PNG, { headers: { 'content-type': 'image/png' } });
+        if (pathname === '/moved') return new Response(null, { status: 302, headers: { location: '/declares' } });
         if (pathname === '/huge') {
           // Headers at once, then far more body than a page may take: never buffered whole.
           const chunk = new TextEncoder().encode('x'.repeat(64 * 1024));
@@ -69,6 +70,9 @@ describe('a pinned page gets its icon', () => {
   });
   test("from the site's /favicon.ico when the page declares none", async () => {
     expect(await resolvePageIcon(`${base}/plain`)).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
+  });
+  test('a redirect is followed hop by hop to the page and its declared icon', async () => {
+    expect(await resolvePageIcon(`${base}/moved`)).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
   });
   test('a page whose body runs past the cap falls back to /favicon.ico', async () => {
     expect(await resolvePageIcon(`${base}/huge`)).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
