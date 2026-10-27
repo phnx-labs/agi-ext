@@ -3,8 +3,9 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
+import { AvatarCache } from '../core/avatarCache';
 import { nextMilestone, parseGoals, renderGoals, type Goals } from '../core/goals';
-import { resolveLaunchTarget } from '../core/launchTarget';
+import { resolveLaunchTarget, type LaunchTarget } from '../core/launchTarget';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -180,7 +181,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
       else if (msg.type === 'reviewPrefs' && typeof msg.key === 'string' && typeof msg.value === 'string') void this.controller.setReviewPref(msg.key, msg.value).then((html) => { if (html) this.post('prs', html); });
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
-      else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id, typeof msg.agent === 'string' ? msg.agent : undefined);
+      else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id, typeof msg.agent === 'string' ? msg.agent : undefined, typeof msg.where === 'string' ? resolveLaunchTarget(msg.where) : undefined);
       else if (msg.type === 'milestone' && typeof msg.name === 'string') void this.pickMilestone(msg.name);
       else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
       // The front card's reply box: its words go into that session's tab here, through
@@ -495,6 +496,20 @@ class ProjectView implements vscode.WebviewViewProvider {
     await this.loadDevices(true);
   }
 
+  private avatarTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Pictures that just reached the avatar cache: Issues or Review is drawn again from what it last read. */
+  avatarsArrived(): void {
+    clearTimeout(this.avatarTimer);
+    this.avatarTimer = setTimeout(async () => {
+      const tab = this.active;
+      if ((tab !== 'tickets' && tab !== 'prs') || !this.view?.visible) return;
+      const p = await this.controller.project().catch(() => null);
+      const html = p ? await this.controller.redrawn(tab, p).catch(() => undefined) : undefined;
+      if (html !== undefined && this.active === tab) this.post(tab, html);
+    }, 250);
+  }
+
   private post(tab: TabId, html: string): void {
     this.tabs.get(tab)!.html = html;
     if (tab === this.active) void this.view?.webview.postMessage({ type: 'html', tab, html });
@@ -525,8 +540,25 @@ class ProjectPanelController {
   /** Which session tabs this window had in front, and when: Next that needs you and Back read it. */
   readonly history = new FrontHistory();
 
+  private readonly avatars: AvatarCache;
+
   constructor(private readonly context: vscode.ExtensionContext) {
     this.view = new ProjectView(this, context);
+    this.avatars = new AvatarCache(path.join(os.homedir(), '.agents', '.cache', 'avatars'), () => this.view.avatarsArrived());
+  }
+
+  /** A person's picture from the avatar cache as the webview loads it; null (initials) until it is there. */
+  private avatarUri(url: string): string | null {
+    const file = this.avatars.file(url);
+    const webview = this.view.view?.webview;
+    return file && webview ? webview.asWebviewUri(vscode.Uri.file(file)).toString() : null;
+  }
+
+  /** Issues or Review drawn again from the read already made, never a new one. */
+  async redrawn(tab: 'tickets' | 'prs', p: ProjectRef): Promise<string | undefined> {
+    if (tab === 'tickets') return this.render('tickets', p, false);
+    const seen = this.reviewSeen;
+    return seen ? renderPrsProgress(seen.slugs, seen.done, Date.now(), this.reviewOptions()) : undefined;
   }
 
   /** The picked project for this workspace, else the one containing its first folder. */
@@ -707,7 +739,7 @@ class ProjectPanelController {
   private reviewSeen: { slugs: string[]; done: Map<string, PrsModel['repos'][number]> } | undefined;
 
   private reviewOptions() {
-    return { prefs: readReviewPrefs(this.context.workspaceState.get(REVIEW_PREFS_KEY)), mergeWith: getSettings(this.context).mergeMethod ?? 'squash' };
+    return { prefs: readReviewPrefs(this.context.workspaceState.get(REVIEW_PREFS_KEY)), mergeWith: getSettings(this.context).mergeMethod ?? 'squash', avatar: (url: string) => this.avatarUri(url) };
   }
 
   /** One Review ⇅ choice; the redrawn tab, or undefined when nothing was read yet. */
@@ -777,6 +809,7 @@ class ProjectPanelController {
       agentKey: agent.key,
       agentName: agent.name,
       peek: renderTicketPeek(t.identifier, t.description, onIt),
+      avatar: t.assigneeAvatar ? this.avatarUri(t.assigneeAvatar) : null,
       onIt: rows.map((r) => ({ agentType: r.agentType, state: sessionStateOf(r), title: sessionTitle(r), sessionId: r.sessionId, host: r.host })),
     };
   }
@@ -838,14 +871,14 @@ class ProjectPanelController {
     }
   }
 
-  /** Start on a ticket from its row: the agent in a new tab here, through the same
-   *  launch path as Agents: Spawn With Prompt. */
-  async startOnTicket(id: string, agent?: string): Promise<void> {
+  /** Start on a ticket from its row: the agent in a new tab here, running where ▾ says
+   *  (else the Launch target setting), through the same launch as Agents: Spawn With Prompt. */
+  async startOnTicket(id: string, agent?: string, where?: LaunchTarget): Promise<void> {
     const t = this.ticketById(id);
     if (!t) { void this.view.notice(`${id} is not in the ticket list just read; Issues is reading it again.`); void this.view.load('tickets', true); return; }
     const key = agent && PICKABLE_AGENTS.some((a) => a.key === agent) ? agent : this.ticketAgent(t).key;
     try {
-      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: key, prompt: ticketPrompt(t) });
+      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: key, prompt: ticketPrompt(t), where: where ?? resolveLaunchTarget(vscode.workspace.getConfiguration('agents').get<string>('launch.defaultTarget')) });
     } catch (e) {
       void vscode.window.showErrorMessage(`Could not start an agent on ${id}: ${errorText(e)}`);
     }
@@ -1208,7 +1241,7 @@ export function shell(cspSource: string, logoCss = ''): string {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com https://public.linear.app https://uploads.linear.app data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
+  content="default-src 'none'; img-src ${cspSource} data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
 <style>
 ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
     background: var(--vscode-sideBar-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }

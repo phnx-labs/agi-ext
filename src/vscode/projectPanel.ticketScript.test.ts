@@ -12,7 +12,7 @@ const { renderTicketPeek } = await import('../core/ticketPeek');
 
 const issue = (id: string, description: string) => ({ identifier: id, title: `t ${id}`, url: `https://linear.app/x/issue/${id}`, description, priority: 2, state: { type: 'started', name: 'Doing' } });
 const groups = parseTickets(JSON.stringify({ issues: [issue('A-1', '## Outcome\nSign-up works.'), issue('A-2', '')] }));
-const draw = () => renderTickets(groups, (t) => ({ agentName: 'Claude', peek: renderTicketPeek(t.identifier, t.description), agentKey: 'claude', onIt: [] }));
+const draw = () => renderTickets(groups, (t) => ({ agentName: 'Claude', peek: renderTicketPeek(t.identifier, t.description), avatar: null, agentKey: 'claude', onIt: [] }));
 
 const window = new Window();
 afterAll(() => window.happyDOM.close());
