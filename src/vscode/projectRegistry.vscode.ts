@@ -29,6 +29,11 @@ export function readRegistry(force = false): Promise<ProjectRef[]> {
   return reread();
 }
 
+/** Drop the held list, so a test that reads the registry leaves none for the next. */
+export function forgetRegistry(): void {
+  held = undefined;
+}
+
 function reread(): Promise<ProjectRef[]> {
   if (reading) return reading;
   reading = runAgentsArgs(['projects', 'list', '--json'], { timeout: 30_000 })

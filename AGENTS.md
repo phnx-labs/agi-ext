@@ -67,9 +67,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   The Project panel opens an artifact through the same path: `openListedArtifact`
   (`src/vscode/sessionCardActions.ts`) finds the row by session id AND host and copies only
   an artifact that row lists. Nothing loads on selection.
-  A third: a ticket row in the Project panel's Issues tab opens its Linear page as a tab and
-  peeks at the description the Issues read already carried (`renderTicketPeek`,
-  `src/core/ticketPeek.ts`); it reads nothing. A ticket tile for a ticket that read does not
+  A third: a ticket row in the Project panel's Issues tab peeks at the description the Issues
+  read already carried (`renderTicketPeek`, `src/core/ticketPeek.ts`) and its ↗ opens the
+  Linear page as a tab; neither reads anything. Assignee and PR author pictures are each
+  downloaded once into `~/.agents/.cache/avatars/` and drawn from there (`AvatarCache`,
+  `src/core/avatarCache.ts`); a picture not there yet is initials, never a remote `src`. A ticket tile for a ticket that read does not
   hold reads that one ticket with `linear tasks <ID> --json`
   (`ProjectPanelController.openTicketPage`) for its page, on the click only, never on a timer.
   Comments live on the Linear page; the extension has no comment box. Every `linear` call
@@ -179,9 +181,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   child, one turn at a time per window, killed after 120 s of silence or 15 min, or when the
   window closes; nothing stops a turn. Whatever the Lead would change arrives held, as a row
   with its own ✓ (✓ Confirm all runs them in turn); nothing in the tab acts without one.
-  The Lead tab reads `agents lead history|status --json` when it shows and on its ⟳, never
-  on a timer. An ask carries `--context` (front tab, agent tabs) and, with `agents.lead.speak`,
-  `--speak`; agents-cli does the speaking. `~/.agents/lead/surface.json` is shared with
+  The Lead tab reads `agents lead history|status --json` when it shows and when agents-cli
+  writes the project's history (`watchLeadHistory`, `src/core/lead.ts`), never on a timer
+  and with no ⟳; a turn agents-cli took on its own (`trigger: 'asks'`) is the Lead's, never "You". An ask carries `--context` (front tab, agent tabs) and, with `agents.lead.speak`
+  (Settings > Lead), `--speak`; agents-cli does the speaking. `~/.agents/lead/surface.json` is shared with
   FastWispr: while it says `bubble`, ⌥Space is FastWispr's (`agents.lead.bubble` gates the keybinding); the extension
   never creates `~/.agents/lead` just to watch it. A held ⌥Space is one press (`PressGate`),
   and the Lead's mic never takes over the reply box's recording (`nextMic`,

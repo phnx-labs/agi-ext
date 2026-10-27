@@ -7,7 +7,9 @@ import {
   buildNewAgentLaunchCommand,
   buildTabLaunchCommand,
   harnessLaunchRegistrations,
+  launchOptsForTarget,
   resolveLaunchTarget,
+  type LaunchTarget,
   type NewAgentLaunchOpts,
 } from '../core/launchTarget';
 import {
@@ -1216,7 +1218,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('agents.spawnWithPrompt', async (args?: { agent?: string; prompt?: string }) => {
+    vscode.commands.registerCommand('agents.spawnWithPrompt', async (args?: { agent?: string; prompt?: string; where?: LaunchTarget }) => {
       await spawnWithPrompt(context, args);
     })
   );
@@ -3747,7 +3749,7 @@ async function maybeRunFirstSetup(context: vscode.ExtensionContext, force = fals
 
 async function spawnWithPrompt(
   context: vscode.ExtensionContext,
-  args?: { agent?: string; prompt?: string }
+  args?: { agent?: string; prompt?: string; where?: LaunchTarget }
 ): Promise<void> {
   let agentKey: string | undefined = args?.agent;
   let prompt: string | undefined = args?.prompt;
@@ -3771,8 +3773,15 @@ async function spawnWithPrompt(
     return;
   }
 
+  const target = launchOptsForTarget(args?.where ?? 'auto');
+  let place: { host?: string; local?: boolean } = target.local ? { local: true } : {};
+  if (target.pickHost) {
+    const picked = await pickLaunchHost(`${def.title} — run on…`);
+    if (picked.cancelled) return;
+    place = picked.host ? { host: picked.host } : { local: true };
+  }
   const agentConfig = createAgentConfig(context.extensionPath, def.title, def.command, def.icon, def.prefix);
-  await openSingleAgentWithQueue(context, agentConfig, [prompt]);
+  await openSingleAgentWithQueue(context, agentConfig, [prompt], place);
 }
 
 async function spawnWithContext(context: vscode.ExtensionContext): Promise<void> {
