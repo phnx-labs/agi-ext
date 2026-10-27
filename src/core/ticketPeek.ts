@@ -1,6 +1,6 @@
-// A ticket row's peek in the Issues tab: the description the list read already carries,
-// the sessions on it and Start, drawn under the row when a click opens its Linear tab.
-// The full ticket, comments included, is that tab.
+// A ticket row's peek in the Issues tab: the description the list read already carries
+// and the sessions on it, drawn under the row when a click unfolds it. The full ticket,
+// comments included, is its Linear page.
 
 import { escapeHtml } from '../shared/sessionCards';
 
@@ -71,12 +71,9 @@ function miniMarkdown(text: string): string {
 /** A session already on the ticket, as the peek lists it. */
 export interface TicketSession { sessionId: string; host: string; title: string; state: string; where: string }
 
-/** What Start runs: the delegated agent when it is one this version launches, else your default. */
-export interface TicketStart { agentName: string; delegated: boolean }
-
 /** The description's opening lines, cut at a line so no mark is split. */
-function opening(description: string): { text: string; more: boolean } {
-  if (description.length <= PEEK_CHARS) return { text: description, more: false };
+function opening(description: string): string {
+  if (description.length <= PEEK_CHARS) return description;
   const lines: string[] = [];
   let n = 0;
   for (const line of description.split('\n')) {
@@ -84,20 +81,15 @@ function opening(description: string): { text: string; more: boolean } {
     lines.push(line);
     n += line.length + 1;
   }
-  return { text: lines.join('\n'), more: true };
+  return lines.join('\n');
 }
 
-export function renderTicketPeek(id: string, description: string, start: TicketStart, onIt: TicketSession[] = []): string {
-  const eid = escapeHtml(id);
-  const { text, more } = opening(description.trim());
-  const startBtn = (primary: boolean, words: string) => `<button class="${primary ? 'primary' : 'link'}" data-start-ticket="${eid}">${words}</button>`;
-  // A ticket already being worked shows its sessions first; starting another is the quiet option.
+/** The description's opening lines and the sessions already on it, each one click to
+ *  its tab. Starting an agent is the row's logo, the page its ↗ (owner, 2026-10-27 6:11 AM). */
+export function renderTicketPeek(id: string, description: string, onIt: TicketSession[] = []): string {
+  const text = opening(description.trim());
   const work = onIt.length
-    ? `<div class="sh">On it now</div><div class="onit">${onIt.map((s) => `<div class="ons"><span class="onm"><b>${escapeHtml(s.title)}</b><small>${escapeHtml(s.state)} · ${escapeHtml(s.where)}</small></span><button class="primary" data-open-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}">Open</button></div>`).join('')}</div>
-      <div class="hint">Another agent on it? ${startBtn(false, `Start ${escapeHtml(start.agentName)} in a new tab`)}</div>`
-    : `<div class="tact">${startBtn(true, `▶ Start ${escapeHtml(start.agentName)}`)}<span class="hint">${start.delegated ? 'Linear delegates it to this agent' : 'your default agent'}, in a new tab here</span></div>`;
-  return `<div class="tpeek" data-peek="${eid}" hidden>
-  <div class="tbody">${text ? miniMarkdown(text) : '<p class="none">No description.</p>'}${more ? '<p class="none">More in its tab.</p>' : ''}</div>
-  ${work}
-</div>`;
+    ? `<div class="onit">${onIt.map((s) => `<button class="ons" data-open-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}"><b>${escapeHtml(s.title)}</b><small>${escapeHtml(s.state)} · ${escapeHtml(s.where)}</small></button>`).join('')}</div>`
+    : '';
+  return `<div class="tpeek" data-peek="${escapeHtml(id)}" hidden><div class="tbody">${text ? miniMarkdown(text) : '<p class="none">No description.</p>'}</div>${work}</div>`;
 }

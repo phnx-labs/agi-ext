@@ -776,7 +776,7 @@ class ProjectPanelController {
     return {
       agentKey: agent.key,
       agentName: agent.name,
-      peek: renderTicketPeek(t.identifier, t.description, { agentName: agent.name, delegated: agent.delegated }, onIt),
+      peek: renderTicketPeek(t.identifier, t.description, onIt),
       onIt: rows.map((r) => ({ agentType: r.agentType, state: sessionStateOf(r), title: sessionTitle(r), sessionId: r.sessionId, host: r.host })),
     };
   }
@@ -1549,14 +1549,11 @@ ${MADE_CSS}
   .tpeek code, .tpeek pre { font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .tpeek pre { white-space: pre-wrap; background: var(--r-well); border-radius: 6px; padding: 6px; }
   .tpeek a { color: var(--vscode-textLink-foreground); }
-  .tpeek .hint, .tpeek .none { color: var(--r-caption); font-size: 11px; }
-  .tpeek .tact { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .tpeek .sh { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--r-faint); }
+  .tpeek .none { color: var(--r-caption); font-size: 11px; }
   .tpeek .onit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .tpeek .ons { display: flex; gap: 6px; align-items: center; min-width: 0; border: 1px solid var(--r-edge); border-radius: 7px; padding: 5px 7px; }
-  .tpeek .onm { flex: 1; min-width: 0; display: grid; } .tpeek .onm b { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tpeek .onm small { color: var(--r-caption); font-size: 10.5px; }
-  .tpeek .ons .primary { flex: none; }
-  .tpeek button.link { background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-decoration: underline; }
+  .tpeek .ons { display: grid; min-width: 0; text-align: left; font: inherit; color: var(--r-text); background: none; border: 1px solid var(--r-edge); border-radius: 7px; padding: 5px 7px; cursor: pointer; }
+  .tpeek .ons:hover { background: var(--r-glass-hover); }
+  .tpeek .ons b { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tpeek .ons small { color: var(--r-caption); font-size: 10.5px; }
   .settings { padding: 4px 2px 16px; }
   .settings .sh { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); margin: 14px 0 4px; }
   .settings .srow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); cursor: pointer; }

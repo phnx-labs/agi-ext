@@ -12,7 +12,7 @@ const { renderTicketPeek } = await import('../core/ticketPeek');
 
 const issue = (id: string, description: string) => ({ identifier: id, title: `t ${id}`, url: `https://linear.app/x/issue/${id}`, description, priority: 2, state: { type: 'started', name: 'Doing' } });
 const groups = parseTickets(JSON.stringify({ issues: [issue('A-1', '## Outcome\nSign-up works.'), issue('A-2', '')] }));
-const draw = () => renderTickets(groups, (t) => ({ agentName: 'Claude', peek: renderTicketPeek(t.identifier, t.description, { agentName: 'Claude', delegated: false }), agentKey: 'claude', onIt: [] }));
+const draw = () => renderTickets(groups, (t) => ({ agentName: 'Claude', peek: renderTicketPeek(t.identifier, t.description), agentKey: 'claude', onIt: [] }));
 
 const window = new Window();
 afterAll(() => window.happyDOM.close());
@@ -59,13 +59,13 @@ test('a redraw keeps the open peek; a tile asks for its row by message', () => {
   expect(peek('A-1').hidden).toBe(true);
 });
 
-test('the agent logo on the row and Start in the peek each send one start; a second click, even after a redraw, sends none', () => {
+test('the agent logo and an agent in ▾ each send one start; a second click, even after a redraw, sends none', () => {
   sent.length = 0;
   el('.tli .tag[data-start-ticket="A-1"]').click();
   deliver({ type: 'html', tab: 'tickets', html: draw() });
   el('.tli .tag[data-start-ticket="A-1"]').click();
-  el('.tpeek[data-peek="A-2"] [data-start-ticket="A-2"]').click();
-  expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2' }]);
+  el('.tli:nth-child(2) .menu [data-agent="codex"]').click();
+  expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2', agent: 'codex', where: 'auto' }]);
 });
 
 test('Settings > Tabs hides Review and Issues; Sessions stays as the way back from the Lead tab and Settings', () => {
