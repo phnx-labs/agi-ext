@@ -1,4 +1,5 @@
 import { test, expect } from 'bun:test'
+import manifest from '../../package.json'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, renderPanelSettings } from './panelSettings'
@@ -15,7 +16,9 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(applyPanelSetting(base, 'display.prompts', true)).toBeNull()
   expect(applyPanelSetting(base, 'quickLaunch.1', 'gemini')).toBeNull()
   const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
-  expect(html).toContain('<kbd>⌘⇧B</kbd>')
+  expect(html).not.toContain('<kbd>⌘⇧B</kbd>')
+  expect(manifest.contributes.commands.some((c) => c.command === 'agents.newSecondaryAgent')).toBe(true)
+  expect(manifest.contributes.keybindings.some((k) => k.command === 'agents.newSecondaryAgent' || k.key === 'ctrl+shift+b' || k.mac === 'cmd+shift+b')).toBe(false)
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
 

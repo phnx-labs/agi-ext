@@ -5,7 +5,7 @@
   "counts": {
     "commands": 124,
     "settings": 11,
-    "keybindings": 51,
+    "keybindings": 50,
     "menuItems": 18,
     "views": 2,
     "viewContainers": 2,
@@ -807,11 +807,6 @@
         "command": "agents.newAgent",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a"
-      },
-      {
-        "command": "agents.newSecondaryAgent",
-        "key": "ctrl+shift+b",
-        "mac": "cmd+shift+b"
       },
       {
         "command": "agents.setTitle",
