@@ -48,7 +48,14 @@ test('after five seconds one merge goes out, pinned to the head; the host answer
   await new Promise((r) => setTimeout(r, 5300));
   expect(sent.filter((m) => m.type === 'merge')).toEqual([{ type: 'merge', repo: 'o/r', number: 1, sha: 'abc0001' }, { type: 'merge', repo: 'o/r', number: 2, sha: 'abc0002' }]);
   expect(ring(1).classList.contains('merging')).toBe(true);
-  expect(ring(1).title).toBe('Merging…');
+  expect(ring(1).title).toBe('Merging #1…');
+  expect(ring(1).getAttribute('aria-label')).toBe('Merging #1…');
+  // Off for the keyboard too: a click while it merges arms nothing and sends nothing.
+  expect(ring(1).disabled).toBe(true);
+  const before = sent.length;
+  ring(1).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event);
+  expect(ring(1).classList.contains('armed')).toBe(false);
+  expect(sent.length).toBe(before);
   // A redraw while the host merges keeps the ring spinning, so it cannot be clicked again.
   deliver({ type: 'html', tab: 'prs', html });
   expect(ring(1).classList.contains('merging')).toBe(true);

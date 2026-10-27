@@ -1887,14 +1887,17 @@ ${MADE_SCRIPT}
   const mergingNow = new Set();
   function drawMerging(key) {
     const b = mergeBtn(key); if (!b) return;
-    b.classList.remove('armed'); b.classList.add('merging'); b.title = 'Merging…';
+    // Off for every input, keyboard included, until the host answers: one merge per ring.
+    b.classList.remove('armed'); b.classList.add('merging'); b.disabled = true; b.setAttribute('aria-busy', 'true');
+    b.title = 'Merging #' + b.dataset.mergeNumber + '…'; b.setAttribute('aria-label', b.title);
   }
   // What the host says when a merge finished: violet, or red with the reason in its tooltip.
   function drawMerged(key, error, merged) {
     mergingNow.delete(key);
     const b = mergeBtn(key); if (!b) return;
     // Turned down here with its own warning: back to a ready ring until Review rereads.
-    if (!merged && !error) { b.classList.remove('merging'); disarm(b); return; }
+    b.removeAttribute('aria-busy');
+    if (!merged && !error) { b.classList.remove('merging'); b.disabled = false; disarm(b); return; }
     b.classList.remove('armed', 'merging', 'v-ok'); b.classList.add(error ? 'v-bad' : 'v-merged'); b.disabled = !error;
     b.title = error ? 'Not merged: ' + error.replace(/[.\s]+$/, '') + '. Click to try again' : 'Merged'; b.setAttribute('aria-label', b.title);
     const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; }
@@ -2177,6 +2180,7 @@ ${MADE_SCRIPT}
     if (merge) {
       e.preventDefault(); e.stopPropagation();
       const key = merge.dataset.mergeRepo + '#' + merge.dataset.mergeNumber;
+      if (mergingNow.has(key)) return;
       // A second click inside the window is Undo: nothing was sent yet.
       if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); disarm(merge); toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
       let left = 5; pendingMerge.set(key, left); drawUndo(key, left);
