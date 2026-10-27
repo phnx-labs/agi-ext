@@ -104,11 +104,11 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(groups[0].tickets[0].description).toBe('')
   // The assignee as a colored initial; Linear's delegate is not drawn (▶ starts that agent).
   expect(html).not.toContain('Delegated to claude')
-  expect(html).toMatch(/data-ticket="A-3" title="t A-3"><span class="iav av\d" title="Muqsit Nawaz">MN<\/span><span class="pri p2"/)
+  expect(html).toMatch(/data-ticket="A-3" title="t A-3"><span class="iav av\d" title="Muqsit Nawaz">MN<\/span><span class="tm"><span class="t"><span>t A-3<\/span><\/span><span class="sub"><span class="pri p2"/)
   expect(html).toContain('data-ticket="A-4" title="t A-4"><span class="iav nobody" title="Unassigned"></span>')
   // The milestone shows only when it is not the one the header names.
-  expect(html).toContain('<span class="sub">A-3 · Ship B</span>')
-  expect(renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }), 'Ship B')).toContain('<span class="sub">A-3</span>')
+  expect(html).toContain('</i></span>A-3 · Ship B</span>')
+  expect(renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }), 'Ship B')).toContain('</i></span>A-3</span>')
   // An agent on it now: its logo carries the state dot (and a count past one) and opens that session instead of starting another.
   const live = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: t.identifier === 'A-3' ? [{ agentType: 'claude', state: 'asks', title: 'Ship it', sessionId: 's-1', host: 'zion' }, { agentType: 'codex', state: 'working', title: 'Tests', sessionId: 's-2', host: 'zion' }] : [] }))
   expect(live).toMatch(/<button class="tag" data-open-session="s-1" data-host="zion" title="Ship it: [^"]+\nTests: [^"]+\nClick to open it" aria-label="Open the session on A-3"><i class="hx hx-claude"[^>]*><\/i><i class="d-move"><\/i><span class="n">2<\/span><\/button>/)
