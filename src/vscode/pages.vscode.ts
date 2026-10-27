@@ -48,21 +48,31 @@ export function readBrowserHistory(globalStorage: Pick<vscode.Uri, 'fsPath'>, re
   }
 }
 
-/** A GET whose headers and body both arrive within `ms` and whose body stays under `maxBytes`; null otherwise. */
-async function fetchCapped(url: string, ms: number, maxBytes: number): Promise<{ res: Response; body: Buffer } | null> {
+/**
+ * A GET whose headers and body both arrive within `ms` and whose body stays under `maxBytes`;
+ * null otherwise. Redirects are followed one hop at a time, and a hop `allow` refuses ends it.
+ */
+async function fetchCapped(url: string, ms: number, maxBytes: number, allow: (url: string) => boolean): Promise<{ res: Response; url: string; body: Buffer } | null> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms);
   try {
-    const res = await fetch(url, { signal: ctl.signal, redirect: 'follow' });
-    if (Number(res.headers.get('content-length') ?? 0) > maxBytes || !res.body) return null;
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      size += chunk.length;
-      if (size > maxBytes) { ctl.abort(); return null; }
-      chunks.push(chunk);
+    let at = url;
+    for (let hop = 0; hop <= 5; hop++) {
+      if (!/^https?:/i.test(at) || !allow(at)) return null;
+      const res = await fetch(at, { signal: ctl.signal, redirect: 'manual' });
+      const next = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (next) { at = new URL(next, at).toString(); continue; }
+      if (Number(res.headers.get('content-length') ?? 0) > maxBytes || !res.body) return null;
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+        size += chunk.length;
+        if (size > maxBytes) { ctl.abort(); return null; }
+        chunks.push(chunk);
+      }
+      return { res, url: at, body: Buffer.concat(chunks) };
     }
-    return { res, body: Buffer.concat(chunks) };
+    return null;
   } catch {
     return null;
   } finally {
@@ -81,8 +91,8 @@ function isPrivateHost(url: string): boolean {
   }
 }
 
-async function iconAt(url: string): Promise<string | undefined> {
-  const got = await fetchCapped(url, 5000, ICON_MAX_BYTES);
+async function iconAt(url: string, allow: (url: string) => boolean): Promise<string | undefined> {
+  const got = await fetchCapped(url, 5000, ICON_MAX_BYTES, allow);
   if (!got) return undefined;
   const type = (got.res.headers.get('content-type') ?? '').split(';')[0].trim();
   return got.res.ok && type.startsWith('image/') && got.body.length ? `data:${type};base64,${got.body.toString('base64')}` : undefined;
@@ -94,15 +104,15 @@ export async function resolvePageIcon(pageUrl: string): Promise<string | undefin
   // A page you pinned on your own machine may use its own; a public page's icon may not point inward.
   const allowed = (href: string) => isPrivateHost(pageUrl) || !isPrivateHost(href);
   const tries: string[] = [];
-  const page = await fetchCapped(pageUrl, 5000, 512 * 1024);
-  if (page?.res.ok && allowed(page.res.url || pageUrl)) {
-    const declared = findIconHref(page.body.toString('utf8'), page.res.url || pageUrl);
+  const page = await fetchCapped(pageUrl, 5000, 512 * 1024, allowed);
+  if (page?.res.ok) {
+    const declared = findIconHref(page.body.toString('utf8'), page.url);
     if (declared && allowed(declared)) tries.push(declared);
   }
   const fallback = findIconHref('', pageUrl);
   if (fallback && !tries.includes(fallback)) tries.push(fallback);
   for (const href of tries) {
-    const icon = await iconAt(href);
+    const icon = await iconAt(href, allowed);
     if (icon) return icon;
   }
   return undefined;
