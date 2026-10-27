@@ -231,8 +231,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
   part off, down to the logo and title on one line (owner video, 2026-10-17).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
-  ☆ after the title is one of them; ★ stays on a favorite, and Favorites (the viewer's own,
-  `globalState` by session id) repeat under the pinned card above every group, each still
+  Copy is one of them; Add to Favorites is in ⋯ (owner video, 2026-10-27 9:24 AM) and ★ shows
+  after a favorite's title; Favorites (the viewer's own, `globalState` by session id) repeat under the pinned card above every group, each still
   in its own group (owner video, 2026-10-19 1:42 AM). A card whose agent has not spoken
   shows your prompt as "You: …", never as its words. Settings > Session list turns the
   Favorites group and the whole list off (only the pinned card; ⌘K finds the rest).
@@ -241,8 +241,9 @@ going on, where, and what came out of it" in one look; text explains only what a
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
   waits or asks, nothing without `doneVerdict`.
   The question opens to its full text on a click on it. The front tab's card is the one
-  exception: pinned above everything and opened up (one header row: ⇤ ‹, the title and state, its host,
-  its place among the tabs (2/10) and its age, › ⇥; owner, 2026-10-22 1:01 PM; its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
+  exception: pinned above everything and opened up (⇤ ‹ the title, up to three lines, and its state › ⇥,
+  then a line with its host, its place among the tabs (Tab 2 of 10), its age, Copy and ⋯; owner video,
+  2026-10-27 9:24 AM; its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
   scrolls, a reply box; owner, 2026-10-18), and its card still keeps its place in this window's group
   with the selected rail (answers only on the pinned one), so switching tabs never reorders or
   removes a card, and the list never jumps: a clicked card stays where it was on screen
@@ -277,8 +278,9 @@ going on, where, and what came out of it" in one look; text explains only what a
   agent's latest line and what it made, owner, 2026-10-22 1:02 PM; Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
   either way; then Sort: Tab order, Last active, Newest, Name). No grouping choice: sessions
   group by where they live, this window's tabs headed by the editor's icon and the
-  workspace ("agi-ext 5"; owner, 2026-10-22 1:01 PM). Group headers carry the icon, a count and one dot per state, so a
-  folded group still says what is inside. There is no group of asks: a session that asks is
+  workspace ("agi-ext 5"; owner, 2026-10-22 1:01 PM). Group headers carry the icon, the name and a count; a colored dot only ever
+  says an agent's state, never beside a machine or as a header's summary, and a working agent is its
+  dot without the word (owner video, 2026-10-27 9:24 AM). There is no group of asks: a session that asks is
   a red card leading its own group, by urgency, then wait; then finished turns, then what
   works, then what ended (`TIER`; Name and this window's group under Tab order keep their
   own order after the asks). Under the pinned card come Favorites (when any are

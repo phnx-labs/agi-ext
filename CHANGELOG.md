@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.430] - 2026-10-27
+
+From the owner's 9:24 AM video on the Sessions tab:
+
+- The pinned card's title has the row between ‹ › to itself and wraps to three lines, so you
+  read all of it at sidebar width (it showed "S…" before). Its state sits beside it; the line
+  under it is the machine, "Tab 3 of 17" and the age, then Copy and ⋯, always shown.
+- A working agent is its green dot, without the word Running; Asks and Idle keep their word.
+- Add to Favorites moved into ⋯, since starring is rare and Copy is the common action. ★ still
+  shows after a favorite's title.
+- No dot beside a machine name: a colored dot only ever says an agent's state.
+- Group headers lose their row of state dots.
+- A session in another repository says so on its last line, beside the machine
+  ("agi-ext · s0"), instead of a row of its own.
+
 ## [0.9.429] - 2026-10-27
 
 - Stop assigning Cmd/Ctrl+Shift+B to New Secondary. The command remains available for a custom shortcut, and Settings no longer advertises the removed default.
