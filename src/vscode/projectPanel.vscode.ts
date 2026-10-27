@@ -1310,7 +1310,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card.front .fc-nav .top { flex: 1; min-width: 0; }
   .card.front .fc-nav .ttl { line-height: 17px; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
   .card.front .fc-nav { align-items: flex-start; } .card.front .fc-nav .fc-step { margin-top: 1px; }
-  .fc-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 0 2px 26px; height: 22px; }
+  .fc-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 0 2px 26px; height: 22px; } .fc-nav.bare + .fc-meta { margin-left: 0; }
   .fc-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
   .fc-acts { display: flex; gap: 2px; flex: none; margin-left: auto; }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
@@ -1358,19 +1358,16 @@ ${MADE_CSS}
   .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
   .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .act .ic { width: 13px; height: 13px; stroke-width: 1.6; }
-  .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; min-width: 0; font-size: 10.5px; color: var(--r-faint); }
-  .meta .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .pill { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; font-size: 10.5px; line-height: 16px; color: var(--r-text-2); }
   .pill i { background: var(--r-faint); } .pill i { width: 6px; height: 6px; border-radius: 50%; display: block; }
   .pill.solo { padding: 0 4px; border: 0; }
-  .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-move { background: var(--r-warn) !important; }
-  .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-running { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
+  .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i { background: var(--r-warn) !important; }
+  .st-working.pill { color: var(--r-ok); } .pill.st-working i { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
   .st-stuck.pill { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-stuck i { background: var(--r-bad) !important; }
-  .pill.st-review i, .d-review { background: var(--r-info) !important; }
+  .pill.st-review i { background: var(--r-info) !important; }
   /* Waiting on its own work reads Running: green and breathing. */
-  .st-waiting.pill { color: var(--r-ok); } .pill.st-waiting i, .d-waiting { background: var(--r-ok) !important; }
+  .st-waiting.pill { color: var(--r-ok); } .pill.st-waiting i { background: var(--r-ok) !important; }
   .st-waiting.pill i { animation: breathe 1.6s ease-in-out infinite; }
-  .meta .repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .fx { display: inline-flex; gap: 2px; flex: none; } .fx span { font-size: 10.5px; line-height: 1; padding: 2px 3px; border-radius: 4px; background: var(--r-well); }
   .fx .fast { color: var(--r-warn); } .fx .hi { color: var(--r-info); }
   .cbot { display: flex; align-items: flex-end; gap: 6px; margin-top: 6px; min-width: 0; } .card .cbot .cstrip { margin-top: 0; flex: 1; min-width: 0; }
@@ -1459,8 +1456,7 @@ ${MADE_CSS}
   .card .top .hx { width: 14px; height: 14px; border-radius: 3px; }
   .card .top .fork { flex: none; font-size: 12px; color: var(--r-caption); }
   /* ☆ on hover, ★ kept on a favorite; it always holds its place, so the row never moves. */
-  .star { flex: none; width: 16px; height: 18px; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; line-height: 1; color: var(--r-caption); cursor: pointer; opacity: 0; }
-  .card:hover .star, .card:focus-within .star, .star:focus-visible, .star.on { opacity: 1; } .star.on { color: var(--r-gold-line); } .star:hover { color: var(--r-gold-line); }
+  .star { flex: none; font-size: 13px; line-height: 1; color: var(--r-gold-line); }
   .fav-ic { color: var(--r-gold-line); font-size: 13px; }
   .card .line.said.you b { font-weight: 600; color: var(--r-caption); margin-right: 2px; }
   /* The pinned card's title renames a Claude session on a click. */
