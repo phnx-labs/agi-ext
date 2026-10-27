@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// A bounded test double for `linear tasks --project <id> --json`: one started ticket.
+const argv = process.argv.slice(2);
+if (argv[0] !== 'tasks' || argv[1] !== '--project' || argv[3] !== '--json') { process.stderr.write(`error: unknown command '${argv.join(' ')}'\n`); process.exit(1); }
+process.stdout.write(JSON.stringify({ issues: [{ identifier: 'RUSH-1', title: 'Sign-up works', url: 'https://linear.app/x/issue/RUSH-1', description: 'Outcome', priority: 2, state: { type: 'started', name: 'Doing' } }] }) + '\n');

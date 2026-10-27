@@ -4,6 +4,26 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.431] - 2026-10-27
+
+From the owner's 4:44 AM to 6:11 AM screenshots and 5:48 AM video on the Project panel:
+
+- The Lead tab shows a turn the Lead took on its own, drafting answers for new asks, as the
+  Lead's ("for new asks"), not as something you said. Needs agents-cli 1.23.45.
+- The Lead tab updates itself when agents-cli writes its history; its ⟳ is gone. The speaker
+  moved to Settings > Lead > Read answers aloud.
+- Issues is one line per ticket: the assignee's Linear profile picture, the title (a long one
+  scrolls sideways under the pointer instead of wrapping), and under it the priority in color,
+  the id and the milestone. Needs linear-cli 0.33.0 for the pictures.
+- The agent's logo on a ticket starts that agent in one click and, while a session works on
+  it, opens that session. ▾ beside it picks another agent and where it runs (Auto, This
+  machine, or Ask). ↗ opens the Linear page.
+- A click on a ticket shows its description and the sessions on it, with no buttons or hints
+  of its own.
+- The milestone in the header is a menu: pick one to list only its tickets.
+- Profile pictures (Issues and Review) download once into `~/.agents/.cache/avatars/` and
+  are drawn from there, not fetched again per draw, window or restart.
+
 ## [0.9.429] - 2026-10-27
 
 - Stop assigning Cmd/Ctrl+Shift+B to New Secondary. The command remains available for a custom shortcut, and Settings no longer advertises the removed default.
