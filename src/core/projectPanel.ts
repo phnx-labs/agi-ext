@@ -9,7 +9,7 @@ import * as os from 'os';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, SESSION_STATE_WORD, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { frontNav, nextNeedsYou, type FrontMemory, type FrontNav, type FrontStep } from './frontNav';
@@ -851,7 +851,7 @@ function thumbImg(uri: string, path: string, alt: string): string {
 
 /** The card's ⋯ menu: what used to crowd its meta row (tab, model, folder, session
  *  id, account), each on its own line. */
-function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string; linearName?: string; here: SessionHere }): string {
+function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string; linearName?: string; here: SessionHere; favorite?: boolean }): string {
   const tab = place.where.match(/tab \d+/)?.[0];
   const other = opts.project && s.confirmedProject && s.confirmedProject.toLowerCase() !== opts.project.toLowerCase();
   const project = opts.project ? [opts.project, opts.linearName ? `Linear: ${opts.linearName}` : '', other ? `the CLI said ${s.confirmedProject}` : ''].filter(Boolean).join(' · ') : '';
@@ -868,13 +868,8 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
   // Close (or Hide, for a card with no tab) lives here, out of a stray click's way (owner video, 2026-10-17).
   const hasTab = place.kind === 'here' || place.kind === 'leftover';
   const close = hasTab ? '<button class="danger" data-act="close">Close the tab</button>' : '<button data-act="hide">Hide until it does something new</button>';
-  return `<details class="cmore"><summary class="act" title="Details, close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${close}</div></details>`;
-}
-
-/** A red card says what it asks, not whether its agent still runs: a green dot before
- *  the machine says the CLI saw the process alive (`pidAlive`; owner video, 2026-10-19). */
-function runMark(s: Pick<SessionLike, 'pidAlive'>, device: string): string {
-  return s.pidAlive ? `<i class="run" role="img" title="Running on ${escapeHtml(device)}" aria-label="Running on ${escapeHtml(device)}"></i>` : '';
+  const fav = `<button class="favitem" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}">${opts.favorite ? 'Remove from Favorites' : 'Add to Favorites'}</button>`;
+  return `<details class="cmore"><summary class="act" title="Details, favorite, close" aria-label="Details, favorite and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${fav}${close}</div></details>`;
 }
 
 const STEP_MARK = { first: '⇤', prev: '‹', next: '›', last: '⇥' } as const;
@@ -959,7 +954,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const tip = verdict ? verdict.why : word;
   const pillTitle = state !== 'ended' && counts.total ? ` title="${escapeHtml(`${word}, with its own work running: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
   const vchip = verdictChipHtml(verdict);
-  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}"${pillTitle}><i></i>${escapeHtml(word)}</span>` : '';
+  // Working and waiting are the dot alone; a word is for what asks something of you or is over (owner video, 2026-10-27 9:24 AM).
+  const dotOnly = !opts.blocked && (state === 'working' || state === 'waiting');
+  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || ` title="${escapeHtml(word)}"`}${dotOnly ? ` aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
       : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;
@@ -974,18 +971,18 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const preview = ask || saidLine(s, said);
   // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
   const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
-  const meta = cards.machine ? repoTag : '';
   const text = opts.compact ? (cards.description ? preview : '') : cards.description
     ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
-  const host = cards.machine ? `<span class="hst" title="Host">${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}</span>` : '';
+  // The repository and the machine share the card's last line; a colored dot there is only ever a state (owner video, 2026-10-27 9:24 AM).
+  const host = cards.machine ? `<span class="hst" title="${escapeHtml(place.device)}">${repoTag}${escapeHtml(shortDevice(place.device))}</span>` : '';
   const fork = s.forkOf ? `<span class="fork" title="${escapeHtml(`Forked from ${s.forkOf.slice(0, 8)}`)}" aria-label="Fork">⑂</span>` : '';
   // Copy: what another agent or a message needs to pick this session up.
   const brief = [title, `Session ${s.sessionId} on ${place.device}${s.cwd ? ` in ${displayHome(s.cwd)}` : ''}`, plain(s.recap?.text ?? '') || said].filter(Boolean).join('\n');
   const copy = `<button class="act" data-copy="${escapeHtml(brief)}" title="Copy its title, session id, machine and recap" aria-label="Copy session details">${glyph('copy')}</button>`;
-  // ☆ shows on hover and ★ stays on a favorite; it holds its place either way, so nothing moves.
-  const star = `<button class="star${opts.favorite ? ' on' : ''}" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${opts.favorite ? 'Remove from Favorites' : 'Add to Favorites'}" aria-label="${opts.favorite ? 'Remove from Favorites' : 'Add to Favorites'}">${opts.favorite ? '★' : '☆'}</button>`;
+  // Favoriting is rare, so it lives in ⋯; ★ shows after the title only on a favorite (owner video, 2026-10-27 9:24 AM).
+  const star = opts.favorite ? `<span class="star on" title="Favorite" aria-label="Favorite">★</span>` : '';
   // The pinned card's title renames the session on a click; the page keeps what is typed
   // there (data-keep) and draws the stream's title from data-ttl otherwise.
   const rename = opts.front ? renameOf(s, place, state) : null;
@@ -997,7 +994,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const ago = ageWords(s.lastActivityMs, now);
     const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ago;
     const at = opts.nav?.at ? `${opts.nav.at}/${opts.nav.count}` : s.tabIndex ? String(s.tabIndex) : '';
-    const where = [`${runMark(s, place.device)}${escapeHtml(shortDevice(place.device))}`, at, since].filter(Boolean).join(' · ');
+    const where = [escapeHtml(shortDevice(place.device)), at, since].filter(Boolean).join(' · ');
     const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     return `<span class="thistab" title="${escapeHtml(stateWords)}">${where}</span>`;
   }
@@ -1020,7 +1017,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   }
   const body = opts.front ? frontBody() : `
     ${top}
-    ${meta ? `<div class="meta">${meta}</div>` : ''}${text}
+    ${text}
     ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
   `;
   const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
@@ -1147,15 +1144,12 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   let menuPlaced = false;
   const folded = new Set(prefs.folded);
   const section = (g: Group) => {
-    const counts = new Map<SessionStateKey, number>();
-    for (const { row } of g.items) { const k = sessionStateOf(row); counts.set(k, (counts.get(k) ?? 0) + 1); }
-    const dots = [...counts].map(([k, n]) => `<i class="d-${STATE_TONE[k]}" title="${n} ${SESSION_STATE_WORD[k]}"></i>`).join('');
     // A folded group opens while it holds the selected session (the front tab included).
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
     const menuHere = !menuPlaced;
     menuPlaced = true;
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="dots">${dots}</span>${menuHere ? menuButton(prefs) : ''}</div>
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}${menuHere ? menuButton(prefs) : ''}</div>
       <div class="items">${closed ? '' : ordered(g.items).map((x) => card(x, false, g.copy)).join('')}</div>
     </section>`;
   };
@@ -1455,7 +1449,7 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     const age = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now);
     // This machine's rows carry the stream's local label; the row names the machine, as a card does.
     const device = s.host === here.localHost ? here.device : s.host;
-    const meta = runMark(s, device) + [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
+    const meta = [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
     const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
     const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);
     const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
