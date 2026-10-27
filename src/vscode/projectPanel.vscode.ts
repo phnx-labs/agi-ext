@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
-import { nextMilestone, parseGoals, renderGoals } from '../core/goals';
+import { nextMilestone, parseGoals, renderGoals, type Goals } from '../core/goals';
+import { resolveLaunchTarget } from '../core/launchTarget';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -89,6 +90,7 @@ import { PanelDock, type PanelHost } from './panelDock.vscode';
 
 const PICKED_PROJECT_KEY = 'agents.projectPanel.project';
 const TAB_KEY = 'agents.projectPanel.tab';
+const MILESTONE_KEY = 'agents.projectPanel.milestone';
 const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const REVIEW_PREFS_KEY = 'agents.projectPanel.reviewPrefs';
 /** Starred session ids: a per-user preference, kept across windows and reloads. */
@@ -106,7 +108,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; focus?: unknown; here?: unknown; answer?: unknown; step?: unknown; back?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; step?: unknown; back?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -178,7 +180,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
       else if (msg.type === 'reviewPrefs' && typeof msg.key === 'string' && typeof msg.value === 'string') void this.controller.setReviewPref(msg.key, msg.value).then((html) => { if (html) this.post('prs', html); });
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
-      else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id);
+      else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id, typeof msg.agent === 'string' ? msg.agent : undefined);
+      else if (msg.type === 'milestone' && typeof msg.name === 'string') void this.pickMilestone(msg.name);
       else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
       // The front card's reply box: its words go into that session's tab here, through
       // the one reply rail; the mic is the Active Session sidebar's recorder.
@@ -430,6 +433,15 @@ class ProjectView implements vscode.WebviewViewProvider {
   private goalsGen = 0;
 
   /** The two goal lines above the tabs; a failed read says so on one faint line. */
+  /** A pick in the header's milestone menu: the header names it and Issues lists only its tickets. */
+  private async pickMilestone(name: string): Promise<void> {
+    const html = await this.controller.pickMilestone(name);
+    if (html === undefined) return;
+    this.goalsHtml = html;
+    void this.view?.webview.postMessage({ type: 'goals', html });
+    if (this.active === 'tickets') void this.load('tickets', false);
+  }
+
   private async loadGoals(force: boolean): Promise<void> {
     if (!this.view?.visible) return;
     if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
@@ -670,7 +682,12 @@ class ProjectPanelController {
   }
 
   async render(id: Exclude<TabId, 'sessions' | 'settings'>, p: ProjectRef, force: boolean): Promise<string> {
-    if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force), (t) => this.ticketRow(p, t), this.headMilestone);
+    if (id === 'tickets') {
+      const chosen = this.chosenMilestone(p.name);
+      const groups = (await this.ticketGroups(p, force)).map((g) => ({ ...g, tickets: chosen ? g.tickets.filter((t) => t.milestone === chosen) : g.tickets })).filter((g) => g.tickets.length);
+      const where = resolveLaunchTarget(vscode.workspace.getConfiguration('agents').get<string>('launch.defaultTarget'));
+      return renderTickets(groups, (t) => this.ticketRow(p, t), this.headMilestone, where);
+    }
     // `prs list` exits 1 when a repo could not be read but still prints the envelope
     // with `partial: true`; render it rather than discarding it.
     let stdout: string;
@@ -712,6 +729,26 @@ class ProjectPanelController {
   todayId: string | undefined;
   /** The milestone the header shows; Issues names a ticket's milestone only when it differs. */
   headMilestone: string | undefined;
+  /** The last goals read, so a milestone pick redraws the header without reading again. */
+  private goalsSeen: { goals: Goals; project: string; linearName: string | null | undefined } | undefined;
+
+  /** The milestone Issues shows for a project, picked in the header's menu; none is all. */
+  private chosenMilestone(project: string): string | undefined {
+    return this.context.workspaceState.get<Record<string, string>>(MILESTONE_KEY)?.[project] || undefined;
+  }
+
+  async pickMilestone(name: string): Promise<string | undefined> {
+    const seen = this.goalsSeen;
+    if (!seen) return undefined;
+    await this.context.workspaceState.update(MILESTONE_KEY, { ...this.context.workspaceState.get<Record<string, string>>(MILESTONE_KEY), [seen.project]: name });
+    return this.goalsLine(seen);
+  }
+
+  private goalsLine(seen: NonNullable<ProjectPanelController['goalsSeen']>): string {
+    const chosen = this.chosenMilestone(seen.project);
+    this.headMilestone = chosen ?? nextMilestone(seen.goals, seen.linearName)?.name;
+    return renderGoals(seen.goals, seen.linearName, chosen);
+  }
 
   /** Company and today's goal of the project's Linear workspace: one `linear goals` read. */
   async goals(): Promise<string> {
@@ -719,8 +756,8 @@ class ProjectPanelController {
     const { stdout } = await runLinear(['goals', '--json'], project?.linearProfile ?? null, 30_000);
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
-    this.headMilestone = nextMilestone(goals, project?.linearName)?.name;
-    return renderGoals(goals, project?.linearName);
+    this.goalsSeen = { goals, project: project?.name ?? '', linearName: project?.linearName };
+    return this.goalsLine(this.goalsSeen);
   }
 
   private ticketById(id: string): Ticket | undefined {
@@ -803,11 +840,12 @@ class ProjectPanelController {
 
   /** Start on a ticket from its row: the agent in a new tab here, through the same
    *  launch path as Agents: Spawn With Prompt. */
-  async startOnTicket(id: string): Promise<void> {
+  async startOnTicket(id: string, agent?: string): Promise<void> {
     const t = this.ticketById(id);
     if (!t) { void this.view.notice(`${id} is not in the ticket list just read; Issues is reading it again.`); void this.view.load('tickets', true); return; }
+    const key = agent && PICKABLE_AGENTS.some((a) => a.key === agent) ? agent : this.ticketAgent(t).key;
     try {
-      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: this.ticketAgent(t).key, prompt: ticketPrompt(t) });
+      await vscode.commands.executeCommand('agents.spawnWithPrompt', { agent: key, prompt: ticketPrompt(t) });
     } catch (e) {
       void vscode.window.showErrorMessage(`Could not start an agent on ${id}: ${errorText(e)}`);
     }
@@ -1197,6 +1235,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .pri { display: inline-flex; align-items: flex-end; gap: 1.5px; width: 12px; height: 11px; flex: none; margin-top: 3px; }
   .pri i { display: block; width: 2.5px; border-radius: 1px; background: var(--r-edge); }
   .pri i.on { background: var(--r-faint); }
+  .pri.p1 i.on { background: var(--r-bad); } .pri.p2 i.on { background: var(--r-warn); } .pri.p3 i.on { background: var(--r-caption); }
   .trow, .prow { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; padding: 5px 4px; border-radius: 6px; }
   .prli { display: flex; align-items: center; gap: 4px; }
   /* People: GitHub avatars on PRs, colored initials (or the agent's logo) on issues. */
@@ -1252,7 +1291,14 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
      2026-10-18 8:59 PM); the project's name is the view's title. */
   .goals { flex: 1; min-width: 0; margin-right: 4px; overflow: hidden; }
   .goals[hidden] { display: none; }
-  .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
+  .goals .gl1 { width: 100%; border: 0; background: none; padding: 2px 4px; margin-left: -4px; border-radius: 6px; font: inherit; cursor: pointer; text-align: left; }
+  .goals .gl1:hover, .goals .gl1[aria-expanded="true"] { background: var(--r-glass-hover); } .goals .gl1:hover .gtx { color: var(--r-text); }
+  .goals .gcar { font-size: 9px; color: var(--r-faint); flex: none; }
+  .gmenu-pop { position: fixed; left: 8px; right: auto; top: 34px; min-width: 250px; max-width: calc(100vw - 16px); }
+  .menu .mn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .menu .mm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); } .menu .hx { width: 14px; height: 14px; flex: none; }
+  .tpick { position: relative; display: inline-flex; } .tcar { opacity: 0; width: 14px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--r-caption); font-size: 9px; cursor: pointer; margin: 0 2px 0 -2px; }
+  .tli:hover .tcar, .tcar[aria-expanded="true"] { opacity: 1; } .tcar:hover { background: var(--r-glass-hover); color: var(--r-text); }
+  .goals .gl1, .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
   .goals a:hover .gtx { color: var(--r-text); }
   .goals .gl2 { color: var(--r-text-2); }
   .goals .gl2 b { font-weight: 600; margin-right: 3px; }
@@ -1622,7 +1668,7 @@ ${MADE_SCRIPT}
   main.addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-find]')) { e.target.value = ''; applyFind(); e.stopPropagation(); } });
   // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
   function anyMenu() { return ctl.querySelector('.menu') || main.querySelector('.menu'); }
-  function openMenu() { const mm = anyMenu(); return mm && !mm.hidden ? mm : null; }
+  function openMenu() { return document.querySelector('.menu:not([hidden])'); }
   function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
   // A session can show three times: pinned, in Favorites and in its own group.
   function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
@@ -2078,12 +2124,31 @@ ${MADE_SCRIPT}
     const ask = e.target.closest('.card .ask [data-expand]');
     if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
     const goal = e.target.closest('.goals [data-url]');
-    if (goal) { e.preventDefault(); vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+    if (goal) { e.preventDefault(); const gm = goal.closest('.menu'); if (gm) gm.hidden = true; vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = menuBtn ? menuBtn.parentElement.querySelector(':scope > .menu') : openMenu();
     if (menuBtn && menu) { const open = menu.hidden; menu.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); return; }
     const pref = e.target.closest('[data-pref]');
     if (pref) { vscode.postMessage({ type: 'prefs', key: pref.dataset.pref, value: pref.dataset.value }); return; }
+    const closeMenu = (m) => { m.hidden = true; m.parentElement.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); };
+    // The header's milestone menu: the pick is the host's to remember and draw.
+    const ms = e.target.closest('.menu [data-milestone]');
+    if (ms) { closeMenu(ms.closest('.menu')); vscode.postMessage({ type: 'milestone', name: ms.dataset.milestone }); return; }
+    // A ticket's ▾: Where is a choice inside the menu; an agent starts with it.
+    const where = e.target.closest('.menu [data-where]');
+    if (where) {
+      where.closest('.menu').querySelectorAll('[data-where]').forEach((b) => { const on = b === where; b.setAttribute('aria-checked', String(on)); b.querySelector('.ck').textContent = on ? '✓' : ''; });
+      return;
+    }
+    const pickAgent = e.target.closest('.menu [data-start-ticket][data-agent]');
+    if (pickAgent) {
+      const m = pickAgent.closest('.menu'); closeMenu(m);
+      const id = pickAgent.dataset.startTicket;
+      if (Date.now() - (startedAt.get(id) || 0) < 5000) return;
+      startedAt.set(id, Date.now());
+      vscode.postMessage({ type: 'startTicket', id, agent: pickAgent.dataset.agent, where: m.querySelector('[data-where][aria-checked="true"]')?.dataset.where });
+      return;
+    }
     if (menu && !menu.hidden && !e.target.closest('.menu')) { menu.hidden = true; menu.parentElement.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'false'); }
     if (e.target.closest('.menu')) return;
     // The front card's reply box handles its own keys and mic; a click there selects nothing.
