@@ -19,8 +19,9 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(manifest.contributes.commands.some((c) => c.command === 'agents.newSecondaryAgent')).toBe(true)
   expect(manifest.contributes.keybindings.some((k) => k.command === 'agents.newSecondaryAgent')).toBe(false)
   // ⌘⇧B is Pages, the browser's starting point; New Split (Side) keeps ⌘⇧V.
-  expect(manifest.contributes.keybindings.filter((k) => k.mac === 'cmd+shift+b').map((k) => k.command)).toEqual(['agents.pages.open'])
-  expect(manifest.contributes.keybindings.filter((k) => k.mac === 'cmd+shift+v').map((k) => k.command)).toEqual(['agents.newAgentVSplit'])
+  const on = (key: string) => manifest.contributes.keybindings.filter((k) => k.key === `ctrl+${key}` || k.mac === `cmd+${key}`).map((k) => `${k.command} ${k.key} ${k.mac}`)
+  expect(on('shift+b')).toEqual(['agents.pages.open ctrl+shift+b cmd+shift+b'])
+  expect(on('shift+v')).toEqual(['agents.newAgentVSplit ctrl+shift+v cmd+shift+v'])
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
 
