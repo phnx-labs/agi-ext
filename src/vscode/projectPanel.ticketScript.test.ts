@@ -84,3 +84,11 @@ test('Settings > Tabs hides Review and Issues; Sessions stays as the way back fr
   deliver({ type: 'choose', tab: 'tickets' });
   expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
 });
+
+test('a ticket tag colors its session dot for every state tone but the quiet one', async () => {
+  const { STATE_TONE } = await import('../shared/sessionState');
+  for (const tone of new Set(Object.values(STATE_TONE))) {
+    if (tone === 'quiet') continue;
+    expect(page).toMatch(new RegExp(`\\.tag \\.d-${tone} \\{ background: var\\(--r-`));
+  }
+});
