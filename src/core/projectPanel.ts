@@ -16,6 +16,8 @@ import { frontNav, nextNeedsYou, type FrontMemory, type FrontNav, type FrontStep
 import { resolveProject } from '../shared/project';
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
+import { PICKABLE_AGENTS } from './panelSettings';
+import type { LaunchTarget } from './launchTarget';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
 import { prVerdict, type RemotePrStatus } from './prStatus';
@@ -1219,11 +1221,26 @@ export interface TicketRowExtras {
 
 const OPEN_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/></svg>';
 
+const WHERE: { value: LaunchTarget; label: string }[] = [
+  { value: 'local', label: 'This machine' },
+  { value: 'auto', label: 'A fleet worker' },
+  { value: 'ask', label: 'Pick a device…' },
+];
+
+/** ▾ beside a ticket's agent: any agent, and where it runs (owner video, 2026-10-27 5:48 AM).
+ *  Where is the launch target setting until a pick in this menu changes it for this start. */
+function startMenu(id: string, agentKey: string, where: LaunchTarget): string {
+  const agents = PICKABLE_AGENTS.map((a) => `<button data-start-ticket="${id}" data-agent="${escapeHtml(a.key)}">${harnessLogo(a.key)}<span class="mn">${escapeHtml(a.name)}</span>${a.key === agentKey ? '<span class="mm">default</span>' : ''}</button>`).join('');
+  const places = WHERE.map((w) => `<button role="menuitemradio" aria-checked="${w.value === where}" data-where="${w.value}"><span class="ck">${w.value === where ? '✓' : ''}</span><span class="mn">${w.label}</span></button>`).join('');
+  return `<div class="menu" role="menu" hidden><div class="sec">Start on ${id}</div>${agents}<hr><div class="sec">Where</div>${places}</div>`;
+}
+
 /** One line per ticket (owner, 2026-10-27 5:01 AM): a click unfolds its peek, a title too
  *  long for the row scrolls sideways under the pointer, ↗ opens its Linear page. The agent's
- *  logo starts that agent on it; once one works on it, the logo carries its state dot and
- *  opens that session instead. The milestone shows only when it is not the header's. */
-export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras, milestone?: string): string {
+ *  logo starts that agent on it, and ▾ beside it picks another agent or where it runs; once
+ *  one works on it, the logo carries its state dot and opens that session instead. The
+ *  milestone shows only when it is not the header's; priority is colored (owner, 5:48 AM). */
+export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras, milestone?: string, where: LaunchTarget = 'auto'): string {
   if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
   const row = (t: Ticket) => {
     const id = escapeHtml(t.identifier);
@@ -1234,7 +1251,8 @@ export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => Tick
       ? `<button class="tag" data-open-session="${escapeHtml(live.sessionId)}" data-host="${escapeHtml(live.host)}" title="${escapeHtml(x.onIt.map((s) => `${s.title}: ${SESSION_STATE_WORD[s.state]}`).join('\n'))}\nClick to open it" aria-label="Open the session on ${id}">${harnessLogo(live.agentType)}<i class="d-${STATE_TONE[live.state]}"></i>${x.onIt.length > 1 ? `<span class="n">${x.onIt.length}</span>` : ''}</button>`
       : `<button class="tag" data-start-ticket="${id}" title="Start ${escapeHtml(x.agentName)} on ${id} in a new tab" aria-label="Start ${escapeHtml(x.agentName)} on ${id}">${harnessLogo(x.agentKey)}</button>`;
     const open = t.url ? `<a class="pro" href="#" data-url="${escapeHtml(t.url)}" title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open ${id} in a tab">${OPEN_ICON}</a>` : '';
-    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${priorityBars(t.priority)}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${id}${ms}</span></span></a><span class="who">${agent}${personAvatar(t.assignee)}</span>${open}${x.peek}</li>`;
+    const pick = `<span class="tpick"><button class="tcar" data-menu aria-haspopup="menu" aria-expanded="false" title="Another agent, or where it runs" aria-label="Choose an agent for ${id}">▾</button>${startMenu(id, x.agentKey, where)}</span>`;
+    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${priorityBars(t.priority)}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${id}${ms}</span></span></a><span class="who">${agent}${pick}${personAvatar(t.assignee)}</span>${open}${x.peek}</li>`;
   };
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
