@@ -1529,7 +1529,8 @@ ${MADE_CSS}
   button.primary:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
   /* A ticket row: ▶ shows on hover; its peek unfolds under it, inside the same hover tone. */
   .tli { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; border-radius: 6px; }
-  .tli .trow { flex: 1; min-width: 0; grid-template-columns: auto auto minmax(0,1fr); align-items: center; }
+  .tli .trow { flex: 1; min-width: 0; grid-template-columns: auto minmax(0,1fr); align-items: center; }
+  .tli .sub .pri { display: inline-flex; width: 10px; height: 9px; gap: 1px; margin: 0 5px 0 0; vertical-align: -1px; } .tli .sub .pri i { width: 2px; }
   .iav.nobody { border: 1px dashed var(--r-edge); background: none; }
   /* A title longer than its row scrolls to its end and back while the pointer is on it. */
   .tli.mq .t { text-overflow: clip; } .tli.mq .t > span { display: inline-block; animation: tmq var(--mqs) ease-in-out .5s infinite alternate; }
