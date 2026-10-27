@@ -116,3 +116,22 @@ test('the tab row is the same on every tab (owner video, 2026-10-27 1:19 PM): �
   expect(el('.tabs .sctl [data-menu]')).not.toBeNull();
   expect(box.placeholder).toBe('Filter · ⌘K all');
 });
+
+test("filtering hides cards, never a matching card's ⋯; each tab's words come back with it and decide whether the row shows the field", () => {
+  deliver({ type: 'tab', tab: 'sessions' });
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  const box = el('.tabs .hfind [data-find]') as unknown as HTMLInputElement;
+  box.value = 'a';
+  box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
+  const drawer = el('.card[data-session="a"] details.cmore');
+  expect(drawer.style.display).toBe('');
+  // Review has no words: its row shows the tabs; back on Sessions the words and the field return.
+  click('.tab[data-tab="prs"]');
+  expect(box.value).toBe('');
+  expect(el('.tabs').classList.contains('finding')).toBe(false);
+  click('.tab[data-tab="sessions"]');
+  expect(box.value).toBe('a');
+  expect(el('.tabs').classList.contains('finding')).toBe(true);
+  box.value = '';
+  box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
+});

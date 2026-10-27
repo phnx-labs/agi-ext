@@ -1074,7 +1074,7 @@ function menuHtml(p: SessionListPrefs, today?: { id: string; n: number }): strin
 export function tabHead(menu: string | null): string {
   return menu
     ? `<div class="shead"><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="View, filter and sort" aria-label="View, filter and sort">${glyph('sort')}</button>${menu}</div>`
-    : `<div class="shead"><button class="icon" disabled title="Nothing to sort on this tab" aria-label="View, filter and sort">${glyph('sort')}</button></div>`;
+    : `<div class="shead"><button class="icon" disabled title="Nothing to sort on this tab" aria-label="View, filter and sort: nothing to sort on this tab">${glyph('sort')}</button></div>`;
 }
 
 /** What the list draws before grouping: the viewer's Show choices, then ☀ only. */

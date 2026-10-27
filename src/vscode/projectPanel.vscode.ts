@@ -1351,8 +1351,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   body { display: flex; flex-direction: column; padding: 0; }
   .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 4px 10px; border-bottom: 1px solid var(--r-edge); flex: none; min-width: 0; }
   .tab[hidden] { display: none; }
-  .shead .today { margin-left: 6px; flex: none; font: 500 10.5px var(--r-sans); color: var(--r-text-2); border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px; background: transparent; cursor: pointer; }
-  .shead .today.on { border-color: var(--r-selected-edge); background: var(--r-selected); color: var(--r-text); }
   .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
   .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
@@ -1399,14 +1397,13 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .pinned.now { background: var(--r-bad-tint); } .pinned.now .ph { color: var(--r-bad); }
   .grp { margin-top: 8px; }
   .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; position: relative; }
-  .gh .gmenu { width: 22px; height: 20px; margin-left: 2px; } .gh .menu { top: 24px; cursor: default; }
+  .gh .menu { top: 24px; cursor: default; }
   .gh:hover { background: var(--r-glass-hover); }
   .gh .car { width: 10px; color: var(--r-faint); font-size: 10px; transition: transform .15s; } .grp.closed .car { transform: rotate(-90deg); }
   .gi-box { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
   .appic { width: 20px; height: 20px; display: block; }
   .gi { width: 14px; height: 14px; fill: none; stroke: var(--r-caption); stroke-width: 1.4; }
   .gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; } .gname b { font-weight: 600; } .gs { color: var(--r-faint); font-size: 11px; }
-  .gh .gmenu { margin-left: auto; } .gact ~ .gmenu { margin-left: 6px; }
   .gact { margin-left: auto; font: inherit; font-size: 10.5px; border: 1px solid var(--r-edge); background: none; color: var(--r-caption); border-radius: 5px; padding: 0 7px; cursor: pointer; }
   .gact:hover { color: var(--r-text); border-color: var(--r-faint); }
   .items, .flat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 4px; } .pinned .card + .card { margin-top: 6px; }
@@ -1713,12 +1710,17 @@ ${MADE_SCRIPT}
   // the tab lists, and each tab keeps its own words.
   const findBox = document.querySelector('.hfind [data-find]');
   const findWords = {};
-  const FIND_HINT = { sessions: 'Filter · ⌘K all', prs: 'Filter', tickets: 'Filter', lead: 'Filter', settings: 'Filter' };
-  function syncFind(tab) { findBox.value = findWords[tab] || ''; findBox.placeholder = FIND_HINT[tab] || 'Filter'; }
+  const FIND_HINT = { sessions: 'Filter · ⌘K all', prs: 'Filter', tickets: 'Filter', lead: 'Filter' };
+  function syncFind(tab) {
+    findBox.value = findWords[tab] || ''; findBox.placeholder = FIND_HINT[tab] || 'Filter';
+    // A tab with words shows the field; one without shows the tabs, whatever was focused before.
+    document.querySelector('.tabs').classList.toggle('finding', !!findBox.value);
+    document.querySelector('.hfind').hidden = tab === 'settings';
+  }
   function applyFind() {
     const words = findBox.value.toLowerCase().split(/\s+/).filter(Boolean);
     findWords[current] = findBox.value;
-    const groups = [...main.querySelectorAll('.grp, .rgrp, details, .lead')];
+    const groups = [...main.querySelectorAll(':scope > .grp, :scope > .rgrp, :scope > details, :scope > .lead')];
     const rows = (g) => g.querySelectorAll('.items .card, li.prli, li.tli, .lt');
     let shown = 0;
     for (const grp of groups) {
@@ -2210,7 +2212,6 @@ ${MADE_SCRIPT}
     if (fix) { e.preventDefault(); e.stopPropagation(); if (fix.disabled) return; fix.disabled = true; fix.title = 'Starting…'; vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); return; }
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
-    if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
     if (e.target.closest('[data-refresh]')) { vscode.postMessage({ type: 'refresh' }); return; }
     const os = e.target.closest('[data-open-session]');
     if (os) { vscode.postMessage({ type: 'openSession', sessionId: os.dataset.openSession, host: os.dataset.host }); return; }
@@ -2228,7 +2229,8 @@ ${MADE_SCRIPT}
     }
     const ask = e.target.closest('.card .ask [data-expand]');
     if (ask) { const id = ask.closest('.card').dataset.session; if (opened.has(id)) opened.delete(id); else opened.add(id); restoreLocal(); return; }
-    const goal = e.target.closest('.goals [data-url]');
+    // A link inside a menu (Issues' ⇅: Open goals in Linear) closes it.
+    const goal = e.target.closest('.menu [data-url]');
     if (goal) { e.preventDefault(); const gm = goal.closest('.menu'); if (gm) gm.hidden = true; vscode.postMessage({ type: 'open', url: goal.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const menuBtn = e.target.closest('[data-menu]');
     const menu = menuBtn ? menuBtn.parentElement.querySelector(':scope > .menu') : openMenu();
