@@ -13,6 +13,7 @@ const server = Bun.serve({
   fetch(req) {
     const p = new URL(req.url).pathname;
     hits[p] = (hits[p] ?? 0) + 1;
+    if (p === '/empty') return new Response('', { headers: { 'content-type': 'image/png' } });
     return p === '/a' ? new Response(PNG, { headers: { 'content-type': 'image/png' } }) : new Response('no', { status: 404 });
   },
 });
@@ -45,4 +46,17 @@ test('a picture that fails is not asked for again on every draw', async () => {
   await Bun.sleep(20);
   expect(hits['/gone']).toBe(1);
   expect(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+});
+
+test('an empty picture is a failure, and an empty file on disk is not served', async () => {
+  const url = `http://localhost:${server.port}/empty`;
+  const cache = new AvatarCache(dir, () => undefined);
+  expect(cache.file(url)).toBeNull();
+  await until(() => hits['/empty'] === 1);
+  await Bun.sleep(20);
+  expect(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  const a = `http://localhost:${server.port}/a`;
+  const file = new AvatarCache(dir, () => undefined).file(a)!;
+  fs.writeFileSync(file, '');
+  expect(new AvatarCache(dir, () => undefined).file(a)).toBeNull();
 });

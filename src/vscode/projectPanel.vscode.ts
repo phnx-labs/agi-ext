@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
 import { AvatarCache } from '../core/avatarCache';
-import { nextMilestone, parseGoals, renderGoals, type Goals } from '../core/goals';
+import { nextMilestone, openMilestones, parseGoals, renderGoals, type Goals } from '../core/goals';
 import { resolveLaunchTarget, type LaunchTarget } from '../core/launchTarget';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
@@ -556,7 +556,7 @@ class ProjectPanelController {
 
   /** Issues or Review drawn again from the read already made, never a new one. */
   async redrawn(tab: 'tickets' | 'prs', p: ProjectRef): Promise<string | undefined> {
-    if (tab === 'tickets') return this.render('tickets', p, false);
+    if (tab === 'tickets') return this.tickets?.project === p.name ? this.drawTickets(p, await this.tickets.groups) : undefined;
     const seen = this.reviewSeen;
     return seen ? renderPrsProgress(seen.slugs, seen.done, Date.now(), this.reviewOptions()) : undefined;
   }
@@ -715,10 +715,7 @@ class ProjectPanelController {
 
   async render(id: Exclude<TabId, 'sessions' | 'settings'>, p: ProjectRef, force: boolean): Promise<string> {
     if (id === 'tickets') {
-      const chosen = this.chosenMilestone(p.name);
-      const groups = (await this.ticketGroups(p, force)).map((g) => ({ ...g, tickets: chosen ? g.tickets.filter((t) => t.milestone === chosen) : g.tickets })).filter((g) => g.tickets.length);
-      const where = resolveLaunchTarget(vscode.workspace.getConfiguration('agents').get<string>('launch.defaultTarget'));
-      return renderTickets(groups, (t) => this.ticketRow(p, t), this.headMilestone, where);
+      return this.drawTickets(p, await this.ticketGroups(p, force));
     }
     // `prs list` exits 1 when a repo could not be read but still prints the envelope
     // with `partial: true`; render it rather than discarding it.
@@ -733,6 +730,13 @@ class ProjectPanelController {
     const model = parsePrs(stdout);
     this.reviewSeen = { slugs: model.repos.map((r) => r.slug), done: new Map(model.repos.map((r) => [r.slug, r])) };
     return renderPrs(model, Date.now(), this.reviewOptions());
+  }
+
+  private drawTickets(p: ProjectRef, all: TicketGroup[]): string {
+    const chosen = this.chosenMilestone(p.name);
+    const groups = all.map((g) => ({ ...g, tickets: chosen ? g.tickets.filter((t) => t.milestone === chosen) : g.tickets })).filter((g) => g.tickets.length);
+    const where = resolveLaunchTarget(vscode.workspace.getConfiguration('agents').get<string>('launch.defaultTarget'));
+    return renderTickets(groups, (t) => this.ticketRow(p, t), this.headMilestone, where);
   }
 
   /** The PRs last read, so a ⇅ change redraws Review without reading GitHub again. */
@@ -764,9 +768,13 @@ class ProjectPanelController {
   /** The last goals read, so a milestone pick redraws the header without reading again. */
   private goalsSeen: { goals: Goals; project: string; linearName: string | null | undefined } | undefined;
 
-  /** The milestone Issues shows for a project, picked in the header's menu; none is all. */
+  /** The milestone Issues shows for a project, picked in the header's menu; none is all.
+   *  A pick that is no longer open (finished, renamed) is all, as the header then shows. */
   private chosenMilestone(project: string): string | undefined {
-    return this.context.workspaceState.get<Record<string, string>>(MILESTONE_KEY)?.[project] || undefined;
+    const name = this.context.workspaceState.get<Record<string, string>>(MILESTONE_KEY)?.[project] || undefined;
+    const seen = this.goalsSeen;
+    if (!name || !seen || seen.project !== project) return name;
+    return openMilestones(seen.goals, seen.linearName).some((m) => m.name === name) ? name : undefined;
   }
 
   async pickMilestone(name: string): Promise<string | undefined> {
