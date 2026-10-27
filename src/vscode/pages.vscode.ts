@@ -25,12 +25,18 @@ type Inbound =
  * The built-in browser's history lives in VSCodium's own storage, beside this extension's
  * global storage folder. Read-only, with the runtime's own SQLite; nothing else reads it.
  */
-export function readBrowserHistory(globalStorage: Pick<vscode.Uri, 'fsPath'>): { recent: RecentPage[]; reason?: string } {
-  const db = path.join(path.dirname(globalStorage.fsPath), 'state.vscdb');
+export function readBrowserHistory(globalStorage: Pick<vscode.Uri, 'fsPath'>, remoteName?: string): { recent: RecentPage[]; reason?: string } {
+  // A remote window's extension host runs where the code is; the browser's history stays on this machine.
+  if (remoteName) return { recent: [], reason: `Recent shows the built-in browser's history in a local window; this window runs on ${remoteName}.` };
+  let sqlite: { DatabaseSync: new (file: string, o: { readOnly: boolean }) => { prepare(sql: string): { get(key: string): { value?: string } | undefined }; close(): void } };
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (file: string, o: { readOnly: boolean }) => { prepare(sql: string): { get(key: string): { value?: string } | undefined }; close(): void } };
-    const conn = new DatabaseSync(db, { readOnly: true });
+    sqlite = require('node:sqlite');
+  } catch {
+    return { recent: [], reason: "Recent needs an editor whose runtime has SQLite (VSCodium or VS Code 1.117 and later)." };
+  }
+  try {
+    const conn = new sqlite.DatabaseSync(path.join(path.dirname(globalStorage.fsPath), 'state.vscdb'), { readOnly: true });
     try {
       const read = (key: string) => conn.prepare('SELECT value FROM ItemTable WHERE key = ?').get(key)?.value ?? null;
       return { recent: parseBrowserHistory(read('browser.history.entries.global'), read('browser.history.favicons.global')) };
@@ -38,45 +44,66 @@ export function readBrowserHistory(globalStorage: Pick<vscode.Uri, 'fsPath'>): {
       conn.close();
     }
   } catch (err) {
-    return { recent: [], reason: `The browser's history could not be read: ${(err as Error).message}` };
+    return { recent: [], reason: `The built-in browser's history could not be read (${(err as Error).message}).` };
   }
 }
 
-async function fetchWithin(url: string, ms: number): Promise<Response> {
+/** A GET whose headers and body both arrive within `ms` and whose body stays under `maxBytes`; null otherwise. */
+async function fetchCapped(url: string, ms: number, maxBytes: number): Promise<{ res: Response; body: Buffer } | null> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms);
   try {
-    return await fetch(url, { signal: ctl.signal, redirect: 'follow' });
+    const res = await fetch(url, { signal: ctl.signal, redirect: 'follow' });
+    if (Number(res.headers.get('content-length') ?? 0) > maxBytes || !res.body) return null;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      size += chunk.length;
+      if (size > maxBytes) { ctl.abort(); return null; }
+      chunks.push(chunk);
+    }
+    return { res, body: Buffer.concat(chunks) };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
+/** Loopback, link-local and private addresses: an icon fetched from a public page never goes there. */
+function isPrivateHost(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^fe80:|^f[cd]/.test(h)
+      || /^(127|10|0)\./.test(h) || /^169\.254\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  } catch {
+    return true;
+  }
+}
+
 async function iconAt(url: string): Promise<string | undefined> {
-  const res = await fetchWithin(url, 5000);
-  const type = (res.headers.get('content-type') ?? '').split(';')[0].trim();
-  if (!res.ok || !type.startsWith('image/')) return undefined;
-  const body = Buffer.from(await res.arrayBuffer());
-  return body.length && body.length <= ICON_MAX_BYTES ? `data:${type};base64,${body.toString('base64')}` : undefined;
+  const got = await fetchCapped(url, 5000, ICON_MAX_BYTES);
+  if (!got) return undefined;
+  const type = (got.res.headers.get('content-type') ?? '').split(';')[0].trim();
+  return got.res.ok && type.startsWith('image/') && got.body.length ? `data:${type};base64,${got.body.toString('base64')}` : undefined;
 }
 
 /** The icon the page declares, then the site's /favicon.ico; undefined draws a letter. */
 export async function resolvePageIcon(pageUrl: string): Promise<string | undefined> {
   if (!/^https?:/i.test(pageUrl)) return undefined;
+  // A page you pinned on your own machine may use its own; a public page's icon may not point inward.
+  const allowed = (href: string) => isPrivateHost(pageUrl) || !isPrivateHost(href);
   const tries: string[] = [];
-  try {
-    const res = await fetchWithin(pageUrl, 5000);
-    const html = res.ok ? (await res.text()).slice(0, 512 * 1024) : '';
-    const declared = findIconHref(html, res.url || pageUrl);
-    if (declared) tries.push(declared);
-  } catch { /* the page did not answer; the site's favicon may */ }
+  const page = await fetchCapped(pageUrl, 5000, 512 * 1024);
+  if (page?.res.ok && allowed(page.res.url || pageUrl)) {
+    const declared = findIconHref(page.body.toString('utf8'), page.res.url || pageUrl);
+    if (declared && allowed(declared)) tries.push(declared);
+  }
   const fallback = findIconHref('', pageUrl);
   if (fallback && !tries.includes(fallback)) tries.push(fallback);
   for (const href of tries) {
-    try {
-      const icon = await iconAt(href);
-      if (icon) return icon;
-    } catch { /* try the next one */ }
+    const icon = await iconAt(href);
+    if (icon) return icon;
   }
   return undefined;
 }
@@ -85,6 +112,8 @@ export class PagesPanel {
   private panel: vscode.WebviewPanel | undefined;
   /** The URL Pages last opened; "same tab" navigates the browser tab still showing it. */
   private lastUrl: string | null = null;
+  /** Read when the tab shows or on Refresh; a pin, rename or open reuses it. */
+  private history: { recent: RecentPage[]; reason?: string } = { recent: [] };
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly modifier: string) {}
 
@@ -97,13 +126,13 @@ export class PagesPanel {
     this.panel = panel;
     panel.webview.html = pagesShell(panel.webview.cspSource);
     panel.onDidDispose(() => { this.panel = undefined; });
-    panel.onDidChangeViewState((e) => { if (e.webviewPanel.visible) this.post(); });
+    panel.onDidChangeViewState((e) => { if (e.webviewPanel.visible) this.post(true); });
     panel.webview.onDidReceiveMessage((m: Inbound) => { void this.handle(m); });
   }
 
   /** Settings > Pages changed; an open Pages tab redraws its hint. */
   refresh(): void {
-    if (this.panel) this.post();
+    if (this.panel) this.post(true);
   }
 
   private pins(): PagePin[] {
@@ -118,8 +147,9 @@ export class PagesPanel {
     return getSettings(this.context).pages?.click ?? PAGES_CLICK_DEFAULT;
   }
 
-  private post(): void {
-    const { recent, reason } = readBrowserHistory(this.context.globalStorageUri);
+  private post(reread = false): void {
+    if (reread) this.history = readBrowserHistory(this.context.globalStorageUri, vscode.env.remoteName);
+    const { recent, reason } = this.history;
     void this.panel?.webview.postMessage({ type: 'state', pins: this.pins(), recent, reason, click: this.click(), shortcut: `${this.modifier}V` });
   }
 
@@ -127,7 +157,7 @@ export class PagesPanel {
     switch (m.type) {
       case 'ready':
       case 'refresh':
-        this.post();
+        this.post(true);
         return;
       case 'open': {
         const url = normalizePageUrl(m.url);
