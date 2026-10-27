@@ -16,8 +16,8 @@ From the owner's 12:07 PM screenshot of the Review tab, drawn the way the AGI Me
 
 - Each PR row ends in one ring instead of Merge, Conflicts and Fix buttons: a green ✓ when it
   is ready, a red ! for conflicts or failing checks, an amber arc while checks run, a dash
-  for a draft. The verdict is a colored word on the meta line ("Ready to merge", "Conflicts
-  with main", "2 failing"), so titles get the width.
+  for a draft. The verdict was a colored word on the meta line ("Ready to merge", "Conflicts
+  with main", "2 failing"); 0.9.434 drops it, so titles get the width.
 - Merge is a click on the green ring: it fills with a merge mark on hover, drains for 5 s
   (click again to stop), spins while merging, then turns violet with "Merged". A merge that
   did not happen turns the ring red with the reason on the meta line.
