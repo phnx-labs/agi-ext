@@ -1,10 +1,8 @@
 import { test, expect } from 'bun:test'
 import { parseTicketView, renderTicketPeek, ticketPrompt } from './ticketPeek'
 
-const START = { agentName: 'Claude', delegated: false }
-
 test('the peek escapes everything the tracker sends and keeps only safe marks', () => {
-  const html = renderTicketPeek('PHNX-1', '## Outcome\n* **one** `two` [doc](https://example.com/a?b=1&c=2) [x](https://x.io/`y`)\n<script>alert(1)</script>\n[x](javascript:alert(1))', START)
+  const html = renderTicketPeek('PHNX-1', '## Outcome\n* **one** `two` [doc](https://example.com/a?b=1&c=2) [x](https://x.io/`y`)\n<script>alert(1)</script>\n[x](javascript:alert(1))')
   expect(html).not.toMatch(/<script|data-url="javascript/)
   expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
   expect(html).toContain('<h4>Outcome</h4><ul><li><b>one</b> <code>two</code> <a href="#" data-url="https://example.com/a?b=1&amp;c=2">doc</a>')
@@ -12,25 +10,21 @@ test('the peek escapes everything the tracker sends and keeps only safe marks', 
   expect(html).toContain('<div class="tpeek" data-peek="PHNX-1" hidden>')
 })
 
-test('a long description shows its opening lines, cut at a line, and points at the tab', () => {
+test('a long description shows its opening lines, cut at a line', () => {
   const para = 'word '.repeat(30).trim()
-  const html = renderTicketPeek('A-1', Array.from({ length: 10 }, (_, i) => `${para} ${i}`).join('\n'), START)
+  const html = renderTicketPeek('A-1', Array.from({ length: 10 }, (_, i) => `${para} ${i}`).join('\n'))
   expect(html).toContain(`${para} 0`)
   expect(html).not.toContain(`${para} 9`)
-  expect(html).toContain('More in its tab.')
-  expect(renderTicketPeek('A-1', '', START)).toContain('No description.')
+  expect(renderTicketPeek('A-1', '')).toContain('No description.')
 })
 
-test('Start names the delegated agent; sessions already on it come first and starting another is quiet', () => {
-  const idle = renderTicketPeek('A-1', 'x', { agentName: 'Codex', delegated: true })
-  expect(idle).toContain('<button class="primary" data-start-ticket="A-1">▶ Start Codex</button>')
-  expect(idle).toContain('Linear delegates it to this agent')
-  const busy = renderTicketPeek('A-1', 'x', START, [{ sessionId: 's1', host: 'yosemite-m6', title: 'Merge <3867>', state: 'Your move · asks', where: 'yosemite-m6' }])
-  expect(busy).toContain('On it now')
-  expect(busy).toContain('data-open-session="s1" data-host="yosemite-m6">Open</button>')
-  expect(busy).toContain('Merge &lt;3867&gt;')
-  expect(busy).toContain('<button class="link" data-start-ticket="A-1">Start Claude in a new tab</button>')
-  expect(busy).not.toContain('▶ Start')
+test('the peek has no Start of its own; a session already on it is one click to its tab', () => {
+  const idle = renderTicketPeek('A-1', 'x')
+  expect(idle).not.toContain('data-start-ticket')
+  expect(idle).not.toContain('class="hint"')
+  const busy = renderTicketPeek('A-1', 'x', [{ sessionId: 's1', host: 'yosemite-m6', title: 'Merge <3867>', state: 'Your move · asks', where: 'yosemite-m6' }])
+  expect(busy).toContain('<button class="ons" data-open-session="s1" data-host="yosemite-m6"><b>Merge &lt;3867&gt;</b><small>Your move · asks · yosemite-m6</small></button>')
+  expect(busy).not.toContain('data-start-ticket')
 })
 
 test('a ticket view read gives the page and face a tile needs', () => {
