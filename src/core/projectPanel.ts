@@ -1295,7 +1295,7 @@ export function applyReviewPref(p: ReviewPrefs, key: string, value: string): Rev
   return null;
 }
 
-interface ReviewOptions { prefs: ReviewPrefs; mergeWith: string; avatar: (url: string) => string | null }
+interface ReviewOptions { prefs: ReviewPrefs; mergeWith: string; avatar: (url: string) => string | null; fixAgent: { key: string; name: string } }
 
 const METHOD_WORD: Record<string, string> = { squash: 'squash', rebase: 'rebase', merge: 'a merge commit' };
 
@@ -1308,21 +1308,43 @@ function prState(p: PrRow): PrState {
   return 'ready';
 }
 
-/** The PR's state as its rightmost control: Merge (one click, then Undo) when checks
- *  pass, else the checks in a word or two (owner, 2026-10-12 9:00 PM). */
-function prStatusCell(p: PrRow, slug: string, mergeWith: string): string {
+/** What a PR's ring and meta line say, as the AGI Menu says it (owner, 2026-10-27 12:07 PM):
+ *  the verdict is a word on the meta line and a mark in the ring, never a button's text. */
+function prRowVerdict(p: PrRow): { st: PrState; word: string; tone: 'ok' | 'bad' | 'run' | 'quiet' } {
   const st = prState(p);
-  if (st === 'ready') return `<button class="rs merge" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}"${p.headSha ? ` data-merge-sha="${escapeHtml(p.headSha)}"` : ''} title="Merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)">Merge</button>`;
-  if (st === 'conflict') return `<span class="rs fail" title="Conflicts with ${escapeHtml(p.base ?? 'its base')}">Conflicts</span>${fixButton(p, slug, 'conflicts')}`;
-  if (st === 'failing') return `<span class="rs fail" title="${p.failing ? `${p.failing} check${p.failing === 1 ? '' : 's'} failing` : 'Checks failing'}">✕${p.failing ? ` ${p.failing}` : ''}</span>${fixButton(p, slug, 'checks')}`;
-  if (st === 'running') return `<span class="rs run" title="Checks running">${ring(p.ciState, false)}</span>`;
-  return '<span class="rs draft">Draft</span>';
+  if (st === 'ready') return { st, word: 'Ready to merge', tone: 'ok' };
+  if (st === 'conflict') return { st, word: `Conflicts with ${p.base ?? 'its base'}`, tone: 'bad' };
+  if (st === 'failing') return { st, word: p.failing ? `${p.failing} failing` : 'Checks failing', tone: 'bad' };
+  if (st === 'running') return { st, word: 'Checks running', tone: 'run' };
+  return { st, word: 'Draft', tone: 'quiet' };
 }
 
-/** Fix: start an agent tab on the PR with what to fix (`prFixPrompt`). */
-function fixButton(p: PrRow, slug: string, what: 'checks' | 'conflicts'): string {
-  const why = what === 'conflicts' ? `resolve #${p.number}'s conflicts with ${p.base ?? 'its base'}` : `fix #${p.number}'s failing checks${p.failingChecks.length ? ` (${p.failingChecks.join(', ')})` : ''}`;
-  return `<button class="rs fix" data-fix-repo="${escapeHtml(slug)}" data-fix-number="${p.number}" title="${escapeHtml(`Start an agent in a new tab to ${why}`)}">Fix</button>`;
+const RING_SVG = (mark: string) => `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="trk" cx="10" cy="10" r="8.5"/><circle class="arc" cx="10" cy="10" r="8.5"/>${mark}</svg>`;
+const MARK = {
+  ok: '<path class="mk chk" d="M6.4 10.3l2.4 2.4 4.8-5.2"/><g class="mk mrg"><circle cx="7.3" cy="6.4" r="1.4"/><circle cx="7.3" cy="13.6" r="1.4"/><circle cx="12.9" cy="10.6" r="1.4"/><path d="M7.3 7.8v4.4M7.3 8.6c0 1.6 1.4 2 4.2 2"/></g><path class="mk und" d="M7.4 7.4l5.2 5.2M12.6 7.4l-5.2 5.2"/><path class="mk bang" d="M10 6v4.6"/><circle class="mk dot" cx="10" cy="13.6" r="0.9"/>',
+  bad: '<path class="mk bang" d="M10 6v4.6"/><circle class="mk dot" cx="10" cy="13.6" r="0.9"/>',
+  run: '',
+  quiet: '<path class="mk dash" d="M7 10h6"/>',
+} as const;
+
+/** The PR's state as one ring in a fixed slot at the row's end. Only a ready PR's ring is a
+ *  button: hover shows the merge mark, a click merges with the Settings method after the
+ *  page's Undo (the ring drains for 5 s; a click inside it stops the merge), then it spins
+ *  and turns violet with "Merged". A conflict or a failing check is a red ring; Fix is the
+ *  agent's logo beside it on hover. */
+function prRing(p: PrRow, slug: string, mergeWith: string): string {
+  const v = prRowVerdict(p);
+  const tip = v.st === 'failing' && p.failingChecks.length ? `${v.word}: ${p.failingChecks.join(', ')}` : v.word;
+  if (v.st === 'ready') return `<button class="pring v-ok" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}"${p.headSha ? ` data-merge-sha="${escapeHtml(p.headSha)}"` : ''} title="${escapeHtml(`Ready to merge. Click to merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)`)}" aria-label="Merge #${p.number}">${RING_SVG(MARK.ok)}</button>`;
+  return `<span class="pring v-${v.tone}" role="img" aria-label="${escapeHtml(tip)}" title="${escapeHtml(tip)}">${RING_SVG(MARK[v.tone])}</span>`;
+}
+
+/** Fix: the agent's logo, shown on the row's hover, starts it in a new tab on the PR with what to fix (`prFixPrompt`). */
+function fixButton(p: PrRow, slug: string, agent: ReviewOptions['fixAgent']): string {
+  const st = prState(p);
+  if (st !== 'conflict' && st !== 'failing') return '';
+  const why = st === 'conflict' ? `resolve #${p.number}'s conflicts with ${p.base ?? 'its base'}` : `fix #${p.number}'s failing checks${p.failingChecks.length ? ` (${p.failingChecks.join(', ')})` : ''}`;
+  return `<button class="prfix" data-fix-repo="${escapeHtml(slug)}" data-fix-number="${p.number}" title="${escapeHtml(`Start ${agent.name} in a new tab to ${why}`)}" aria-label="${escapeHtml(`Fix #${p.number} with ${agent.name}`)}">${harnessLogo(agent.key)}</button>`;
 }
 
 /** The task a Fix agent gets: the PR, its branch, what is wrong, where the code is, and
@@ -1352,7 +1374,8 @@ function prFace(p: PrRow, avatar: ReviewOptions['avatar']): string {
 
 function prLine(p: PrRow, slug: string, now: number, opts: ReviewOptions, showRepo: boolean): string {
   const age = ageWords(Date.parse(p.date), now);
-  return `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prOpenIcon(p)}${prStatusCell(p, slug, opts.mergeWith)}</li>`;
+  const v = prRowVerdict(p);
+  return `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age} · <span class="vw v-${v.tone}">${escapeHtml(v.word)}</span></span></span></a>${prOpenIcon(p)}${fixButton(p, slug, opts.fixAgent)}${prRing(p, slug, opts.mergeWith)}</li>`;
 }
 
 function reviewMenu(p: ReviewPrefs): string {
@@ -1401,7 +1424,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
     body = section('Open', shown);
   }
   const merged = prefs.showMerged ? m.repos.flatMap((r) => r.merged.map((p) => ({ p, slug: r.slug }))).sort((a, b) => Date.parse(b.p.date) - Date.parse(a.p.date)) : [];
-  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
+  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="pring v-merged" role="img" aria-label="Merged" title="Merged">${RING_SVG(MARK.ok)}</span></li>`).join('')}</ul></section>` : '';
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
   const drafts = hidden ? `<button class="more-drafts" data-pref="showDrafts" data-value="true" title="Show the drafts (the ⇅ menu hides them again)">+${hidden} draft${hidden === 1 ? '' : 's'}</button>` : '';
   return head + partial + readingLine + errors + body + none + drafts + mergedHtml + '<div class="toast" hidden></div>';

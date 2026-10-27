@@ -787,6 +787,7 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     --r-float: 0 10px 26px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
     --r-gold-line: #D4B872;
     --r-info: #a5b4fc;
+    --r-merged: #a371f7;
     --r-av0: #7c3aed; --r-av1: #0891b2; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-light {
@@ -823,6 +824,7 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     --r-float: 0 10px 24px rgba(20, 24, 41, 0.18), 0 2px 6px rgba(20, 24, 41, 0.12);
     --r-gold-line: #A8884A;
     --r-info: #4f46e5;
+    --r-merged: #8250df;
     --r-av0: #7c3aed; --r-av1: #0e7490; --r-av2: #c2410c; --r-av3: #15803d; --r-av4: #be185d; --r-av5: #4338ca; --r-on-av: #FFFFFF;
   }
   body.vscode-high-contrast, body.vscode-high-contrast-light {
@@ -861,6 +863,7 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
     --r-float: none;
     --r-gold-line: var(--vscode-focusBorder);
     --r-info: var(--vscode-textLink-foreground);
+    --r-merged: var(--vscode-charts-purple);
     --r-av0: transparent; --r-av1: transparent; --r-av2: transparent; --r-av3: transparent; --r-av4: transparent; --r-av5: transparent; --r-on-av: var(--vscode-foreground);
   }
   .card {
