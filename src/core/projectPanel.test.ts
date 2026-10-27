@@ -104,7 +104,8 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(groups[0].tickets[0].description).toBe('')
   // The assignee as a colored initial; Linear's delegate is not drawn (▶ starts that agent).
   expect(html).not.toContain('Delegated to claude')
-  expect(html).toMatch(/<span class="iav av\d" title="Muqsit Nawaz">MN<\/span>/)
+  expect(html).toMatch(/data-ticket="A-3" title="t A-3"><span class="iav av\d" title="Muqsit Nawaz">MN<\/span><span class="pri p2"/)
+  expect(html).toContain('data-ticket="A-4" title="t A-4"><span class="iav nobody" title="Unassigned"></span>')
   // The milestone shows only when it is not the one the header names.
   expect(html).toContain('<span class="sub">A-3 · Ship B</span>')
   expect(renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }), 'Ship B')).toContain('<span class="sub">A-3</span>')

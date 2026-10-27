@@ -1239,7 +1239,8 @@ function startMenu(id: string, agentKey: string, where: LaunchTarget): string {
  *  long for the row scrolls sideways under the pointer, ↗ opens its Linear page. The agent's
  *  logo starts that agent on it, and ▾ beside it picks another agent or where it runs; once
  *  one works on it, the logo carries its state dot and opens that session instead. The
- *  milestone shows only when it is not the header's; priority is colored (owner, 5:48 AM). */
+ *  milestone shows only when it is not the header's; priority is colored (owner, 5:48 AM);
+ *  the assignee leads the row (owner, 6:05 AM). */
 export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras, milestone?: string, where: LaunchTarget = 'auto'): string {
   if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
   const row = (t: Ticket) => {
@@ -1252,7 +1253,7 @@ export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => Tick
       : `<button class="tag" data-start-ticket="${id}" title="Start ${escapeHtml(x.agentName)} on ${id} in a new tab" aria-label="Start ${escapeHtml(x.agentName)} on ${id}">${harnessLogo(x.agentKey)}</button>`;
     const open = t.url ? `<a class="pro" href="#" data-url="${escapeHtml(t.url)}" title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open ${id} in a tab">${OPEN_ICON}</a>` : '';
     const pick = `<span class="tpick"><button class="tcar" data-menu aria-haspopup="menu" aria-expanded="false" title="Another agent, or where it runs" aria-label="Choose an agent for ${id}">▾</button>${startMenu(id, x.agentKey, where)}</span>`;
-    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${priorityBars(t.priority)}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${id}${ms}</span></span></a><span class="who">${agent}${pick}${personAvatar(t.assignee)}</span>${open}${x.peek}</li>`;
+    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${personAvatar(t.assignee) || '<span class="iav nobody" title="Unassigned"></span>'}${priorityBars(t.priority)}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${id}${ms}</span></span></a><span class="who">${agent}${pick}</span>${open}${x.peek}</li>`;
   };
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
