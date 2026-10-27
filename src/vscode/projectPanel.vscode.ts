@@ -1580,7 +1580,7 @@ ${MADE_CSS}
   .tag { display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 4px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--r-caption); cursor: pointer; }
   .tag:hover { border-color: var(--r-edge); background: var(--r-glass-hover); } .tag .hx { width: 14px; height: 14px; }
   .tag i[class^="d-"] { width: 6px; height: 6px; border-radius: 50%; display: block; background: var(--r-faint); } .tag .n { font-size: 10px; color: var(--r-faint); }
-  .tag .d-move { background: var(--r-warn); } .tag .d-running { background: var(--r-ok); } .tag .d-review { background: var(--r-info); }
+  .tag i.d-move { background: var(--r-warn); } .tag i.d-running { background: var(--r-ok); } .tag i.d-review { background: var(--r-info); }
   .tli:hover .pro, .tli.peek .pro { opacity: 1; }
   .tli:hover, .tli.peek { background: var(--r-glass-hover); } .tli .trow:hover { background: none; }
   .tpeek { flex-basis: 100%; padding: 0 8px 8px 24px; display: flex; flex-direction: column; gap: 6px; }
