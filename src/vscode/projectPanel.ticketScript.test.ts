@@ -87,8 +87,12 @@ test('Settings > Tabs hides Review and Issues; Sessions stays as the way back fr
 
 test('a ticket tag colors its session dot for every state tone but the quiet one', async () => {
   const { STATE_TONE } = await import('../shared/sessionState');
-  for (const tone of new Set(Object.values(STATE_TONE))) {
-    if (tone === 'quiet') continue;
-    expect(page).toMatch(new RegExp(`\\.tag \\.d-${tone} \\{ background: var\\(--r-`));
-  }
+  const styled = new Window();
+  const tones = [...new Set(Object.values(STATE_TONE))];
+  styled.document.write(`${page.slice(page.indexOf('<style'), page.indexOf('</style>') + 8)}<button class="tag">${tones.map((t) => `<i class="d-${t}"></i>`).join('')}</button>`);
+  const color = (t: string) => styled.getComputedStyle(styled.document.querySelector(`.tag i.d-${t}`) as unknown as Element).backgroundColor;
+  const quiet = color('quiet');
+  for (const t of tones.filter((x) => x !== 'quiet')) expect(color(t)).not.toBe(quiet);
+  expect(new Set(tones.filter((x) => x !== 'quiet').map(color)).size).toBe(tones.length - 1);
+  await styled.happyDOM.close();
 });
