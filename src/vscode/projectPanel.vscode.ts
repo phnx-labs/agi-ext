@@ -408,15 +408,18 @@ class ProjectView implements vscode.WebviewViewProvider {
   /** Merge from a PR row: one read of that PR (the list has no head commit), a
    *  method or admin merge from the menu, a dialog, then one pinned merge. */
   private async mergeRow(repo: string, number: number, sha: string | undefined): Promise<void> {
-    // Merges run one after another, never dropped; Review is reread after each,
-    // merged or not, so a row never stays on "Merging…".
+    // Merges run one after another, never dropped; Review is reread after each merge,
+    // and a refused one keeps its reason on the row until the next read.
     this.merging = this.merging.then(async () => {
+      // The row's ring says how it went: violet and Merged, or red with GitHub's reason on its meta line.
+      let error = '';
       try {
         await this.controller.mergeFromRow(repo, number, sha);
       } catch (e) {
-        void vscode.window.showErrorMessage(`Merge failed: ${errorText(e).split('\n').slice(0, 3).join(' ')}`);
+        error = errorText(e).split('\n').slice(0, 3).join(' ');
       }
-      await this.load('prs', true);
+      void this.view?.webview.postMessage({ type: 'merged', repo, number, error });
+      if (!error) await this.load('prs', true);
     });
     await this.merging;
   }
@@ -743,7 +746,7 @@ class ProjectPanelController {
   private reviewSeen: { slugs: string[]; done: Map<string, PrsModel['repos'][number]> } | undefined;
 
   private reviewOptions() {
-    return { prefs: readReviewPrefs(this.context.workspaceState.get(REVIEW_PREFS_KEY)), mergeWith: getSettings(this.context).mergeMethod ?? 'squash', avatar: (url: string) => this.avatarUri(url) };
+    return { prefs: readReviewPrefs(this.context.workspaceState.get(REVIEW_PREFS_KEY)), mergeWith: getSettings(this.context).mergeMethod ?? 'squash', avatar: (url: string) => this.avatarUri(url), fixAgent: { key: this.defaultAgent().key, name: this.defaultAgent().name } };
   }
 
   /** One Review ⇅ choice; the redrawn tab, or undefined when nothing was read yet. */
@@ -1297,13 +1300,29 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .prli:hover .pro, .pro:focus-visible { opacity: 1; }
   .pro:hover { background: var(--r-glass-hover); color: var(--r-text); }
   .pro svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-  /* A PR row: its author on the left, its state as the rightmost control (Merge when checks pass). */
-  .rs { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 2px 8px; font: 600 11px var(--vscode-font-family); border: 1px solid transparent; white-space: nowrap; }
-  .rs.merge { background: var(--r-ok); color: var(--r-on-av); cursor: pointer; } .rs.merge:hover { filter: brightness(1.08); } .rs.merge:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-  .rs.undo { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; font-variant-numeric: tabular-nums; min-width: 62px; justify-content: center; }
-  .rs.fail { color: var(--r-bad); background: var(--r-bad-tint); }
-  /* Fix: a quiet button beside the failure that starts an agent tab on the PR. */
-  .rs.fix { color: var(--r-text); background: transparent; border: 1px solid var(--r-edge); cursor: pointer; } .rs.fix:hover { background: var(--r-glass-hover); } .rs.fix:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; } .rs.run { padding: 2px 4px; } .rs.draft { color: var(--r-faint); border: 1px dashed var(--r-edge); } .rs.done { color: var(--r-caption); }
+  /* A PR row ends in one ring, as in the AGI Menu (owner, 2026-10-27 12:07 PM): the verdict is a mark,
+     its word sits on the meta line, and only a ready PR's ring is a button. */
+  .pring { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: none; display: inline-flex; align-items: center; justify-content: center; font: inherit; }
+  .pring svg { width: 20px; height: 20px; display: block; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+  .pring .trk { stroke: var(--r-edge); } .pring .arc { stroke: currentColor; stroke-dasharray: 53.4 53.4; transform: rotate(-90deg); transform-origin: 10px 10px; }
+  .pring .mk { stroke: currentColor; } .pring .dot { fill: currentColor; stroke: none; } .pring .mrg, .pring .und { display: none; } .pring .mrg circle { fill: none; }
+  button.pring:not(.v-bad) :is(.bang, .dot) { display: none; } button.pring.v-bad .chk { display: none; }
+  .v-ok { color: var(--r-ok); } .v-bad { color: var(--r-bad); } .v-run { color: var(--r-warn); } .v-quiet { color: var(--r-faint); } .v-merged { color: var(--r-merged); }
+  .pring.v-run .arc { stroke-dasharray: 14 40; animation: spin 1s linear infinite; } .pring.v-quiet .arc { stroke: none; }
+  button.pring { cursor: pointer; } button.pring:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  button.pring.v-ok:is(:hover, :focus-visible):not(.armed):not(.merging) { background: var(--r-ok); color: var(--r-on-av); }
+  button.pring.v-ok:is(:hover, :focus-visible):not(.armed):not(.merging) .chk { display: none; } button.pring.v-ok:is(:hover, :focus-visible):not(.armed):not(.merging) .mrg { display: inline; }
+  button.pring:is(:hover, :focus-visible):not(.armed):not(.merging) .trk, button.pring:is(:hover, :focus-visible):not(.armed):not(.merging) .arc { stroke: none; }
+  /* Undo: the ring drains for 5 s; under the pointer its center is ✕, and a click stops the merge. */
+  .pring.armed .arc { animation: drain 5s linear forwards; } .pring.armed:is(:hover, :focus-visible) .chk { display: none; } .pring.armed:is(:hover, :focus-visible) .und { display: inline; }
+  .pring.merging { pointer-events: none; } .pring.merging .chk { display: none; } .pring.merging .arc { stroke-dasharray: 14 40; animation: spin .7s linear infinite; }
+  .pring.v-merged { background: var(--r-merged); color: var(--r-on-av); animation: pop .35s ease-out; } .pring.v-merged .trk, .pring.v-merged .arc { stroke: none; }
+  @keyframes drain { to { stroke-dashoffset: 53.4; } }
+  @keyframes pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+  .vw { font-family: var(--vscode-font-family); } .sub .vw.v-quiet { color: var(--r-faint); }
+  /* Fix: the agent's logo beside a red ring, on the row's hover; one click starts it on the PR. */
+  .prfix { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; }
+  .prli:hover .prfix, .prfix:focus-visible, .prfix[disabled] { opacity: 1; } .prfix:hover { background: var(--r-glass-hover); } .prfix .hx { width: 15px; height: 15px; } .prfix[disabled] { animation: breathe 1.2s ease-in-out infinite; cursor: default; }
   .rgrp .head { margin-bottom: 2px; } .rgrp.g-ready .label { color: var(--r-ok); } .rgrp.g-fail .label { color: var(--r-bad); }
   .trow:hover, .prow:hover { background: var(--r-glass-hover); }
   .tm { display: grid; min-width: 0; gap: 1px; }
@@ -1647,7 +1666,7 @@ ${MADE_CSS}
   .kql { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
   .kql figure { margin: 0; text-align: center; max-width: 94vw; } .kql img { max-width: 94vw; max-height: 82vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
   .kql figcaption { color: #fff; font-size: 11.5px; margin-top: 6px; }
-  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .pill.st-stuck i::after, .pill.st-blocked i::after, .card.fresh, .card.flash, .tli.mq .t > span { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .pring.v-run .arc, .pring.merging .arc, .pring.v-merged, .prfix[disabled], .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .pill.st-stuck i::after, .pill.st-blocked i::after, .card.fresh, .card.flash, .tli.mq .t > span { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1848,9 +1867,20 @@ ${MADE_SCRIPT}
     return n;
   }
   function mergeBtn(key) { const [repo, num] = key.split('#'); return main.querySelector('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]'); }
+  // Undo: the ready ring drains one fifth a second; under the pointer its center is ✕.
   function drawUndo(key, left) {
     const b = mergeBtn(key); if (!b) return;
-    b.className = 'rs undo'; b.textContent = 'Undo · ' + left; b.title = 'Stop this merge';
+    b.classList.add('armed'); b.title = 'Merging in ' + left + ' s. Click to stop'; b.setAttribute('aria-label', b.title);
+    const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = 'stroke-dashoffset 1s linear'; arc.style.strokeDashoffset = String(53.4 * (6 - left) / 5); }
+  }
+  // What the host says when a merge finished: violet and Merged, or red with the reason.
+  function drawMerged(key, error) {
+    const b = mergeBtn(key); if (!b) return;
+    const row = b.closest('.prli'); const word = row && row.querySelector('.vw');
+    b.classList.remove('armed', 'merging', 'v-ok'); b.classList.add(error ? 'v-bad' : 'v-merged'); b.disabled = true;
+    b.title = error ? 'Not merged: ' + error : 'Merged'; b.setAttribute('aria-label', b.title);
+    const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; }
+    if (word) { word.className = 'vw ' + (error ? 'v-bad' : 'v-merged'); word.textContent = error ? 'Not merged: ' + error : 'Merged'; }
   }
   // The Lead tab's box is data-keep (what you type survives a redraw); its mic and busy
   // state arrive as attributes on .lead-ask and are copied onto the box here.
@@ -1899,6 +1929,7 @@ ${MADE_SCRIPT}
     const m = e.data;
     if (m.type === 'tab') { current = m.tab; select(m.tab); syncTabs(); }
     else if (m.type === 'choose') choose(m.tab);
+    else if (m.type === 'merged' && typeof m.repo === 'string') drawMerged(m.repo + '#' + m.number, typeof m.error === 'string' ? m.error : '');
     else if (m.type === 'count') {
       const c = document.querySelector('[data-cnt="sessions"]'); if (c) c.textContent = m.n ? String(m.n) : '';
       const d = document.querySelector('[data-asks]'); if (d) d.textContent = m.asks ? String(m.asks) : '';
@@ -2129,14 +2160,14 @@ ${MADE_SCRIPT}
       e.preventDefault(); e.stopPropagation();
       const key = merge.dataset.mergeRepo + '#' + merge.dataset.mergeNumber;
       // A second click inside the window is Undo: nothing was sent yet.
-      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); merge.className = 'rs merge'; merge.textContent = 'Merge'; merge.title = 'Merge #' + merge.dataset.mergeNumber; toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
+      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); merge.classList.remove('armed'); const arc = merge.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; } merge.title = 'Ready to merge. Click to merge #' + merge.dataset.mergeNumber; merge.setAttribute('aria-label', 'Merge #' + merge.dataset.mergeNumber); toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
       let left = 5; pendingMerge.set(key, left); drawUndo(key, left);
       const timer = setInterval(() => {
         left -= 1;
         if (!pendingMerge.has(key)) { clearInterval(timer); return; }
         if (left > 0) { pendingMerge.set(key, left); drawUndo(key, left); return; }
         clearInterval(timer); pendingMerge.delete(key); mergeTimers.delete(key);
-        const b = mergeBtn(key); if (b) { b.textContent = 'Merging…'; b.disabled = true; }
+        const b = mergeBtn(key); if (b) { b.classList.remove('armed'); b.classList.add('merging'); b.title = 'Merging…'; const w = b.closest('.prli') && b.closest('.prli').querySelector('.vw'); if (w) w.textContent = 'Merging…'; }
         vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber), sha: merge.dataset.mergeSha });
       }, 1000);
       mergeTimers.set(key, timer);
@@ -2144,7 +2175,7 @@ ${MADE_SCRIPT}
     }
     const fix = e.target.closest('[data-fix-repo]');
     // One agent per click: the button stays off until Review redraws.
-    if (fix) { e.preventDefault(); e.stopPropagation(); if (fix.disabled) return; fix.disabled = true; fix.textContent = 'Starting…'; vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); return; }
+    if (fix) { e.preventDefault(); e.stopPropagation(); if (fix.disabled) return; fix.disabled = true; fix.title = 'Starting…'; vscode.postMessage({ type: 'fixPr', repo: fix.dataset.fixRepo, number: Number(fix.dataset.fixNumber) }); return; }
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
     if (e.target.closest('[data-search]')) { vscode.postMessage({ type: 'search' }); return; }
