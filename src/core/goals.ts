@@ -68,6 +68,12 @@ function milestoneMenu(all: Milestone[], chosen: string | undefined, url: string
  *  two): the project's next milestone with its date and progress (owner video, 2026-10-22
  *  6:42 AM), else ◎ the company goal with its date; the rest in its tooltip; with neither,
  *  ☀ Today. The ☀ filter on Sessions still finds today's sessions. */
+/** Issues' ⇅: which milestone it lists (the menu the goal line used to open). */
+export function issuesMenu(goals: Goals, linearName?: string | null, chosen?: string): string | null {
+  const all = openMilestones(goals, linearName);
+  return all.length ? milestoneMenu(all, all.find((m) => m.name === chosen)?.name, goals.company?.url) : null;
+}
+
 export function renderGoals(goals: Goals, linearName?: string | null, chosen?: string): string {
   const today = goals.today ? `Today · ${goals.today.id}: ${goals.today.title}` : '';
   const all = openMilestones(goals, linearName);

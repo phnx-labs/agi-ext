@@ -52,6 +52,7 @@ import {
   type SessionListPrefs,
   type Ticket,
   type TicketGroup,
+  tabHead,
 } from '../core/projectPanel';
 import { SESSION_STATE_WORD, relTime, sessionStateOf, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
@@ -272,7 +273,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.post(tab, this.controller.settings(this.devices));
       void this.loadDevices(force);
       // The view's title names the project on every tab, Settings included.
-      void this.controller.project().then((p) => { if (this.view === view) view.title = p?.name; }, () => undefined);
+      // The bar says only PROJECT (VS Code joins the container's name and the view's); the name is the panel's own ⌄ (owner video, 2026-10-27 1:19 PM).
+      view.title = '';
       return;
     }
     const gen = ++state.generation;
@@ -285,7 +287,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     }
     if (gen !== state.generation) return;
     // The project's name is the view's title, "PROJECT: RUSH"; ⇄ beside it switches it.
-    view.title = project?.name;
+    view.title = '';
     void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
     if (!project) {
       this.post(tab, '<div class="empty">No project found for this folder. <a href="#" data-pick>Pick a project</a></div>');
@@ -1352,7 +1354,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
   /* One header row: the goal, then the tabs as icons and their controls (owner video,
      2026-10-18 8:59 PM); the project's name is the view's title. */
-  .goals { flex: 1; min-width: 0; margin-right: 4px; overflow: hidden; }
+  .goals { flex: 1; min-width: 0; overflow: hidden; }
   .goals[hidden] { display: none; }
   .goals .gl1 { width: 100%; border: 0; background: none; padding: 2px 4px; margin-left: -4px; border-radius: 6px; font: inherit; cursor: pointer; text-align: left; }
   .goals .gl1:hover, .goals .gl1[aria-expanded="true"] { background: var(--r-glass-hover); } .goals .gl1:hover .gtx { color: var(--r-text); }
@@ -1381,12 +1383,19 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
   /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
-  .sfind { position: sticky; top: 0; z-index: 3; margin: 2px 0 6px; padding: 4px 0; background: var(--vscode-sideBar-background); }
-  .sfind input { width: 100%; box-sizing: border-box; height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); font: inherit; font-size: 12px; outline: none; }
-  .sfind input:focus { border-color: var(--vscode-focusBorder); }
+  /* The filter is a field in the tab row, between the tabs and ⇅: one row on every tab (owner, 2026-10-27 1:19 PM). */
+  .hfind { flex: 1; min-width: 60px; margin: 0 2px 0 6px; position: relative; display: flex; align-items: center; }
+  .hfind svg { position: absolute; left: 7px; width: 12px; height: 12px; fill: none; stroke: var(--r-faint); stroke-width: 1.5; pointer-events: none; }
+  /* Option B: the search icon alone; a click turns the row into the field until Esc or the field empties and loses focus. */
+  body.find-icon .hfind { flex: 0 0 26px; min-width: 26px; margin-left: auto; cursor: pointer; } body.find-icon .tabs .sctl { margin-left: 0; } body.find-icon .hfind input { padding: 0; width: 26px; border-color: transparent; background: none; color: transparent; cursor: pointer; } body.find-icon .hfind input::placeholder { color: transparent; }
+  body.find-icon .hfind svg { left: 7px; stroke: var(--r-caption); }
+  body.find-icon .tabs.finding .tab { display: none; } body.find-icon .tabs.finding .hfind { flex: 1; margin-left: 0; } body.find-icon .tabs.finding .hfind input { width: 100%; padding: 0 9px 0 24px; border-color: var(--r-edge); background: var(--r-glass); color: var(--r-text); cursor: text; } body.find-icon .tabs.finding .hfind input::placeholder { color: var(--r-faint); }
+  .hfind input { width: 100%; box-sizing: border-box; height: 24px; padding: 0 9px 0 24px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); font: inherit; font-size: 12px; outline: none; }
+  .hfind input:focus { border-color: var(--vscode-focusBorder); }
   .nofind { margin: 10px 6px; color: var(--r-faint); font-size: 11.5px; }
   .more-drafts { display: block; margin: 6px 4px; padding: 2px 6px; border: 0; border-radius: 5px; background: none; color: var(--r-faint); font: inherit; font-size: 11.5px; cursor: pointer; } .more-drafts:hover { color: var(--r-text); background: var(--r-glass-hover); }
   .icon { width: 24px; height: 22px; display: grid; place-items: center; border-radius: 5px; border: 1px solid transparent; background: none; color: var(--r-caption); cursor: pointer; padding: 0; flex: none; }
+  .icon[disabled] { opacity: .3; cursor: default; pointer-events: none; }
   .icon:hover, .icon[aria-expanded="true"] { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .icon .ic { width: 14px; height: 14px; }
   .menu { position: absolute; right: 0; top: 26px; z-index: 5; min-width: 176px; padding: 5px; border-radius: 9px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 10px 28px rgba(0,0,0,.28); }
@@ -1673,12 +1682,12 @@ ${MADE_CSS}
 </head>
 <body>
 <div class="tabs" role="tablist" aria-label="Project">
-  <div class="goals" hidden></div>
   <button class="tab" role="tab" data-tab="lead" aria-selected="false" title="Lead: ask or tell this project's Lead, by voice (⌥Space) or text"><svg class="ti" viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6"/></svg><span class="lbl">Lead</span></button>
   <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
-  <div class="sctl"></div>
+  <label class="hfind"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input type="search" data-find placeholder="Filter" aria-label="Filter" spellcheck="false" autocomplete="off"></label>
+  <div class="sctl">${tabHead(null)}</div>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
 <div class="kscrim" hidden><div class="kpal" role="dialog" aria-label="Search sessions"><input id="kq" placeholder="Search sessions" autocomplete="off" spellcheck="false" aria-controls="klist"><div class="klist" id="klist" role="listbox"></div><div class="kfoot">Favorites, then asks, running, idle; ended last · ↑↓ ↵ · esc</div></div></div>
@@ -1687,6 +1696,7 @@ ${MADE_CSS}
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
   const ctl = document.querySelector('.tabs .sctl');
+  const EMPTY_HEAD = ${JSON.stringify(tabHead(null))};
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
 ${REPLY_SCRIPT}
@@ -1709,26 +1719,36 @@ ${MADE_SCRIPT}
   let anchor = null;
   // The filter bar over the Sessions list: every word typed must appear in a listed card's
   // title or words; groups with none left fold away. The pinned card always stays.
+  // One filter box under the tabs on every tab (owner video, 2026-10-27 1:19 PM): it filters what
+  // the tab lists, and each tab keeps its own words.
+  const findBox = document.querySelector('.hfind [data-find]');
+  const findWords = {};
+  const FIND_HINT = { sessions: 'Filter · ⌘K all', prs: 'Filter', tickets: 'Filter', lead: 'Filter', settings: 'Filter' };
+  function syncFind(tab) { findBox.value = findWords[tab] || ''; findBox.placeholder = FIND_HINT[tab] || 'Filter'; }
   function applyFind() {
-    const box = main.querySelector('[data-find]');
-    const words = (box ? box.value : '').toLowerCase().split(/\s+/).filter(Boolean);
+    const words = findBox.value.toLowerCase().split(/\s+/).filter(Boolean);
+    findWords[current] = findBox.value;
+    const groups = [...main.querySelectorAll('.grp, .rgrp, details, .lead')];
+    const rows = (g) => g.querySelectorAll('.items .card, li.prli, li.tli, .lt');
     let shown = 0;
-    for (const grp of main.querySelectorAll('.grp')) {
+    for (const grp of groups) {
       let left = 0;
-      for (const c of grp.querySelectorAll('.items .card')) {
+      for (const c of rows(grp)) {
         const hay = ((c.dataset.title || '') + ' ' + c.textContent).toLowerCase();
         const hit = words.every((w) => hay.includes(w));
         c.style.display = hit ? '' : 'none';
         if (hit) left++;
       }
-      grp.style.display = words.length && !left && !grp.classList.contains('closed') ? 'none' : '';
+      if (!grp.classList.contains('lead')) grp.style.display = words.length && !left && !grp.classList.contains('closed') ? 'none' : '';
       shown += left;
     }
     const none = main.querySelector('.nofind');
     if (none) none.hidden = !words.length || shown > 0;
   }
-  main.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('[data-find]')) applyFind(); });
-  main.addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-find]')) { e.target.value = ''; applyFind(); e.stopPropagation(); } });
+  findBox.addEventListener('input', applyFind);
+  findBox.addEventListener('focus', () => document.querySelector('.tabs').classList.add('finding'));
+  findBox.addEventListener('blur', () => { if (!findBox.value) document.querySelector('.tabs').classList.remove('finding'); });
+  findBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') { findBox.value = ''; applyFind(); findBox.blur(); e.stopPropagation(); } });
   // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
   function anyMenu() { return ctl.querySelector('.menu') || main.querySelector('.menu'); }
   function openMenu() { return document.querySelector('.menu:not([hidden])'); }
@@ -1918,6 +1938,7 @@ ${MADE_SCRIPT}
   let current = 'sessions';
   function select(tab) {
     tabs.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    syncFind(tab);
   }
   // Leaving Review cancels a Merge still counting down: its Undo would no longer be on screen.
   function cancelMerges() {
@@ -1979,7 +2000,7 @@ ${MADE_SCRIPT}
       // The tab's heading row (☀, search, ⇅ and its menu) goes into the tab row; the rest into main.
       const page = document.createElement('template'); page.innerHTML = m.html;
       const head = [...page.content.children].find((c) => c.classList.contains('shead')); if (head) head.remove();
-      patchChildren(ctl, head ? head.outerHTML : '');
+      patchChildren(ctl, head ? head.outerHTML : EMPTY_HEAD);
       if (same) patchChildren(main, page.innerHTML); else main.innerHTML = page.innerHTML;
       if (keepToast !== null) { const t = main.querySelector('.toast'); if (t) { t.innerHTML = keepToast; t.hidden = false; } }
       for (const [key, place, box] of keepConfirm) cardsOf('key', key).find((c) => placeOf(c) === place)?.appendChild(box);
@@ -2011,7 +2032,7 @@ ${MADE_SCRIPT}
       if (!tabsShown[current] && current !== 'sessions' && current !== 'settings') choose('sessions');
       syncTabs();
     }
-    else if (m.type === 'goals') { const g = document.querySelector('.goals'); g.innerHTML = m.html || ''; g.hidden = !m.html; }
+    else if (m.type === 'goals') { /* The goal is the view's title now (Rush / milestone), not a line in the page. */ }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }
@@ -2356,7 +2377,7 @@ ${MADE_SCRIPT}
       return;
     }
     // The reply box and the filter bar take their own keys; the activity box scrolls with the arrow keys.
-    if (e.target.closest && e.target.closest('.fc-reply, .fc-act ol, .sfind')) return;
+    if (e.target.closest && e.target.closest('.fc-reply, .fc-act ol, .hfind')) return;
     // Other…: Enter sends what was typed (with the same Undo setting), Escape closes the box.
     const input = e.target.closest && e.target.closest('[data-ask-input]');
     if (input) {
