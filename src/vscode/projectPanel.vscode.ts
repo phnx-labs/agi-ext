@@ -1374,7 +1374,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
   /* 🔍 beside ⇅; a click turns the tab row into the filter field until Esc, or until it is left empty
      (owner, 2026-10-27 1:19 PM: one row, the same on every tab). */
-  .hfind { flex: 0 0 26px; min-width: 26px; margin-left: auto; position: relative; display: flex; align-items: center; cursor: pointer; }
+  .hfind { flex: 0 0 26px; min-width: 26px; margin-left: auto; position: relative; display: flex; align-items: center; cursor: pointer; } .hfind[hidden] { display: none; }
   .hfind svg { position: absolute; left: 7px; width: 12px; height: 12px; fill: none; stroke: var(--r-caption); stroke-width: 1.5; pointer-events: none; }
   .tabs:not(.finding) .hfind input { padding: 0; width: 26px; border-color: transparent; background: none; color: transparent; cursor: pointer; } .tabs:not(.finding) .hfind input::placeholder { color: transparent; }
   .tabs.finding .tab { display: none; } .tabs.finding .hfind { flex: 1; margin-left: 0; } .tabs.finding .hfind svg { stroke: var(--r-faint); }
