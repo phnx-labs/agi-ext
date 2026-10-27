@@ -111,7 +111,10 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   // An agent on it now: its logo carries the state dot (and a count past one) and opens that session instead of starting another.
   const live = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: t.identifier === 'A-3' ? [{ agentType: 'claude', state: 'asks', title: 'Ship it', sessionId: 's-1', host: 'zion' }, { agentType: 'codex', state: 'working', title: 'Tests', sessionId: 's-2', host: 'zion' }] : [] }))
   expect(live).toMatch(/<button class="tag" data-open-session="s-1" data-host="zion" title="Ship it: [^"]+\nTests: [^"]+\nClick to open it" aria-label="Open the session on A-3"><i class="hx hx-claude"[^>]*><\/i><i class="d-move"><\/i><span class="n">2<\/span><\/button>/)
-  expect(live).not.toContain('data-start-ticket="A-3"')
+  expect(live).not.toContain('<button class="tag" data-start-ticket="A-3"')
+  // ▾ still offers every agent, and where it runs.
+  expect(live).toContain('<button data-start-ticket="A-3" data-agent="codex">')
+  expect(live).toContain('data-where="auto"><span class="ck">✓</span>')
 })
 
 test('tickets render escapes titles from the tracker', () => {
