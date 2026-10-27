@@ -10,7 +10,7 @@
 
 import * as vscode from 'vscode';
 import {
-  LeadClient, ageText, isWebUrl, parseLeadRef, readSurface, refKey, watchSurface, writeSurface,
+  LeadClient, ageText, isWebUrl, parseLeadRef, readSurface, refKey, watchLeadHistory, watchSurface, writeSurface,
   type LeadContext, type LeadHistoryTurn, type LeadRef, type LeadSnapshot, type LeadStatus, type LeadSurface,
 } from '../core/lead';
 import { MIC_IDLE, PressGate, nextMic, type MicEvent, type MicMachine, type MicUpdate } from '../core/leadInput';
@@ -63,8 +63,6 @@ export interface LeadPanelBridge {
   talk(): Promise<void>;
   confirm(token: string): Promise<void>;
   confirmAll(tokens: string[]): Promise<void>;
-  /** Flip `agents.lead.speak` for every window; the answer in flight keeps its choice. */
-  toggleSpeak(): Promise<void>;
   /** Only a ref the tab was given opens; page text never becomes a target. */
   openRef(ref: unknown, external: boolean): Promise<void>;
 }
@@ -92,6 +90,7 @@ class LeadController implements LeadPanelBridge {
   private project: string | undefined;
   private history: LeadHistoryTurn[] = [];
   private historyFor: string | undefined;
+  private historyWatch: { dispose(): void } | undefined;
   private leadStatus: LeadStatus | null = null;
   private loading = false;
   private loadError: string | undefined;
@@ -116,15 +115,9 @@ class LeadController implements LeadPanelBridge {
     } catch (e) {
       console.warn('[lead] cannot watch ~/.agents/lead/surface.json:', e);
     }
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('agents.lead.speak')) this.changed.fire();
-    }));
+    context.subscriptions.push({ dispose: () => this.historyWatch?.dispose() });
     this.renderStatus(this.client.snapshot());
     this.status.show();
-  }
-
-  async toggleSpeak(): Promise<void> {
-    await vscode.workspace.getConfiguration('agents').update('lead.speak', !speakOn(), vscode.ConfigurationTarget.Global);
   }
 
   async resolveProject(): Promise<string | undefined> {
@@ -232,7 +225,11 @@ class LeadController implements LeadPanelBridge {
   async load(project: string, force: boolean): Promise<void> {
     if (!force && this.historyFor === project) return;
     // Another project: nothing of the last one may show (or open) while the reads run.
-    if (this.historyFor !== project) { this.history = []; this.leadStatus = null; this.loadError = undefined; }
+    if (this.historyFor !== project) {
+      this.history = []; this.leadStatus = null; this.loadError = undefined;
+      this.historyWatch?.dispose();
+      this.historyWatch = watchLeadHistory(project, () => { if (this.historyFor === project) void this.load(project, true); });
+    }
     this.project = project;
     this.historyFor = project;
     this.loading = true;
@@ -261,7 +258,6 @@ class LeadController implements LeadPanelBridge {
       turns,
       busy: snap.busy,
       mic: this.mic.phase,
-      speak: speakOn(),
       ...(st?.model ? { model: st.model } : {}),
       ...(snap.engine ?? st?.state ? { state: snap.engine ?? st?.state } : {}),
       ...(st?.host ? { host: st.host } : {}),

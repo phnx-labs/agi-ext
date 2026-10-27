@@ -14,7 +14,7 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(applyPanelSetting(base, 'quickLaunch.1', '')?.quickLaunch?.slots).toEqual({})
   expect(applyPanelSetting(base, 'display.prompts', true)).toBeNull()
   expect(applyPanelSetting(base, 'quickLaunch.1', 'gemini')).toBeNull()
-  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
   expect(html).toContain('<kbd>⌘⇧B</kbd>')
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
@@ -27,7 +27,7 @@ test('Tabs: Review and Issues turn off on their own; Made is chips unless Settin
   expect(DEFAULT_CARD_SETTINGS.made).toBe('chips')
   expect(applyPanelSetting(base, 'cards.made', 'previews')?.cards?.made).toBe('previews')
   expect(applyPanelSetting(base, 'cards.made', 'tiles')).toBeNull()
-  const html = renderPanelSettings({ settings: { ...base, tabs: { prs: false, tickets: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ settings: { ...base, tabs: { prs: false, tickets: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
   expect(html).toContain('<input type="checkbox" data-setting="tabs.prs">')
   expect(html).toContain('<input type="checkbox" data-setting="tabs.tickets" checked>')
   expect(html).toContain('data-setting="cards.made"')
@@ -50,7 +50,7 @@ test('Session cards: pickers and part toggles write cards.*; banners are the AGI
   expect(applyPanelSetting(base, 'cards.question', 'full')?.cards?.question).toBe('full')
   expect(applyPanelSetting(base, 'cards.asks', 'loud')).toBeNull()
   expect(applyPanelSetting(base, 'notifications.enabled', true)).toBeNull()
-  const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'question', chips: false } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'question', chips: false } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
   expect(html).toContain('<div class="sh">Session cards</div>')
   expect(html).toMatch(/data-setting="cards\.asks"[^>]*><option value="answers">With answers<\/option><option value="question" selected>Question only<\/option><option value="off">Off<\/option>/)
   expect(html).toContain('<option value="titles" selected>Titles only</option>')
@@ -70,7 +70,7 @@ test('Devices: draws the CLI\'s placement verdict per device and keeps every oth
   expect(byName['yosemite-s1']).toMatchObject({ enabled: true, preferred: true, autoSkip: null })
   expect(byName['yosemite-m5'].autoSkip).toBe('disk-low')
   expect(byName['mark-1']).toMatchObject({ enabled: false, autoSkip: 'off' })
-  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { rows }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { rows }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
   // The settings that were there before are all still drawn, in order, above Devices.
   const order = ['Session titles', 'Shortcuts', 'Pull requests', 'Session cards', 'Reader', 'Devices'].map((h) => html.indexOf(`<div class="sh">${h}`))
   expect(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1]))).toBe(true)
@@ -93,7 +93,7 @@ test('Devices: draws the CLI\'s placement verdict per device and keeps every oth
 
 test('Devices: an older CLI is an upgrade message, a failed read says so', () => {
   expect(() => parseSettingsDevices('[{"name":"a"}]')).toThrow('agents upgrade')
-  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { error: 'Devices could not be read: boom' }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { error: 'Devices could not be read: boom' }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
   expect(html).toContain('Devices could not be read: boom')
 })
 
@@ -102,4 +102,9 @@ test('Devices: each control is one agents devices verb', () => {
   expect(deviceSettingArgv('yosemite-m1', 'enabled', true)).toEqual(['devices', 'enable', 'yosemite-m1'])
   expect(deviceSettingArgv('yosemite-s0', 'preferred', true)).toEqual(['devices', 'config', 'yosemite-s0', 'auto-launch.preferred', 'on'])
   expect(deviceSettingArgv('yosemite-s0', 'preferred', false)).toEqual(['devices', 'config', 'yosemite-s0', 'auto-launch.preferred', '--unset'])
+})
+
+test('Lead: read answers aloud is a Settings switch for agents.lead.speak, not a speaker on the tab row', () => {
+  const on = renderPanelSettings({ settings: getDefaultSettings(), devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: true })
+  expect(on).toMatch(/<b>Read answers aloud<\/b>.*<input type="checkbox" data-setting="lead.speak" checked>/)
 })

@@ -433,7 +433,7 @@ function fieldsHash(text: string): string {
 /** The ↗ the Active Session header uses to open a tab: on a PR row it opens the PR's GitHub
  *  page as an editor tab (a ⌘ or ⌥ click, in the OS browser). */
 function prOpenIcon(p: { number: number; url: string }): string {
-  return `<a class="pro" href="#" data-url="${escapeHtml(p.url)}" title="Open #${p.number} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open #${p.number} in a tab"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/></svg></a>`;
+  return `<a class="pro" href="#" data-url="${escapeHtml(p.url)}" title="Open #${p.number} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open #${p.number} in a tab">${OPEN_ICON}</a>`;
 }
 
 /** Where a chip points, as that service's own mark: GitHub for pull requests, Linear for
@@ -1214,19 +1214,33 @@ function personAvatar(name: string | null): string {
   return `<span class="iav av${h % 6}" title="${escapeHtml(name)}">${escapeHtml(initials)}</span>`;
 }
 
-/** What a row adds beyond the list read: the agent its ▶ starts, and its peek. */
-export interface TicketRowExtras { agentName: string; peek: string }
+/** What a row adds beyond the list read: the agent its logo starts, its peek, and the
+ *  sessions the stream shows working on it. */
+export interface TicketRowExtras {
+  agentKey: string;
+  agentName: string;
+  peek: string;
+  onIt: { agentType?: string; state: SessionStateKey; title: string; sessionId: string; host: string }[];
+}
 
-const START_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>';
+const OPEN_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3L7.5 8.5M11 9.5V13H3V5h3.5"/></svg>';
 
-/** A row opens the ticket's Linear tab and unfolds its peek; ▶ (shown on hover) starts an agent on it. */
-export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras): string {
+/** One line per ticket (owner, 2026-10-27 5:01 AM): a click unfolds its peek, a title too
+ *  long for the row scrolls sideways under the pointer, ↗ opens its Linear page. The agent's
+ *  logo starts that agent on it; once one works on it, the logo carries its state dot and
+ *  opens that session instead. The milestone shows only when it is not the header's. */
+export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras, milestone?: string): string {
   if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
   const row = (t: Ticket) => {
     const id = escapeHtml(t.identifier);
     const x = extras(t);
-    const start = `Start ${escapeHtml(x.agentName)} on ${id} in a new tab`;
-    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}"${t.url ? ` data-url="${escapeHtml(t.url)}"` : ''} title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)">${priorityBars(t.priority)}<span class="tm"><span class="t">${escapeHtml(t.title)}</span><span class="sub">${id}${t.milestone ? ` · ${escapeHtml(t.milestone)}` : ''}</span></span><span class="who">${personAvatar(t.delegate)}${personAvatar(t.assignee)}</span></a><button class="pro tgo" data-start-ticket="${id}" title="${start}" aria-label="${start}">${START_ICON}</button>${x.peek}</li>`;
+    const ms = t.milestone && t.milestone !== milestone ? ` · ${escapeHtml(t.milestone)}` : '';
+    const live = x.onIt[0];
+    const agent = live
+      ? `<button class="tag" data-open-session="${escapeHtml(live.sessionId)}" data-host="${escapeHtml(live.host)}" title="${escapeHtml(x.onIt.map((s) => `${s.title}: ${SESSION_STATE_WORD[s.state]}`).join('\n'))}\nClick to open it" aria-label="Open the session on ${id}">${harnessLogo(live.agentType)}<i class="d-${STATE_TONE[live.state]}"></i>${x.onIt.length > 1 ? `<span class="n">${x.onIt.length}</span>` : ''}</button>`
+      : `<button class="tag" data-start-ticket="${id}" title="Start ${escapeHtml(x.agentName)} on ${id} in a new tab" aria-label="Start ${escapeHtml(x.agentName)} on ${id}">${harnessLogo(x.agentKey)}</button>`;
+    const open = t.url ? `<a class="pro" href="#" data-url="${escapeHtml(t.url)}" title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open ${id} in a tab">${OPEN_ICON}</a>` : '';
+    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${priorityBars(t.priority)}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${id}${ms}</span></span></a><span class="who">${agent}${personAvatar(t.assignee)}</span>${open}${x.peek}</li>`;
   };
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>

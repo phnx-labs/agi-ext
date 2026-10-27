@@ -5,7 +5,7 @@ import * as path from 'path';
 import {
   leadAskArgs,
   LeadClient, ageText, answerLines, applyLeadEvent, linkify, newTurn, parseLeadHistory, parseLeadLine,
-  isWebUrl, nextSurface, parseLeadStatus, parseSurface, readSurface, readSurfaceFile, summaryOf, uniqueRefs, watchSurface, writeSurface,
+  isWebUrl, nextSurface, parseLeadStatus, parseSurface, readSurface, readSurfaceFile, summaryOf, uniqueRefs, watchLeadHistory, watchSurface, writeSurface,
   type LeadEvent, type LeadRef,
 } from './lead';
 
@@ -182,6 +182,31 @@ describe('the surface switch', () => {
       fs.writeFileSync(file, '{"surface":"docked"}');
       for (let i = 0; i < 50 && !seen.length; i++) await Bun.sleep(20);
       expect(seen).toEqual(['docked']);
+      w.dispose();
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('the Lead tab redraws on a written turn or the host starting, never on its log, and finds a folder that appears later', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-history-'));
+    try {
+      fs.mkdirSync(path.join(home, '.agents', 'lead'), { recursive: true });
+      let calls = 0;
+      const w = watchLeadHistory('rush', () => calls++, home, 20);
+      const dir = path.join(home, '.agents', 'lead', 'rush');
+      fs.mkdirSync(dir);
+      for (let i = 0; i < 50 && !calls; i++) await Bun.sleep(20);
+      expect(calls).toBe(1);
+      fs.appendFileSync(path.join(dir, 'host.log'), 'turn started\n');
+      await Bun.sleep(150);
+      expect(calls).toBe(1);
+      fs.appendFileSync(path.join(dir, 'history.ndjson'), '{"turn":"t_1","ask":"","trigger":"asks","text":"a"}\n');
+      for (let i = 0; i < 50 && calls < 2; i++) await Bun.sleep(20);
+      expect(calls).toBe(2);
+      fs.writeFileSync(path.join(dir, 'host.json'), '{}');
+      for (let i = 0; i < 50 && calls < 3; i++) await Bun.sleep(20);
+      expect(calls).toBe(3);
       w.dispose();
     } finally {
       fs.rmSync(home, { recursive: true, force: true });

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { mergeTurns, renderLeadTab, type LeadTabModel, type TabTurn } from './leadView';
-import { newTurn, type LeadHistoryTurn } from './lead';
+import { newTurn, parseLeadHistory, type LeadHistoryTurn } from './lead';
 
-const base: LeadTabModel = { project: 'agents', turns: [], busy: false, mic: 'idle', speak: false, loading: false, now: 0 };
+const base: LeadTabModel = { project: 'agents', turns: [], busy: false, mic: 'idle', loading: false, now: 0 };
 const turn = (over: Partial<TabTurn>): TabTurn => ({ key: 'k', ask: 'hi', segments: [], confirms: [], refs: [], live: false, ...over });
 
 describe('renderLeadTab', () => {
@@ -38,6 +38,20 @@ describe('renderLeadTab', () => {
     expect(html).not.toContain('<img src=x>');
     expect(html).not.toContain('<em>');
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+  });
+
+  test('a turn the Lead ran on its own for new asks draws no words of yours, only its answer with when', () => {
+    const own = parseLeadHistory(JSON.stringify([{ turn: 't_1', at: '2026-10-22T21:54:36.735Z', ask: '', trigger: 'asks', text: 'Improve is still waiting on you.' }]));
+    const html = renderLeadTab({ ...base, turns: mergeTurns(own, []) });
+    expect(html).not.toContain('lt-you');
+    expect(html).toContain('<div class="lt lt-lead own" data-key="t_1"><div class="lt-cap">✳ Lead<span class="why"');
+    expect(html).toContain('· for new asks</span><span class="tm">');
+  });
+
+  test('the model and state sit on the Lead line; the tab draws no heading row', () => {
+    const html = renderLeadTab({ ...base, model: 'opus', state: 'stopped' });
+    expect(html.startsWith('<div class="lead">')).toBe(true);
+    expect(html).toContain('<span class="st">opus · stopped</span>');
   });
 
   test('the mic and busy state ride on the kept box’s attributes', () => {

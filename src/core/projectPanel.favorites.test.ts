@@ -89,7 +89,7 @@ test('Settings > Session list: both on by default, each a checkbox that writes i
   const s = getDefaultSettings()
   expect(applyPanelSetting(s, 'cards.list', false)?.cards).toMatchObject({ list: false, favorites: true })
   expect(applyPanelSetting(s, 'cards.favorites', 'no')).toBeNull()
-  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧', leadSpeak: false })
   expect(html).toContain('<div class="sh">Session list</div>')
   expect(html).toContain('<b>Show the session list</b>')
   expect(html).toContain('data-setting="cards.list" checked')

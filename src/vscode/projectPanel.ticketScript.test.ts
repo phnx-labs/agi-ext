@@ -1,6 +1,6 @@
 // The Project panel's real webview script, run in happy-dom against the real Issues
-// markup: a row opens its Linear page once and unfolds its peek, a second click folds
-// it without opening the page again, a redraw keeps the peek, and ▶ sends one start.
+// markup: a row unfolds its peek and a second click folds it, ↗ opens its Linear page,
+// a redraw keeps the peek, and the agent's logo sends one start.
 import { afterAll, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { vscodeDouble } from '../testing/vscodeDouble';
@@ -12,7 +12,7 @@ const { renderTicketPeek } = await import('../core/ticketPeek');
 
 const issue = (id: string, description: string) => ({ identifier: id, title: `t ${id}`, url: `https://linear.app/x/issue/${id}`, description, priority: 2, state: { type: 'started', name: 'Doing' } });
 const groups = parseTickets(JSON.stringify({ issues: [issue('A-1', '## Outcome\nSign-up works.'), issue('A-2', '')] }));
-const draw = () => renderTickets(groups, (t) => ({ agentName: 'Claude', peek: renderTicketPeek(t.identifier, t.description, { agentName: 'Claude', delegated: false }) }));
+const draw = () => renderTickets(groups, (t) => ({ agentName: 'Claude', peek: renderTicketPeek(t.identifier, t.description, { agentName: 'Claude', delegated: false }), agentKey: 'claude', onIt: [] }));
 
 const window = new Window();
 afterAll(() => window.happyDOM.close());
@@ -33,10 +33,10 @@ const peek = (id: string) => el(`.tpeek[data-peek="${id}"]`);
 deliver({ type: 'tab', tab: 'tickets' });
 deliver({ type: 'html', tab: 'tickets', html: draw() });
 
-test('a row opens its page and unfolds its peek; a second click folds it without opening again', () => {
+test('a row unfolds its peek and opens nothing; a second click folds it; ↗ opens its page', () => {
   sent.length = 0;
   el('.trow[data-ticket="A-1"]').click();
-  expect(sent).toEqual([{ type: 'open', url: 'https://linear.app/x/issue/A-1', external: false }]);
+  expect(sent).toEqual([]);
   expect(peek('A-1').hidden).toBe(false);
   expect(peek('A-1').textContent).toContain('Sign-up works.');
   expect(peek('A-2').hidden).toBe(true);
@@ -45,7 +45,9 @@ test('a row opens its page and unfolds its peek; a second click folds it without
   expect(peek('A-2').hidden).toBe(false);
   el('.trow[data-ticket="A-2"]').click();
   expect(peek('A-2').hidden).toBe(true);
-  expect(sent.filter((m) => m.type === 'open').map((m) => m.url)).toEqual(['https://linear.app/x/issue/A-1', 'https://linear.app/x/issue/A-2']);
+  expect(sent).toEqual([]);
+  el('.tli .pro[data-url="https://linear.app/x/issue/A-2"]').click();
+  expect(sent.filter((m) => m.type === 'open').map((m) => m.url)).toEqual(['https://linear.app/x/issue/A-2']);
 });
 
 test('a redraw keeps the open peek; a tile asks for its row by message', () => {
@@ -57,11 +59,11 @@ test('a redraw keeps the open peek; a tile asks for its row by message', () => {
   expect(peek('A-1').hidden).toBe(true);
 });
 
-test('▶ on the row and Start in the peek each send one start; a second click, even after a redraw, sends none', () => {
+test('the agent logo on the row and Start in the peek each send one start; a second click, even after a redraw, sends none', () => {
   sent.length = 0;
-  el('.tli .tgo[data-start-ticket="A-1"]').click();
+  el('.tli .tag[data-start-ticket="A-1"]').click();
   deliver({ type: 'html', tab: 'tickets', html: draw() });
-  el('.tli .tgo[data-start-ticket="A-1"]').click();
+  el('.tli .tag[data-start-ticket="A-1"]').click();
   el('.tpeek[data-peek="A-2"] [data-start-ticket="A-2"]').click();
   expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2' }]);
 });

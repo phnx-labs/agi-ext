@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
-import { parseGoals, renderGoals } from '../core/goals';
+import { nextMilestone, parseGoals, renderGoals } from '../core/goals';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
 import { sessionPresentationStore } from '../core/sessionPresentationStore';
@@ -31,7 +31,7 @@ import {
   renderPalette,
   renderSessions,
   nextThatNeedsYou,
-  renderTickets,
+  renderTickets, type TicketRowExtras,
   readSessionPrefs,
   readReviewPrefs,
   onTicket,
@@ -156,8 +156,6 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'leadConfirm' && typeof msg.key === 'string') void leadPanel()?.confirm(msg.key);
       else if (msg.type === 'leadConfirmAll' && typeof msg.tokens === 'string') void leadPanel()?.confirmAll(msg.tokens.split(' ').filter(Boolean));
       else if (msg.type === 'leadRef') void leadPanel()?.openRef(msg.ref, msg.external === true);
-      else if (msg.type === 'leadRefresh') void this.load('lead', true);
-      else if (msg.type === 'leadSpeak') void leadPanel()?.toggleSpeak();
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') opened(this.openTicketTab(msg.id));
       else if (msg.type === 'image' && typeof msg.path === 'string') opened(this.controller.openImage(msg.path));
@@ -672,7 +670,7 @@ class ProjectPanelController {
   }
 
   async render(id: Exclude<TabId, 'sessions' | 'settings'>, p: ProjectRef, force: boolean): Promise<string> {
-    if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force), (t) => this.ticketRow(p, t));
+    if (id === 'tickets') return renderTickets(await this.ticketGroups(p, force), (t) => this.ticketRow(p, t), this.headMilestone);
     // `prs list` exits 1 when a repo could not be read but still prints the envelope
     // with `partial: true`; render it rather than discarding it.
     let stdout: string;
@@ -712,6 +710,8 @@ class ProjectPanelController {
 
   /** Today's goal ticket from the last goals read; the Sessions tab marks and filters by it. */
   todayId: string | undefined;
+  /** The milestone the header shows; Issues names a ticket's milestone only when it differs. */
+  headMilestone: string | undefined;
 
   /** Company and today's goal of the project's Linear workspace: one `linear goals` read. */
   async goals(): Promise<string> {
@@ -719,6 +719,7 @@ class ProjectPanelController {
     const { stdout } = await runLinear(['goals', '--json'], project?.linearProfile ?? null, 30_000);
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
+    this.headMilestone = nextMilestone(goals, project?.linearName)?.name;
     return renderGoals(goals, project?.linearName);
   }
 
@@ -729,12 +730,18 @@ class ProjectPanelController {
 
   /** A row's ▶ agent and its peek: the description the list read carried, and the live
    *  sessions on the ticket. */
-  private ticketRow(p: ProjectRef, t: Ticket): { agentName: string; peek: string } {
+  private ticketRow(p: ProjectRef, t: Ticket): TicketRowExtras {
     const agent = this.ticketAgent(t);
-    const onIt = this.projectRows(p).filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier))).map((r) => ({
+    const rows = this.projectRows(p).filter((r) => sessionStateOf(r) !== 'ended' && (r.ticket === t.identifier || onTicket(r, t.identifier)));
+    const onIt = rows.map((r) => ({
       sessionId: r.sessionId, host: r.host, title: sessionTitle(r), state: SESSION_STATE_WORD[sessionStateOf(r)], where: r.host === LOCAL_LABEL || !r.host ? 'this machine' : r.host,
     }));
-    return { agentName: agent.name, peek: renderTicketPeek(t.identifier, t.description, { agentName: agent.name, delegated: agent.delegated }, onIt) };
+    return {
+      agentKey: agent.key,
+      agentName: agent.name,
+      peek: renderTicketPeek(t.identifier, t.description, { agentName: agent.name, delegated: agent.delegated }, onIt),
+      onIt: rows.map((r) => ({ agentType: r.agentType, state: sessionStateOf(r), title: sessionTitle(r), sessionId: r.sessionId, host: r.host })),
+    };
   }
 
   /** Open a ticket's Linear page as a tab: the URL the Issues read carried (waiting for
@@ -813,6 +820,7 @@ class ProjectPanelController {
       defaultAgentTitle: this.context.globalState.get<string>(DEFAULT_AGENT_KEY, PICKABLE_AGENTS[0].title),
       secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
       modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
+      leadSpeak: vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', false),
     });
   }
 
@@ -838,6 +846,10 @@ class ProjectPanelController {
     // The Reader commands also sync the editor association and its context keys.
     if (key === 'editor.markdownViewerEnabled' && typeof value === 'boolean') {
       await vscode.commands.executeCommand(value ? 'agents.enableReader' : 'agents.disableReader');
+      return;
+    }
+    if (key === 'lead.speak' && typeof value === 'boolean') {
+      await vscode.workspace.getConfiguration('agents').update('lead.speak', value, vscode.ConfigurationTarget.Global);
       return;
     }
     const previous = getSettings(this.context);
@@ -1238,7 +1250,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
   /* One header row: the goal, then the tabs as icons and their controls (owner video,
      2026-10-18 8:59 PM); the project's name is the view's title. */
-  .goals { flex: 1; min-width: 0; margin-right: 4px; }
+  .goals { flex: 1; min-width: 0; margin-right: 4px; overflow: hidden; }
   .goals[hidden] { display: none; }
   .goals a { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; line-height: 1.55; color: var(--r-caption); text-decoration: none; }
   .goals a:hover .gtx { color: var(--r-text); }
@@ -1477,10 +1489,15 @@ ${MADE_CSS}
   /* A ticket row: ▶ shows on hover; its peek unfolds under it, inside the same hover tone. */
   .tli { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; border-radius: 6px; }
   .tli .trow { flex: 1; min-width: 0; }
+  /* A title longer than its row scrolls to its end and back while the pointer is on it. */
+  .tli.mq .t { text-overflow: clip; } .tli.mq .t > span { display: inline-block; animation: tmq var(--mqs) ease-in-out .5s infinite alternate; }
+  @keyframes tmq { to { transform: translateX(var(--mq)); } }
+  .tli .who { margin-left: 0; }
+  .tag { display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 4px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--r-caption); cursor: pointer; }
+  .tag:hover { border-color: var(--r-edge); background: var(--r-glass-hover); } .tag .hx { width: 14px; height: 14px; }
+  .tag i[class^="d-"] { width: 6px; height: 6px; border-radius: 50%; display: block; background: var(--r-faint); } .tag .n { font-size: 10px; color: var(--r-faint); }
   .tli:hover .pro, .tli.peek .pro { opacity: 1; }
   .tli:hover, .tli.peek { background: var(--r-glass-hover); } .tli .trow:hover { background: none; }
-  .tgo { background: none; border: 0; padding: 0; cursor: pointer; }
-  .tgo svg { fill: currentColor; stroke: none; }
   .tpeek { flex-basis: 100%; padding: 0 8px 8px 24px; display: flex; flex-direction: column; gap: 6px; }
   .tpeek[hidden] { display: none; }
   .tpeek .tbody { font-size: 12px; line-height: 1.45; color: var(--r-text-2); overflow-wrap: anywhere; }
@@ -1547,7 +1564,7 @@ ${MADE_CSS}
   .kql { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; }
   .kql figure { margin: 0; text-align: center; max-width: 94vw; } .kql img { max-width: 94vw; max-height: 82vh; border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
   .kql figcaption { color: #fff; font-size: 11.5px; margin-top: 6px; }
-  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .pill.st-stuck i::after, .pill.st-blocked i::after, .card.fresh, .card.flash { animation: none; } .gh .car { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .pill.st-stuck i::after, .pill.st-blocked i::after, .card.fresh, .card.flash, .tli.mq .t > span { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
 <body>
@@ -1662,6 +1679,20 @@ ${MADE_SCRIPT}
   let scrollToPeek = false;
   // When ▶ last started each ticket: a redraw replaces the button, so the guard lives here.
   const startedAt = new Map();
+  // A ticket title wider than its row scrolls to its end under the pointer, at a reading pace.
+  main.addEventListener('mouseover', (e) => {
+    const li = e.target.closest && e.target.closest('.tli');
+    if (!li || li.classList.contains('mq')) return;
+    const t = li.querySelector('.t');
+    const over = t ? t.scrollWidth - t.clientWidth : 0;
+    if (over <= 4) return;
+    li.style.setProperty('--mq', -over + 'px'); li.style.setProperty('--mqs', Math.max(1.5, over / 40) + 's');
+    li.classList.add('mq');
+  });
+  main.addEventListener('mouseout', (e) => {
+    const li = e.target.closest && e.target.closest('.tli');
+    if (li && !li.contains(e.relatedTarget)) li.classList.remove('mq');
+  });
   function drawPeek() {
     main.querySelectorAll('.tli').forEach((li) => {
       const on = li.querySelector('.trow').dataset.ticket === peeked;
@@ -1967,8 +1998,6 @@ ${MADE_SCRIPT}
       const all = e.target.closest('[data-lead-confirm-all]');
       if (all && !all.disabled) { all.disabled = true; vscode.postMessage({ type: 'leadConfirmAll', tokens: all.dataset.leadConfirmAll }); return; }
       if (e.target.closest('#lead-mic')) { vscode.postMessage({ type: 'leadTalk' }); return; }
-      if (e.target.closest('[data-lead-refresh]')) { vscode.postMessage({ type: 'leadRefresh' }); return; }
-      if (e.target.closest('[data-lead-speak]')) { vscode.postMessage({ type: 'leadSpeak' }); return; }
     }
     // A card's ⋯ menu: its summary toggles it; a click anywhere else closes it.
     main.querySelectorAll('.cmore[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
@@ -2089,15 +2118,14 @@ ${MADE_SCRIPT}
     }
     const th = e.target.closest('.th[data-path]');
     if (th) { e.preventDefault(); opening(th, 'Opening the image…'); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
-    // Tickets: a row opens its Linear page as a tab and unfolds its peek; a second click
-    // folds it without opening the page again. ▶ starts an agent on it, once per click.
+    // Tickets: a row unfolds its peek and a second click folds it; ↗ opens its Linear page.
+    // The agent's logo starts that agent on it, once per click.
     const trow = e.target.closest('.trow[data-ticket]');
     if (trow) {
       e.preventDefault();
       const id = trow.dataset.ticket;
-      if (peeked === id) { peeked = null; drawPeek(); return; }
-      peeked = id; drawPeek();
-      if (trow.dataset.url) vscode.postMessage({ type: 'open', url: trow.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey });
+      peeked = peeked === id ? null : id;
+      drawPeek();
       return;
     }
     const go = e.target.closest('[data-start-ticket]');
