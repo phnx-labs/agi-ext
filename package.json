@@ -971,11 +971,6 @@
         "mac": "cmd+shift+a"
       },
       {
-        "command": "agents.newSecondaryAgent",
-        "key": "ctrl+shift+b",
-        "mac": "cmd+shift+b"
-      },
-      {
         "command": "agents.setTitle",
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l"

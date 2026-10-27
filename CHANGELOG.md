@@ -4,6 +4,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.429] - 2026-10-27
+
+- Stop assigning Cmd/Ctrl+Shift+B to New Secondary. The command remains available for a custom shortcut, and Settings no longer advertises the removed default.
+
 ## [0.9.428] - 2026-10-22
 
 From the owner's 8:50 AM video on the Project panel:
