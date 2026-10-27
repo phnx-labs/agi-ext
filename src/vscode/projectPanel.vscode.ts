@@ -412,9 +412,11 @@ class ProjectView implements vscode.WebviewViewProvider {
     // and a refused one keeps its reason on the row until the next read.
     this.merging = this.merging.then(async () => {
       // The row's ring says how it went: violet and Merged, or red with GitHub's reason on its meta line.
+      // A merge GitHub refused throws its reason; one mergeNow turned down (a new commit, a
+      // conflict, the admin dialog closed) returns false and its warning says why.
       let error = '';
       try {
-        await this.controller.mergeFromRow(repo, number, sha);
+        if (!await this.controller.mergeFromRow(repo, number, sha)) error = 'see the message';
       } catch (e) {
         error = errorText(e).split('\n').slice(0, 3).join(' ');
       }

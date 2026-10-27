@@ -4,6 +4,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.433] - 2026-10-27
+
+From the owner's 12:07 PM screenshot of the Review tab, drawn the way the AGI Menu draws PRs:
+
+- Each PR row ends in one ring instead of Merge, Conflicts and Fix buttons: a green ✓ when it
+  is ready, a red ! for conflicts or failing checks, an amber arc while checks run, a dash
+  for a draft. The verdict is a colored word on the meta line ("Ready to merge", "Conflicts
+  with main", "2 failing"), so titles get the width.
+- Merge is a click on the green ring: it fills with a merge mark on hover, drains for 5 s
+  (click again to stop), spins while merging, then turns violet with "Merged". A merge that
+  did not happen turns the ring red with the reason on the meta line.
+- Fix is the agent's logo beside a red ring, shown on the row's hover.
+
 ## [0.9.432] - 2026-10-27
 
 Pages, from the owner's 10:41 AM to 11:04 AM prototype rounds:

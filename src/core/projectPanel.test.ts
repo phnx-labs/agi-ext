@@ -69,7 +69,7 @@ test('an ended card says how long it ran and when; durations read in minutes, ho
   expect(ranSpan(new Date(2026, 9, 11, 4, 20).getTime(), new Date(2026, 9, 11, 12, 32).getTime(), now)).toBe('Oct 11 · 4:20 AM → 12:32 PM')
 })
 
-const OPTS = { prefs: DEFAULT_REVIEW_PREFS, mergeWith: 'squash', avatar: () => null }
+const OPTS = { prefs: DEFAULT_REVIEW_PREFS, mergeWith: 'squash', avatar: () => null, fixAgent: { key: 'claude', name: 'Claude' } }
 
 test('Review while repositories answer: each finished one draws, the rest say they are being read', () => {
   const done = new Map([['me/a', { slug: 'me/a', error: null, branch: null, release: null, open: [{ number: 7, title: 'Fix', url: 'https://github.com/me/a/pull/7', isDraft: false, ciState: 'SUCCESS', author: 'me', avatar: null, date: '2026-10-12T00:00:00Z', failing: 0 }], merged: [] }]])
@@ -160,8 +160,8 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   expect(html).not.toContain('class="sum"')
   expect(html).not.toContain('feat: x')
   const all = renderPrs(model, now, { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true, showMerged: true } })
-  expect(all).toContain('class="rs draft">Draft<')
-  expect(all).toContain('#7 · busy · 24h</span>')
+  expect(all).toContain('<span class="pring v-quiet" role="img" aria-label="Draft" title="Draft">')
+  expect(all).toContain('#7 · busy · 24h · <span class="vw v-quiet">Draft</span></span>')
   // The author as a face on the left: a colored initial when the row carries no GitHub avatar.
   expect(all).toMatch(/<li class="prli"><span class="iav av\d"/)
   expect(all).toContain('Recently merged</span><span class="n">5</span>')
@@ -170,16 +170,20 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   expect(all).toContain('data-url="https://github.com/o/busy/pull/0" title="Open #0 in a tab')
 })
 
-test('prs: a ready PR is one Merge button at the right; failing checks are counted; a draft never merges', () => {
+test('prs: a ready PR ends in one ring that merges (owner, 2026-10-27 12:07 PM); failing checks are counted; a draft never merges', () => {
   const model = parsePrs(JSON.stringify({ repositories: [{ slug: 'o/busy', pullRequests: [
     { number: 7, title: 'draft', url: 'https://github.com/o/busy/pull/7', isDraft: true, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
     { number: 8, title: 'ready', url: 'https://github.com/o/busy/pull/8', isDraft: false, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
     { number: 9, title: 'red', url: 'https://github.com/o/busy/pull/9', isDraft: false, ciState: 'FAILURE', failingChecks: [{ name: 'a' }, { name: 'b' }], author: { login: 'codex1' }, createdAt: '2026-10-08T00:00:00Z' },
   ], recentlyMerged: [] }] }))
-  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'rebase', avatar: () => null })
-  expect(html).toContain('<button class="rs merge" data-merge-repo="o/busy" data-merge-number="8" title="Merge #8 with rebase (change in Settings)">Merge</button></li>')
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'rebase' })
+  // No button text anywhere: the verdict is the ring's mark and a word on the meta line.
+  expect(html).toContain('<button class="pring v-ok" data-merge-repo="o/busy" data-merge-number="8" title="Ready to merge. Click to merge #8 with rebase (change in Settings)" aria-label="Merge #8"><svg')
+  expect(html).toContain('<span class="vw v-ok">Ready to merge</span>')
+  expect(html).not.toMatch(/>Merge<|>Fix<|>Conflicts<\/span><button/)
   expect(html).not.toContain('data-merge-number="7"')
-  expect(html).toContain('<span class="rs fail" title="2 checks failing">✕ 2</span>')
+  expect(html).toContain('<span class="vw v-bad">2 failing</span>')
+  expect(html).toContain('<span class="pring v-bad" role="img" aria-label="2 failing: a, b" title="2 failing: a, b">')
   // Status grouping puts ready ones first; an agent author shows as its harness logo.
   expect(html.indexOf('Ready to merge')).toBeLessThan(html.indexOf('Failing'))
   expect(html).toContain('title="Delegated to codex1"')
@@ -191,10 +195,13 @@ test('prs: a failing or conflicting PR offers Fix, which starts an agent with th
     { number: 10, title: 'tangled', url: 'https://github.com/o/busy/pull/10', isDraft: false, ciState: 'SUCCESS', mergeable: false, mergeableState: 'dirty', headRefName: 'feat/t', baseRefName: 'main', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
     { number: 11, title: 'wip', url: 'https://github.com/o/busy/pull/11', isDraft: true, ciState: 'FAILURE', mergeable: false, mergeableState: 'dirty', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
   ], recentlyMerged: [] }] }))
-  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'squash', avatar: () => null })
-  expect(html).toContain('✕ 2</span><button class="rs fix" data-fix-repo="o/busy" data-fix-number="9" title="Start an agent in a new tab to fix #9&#39;s failing checks (All tests pass, gitleaks)">Fix</button>')
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true } })
+  // Fix is the agent's logo just before the red ring.
+  expect(html).toContain('<button class="prfix" data-fix-repo="o/busy" data-fix-number="9" title="Start Claude in a new tab to fix #9&#39;s failing checks (All tests pass, gitleaks)" aria-label="Fix #9 with Claude"><i class="hx hx-claude"')
+  expect(html).toMatch(/data-fix-number="9"[^]*?<\/button><span class="pring v-bad"/)
   // A conflict never offers Merge; it gets its own group above Failing.
-  expect(html).toContain('<span class="rs fail" title="Conflicts with main">Conflicts</span><button class="rs fix" data-fix-repo="o/busy" data-fix-number="10"')
+  expect(html).toContain('<span class="vw v-bad">Conflicts with main</span>')
+  expect(html).toContain('<button class="prfix" data-fix-repo="o/busy" data-fix-number="10"')
   expect(html).not.toContain('data-merge-number="10"')
   expect(html.indexOf('>Conflicts</span><span class="n">')).toBeLessThan(html.indexOf('>Failing</span>'))
   // A draft is someone's work in progress: no Fix.
