@@ -150,7 +150,7 @@ export const SESSION_STATE_WORD: Record<SessionStateKey, string> = {
  *  state line and Related chips): your move amber, running green (waiting on its own
  *  work included: it is the agent's ball; owner video, 2026-10-22 8:50 AM), ready for
  *  review indigo; idle and ended stay quiet. */
-export type StateTone = 'move' | 'running' | 'waiting' | 'review' | 'quiet';
+export type StateTone = 'move' | 'running' | 'review' | 'quiet';
 
 export const STATE_TONE: Record<SessionStateKey, StateTone> = {
   asks: 'move',

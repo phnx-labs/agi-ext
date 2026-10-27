@@ -1538,7 +1538,7 @@ ${MADE_CSS}
   .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow .knote mark { background: none; color: var(--r-gold); font-weight: 600; }
   .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  /* Settings > Session list style > Rows: a listed session as ⌘K draws it. */
+  /* ⌘K palette rows. */
   .krow.ended { opacity: .55; }
   .kth { display: block; width: 46px; height: 28px; border-radius: 4px; overflow: hidden; border: 1px solid var(--r-edge); outline: 1.5px dashed var(--r-faint); outline-offset: 1px; background: var(--r-well); cursor: zoom-in; }
   .kth img { width: 100%; height: 100%; object-fit: cover; display: block; }
