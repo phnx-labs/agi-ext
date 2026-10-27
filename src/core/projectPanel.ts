@@ -9,7 +9,7 @@ import * as os from 'os';
 import { extractLinearTicketId, isHostFallbackLabel } from './utils';
 import { isDerivedSessionName } from './remoteSessions';
 import { ticketFace } from './ticketFaces';
-import { BALL_WORD, SESSION_STATE_WORD, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
+import { BALL_WORD, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
 import { frontNav, nextNeedsYou, type FrontMemory, type FrontNav, type FrontStep } from './frontNav';
