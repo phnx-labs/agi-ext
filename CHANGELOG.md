@@ -4,6 +4,19 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.436] - 2026-10-27
+
+From the owner's 1:19 PM video and 1:26 PM note on the Project panel's header:
+
+- One header row, the same on every tab: the tabs, then 🔍 and ⇅ in the same place. Before,
+  each tab brought its own controls (search only on Sessions, ⇅ only on Review), so the icons
+  moved as you switched tabs.
+- 🔍 turns the row into the filter field for that tab's list until Esc; each tab keeps its
+  words. Sessions' separate filter row is gone, so the list starts right under the header.
+- The project and its milestone move to VS Code's top row: "AGI: RUSH / 0.2.1 - Stable for
+  running agents". The goal line is gone, and Issues' ⇅ picks which milestone it lists.
+- ☀ "on today" is an item in Sessions' ⇅ (Only today's goal).
+
 ## [0.9.435] - 2026-10-27
 
 From the owner, 12:45 PM: ⌘⇧B is where the browser starts.
