@@ -412,15 +412,17 @@ class ProjectView implements vscode.WebviewViewProvider {
     // and a refused one keeps its reason on the row until the next read.
     this.merging = this.merging.then(async () => {
       // The row's ring says how it went: violet and Merged, or red with GitHub's reason on its meta line.
-      // A merge GitHub refused throws its reason; one mergeNow turned down (a new commit, a
-      // conflict, the admin dialog closed) returns false and its warning says why.
+      let merged = false;
       let error = '';
       try {
-        if (!await this.controller.mergeFromRow(repo, number, sha)) error = 'see the message';
+        merged = await this.controller.mergeFromRow(repo, number, sha);
       } catch (e) {
-        error = errorText(e).split('\n').slice(0, 3).join(' ');
+        error = errorText(e).split('\n')[0] ?? 'merge failed';
       }
-      void this.view?.webview.postMessage({ type: 'merged', repo, number, error });
+      // Merged: violet, then Review rereads. Refused by GitHub: red with its reason, and a
+      // click tries again. Turned down here (a closed dialog, a new commit; its warning
+      // says why): Review rereads, so the row shows what is true now.
+      void this.view?.webview.postMessage({ type: 'merged', repo, number, error, merged });
       if (!error) await this.load('prs', true);
     });
     await this.merging;
@@ -1316,10 +1318,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   button.pring.v-ok:is(:hover, :focus-visible):not(.armed):not(.merging) .chk { display: none; } button.pring.v-ok:is(:hover, :focus-visible):not(.armed):not(.merging) .mrg { display: inline; }
   button.pring:is(:hover, :focus-visible):not(.armed):not(.merging) .trk, button.pring:is(:hover, :focus-visible):not(.armed):not(.merging) .arc { stroke: none; }
   /* Undo: the ring drains for 5 s; under the pointer its center is ✕, and a click stops the merge. */
-  .pring.armed .arc { animation: drain 5s linear forwards; } .pring.armed:is(:hover, :focus-visible) .chk { display: none; } .pring.armed:is(:hover, :focus-visible) .und { display: inline; }
+  .pring.armed:is(:hover, :focus-visible) .chk { display: none; } .pring.armed:is(:hover, :focus-visible) .und { display: inline; }
   .pring.merging { pointer-events: none; } .pring.merging .chk { display: none; } .pring.merging .arc { stroke-dasharray: 14 40; animation: spin .7s linear infinite; }
   .pring.v-merged { background: var(--r-merged); color: var(--r-on-av); animation: pop .35s ease-out; } .pring.v-merged .trk, .pring.v-merged .arc { stroke: none; }
-  @keyframes drain { to { stroke-dashoffset: 53.4; } }
   @keyframes pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
   .vw { font-family: var(--vscode-font-family); } .sub .vw.v-quiet { color: var(--r-faint); }
   /* Fix: the agent's logo beside a red ring, on the row's hover; one click starts it on the PR. */
@@ -1811,6 +1812,7 @@ ${MADE_SCRIPT}
     drawPeek();
     main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
     for (const [key, left] of pendingMerge) drawUndo(key, left);
+    for (const key of mergingNow) drawMerging(key);
     // An ask that left the list takes its answer along: a sent one is forgotten, and
     // one still counting down is stopped, since its Undo is no longer on screen.
     let dropped = 0;
@@ -1869,18 +1871,35 @@ ${MADE_SCRIPT}
     return n;
   }
   function mergeBtn(key) { const [repo, num] = key.split('#'); return main.querySelector('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]'); }
-  // Undo: the ready ring drains one fifth a second; under the pointer its center is ✕.
+  // Undo: the ready ring drains one fifth a second (in steps under reduced motion); under the pointer its center is ✕.
   function drawUndo(key, left) {
     const b = mergeBtn(key); if (!b) return;
-    b.classList.add('armed'); b.title = 'Merging in ' + left + ' s. Click to stop'; b.setAttribute('aria-label', b.title);
-    const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = 'stroke-dashoffset 1s linear'; arc.style.strokeDashoffset = String(53.4 * (6 - left) / 5); }
+    b.classList.remove('v-bad'); b.classList.add('v-ok', 'armed'); b.title = 'Merging in ' + left + ' s. Click to stop'; b.setAttribute('aria-label', b.title);
+    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = still ? '' : 'stroke-dashoffset 1s linear'; arc.style.strokeDashoffset = String(53.4 * (6 - left) / 5); }
+  }
+  // Back to a ready ring: a stopped Undo, or a countdown the tab left behind.
+  function disarm(b) {
+    if (!b) return;
+    b.classList.remove('armed'); const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; }
+    b.title = 'Ready to merge. Click to merge #' + b.dataset.mergeNumber; b.setAttribute('aria-label', 'Merge #' + b.dataset.mergeNumber);
+  }
+  // Rings sent to the host and not answered yet: a redraw keeps them spinning.
+  const mergingNow = new Set();
+  function drawMerging(key) {
+    const b = mergeBtn(key); if (!b) return;
+    b.classList.remove('armed'); b.classList.add('merging'); b.title = 'Merging…';
+    const w = b.closest('.prli') && b.closest('.prli').querySelector('.vw'); if (w) w.textContent = 'Merging…';
   }
   // What the host says when a merge finished: violet and Merged, or red with the reason.
-  function drawMerged(key, error) {
+  function drawMerged(key, error, merged) {
+    mergingNow.delete(key);
     const b = mergeBtn(key); if (!b) return;
+    // Turned down here with its own warning: back to a ready ring until Review rereads.
+    if (!merged && !error) { b.classList.remove('merging'); disarm(b); const w = b.closest('.prli') && b.closest('.prli').querySelector('.vw'); if (w) w.textContent = 'Ready to merge'; return; }
     const row = b.closest('.prli'); const word = row && row.querySelector('.vw');
-    b.classList.remove('armed', 'merging', 'v-ok'); b.classList.add(error ? 'v-bad' : 'v-merged'); b.disabled = true;
-    b.title = error ? 'Not merged: ' + error : 'Merged'; b.setAttribute('aria-label', b.title);
+    b.classList.remove('armed', 'merging', 'v-ok'); b.classList.add(error ? 'v-bad' : 'v-merged'); b.disabled = !error;
+    b.title = error ? 'Not merged: ' + error + '. Click to try again' : 'Merged'; b.setAttribute('aria-label', b.title);
     const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; }
     if (word) { word.className = 'vw ' + (error ? 'v-bad' : 'v-merged'); word.textContent = error ? 'Not merged: ' + error : 'Merged'; }
   }
@@ -1904,6 +1923,7 @@ ${MADE_SCRIPT}
   // Leaving Review cancels a Merge still counting down: its Undo would no longer be on screen.
   function cancelMerges() {
     for (const t of mergeTimers.values()) clearInterval(t);
+    for (const key of pendingMerge.keys()) disarm(mergeBtn(key));
     const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
     return n;
   }
@@ -1931,7 +1951,7 @@ ${MADE_SCRIPT}
     const m = e.data;
     if (m.type === 'tab') { current = m.tab; select(m.tab); syncTabs(); }
     else if (m.type === 'choose') choose(m.tab);
-    else if (m.type === 'merged' && typeof m.repo === 'string') drawMerged(m.repo + '#' + m.number, typeof m.error === 'string' ? m.error : '');
+    else if (m.type === 'merged' && typeof m.repo === 'string') drawMerged(m.repo + '#' + m.number, typeof m.error === 'string' ? m.error : '', m.merged !== false);
     else if (m.type === 'count') {
       const c = document.querySelector('[data-cnt="sessions"]'); if (c) c.textContent = m.n ? String(m.n) : '';
       const d = document.querySelector('[data-asks]'); if (d) d.textContent = m.asks ? String(m.asks) : '';
@@ -2162,14 +2182,14 @@ ${MADE_SCRIPT}
       e.preventDefault(); e.stopPropagation();
       const key = merge.dataset.mergeRepo + '#' + merge.dataset.mergeNumber;
       // A second click inside the window is Undo: nothing was sent yet.
-      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); merge.classList.remove('armed'); const arc = merge.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; } merge.title = 'Ready to merge. Click to merge #' + merge.dataset.mergeNumber; merge.setAttribute('aria-label', 'Merge #' + merge.dataset.mergeNumber); toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
+      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); disarm(merge); toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
       let left = 5; pendingMerge.set(key, left); drawUndo(key, left);
       const timer = setInterval(() => {
         left -= 1;
         if (!pendingMerge.has(key)) { clearInterval(timer); return; }
         if (left > 0) { pendingMerge.set(key, left); drawUndo(key, left); return; }
         clearInterval(timer); pendingMerge.delete(key); mergeTimers.delete(key);
-        const b = mergeBtn(key); if (b) { b.classList.remove('armed'); b.classList.add('merging'); b.title = 'Merging…'; const w = b.closest('.prli') && b.closest('.prli').querySelector('.vw'); if (w) w.textContent = 'Merging…'; }
+        mergingNow.add(key); drawMerging(key);
         vscode.postMessage({ type: 'merge', repo: merge.dataset.mergeRepo, number: Number(merge.dataset.mergeNumber), sha: merge.dataset.mergeSha });
       }, 1000);
       mergeTimers.set(key, timer);
