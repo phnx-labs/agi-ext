@@ -3773,7 +3773,7 @@ async function spawnWithPrompt(
     return;
   }
 
-  const target = launchOptsForTarget(args?.where ?? 'auto');
+  const target = launchOptsForTarget(resolveLaunchTarget(args?.where ?? 'auto'));
   let place: { host?: string; local?: boolean } = target.local ? { local: true } : {};
   if (target.pickHost) {
     const picked = await pickLaunchHost(`${def.title} — run on…`);

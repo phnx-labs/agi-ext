@@ -43,7 +43,7 @@ function shortDate(iso: string | undefined): string {
 }
 
 /** The project's unfinished milestones, earliest target first. */
-function openMilestones(goals: Goals, linearName: string | null | undefined): Milestone[] {
+export function openMilestones(goals: Goals, linearName: string | null | undefined): Milestone[] {
   if (!linearName) return [];
   return (goals.milestones ?? []).filter((m) => m.project.toLowerCase() === linearName.toLowerCase() && (m.progress ?? 0) < 100)
     .sort((a, b) => (a.target ?? '9999').localeCompare(b.target ?? '9999'));
