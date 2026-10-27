@@ -26,17 +26,21 @@ const draw = (o: { favorites?: string[]; cards?: Partial<typeof DEFAULT_CARD_SET
 const sectionOf = (html: string, key: string) => html.slice(html.indexOf(`data-group="${key}"`), html.indexOf('</section>', html.indexOf(`data-group="${key}"`)))
 const ids = (html: string) => [...html.matchAll(/class="card [^"]*"[^>]*data-session="([^"]+)"/g)].map((m) => m[1])
 
-test('☆ sits on every title row; a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
+test('Add to Favorites is in ⋯ (owner video, 2026-10-27 9:24 AM); a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
   const plain = draw()
-  expect(plain).toContain('<button class="star" data-fav="starred" aria-pressed="false" title="Add to Favorites"')
+  expect(plain).toContain('<button class="favitem" data-fav="starred" aria-pressed="false">Add to Favorites</button>')
+  expect(plain).not.toContain('class="star')
   expect(plain).not.toContain('data-group="favorites"')
   const html = draw({ favorites: ['starred', 'asker'] })
-  expect(html).toContain('<button class="star on" data-fav="starred" aria-pressed="true" title="Remove from Favorites"')
+  expect(html).toContain('<button class="favitem" data-fav="starred" aria-pressed="true">Remove from Favorites</button>')
+  expect(html).toContain('<span class="star on" title="Favorite" aria-label="Favorite">★</span>')
   // Pinned card, then Favorites, then the grouping.
   expect(html.indexOf('front-pin')).toBeLessThan(html.indexOf('data-group="favorites"'))
   expect(html.indexOf('data-group="favorites"')).toBeLessThan(html.indexOf('data-group="here"'))
   const favs = sectionOf(html, 'favorites')
   expect(favs).toContain('<b>Favorites</b> <span class="n">2</span>')
+  // A group header is its icon, name and count; no row of colored dots (owner video, 2026-10-27 9:24 AM).
+  expect(html).not.toContain('class="dots"')
   // An ask leads, as in every group; a copy asks with its question only, so its answers exist once.
   expect(ids(favs)).toEqual(['asker', 'starred'])
   expect(favs).toContain('Ship it?')
@@ -48,7 +52,7 @@ test('☆ sits on every title row; a favorite shows ★ and leads the list under
   // Settings > Favorites group off: the stars stay, the group goes.
   const off = draw({ favorites: ['starred'], cards: { favorites: false } })
   expect(off).not.toContain('data-group="favorites"')
-  expect(off).toContain('class="star on" data-fav="starred"')
+  expect(off).toContain('<span class="star on" title="Favorite" aria-label="Favorite">★</span>')
 })
 
 test('a card whose agent has not spoken yet marks your prompt "You:", on the list and on the pinned card', () => {
