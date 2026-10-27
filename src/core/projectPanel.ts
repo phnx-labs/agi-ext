@@ -1308,8 +1308,8 @@ function prState(p: PrRow): PrState {
   return 'ready';
 }
 
-/** What a PR's ring and meta line say, as the AGI Menu says it (owner, 2026-10-27 12:07 PM):
- *  the verdict is a word on the meta line and a mark in the ring, never a button's text. */
+/** What a PR's ring says (owner, 2026-10-27 12:07 PM): the verdict is the ring's mark, its
+ *  word only in the tooltip and to screen readers, never text on the row. */
 function prRowVerdict(p: PrRow): { st: PrState; word: string; tone: 'ok' | 'bad' | 'run' | 'quiet' } {
   const st = prState(p);
   if (st === 'ready') return { st, word: 'Ready to merge', tone: 'ok' };
@@ -1374,8 +1374,7 @@ function prFace(p: PrRow, avatar: ReviewOptions['avatar']): string {
 
 function prLine(p: PrRow, slug: string, now: number, opts: ReviewOptions, showRepo: boolean): string {
   const age = ageWords(Date.parse(p.date), now);
-  const v = prRowVerdict(p);
-  return `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age} · <span class="vw v-${v.tone}">${escapeHtml(v.word)}</span></span></span></a>${prOpenIcon(p)}${fixButton(p, slug, opts.fixAgent)}${prRing(p, slug, opts.mergeWith)}</li>`;
+  return `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prOpenIcon(p)}${fixButton(p, slug, opts.fixAgent)}${prRing(p, slug, opts.mergeWith)}</li>`;
 }
 
 function reviewMenu(p: ReviewPrefs): string {

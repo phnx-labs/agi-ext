@@ -83,7 +83,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
   --number N`) on the click for its head commit and whether you may bypass protection
   (`src/vscode/prMerge.vscode.ts`). A Review row's Merge is a click on its ready ring with the Settings
-  method after the ring drains for 5 s in the page (`mergeNow`; a PR row ends in one ring and says its verdict on the meta line, as the AGI Menu does, owner 2026-10-27 12:07 PM), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
+  method after the ring drains for 5 s in the page (`mergeNow`; a PR row ends in one ring that carries its verdict, with no state word on the row, owner 2026-10-27 12:07 PM), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
   dialog (`mergeWithMenu`); `--admin` only after its own warning dialog.
   A sixth: ticket tiles show the title and state a Linear read in this window already returned
   (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <id> --json`)

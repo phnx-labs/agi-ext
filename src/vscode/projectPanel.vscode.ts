@@ -1322,7 +1322,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .pring.merging { pointer-events: none; } .pring.merging .chk { display: none; } .pring.merging .arc { stroke-dasharray: 14 40; animation: spin .7s linear infinite; }
   .pring.v-merged { background: var(--r-merged); color: var(--r-on-av); animation: pop .35s ease-out; } .pring.v-merged .trk, .pring.v-merged .arc { stroke: none; }
   @keyframes pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
-  .vw { font-family: var(--vscode-font-family); } .sub .vw.v-quiet { color: var(--r-faint); }
   /* Fix: the agent's logo beside a red ring, on the row's hover; one click starts it on the PR. */
   .prfix { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; }
   .prli:hover .prfix, .prfix:focus-visible, .prfix[disabled] { opacity: 1; } .prfix:hover { background: var(--r-glass-hover); } .prfix .hx { width: 15px; height: 15px; } .prfix[disabled] { animation: breathe 1.2s ease-in-out infinite; cursor: default; }
@@ -1889,19 +1888,16 @@ ${MADE_SCRIPT}
   function drawMerging(key) {
     const b = mergeBtn(key); if (!b) return;
     b.classList.remove('armed'); b.classList.add('merging'); b.title = 'Merging…';
-    const w = b.closest('.prli') && b.closest('.prli').querySelector('.vw'); if (w) w.textContent = 'Merging…';
   }
-  // What the host says when a merge finished: violet and Merged, or red with the reason.
+  // What the host says when a merge finished: violet, or red with the reason in its tooltip.
   function drawMerged(key, error, merged) {
     mergingNow.delete(key);
     const b = mergeBtn(key); if (!b) return;
     // Turned down here with its own warning: back to a ready ring until Review rereads.
-    if (!merged && !error) { b.classList.remove('merging'); disarm(b); const w = b.closest('.prli') && b.closest('.prli').querySelector('.vw'); if (w) w.textContent = 'Ready to merge'; return; }
-    const row = b.closest('.prli'); const word = row && row.querySelector('.vw');
+    if (!merged && !error) { b.classList.remove('merging'); disarm(b); return; }
     b.classList.remove('armed', 'merging', 'v-ok'); b.classList.add(error ? 'v-bad' : 'v-merged'); b.disabled = !error;
-    b.title = error ? 'Not merged: ' + error + '. Click to try again' : 'Merged'; b.setAttribute('aria-label', b.title);
+    b.title = error ? 'Not merged: ' + error.replace(/[.\s]+$/, '') + '. Click to try again' : 'Merged'; b.setAttribute('aria-label', b.title);
     const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = ''; arc.style.strokeDashoffset = ''; }
-    if (word) { word.className = 'vw ' + (error ? 'v-bad' : 'v-merged'); word.textContent = error ? 'Not merged: ' + error : 'Merged'; }
   }
   // The Lead tab's box is data-keep (what you type survives a redraw); its mic and busy
   // state arrive as attributes on .lead-ask and are copied onto the box here.

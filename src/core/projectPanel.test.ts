@@ -161,7 +161,7 @@ test('prs: repos with open PRs first, a failed repo shows its error, partial is 
   expect(html).not.toContain('feat: x')
   const all = renderPrs(model, now, { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true, showMerged: true } })
   expect(all).toContain('<span class="pring v-quiet" role="img" aria-label="Draft" title="Draft">')
-  expect(all).toContain('#7 · busy · 24h · <span class="vw v-quiet">Draft</span></span>')
+  expect(all).toContain('#7 · busy · 24h</span></span></a>')
   // The author as a face on the left: a colored initial when the row carries no GitHub avatar.
   expect(all).toMatch(/<li class="prli"><span class="iav av\d"/)
   expect(all).toContain('Recently merged</span><span class="n">5</span>')
@@ -179,10 +179,10 @@ test('prs: a ready PR ends in one ring that merges (owner, 2026-10-27 12:07 PM);
   const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { ...OPTS, prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'rebase' })
   // No button text anywhere: the verdict is the ring's mark and a word on the meta line.
   expect(html).toContain('<button class="pring v-ok" data-merge-repo="o/busy" data-merge-number="8" title="Ready to merge. Click to merge #8 with rebase (change in Settings)" aria-label="Merge #8"><svg')
-  expect(html).toContain('<span class="vw v-ok">Ready to merge</span>')
+  // No state word on the row (owner, 2026-10-27): the ring and the group header say it.
+  expect(html).not.toContain('class="vw')
   expect(html).not.toMatch(/>Merge<|>Fix<|>Conflicts<\/span><button/)
   expect(html).not.toContain('data-merge-number="7"')
-  expect(html).toContain('<span class="vw v-bad">2 failing</span>')
   expect(html).toContain('<span class="pring v-bad" role="img" aria-label="2 failing: a, b" title="2 failing: a, b">')
   // Status grouping puts ready ones first; an agent author shows as its harness logo.
   expect(html.indexOf('Ready to merge')).toBeLessThan(html.indexOf('Failing'))
@@ -200,7 +200,7 @@ test('prs: a failing or conflicting PR offers Fix, which starts an agent with th
   expect(html).toContain('<button class="prfix" data-fix-repo="o/busy" data-fix-number="9" title="Start Claude in a new tab to fix #9&#39;s failing checks (All tests pass, gitleaks)" aria-label="Fix #9 with Claude"><i class="hx hx-claude"')
   expect(html).toMatch(/data-fix-number="9"[^]*?<\/button><span class="pring v-bad"/)
   // A conflict never offers Merge; it gets its own group above Failing.
-  expect(html).toContain('<span class="vw v-bad">Conflicts with main</span>')
+  expect(html).toContain('<span class="pring v-bad" role="img" aria-label="Conflicts with main" title="Conflicts with main">')
   expect(html).toContain('<button class="prfix" data-fix-repo="o/busy" data-fix-number="10"')
   expect(html).not.toContain('data-merge-number="10"')
   expect(html.indexOf('>Conflicts</span><span class="n">')).toBeLessThan(html.indexOf('>Failing</span>'))
