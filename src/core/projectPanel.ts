@@ -1059,16 +1059,23 @@ function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: Sess
 }
 
 /** Filter, then sort (owner video, 2026-10-22 6:42 AM: on the list's own header, no grouping). */
-function menuHtml(p: SessionListPrefs): string {
+function menuHtml(p: SessionListPrefs, today?: { id: string; n: number }): string {
   const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
   return `<div class="menu" role="menu" hidden>
     <div class="sec">View</div>${item(p.view === 'default', 'Default', 'view', 'default')}${item(p.view === 'compact', 'Compact', 'view', 'compact')}<hr>
-    <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}<hr>
+    <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}${today ? item(p.todayOnly, `Only today's goal (${escapeHtml(today.id)}, ${today.n})`, 'todayOnly', String(!p.todayOnly)) : ''}<hr>
     <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
   </div>`;
 }
 
-const menuButton = (p: SessionListPrefs) => `<button class="icon gmenu" data-menu aria-haspopup="menu" aria-expanded="false" title="View, filter and sort" aria-label="View, filter and sort">${glyph('sort')}</button>${menuHtml(p)}`;
+/** Every tab's ⇅, in the same place on every tab (owner video, 2026-10-27 1:19 PM: "the view
+ *  changes … the search is even gone … the placement of the icon also changes"); dimmed on a tab
+ *  with nothing to sort. The filter field beside it is the page's own. */
+export function tabHead(menu: string | null): string {
+  return menu
+    ? `<div class="shead"><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="View, filter and sort" aria-label="View, filter and sort">${glyph('sort')}</button>${menu}</div>`
+    : `<div class="shead"><button class="icon" disabled title="Nothing to sort on this tab" aria-label="View, filter and sort">${glyph('sort')}</button></div>`;
+}
 
 /** What the list draws before grouping: the viewer's Show choices, then ☀ only. */
 function listedSessions(rows: SessionLike[], opts: SessionListOptions): { row: SessionLike; place: SessionPlace }[] {
@@ -1135,26 +1142,17 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, nav: pinned ? nav : undefined, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId),
   });
-  // The tab already shows the count and the asks badge, so the header carries only search and ☀;
-  // filter and sort sit on the list's first group, so the header row never changes.
-  // With no group drawn (Show hid everything, or only grouped finished sessions are left) ⇅ stays in the header, so Show can be turned back on.
-  const headWith = (menu: boolean) => `<div class="shead">${opts.todayId && (onToday || prefs.todayOnly) ? `<button class="today${prefs.todayOnly ? ' on' : ''}" data-pref="todayOnly" data-value="${!prefs.todayOnly}" aria-pressed="${prefs.todayOnly}" title="${prefs.todayOnly ? 'Show every session' : `Show only the sessions on today's goal (${escapeHtml(opts.todayId)})`}">☀ ${onToday} on today</button>` : ''}<button class="icon" data-search title="Search sessions (${escapeHtml(opts.searchKey ?? '⌘K')})" aria-label="Search sessions">${glyph('search')}</button>${menu ? menuButton(prefs) : ''}</div>`;
-  const head = headWith(false);
-  // Always there, under the header: typing filters the list in place; ⌘K still opens the full search (owner video, 2026-10-22 8:50 AM).
-  const find = `<div class="sfind" data-keep><input type="search" data-find placeholder="Filter sessions · ${escapeHtml(opts.searchKey ?? '⌘K')} searches every project" aria-label="Filter sessions" spellcheck="false" autocomplete="off"></div>`;
+  // The tab row's two controls, as on every tab; ☀ is a Show item in ⇅. The filter box is the page's own, under the tabs.
+  const head = tabHead(menuHtml(prefs, opts.todayId && (onToday || prefs.todayOnly) ? { id: opts.todayId, n: onToday } : undefined));
   const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
-  if (all.length === 0) return `${headWith(true)}${find}<div class="empty">No sessions on this project right now.</div>${tail}`;
+  if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean };
-  // ⇅ rides the first group header drawn, Favorites included.
-  let menuPlaced = false;
   const folded = new Set(prefs.folded);
   const section = (g: Group) => {
     // A folded group opens while it holds the selected session (the front tab included).
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
-    const menuHere = !menuPlaced;
-    menuPlaced = true;
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}${menuHere ? menuButton(prefs) : ''}</div>
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}</div>
       <div class="items">${closed ? '' : ordered(g.items).map((x) => card(x, false, g.copy)).join('')}</div>
     </section>`;
   };
@@ -1176,7 +1174,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     g.items.push(x); byKey.set(x.place.key, g);
   }
   const listed = groups(byKey);
-  return (menuPlaced ? head : headWith(true)) + find + pinned + favs + quietGroups + listed + '<div class="nofind" hidden>No session here matches. ⌘K searches every project.</div>' + tail;
+  return head + pinned + favs + quietGroups + listed + '<div class="nofind" hidden>No session here matches. ⌘K searches every project.</div>' + tail;
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
@@ -1246,8 +1244,10 @@ function startMenu(id: string, agentKey: string, where: LaunchTarget): string {
  *  one works on it, the logo carries its state dot and opens that session instead. The
  *  milestone shows only when it is not the header's; priority is colored (owner, 5:48 AM);
  *  the assignee leads the row (owner, 6:05 AM) and priority sits before the id (6:07 AM). */
-export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras, milestone?: string, where: LaunchTarget = 'auto'): string {
-  if (groups.length === 0) return '<div class="empty">No open tickets in this project.</div>';
+export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => TicketRowExtras, milestone?: string, where: LaunchTarget = 'auto', menu: string | null = null): string {
+  // ⇅ picks the milestone Issues lists (it was the goal line's menu).
+  const head = tabHead(menu);
+  if (groups.length === 0) return head + '<div class="empty">No open tickets in this project.</div>';
   const row = (t: Ticket) => {
     const id = escapeHtml(t.identifier);
     const x = extras(t);
@@ -1260,7 +1260,7 @@ export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => Tick
     const pick = `<span class="tpick"><button class="tcar" data-menu aria-haspopup="menu" aria-expanded="false" title="Another agent, or where it runs" aria-label="Choose an agent for ${id}">▾</button>${startMenu(id, x.agentKey, where)}</span>`;
     return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${x.avatar ? `<img class="pav" src="${escapeHtml(x.avatar)}" alt="${escapeHtml(t.assignee ?? '')}" title="${escapeHtml(t.assignee ?? '')}">` : personAvatar(t.assignee) || '<span class="iav nobody" title="Unassigned"></span>'}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${priorityBars(t.priority)}${id}${ms}</span></span></a><span class="who">${agent}${pick}</span>${open}${x.peek}</li>`;
   };
-  return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
+  return head + groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
     <ul>${g.tickets.map(row).join('')}</ul>
   </details>`).join('');
@@ -1400,7 +1400,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   const hidden = all.length - shown.length;
   // The tab row holds only the menu, so it never grows when the list arrives (owner video, 2026-10-22 6:42 AM);
   // hidden drafts are one quiet line under the list instead.
-  const head = `<div class="shead"><button class="icon" data-menu aria-haspopup="menu" aria-expanded="false" title="Group and show" aria-label="Group and show">${glyph('sort')}</button>${reviewMenu(prefs)}</div>`;
+  const head = tabHead(reviewMenu(prefs));
   const partial = m.partial ? '<div class="warn">Some repositories could not be read; this list is incomplete.</div>' : '';
   const readingLine = reading.length ? `<div class="reading">Reading ${reading.map((w) => escapeHtml(w.split('/').pop() ?? w)).join(', ')}…</div>` : '';
   const errors = m.repos.filter((r) => r.error).map((r) => `<div class="err">${escapeHtml(r.slug)}: could not read: ${escapeHtml(r.error!)}</div>`).join('');
