@@ -121,7 +121,7 @@ export interface AgentSettings {
   mergeMethod?: MergeMethod;
   /** The Project panel's Review and Issues tabs; both shown when unset. */
   tabs?: PanelTabs;
-  /** Pages (⌘⇧V): what a plain click on a page does; the same browser tab when unset. */
+  /** Pages (⌘⇧B): what a plain click on a page does; the same browser tab when unset. */
   pages?: { click: PagesClick };
 }
 

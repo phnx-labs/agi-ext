@@ -10,6 +10,12 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   and the ring. The ring's tooltip and the group header still name it, and a refused merge
   gives GitHub's reason in the red ring's tooltip.
 
+From the owner, 12:45 PM: ⌘⇧B is where the browser starts.
+
+- ⌘⇧B opens Pages, so your pinned pages are the first thing the browser shows; a click on one
+  opens it in the built-in browser. New Secondary still has no default shortcut.
+- New Split (Side) is back on ⌘⇧V.
+
 ## [0.9.433] - 2026-10-27
 
 From the owner's 12:07 PM screenshot of the Review tab, drawn the way the AGI Menu draws PRs:

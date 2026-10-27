@@ -109,7 +109,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A ninth: Close Terminal With Recap finds the transcript with one `sessions <id> --json` read
   when the command runs (`transcriptPathOf`, `src/vscode/recap.vscode.ts`), so it works while
   no view demands the stream; the extension reads no transcript itself.
-  A tenth: Pages (⌘⇧V, `src/vscode/pages.vscode.ts`) is not about sessions and calls no CLI. It
+  A tenth: Pages (⌘⇧B, `src/vscode/pages.vscode.ts`) is not about sessions and calls no CLI. It
   reads the built-in browser's history read-only from VSCodium's own `state.vscdb` beside this
   extension's global storage, with the runtime's `node:sqlite`, when the tab shows; it fetches a
   pinned page and its icon once, when the page is pinned (`resolvePageIcon`); and it opens
