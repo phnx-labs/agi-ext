@@ -102,7 +102,7 @@ test('the pinned card says its place among the tabs (2/3) and ⇤ ⇥ front the 
   expect(frontNav('off', tabs, tabs[2], undefined, (r) => r.title)).toEqual({ mode: 'off', at: 3, count: 3 });
   const draw = (ends: boolean) => renderSessions(tabs, T, { selectedId: 'b', frontId: 'b', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, ends } });
   const html = draw(true);
-  expect(html).toContain('<span class="thistab" title="Idle">zion · 2/3 · now</span>');
+  expect(html).toContain('<span class="fc-where" title="Idle">zion · Tab 2 of 3 · now</span>');
   expect(html).toContain('data-front-step="first" data-session="a"');
   expect(html).toContain('data-front-step="last" data-session="c"');
   expect(draw(false)).not.toContain('data-front-step="first"');

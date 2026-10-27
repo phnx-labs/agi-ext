@@ -1294,7 +1294,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card:hover, .card:focus-visible { background: var(--r-glass-hover); border-color: var(--r-faint); outline: none; }
   /* Selected is its own look, not hover's: a gold rail inside the left edge. */
   .card.sel { background: var(--r-glass-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold-line); }
-  .card .thistab { font-size: 9.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-gold-line); line-height: 12px; margin-bottom: 2px; }
   /* The front tab's card, pinned above the list (owner, 2026-10-18). */
   .front-pin { margin: 2px 0 8px; }
   .fc-nav { display: flex; align-items: center; gap: 4px; margin: -2px -2px 2px; }
@@ -1304,17 +1303,17 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-step[disabled] { opacity: .3; cursor: default; }
   .card.front { cursor: default; }
   .card.front.st-asks:hover, .card.front.st-stuck:hover, .card.front.st-blocked:hover, .card.front.st-working:hover, .card.front.st-waiting:hover, .card.front.st-idle:hover, .card.front.st-review:hover { filter: none; }
-  .card.front:not(:hover):not(:focus-within):not(:has(.cmore[open])) .acts { display: none; } .card.front:is(:hover, :focus-within) .top .thistab { display: none; } .card.front .age { display: none; }
   .card.front .top { height: auto; min-height: 20px; align-items: flex-start; }
   .card.front .top .hx { margin-top: 2px; }
   .card.front .top .vchip { margin-top: 1px; }
-  /* One header row: ⇤ ‹ title, state, where it runs, its tab and age › ⇥ (owner, 2026-10-22 1:01 PM). */
+  /* ⇤ ‹ the title, up to three lines, and its state › ⇥; under it the machine, the tab's place, the age, Copy and ⋯ (owner video, 2026-10-27 9:24 AM). */
   .card.front .fc-nav .top { flex: 1; min-width: 0; }
-  .card.front .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 17px; }
-  .card.front .top { align-items: center; }
-  .card.front .top .thistab { flex: none; max-width: 38%; margin: 0; letter-spacing: 0; text-transform: none; font-size: 10.5px; font-weight: 500; font-family: var(--vscode-editor-font-family); }
+  .card.front .fc-nav .ttl { line-height: 17px; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+  .card.front .fc-nav { align-items: flex-start; } .card.front .fc-nav .fc-step { margin-top: 1px; }
+  .fc-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 0 2px 26px; height: 22px; }
+  .fc-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
+  .fc-acts { display: flex; gap: 2px; flex: none; margin-left: auto; }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
-  .card .fc-nav .thistab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
   .fc-recap .fc-k { color: var(--r-gold-line); }
   .fc-old { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); }

@@ -989,16 +989,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const ttl = rename
     ? `<span class="ttl${rename.can ? ' rn' : ''}" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\n${rename.tip}`)}">${escapeHtml(title)}</span>`
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
-  // The pinned card says where it runs, its place among the tabs and its age where a listed card has its age.
-  function frontWhere(): string {
-    const ago = ageWords(s.lastActivityMs, now);
-    const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ago;
-    const at = opts.nav?.at ? `${opts.nav.at}/${opts.nav.count}` : s.tabIndex ? String(s.tabIndex) : '';
-    const where = [escapeHtml(shortDevice(place.device)), at, since].filter(Boolean).join(' · ');
-    const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
-    return `<span class="thistab" title="${escapeHtml(stateWords)}">${where}</span>`;
-  }
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${opts.front ? vchip : ''}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${opts.front ? '' : vchip}${pill}${opts.front ? frontWhere() : age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
+  // A listed card's title row; the pinned card draws its own two rows in frontBody.
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
@@ -1013,7 +1005,15 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     // Made shelf or the activity box to another position (the patch pairs by position).
     const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${cards.activity ? activitySteps(s) : ''}`;
     const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
-    return `${navButtons(opts.nav, top, cards.ends)}<div class="fc-body">${detail}</div>${reply}`;
+    const pos = opts.nav?.at ? `Tab ${opts.nav.at} of ${opts.nav.count}` : s.tabIndex ? `Tab ${s.tabIndex}` : '';
+    const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ageWords(s.lastActivityMs, now);
+    const where = escapeHtml(shortDevice(place.device));
+    const acts = `<span class="fc-acts">${copy}${cardMenu(s, place, opts)}${go}</span>`;
+    const name = `${harnessLogo(s.agentType)}${fork}${ttl}${star}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}`;
+    const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
+    // ‹ the title (up to three lines) and its state ›, then a line of its own for the machine, the tab's place and the
+    // age, with Copy and ⋯ always there (owner video, 2026-10-27 9:24 AM: the full title, 17/17 on another row).
+    return `${navButtons(opts.nav, `<div class="top">${name}${vchip}${pill}</div>`, cards.ends)}<div class="fc-meta"><span class="fc-where" title="${escapeHtml(stateWords)}">${[where, pos, since].filter(Boolean).join(' · ')}</span>${acts}</div><div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
