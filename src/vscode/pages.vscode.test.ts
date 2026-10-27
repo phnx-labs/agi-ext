@@ -89,7 +89,7 @@ describe('the Pages webview', () => {
   const page = pagesShell('vscode-webview:');
   document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<script'));
   const sent: Record<string, unknown>[] = [];
-  const script = page.match(/<script[^>]*>([\s\S]*?)<\/script>/i)![1];
+  const script = page.match(/<script[^>]*>([\s\S]*?)<\/script[^>]*>/i)![1];
   new Function('window', 'document', 'acquireVsCodeApi', script)(window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }));
   const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));
   const $ = (sel: string) => document.querySelector(sel) as unknown as HTMLElement;
