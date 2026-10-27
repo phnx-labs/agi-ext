@@ -35,7 +35,7 @@ const held: TabTurn = {
   ],
   refs: [{ kind: 'session', id: 'c106a56b-2ccb', title: 'Rush account creation' }], live: false,
 };
-const model = (over: Partial<LeadTabModel> = {}): LeadTabModel => ({ project: 'agents', turns: [held], busy: false, mic: 'idle', speak: false, model: 'opus', state: 'warm', host: 'yosemite-s0', loading: false, now: Date.now(), ...over });
+const model = (over: Partial<LeadTabModel> = {}): LeadTabModel => ({ project: 'agents', turns: [held], busy: false, mic: 'idle', model: 'opus', state: 'warm', host: 'yosemite-s0', loading: false, now: Date.now(), ...over });
 
 deliver({ type: 'tab', tab: 'lead' });
 deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model()) });
@@ -86,13 +86,10 @@ test('a session the Lead named opens through the host', () => {
   expect(sent.filter((m) => m.type === 'leadRef')).toEqual([{ type: 'leadRef', ref: { kind: 'session', id: 'c106a56b-2ccb', title: 'Rush account creation' }, external: false }]);
 });
 
-test('the speaker beside ⟳ posts leadSpeak and shows whether answers are read aloud', () => {
-  deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model({ speak: false })) });
-  expect(el('[data-lead-speak]').getAttribute('aria-pressed')).toBe('false');
-  el('[data-lead-speak]').click();
-  expect(sent.filter((m) => m.type === 'leadSpeak').length).toBe(1);
-  deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model({ speak: true })) });
-  expect(el('[data-lead-speak]').getAttribute('aria-pressed')).toBe('true');
+test('the Lead puts nothing on the tab row: no speaker, no ⟳', () => {
+  deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model()) });
+  expect(el('.tabs .sctl').innerHTML).toBe('');
+  expect(document.querySelector('[data-lead-speak], [data-lead-refresh]')).toBeNull();
 });
 
 test('a new turn keeps the newest words in view when the viewer was at the end, and leaves a viewer who scrolled up', () => {

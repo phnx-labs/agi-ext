@@ -94,19 +94,28 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(groups.map((g) => g.state)).toEqual(['Doing', 'Todo', 'Backlog'])
   expect(groups[1].tickets.map((t) => t.identifier)).toEqual(['A-4', 'A-2'])
   expect(groups[0].tickets[0]).toMatchObject({ delegate: 'claude', assignee: 'Muqsit Nawaz', milestone: 'Ship B' })
-  const html = renderTickets(groups, (t) => ({ agentName: 'Claude', peek: `<div data-peek="${t.identifier}"></div>` }))
-  // A row carries its page and ▶; the peek the caller drew follows the row.
-  expect(html).toContain('<a class="trow" href="#" data-ticket="A-3" data-url="https://linear.app/x/A-3"')
-  expect(html).toContain('data-start-ticket="A-3" title="Start Claude on A-3 in a new tab"')
-  expect(html).toContain('</button><div data-peek="A-3"></div></li>')
+  const html = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: `<div data-peek="${t.identifier}"></div>`, onIt: [] }))
+  // One line: the row unfolds the peek, the agent's logo starts it, ↗ opens the page; the peek follows.
+  expect(html).toContain('<a class="trow" href="#" data-ticket="A-3" title="t A-3">')
+  expect(html).toContain('<span class="t"><span>t A-3</span></span>')
+  expect(html).toMatch(/<button class="tag" data-start-ticket="A-3" title="Start Claude on A-3 in a new tab" aria-label="Start Claude on A-3"><i class="hx hx-claude"/)
+  expect(html).toContain('<a class="pro" href="#" data-url="https://linear.app/x/A-3" title="Open A-3 in a tab')
+  expect(html).toContain('</svg></a><div data-peek="A-3"></div></li>')
   expect(groups[0].tickets[0].description).toBe('')
-  // People, not names: the delegated agent as its harness logo, the assignee as a colored initial.
-  expect(html).toContain('<span class="iav agent" title="Delegated to claude"><i class="hx hx-claude"')
+  // The assignee as a colored initial; Linear's delegate is not drawn (▶ starts that agent).
+  expect(html).not.toContain('Delegated to claude')
   expect(html).toMatch(/<span class="iav av\d" title="Muqsit Nawaz">MN<\/span>/)
+  // The milestone shows only when it is not the one the header names.
+  expect(html).toContain('<span class="sub">A-3 · Ship B</span>')
+  expect(renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }), 'Ship B')).toContain('<span class="sub">A-3</span>')
+  // An agent on it now: its logo carries the state dot (and a count past one) and opens that session instead of starting another.
+  const live = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: t.identifier === 'A-3' ? [{ agentType: 'claude', state: 'asks', title: 'Ship it', sessionId: 's-1', host: 'zion' }, { agentType: 'codex', state: 'working', title: 'Tests', sessionId: 's-2', host: 'zion' }] : [] }))
+  expect(live).toMatch(/<button class="tag" data-open-session="s-1" data-host="zion" title="Ship it: [^"]+\nTests: [^"]+\nClick to open it" aria-label="Open the session on A-3"><i class="hx hx-claude"[^>]*><\/i><i class="d-move"><\/i><span class="n">2<\/span><\/button>/)
+  expect(live).not.toContain('data-start-ticket="A-3"')
 })
 
 test('tickets render escapes titles from the tracker', () => {
-  const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>', url: 'https://linear.app/x/"><b>' }] })), () => ({ agentName: '<i>', peek: '' }))
+  const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>', url: 'https://linear.app/x/"><b>' }] })), () => ({ agentKey: 'claude', agentName: '<i>', peek: '', onIt: [] }))
   expect(html).not.toMatch(/<img|"><b>|<i>/)
   expect(html).toContain('&lt;img')
 })

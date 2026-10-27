@@ -270,6 +270,8 @@ export interface LeadHistoryTurn {
   turn: string;
   at?: number;
   ask: string;
+  /** `asks`: a turn the Lead ran on its own to draft replies (agents-cli 1.23.45); `ask` is empty. */
+  trigger?: 'asks';
   voiceSecs?: number;
   text: string;
   summary: string;
@@ -296,7 +298,7 @@ function parseHistoryTurn(v: unknown): LeadHistoryTurn | null {
   })) : [];
   const at = parseAt(v.at ?? v.ts ?? v.endedAt);
   return {
-    turn: str(v.turn) ? v.turn : '', ...(at !== undefined ? { at } : {}), ask,
+    turn: str(v.turn) ? v.turn : '', ...(at !== undefined ? { at } : {}), ask, ...(v.trigger === 'asks' ? { trigger: 'asks' as const } : {}),
     ...(num(v.voice) ? { voiceSecs: v.voice } : num(v.voiceSecs) ? { voiceSecs: v.voiceSecs } : {}),
     text, summary: str(v.summary) && v.summary ? v.summary : summaryOf(text), refs: parseRefs(v.refs), tools,
     ...(parseTiming(v.timing) ? { timing: parseTiming(v.timing) } : {}),
@@ -451,6 +453,42 @@ export function watchSurface(onChange: (s: LeadSurface) => void, home: string = 
       dirWatcher?.close();
       parentWatcher?.close();
       dirWatcher = parentWatcher = undefined;
+    },
+  };
+}
+
+/** agents-cli's own writes that change what the Lead tab shows: a finished turn (one it
+ *  ran on its own included) and its host starting or stopping. */
+const LEAD_TAB_FILES = new Set(['history.ndjson', 'history.ndjson.1', 'host.json']);
+
+/** Calls `onChange` (at most once per `settleMs`) when agents-cli writes the project's Lead
+ *  history or host file, so the tab reads `history|status` again without a ⟳ or a timer. A
+ *  project whose Lead never ran has no folder yet; `~/.agents/lead` is watched for it. */
+export function watchLeadHistory(project: string, onChange: () => void, home: string = os.homedir(), settleMs = 300): { dispose(): void } {
+  const root = leadDir(home);
+  const dir = path.join(root, project);
+  let dirWatcher: fs.FSWatcher | undefined;
+  let rootWatcher: fs.FSWatcher | undefined;
+  let settle: NodeJS.Timeout | undefined;
+  const fire = () => { if (settle) clearTimeout(settle); settle = setTimeout(onChange, settleMs); };
+  const watch = (target: string, on: (name: string) => void): fs.FSWatcher | undefined => {
+    try {
+      const w = fs.watch(target, (_e, name) => on(String(name ?? '')));
+      w.on('error', () => { w.close(); if (dirWatcher === w) dirWatcher = undefined; if (rootWatcher === w) rootWatcher = undefined; });
+      return w;
+    } catch { return undefined; }
+  };
+  const arm = () => {
+    if (!dirWatcher) dirWatcher = watch(dir, (name) => { if (LEAD_TAB_FILES.has(name)) fire(); });
+  };
+  arm();
+  if (!dirWatcher && fs.existsSync(root)) rootWatcher = watch(root, (name) => { if (name === project && !dirWatcher) { arm(); fire(); } });
+  return {
+    dispose: () => {
+      if (settle) clearTimeout(settle);
+      dirWatcher?.close();
+      rootWatcher?.close();
+      dirWatcher = rootWatcher = undefined;
     },
   };
 }
