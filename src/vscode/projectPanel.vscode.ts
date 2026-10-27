@@ -1286,9 +1286,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .appic { width: 20px; height: 20px; display: block; }
   .gi { width: 14px; height: 14px; fill: none; stroke: var(--r-caption); stroke-width: 1.4; }
   .gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; } .gname b { font-weight: 600; } .gs { color: var(--r-faint); font-size: 11px; }
-  .dots { margin-left: auto; display: flex; gap: 3px; } .dots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+  .gh .gmenu { margin-left: auto; } .gact ~ .gmenu { margin-left: 6px; }
   .gact { margin-left: auto; font: inherit; font-size: 10.5px; border: 1px solid var(--r-edge); background: none; color: var(--r-caption); border-radius: 5px; padding: 0 7px; cursor: pointer; }
-  .gact:hover { color: var(--r-text); border-color: var(--r-faint); } .gact + .dots { margin-left: 6px; }
+  .gact:hover { color: var(--r-text); border-color: var(--r-faint); }
   .items, .flat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 4px; } .pinned .card + .card { margin-top: 6px; }
   .card { display: block; min-width: 0; color: inherit; cursor: pointer; transition: background .12s, border-color .12s; }
   .card:hover, .card:focus-visible { background: var(--r-glass-hover); border-color: var(--r-faint); outline: none; }
@@ -1362,7 +1362,7 @@ ${MADE_CSS}
   .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; min-width: 0; font-size: 10.5px; color: var(--r-faint); }
   .meta .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); }
   .pill { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 1px solid var(--r-edge); border-radius: 999px; padding: 0 7px 0 6px; font-size: 10.5px; line-height: 16px; color: var(--r-text-2); }
-  .pill i, .dots i { background: var(--r-faint); } .pill i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+  .pill i { background: var(--r-faint); } .pill i { width: 6px; height: 6px; border-radius: 50%; display: block; }
   .pill.solo { padding: 0 4px; border: 0; }
   .st-asks.pill { color: var(--r-warn); border-color: var(--r-warn); } .pill.st-asks i, .d-move { background: var(--r-warn) !important; }
   .st-working.pill { color: var(--r-ok); } .pill.st-working i, .d-running { background: var(--r-ok) !important; } .st-working.pill i { animation: breathe 1.6s ease-in-out infinite; }
@@ -1376,7 +1376,7 @@ ${MADE_CSS}
   .fx .fast { color: var(--r-warn); } .fx .hi { color: var(--r-info); }
   .cbot { display: flex; align-items: flex-end; gap: 6px; margin-top: 6px; min-width: 0; } .card .cbot .cstrip { margin-top: 0; flex: 1; min-width: 0; }
   .cbot .hst { margin-left: auto; flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); opacity: .8; }
-  i.run { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--r-ok); margin-right: 4px; vertical-align: 1px; }
+  .cbot .hst .repo { margin-right: 6px; } .cbot .hst .repo::after { content: '·'; margin-left: 6px; }
   .cmore { position: relative; } .cmore > summary { list-style: none; font-size: 13px; line-height: 18px; text-align: center; } .cmore > summary::-webkit-details-marker { display: none; }
   .card:has(.cmore[open]) .acts { display: flex; } .card:has(.cmore[open]) .age { display: none; }
   .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
@@ -1977,7 +1977,8 @@ ${MADE_SCRIPT}
     if (fav) {
       e.preventDefault(); e.stopPropagation();
       const on = fav.getAttribute('aria-pressed') !== 'true';
-      main.querySelectorAll('[data-fav="' + CSS.escape(fav.dataset.fav) + '"]').forEach((b) => { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '\u2605' : '\u2606'; b.title = on ? 'Remove from Favorites' : 'Add to Favorites'; });
+      main.querySelectorAll('[data-fav="' + CSS.escape(fav.dataset.fav) + '"]').forEach((b) => { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Remove from Favorites' : 'Add to Favorites'; });
+      fav.closest('.cmore').open = false;
       vscode.postMessage({ type: 'favorite', sessionId: fav.dataset.fav, value: on });
       toast(on ? 'Added to Favorites' : 'Removed from Favorites');
       return;
