@@ -32,7 +32,12 @@ describe("the built-in browser's history", () => {
   test('says why when the storage is not there, and lists nothing', () => {
     const { recent, reason } = readBrowserHistory({ fsPath: join(dir, 'nowhere', 'ext') });
     expect(recent).toEqual([]);
-    expect(reason).toContain("The browser's history could not be read");
+    expect(reason).toContain("The built-in browser's history could not be read");
+  });
+  test('a remote window says where it runs instead of reading the remote machine', () => {
+    const { recent, reason } = readBrowserHistory({ fsPath: join(dir, 'swarmify.swarm-ext') }, 'ssh-remote');
+    expect(recent).toEqual([]);
+    expect(reason).toBe("Recent shows the built-in browser's history in a local window; this window runs on ssh-remote.");
   });
 });
 
@@ -46,6 +51,12 @@ describe('a pinned page gets its icon', () => {
         const { pathname } = new URL(req.url);
         if (pathname === '/declares') return new Response('<html><head><link rel="icon" href="/assets/mark.png"></head></html>', { headers: { 'content-type': 'text/html' } });
         if (pathname === '/assets/mark.png' || pathname === '/favicon.ico') return new Response(PNG, { headers: { 'content-type': 'image/png' } });
+        if (pathname === '/huge') {
+          // Headers at once, then far more body than a page may take: never buffered whole.
+          const chunk = new TextEncoder().encode('x'.repeat(64 * 1024));
+          let sent = 0;
+          return new Response(new ReadableStream({ pull(c) { if (sent++ < 64) c.enqueue(chunk); else c.close(); } }), { headers: { 'content-type': 'text/html' } });
+        }
         if (pathname === '/plain') return new Response('<html></html>', { headers: { 'content-type': 'text/html' } });
         return new Response('nope', { status: 404, headers: { 'content-type': 'text/plain' } });
       },
@@ -58,6 +69,9 @@ describe('a pinned page gets its icon', () => {
   });
   test("from the site's /favicon.ico when the page declares none", async () => {
     expect(await resolvePageIcon(`${base}/plain`)).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
+  });
+  test('a page whose body runs past the cap falls back to /favicon.ico', async () => {
+    expect(await resolvePageIcon(`${base}/huge`)).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
   });
   test('none for a local file, which the view draws as a letter', async () => {
     expect(await resolvePageIcon('file:///Users/me/plan.html')).toBeUndefined();
@@ -122,6 +136,13 @@ describe('the Pages webview', () => {
     expect(last()).toEqual({ type: 'pin', url: 'https://console.example.com/', title: 'Console', icon: undefined });
     click($('.unpin'));
     expect(last()).toEqual({ type: 'unpin', url: 'https://github.com/acme/app' });
+  });
+  test('a hostile title or URL from the history is text, never markup', () => {
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧V', pins: [],
+      recent: [{ url: 'https://evil.example/"><img src=x onerror=alert(1)>', title: '<img src=x onerror=alert(1)>', time: Date.now() }] });
+    expect(document.querySelectorAll('#recent img:not([data-ic])').length).toBe(0);
+    expect($('.row .t').textContent).toContain('<img src=x onerror=alert(1)>');
+    state('same');
   });
   test('Enter on a typed URL opens it; ⌘Enter opens it in a new tab', () => {
     const q = $('#q') as unknown as HTMLInputElement;
