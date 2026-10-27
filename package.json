@@ -317,6 +317,14 @@
         "title": "Agents: New Split (Side)"
       },
       {
+        "command": "agents.pages.open",
+        "title": "Agents: Pages"
+      },
+      {
+        "command": "agents.pages.refresh",
+        "title": "Agents: Refresh Pages"
+      },
+      {
         "command": "agents.prompts",
         "title": "Agents: Prompts"
       },
@@ -845,6 +853,10 @@
           "when": "false"
         },
         {
+          "command": "agents.pages.refresh",
+          "when": "false"
+        },
+        {
           "command": "agents.setSessionId",
           "when": "agents.activeIsAgent"
         },
@@ -1012,6 +1024,11 @@
       },
       {
         "command": "agents.newAgentVSplit",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v"
+      },
+      {
+        "command": "agents.pages.open",
         "key": "ctrl+shift+v",
         "mac": "cmd+shift+v"
       },

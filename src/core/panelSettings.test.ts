@@ -111,3 +111,16 @@ test('Lead: read answers aloud is a Settings switch for agents.lead.speak, not a
   const on = renderPanelSettings({ settings: getDefaultSettings(), devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: true })
   expect(on).toMatch(/<b>Read answers aloud<\/b>.*<input type="checkbox" data-setting="lead.speak" checked>/)
 })
+
+test('Settings > Pages: a click opens the same tab until it is set to a new one; nothing else is accepted', () => {
+  const base = getDefaultSettings()
+  expect(applyPanelSetting(base, 'pages.click', 'new')?.pages).toEqual({ click: 'new' })
+  expect(applyPanelSetting(base, 'pages.click', 'sideways')).toBeNull()
+  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  expect(html).toContain('<kbd>⌘⇧V</kbd> opens your pages')
+  expect(html).toContain('<option value="same" selected>This tab</option>')
+  expect(html).toContain('⌘-click does the other')
+  const set = renderPanelSettings({ settings: { ...base, pages: { click: 'new' } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: 'Ctrl+Shift+' })
+  expect(set).toContain('<option value="new" selected>A new tab</option>')
+  expect(set).toContain('Ctrl-click does the other')
+})

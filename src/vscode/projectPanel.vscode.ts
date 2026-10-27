@@ -936,6 +936,7 @@ class ProjectPanelController {
     if (!next) return;
     await saveSettings(this.context, next);
     if (key.startsWith('display.')) await maybeUpdateTerminalTitles(previous, next);
+    if (key.startsWith('pages.')) await vscode.commands.executeCommand('agents.pages.refresh');
   }
 
   /** The project's sessions: the CLI's own project, plus (until agents-cli maps a
