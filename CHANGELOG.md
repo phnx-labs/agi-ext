@@ -16,6 +16,7 @@ From the owner's 8:50 AM video on the Project panel:
 - Listed cards show an ask's question without its answer buttons; the pinned card keeps them.
   Settings > Asks on listed cards > With answers brings them back (that choice was also
   impossible to keep before: the setting read it back as the default).
+- A saved Settings > State word choice is not carried over; the pill is on until you turn it off.
 - Every card carries ⌘K's state pill beside its age (Asks, Blocked, Running, Idle), and the
   separate row of ▸ ⑂ ◉ background-work counts is gone: hover the pill to see that work.
   Settings > A card shows > State turns the pill off.

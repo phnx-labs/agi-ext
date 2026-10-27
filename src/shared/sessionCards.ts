@@ -876,7 +876,6 @@ export const RUSH_THEME_CSS = `  /* ── Rush register tokens (rush/DESIGN.md,
   .vchip.v-bad { color: var(--r-bad); border-color: var(--r-bad); background: var(--r-bad-tint); }
   /* A harness logo: its .hx-<key> class (harnessLogoCss) sets the image. */
   .hx { display: inline-block; flex: none; background-position: center; background-size: contain; background-repeat: no-repeat; }
-  @keyframes waitbreathe { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
 `;
 
 /** The session panel stylesheet: Rush register tokens, cards, timeline, gallery.
@@ -1445,14 +1444,11 @@ ${REPLY_BOX_CSS}
   .state-review .state-dot { background: var(--r-info); }
   .state-failed .state-dot { background: var(--r-bad); }
   /* Waiting on its own background work: a blue dot that breathes slowly. */
-  .state-waiting .state-dot { background: var(--r-wait); box-shadow: 0 0 0 3px var(--r-wait-tint); animation: waitbreathe 2.2s ease-in-out infinite; }
-  .session-stats.state-waiting { color: var(--r-wait); }
   .pend-list { margin: 8px 0 2px; border-radius: 10px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--r-wait) 40%, transparent); background: var(--r-wait-tint); }
   .pend-k { font-family: var(--r-display); font-size: 10px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--r-wait); }
   .pend-list ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
   .pend-list li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; }
   .pend-m { color: var(--r-wait); } .pend-d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pend-t { font-family: var(--r-mono); font-size: 10.5px; color: var(--r-caption); }
-  @media (prefers-reduced-motion: reduce) { .state-waiting .state-dot { animation: none; } }
   .session-stats.live .state-dot { animation: livedot 2s ease-out infinite; }
   @keyframes livedot { 0% { box-shadow: 0 0 0 0 var(--r-ok); } 100% { box-shadow: 0 0 0 6px transparent; } }
   @media (prefers-reduced-motion: reduce) { .session-stats.live .state-dot { animation: none; } }
