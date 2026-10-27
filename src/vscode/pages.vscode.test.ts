@@ -9,7 +9,9 @@ import { vscodeDouble } from '../testing/vscodeDouble';
 
 mock.module('vscode', () => vscodeDouble());
 const { pagesShell, readBrowserHistory, resolvePageIcon } = await import('./pages.vscode');
-const { DatabaseSync } = await import('node:sqlite');
+const { Database } = await import('bun:sqlite');
+// The editor's runtime reads with node:sqlite; an older bun has none and gets the reason instead.
+const hasNodeSqlite = await import('node:sqlite').then(() => true, () => false);
 
 const fixture = (name: string) => readFileSync(join(__dirname, '..', 'core', 'testdata', 'pages', name), 'utf8');
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -17,8 +19,8 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 describe("the built-in browser's history", () => {
   const dir = mkdtempSync(join(tmpdir(), 'pages-history-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
-  test('is read from state.vscdb beside the extension folder', () => {
-    const db = new DatabaseSync(join(dir, 'state.vscdb'));
+  test('is read from state.vscdb beside the extension folder, or says the runtime has no SQLite', () => {
+    const db = new Database(join(dir, 'state.vscdb'));
     db.exec('CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)');
     const put = db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)');
     put.run('browser.history.entries.global', fixture('history-entries.json'));
@@ -26,13 +28,18 @@ describe("the built-in browser's history", () => {
     db.close();
     mkdirSync(join(dir, 'swarmify.swarm-ext'));
     const { recent, reason } = readBrowserHistory({ fsPath: join(dir, 'swarmify.swarm-ext') });
+    if (!hasNodeSqlite) {
+      expect(recent).toEqual([]);
+      expect(reason).toContain('Recent needs an editor whose runtime has SQLite');
+      return;
+    }
     expect(reason).toBeUndefined();
     expect(recent.map((r) => r.url)).toEqual(['https://github.com/acme/app/pulls', 'https://console.example.com/', 'file:///Users/me/plan.html']);
   });
   test('says why when the storage is not there, and lists nothing', () => {
     const { recent, reason } = readBrowserHistory({ fsPath: join(dir, 'nowhere', 'ext') });
     expect(recent).toEqual([]);
-    expect(reason).toContain("The built-in browser's history could not be read");
+    expect(reason).toContain(hasNodeSqlite ? "The built-in browser's history could not be read" : 'Recent needs an editor whose runtime has SQLite');
   });
   test('a remote window says where it runs instead of reading the remote machine', () => {
     const { recent, reason } = readBrowserHistory({ fsPath: join(dir, 'swarmify.swarm-ext') }, 'ssh-remote');
