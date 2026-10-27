@@ -109,6 +109,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   A ninth: Close Terminal With Recap finds the transcript with one `sessions <id> --json` read
   when the command runs (`transcriptPathOf`, `src/vscode/recap.vscode.ts`), so it works while
   no view demands the stream; the extension reads no transcript itself.
+  A tenth: Pages (⌘⇧V, `src/vscode/pages.vscode.ts`) is not about sessions and calls no CLI. It
+  reads the built-in browser's history read-only from VSCodium's own `state.vscdb` beside this
+  extension's global storage, with the runtime's `node:sqlite`, when the tab shows; it fetches a
+  pinned page and its icon once, when the page is pinned (`resolvePageIcon`); and it opens
+  pages only through `workbench.action.browser.open` (`browserOpenArgs`, `src/core/pages.ts`).
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once, and
   the pinned front card's reply box and Made shelf are `data-keep` (a patch updates their

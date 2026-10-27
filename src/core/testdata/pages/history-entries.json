@@ -1,0 +1,45 @@
+{
+ "global": [
+  {
+   "id": 1,
+   "time": 1792400000000,
+   "title": "Pull requests \u00b7 acme/app",
+   "url": "https://github.com/acme/app/pulls",
+   "icon": "gh"
+  },
+  {
+   "id": 2,
+   "time": 1792500000000,
+   "title": "Pull requests \u00b7 acme/app",
+   "url": "https://github.com/acme/app/pulls#top",
+   "icon": "gh"
+  },
+  {
+   "id": 3,
+   "time": 1792450000000,
+   "title": "Sign in - Google Accounts",
+   "url": "https://accounts.google.com/v3/signin/identifier",
+   "icon": "g"
+  },
+  {
+   "id": 4,
+   "time": 1792300000000,
+   "title": "",
+   "url": "https://console.example.com/",
+   "icon": "missing"
+  },
+  {
+   "id": 5,
+   "time": 1792350000000,
+   "title": "Settings",
+   "url": "vscode://settings",
+   "icon": "gh"
+  },
+  {
+   "id": 6,
+   "time": 1792200000000,
+   "title": "Plan",
+   "url": "file:///Users/me/plan.html"
+  }
+ ]
+}

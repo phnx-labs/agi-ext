@@ -3,10 +3,10 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 124,
+    "commands": 126,
     "settings": 11,
-    "keybindings": 50,
-    "menuItems": 18,
+    "keybindings": 51,
+    "menuItems": 19,
     "views": 2,
     "viewContainers": 2,
     "customEditors": 2,
@@ -210,6 +210,14 @@
       {
         "command": "agents.newAgentVSplit",
         "title": "Agents: New Split (Side)"
+      },
+      {
+        "command": "agents.pages.open",
+        "title": "Agents: Pages"
+      },
+      {
+        "command": "agents.pages.refresh",
+        "title": "Agents: Refresh Pages"
       },
       {
         "command": "agents.prompts",
@@ -850,6 +858,11 @@
       },
       {
         "command": "agents.newAgentVSplit",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v"
+      },
+      {
+        "command": "agents.pages.open",
         "key": "ctrl+shift+v",
         "mac": "cmd+shift+v"
       },
@@ -1039,6 +1052,10 @@
       "commandPalette": [
         {
           "command": "agents.project.tab",
+          "when": "false"
+        },
+        {
+          "command": "agents.pages.refresh",
           "when": "false"
         },
         {

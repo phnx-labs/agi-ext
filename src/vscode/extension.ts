@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { PagesPanel } from './pages.vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, isDeprecatedAgentKey } from '../core/agents';
 import { shellQuote } from '../core/shellQuote';
 import { readManagedProjects } from '../core/managedProjects';
@@ -1116,6 +1117,12 @@ export async function activate(context: vscode.ExtensionContext) {
         openSingleAgent(context, agentConfig);
       }
     })
+  );
+
+  const pages = new PagesPanel(context, process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+');
+  context.subscriptions.push(
+    vscode.commands.registerCommand('agents.pages.open', () => pages.show()),
+    vscode.commands.registerCommand('agents.pages.refresh', () => pages.refresh()),
   );
 
   context.subscriptions.push(
