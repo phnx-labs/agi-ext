@@ -810,7 +810,7 @@
         "agents.lead.speak": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "The Lead reads its answers aloud on this machine as they stream (`agents lead ask --speak`; agents-cli does the speaking). The speaker in the Lead tab's header turns it on and off."
+          "markdownDescription": "The Lead reads its answers aloud on this machine as they stream (`agents lead ask --speak`; agents-cli does the speaking). Project panel Settings > Lead turns it on and off."
         }
       }
     },
