@@ -450,7 +450,7 @@ What should happen: the HTML viewer never runs the page's scripts against the ed
 
 You spend your day in the editor and a handful of pages every day: a console, a pull-request list, a planning doc. You want them one keystroke away, named the way you think of them, without a sidebar or a second panel.
 
-⌘⇧V opens Pages, an editor tab like any other. Your pages are one row of icons with your own name under each. A click on an icon opens that page in VSCodium's built-in browser, reusing the browser tab Pages last opened; ⌘-click opens a new browser tab, and Settings › Pages swaps the two. A click on a name renames it in place; clearing the name brings back the page's title. Below the icons, Recent is the built-in browser's own history, newest first, with ☆ to pin; ✕ on a tile unpins it. The search box filters both lists, and a typed address with Enter opens it.
+⌘⇧B opens Pages, the starting point for VSCodium's built-in browser: an editor tab like any other. Your pages are one row of icons with your own name under each. A click on an icon opens that page in VSCodium's built-in browser, reusing the browser tab Pages last opened; ⌘-click opens a new browser tab, and Settings › Pages swaps the two. A click on a name renames it in place; clearing the name brings back the page's title. Below the icons, Recent is the built-in browser's own history, newest first, with ☆ to pin; ✕ on a tile unpins it. The search box filters both lists, and a typed address with Enter opens it.
 
 What should happen: a pin never shows a blank icon. It keeps the icon VSCodium saved for the page, else the one the page declares, else the site's `/favicon.ico`, else a colored letter, and an icon made for dark themes sits on a dark chip.
 

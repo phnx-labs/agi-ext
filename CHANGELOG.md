@@ -17,6 +17,12 @@ From the owner's 12:07 PM screenshot of the Review tab, drawn the way the AGI Me
   did not happen turns the ring red with the reason on the meta line.
 - Fix is the agent's logo beside a red ring, shown on the row's hover.
 
+From the owner, 12:45 PM: ⌘⇧B is where the browser starts.
+
+- ⌘⇧B opens Pages, so your pinned pages are the first thing the browser shows; a click on one
+  opens it in the built-in browser. New Secondary still has no default shortcut.
+- New Split (Side) is back on ⌘⇧V.
+
 ## [0.9.432] - 2026-10-27
 
 Pages, from the owner's 10:41 AM to 11:04 AM prototype rounds:

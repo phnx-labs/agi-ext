@@ -16,9 +16,11 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(applyPanelSetting(base, 'display.prompts', true)).toBeNull()
   expect(applyPanelSetting(base, 'quickLaunch.1', 'gemini')).toBeNull()
   const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
-  expect(html).not.toContain('<kbd>⌘⇧B</kbd>')
   expect(manifest.contributes.commands.some((c) => c.command === 'agents.newSecondaryAgent')).toBe(true)
-  expect(manifest.contributes.keybindings.some((k) => k.command === 'agents.newSecondaryAgent' || k.key === 'ctrl+shift+b' || k.mac === 'cmd+shift+b')).toBe(false)
+  expect(manifest.contributes.keybindings.some((k) => k.command === 'agents.newSecondaryAgent')).toBe(false)
+  // ⌘⇧B is Pages, the browser's starting point; New Split (Side) keeps ⌘⇧V.
+  expect(manifest.contributes.keybindings.filter((k) => k.mac === 'cmd+shift+b').map((k) => k.command)).toEqual(['agents.pages.open'])
+  expect(manifest.contributes.keybindings.filter((k) => k.mac === 'cmd+shift+v').map((k) => k.command)).toEqual(['agents.newAgentVSplit'])
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
 
@@ -117,7 +119,7 @@ test('Settings > Pages: a click opens the same tab until it is set to a new one;
   expect(applyPanelSetting(base, 'pages.click', 'new')?.pages).toEqual({ click: 'new' })
   expect(applyPanelSetting(base, 'pages.click', 'sideways')).toBeNull()
   const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
-  expect(html).toContain('<kbd>⌘⇧V</kbd> opens your pages')
+  expect(html).toContain('<kbd>⌘⇧B</kbd> opens your pages')
   expect(html).toContain('<option value="same" selected>This tab</option>')
   expect(html).toContain('⌘-click does the other')
   const set = renderPanelSettings({ settings: { ...base, pages: { click: 'new' } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: 'Ctrl+Shift+' })
