@@ -175,6 +175,8 @@ export interface PanelSettingsModel {
   secondaryAgentTitle: string;
   /** "⌘⇧" on macOS, "Ctrl+Shift+" elsewhere. */
   modifier: string;
+  /** `agents.lead.speak`, a VS Code setting shared by every window. */
+  leadSpeak: boolean;
 }
 
 /** Apply one Settings-tab change to the stored settings; null for a key or value it does not know. */
@@ -248,6 +250,8 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   ${CARD_ROWS.map((r) => `<label class="srow"><span><b>${escapeHtml(r.label)}</b><small>${escapeHtml(r.sub)}</small></span>${picker(`cards.${r.key}`, r.options, cards[r.key], r.label)}</label>`).join('')}
   <div class="sh">A card shows <span class="shsub">all off: logo and title on one line</span></div>
   ${CARD_PARTS.map((k) => toggle(`cards.${k}`, CARD_PART_ROWS[k].label, CARD_PART_ROWS[k].sub, cards[k])).join('')}
+  <div class="sh">Lead</div>
+  ${toggle('lead.speak', 'Read answers aloud', 'The Lead speaks each answer on this machine as it arrives', m.leadSpeak)}
   <div class="sh">Reader</div>
   ${toggle('editor.markdownViewerEnabled', 'Open .md and .html in Reader', 'The Reader editor for Markdown and HTML', s.editor?.markdownViewerEnabled ?? true)}
   ${renderDevicesSection(m.devices)}

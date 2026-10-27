@@ -1,5 +1,5 @@
 // The Project panel's ✳ Lead tab: the project Lead's conversation as the panel draws
-// it. History (`agents lead history --json`, read when the tab shows and on Refresh)
+// it. History (`agents lead history --json`, read when the tab shows and when agents-cli writes it)
 // first, then this window's live turns. A turn shows what you said and what the Lead
 // answered; what it ran stays out of sight while it works. An action the Lead held
 // (stop, answer, send, start, dispatch, a PR) is a row with its own ✓, and a turn
@@ -12,6 +12,8 @@ import { escapeHtml } from '../shared/sessionCards';
 export interface TabTurn {
   key: string;
   ask: string;
+  /** `asks`: nobody asked; the Lead drafted replies for agents that stopped to ask. */
+  trigger?: 'asks';
   voiceSecs?: number;
   at?: number;
   segments: LeadSegment[];
@@ -23,7 +25,7 @@ export interface TabTurn {
 }
 
 const fromHistory = (h: LeadHistoryTurn, i: number): TabTurn => ({
-  key: h.turn || `h${i}`, ask: h.ask, ...(h.voiceSecs !== undefined ? { voiceSecs: h.voiceSecs } : {}), ...(h.at !== undefined ? { at: h.at } : {}),
+  key: h.turn || `h${i}`, ask: h.ask, ...(h.trigger ? { trigger: h.trigger } : {}), ...(h.voiceSecs !== undefined ? { voiceSecs: h.voiceSecs } : {}), ...(h.at !== undefined ? { at: h.at } : {}),
   segments: linkify(h.text, h.refs), confirms: [], refs: uniqueRefs(h.refs), live: false,
 });
 
@@ -52,8 +54,6 @@ export interface LeadTabModel {
   turns: TabTurn[];
   busy: boolean;
   mic: 'idle' | 'listening' | 'transcribing';
-  /** `agents.lead.speak`: whether the next answer is read aloud. */
-  speak: boolean;
   /** The Lead's model and whether its process is warm, from `agents lead status --json`. */
   model?: string;
   state?: string;
@@ -109,7 +109,10 @@ function turnHtml(t: TabTurn, busy: boolean): string {
   const linked = new Set(t.segments.flatMap((s) => s.kind === 'ref' ? [JSON.stringify(s.ref)] : []));
   const refs = t.live ? '' : t.refs.filter((r) => !linked.has(JSON.stringify(r))).map(refRow).join('');
   const err = t.error ? `<div class="lt-err">${escapeHtml(t.error)}</div>` : '';
-  return `${you}<div class="lt lt-lead" data-key="${escapeHtml(t.key)}"><div class="lt-cap">✳ Lead</div>${working}${text}${refs}${actionsHtml(t, busy)}${err}</div>`;
+  const cap = t.trigger === 'asks'
+    ? `✳ Lead<span class="why" title="Nobody asked: agents stopped to ask, so the Lead drafted replies for their cards">· for new asks</span>${t.at ? `<span class="tm">${escapeHtml(clock(t.at))}</span>` : ''}`
+    : '✳ Lead';
+  return `${you}<div class="lt lt-lead${t.trigger ? ' own' : ''}" data-key="${escapeHtml(t.key)}"><div class="lt-cap">${cap}</div>${working}${text}${refs}${actionsHtml(t, busy)}${err}</div>`;
 }
 
 /** The Lead's own reply box: the reply box's look (REPLY_BOX_CSS) with its own ids, so the
@@ -125,32 +128,32 @@ function askBox(m: LeadTabModel): string {
     '</div><div class="hint"><span><kbd>Enter</kbd> asks</span><span><kbd>⌥Space</kbd> talks</span></div></div>';
 }
 
-/** The whole tab: its heading row (into the tab row), the conversation, the box. */
+/** The whole tab: the conversation and the box. It has no controls of its own on the tab
+ *  row: it redraws when agents-cli writes the history (`watchLeadHistory`), and reading
+ *  answers aloud is a setting (owner, 2026-10-27 4:51 AM). */
 export function renderLeadTab(m: LeadTabModel): string {
-  const speaker = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5z"/>${m.speak ? '<path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.5 6.5 0 0 1 0 9"/>' : '<path d="M10.5 6l4 4M14.5 6l-4 4"/>'}</svg>`;
-  const speak = `<button class="icon lead-speak" data-lead-speak aria-pressed="${m.speak}" title="${m.speak ? 'The Lead reads its answers aloud. Click to mute.' : 'The Lead is muted. Click to hear its answers.'}" aria-label="Read answers aloud">${speaker}</button>`;
-  const head = `<div class="shead"><span class="sum">${escapeHtml([m.model, m.busy ? 'working' : m.state].filter(Boolean).join(' · '))}</span>${speak}<button class="icon" data-lead-refresh title="Read the Lead's history again" aria-label="Refresh">⟳</button></div>`;
-  const id = `<div class="lead-id" title="One Claude session for this project, kept across every question"><span class="live${m.state === 'warm' || m.busy ? ' on' : ''}"></span><span class="who">Lead · ${escapeHtml(m.project || 'no project')}</span>${m.host ? `<span class="sid">${escapeHtml(m.host)}</span>` : ''}</div>`;
+  const id = `<div class="lead-id" title="One Claude session for this project, kept across every question"><span class="live${m.state === 'warm' || m.busy ? ' on' : ''}"></span><span class="who">Lead · ${escapeHtml(m.project || 'no project')}</span><span class="st">${escapeHtml([m.model, m.busy ? 'working' : m.state].filter(Boolean).join(' · '))}</span>${m.host ? `<span class="sid">${escapeHtml(m.host)}</span>` : ''}</div>`;
   const body = m.turns.length
     ? m.turns.map((t) => turnHtml(t, m.busy)).join('')
     : `<div class="empty">${m.loading ? 'Reading the Lead’s history…' : m.error ? '' : 'Ask about this project, or tell the Lead what to do: answer an agent, message a tab, start an agent, act on a PR. Anything that changes something waits for your ✓.'}</div>`;
   const err = m.error ? `<div class="lt-err">${escapeHtml(m.error)}</div>` : '';
-  return `${head}<div class="lead">${id}${err}${body}${askBox(m)}</div>`;
+  return `<div class="lead">${id}${err}${body}${askBox(m)}</div>`;
 }
 
 export const LEAD_TAB_CSS = `
-  .lead-speak svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
-  .lead-speak[aria-pressed="false"]:not(:hover) { color: var(--r-faint); }
   .lead { display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 10px; }
   .lead-id { display: flex; align-items: center; gap: 6px; white-space: nowrap; font: 500 10.5px var(--r-sans); color: var(--r-caption); }
-  .lead-id .who { color: var(--r-text); font-weight: 600; }
+  .lead-id .who { color: var(--r-text); font-weight: 600; margin-left: 0; }
   .lead-id .live { width: 6px; height: 6px; border-radius: 50%; background: var(--r-faint); flex: none; }
   .lead-id .live.on { background: var(--r-ok); }
+  .lead-id .st { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .lead-id .sid { margin-left: auto; font-family: var(--r-mono); color: var(--r-faint); }
   .lt { display: flex; flex-direction: column; gap: 4px; }
   .lt-cap { display: flex; align-items: center; gap: 6px; font: 500 10px var(--r-sans); letter-spacing: .06em; text-transform: uppercase; color: var(--r-faint); }
+  .lt-cap .why { text-transform: none; letter-spacing: 0; }
   .lt-cap .tm { margin-left: auto; text-transform: none; letter-spacing: 0; font-family: var(--r-mono); }
   .lt-you .q { font-size: 12px; color: var(--r-text); line-height: 1.45; padding: 6px 8px; border-radius: 6px; background: var(--r-well); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lt-lead.own { background: transparent; }
   .lt-lead { border: 1px solid var(--r-edge); border-radius: 8px; padding: 8px 9px; gap: 6px; background: var(--r-glass); }
   .lt-say { font-size: 12px; line-height: 1.5; color: var(--r-text); margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .lt-link { font: inherit; color: var(--r-link); text-decoration: underline; text-decoration-color: var(--r-edge-hi); background: none; border: 0; padding: 0; cursor: pointer; }
