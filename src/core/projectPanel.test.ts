@@ -494,8 +494,12 @@ test('the front tab\'s card is pinned above the list, opened up, and keeps its o
   expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
   // The title and its state between the arrows; where it runs, its place among the tabs and its age on the line under it (owner video, 2026-10-27 9:24 AM).
-  expect(html).toContain('<span class="pill st-working solo" title="Running" aria-label="Running"><i></i></span></div><button class="fc-step" disabled')
+  expect(html).toContain('<span class="pill st-working solo" title="Running" role="img" aria-label="Running"><i></i></span></div><button class="fc-step" disabled')
   expect(html).toContain('</div><div class="fc-meta"><span class="fc-where" title="Running">m6 · Tab 1 of 1</span><span class="fc-acts">')
+  // Settings > A card shows: Host and State off take them off the pinned card too; a screen reader still hears the state.
+  const bare = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs(), cards: { ...DEFAULT_CARD_SETTINGS, machine: false, state: false } })
+  expect(bare).toContain('<span class="fc-where" title="Running">Tab 1 of 1</span>')
+  expect(bare).toContain('<span class="sr">Running</span></div>')
   // One tab: no ⇤ ⇥.
   expect(html).not.toContain('data-front-step="first"')
   expect(html).not.toContain('fc-state')
@@ -697,7 +701,7 @@ test('an idle session with background work is Running (owner video, 2026-10-22 8
   const waiting = row({ sessionId: 'w', phase: 'idle', liveStatus: 'idle', pending: { shells: [SHELL], subagents: [{ id: 'a', description: 'Watch reels' }] } })
   const html = card(waiting)
   expect(html).toMatch(/^<div class="card st-waiting"/)
-  expect(html).toContain('<span class="pill st-waiting solo" title="Running, with its own work running: 1 subagent, 1 shell\n⑂ Watch reels\n▸ Poll prod until the segment closes · 6m" aria-label="Running"><i></i></span>')
+  expect(html).toContain('<span class="pill st-waiting solo" title="Running, with its own work running: 1 subagent, 1 shell\n⑂ Watch reels\n▸ Poll prod until the segment closes · 6m" role="img" aria-label="Running"><i></i></span>')
   expect(html).not.toContain('class="meta"')
   expect(html).toContain('data-busy="1"')
   const idle = row({ sessionId: 'y', phase: 'idle', liveStatus: 'idle' })

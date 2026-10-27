@@ -956,7 +956,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const vchip = verdictChipHtml(verdict);
   // Working and waiting are the dot alone; a word is for what asks something of you or is over (owner video, 2026-10-27 9:24 AM).
   const dotOnly = !opts.blocked && (state === 'working' || state === 'waiting');
-  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
+  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` role="img" aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
       : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;
@@ -1013,7 +1013,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     // ‹ the title (up to three lines) and its state ›, then a line of its own for the machine, the tab's place and the
     // age, with Copy and ⋯ always there (owner video, 2026-10-27 9:24 AM: the full title, 17/17 on another row).
-    return `${navButtons(opts.nav, `<div class="top">${name}${vchip}${pill}</div>`, cards.ends)}<div class="fc-meta"><span class="fc-where" title="${escapeHtml(stateWords)}">${[where, pos, since].filter(Boolean).join(' · ')}</span>${acts}</div><div class="fc-body">${detail}</div>${reply}`;
+    return `${navButtons(opts.nav, `<div class="top">${name}${vchip}${pill || `<span class="sr">${escapeHtml(word)}</span>`}</div>`, cards.ends)}<div class="fc-meta"><span class="fc-where" title="${escapeHtml(stateWords)}">${[cards.machine ? where : '', pos, cards.age ? since : ''].filter(Boolean).join(' · ')}</span>${acts}</div><div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
