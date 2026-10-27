@@ -18,7 +18,7 @@ links:
 
 ## Secondary agent shortcut
 
-Agents: New Secondary remains available in the Command Palette and accepts a user-assigned keyboard shortcut. The extension supplies no default binding for it: Cmd/Ctrl+Shift+B stays available for the editor or the user’s chosen command. Activation must not write user keybindings.
+Agents: New Secondary remains available in the Command Palette and accepts a user-assigned keyboard shortcut. The extension supplies no default binding for it; Cmd/Ctrl+Shift+B opens Pages. Activation must not write user keybindings.
 
 ## What this is
 
