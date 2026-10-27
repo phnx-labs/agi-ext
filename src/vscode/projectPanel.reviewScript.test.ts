@@ -50,12 +50,38 @@ test('after five seconds one merge goes out, pinned to the head; the host answer
   expect(sent.filter((m) => m.type === 'merge')).toEqual([{ type: 'merge', repo: 'o/r', number: 1, sha: 'abc0001' }, { type: 'merge', repo: 'o/r', number: 2, sha: 'abc0002' }]);
   expect(ring(1).classList.contains('merging')).toBe(true);
   expect(word(1)).toBe('Merging…');
-  deliver({ type: 'merged', repo: 'o/r', number: 1, error: '' });
+  // A redraw while the host merges keeps the ring spinning, so it cannot be clicked again.
+  deliver({ type: 'html', tab: 'prs', html });
+  expect(ring(1).classList.contains('merging')).toBe(true);
+  deliver({ type: 'merged', repo: 'o/r', number: 1, error: '', merged: true });
   expect(ring(1).className).toBe('pring v-merged');
   expect(word(1)).toBe('Merged');
-  deliver({ type: 'merged', repo: 'o/r', number: 2, error: 'Base branch was modified.' });
+  deliver({ type: 'merged', repo: 'o/r', number: 2, error: 'Base branch was modified.', merged: false });
   expect(ring(2).className).toBe('pring v-bad');
   expect(word(2)).toBe('Not merged: Base branch was modified.');
+  // A refused ring stays a button: a click arms it again.
+  expect(ring(2).disabled).toBe(false);
+  ring(2).click();
+  expect(ring(2).classList.contains('armed')).toBe(true);
+  expect(ring(2).classList.contains('v-ok')).toBe(true);
+  // Leaving Review mid-countdown puts the ring back to ready, with nothing sent.
+  sent.length = 0;
+  const armed = ring(2);
+  deliver({ type: 'choose', tab: 'sessions' });
+  expect(armed.classList.contains('armed')).toBe(false);
+  deliver({ type: 'choose', tab: 'prs' });
+  deliver({ type: 'html', tab: 'prs', html });
+  expect(ring(2).classList.contains('armed')).toBe(false);
+  expect(sent.filter((m) => m.type === 'merge')).toEqual([]);
+}, 10000);
+
+test('a merge turned down here with its own warning puts the ring back to ready', async () => {
+  ring(2).click();
+  await new Promise((r) => setTimeout(r, 5300));
+  expect(ring(2).classList.contains('merging')).toBe(true);
+  deliver({ type: 'merged', repo: 'o/r', number: 2, error: '', merged: false });
+  expect(ring(2).className).toBe('pring v-ok');
+  expect(word(2)).toBe('Ready to merge');
 }, 10000);
 
 test("a conflict's ring is not a button; the agent's logo sends one Fix", () => {
