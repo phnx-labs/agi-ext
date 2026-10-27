@@ -118,6 +118,17 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(live).toContain('data-where="auto"><span class="ck">✓</span>')
 })
 
+test('tickets: the assignee shows as their Linear profile picture; a picture from anywhere else is the initial', () => {
+  const groups = parseTickets(JSON.stringify({ issues: [
+    issue('A-1', 'started', 'Doing', 2, { assignee: { name: 'Bisma', avatarUrl: 'https://public.linear.app/org/u/b.png' } }),
+    issue('A-2', 'started', 'Doing', 2, { assignee: { name: 'Eve', avatarUrl: 'https://evil.example/e.png' } }),
+  ] }))
+  const html = renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }))
+  expect(html).toContain('title="t A-1"><img class="pav" src="https://public.linear.app/org/u/b.png" alt="Bisma" title="Bisma">')
+  expect(html).not.toContain('evil.example')
+  expect(html).toMatch(/title="t A-2"><span class="iav av\d" title="Eve">E<\/span>/)
+})
+
 test('tickets render escapes titles from the tracker', () => {
   const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>', url: 'https://linear.app/x/"><b>' }] })), () => ({ agentKey: 'claude', agentName: '<i>', peek: '', onIt: [] }))
   expect(html).not.toMatch(/<img|"><b>|<i>/)
