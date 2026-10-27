@@ -1024,13 +1024,13 @@
       },
       {
         "command": "agents.newAgentVSplit",
-        "key": "ctrl+alt+v",
-        "mac": "cmd+alt+v"
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v"
       },
       {
         "command": "agents.pages.open",
-        "key": "ctrl+shift+v",
-        "mac": "cmd+shift+v"
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b"
       },
       {
         "command": "agents.prompts",

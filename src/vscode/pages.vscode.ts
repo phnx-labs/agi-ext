@@ -1,4 +1,4 @@
-// Pages (⌘⇧V): the owner's everyday pages as one row of icons in an editor tab.
+// Pages (⌘⇧B): the owner's everyday pages as one row of icons in an editor tab.
 // A click opens the page in VSCodium's own browser, in the same tab or a new one.
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -160,7 +160,7 @@ export class PagesPanel {
   private post(reread = false): void {
     if (reread) this.history = readBrowserHistory(this.context.globalStorageUri, vscode.env.remoteName);
     const { recent, reason } = this.history;
-    void this.panel?.webview.postMessage({ type: 'state', pins: this.pins(), recent, reason, click: this.click(), shortcut: `${this.modifier}V` });
+    void this.panel?.webview.postMessage({ type: 'state', pins: this.pins(), recent, reason, click: this.click(), shortcut: `${this.modifier}B` });
   }
 
   private async handle(m: Inbound): Promise<void> {

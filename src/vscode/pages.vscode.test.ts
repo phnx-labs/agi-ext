@@ -104,7 +104,7 @@ describe('the Pages webview', () => {
   const key = (el: HTMLElement, k: string, meta = false) => el.dispatchEvent(new window.KeyboardEvent('keydown', { key: k, bubbles: true, metaKey: meta }) as unknown as Event);
   const last = () => sent[sent.length - 1];
   const state = (click: 'same' | 'new') => deliver({
-    type: 'state', click, shortcut: '⌘⇧V',
+    type: 'state', click, shortcut: '⌘⇧B',
     pins: [{ url: 'https://github.com/acme/app', name: 'RUSH', title: 'acme/app', icon: `data:image/png;base64,${PNG.toString('base64')}` }, { url: 'file:///Users/me/plan.html', name: 'Plan', title: 'Plan' }],
     recent: [{ url: 'https://console.example.com/', title: 'Console', time: Date.now() - 3_600_000 }, { url: 'https://github.com/acme/app', title: 'acme/app', time: Date.now() }],
   });
@@ -149,7 +149,7 @@ describe('the Pages webview', () => {
     expect(last()).toEqual({ type: 'unpin', url: 'https://github.com/acme/app' });
   });
   test('a hostile title or URL from the history is text, never markup', () => {
-    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧V', pins: [],
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', pins: [],
       recent: [{ url: 'https://evil.example/"><img src=x onerror=alert(1)>', title: '<img src=x onerror=alert(1)>', time: Date.now() }] });
     expect(document.querySelectorAll('#recent img:not([data-ic])').length).toBe(0);
     expect($('.row .t').textContent).toContain('<img src=x onerror=alert(1)>');

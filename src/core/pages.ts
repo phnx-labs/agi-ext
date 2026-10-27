@@ -1,4 +1,4 @@
-// Pages: the pages the owner opens every day, as one row of icons in an editor tab (⌘⇧V).
+// Pages: the pages the owner opens every day, as one row of icons in an editor tab (⌘⇧B).
 // A click opens the page in VSCodium's own browser. Pure: no vscode import.
 
 /** A page the owner pinned: their own name for it, and the icon saved when it was pinned. */
