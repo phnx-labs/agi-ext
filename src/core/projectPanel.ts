@@ -46,6 +46,8 @@ export interface Ticket {
   milestone: string | null;
   /** The person it is assigned to, and the agent it is delegated to, as Linear names them. */
   assignee: string | null;
+  /** The assignee's Linear profile picture (linear-cli 0.33.0); only Linear's own image hosts. */
+  assigneeAvatar: string | null;
   delegate: string | null;
 }
 
@@ -203,6 +205,7 @@ export function parseTickets(raw: string): TicketGroup[] {
       priority: num(d.priority),
       milestone: str(ms?.name),
       assignee: str(assignee?.name),
+      assigneeAvatar: /^https:\/\/(public|uploads)\.linear\.app\//.test(str(assignee?.avatarUrl) ?? '') ? str(assignee?.avatarUrl) : null,
       delegate: str(delegate?.name),
     };
     const g = groups.get(stateName) ?? { order, tickets: [] };
@@ -1253,7 +1256,7 @@ export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => Tick
       : `<button class="tag" data-start-ticket="${id}" title="Start ${escapeHtml(x.agentName)} on ${id} in a new tab" aria-label="Start ${escapeHtml(x.agentName)} on ${id}">${harnessLogo(x.agentKey)}</button>`;
     const open = t.url ? `<a class="pro" href="#" data-url="${escapeHtml(t.url)}" title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open ${id} in a tab">${OPEN_ICON}</a>` : '';
     const pick = `<span class="tpick"><button class="tcar" data-menu aria-haspopup="menu" aria-expanded="false" title="Another agent, or where it runs" aria-label="Choose an agent for ${id}">▾</button>${startMenu(id, x.agentKey, where)}</span>`;
-    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${personAvatar(t.assignee) || '<span class="iav nobody" title="Unassigned"></span>'}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${priorityBars(t.priority)}${id}${ms}</span></span></a><span class="who">${agent}${pick}</span>${open}${x.peek}</li>`;
+    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${t.assigneeAvatar ? `<img class="pav" src="${escapeHtml(t.assigneeAvatar)}" alt="${escapeHtml(t.assignee ?? '')}" title="${escapeHtml(t.assignee ?? '')}">` : personAvatar(t.assignee) || '<span class="iav nobody" title="Unassigned"></span>'}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${priorityBars(t.priority)}${id}${ms}</span></span></a><span class="who">${agent}${pick}</span>${open}${x.peek}</li>`;
   };
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>

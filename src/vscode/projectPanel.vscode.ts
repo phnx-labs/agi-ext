@@ -1208,7 +1208,7 @@ export function shell(cspSource: string, logoCss = ''): string {
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
+  content="default-src 'none'; img-src ${cspSource} https://avatars.githubusercontent.com https://public.linear.app https://uploads.linear.app data:; connect-src ${cspSource}; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${n}';" />
 <style>
 ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); font-size: 12px; color: var(--r-text);
     background: var(--vscode-sideBar-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }
