@@ -283,7 +283,7 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   expect(html).toContain('<button class="danger" data-act="close">Close the tab</button></div></details>')
   // The tab and machine moved: the machine sits dimmed at the bottom right, the tab in ⋯.
   expect(html).not.toContain('class="where"')
-  expect(html).toContain('<span class="hst" title="Host">m6</span></div>')
+  expect(html).toContain('<span class="hst" title="yosemite-m6">m6</span></div>')
   expect(html).toContain('<dt>Tab</dt><dd>tab 3 in this window</dd>')
   expect(html).toContain('class="line said">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
@@ -692,11 +692,11 @@ test('a session whose agent posted blocked leads its urgency, as Blocked', () =>
 
 const SHELL = { id: 'b1', description: 'Poll prod until the segment closes', startedAtMs: NOW - 6 * 60_000 }
 
-test('an idle session with background work reads Running (owner video, 2026-10-22 8:50 AM), names its work on the pill hover with no row of chips (12:30 PM), and is not Your move', () => {
+test('an idle session with background work is Running (owner video, 2026-10-22 8:50 AM), its dot alone (2026-10-27 9:24 AM), naming its work on the dot hover with no row of chips (12:30 PM), and is not Your move', () => {
   const waiting = row({ sessionId: 'w', phase: 'idle', liveStatus: 'idle', pending: { shells: [SHELL], subagents: [{ id: 'a', description: 'Watch reels' }] } })
   const html = card(waiting)
   expect(html).toMatch(/^<div class="card st-waiting"/)
-  expect(html).toContain('<span class="pill st-waiting" title="Running, with its own work running: 1 subagent, 1 shell\n⑂ Watch reels\n▸ Poll prod until the segment closes · 6m"><i></i>Running</span>')
+  expect(html).toContain('<span class="pill st-waiting solo" title="Running, with its own work running: 1 subagent, 1 shell\n⑂ Watch reels\n▸ Poll prod until the segment closes · 6m" aria-label="Running"><i></i></span>')
   expect(html).not.toContain('class="meta"')
   expect(html).toContain('data-busy="1"')
   const idle = row({ sessionId: 'y', phase: 'idle', liveStatus: 'idle' })
@@ -709,11 +709,12 @@ test('an idle session with background work reads Running (owner video, 2026-10-2
   expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toMatch(/^<div class="card st-idle"/)
 })
 
-test('a quieter card: the repository only when it is not this window\'s, the machine bottom right, ⚡ and ◆, details in ⋯', () => {
+test('a quieter card: the repository only when it is not this window\'s, beside the machine bottom right (owner video, 2026-10-27 9:24 AM), ⚡ and ◆, details in ⋯', () => {
   const ours = card(row({ cwd: '/Users/me/src/agents/.agents/worktrees/x', host: 'yosemite-m5' }))
   expect(ours).not.toContain('class="repo"')
-  expect(ours).toContain('<span class="hst" title="Host">m5</span>')
-  expect(card(row({ cwd: '/Users/me/src/agents-cli' }))).toContain('<span class="repo" title="/Users/me/src/agents-cli">agents-cli</span>')
+  expect(ours).toContain('<span class="hst" title="yosemite-m5">m5</span>')
+  expect(card(row({ cwd: '/Users/me/src/agents-cli' }))).toContain('<span class="hst" title="yosemite-m6"><span class="repo" title="/Users/me/src/agents-cli">agents-cli</span>m6</span>')
+  expect(card(row({ cwd: '/Users/me/src/agents-cli' }))).not.toContain('class="meta"')
   const fx = card(row({ fast: true, effort: 'max', model: 'claude-opus-5-5', account: 'claude#work', cwd: '/home/me/src/agents' }))
   expect(fx).toContain('<span class="fx"><span class="fast" title="Fast mode">⚡</span><span class="hi" title="max reasoning effort">◆</span></span>')
   // Every value copies on a click; what is copied is the value itself.

@@ -117,13 +117,13 @@ test('a snippet starts at a word boundary near the first match and marks it', ()
   expect(saidSnippet('Shipped it · Trying Intuit now · step b', 'intuit')).toEqual({ before: 'Trying ', hit: 'Intuit', after: ' now' })
 })
 
-// Owner video, 2026-10-19: "it does say asks, but it doesn't tell me if the session is on".
-test('a row whose agent the CLI saw alive carries the running dot; an ended one does not', () => {
+// Owner video, 2026-10-27 9:24 AM: a green dot beside s0 reads as the machine being live; a dot is only ever a state.
+test('a machine never carries a dot, alive or ended', () => {
   const html = renderPalette([
     entry({ sessionId: 'live-ask', title: 'Merged changes verification', host: 'yosemite-s0', pidAlive: true, ...ask('k9', 'normal', 60_000) }),
     entry({ sessionId: 'gone', title: 'Gone', host: 'yosemite-s0', phase: 'done', liveStatus: 'closed' }),
   ], NOW, new Set(), HERE)
   const rowOf = (id: string) => html.split('<div class="krow').find((r) => r.includes(`data-session="${id}"`)) ?? ''
-  expect(rowOf('live-ask')).toContain('<i class="run" role="img" title="Running on yosemite-s0" aria-label="Running on yosemite-s0"></i>s0')
-  expect(rowOf('gone')).not.toContain('class="run"')
+  expect(rowOf('live-ask')).toContain('<span class="kw">s0 · 1m 00s</span>')
+  expect(html).not.toContain('class="run"')
 })

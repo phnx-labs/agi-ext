@@ -956,7 +956,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const vchip = verdictChipHtml(verdict);
   // Working and waiting are the dot alone; a word is for what asks something of you or is over (owner video, 2026-10-27 9:24 AM).
   const dotOnly = !opts.blocked && (state === 'working' || state === 'waiting');
-  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || ` title="${escapeHtml(word)}"`}${dotOnly ? ` aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
+  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
       : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;

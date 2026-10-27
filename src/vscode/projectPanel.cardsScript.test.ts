@@ -48,15 +48,15 @@ const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 deliver({ type: 'tab', tab: 'sessions' });
 deliver({ type: 'html', tab: 'sessions', html: draw() });
 
-test('☆ posts one favorite and turns every copy of that card to ★ at once, without selecting it', () => {
+test('Add to Favorites in ⋯ posts one favorite and turns every copy of that card at once, without selecting it', () => {
   sent.length = 0;
   ($$('[data-fav="b"]')[0]).click();
   expect(sent).toEqual([{ type: 'favorite', sessionId: 'b', value: true }]);
-  expect($$('[data-fav="b"]').every((b) => b.textContent === '★' && b.getAttribute('aria-pressed') === 'true')).toBe(true);
+  expect($$('[data-fav="b"]').every((b) => b.textContent === 'Remove from Favorites' && b.getAttribute('aria-pressed') === 'true')).toBe(true);
   // The host redraws with the Favorites group; b now shows twice, both starred.
   deliver({ type: 'html', tab: 'sessions', html: draw(['b']) });
   expect($$('[data-group="favorites"] .card').map((c) => c.dataset.session)).toEqual(['b']);
-  expect($$('.star.on[data-fav="b"]')).toHaveLength(2);
+  expect($$('.card[data-session="b"] .star.on')).toHaveLength(2);
   $$('[data-fav="b"]')[0].click();
   expect(sent.at(-1)).toEqual({ type: 'favorite', sessionId: 'b', value: false });
 });
