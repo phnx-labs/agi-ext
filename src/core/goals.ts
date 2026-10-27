@@ -42,23 +42,40 @@ function shortDate(iso: string | undefined): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/** The project's unfinished milestones, earliest target first. */
+function openMilestones(goals: Goals, linearName: string | null | undefined): Milestone[] {
+  if (!linearName) return [];
+  return (goals.milestones ?? []).filter((m) => m.project.toLowerCase() === linearName.toLowerCase() && (m.progress ?? 0) < 100)
+    .sort((a, b) => (a.target ?? '9999').localeCompare(b.target ?? '9999'));
+}
+
 /** The project's next milestone: the earliest unfinished one by target date. */
 export function nextMilestone(goals: Goals, linearName: string | null | undefined): Milestone | undefined {
-  if (!linearName) return undefined;
-  const mine = (goals.milestones ?? []).filter((m) => m.project.toLowerCase() === linearName.toLowerCase() && (m.progress ?? 0) < 100);
-  return mine.sort((a, b) => (a.target ?? '9999').localeCompare(b.target ?? '9999'))[0];
+  return openMilestones(goals, linearName)[0];
+}
+
+const msMeta = (m: Milestone) => [shortDate(m.target), m.progress !== undefined ? `${m.progress}%` : ''].filter(Boolean).join(' · ');
+
+/** The milestone menu the header's milestone opens (owner video, 2026-10-27 5:48 AM):
+ *  the project's open milestones, ✓ on the one Issues shows, All milestones, and the
+ *  Linear page. A pick is one `milestone` message; the host remembers it per project. */
+function milestoneMenu(all: Milestone[], chosen: string | undefined, url: string | undefined): string {
+  const item = (value: string, label: string, meta: string) => `<button role="menuitemradio" aria-checked="${chosen === (value || undefined)}" data-milestone="${escapeHtml(value)}"><span class="ck">${chosen === (value || undefined) ? '✓' : ''}</span><span class="mn">${escapeHtml(label)}</span><span class="mm">${escapeHtml(meta)}</span></button>`;
+  return `<div class="menu gmenu-pop" role="menu" hidden><div class="sec">Issues shows</div>${item('', 'All milestones', '')}${all.map((m) => item(m.name, m.name, msMeta(m))).join('')}${url ? `<hr><button data-url="${escapeHtml(url)}"><span class="ck"></span><span class="mn">Open goals in Linear</span><span class="mm">↗</span></button>` : ''}</div>`;
 }
 
 /** One quiet line on the panel's header row (owner video, 2026-10-18 8:59 PM: one row, not
  *  two): the project's next milestone with its date and progress (owner video, 2026-10-22
  *  6:42 AM), else ◎ the company goal with its date; the rest in its tooltip; with neither,
  *  ☀ Today. The ☀ filter on Sessions still finds today's sessions. */
-export function renderGoals(goals: Goals, linearName?: string | null): string {
+export function renderGoals(goals: Goals, linearName?: string | null, chosen?: string): string {
   const today = goals.today ? `Today · ${goals.today.id}: ${goals.today.title}` : '';
-  const ms = nextMilestone(goals, linearName);
+  const all = openMilestones(goals, linearName);
+  const picked = all.find((m) => m.name === chosen);
+  const ms = picked ?? all[0];
   if (ms) {
-    const tip = [`${ms.project} milestone${ms.progress !== undefined ? ` · ${ms.progress}% done` : ''}`, goals.company ? `Company goal: ${goals.company.name}` : '', goals.week ? `this week: ${goals.week}` : '', today].filter(Boolean).join('\n');
-    return `<a class="gl1" href="#"${goals.company?.url ? ` data-url="${escapeHtml(goals.company.url)}"` : ''} title="${escapeHtml(tip)}"><span class="gk">◇</span><span class="gtx">${escapeHtml(ms.name)}</span><span class="gm">${escapeHtml([shortDate(ms.target), ms.progress !== undefined ? `${ms.progress}%` : ''].filter(Boolean).join(' · '))}</span></a>`;
+    const tip = [`${ms.project} milestone${ms.progress !== undefined ? ` · ${ms.progress}% done` : ''}`, 'Click to pick the milestone Issues shows', goals.company ? `Company goal: ${goals.company.name}` : '', goals.week ? `this week: ${goals.week}` : '', today].filter(Boolean).join('\n');
+    return `<button class="gl1" data-menu aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(tip)}"><span class="gk">◇</span><span class="gtx">${escapeHtml(ms.name)}</span><span class="gm">${escapeHtml(msMeta(ms))}</span><span class="gcar">▾</span></button>${milestoneMenu(all, picked?.name, goals.company?.url)}`;
   }
   if (goals.company) {
     const tip = ['Company goal', goals.week ? `this week: ${goals.week}` : '', today].filter(Boolean).join('\n');
