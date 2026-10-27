@@ -1,5 +1,7 @@
 // Settings types and pure functions (no VS Code dependencies - testable)
 
+import type { PagesClick } from './pages';
+
 // Per-agent configuration for built-in agents
 interface BuiltInAgentConfig {
   login: boolean;
@@ -119,6 +121,8 @@ export interface AgentSettings {
   mergeMethod?: MergeMethod;
   /** The Project panel's Review and Issues tabs; both shown when unset. */
   tabs?: PanelTabs;
+  /** Pages (⌘⇧V): what a plain click on a page does; the same browser tab when unset. */
+  pages?: { click: PagesClick };
 }
 
 /** The Project panel tabs beside Sessions; with both off the tab row is the goal alone. */

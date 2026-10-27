@@ -193,6 +193,9 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   if (group === 'tabs' && (PANEL_TABS as readonly string[]).includes(field) && typeof value === 'boolean') {
     return { ...settings, tabs: { ...panelTabs(settings.tabs), [field]: value } };
   }
+  if (key === 'pages.click' && (value === 'same' || value === 'new')) {
+    return { ...settings, pages: { click: value } };
+  }
   if (key === 'mergeMethod' && typeof value === 'string' && (MERGE_METHODS as readonly string[]).includes(value)) {
     return { ...settings, mergeMethod: value as AgentSettings['mergeMethod'] };
   }
@@ -242,6 +245,8 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   ${SLOTS.map(slot).join('')}
   <div class="sh">Pull requests</div>
   <label class="srow"><span><b>Merge with</b><small>One click on Merge uses this; a repository that does not allow it uses one it allows</small></span>${picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with')}</label>
+  <div class="sh">Pages <span class="shsub">${kbd('V')} opens your pages</span></div>
+  <label class="srow"><span><b>A click opens the page in</b><small>${m.modifier.startsWith('⌘') ? '⌘' : 'Ctrl'}-click does the other</small></span>${picker('pages.click', [{ value: 'same', label: 'This tab' }, { value: 'new', label: 'A new tab' }], s.pages?.click ?? 'same', 'A click opens the page in')}</label>
   <div class="sh">Session list</div>
   ${LIST_PARTS.map((k) => toggle(`cards.${k}`, LIST_PART_ROWS[k].label, LIST_PART_ROWS[k].sub, cards[k])).join('')}
   <div class="sh">Session cards</div>

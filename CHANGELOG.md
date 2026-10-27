@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.432] - 2026-10-27
+
+Pages, from the owner's 10:41 AM to 11:04 AM prototype rounds:
+
+- ⌘⇧V opens Pages, an editor tab with the pages you open every day as one row of icons, each
+  with your own name under it. A click on the icon opens the page in VSCodium's built-in
+  browser in the same tab; ⌘-click opens a new tab. Settings › Pages swaps the two.
+- Click a name to rename it; clearing the name brings back the page's own title.
+- Recent lists the built-in browser's history, newest first; ☆ pins a page and ✕ on a tile
+  unpins it. Typing filters both; a typed URL and Enter opens it.
+- Every pin keeps an icon: the one VSCodium already saved, else the one the page declares,
+  else the site's /favicon.ico, else a colored letter. An icon drawn for dark themes gets a dark
+  chip so it never disappears on a light background.
+- New Split (Side) moves from ⌘⇧V to ⌘⌥V.
+
 ## [0.9.430] - 2026-10-27
 
 From the owner's 9:24 AM video on the Sessions tab:

@@ -106,3 +106,16 @@ test('Devices: each control is one agents devices verb', () => {
   expect(deviceSettingArgv('yosemite-s0', 'preferred', true)).toEqual(['devices', 'config', 'yosemite-s0', 'auto-launch.preferred', 'on'])
   expect(deviceSettingArgv('yosemite-s0', 'preferred', false)).toEqual(['devices', 'config', 'yosemite-s0', 'auto-launch.preferred', '--unset'])
 })
+
+test('Settings > Pages: a click opens the same tab until it is set to a new one; nothing else is accepted', () => {
+  const base = getDefaultSettings()
+  expect(applyPanelSetting(base, 'pages.click', 'new')?.pages).toEqual({ click: 'new' })
+  expect(applyPanelSetting(base, 'pages.click', 'sideways')).toBeNull()
+  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  expect(html).toContain('<kbd>⌘⇧V</kbd> opens your pages')
+  expect(html).toContain('<option value="same" selected>This tab</option>')
+  expect(html).toContain('⌘-click does the other')
+  const set = renderPanelSettings({ settings: { ...base, pages: { click: 'new' } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: 'Ctrl+Shift+' })
+  expect(set).toContain('<option value="new" selected>A new tab</option>')
+  expect(set).toContain('Ctrl-click does the other')
+})

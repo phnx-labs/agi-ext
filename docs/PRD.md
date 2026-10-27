@@ -446,6 +446,16 @@ What should happen: the HTML viewer never runs the page's scripts against the ed
 <figcaption>The Reader turns agent output into something you read, without leaving the editor.</figcaption>
 </figure>
 
+## Open your everyday pages
+
+You spend your day in the editor and a handful of pages every day: a console, a pull-request list, a planning doc. You want them one keystroke away, named the way you think of them, without a sidebar or a second panel.
+
+⌘⇧V opens Pages, an editor tab like any other. Your pages are one row of icons with your own name under each. A click on an icon opens that page in VSCodium's built-in browser, reusing the browser tab Pages last opened; ⌘-click opens a new browser tab, and Settings › Pages swaps the two. A click on a name renames it in place; clearing the name brings back the page's title. Below the icons, Recent is the built-in browser's own history, newest first, with ☆ to pin; ✕ on a tile unpins it. The search box filters both lists, and a typed address with Enter opens it.
+
+What should happen: a pin never shows a blank icon. It keeps the icon VSCodium saved for the page, else the one the page declares, else the site's `/favicon.ico`, else a colored letter, and an icon made for dark themes sits on a dark chip.
+
+Pages reads nothing on a timer: the history when the tab shows, an icon once when a page is pinned. Pins live in this extension's global state, so every window shows the same ones. In an editor with no built-in browser, a click says so instead of failing silently.
+
 ## Requirements
 
 **Stream contract.** Exactly one `agents feed watch --json` child exists per machine for all editor windows, owned by the elected leader window, and only while some window demands it: a visible Active Session sidebar or Project Sessions tab, an open Resume Session picker, or a tracked agent tab whose identity the stream has not resolved. When no window demands it the producer is torn down after a short grace period. Every window reads a broadcast projection of that stream. A reset replaces a scope; upserts and removes apply only when newer; a stale event is ignored; a follower that has never seen a reset renders as degraded, never as an authoritative empty state. If a field the UI needs is missing from the stream, the fix is to add it to the CLI's row, never a side-channel fetch. That side channel caused the 2026-08-25 CPU incident.
