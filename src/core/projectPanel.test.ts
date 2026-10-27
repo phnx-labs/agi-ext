@@ -69,7 +69,7 @@ test('an ended card says how long it ran and when; durations read in minutes, ho
   expect(ranSpan(new Date(2026, 9, 11, 4, 20).getTime(), new Date(2026, 9, 11, 12, 32).getTime(), now)).toBe('Oct 11 · 4:20 AM → 12:32 PM')
 })
 
-const OPTS = { prefs: DEFAULT_REVIEW_PREFS, mergeWith: 'squash' }
+const OPTS = { prefs: DEFAULT_REVIEW_PREFS, mergeWith: 'squash', avatar: () => null }
 
 test('Review while repositories answer: each finished one draws, the rest say they are being read', () => {
   const done = new Map([['me/a', { slug: 'me/a', error: null, branch: null, release: null, open: [{ number: 7, title: 'Fix', url: 'https://github.com/me/a/pull/7', isDraft: false, ciState: 'SUCCESS', author: 'me', avatar: null, date: '2026-10-12T00:00:00Z', failing: 0 }], merged: [] }]])
@@ -94,7 +94,7 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(groups.map((g) => g.state)).toEqual(['Doing', 'Todo', 'Backlog'])
   expect(groups[1].tickets.map((t) => t.identifier)).toEqual(['A-4', 'A-2'])
   expect(groups[0].tickets[0]).toMatchObject({ delegate: 'claude', assignee: 'Muqsit Nawaz', milestone: 'Ship B' })
-  const html = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: `<div data-peek="${t.identifier}"></div>`, onIt: [] }))
+  const html = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: `<div data-peek="${t.identifier}"></div>`, avatar: null, onIt: [] }))
   // One line: the row unfolds the peek, the agent's logo starts it, ↗ opens the page; the peek follows.
   expect(html).toContain('<a class="trow" href="#" data-ticket="A-3" title="t A-3">')
   expect(html).toContain('<span class="t"><span>t A-3</span></span>')
@@ -108,9 +108,9 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(html).toContain('data-ticket="A-4" title="t A-4"><span class="iav nobody" title="Unassigned"></span>')
   // The milestone shows only when it is not the one the header names.
   expect(html).toContain('</i></span>A-3 · Ship B</span>')
-  expect(renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }), 'Ship B')).toContain('</i></span>A-3</span>')
+  expect(renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', avatar: null, onIt: [] }), 'Ship B')).toContain('</i></span>A-3</span>')
   // An agent on it now: its logo carries the state dot (and a count past one) and opens that session instead of starting another.
-  const live = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: t.identifier === 'A-3' ? [{ agentType: 'claude', state: 'asks', title: 'Ship it', sessionId: 's-1', host: 'zion' }, { agentType: 'codex', state: 'working', title: 'Tests', sessionId: 's-2', host: 'zion' }] : [] }))
+  const live = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: '', avatar: null, onIt: t.identifier === 'A-3' ? [{ agentType: 'claude', state: 'asks', title: 'Ship it', sessionId: 's-1', host: 'zion' }, { agentType: 'codex', state: 'working', title: 'Tests', sessionId: 's-2', host: 'zion' }] : [] }))
   expect(live).toMatch(/<button class="tag" data-open-session="s-1" data-host="zion" title="Ship it: [^"]+\nTests: [^"]+\nClick to open it" aria-label="Open the session on A-3"><i class="hx hx-claude"[^>]*><\/i><i class="d-move"><\/i><span class="n">2<\/span><\/button>/)
   expect(live).not.toContain('<button class="tag" data-start-ticket="A-3"')
   // ▾ still offers every agent, and where it runs.
@@ -118,19 +118,24 @@ test('tickets: Doing before Todo before Backlog, urgent first, no-priority last'
   expect(live).toContain('data-where="auto"><span class="ck">✓</span>')
 })
 
-test('tickets: the assignee shows as their Linear profile picture; a picture from anywhere else is the initial', () => {
+test('tickets: the assignee shows as their cached Linear profile picture; initials until it is cached or from anywhere else', () => {
   const groups = parseTickets(JSON.stringify({ issues: [
     issue('A-1', 'started', 'Doing', 2, { assignee: { name: 'Bisma', avatarUrl: 'https://public.linear.app/org/u/b.png' } }),
     issue('A-2', 'started', 'Doing', 2, { assignee: { name: 'Eve', avatarUrl: 'https://evil.example/e.png' } }),
+    issue('A-3', 'started', 'Doing', 2, { assignee: { name: 'Tasbeha', avatarUrl: 'https://public.linear.app/org/u/t.png' } }),
   ] }))
-  const html = renderTickets(groups, () => ({ agentKey: 'claude', agentName: 'Claude', peek: '', onIt: [] }))
-  expect(html).toContain('title="t A-1"><img class="pav" src="https://public.linear.app/org/u/b.png" alt="Bisma" title="Bisma">')
+  const cached: Record<string, string> = { 'https://public.linear.app/org/u/b.png': 'https://file+.vscode-resource/avatars/b.png' }
+  expect(groups[0]!.tickets.map((t) => t.assigneeAvatar)).toEqual(['https://public.linear.app/org/u/b.png', null, 'https://public.linear.app/org/u/t.png'])
+  const html = renderTickets(groups, (t) => ({ agentKey: 'claude', agentName: 'Claude', peek: '', avatar: cached[t.assigneeAvatar ?? ''] ?? null, onIt: [] }))
+  expect(html).toContain('title="t A-1"><img class="pav" src="https://file+.vscode-resource/avatars/b.png" alt="Bisma" title="Bisma">')
+  expect(html).not.toContain('linear.app/org')
   expect(html).not.toContain('evil.example')
   expect(html).toMatch(/title="t A-2"><span class="iav av\d" title="Eve">E<\/span>/)
+  expect(html).toMatch(/title="t A-3"><span class="iav av\d" title="Tasbeha">T<\/span>/)
 })
 
 test('tickets render escapes titles from the tracker', () => {
-  const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>', url: 'https://linear.app/x/"><b>' }] })), () => ({ agentKey: 'claude', agentName: '<i>', peek: '', onIt: [] }))
+  const html = renderTickets(parseTickets(JSON.stringify({ issues: [{ ...issue('A-9', 'started', 'Doing', 2), title: '<img src=x onerror=alert(1)>', url: 'https://linear.app/x/"><b>' }] })), () => ({ agentKey: 'claude', agentName: '<i>', peek: '', avatar: null, onIt: [] }))
   expect(html).not.toMatch(/<img|"><b>|<i>/)
   expect(html).toContain('&lt;img')
 })
@@ -171,7 +176,7 @@ test('prs: a ready PR is one Merge button at the right; failing checks are count
     { number: 8, title: 'ready', url: 'https://github.com/o/busy/pull/8', isDraft: false, ciState: 'SUCCESS', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
     { number: 9, title: 'red', url: 'https://github.com/o/busy/pull/9', isDraft: false, ciState: 'FAILURE', failingChecks: [{ name: 'a' }, { name: 'b' }], author: { login: 'codex1' }, createdAt: '2026-10-08T00:00:00Z' },
   ], recentlyMerged: [] }] }))
-  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'rebase' })
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'rebase', avatar: () => null })
   expect(html).toContain('<button class="rs merge" data-merge-repo="o/busy" data-merge-number="8" title="Merge #8 with rebase (change in Settings)">Merge</button></li>')
   expect(html).not.toContain('data-merge-number="7"')
   expect(html).toContain('<span class="rs fail" title="2 checks failing">✕ 2</span>')
@@ -186,7 +191,7 @@ test('prs: a failing or conflicting PR offers Fix, which starts an agent with th
     { number: 10, title: 'tangled', url: 'https://github.com/o/busy/pull/10', isDraft: false, ciState: 'SUCCESS', mergeable: false, mergeableState: 'dirty', headRefName: 'feat/t', baseRefName: 'main', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
     { number: 11, title: 'wip', url: 'https://github.com/o/busy/pull/11', isDraft: true, ciState: 'FAILURE', mergeable: false, mergeableState: 'dirty', author: { login: 'm' }, createdAt: '2026-10-08T00:00:00Z' },
   ], recentlyMerged: [] }] }))
-  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'squash' })
+  const html = renderPrs(model, Date.parse('2026-10-09T00:00:00Z'), { prefs: { ...DEFAULT_REVIEW_PREFS, showDrafts: true }, mergeWith: 'squash', avatar: () => null })
   expect(html).toContain('✕ 2</span><button class="rs fix" data-fix-repo="o/busy" data-fix-number="9" title="Start an agent in a new tab to fix #9&#39;s failing checks (All tests pass, gitleaks)">Fix</button>')
   // A conflict never offers Merge; it gets its own group above Failing.
   expect(html).toContain('<span class="rs fail" title="Conflicts with main">Conflicts</span><button class="rs fix" data-fix-repo="o/busy" data-fix-number="10"')
@@ -701,10 +706,12 @@ test("today's goal: its sessions carry ☀, the header counts them, and the togg
   expect(readSessionPrefs({}).todayOnly).toBe(false)
 })
 
-test('prs: the author shows as their GitHub avatar, only from avatars.githubusercontent.com', () => {
+test('prs: the author shows as their cached GitHub avatar, only one from avatars.githubusercontent.com', () => {
   const pr = (avatarUrl: string) => parsePrs(JSON.stringify({ repositories: [{ slug: 'o/r', pullRequests: [{ number: 9, title: 't', url: 'https://github.com/o/r/pull/9', isDraft: false, ciState: 'SUCCESS', author: { login: 'muqsitnawaz', avatarUrl }, createdAt: '2026-10-08T00:00:00Z' }], recentlyMerged: [] }] }))
-  expect(renderPrs(pr('https://avatars.githubusercontent.com/u/13007401?v=4'), Date.parse('2026-10-09T00:00:00Z'), OPTS)).toContain('<img class="pav" src="https://avatars.githubusercontent.com/u/13007401?v=4" alt="muqsitnawaz"')
-  expect(renderPrs(pr('https://evil.example/x.png'), Date.parse('2026-10-09T00:00:00Z'), OPTS)).not.toContain('evil.example')
+  const cache = { ...OPTS, avatar: (url: string) => `https://file+.vscode-resource/avatars/${encodeURIComponent(url)}` }
+  expect(renderPrs(pr('https://avatars.githubusercontent.com/u/13007401?v=4'), Date.parse('2026-10-09T00:00:00Z'), cache)).toContain('<img class="pav" src="https://file+.vscode-resource/avatars/https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F13007401%3Fv%3D4" alt="muqsitnawaz"')
+  expect(renderPrs(pr('https://avatars.githubusercontent.com/u/13007401?v=4'), Date.parse('2026-10-09T00:00:00Z'), OPTS)).toMatch(/<span class="iav av\d" title="muqsitnawaz">M<\/span>/)
+  expect(renderPrs(pr('https://evil.example/x.png'), Date.parse('2026-10-09T00:00:00Z'), cache)).not.toContain('evil.example')
 })
 
 test('a session whose agent posted blocked leads its urgency, as Blocked', () => {

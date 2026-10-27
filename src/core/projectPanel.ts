@@ -1219,6 +1219,8 @@ export interface TicketRowExtras {
   agentKey: string;
   agentName: string;
   peek: string;
+  /** The assignee's picture as the webview loads it from the avatar cache; null draws initials. */
+  avatar: string | null;
   onIt: { agentType?: string; state: SessionStateKey; title: string; sessionId: string; host: string }[];
 }
 
@@ -1256,7 +1258,7 @@ export function renderTickets(groups: TicketGroup[], extras: (t: Ticket) => Tick
       : `<button class="tag" data-start-ticket="${id}" title="Start ${escapeHtml(x.agentName)} on ${id} in a new tab" aria-label="Start ${escapeHtml(x.agentName)} on ${id}">${harnessLogo(x.agentKey)}</button>`;
     const open = t.url ? `<a class="pro" href="#" data-url="${escapeHtml(t.url)}" title="Open ${id} in a tab (⌘- or Ctrl-click: in your browser)" aria-label="Open ${id} in a tab">${OPEN_ICON}</a>` : '';
     const pick = `<span class="tpick"><button class="tcar" data-menu aria-haspopup="menu" aria-expanded="false" title="Another agent, or where it runs" aria-label="Choose an agent for ${id}">▾</button>${startMenu(id, x.agentKey, where)}</span>`;
-    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${t.assigneeAvatar ? `<img class="pav" src="${escapeHtml(t.assigneeAvatar)}" alt="${escapeHtml(t.assignee ?? '')}" title="${escapeHtml(t.assignee ?? '')}">` : personAvatar(t.assignee) || '<span class="iav nobody" title="Unassigned"></span>'}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${priorityBars(t.priority)}${id}${ms}</span></span></a><span class="who">${agent}${pick}</span>${open}${x.peek}</li>`;
+    return `<li class="tli"><a class="trow" href="#" data-ticket="${id}" title="${escapeHtml(t.title)}">${x.avatar ? `<img class="pav" src="${escapeHtml(x.avatar)}" alt="${escapeHtml(t.assignee ?? '')}" title="${escapeHtml(t.assignee ?? '')}">` : personAvatar(t.assignee) || '<span class="iav nobody" title="Unassigned"></span>'}<span class="tm"><span class="t"><span>${escapeHtml(t.title)}</span></span><span class="sub">${priorityBars(t.priority)}${id}${ms}</span></span></a><span class="who">${agent}${pick}</span>${open}${x.peek}</li>`;
   };
   return groups.map((g, gi) => `<details ${gi < 2 ? 'open' : ''}>
     <summary>${escapeHtml(g.state)} <span class="n">${g.tickets.length}</span></summary>
@@ -1293,7 +1295,7 @@ export function applyReviewPref(p: ReviewPrefs, key: string, value: string): Rev
   return null;
 }
 
-interface ReviewOptions { prefs: ReviewPrefs; mergeWith: string }
+interface ReviewOptions { prefs: ReviewPrefs; mergeWith: string; avatar: (url: string) => string | null }
 
 const METHOD_WORD: Record<string, string> = { squash: 'squash', rebase: 'rebase', merge: 'a merge commit' };
 
@@ -1343,13 +1345,14 @@ export function prFixPrompt(p: Pick<PrRow, 'number' | 'title' | 'url' | 'head' |
   return lines.join('\n');
 }
 
-function prFace(p: PrRow): string {
-  return p.avatar ? `<img class="pav" src="${escapeHtml(p.avatar)}" alt="${escapeHtml(p.author)}" title="${escapeHtml(p.author)}">` : personAvatar(p.author) || '<span class="iav av0">?</span>';
+function prFace(p: PrRow, avatar: ReviewOptions['avatar']): string {
+  const src = p.avatar ? avatar(p.avatar) : null;
+  return src ? `<img class="pav" src="${escapeHtml(src)}" alt="${escapeHtml(p.author)}" title="${escapeHtml(p.author)}">` : personAvatar(p.author) || '<span class="iav av0">?</span>';
 }
 
-function prLine(p: PrRow, slug: string, now: number, mergeWith: string, showRepo: boolean): string {
+function prLine(p: PrRow, slug: string, now: number, opts: ReviewOptions, showRepo: boolean): string {
   const age = ageWords(Date.parse(p.date), now);
-  return `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prOpenIcon(p)}${prStatusCell(p, slug, mergeWith)}</li>`;
+  return `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${showRepo ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · ${age}</span></span></a>${prOpenIcon(p)}${prStatusCell(p, slug, opts.mergeWith)}</li>`;
 }
 
 function reviewMenu(p: ReviewPrefs): string {
@@ -1369,7 +1372,7 @@ export function renderPrsProgress(slugs: string[], done: Map<string, PrsModel['r
 }
 
 export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading: string[] = []): string {
-  const { prefs, mergeWith } = opts;
+  const { prefs } = opts;
   const all = m.repos.flatMap((r) => r.open.map((p) => ({ p, slug: r.slug })));
   const shown = all.filter(({ p }) => prefs.showDrafts || !p.isDraft);
   const hidden = all.length - shown.length;
@@ -1382,7 +1385,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   if (!m.repos.length && !reading.length) return head + '<div class="empty">This project has no attached repositories.</div>';
   const many = m.repos.length > 1;
   const section = (name: string, items: { p: PrRow; slug: string }[], cls = '', extra = '', showRepo = many) =>
-    items.length ? `<section class="rgrp ${cls}"><div class="head"><span class="label">${escapeHtml(name)}</span>${extra}<span class="n">${items.length}</span></div><ul>${items.map(({ p, slug }) => prLine(p, slug, now, mergeWith, showRepo)).join('')}</ul></section>` : '';
+    items.length ? `<section class="rgrp ${cls}"><div class="head"><span class="label">${escapeHtml(name)}</span>${extra}<span class="n">${items.length}</span></div><ul>${items.map(({ p, slug }) => prLine(p, slug, now, opts, showRepo)).join('')}</ul></section>` : '';
   let body = '';
   if (prefs.group === 'status') {
     const by = (st: PrState) => shown.filter(({ p }) => prState(p) === st);
@@ -1398,7 +1401,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
     body = section('Open', shown);
   }
   const merged = prefs.showMerged ? m.repos.flatMap((r) => r.merged.map((p) => ({ p, slug: r.slug }))).sort((a, b) => Date.parse(b.p.date) - Date.parse(a.p.date)) : [];
-  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
+  const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="rs done">Merged</span></li>`).join('')}</ul></section>` : '';
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
   const drafts = hidden ? `<button class="more-drafts" data-pref="showDrafts" data-value="true" title="Show the drafts (the ⇅ menu hides them again)">+${hidden} draft${hidden === 1 ? '' : 's'}</button>` : '';
   return head + partial + readingLine + errors + body + none + drafts + mergedHtml + '<div class="toast" hidden></div>';
