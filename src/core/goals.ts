@@ -64,16 +64,6 @@ function milestoneMenu(all: Milestone[], chosen: string | undefined, url: string
   return `<div class="menu gmenu-pop" role="menu" hidden><div class="sec">Issues shows</div>${item('', 'All milestones', '')}${all.map((m) => item(m.name, m.name, msMeta(m))).join('')}${url ? `<hr><button data-url="${escapeHtml(url)}"><span class="ck"></span><span class="mn">Open goals in Linear</span><span class="mm">↗</span></button>` : ''}</div>`;
 }
 
-/** What follows the project in the view's title, "Rush / 0.2.1 - Stable for running agents"
- *  (owner video, 2026-10-27 1:19 PM: the project and its milestone in the top row, no row of
- *  its own): the milestone Issues shows, else the next unfinished one, else the company goal,
- *  else today's ticket; '' with none. */
-export function goalTitle(goals: Goals, linearName?: string | null, chosen?: string): string {
-  const all = openMilestones(goals, linearName);
-  const ms = all.find((m) => m.name === chosen) ?? all[0];
-  return ms?.name ?? goals.company?.name ?? goals.today?.title ?? '';
-}
-
 /** Issues' ⇅: which milestone it lists; null for a project with no open milestone. */
 export function issuesMenu(goals: Goals, linearName?: string | null, chosen?: string): string | null {
   const all = openMilestones(goals, linearName);

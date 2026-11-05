@@ -68,21 +68,24 @@ test('the agent logo and an agent in ▾ each send one start; a second click, ev
   expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2', agent: 'codex', where: 'auto' }]);
 });
 
-test('Settings > Tabs hides Review and Issues; Sessions stays as the way back from the Lead tab and Settings', () => {
-  const hidden = () => [...document.querySelectorAll('.tabs .tab')].map((t) => `${(t as unknown as HTMLElement).dataset.tab}:${(t as unknown as HTMLElement).hidden}`).join(' ');
+test('Settings > In the header turns Lead, Review and Issues off; a tab that is off, or a ⌃ key to one, lands on Sessions', () => {
   sent.length = 0;
-  deliver({ type: 'tabs', prs: false, tickets: false });
+  deliver({ type: 'tabs', lead: false, prs: false, tickets: false });
   // Issues was showing and is gone: the panel goes back to Sessions.
   expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
-  expect(hidden()).toBe('lead:false sessions:false prs:true tickets:true');
+  for (const tab of ['lead', 'prs', 'tickets']) {
+    sent.length = 0;
+    deliver({ type: 'choose', tab });
+    expect(sent).toEqual([]);
+  }
+  deliver({ type: 'tabs', lead: false, prs: true, tickets: false });
+  deliver({ type: 'choose', tab: 'prs' });
+  expect(sent).toContainEqual({ type: 'tab', tab: 'prs' });
+  // Settings always stays: ⚙ is in VS Code's row whatever is checked.
   deliver({ type: 'choose', tab: 'settings' });
-  expect(hidden()).toBe('lead:false sessions:false prs:true tickets:true');
-  deliver({ type: 'tabs', prs: true, tickets: false });
-  expect(hidden()).toBe('lead:false sessions:false prs:false tickets:true');
-  // ⌃3 to Issues, which is off, lands on Sessions.
-  sent.length = 0;
+  expect(sent).toContainEqual({ type: 'tab', tab: 'settings' });
+  deliver({ type: 'tabs', lead: false, prs: true, tickets: true });
   deliver({ type: 'choose', tab: 'tickets' });
-  expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
 });
 
 test('a ticket tag colors its session dot for every state tone but the quiet one', async () => {

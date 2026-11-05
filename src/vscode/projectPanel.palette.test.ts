@@ -89,8 +89,8 @@ test('Search Sessions shows the panel on Sessions and sends every session the st
   // No device on a row (owner, 2026-11-04 9:49 PM): a tab here says nothing of where it runs.
   expect(palette.html).toContain('data-here="1" data-reach="here"');
   expect(palette.html).not.toContain(`<span class="kw">${ME.replace(/^yosemite-/, '')}`);
-  // Nothing was read: no command but the view's own.
-  expect(ran).toEqual([]);
+  // Nothing was read: no command but the context keys VS Code's row reads.
+  expect(ran.filter((id) => id !== 'setContext')).toEqual([]);
 });
 
 test('Enter on a session with a tab here fronts that tab; closing stops the updates', async () => {

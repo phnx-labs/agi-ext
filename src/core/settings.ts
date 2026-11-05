@@ -119,22 +119,28 @@ export interface AgentSettings {
   cards?: CardSettings;
   /** How every Merge button merges (Review rows, the session sidebar); squash when unset. */
   mergeMethod?: MergeMethod;
-  /** The Project panel's Review and Issues tabs; both shown when unset. */
-  tabs?: PanelTabs;
+  /** Which icons VS Code's row above the Project panel shows (`panelHeader`). */
+  header?: Partial<PanelHeader>;
   /** Pages (⌘⇧B): what a plain click on a page does; the same browser tab when unset. */
   pages?: { click: PagesClick };
 }
 
-/** The Project panel tabs beside Sessions; with both off the tab row is the goal alone. */
-export interface PanelTabs {
+/** What VS Code's row above the Project panel shows besides Sessions, ⚙ and ⋯ (owner, 2026-11-05
+ *  2:21 AM: "like the macOS menu bar … turn on or off these icons"). Off by default except
+ *  Review: search is ⌘K, and sort and Switch Project are in ⋯. A tab turned off is gone. */
+export interface PanelHeader {
+  lead: boolean;
   prs: boolean;
   tickets: boolean;
+  search: boolean;
+  sort: boolean;
+  pick: boolean;
 }
 
-export const PANEL_TABS = ['prs', 'tickets'] as const;
+export const PANEL_HEADER = ['lead', 'prs', 'tickets', 'search', 'sort', 'pick'] as const;
 
-export function panelTabs(v: Partial<PanelTabs> | undefined): PanelTabs {
-  return { prs: v?.prs !== false, tickets: v?.tickets !== false };
+export function panelHeader(v: Partial<PanelHeader> | undefined): PanelHeader {
+  return { lead: v?.lead === true, prs: v?.prs !== false, tickets: v?.tickets === true, search: v?.search === true, sort: v?.sort === true, pick: v?.pick === true };
 }
 
 export type MergeMethod = 'squash' | 'rebase' | 'merge';

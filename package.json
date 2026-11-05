@@ -115,7 +115,7 @@
         {
           "type": "webview",
           "id": "agentsProject.panel",
-          "name": "Project"
+          "name": "AGI"
         }
       ]
     },
@@ -664,7 +664,7 @@
       },
       {
         "command": "agents.project.pick",
-        "title": "Switch Project",
+        "title": "Switch Project…",
         "category": "Agents: Project",
         "icon": "$(arrow-swap)"
       },
@@ -678,6 +678,111 @@
         "command": "agents.project.tab",
         "title": "Show a Project Panel Tab",
         "category": "Agents: Project"
+      },
+      {
+        "command": "agents.project.tab.lead",
+        "title": "Lead",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/lead-light.svg",
+          "dark": "assets/header/lead-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.lead.on",
+        "title": "Lead",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/lead-on-light.svg",
+          "dark": "assets/header/lead-on-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.sessions",
+        "title": "Sessions",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/sessions-light.svg",
+          "dark": "assets/header/sessions-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.sessions.on",
+        "title": "Sessions",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/sessions-on-light.svg",
+          "dark": "assets/header/sessions-on-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.sessions.asks",
+        "title": "Sessions (a session asks)",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/sessions-asks-light.svg",
+          "dark": "assets/header/sessions-asks-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.sessions.on.asks",
+        "title": "Sessions (a session asks)",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/sessions-on-asks-light.svg",
+          "dark": "assets/header/sessions-on-asks-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.prs",
+        "title": "Review",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/prs-light.svg",
+          "dark": "assets/header/prs-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.prs.on",
+        "title": "Review",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/prs-on-light.svg",
+          "dark": "assets/header/prs-on-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.tickets",
+        "title": "Issues",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/tickets-light.svg",
+          "dark": "assets/header/tickets-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.tab.tickets.on",
+        "title": "Issues",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/tickets-on-light.svg",
+          "dark": "assets/header/tickets-on-dark.svg"
+        }
+      },
+      {
+        "command": "agents.project.search",
+        "title": "Search Sessions",
+        "category": "Agents: Project",
+        "icon": "$(search)"
+      },
+      {
+        "command": "agents.project.sortMenu",
+        "title": "View, Filter and Sort…",
+        "category": "Agents: Project",
+        "icon": {
+          "light": "assets/header/sort-light.svg",
+          "dark": "assets/header/sort-dark.svg"
+        }
       },
       {
         "command": "agents.lead.ask",
@@ -828,6 +933,91 @@
           "command": "agents.open",
           "group": "navigation",
           "when": "true"
+        },
+        {
+          "command": "agents.project.tab.lead",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.lead && agents.project.tab != lead",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.tab.lead.on",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.lead && agents.project.tab == lead",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.tab.sessions",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.tab != sessions && !agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.sessions.on",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.tab == sessions && !agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.sessions.asks",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.tab != sessions && agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.sessions.on.asks",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.tab == sessions && agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.prs",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.prs && agents.project.tab != prs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agents.project.tab.prs.on",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.prs && agents.project.tab == prs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agents.project.tab.tickets",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.tickets && agents.project.tab != tickets",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agents.project.tab.tickets.on",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.tickets && agents.project.tab == tickets",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agents.project.search",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.search",
+          "group": "navigation@5"
+        },
+        {
+          "command": "agents.project.sortMenu",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.sort",
+          "group": "navigation@6"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "activeWebviewPanelId == 'agents.project' && agents.project.show.pick",
+          "group": "navigation@7"
+        },
+        {
+          "command": "agents.project.settings",
+          "when": "activeWebviewPanelId == 'agents.project'",
+          "group": "navigation@8"
+        },
+        {
+          "command": "agents.project.sortMenu",
+          "when": "activeWebviewPanelId == 'agents.project'",
+          "group": "more@1"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "activeWebviewPanelId == 'agents.project'",
+          "group": "more@2"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "activeWebviewPanelId == 'agents.project'",
+          "group": "more@4"
         }
       ],
       "scm/title": [
@@ -897,23 +1087,138 @@
         {
           "command": "agents.lead.float",
           "when": "!agents.lead.bubble"
+        },
+        {
+          "command": "agents.project.tab.lead",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.lead.on",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.sessions",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.sessions.on",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.sessions.asks",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.sessions.on.asks",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.prs",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.prs.on",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.tickets",
+          "when": "false"
+        },
+        {
+          "command": "agents.project.tab.tickets.on",
+          "when": "false"
         }
       ],
       "view/title": [
         {
-          "command": "agents.project.pick",
-          "when": "view == agentsProject.panel",
+          "command": "agents.project.tab.lead",
+          "when": "view == agentsProject.panel && agents.project.show.lead && agents.project.tab != lead",
           "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.tab.lead.on",
+          "when": "view == agentsProject.panel && agents.project.show.lead && agents.project.tab == lead",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agents.project.tab.sessions",
+          "when": "view == agentsProject.panel && agents.project.tab != sessions && !agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.sessions.on",
+          "when": "view == agentsProject.panel && agents.project.tab == sessions && !agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.sessions.asks",
+          "when": "view == agentsProject.panel && agents.project.tab != sessions && agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.sessions.on.asks",
+          "when": "view == agentsProject.panel && agents.project.tab == sessions && agents.project.asks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agents.project.tab.prs",
+          "when": "view == agentsProject.panel && agents.project.show.prs && agents.project.tab != prs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agents.project.tab.prs.on",
+          "when": "view == agentsProject.panel && agents.project.show.prs && agents.project.tab == prs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agents.project.tab.tickets",
+          "when": "view == agentsProject.panel && agents.project.show.tickets && agents.project.tab != tickets",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agents.project.tab.tickets.on",
+          "when": "view == agentsProject.panel && agents.project.show.tickets && agents.project.tab == tickets",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agents.project.search",
+          "when": "view == agentsProject.panel && agents.project.show.search",
+          "group": "navigation@5"
+        },
+        {
+          "command": "agents.project.sortMenu",
+          "when": "view == agentsProject.panel && agents.project.show.sort",
+          "group": "navigation@6"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.panel && agents.project.show.pick",
+          "group": "navigation@7"
         },
         {
           "command": "agents.project.settings",
           "when": "view == agentsProject.panel",
-          "group": "navigation@3"
+          "group": "navigation@8"
+        },
+        {
+          "command": "agents.project.sortMenu",
+          "when": "view == agentsProject.panel",
+          "group": "more@1"
+        },
+        {
+          "command": "agents.project.pick",
+          "when": "view == agentsProject.panel",
+          "group": "more@2"
+        },
+        {
+          "command": "agents.project.refresh",
+          "when": "view == agentsProject.panel",
+          "group": "more@4"
         },
         {
           "command": "agents.project.popOut",
           "when": "view == agentsProject.panel",
-          "group": "navigation@2"
+          "group": "more@3"
         },
         {
           "command": "agents.activeSession.popOut",

@@ -77,7 +77,7 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   Comments live on the Linear page; the extension has no comment box. Every `linear` call
   (`runLinear`) sets `LINEAR_PROFILE` to the project's `linear.profile` (`default` when it has
   none) and names the Linear project by id (`--project <id>`), so no folder picks the workspace.
-  A fourth: the milestone in the Project panel's title is one `linear goals --json` read
+  A fourth: the milestone Issues lists and today's ☀ come from one `linear goals --json` read
   when the panel shows (at most once a minute) or on Refresh (`ProjectView.loadGoals`); never
   per tab or per click.
   A fifth: merging a PR reads that one PR (`agents projects prs <name> --json --repo R
@@ -287,9 +287,10 @@ going on, where, and what came out of it" in one look; text explains only what a
   `prefers-reduced-motion`. Nothing flashes for as long as it waits. The one answer to a
   click: what was clicked to open rings once and is busy until the host's `opened` (owner
   video, 2026-10-19 12:58 AM); nothing silently waits. No toast (owner, 2026-11-04 9:42 PM):
-  Copy turns its icon to ✓, and the only words, an Undo or a refusal, sit in the header
-  row's free space for 6 s (`note`), over nothing and moving nothing.
-- **View, filter, then sort, in one ⇅ menu** at the end of the tab row, with checkmarks,
+  Copy turns its icon to ✓, and the only words, an Undo or a refusal, float at the panel's foot
+  for 6 s (`note`), moving nothing.
+- **View, filter, then sort, in one ⇅ menu** (⋯ > View, Filter and Sort…, or ⇅ in VS Code's row when
+  Settings shows it; View and Sort are also in Settings > Session list), with checkmarks,
   as in the AGI Menu (View: Default or Compact, where a listed card is its title row, the
   agent's latest line and what it made, owner, 2026-10-22 1:02 PM; Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
   either way; then Sort: Tab order, Last active, Newest, Name). No grouping choice: sessions
@@ -302,19 +303,22 @@ going on, where, and what came out of it" in one look; text explains only what a
   own order after the asks). Under the pinned card come Favorites (when any are
   starred), then the groups; Settings > Ready for review and Idle groups (off) brings back
   those two groups for sessions with no tab here (owner video, 2026-10-22 6:42 AM).
-- **One header row, the same on every tab.** VS Code's top row names the project and its
-  milestone, "AGI: RUSH / 0.2.1 - Stable for running agents": the view's title is "<project> /
-  <milestone>" (else the company goal; `goalTitle`), the container is named AGI because VS Code
-  always writes the container's name first and drops a view's description in a one-view sidebar,
-  and ⇄ beside it switches the project. The panel's own header is one row: the tabs as icons,
-  ✳ Lead first, then 🔍 and ⇅ in the same place on every tab (owner video, 2026-10-27 1:19 PM:
-  "the view changes … the search is even gone … the placement of the icon also changes"). On
-  Sessions 🔍 is ⌘K, which reopens holding its last words (owner video, 2026-11-04 5:57 PM); on
-  Review and Issues it turns the row into the filter field for that list until Esc (each tab keeps its words);
-  ⇅ is dimmed on a tab with nothing to sort and on Issues picks the milestone it lists (`tabHead`,
-  `issuesMenu`). No goal line and no filter row: the list starts under the one row. Settings > Tabs turns Review and Issues off.
-  Settings is the gear, last of the panel's title icons; Refresh lives in Settings, and ⌃1–⌃4
-  switch the tabs (owner videos, 2026-10-17, 2026-10-18 8:59 PM and 2026-10-22 6:42 AM).
+- **One header row: VS Code's.** The panel draws no header of its own; VS Code's row is "AGI: RUSH",
+  the project's name and no milestone (the view is named AGI, so VS Code's own prefix is the
+  shortest it can be; it writes "<sidebar>: <title>" and drops the first part only for an empty
+  title), then the panel's buttons: ▣ Sessions, ⑂ Review, ⚙ and ⋯ (owner video, 2026-11-05
+  12:23 AM; owner, 2:21 AM: "the sessions panel, the merge request icon, and then settings, and
+  then dot dot dot"). Settings > In the header turns on ✳ Lead, ◑ Issues, 🔍, ⇅ and ⇄ like the
+  macOS menu bar (`panelHeader`, `src/core/settings.ts`); Review can go too, and a tab that is off
+  is gone. ⋯ holds View, Filter and Sort…, Switch Project…, Move into New Window and Refresh. A tab
+  button is drawn pressed and Sessions carries an amber dot while a session asks, each a variant
+  command picked by context key (`agents.project.tab`, `agents.project.asks`,
+  `agents.project.show.*`; `HEADER_TAB_COMMANDS`), since an extension's button cannot toggle; the
+  number goes on the bar's own icon (`badge`). The same buttons ride the panel's editor tab when it
+  pops out. ⌘K (or 🔍) is the one search: the session palette, which reopens holding its last
+  words, except on Review and Issues, where it opens the filter field above the list until Esc
+  (each tab keeps its words); ⇅ on Issues picks the milestone it lists (`tabHead`, `issuesMenu`).
+  ⌃1–⌃4 switch the tabs. ⛶ and the divider before it are VS Code's own.
 - **A click selects and brings its tab forward; it never resumes.** A card click shows the
   session and fronts its tab when the tab is in this window; switching tabs moves the
   selection back. Anything else is an explicit icon: focus (↗, only where the click cannot

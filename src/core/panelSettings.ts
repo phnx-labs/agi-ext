@@ -6,7 +6,16 @@
 import { escapeHtml } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
-import { CARD_PARTS, cardSettings, LIST_PARTS, getQuickLaunchSlot, MERGE_METHODS, PANEL_TABS, panelTabs, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+import { CARD_PARTS, cardSettings, LIST_PARTS, getQuickLaunchSlot, MERGE_METHODS, PANEL_HEADER, panelHeader, type AgentSettings, type CardSettings, type DisplayPreferences, type QuickLaunchSlotKey } from './settings';
+
+const HEADER_ROWS: { key: (typeof PANEL_HEADER)[number]; label: string; sub: string }[] = [
+  { key: 'lead', label: 'Lead', sub: 'Ask or tell this project\u2019s Lead' },
+  { key: 'prs', label: 'Review', sub: 'Pull requests waiting on review or merge' },
+  { key: 'tickets', label: 'Issues', sub: 'The project\u2019s Linear tickets' },
+  { key: 'search', label: 'Search', sub: '\u2318K opens it either way' },
+  { key: 'sort', label: 'View, filter and sort', sub: 'Also in \u22ef' },
+  { key: 'pick', label: 'Switch Project', sub: 'Also in \u22ef' },
+];
 
 const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string }[] = [
   { key: 'autoLabelInTabTitles', label: 'Auto labels', sub: 'Use the CLI title once the stream has one' },
@@ -179,6 +188,8 @@ export interface PanelSettingsModel {
   leadSpeak: boolean;
   /** Real cards drawn with these settings (`renderCardPreview`), under A card shows. */
   preview?: string;
+  /** The session list's View and Sort, this workspace's own (the ⇅ menu's same two choices). */
+  list: { view: string; sort: string };
 }
 
 /** Apply one Settings-tab change to the stored settings; null for a key or value it does not know. */
@@ -194,8 +205,8 @@ export function applyPanelSetting(settings: AgentSettings, key: string, value: u
   if (group === 'cards' && ([...CARD_PARTS, ...LIST_PARTS] as readonly string[]).includes(field) && typeof value === 'boolean') {
     return { ...settings, cards: { ...cardSettings(settings.cards), [field]: value } };
   }
-  if (group === 'tabs' && (PANEL_TABS as readonly string[]).includes(field) && typeof value === 'boolean') {
-    return { ...settings, tabs: { ...panelTabs(settings.tabs), [field]: value } };
+  if (group === 'header' && (PANEL_HEADER as readonly string[]).includes(field) && typeof value === 'boolean') {
+    return { ...settings, header: { ...panelHeader(settings.header), [field]: value } };
   }
   if (key === 'pages.click' && (value === 'same' || value === 'new')) {
     return { ...settings, pages: { click: value } };
@@ -237,9 +248,11 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   const cards = cardSettings(s.cards);
   return `<div class="settings">
   <div class="srow"><span><b>Refresh</b><small>Read issues, review, goals and devices again; sessions are already live</small></span><button class="rbtn" data-refresh>Refresh</button></div>
-  <div class="sh">Tabs <span class="shsub">Sessions is always there</span></div>
-  ${toggle('tabs.prs', 'Review', 'Pull requests waiting on review or merge', panelTabs(s.tabs).prs)}
-  ${toggle('tabs.tickets', 'Issues', 'The project’s Linear tickets', panelTabs(s.tabs).tickets)}
+  <div class="sh">In the header <span class="shsub">Sessions, ⚙ and ⋯ are always there</span></div>
+  ${HEADER_ROWS.map((r) => toggle(`header.${r.key}`, r.label, r.sub, panelHeader(s.header)[r.key])).join('')}
+  <div class="sh">Session list</div>
+  <label class="srow"><span><b>View</b><small>Compact: a listed card is its title, the agent's latest line and what it made</small></span>${picker('list.view', [{ value: 'default', label: 'Default' }, { value: 'compact', label: 'Compact' }], m.list.view, 'View')}</label>
+  <label class="srow"><span><b>Sort</b><small>Sessions that ask always lead</small></span>${picker('list.sort', [{ value: 'tab', label: 'Tab order' }, { value: 'last', label: 'Last active' }, { value: 'newest', label: 'Newest' }, { value: 'name', label: 'Name' }], m.list.sort, 'Sort')}</label>
   <div class="sh">Session titles</div>
   ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}
   <div class="sh">Shortcuts</div>

@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { runAgentsArgs, runCliArgs } from '../core/agentsBin';
 import { AvatarCache } from '../core/avatarCache';
-import { goalTitle, issuesMenu, nextMilestone, openMilestones, parseGoals, type Goals } from '../core/goals';
+import { issuesMenu, nextMilestone, openMilestones, parseGoals, type Goals } from '../core/goals';
 import { resolveLaunchTarget, type LaunchTarget } from '../core/launchTarget';
 import { mergeNow } from './prMerge.vscode';
 import { blockedSessions } from '../core/sessionUpdates';
@@ -73,7 +73,7 @@ import { leadPanel } from './lead.vscode';
 import { getNonce } from './htmlReader';
 import { parseTicketView, renderTicketPeek, ticketPrompt } from '../core/ticketPeek';
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, PICKABLE_AGENTS, renderPanelSettings, type DevicesState } from '../core/panelSettings';
-import { cardSettings, panelTabs, validMergeMethod } from '../core/settings';
+import { cardSettings, PANEL_HEADER, panelHeader, validMergeMethod } from '../core/settings';
 import { FrontHistory } from '../core/frontNav';
 import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSettings.vscode';
 import { harnessLogoCss } from './theme.vscode';
@@ -123,9 +123,13 @@ interface TabState {
   generation: number;
 }
 
+/** The tab buttons in VS Code's row, each with the variants package.json draws by context key. */
+const HEADER_TAB_COMMANDS: [string, TabId][] = (['lead', 'sessions', 'prs', 'tickets'] as const).flatMap((tab) =>
+  (tab === 'sessions' ? ['', '.on', '.asks', '.on.asks'] : ['', '.on']).map((v): [string, TabId] => [`agents.project.tab.${tab}${v}`, tab]));
+
 class ProjectView implements vscode.WebviewViewProvider {
   view: PanelHost | undefined;
-  readonly dock = new PanelDock({ viewType: 'agents.project', command: 'agents.project.popOut', title: 'Project', attach: (host) => this.attach(host) });
+  readonly dock = new PanelDock({ viewType: 'agents.project', command: 'agents.project.popOut', title: 'AGI', attach: (host) => this.attach(host) });
   private active: TabId;
   private paletteOpen = false;
   private leadProject: string | undefined;
@@ -135,6 +139,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
     const saved = context.workspaceState.get<string>(TAB_KEY);
     this.active = (TABS as readonly string[]).includes(saved ?? '') ? saved as TabId : 'sessions';
+    this.syncTabContext();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -242,6 +247,7 @@ class ProjectView implements vscode.WebviewViewProvider {
    *  draw can be lost; the script says when it is ready and gets the tab again. */
   private onReady(): void {
     void this.view?.webview.postMessage({ type: 'tab', tab: this.active });
+    this.syncTabContext();
     this.postTabs();
     void this.loadGoals(false);
     const cached = this.tabs.get(this.active)!.html;
@@ -250,15 +256,24 @@ class ProjectView implements vscode.WebviewViewProvider {
     this.postPalette();
   }
 
-  /** Which of Review and Issues Settings shows beside Sessions. */
+  /** Settings > In the header: which icons VS Code's row shows (its menus read these keys),
+   *  and which tabs the page may switch to. */
   private postTabs(): void {
-    void this.view?.webview.postMessage({ type: 'tabs', ...panelTabs(getSettings(this.context).tabs) });
+    const header = panelHeader(getSettings(this.context).header);
+    for (const k of PANEL_HEADER) void vscode.commands.executeCommand('setContext', `agents.project.show.${k}`, header[k]);
+    void this.view?.webview.postMessage({ type: 'tabs', lead: header.lead, prs: header.prs, tickets: header.tickets });
+  }
+
+  /** The tab buttons in VS Code's row: the one shown is drawn pressed. */
+  private syncTabContext(): void {
+    void vscode.commands.executeCommand('setContext', 'agents.project.tab', this.active);
   }
 
   private async show(tab: TabId): Promise<void> {
     if (tab === this.active) return;
     this.active = tab;
     void this.context.workspaceState.update(TAB_KEY, tab);
+    this.syncTabContext();
     this.syncDemand();
     const cached = this.tabs.get(tab)!.html;
     if (cached) this.post(tab, cached);
@@ -276,7 +291,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       // The card preview draws this project's sessions; it joins the page once the project is known.
       void this.controller.project().then((p) => { this.settingsProject = p; if (this.active === 'settings') this.post('settings', this.settingsHtml()); }, () => undefined);
       void this.loadDevices(force);
-      // The view's title names the project and its milestone on every tab, Settings included.
+      // The view's title names the project on every tab, Settings included.
       this.setTitle();
       return;
     }
@@ -289,7 +304,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       return;
     }
     if (gen !== state.generation) return;
-    // "AGI: RUSH / 0.2.1 - …": VS Code's top row names the project and its milestone (owner, 2026-10-27 1:26 PM); ⇄ beside it switches the project.
+    // "AGI: RUSH": VS Code's top row names the project.
     this.projectName = project?.name ?? '';
     this.setTitle();
     void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
@@ -314,7 +329,10 @@ class ProjectView implements vscode.WebviewViewProvider {
       // Ticket tiles show titles from the Issues read; Sessions shares it, once per FRESH_MS.
       this.controller.warmTicketFaces(project);
       const { html, count } = this.controller.sessions(project, view.webview);
-      void view.webview.postMessage({ type: 'count', tab: 'sessions', n: count.shown, asks: count.asks });
+      // VS Code's row has no room for a number: Sessions' icon takes an amber dot, and the
+      // count goes on the bar's own icon.
+      void vscode.commands.executeCommand('setContext', 'agents.project.asks', count.asks > 0);
+      view.badge = count.asks ? { value: count.asks, tooltip: `${count.asks} ${count.asks === 1 ? 'session asks' : 'sessions ask'} for you` } : undefined;
       // Most stream facts are another project's: the page already shows this list, so a
       // copy of it (hundreds of KB for hundreds of sessions) is neither sent nor parsed.
       if (html !== state.html) this.post(tab, html);
@@ -351,9 +369,16 @@ class ProjectView implements vscode.WebviewViewProvider {
   /** The title bar's gear and ⌃1–⌃4: the panel comes up on that tab, through the page's own switch. */
   async open(tab: TabId): Promise<void> {
     // Not drawn yet: its ready message asks for the tab, so that is the one it shows.
-    if (!this.view) { this.active = tab; void this.context.workspaceState.update(TAB_KEY, tab); }
+    if (!this.view) { this.active = tab; void this.context.workspaceState.update(TAB_KEY, tab); this.syncTabContext(); }
     await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     void this.view?.webview.postMessage({ type: 'choose', tab });
+  }
+
+  /** 🔍 and ⇅ in VS Code's row act in the page: ⌘K or the list's filter, and the ⇅ menu. */
+  async page(type: 'find' | 'menu'): Promise<void> {
+    if (this.view) this.view.show(false);
+    else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
+    void this.view?.webview.postMessage({ type });
   }
 
   /** ⌘K: the panel comes up on Sessions (its own view or the window it popped out into)
@@ -388,6 +413,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (this.active !== 'tickets') {
       this.active = 'tickets';
       void this.context.workspaceState.update(TAB_KEY, 'tickets');
+      this.syncTabContext();
       this.syncDemand();
     }
     void this.view?.webview.postMessage({ type: 'tab', tab: 'tickets' });
@@ -402,10 +428,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   /** Refresh rereads what is shown. */
-  refresh(projectChanged = false): void {
+  refresh(): void {
     for (const t of TABS) { this.tabs.get(t)!.html = undefined; void this.load(t, true); }
-    // Another project's milestone never stays up while this one's is read.
-    if (projectChanged) { this.goalText = ''; this.setTitle(); }
     void this.loadGoals(true);
   }
 
@@ -443,20 +467,16 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   private goalsAt = 0;
   private goalsGen = 0;
-  /** The project and the milestone (else the company goal) the view's title names. */
+  /** VS Code's row reads "AGI: RUSH": the project's name only, no milestone (owner video,
+   *  2026-11-05 12:23 AM, 1:24: "we don't really have to show the full milestone here"). */
   private projectName = '';
-  private goalText = '';
   private setTitle(): void {
-    if (this.view) this.view.title = [this.projectName, this.goalText].filter(Boolean).join(' / ');
+    if (this.view) this.view.title = this.projectName;
   }
 
-  /** A pick in Issues' ⇅: the title names that milestone and Issues lists only its tickets. */
+  /** A pick in Issues' ⇅: Issues lists only that milestone's tickets. */
   private async pickMilestone(name: string): Promise<void> {
-    const text = await this.controller.pickMilestone(name);
-    if (text === undefined) return;
-    this.goalText = text;
-    this.setTitle();
-    if (this.active === 'tickets') void this.load('tickets', false);
+    if (await this.controller.pickMilestone(name) && this.active === 'tickets') void this.load('tickets', false);
   }
 
   private async loadGoals(force: boolean): Promise<void> {
@@ -464,19 +484,14 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (!force && Date.now() - this.goalsAt < FRESH_MS) return;
     this.goalsAt = Date.now();
     const gen = ++this.goalsGen;
-    let text: string;
     const before = this.controller.todayId;
     try {
-      text = await this.controller.goals();
+      await this.controller.goals();
     } catch {
-      // An unread goal leaves the title at the project's name until the next read.
       this.goalsAt = 0;
-      text = '';
     }
     // A read overtaken by a newer one (a project switch while it ran) is dropped.
     if (gen !== this.goalsGen) return;
-    this.goalText = text;
-    this.setTitle();
     // Today's ticket marks its sessions with ☀; redraw the list when it changes.
     if (this.controller.todayId !== before && this.active === 'sessions') void this.load('sessions', false);
   }
@@ -800,27 +815,27 @@ class ProjectPanelController {
     return openMilestones(seen.goals, seen.linearName).some((m) => m.name === name) ? name : undefined;
   }
 
-  async pickMilestone(name: string): Promise<string | undefined> {
+  /** A pick in Issues' ⇅; false before the goals were read. */
+  async pickMilestone(name: string): Promise<boolean> {
     const seen = this.goalsSeen;
-    if (!seen) return undefined;
+    if (!seen) return false;
     await this.context.workspaceState.update(MILESTONE_KEY, { ...this.context.workspaceState.get<Record<string, string>>(MILESTONE_KEY), [seen.project]: name });
-    return this.goalsLine(seen);
+    this.headMilestone = this.milestoneOf(seen);
+    return true;
   }
 
-  private goalsLine(seen: NonNullable<ProjectPanelController['goalsSeen']>): string {
-    const chosen = this.chosenMilestone(seen.project);
-    this.headMilestone = chosen ?? nextMilestone(seen.goals, seen.linearName)?.name;
-    return goalTitle(seen.goals, seen.linearName, chosen);
+  private milestoneOf(seen: NonNullable<ProjectPanelController['goalsSeen']>): string | undefined {
+    return this.chosenMilestone(seen.project) ?? nextMilestone(seen.goals, seen.linearName)?.name;
   }
 
-  /** Company and today's goal of the project's Linear workspace: one `linear goals` read. */
-  async goals(): Promise<string> {
+  /** Today's ticket and the milestones of the project's Linear workspace: one `linear goals` read. */
+  async goals(): Promise<void> {
     const project = await this.project().catch(() => null);
     const { stdout } = await runLinear(['goals', '--json'], project?.linearProfile ?? null, 30_000);
     const goals = parseGoals(stdout);
     this.todayId = goals.today?.id;
     this.goalsSeen = { goals, project: project?.name ?? '', linearName: project?.linearName };
-    return this.goalsLine(this.goalsSeen);
+    this.headMilestone = this.milestoneOf(this.goalsSeen);
   }
 
   private ticketById(id: string): Ticket | undefined {
@@ -924,6 +939,7 @@ class ProjectPanelController {
       secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
       modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
       leadSpeak: vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', false),
+      list: { view: this.prefs().view, sort: this.prefs().sort },
     });
   }
 
@@ -941,6 +957,8 @@ class ProjectPanelController {
 
   /** One Settings-tab change, written where that setting already lives. */
   async setSetting(key: string, value: unknown): Promise<void> {
+    // Settings > Session list writes the ⇅ menu's own View and Sort for this workspace.
+    if (key === 'list.view' || key === 'list.sort') { await this.setPref(key.slice(5), value); return; }
     if (key === 'defaultAgent' || key === 'secondaryAgent') {
       if (!PICKABLE_AGENTS.some((a) => a.title === value)) return;
       await vscode.commands.executeCommand(key === 'defaultAgent' ? 'agents.setDefaultAgentTitle' : 'agents.setSecondaryAgentTitle', value);
@@ -1228,7 +1246,7 @@ class ProjectPanelController {
     this.detected = undefined;
     // Tickets and pull requests read are the shown project's; a switch must not keep the last one's.
     if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; }
-    this.view.refresh(projectChanged);
+    this.view.refresh();
   }
 }
 
@@ -1258,6 +1276,11 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('agents.project.refresh', () => controller.refresh()),
     vscode.commands.registerCommand('agents.project.settings', () => controller.view.open('settings')),
     vscode.commands.registerCommand('agents.project.tab', (tab: unknown) => (TABS as readonly unknown[]).includes(tab) ? controller.view.open(tab as TabId) : undefined),
+    // VS Code's row: one button per tab, drawn pressed (.on) or with an ask (.asks) by its
+    // context keys, since an extension's button cannot toggle (HEADER_TAB_COMMANDS).
+    ...HEADER_TAB_COMMANDS.map(([id, tab]) => vscode.commands.registerCommand(id, () => controller.view.open(tab))),
+    vscode.commands.registerCommand('agents.project.search', () => controller.view.page('find')),
+    vscode.commands.registerCommand('agents.project.sortMenu', () => controller.view.page('menu')),
     vscode.commands.registerCommand('agents.project.pick', () => controller.pick().catch((e) => {
       void vscode.window.showErrorMessage(`Could not list projects: ${errorText(e)}`);
     })),
@@ -1373,8 +1396,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .empty a { color: var(--vscode-textLink-foreground); }
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; padding: 0; }
-  .tabs { display: flex; align-items: center; gap: 2px; padding: 4px 8px 4px 10px; border-bottom: 1px solid var(--r-edge); flex: none; min-width: 0; }
-  .tab[hidden] { display: none; }
+  /* VS Code's row carries the tabs, ⚙ and ⋯ (owner, 2026-11-05 2:21 AM); the page's only header is
+     the filter field, while Review or Issues is filtered (⌘K or 🔍), and nothing otherwise. */
+  .frow { display: flex; align-items: center; padding: 4px 8px 4px 10px; border-bottom: 1px solid var(--r-edge); flex: none; min-width: 0; } .frow[hidden] { display: none; }
   .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
   .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
@@ -1384,24 +1408,11 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .menu .mn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .menu .mm { flex: none; font-family: var(--r-mono); font-size: 10px; color: var(--r-faint); } .menu .hx { width: 14px; height: 14px; flex: none; }
   .tpick { position: relative; display: inline-flex; } .tcar { opacity: 0; width: 14px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--r-caption); font-size: 9px; cursor: pointer; margin: 0 2px 0 -2px; }
   .tli:hover .tcar, .tcar[aria-expanded="true"] { opacity: 1; } .tcar:hover { background: var(--r-glass-hover); color: var(--r-text); }
-  .tab { height: 26px; padding: 0 6px; border: none; border-radius: 6px; background: none; color: var(--r-caption); font: inherit; display: inline-flex; gap: 5px; align-items: center; position: relative; cursor: pointer; }
-  .tab .lbl { display: none; font-size: 12px; white-space: nowrap; }
-  .tab:hover { background: var(--r-glass-hover); }
-  .tab[aria-selected="true"] { background: var(--r-glass-hover); color: var(--r-text); font-weight: 600; }
-  .tab:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-  .tab .ti { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-  .tab .cnt { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); font-weight: 400; }
-  .tab .dot { position: absolute; top: -1px; right: -2px; min-width: 14px; height: 14px; line-height: 14px; border-radius: 7px; background: var(--r-warn-tint); color: var(--r-warn); font-size: 9.5px; font-weight: 700; text-align: center; padding: 0 3px; box-sizing: border-box; transform: scale(.85); }
-  .tab .dot:empty { display: none; }
   main { padding: 2px 8px 12px; overflow: auto; flex: 1; min-height: 0; }
   /* Sessions: outlined cards, compact until hovered or selected (AGENTS.md Design). */
   .shead { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; position: relative; }
-  /* 🔍 beside ⇅; a click turns the tab row into the filter field until Esc, or until it is left empty
-     (owner, 2026-10-27 1:19 PM: one row, the same on every tab). */
-  .hfind { flex: 0 0 26px; min-width: 26px; margin-left: auto; position: relative; display: flex; align-items: center; cursor: pointer; } .hfind[hidden] { display: none; }
-  .hfind svg { position: absolute; left: 7px; width: 12px; height: 12px; fill: none; stroke: var(--r-caption); stroke-width: 1.5; pointer-events: none; }
-  .tabs:not(.finding) .hfind input { padding: 0; width: 26px; border-color: transparent; background: none; color: transparent; cursor: pointer; } .tabs:not(.finding) .hfind input::placeholder { color: transparent; }
-  .tabs.finding .tab { display: none; } .tabs.finding .hfind { flex: 1; margin-left: 0; } .tabs.finding .hfind svg { stroke: var(--r-faint); }
+  .hfind { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; }
+  .hfind svg { position: absolute; left: 7px; width: 12px; height: 12px; fill: none; stroke: var(--r-faint); stroke-width: 1.5; pointer-events: none; }
   .hfind input { width: 100%; box-sizing: border-box; height: 24px; padding: 0 9px 0 24px; border-radius: 7px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text); font: inherit; font-size: 12px; outline: none; }
   .hfind input:focus { border-color: var(--vscode-focusBorder); }
   .nofind { margin: 10px 6px; color: var(--r-faint); font-size: 11.5px; }
@@ -1604,14 +1615,14 @@ ${MADE_CSS}
   .card.front .ttl.rn { cursor: text; border-radius: 4px; } .card.front .ttl.rn:hover { background: var(--r-glass-hover); }
   .ttl-edit { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; font-size: 12.5px; padding: 0 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; outline: none; }
   ${logoCss}
-  /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
-  .hnote { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 11px; color: var(--r-text-2); white-space: nowrap; }
+  /* An Undo or a refusal floats at the panel's foot for 6 s, over the list like the reply box. */
+  .hnote { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 30; max-width: calc(100vw - 24px); display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 6px 18px rgba(0,0,0,.18); font-size: 11.5px; color: var(--r-text-2); white-space: nowrap; }
   .hnote span { overflow: hidden; text-overflow: ellipsis; } .hnote[hidden] { display: none; }
   .hnote button { font: inherit; font-weight: 600; color: var(--r-text); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
   [aria-busy="true"] { cursor: progress; }
   .act.copied svg { opacity: 0; } .act.copied { position: relative; } .act.copied::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--r-text-2); }
-  .tabs .sctl { position: relative; display: flex; align-items: center; min-width: 0; }
-  .tabs .sctl .shead { margin: 0; gap: 4px; }
+  /* ⇅ lives in VS Code's row (or ⋯); its menu drops from the panel's top-right corner. */
+  .sctl { position: fixed; top: 0; right: 8px; height: 0; z-index: 20; } .sctl .shead { margin: 0; } .sctl [data-menu], .sctl .icon[disabled] { visibility: hidden; height: 0; } .sctl .menu { top: 4px; }
   /* Ticket detail and Settings (PHNX-4329). */
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 4px; padding: 5px 9px; cursor: pointer; font: inherit; font-weight: 600; align-self: flex-start; }
   button.primary:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
@@ -1727,22 +1738,18 @@ ${MADE_CSS}
 </style>
 </head>
 <body>
-<div class="tabs" role="tablist" aria-label="Project">
-  <button class="tab" role="tab" data-tab="lead" aria-selected="false" title="Lead: ask or tell this project's Lead, by voice (⌥Space) or text"><svg class="ti" viewBox="0 0 16 16"><path d="M8 2v12M2.8 5l10.4 6M2.8 11l10.4-6"/></svg><span class="lbl">Lead</span></button>
-  <button class="tab" role="tab" data-tab="sessions" aria-selected="true" title="Sessions"><svg class="ti" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="9" rx="1.5"/><path d="M5 7l2 1.5L5 10M8.5 10H11"/></svg><span class="lbl">Sessions <span class="cnt" data-cnt="sessions"></span></span><span class="dot" data-asks title="Sessions that need you"></span></button>
-  <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
-  <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
+<div class="frow" hidden>
   <label class="hfind"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input type="search" data-find placeholder="Filter" aria-label="Filter" spellcheck="false" autocomplete="off"></label>
-  <span class="hnote" role="status" aria-live="polite" hidden></span>
-  <div class="sctl">${tabHead(null)}</div>
 </div>
+<div class="sctl">${tabHead(null)}</div>
+<span class="hnote" role="status" aria-live="polite" hidden></span>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
 <div class="kscrim" hidden><div class="kpal" role="dialog" aria-label="Search sessions"><input id="kq" placeholder="Search sessions" autocomplete="off" spellcheck="false" aria-controls="klist"><div class="klist" id="klist" role="listbox"></div><div class="kfoot">Favorites, then asks, running, idle; ended last · ↑↓ ↵ · esc</div></div></div>
 <div class="kql" hidden><figure><img alt=""><figcaption></figcaption></figure></div>
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
-  const ctl = document.querySelector('.tabs .sctl');
+  const ctl = document.querySelector('.sctl');
   const EMPTY_HEAD = ${JSON.stringify(tabHead(null))};
 ${PATCH_SCRIPT}
 ${THUMB_SCRIPT}
@@ -1770,13 +1777,11 @@ ${MADE_SCRIPT}
   // the tab lists, and each tab keeps its own words.
   const findBox = document.querySelector('.hfind [data-find]');
   const findWords = {};
+  const frow = document.querySelector('.frow');
   function syncFind(tab) {
     findBox.value = findWords[tab] || '';
-    // A tab with words shows the field; one without shows the tabs, whatever was focused before.
-    document.querySelector('.tabs').classList.toggle('finding', !!findBox.value);
-    document.querySelector('.hfind').hidden = tab === 'settings';
-    const words = tab === 'sessions' ? 'Search sessions (\u2318K)' : 'Filter';
-    findBox.setAttribute('aria-label', words); document.querySelector('.hfind').title = words;
+    // A tab with words shows its field; one without shows none.
+    frow.hidden = !findBox.value;
   }
   function applyFind() {
     const words = findBox.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1799,15 +1804,14 @@ ${MADE_SCRIPT}
     if (none) none.hidden = !words.length || shown > 0;
   }
   findBox.addEventListener('input', applyFind);
-  // On Sessions 🔍 is ⌘K, the one search (owner video, 2026-11-04 5:57 PM: "it should be the same
-  // search which is the command K based search"); the other tabs filter their own list.
-  function findIsPalette() { return current === 'sessions'; }
-  document.querySelector('.hfind').addEventListener('mousedown', (e) => { if (!findIsPalette()) return; e.preventDefault(); if (kscrim.hidden) vscode.postMessage({ type: 'search' }); else kq.focus(); });
-  findBox.addEventListener('focus', () => {
-    if (findIsPalette()) { findBox.blur(); if (kscrim.hidden) vscode.postMessage({ type: 'search' }); return; }
-    document.querySelector('.tabs').classList.add('finding');
-  });
-  findBox.addEventListener('blur', () => { if (!findBox.value) document.querySelector('.tabs').classList.remove('finding'); });
+  // ⌘K (or 🔍 in VS Code's row) is the one search: the session palette, except on Review and
+  // Issues, where it filters the list until Esc (owner, 2026-11-05 2:21 AM: "it doesn't show up
+  // unless the user says command K").
+  function find() {
+    if (current !== 'prs' && current !== 'tickets') { if (kscrim.hidden) vscode.postMessage({ type: 'search' }); else { kq.focus(); kq.select(); } return; }
+    frow.hidden = false; findBox.focus(); findBox.select();
+  }
+  findBox.addEventListener('blur', () => { if (!findBox.value) frow.hidden = true; });
   findBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') { findBox.value = ''; applyFind(); findBox.blur(); e.stopPropagation(); } });
   // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
   function anyMenu() { return ctl.querySelector('.menu') || main.querySelector('.menu'); }
@@ -1993,11 +1997,11 @@ ${MADE_SCRIPT}
     const b = box.querySelector('#lead-mic'); if (b) b.setAttribute('aria-pressed', String(mic === 'listening'));
     const input = box.querySelector('#lead-input'); if (input) input.placeholder = ask.dataset.busy === 'true' ? 'The Lead is working…' : 'Ask the Lead… (Enter asks)';
   }
-  const tabs = [...document.querySelectorAll('.tab')];
   const scroll = {};
+  const TAB_NAMES = { lead: 'Lead', sessions: 'Sessions', prs: 'Review', tickets: 'Issues', settings: 'Settings' };
   let current = 'sessions';
   function select(tab) {
-    tabs.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    main.setAttribute('aria-label', TAB_NAMES[tab] || tab);
     syncFind(tab);
   }
   // Leaving Review cancels a Merge still counting down: its Undo would no longer be on screen.
@@ -2007,35 +2011,26 @@ ${MADE_SCRIPT}
     const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
     return n;
   }
-  // Settings > Tabs: Review and Issues can go. Sessions always stays: the Lead tab and
-  // Settings need a way back.
-  let tabsShown = { prs: true, tickets: true, lead: true };
-  function syncTabs() {
-    for (const t of document.querySelectorAll('.tabs .tab')) {
-      t.hidden = t.dataset.tab !== 'sessions' && !tabsShown[t.dataset.tab];
-    }
-  }
+  // Settings > In the header: Lead, Review and Issues can go. Sessions and Settings always stay.
+  let tabsShown = { prs: true, tickets: false, lead: false };
   function choose(tab) {
-    // ⌃2/⌃3 to a tab Settings turned off land on Sessions.
-    if ((tab === 'prs' || tab === 'tickets') && !tabsShown[tab]) tab = 'sessions';
+    // ⌃1–⌃4 to a tab Settings turned off land on Sessions.
+    if ((tab === 'prs' || tab === 'tickets' || tab === 'lead') && !tabsShown[tab]) tab = 'sessions';
     if (tab === current) return;
     if (current === 'prs' && cancelMerges()) note('Merge cancelled: you left Review before it started.');
     if (current === 'sessions' && cancelAnswers()) note('Answer not sent: you left Sessions before it went.');
     scroll[current] = main.scrollTop;
     current = tab;
     select(tab);
-    syncTabs();
     vscode.postMessage({ type: 'tab', tab });
   }
   window.addEventListener('message', (e) => {
     const m = e.data;
-    if (m.type === 'tab') { current = m.tab; select(m.tab); syncTabs(); }
+    if (m.type === 'tab') { current = m.tab; select(m.tab); }
     else if (m.type === 'choose') choose(m.tab);
+    else if (m.type === 'find') find();
+    else if (m.type === 'menu') { const b = ctl.querySelector('[data-menu]'); if (b) b.click(); else note('Nothing to sort on this tab.'); }
     else if (m.type === 'merged' && typeof m.repo === 'string') drawMerged(m.repo + '#' + m.number, typeof m.error === 'string' ? m.error : '', m.merged !== false);
-    else if (m.type === 'count') {
-      const c = document.querySelector('[data-cnt="sessions"]'); if (c) c.textContent = m.n ? String(m.n) : '';
-      const d = document.querySelector('[data-asks]'); if (d) d.textContent = m.asks ? String(m.asks) : '';
-    }
     else if (m.type === 'html' && m.tab === current) {
       // A redraw of the same tab keeps what the viewer opened and where they scrolled.
       const same = main.dataset.tab === m.tab;
@@ -2086,9 +2081,8 @@ ${MADE_SCRIPT}
       shownProject = m.name;
     }
     else if (m.type === 'tabs') {
-      tabsShown = { prs: m.prs, tickets: m.tickets, lead: true };
+      tabsShown = { prs: m.prs, tickets: m.tickets, lead: m.lead };
       if (!tabsShown[current] && current !== 'sessions' && current !== 'settings') choose('sessions');
-      syncTabs();
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') document.body.classList.remove('loading');
@@ -2125,8 +2119,8 @@ ${MADE_SCRIPT}
   let noteTimer = 0;
   let undo = null;
   const target = (card) => ({ sessionId: card.dataset.session, host: card.dataset.host });
-  // No toast: what the page must still say (an Undo, a refusal) sits in the header row's free
-  // space for 6 s, over nothing and moving nothing (owner, 2026-11-04 9:42 PM).
+  // No toast (owner, 2026-11-04 9:42 PM): what the page must still say, an Undo or a refusal,
+  // floats at the panel's foot for 6 s and moves nothing.
   const hnote = document.querySelector('.hnote');
   function note(text, onUndo) {
     hnote.innerHTML = '<span></span>' + (onUndo ? '<button data-undo>Undo</button>' : '');
@@ -2624,8 +2618,7 @@ ${MADE_SCRIPT}
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
       e.preventDefault(); e.stopPropagation();
       // Open already: back to the box with its words selected; nothing is sent again.
-      if (!kscrim.hidden) { kq.focus(); kq.select(); return; }
-      vscode.postMessage({ type: 'search' });
+      find();
     }
   }, true);
   kq.addEventListener('input', () => { kpicked = null; kfilter(); klist.scrollTop = 0; });

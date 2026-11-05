@@ -3,7 +3,9 @@ import manifest from '../../package.json'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, renderPanelSettings } from './panelSettings'
-import { DEFAULT_CARD_SETTINGS, getDefaultSettings } from './settings'
+import { DEFAULT_CARD_SETTINGS, getDefaultSettings, panelHeader } from './settings'
+
+const LIST = { view: 'default', sort: 'tab' }
 
 test('each Settings control writes its own key and nothing else', () => {
   const base = getDefaultSettings()
@@ -15,7 +17,7 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(applyPanelSetting(base, 'quickLaunch.1', '')?.quickLaunch?.slots).toEqual({})
   expect(applyPanelSetting(base, 'display.prompts', true)).toBeNull()
   expect(applyPanelSetting(base, 'quickLaunch.1', 'gemini')).toBeNull()
-  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
+  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: LIST })
   expect(manifest.contributes.commands.some((c) => c.command === 'agents.newSecondaryAgent')).toBe(true)
   expect(manifest.contributes.keybindings.some((k) => k.command === 'agents.newSecondaryAgent')).toBe(false)
   // ⌘⇧B is Pages, the browser's starting point; New Split (Side) keeps ⌘⇧V.
@@ -25,17 +27,22 @@ test('each Settings control writes its own key and nothing else', () => {
   expect(html).toMatch(/data-setting="secondaryAgent"[^>]*>(<option[^>]*>[^<]*<\/option>)*<option value="CX" selected>Codex/)
 })
 
-test('Tabs: Review and Issues turn off on their own; Made is chips unless Settings asks for previews', () => {
+test('In the header: Review on, the rest off until checked (owner, 2026-11-05 2:21 AM); the list\'s View and Sort sit below; Made is chips unless Settings asks for previews', () => {
   const base = getDefaultSettings()
-  expect(applyPanelSetting(base, 'tabs.prs', false)?.tabs).toEqual({ prs: false, tickets: true })
-  expect(applyPanelSetting(base, 'tabs.sessions', false)).toBeNull()
-  expect(applyPanelSetting(base, 'tabs.tickets', 'off')).toBeNull()
+  expect(panelHeader(base.header)).toEqual({ lead: false, prs: true, tickets: false, search: false, sort: false, pick: false })
+  expect(applyPanelSetting(base, 'header.tickets', true)?.header).toEqual({ lead: false, prs: true, tickets: true, search: false, sort: false, pick: false })
+  expect(applyPanelSetting(base, 'header.sessions', false)).toBeNull()
+  expect(applyPanelSetting(base, 'header.prs', 'off')).toBeNull()
   expect(DEFAULT_CARD_SETTINGS.made).toBe('chips')
   expect(applyPanelSetting(base, 'cards.made', 'previews')?.cards?.made).toBe('previews')
   expect(applyPanelSetting(base, 'cards.made', 'tiles')).toBeNull()
-  const html = renderPanelSettings({ settings: { ...base, tabs: { prs: false, tickets: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
-  expect(html).toContain('<input type="checkbox" data-setting="tabs.prs">')
-  expect(html).toContain('<input type="checkbox" data-setting="tabs.tickets" checked>')
+  const html = renderPanelSettings({ settings: { ...base, header: { prs: false, search: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: { view: 'compact', sort: 'name' } })
+  expect(html).toContain('<input type="checkbox" data-setting="header.prs">')
+  expect(html).toContain('<input type="checkbox" data-setting="header.search" checked>')
+  for (const k of ['lead', 'tickets', 'sort', 'pick']) expect(html).toContain(`<input type="checkbox" data-setting="header.${k}">`)
+  expect(html).toContain('<option value="compact" selected>Compact</option>')
+  expect(html).toContain('<option value="name" selected>Name</option>')
+  expect(html).toContain('data-setting="list.view"')
   expect(html).toContain('data-setting="cards.made"')
 })
 
@@ -56,7 +63,7 @@ test('Session cards: pickers and part toggles write cards.*; banners are the AGI
   expect(applyPanelSetting(base, 'cards.question', 'full')?.cards?.question).toBe('full')
   expect(applyPanelSetting(base, 'cards.asks', 'loud')).toBeNull()
   expect(applyPanelSetting(base, 'notifications.enabled', true)).toBeNull()
-  const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'question', chips: false } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
+  const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'question', chips: false } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: LIST })
   expect(html).toContain('<div class="sh">Session cards</div>')
   expect(html).toMatch(/data-setting="cards\.asks"[^>]*><option value="answers">With answers<\/option><option value="question" selected>Question only<\/option><option value="off">Off<\/option>/)
   expect(html).toContain('<option value="titles" selected>Titles only</option>')
@@ -76,7 +83,7 @@ test('Devices: draws the CLI\'s placement verdict per device and keeps every oth
   expect(byName['yosemite-s1']).toMatchObject({ enabled: true, preferred: true, autoSkip: null })
   expect(byName['yosemite-m5'].autoSkip).toBe('disk-low')
   expect(byName['mark-1']).toMatchObject({ enabled: false, autoSkip: 'off' })
-  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { rows }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
+  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { rows }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: LIST })
   // The settings that were there before are all still drawn, in order, above Devices.
   const order = ['Session titles', 'Shortcuts', 'Pull requests', 'Session cards', 'Reader', 'Devices'].map((h) => html.indexOf(`<div class="sh">${h}`))
   expect(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1]))).toBe(true)
@@ -99,7 +106,7 @@ test('Devices: draws the CLI\'s placement verdict per device and keeps every oth
 
 test('Devices: an older CLI is an upgrade message, a failed read says so', () => {
   expect(() => parseSettingsDevices('[{"name":"a"}]')).toThrow('agents upgrade')
-  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { error: 'Devices could not be read: boom' }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false })
+  const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { error: 'Devices could not be read: boom' }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: LIST })
   expect(html).toContain('Devices could not be read: boom')
 })
 
@@ -111,7 +118,7 @@ test('Devices: each control is one agents devices verb', () => {
 })
 
 test('Lead: read answers aloud is a Settings switch for agents.lead.speak, not a speaker on the tab row', () => {
-  const on = renderPanelSettings({ settings: getDefaultSettings(), devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: true })
+  const on = renderPanelSettings({ settings: getDefaultSettings(), devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: true, list: LIST })
   expect(on).toMatch(/<b>Read answers aloud<\/b>.*<input type="checkbox" data-setting="lead.speak" checked>/)
 })
 
@@ -119,11 +126,11 @@ test('Settings > Pages: a click opens the same tab until it is set to a new one;
   const base = getDefaultSettings()
   expect(applyPanelSetting(base, 'pages.click', 'new')?.pages).toEqual({ click: 'new' })
   expect(applyPanelSetting(base, 'pages.click', 'sideways')).toBeNull()
-  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧' })
+  const html = renderPanelSettings({ settings: base, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', list: LIST })
   expect(html).toContain('<kbd>⌘⇧B</kbd> opens your pages')
   expect(html).toContain('<option value="same" selected>This tab</option>')
   expect(html).toContain('⌘-click does the other')
-  const set = renderPanelSettings({ settings: { ...base, pages: { click: 'new' } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: 'Ctrl+Shift+' })
+  const set = renderPanelSettings({ settings: { ...base, pages: { click: 'new' } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: 'Ctrl+Shift+', list: LIST })
   expect(set).toContain('<option value="new" selected>A new tab</option>')
   expect(set).toContain('Ctrl-click does the other')
 })

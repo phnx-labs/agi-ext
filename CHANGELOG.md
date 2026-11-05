@@ -4,6 +4,22 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.438] - 2026-11-05
+
+From the owner's 12:23 AM video and 2:21 AM note on the Project panel's header:
+
+- One header row: the panel's own row of tabs is gone. VS Code's row above it now holds
+  Sessions, Review, ⚙ and ⋯, and the shown tab's button is drawn pressed.
+- The title is the project's name only, "AGI: RUSH": no milestone, and no "PROJECT:" prefix
+  after you move the view into another sidebar.
+- Settings > In the header turns Lead, Review, Issues, 🔍, ⇅ and ⇄ on or off, like the macOS
+  menu bar. Lead and Issues start off. Settings > Session list holds View and Sort.
+- ⋯ holds View, Filter and Sort…, Switch Project…, Move into New Window and Refresh.
+- ⌘K is the one search: the session palette on Sessions, and the list's filter on Review and
+  Issues, shown only while you filter.
+- A session that asks puts an amber dot on Sessions' button and its count on the AGI icon.
+- Undo and refusals float at the panel's foot for 6 s.
+
 ## [0.9.437] - 2026-11-04
 
 From the owner's 5:57 PM video and 6:01, 9:42 and 9:49 PM notes on the Project panel:

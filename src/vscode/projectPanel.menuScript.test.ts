@@ -38,24 +38,24 @@ const click = (sel: string) => el(sel).dispatchEvent(new window.MouseEvent('clic
 deliver({ type: 'tab', tab: 'sessions' });
 deliver({ type: 'html', tab: 'sessions', html: draw() });
 
-test('⇅ sits in the tab row on every tab (owner video, 2026-10-27 1:19 PM); a click in its menu never folds a group, and the menu survives a redraw', () => {
+test('⇅ in VS Code\'s row or ⋯ opens the list\'s menu from the panel\'s corner; a click in it never folds a group, and the menu survives a redraw', () => {
   expect(el('.grp .gh [data-menu]')).toBeNull();
-  expect(el('.tabs .sctl [data-menu]')).not.toBeNull();
-  click('.tabs .sctl [data-menu]');
-  expect(el('.tabs .sctl .menu').hidden).toBe(false);
+  expect(el('.sctl [data-menu]')).not.toBeNull();
+  deliver({ type: 'menu' });
+  expect(el('.sctl .menu').hidden).toBe(false);
   sent.length = 0;
-  click('.tabs .sctl .menu .sec');
+  click('.sctl .menu .sec');
   expect(sent.filter((m) => m.type === 'fold')).toEqual([]);
-  expect(el('.tabs .sctl .menu').hidden).toBe(false);
+  expect(el('.sctl .menu').hidden).toBe(false);
   // A stream tick redraws the list; the open menu stays open.
   deliver({ type: 'html', tab: 'sessions', html: draw({}, [row('a', 1), row('b', 2), row('c', 3)]) });
-  expect(el('.tabs .sctl .menu').hidden).toBe(false);
-  click('.tabs .sctl .menu [data-pref="sort"][data-value="name"]');
+  expect(el('.sctl .menu').hidden).toBe(false);
+  click('.sctl .menu [data-pref="sort"][data-value="name"]');
   expect(sent).toContainEqual({ type: 'prefs', key: 'sort', value: 'name' });
   expect(sent.filter((m) => m.type === 'fold')).toEqual([]);
   // A click outside closes it; a click on a group header still folds.
   click('.grp .gh .gname');
-  expect(el('.tabs .sctl .menu').hidden).toBe(true);
+  expect(el('.sctl .menu').hidden).toBe(true);
   expect(sent.at(-1)).toEqual({ type: 'fold', group: 'here' });
 });
 
@@ -63,8 +63,8 @@ test('with nothing to list, ⇅ is in the header so Show can be turned back on',
   deliver({ type: 'html', tab: 'sessions', html: draw({ showOpen: false }, [row('a', 1)]) });
   expect(el('main .grp')).toBeNull();
   sent.length = 0;
-  click('.tabs .sctl [data-menu]');
-  click('.tabs .sctl .menu [data-pref="showOpen"]');
+  deliver({ type: 'menu' });
+  click('.sctl .menu [data-pref="showOpen"]');
   expect(sent).toContainEqual({ type: 'prefs', key: 'showOpen', value: 'true' });
 });
 
@@ -99,42 +99,45 @@ test('the filter bar keeps only the listed cards that match every word typed, su
   expect(shown()).toEqual(['a', 'b', 'c']);
 });
 
-test('the tab row is the same on every tab (owner video, 2026-10-27 1:19 PM): on Sessions 🔍 is ⌘K (owner video, 2026-11-04 5:57 PM); elsewhere it opens the filter in the row, Esc gives the tabs back, and a tab with nothing to sort keeps a dimmed ⇅ in place', () => {
-  const box = el('.tabs .hfind [data-find]') as unknown as HTMLInputElement;
+test('⌘K is the one search (owner, 2026-11-05 2:21 AM): the session palette on Sessions; on Review the filter field, shown only while it filters; ⇅ on a tab with nothing to sort says so', () => {
+  const box = el('.hfind [data-find]') as unknown as HTMLInputElement;
   sent.length = 0;
-  box.focus();
-  expect(el('.tabs').classList.contains('finding')).toBe(false);
+  deliver({ type: 'find' });
   expect(sent).toContainEqual({ type: 'search' });
-  click('.tab[data-tab="prs"]');
-  box.focus();
-  expect(el('.tabs').classList.contains('finding')).toBe(true);
+  expect(el('.frow').hidden).toBe(true);
+  deliver({ type: 'choose', tab: 'prs' });
+  sent.length = 0;
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }) as unknown as Event);
+  expect(sent).not.toContainEqual({ type: 'search' });
+  expect(el('.frow').hidden).toBe(false);
   box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
-  expect(el('.tabs').classList.contains('finding')).toBe(false);
-  // Issues and Lead send no controls of their own: the row still ends in ⇅, dimmed.
+  expect(el('.frow').hidden).toBe(true);
+  // Issues sends nothing to sort: ⇅ answers in the note at the panel's foot.
   deliver({ type: 'tab', tab: 'tickets' });
   deliver({ type: 'html', tab: 'tickets', html: '<div class="empty">No open tickets in this project.</div>' });
-  expect(el('.tabs .sctl [disabled]')).not.toBeNull();
-  expect(el('.tabs .hfind [data-find]')).toBe(box as unknown as HTMLElement);
+  deliver({ type: 'menu' });
+  expect(el('.hnote').hidden).toBe(false);
+  expect(el('.hnote').textContent).toBe('Nothing to sort on this tab.');
   deliver({ type: 'tab', tab: 'sessions' });
   deliver({ type: 'html', tab: 'sessions', html: draw() });
-  expect(el('.tabs .sctl [data-menu]')).not.toBeNull();
+  expect(el('.sctl [data-menu]')).not.toBeNull();
 });
 
-test("filtering hides cards, never a matching card's ⋯; each tab's words come back with it and decide whether the row shows the field", () => {
+test("filtering hides cards, never a matching card's ⋯; each tab's words come back with it and decide whether the field shows", () => {
   deliver({ type: 'tab', tab: 'sessions' });
   deliver({ type: 'html', tab: 'sessions', html: draw() });
-  const box = el('.tabs .hfind [data-find]') as unknown as HTMLInputElement;
+  const box = el('.hfind [data-find]') as unknown as HTMLInputElement;
   box.value = 'a';
   box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
   const drawer = el('.card[data-session="a"] details.cmore');
   expect(drawer.style.display).toBe('');
-  // Review has no words: its row shows the tabs; back on Sessions the words and the field return.
-  click('.tab[data-tab="prs"]');
+  // Review has no words: no field; back on Sessions the words and the field return.
+  deliver({ type: 'choose', tab: 'prs' });
   expect(box.value).toBe('');
-  expect(el('.tabs').classList.contains('finding')).toBe(false);
-  click('.tab[data-tab="sessions"]');
+  expect(el('.frow').hidden).toBe(true);
+  deliver({ type: 'choose', tab: 'sessions' });
   expect(box.value).toBe('a');
-  expect(el('.tabs').classList.contains('finding')).toBe(true);
+  expect(el('.frow').hidden).toBe(false);
   box.value = '';
   box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
 });
