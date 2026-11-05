@@ -1559,6 +1559,7 @@ function paletteReach(s: SessionLike, place: SessionPlace): { where: string; far
   // Ghostty known only from the row's terminal app, with no terminal agents-cli sees showing it,
   // cannot come forward: the focus path would end in a refused resume ("Could not resume …").
   if (place.kind === 'ghostty') return (s.observers ?? []).some((o) => /ghostty/i.test(o.viewingIn)) ? { where: 'Ghostty', far: '', reach: 'focus' } : { where: 'Ghostty', far: `Ghostty on ${device}`, reach: 'none' };
+  if (place.kind === 'background') return { where: 'Background', far: `the background on ${device}`, reach: 'none' };
   return { where: 'Terminal', far: `a terminal on ${device}`, reach: 'none' };
 }
 
