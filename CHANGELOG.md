@@ -4,6 +4,26 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.437] - 2026-11-04
+
+From the owner's 5:57 PM video and 6:01, 9:42 and 9:49 PM notes on the Project panel:
+
+- ⌘K rows are compact and roomier: no tab number and no device name, only the app a session
+  runs in (another window's workspace, Ghostty, Terminal), and its age in one unit ("1d", "12h").
+- ⌘K finds a title through a typo ("prpject" finds "Project member picker"), but only after
+  every direct match, under "Close matches for …".
+- 🔍 on Sessions opens ⌘K, which reopens holding your last words, selected. Review and Issues
+  keep their own filter.
+- ☆ is one click, on a card's hover icons and on ⌘K's selected row; it replaces Add to
+  Favorites in ⋯.
+- Enter on a session that runs in Ghostty or a terminal with no tab here opens it in place in
+  ⌘K, with its question to answer, instead of a resume that agents-cli refuses.
+- Settings > A card shows draws a real card under those sections, redrawn on every check, with
+  ‹ › through sessions of different shapes and Listed / Pinned.
+- No toasts: "Opening …", "Copied" and "Added to Favorites" are gone (the clicked thing rings,
+  Copy turns ✓). An Undo or a refusal shows for 6 s in the header row's free space. Pages
+  shows a refusal in its hint instead.
+
 ## [0.9.436] - 2026-10-27
 
 From the owner's 1:19 PM video and 1:26 PM note on the Project panel's header:

@@ -86,7 +86,9 @@ test('Search Sessions shows the panel on Sessions and sends every session the st
   expect(titles[0]).toBe('Another project');
   expect(titles).toContain('Tab here');
   expect(palette.html).toContain('data-session="here-1" data-host="this-mac" data-here="1"');
-  expect(palette.html).toContain(`<span class="kw">${ME.replace(/^yosemite-/, '')}</span>`);
+  // No device on a row (owner, 2026-11-04 9:49 PM): a tab here says nothing of where it runs.
+  expect(palette.html).toContain('data-here="1" data-reach="here"');
+  expect(palette.html).not.toContain(`<span class="kw">${ME.replace(/^yosemite-/, '')}`);
   // Nothing was read: no command but the view's own.
   expect(ran).toEqual([]);
 });

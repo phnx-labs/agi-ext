@@ -26,13 +26,14 @@ const draw = (o: { favorites?: string[]; cards?: Partial<typeof DEFAULT_CARD_SET
 const sectionOf = (html: string, key: string) => html.slice(html.indexOf(`data-group="${key}"`), html.indexOf('</section>', html.indexOf(`data-group="${key}"`)))
 const ids = (html: string) => [...html.matchAll(/class="card [^"]*"[^>]*data-session="([^"]+)"/g)].map((m) => m[1])
 
-test('Add to Favorites is in ⋯ (owner video, 2026-10-27 9:24 AM); a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
+test('☆ is one click among a card\'s hover icons, not in ⋯ (owner video, 2026-11-04 5:57 PM); a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
   const plain = draw()
-  expect(plain).toContain('<button class="favitem" data-fav="starred" aria-pressed="false">Add to Favorites</button>')
+  expect(plain).toContain('<button class="act favq" data-fav="starred" aria-pressed="false" title="Add to Favorites" aria-label="Add to Favorites">☆</button>')
+  expect(plain).not.toContain('class="favitem"')
   expect(plain).not.toContain('class="star')
   expect(plain).not.toContain('data-group="favorites"')
   const html = draw({ favorites: ['starred', 'asker'] })
-  expect(html).toContain('<button class="favitem" data-fav="starred" aria-pressed="true">Remove from Favorites</button>')
+  expect(html).toContain('<button class="act favq" data-fav="starred" aria-pressed="true" title="Remove from Favorites" aria-label="Remove from Favorites">★</button>')
   expect(html).toContain('<span class="star on" title="Favorite" aria-label="Favorite">★</span>')
   // Pinned card, then Favorites, then the grouping.
   expect(html.indexOf('front-pin')).toBeLessThan(html.indexOf('data-group="favorites"'))

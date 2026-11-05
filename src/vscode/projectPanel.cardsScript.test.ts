@@ -1,7 +1,7 @@
 // The Project panel's real webview script and real patch, in happy-dom, for the cards
 // after the owner's 2026-10-19 videos: ☆/★ turns every copy of a card at once, the
 // pinned title is an inline rename that a stream update never takes away, and a click
-// that opens something rings and says "Opening …" until the host has acted.
+// that opens something rings and stays busy until the host has acted, with no toast.
 import { afterAll, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { vscodeDouble } from '../testing/vscodeDouble';
@@ -48,11 +48,11 @@ const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 deliver({ type: 'tab', tab: 'sessions' });
 deliver({ type: 'html', tab: 'sessions', html: draw() });
 
-test('Add to Favorites in ⋯ posts one favorite and turns every copy of that card at once, without selecting it', () => {
+test('☆ posts one favorite and turns every copy of that card at once, without selecting it', () => {
   sent.length = 0;
   ($$('[data-fav="b"]')[0]).click();
   expect(sent).toEqual([{ type: 'favorite', sessionId: 'b', value: true }]);
-  expect($$('[data-fav="b"]').every((b) => b.textContent === 'Remove from Favorites' && b.getAttribute('aria-pressed') === 'true')).toBe(true);
+  expect($$('[data-fav="b"]').every((b) => b.textContent === '★' && b.getAttribute('aria-pressed') === 'true')).toBe(true);
   // The host redraws with the Favorites group; b now shows twice, both starred.
   deliver({ type: 'html', tab: 'sessions', html: draw(['b']) });
   expect($$('[data-group="favorites"] .card').map((c) => c.dataset.session)).toEqual(['b']);
@@ -101,36 +101,35 @@ test('Esc or leaving the box cancels; a harness without /rename never opens one'
   expect($('.front-pin .ttl input')).toBeNull();
 });
 
-test('a PR chip or a card rings and says "Opening …" at once; the host\'s answer ends it', async () => {
+test('a PR chip or a card rings and stays busy until the host\'s answer, with no toast (owner, 2026-11-04 9:42 PM)', async () => {
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   sent.length = 0;
-  const toast = () => $('.toast');
   const card = $$('[data-group="here"] .card[data-session="c"]')[0];
   card.click();
   expect(sent.at(-1)).toMatchObject({ type: 'select', sessionId: 'c' });
   expect(rang.at(-1)).toBe(card);
-  expect(toast().hidden).toBe(false);
-  expect(toast().textContent).toBe('Opening Task c…');
-  // A redraw while it waits keeps the status.
-  deliver({ type: 'html', tab: 'sessions', html: draw() });
-  expect(toast().hidden).toBe(false);
+  expect(card.getAttribute('aria-busy')).toBe('true');
+  expect($('.toast')).toBeNull();
+  expect((document.querySelector('.hnote') as unknown as HTMLElement).hidden).toBe(true);
   deliver({ type: 'opened' });
-  await settle(750);
-  expect(toast().hidden).toBe(true);
+  expect(card.getAttribute('aria-busy')).toBeNull();
   const pr = $$('[data-group="here"] .card[data-session="b"] [data-url]')[0];
   sent.length = 0;
   pr.click();
   expect(sent).toEqual([{ type: 'open', url: 'https://github.com/me/x/pull/12', external: false }]);
   expect(rang.at(-1)).toBe(pr);
-  expect(toast().textContent).toBe('Opening #12…');
   const page = $$('[data-group="here"] .card[data-session="b"] [data-artifact]')[0];
   page.click();
   expect(sent.at(-1)).toMatchObject({ type: 'artifact', sessionId: 'b', path: '/home/me/.agents/artifacts/plan/plan.html' });
   expect(rang.at(-1)).toBe(page);
-  expect(toast().textContent).toBe('Opening plan.html…');
-  // With no answer from the host the status stays: nothing silently waits.
+  // With no answer from the host it stays busy: nothing silently waits.
   await settle(750);
-  expect(toast().hidden).toBe(false);
+  expect(page.getAttribute('aria-busy')).toBe('true');
+  // Copy answers on its own icon.
+  const copy = $$('[data-group="here"] .card[data-session="b"] .acts [data-copy]')[0];
+  copy.click();
+  expect(copy.classList.contains('copied')).toBe(true);
+  expect((document.querySelector('.hnote') as unknown as HTMLElement).hidden).toBe(true);
 });
 
 test('a card click moves the selected rail at once; the host\'s redraw of the same selection keeps it', () => {

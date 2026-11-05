@@ -43,6 +43,9 @@ const namespaceSurface = {
   window: {},
   workspace: {},
   TabInputTerminal: class {},
+  // The Project panel names this editor (`here`) when it draws Sessions or ⌘K, so the export
+  // must exist in whichever double a suite run imports first, as with Uri below.
+  env: { appName: 'VSCodium' },
   // A webview provider builds localResourceRoots from Uri at resolve time, so
   // the export must exist in whichever double a suite run imports first.
   Uri: {

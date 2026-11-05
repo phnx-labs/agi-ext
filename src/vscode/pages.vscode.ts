@@ -223,7 +223,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--r-glass); }
   .search:focus-within { border-color: var(--r-gold-line); }
   .search input { flex: 1; border: 0; outline: 0; background: transparent; color: var(--r-text); font: inherit; font-size: 13.5px; }
-  .hint { color: var(--r-faint); font-size: 11.5px; white-space: nowrap; }
+  .hint { color: var(--r-faint); font-size: 11.5px; white-space: nowrap; } .hint.fail { color: var(--r-text-2); }
   h2 { margin: 22px 0 12px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--r-caption); }
   h2 .n { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); margin-left: 6px; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, 104px); gap: 18px 14px; }
@@ -254,8 +254,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .tiles .empty { grid-column: 1 / -1; }
   .ring { animation: ring .9s ease; }
   @keyframes ring { from { box-shadow: 0 0 0 0 rgba(168,136,74,.55); } to { box-shadow: 0 0 0 10px rgba(168,136,74,0); } }
-  .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--r-glass-strong); color: var(--r-text); border: 1px solid var(--r-edge); box-shadow: var(--r-float); padding: 7px 14px; border-radius: 9px; font-size: 12.5px; }
-  .toast[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .ring { animation: none; } }
 </style>
 </head>
@@ -267,7 +265,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   <h2 id="recentH">Recent<span class="n">from the built-in browser's history</span></h2>
   <div id="recent"></div>
 </main>
-<div class="toast" id="toast" role="status" hidden></div>
 <script nonce="${n}">${PAGES_SCRIPT}</script>
 </body>
 </html>`;
@@ -300,11 +297,13 @@ const PAGES_SCRIPT = `(() => {
     } catch { /* an image the canvas cannot read keeps its own background */ }
   };
   const match = (q, ...xs) => !q || xs.join(' ').toLowerCase().includes(q);
-  function toast(text) { const t = $('toast'); t.textContent = text; t.hidden = !text; }
+  // No toast (owner, 2026-11-04 9:42 PM): a refusal takes the hint's place for 4 s.
+  let failUntil = 0;
+  function fail(text) { failUntil = Date.now() + 4000; $('hint').textContent = text; $('hint').classList.add('fail'); setTimeout(() => { if (Date.now() >= failUntil) { $('hint').classList.remove('fail'); draw(); } }, 4000); }
   function draw() {
     const q = $('q').value.trim().toLowerCase();
     const mod = state.shortcut.startsWith('Ctrl') ? 'Ctrl+' : '⌘';
-    $('hint').textContent = state.click === 'same' ? 'Enter opens here · ' + mod + 'Enter in a new tab' : 'Enter opens a new tab · ' + mod + 'Enter here';
+    if (Date.now() >= failUntil) $('hint').textContent = state.click === 'same' ? 'Enter opens here · ' + mod + 'Enter in a new tab' : 'Enter opens a new tab · ' + mod + 'Enter here';
     $('npin').textContent = state.pins.length ? String(state.pins.length) : '';
     const pins = state.pins.filter((p) => match(q, p.name, p.title, p.url));
     $('tiles').innerHTML = pins.map((p) => '<div class="tile">'
@@ -326,7 +325,6 @@ const PAGES_SCRIPT = `(() => {
   }
   function open(url, flip, el) {
     if (el && el.animate) { el.classList.remove('ring'); void el.offsetWidth; el.classList.add('ring'); }
-    toast('Opening …');
     vscode.postMessage({ type: 'open', url, newTab: (state.click === 'new') !== !!flip });
   }
   function commit(input) {
@@ -363,7 +361,7 @@ const PAGES_SCRIPT = `(() => {
   window.addEventListener('message', (e) => {
     const m = e.data;
     if (m.type === 'state') { state = m; draw(); }
-    if (m.type === 'opened') { toast(m.error || ''); if (m.error) setTimeout(() => toast(''), 4000); }
+    if (m.type === 'opened' && m.error) fail(m.error);
   });
   vscode.postMessage({ type: 'ready' });
 })();`;

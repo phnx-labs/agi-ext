@@ -85,7 +85,7 @@ test('an answer whose card leaves the list before its 5 s is not sent', async ()
   deliver({ type: 'html', tab: 'sessions', html: without });
   await sleep(5300);
   expect(sent.filter((m) => m.type === 'answer').length).toBe(before);
-  expect(document.querySelector('.toast')!.textContent).toContain('Answer not sent: its card left the list before it went.');
+  expect(document.querySelector('.hnote')!.textContent).toContain('Answer not sent: its card left the list before it went.');
 }, 15_000);
 
 test('by default an answer goes at once, and its agent comes to the front through the card\'s own select', () => {
