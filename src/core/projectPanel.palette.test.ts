@@ -45,7 +45,7 @@ test('a row: logo and title, then state, age in one unit and ☆ on the right; w
   expect(html).toContain('<span class="kt">Body alignment</span>')
   expect(html).toContain('<span class="kmeta"><span class="pill st-idle"><i></i>Idle</span><span class="kw">1m</span><button class="kstar" data-fav="abcdef12-3456" aria-pressed="true"')
   expect(html).not.toContain('tab 3')
-  expect(html).not.toContain('class="kwhere')
+  expect(html).not.toContain('class="kapp')
   expect(html).toContain('data-url="https://github.com/o/r/pull/4325"')
   expect(html).toContain('data-artifact="/h/plan/plan.html"')
   expect(html).toContain('<a class="kth" href="#" data-ql="vscode-resource:/h/.agents/.history/attachments/a.png" data-name="a.png"')
@@ -126,8 +126,20 @@ test('a machine never carries a dot, alive or ended', () => {
   ], NOW, new Set(), HERE)
   const rowOf = (id: string) => html.split('<div class="krow').find((r) => r.includes(`data-session="${id}"`)) ?? ''
   expect(rowOf('live-ask')).toContain('<span class="kw">1m</span>')
-  // It runs where nothing here shows it: the row names the app, and Enter opens it in place, naming the machine.
-  expect(rowOf('live-ask')).toContain('<span class="kwhere far">Terminal</span>')
+  // It runs where nothing here shows it: the app is an icon under the logo, named only on hover
+  // (owner, 2026-11-05 3:24 AM), and Enter opens it in place, naming the machine.
+  expect(rowOf('live-ask')).toContain('<span class="kapp far" title="Terminal" role="img" aria-label="Terminal">')
+  expect(rowOf('live-ask')).not.toContain('>Terminal<')
   expect(rowOf('live-ask')).toContain('Running in a terminal on s0 with no tab here')
   expect(html).not.toContain('class="run"')
+})
+
+// Owner, 2026-11-05 3:24 AM: "show it directly under the agent's icon … do not show the name".
+test('the app a session runs in is its own icon under the agent logo, named only on hover', () => {
+  const here = { ...HERE, icons: { ghostty: 'vscode-resource:/ext/assets/apps/ghostty.png', vscodium: 'vscode-resource:/ext/assets/apps/vscodium.png' } }
+  const html = renderPalette([entry({ sessionId: 'gh', title: 'In Ghostty', host: 'this-mac', pidAlive: true, terminalApp: 'Ghostty' })], NOW, new Set(), here)
+  expect(html).toContain('<span class="kapp far" title="Ghostty" role="img" aria-label="Ghostty"><img class="appic" src="vscode-resource:/ext/assets/apps/ghostty.png" alt="Ghostty"></span>')
+  expect(html).not.toContain('>Ghostty<')
+  // Typing the app's name still finds the row.
+  expect(html).toMatch(/data-text="[^"]*Ghostty/)
 })

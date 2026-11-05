@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.439] - 2026-11-05
+
+From the owner's 3:24 AM notes on ⌘K:
+
+- A row no longer writes the app it runs in ("Ghostty", a window's name, "Terminal"). The app's
+  icon sits under the agent's logo instead, named on hover, so what the session made starts the
+  second line. Typing the app's name still finds the row.
+
 ## [0.9.438] - 2026-11-05
 
 From the owner's 12:23 AM video and 2:21 AM note on the Project panel's header:
