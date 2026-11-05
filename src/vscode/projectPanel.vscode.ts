@@ -1708,8 +1708,8 @@ ${MADE_CSS}
   .kstar { flex: none; width: 20px; height: 20px; margin-right: -4px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--r-faint); font-size: 13px; line-height: 20px; cursor: pointer; opacity: 0; }
   .krow:hover .kstar, .krow[aria-selected="true"] .kstar, .kstar:focus-visible, .kstar[aria-pressed="true"] { opacity: 1; }
   .kstar[aria-pressed="true"] { color: var(--r-text-2); } .kstar:hover { background: var(--r-glass-hover); color: var(--r-text); }
-  .krow .kwhere { color: var(--r-text-2); }
-  .krow .ksub > .kwhere + * { margin-left: 4px; }
+  .krow .kapp { grid-column: 1; grid-row: 2; display: grid; place-items: center; width: 16px; height: 16px; }
+  .krow .kapp .appic, .krow .kapp .gi { width: 14px; height: 14px; } .krow .kapp.far { opacity: .55; }
   .krow.open { background: var(--r-selected, var(--r-glass-hover)); }
   .krow .kopen { grid-column: 1 / -1; cursor: default; padding: 4px 0 2px 24px; }
   .krow .kopen p { margin: 0 0 6px; font-size: 11.5px; line-height: 1.45; color: var(--r-caption); white-space: normal; }

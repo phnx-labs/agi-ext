@@ -1573,7 +1573,7 @@ function paletteAsk(s: SessionLike): string {
 }
 
 /** ⌘K's rows, in `paletteOrder`: the harness logo and title, right-aligned the state and
- *  age, then ☆ (★ on a favorite) as one click; under it where it runs, the PRs and pages
+ *  age, then ☆ (★ on a favorite) as one click; under the logo the icon of the app it runs in, beside it the PRs and pages
  *  it made, the images you attached (a click opens a quick look) and its recap's first
  *  sentence. No tab number (owner video, 2026-11-04 5:57 PM). The page filters them as you
  *  type (`paletteMatch`), so each row carries its words. */
@@ -1592,7 +1592,10 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
     const note = firstSentence(s);
     const ids = [s.sessionId.replace(/^session_/, ''), s.sessionId.replace(/^session_/, '').slice(0, 8)].join(' ');
-    const words = [shortDevice(place.device), place.device, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
+    const words = [shortDevice(place.device), place.device, where, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
+    // The app it runs in is its icon under the agent's logo, its name only on hover (owner,
+    // 2026-11-05 3:24 AM: "show it directly under the agent's icon … do not show the name").
+    const app = where ? `<span class="kapp${reach === 'none' ? ' far' : ''}" title="${escapeHtml(place.kind === 'window' ? `${where} window` : where)}" role="img" aria-label="${escapeHtml(where)}">${placeIcon(place, here)}</span>` : '';
     const star = `<button class="kstar" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${fav}" title="${fav ? 'Remove from Favorites' : 'Add to Favorites'}" aria-label="${fav ? 'Remove from Favorites' : 'Add to Favorites'}">${fav ? '★' : '☆'}</button>`;
     // Opened in place by Enter when its agent runs where nothing here can bring it forward.
     const inPlace = reach === 'none' && far && state !== 'ended'
@@ -1600,7 +1603,7 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-reach="${reach}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}" data-said="${escapeHtml(paletteSaid(s))}">`
       + `${harnessLogo(s.agentType)}<span class="kt">${escapeHtml(title)}</span>`
       + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span><span class="kw">${escapeHtml(age)}</span>${star}</span>`
-      + `<span class="ksub">${where ? `<span class="kwhere${reach === 'none' ? ' far' : ''}">${escapeHtml(where)}</span>` : ''}${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span>${inPlace}</div>`;
+      + `${app}<span class="ksub">${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span>${inPlace}</div>`;
   }).join('');
 }
 
