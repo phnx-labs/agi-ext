@@ -128,9 +128,9 @@ test('a machine never carries a dot, alive or ended', () => {
   expect(rowOf('live-ask')).toContain('<span class="kw">1m</span>')
   // It runs where nothing here shows it: the app is an icon under the logo, named only on hover
   // (owner, 2026-11-05 3:24 AM), and Enter opens it in place, naming the machine.
-  expect(rowOf('live-ask')).toContain('<span class="kapp far" title="Terminal" role="img" aria-label="Terminal">')
-  expect(rowOf('live-ask')).not.toContain('>Terminal<')
-  expect(rowOf('live-ask')).toContain('Running in a terminal on s0 with no tab here')
+  expect(rowOf('live-ask')).toContain('<span class="kapp far" title="Background" role="img" aria-label="Background">')
+  expect(rowOf('live-ask')).not.toContain('>Background<')
+  expect(rowOf('live-ask')).toContain('Running in the background on s0 with no tab here')
   expect(html).not.toContain('class="run"')
 })
 
@@ -142,4 +142,7 @@ test('the app a session runs in is its own icon under the agent logo, named only
   expect(html).not.toContain('>Ghostty<')
   // Typing the app's name still finds the row.
   expect(html).toMatch(/data-text="[^"]*Ghostty/)
+  // Another window: this editor's icon, its workspace on hover.
+  const win = renderPalette([entry({ sessionId: 'w', title: 'Elsewhere', host: 'this-mac', pidAlive: true, observers: [{ device: 'zion', viewingIn: 'VSCodium tab 4', workspaceDir: '/Users/me/src/agents-cli' }] } as Partial<SessionLike>)], NOW, new Set(), here)
+  expect(win).toContain('<span class="kapp" title="agents-cli window" role="img" aria-label="agents-cli"><img class="appic" src="vscode-resource:/ext/assets/apps/vscodium.png" alt="VSCodium"></span>')
 })
