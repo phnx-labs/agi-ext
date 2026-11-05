@@ -146,3 +146,22 @@ test('a word only said in the session finds it and shows where; clearing gives t
   expect($('.krow[data-title="Old ended"] mark')).toBeNull();
   key('Escape');
 });
+
+test('an ask nothing here can bring forward opens in place on Enter, and a stream update keeps what you typed in its answer box', () => {
+  const asks = renderPalette([{ row: row('dddddddd-4', {
+    title: 'Sync latest changes', host: 'yosemite-s0', pidAlive: true, phase: 'waiting', liveStatus: 'waiting',
+    attention: { key: 'k-sync', kind: 'question', state: 'open', openedAt: new Date(NOW - 60_000).toISOString(), question: { text: 'Merge it?' }, choices: [{ id: 'y', label: 'Yes' }] },
+  }), made: null, images: [] }], NOW, new Set(), { device: 'zion', localHost: 'this-mac', workspace: 'agi-ext', editor: 'vscodium', editorName: 'VSCodium', icons: {} });
+  deliver({ type: 'palette', html: asks, waiting: false });
+  type('sync');
+  sent.length = 0;
+  key('Enter');
+  expect(sent.filter((m) => m.type === 'paletteGo')).toEqual([]);
+  expect($('.krow.open .kask')).not.toBeNull();
+  const box = $('.krow.open [data-ask-input]') as HTMLInputElement;
+  box.value = 'Yes, after the tests';
+  box.focus();
+  deliver({ type: 'palette', html: asks, waiting: false });
+  expect(($('.krow.open [data-ask-input]') as HTMLInputElement).value).toBe('Yes, after the tests');
+  expect(document.activeElement).toBe($('.krow.open [data-ask-input]'));
+});
