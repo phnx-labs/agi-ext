@@ -13,7 +13,9 @@ From the owner's 12:23 AM video and 2:21 AM note on the Project panel's header:
 - The title is the project's name only, "AGI: RUSH": no milestone, and no "PROJECT:" prefix
   after you move the view into another sidebar.
 - Settings > In the header turns Lead, Review, Issues, 🔍, ⇅ and ⇄ on or off, like the macOS
-  menu bar. Lead and Issues start off. Settings > Session list holds View and Sort.
+  menu bar. Lead and Issues start off; ⌃1–⌃4, a ticket tile and a Lead ask still open their
+  tab. Settings > Session list holds View and Sort. The old Settings > Tabs choices are not
+  carried over.
 - ⋯ holds View, Filter and Sort…, Switch Project…, Move into New Window and Refresh.
 - ⌘K is the one search: the session palette on Sessions, and the list's filter on Review and
   Issues, shown only while you filter.

@@ -256,12 +256,10 @@ class ProjectView implements vscode.WebviewViewProvider {
     this.postPalette();
   }
 
-  /** Settings > In the header: which icons VS Code's row shows (its menus read these keys),
-   *  and which tabs the page may switch to. */
+  /** Settings > In the header: which icons VS Code's row shows (its menus read these keys). */
   private postTabs(): void {
     const header = panelHeader(getSettings(this.context).header);
     for (const k of PANEL_HEADER) void vscode.commands.executeCommand('setContext', `agents.project.show.${k}`, header[k]);
-    void this.view?.webview.postMessage({ type: 'tabs', lead: header.lead, prs: header.prs, tickets: header.tickets });
   }
 
   /** The tab buttons in VS Code's row: the one shown is drawn pressed. */
@@ -2011,11 +2009,9 @@ ${MADE_SCRIPT}
     const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
     return n;
   }
-  // Settings > In the header: Lead, Review and Issues can go. Sessions and Settings always stay.
-  let tabsShown = { prs: true, tickets: false, lead: false };
+  // Settings > In the header hides a tab's button, never the tab: ⌃1–⌃4, a ticket tile and a
+  // Lead ask still open it.
   function choose(tab) {
-    // ⌃1–⌃4 to a tab Settings turned off land on Sessions.
-    if ((tab === 'prs' || tab === 'tickets' || tab === 'lead') && !tabsShown[tab]) tab = 'sessions';
     if (tab === current) return;
     if (current === 'prs' && cancelMerges()) note('Merge cancelled: you left Review before it started.');
     if (current === 'sessions' && cancelAnswers()) note('Answer not sent: you left Sessions before it went.');
@@ -2079,10 +2075,6 @@ ${MADE_SCRIPT}
       if (shownProject !== undefined && m.name !== shownProject && cancelMerges()) note('Merge cancelled: the project changed before it started.');
       if (shownProject !== undefined && m.name !== shownProject) peeked = null;
       shownProject = m.name;
-    }
-    else if (m.type === 'tabs') {
-      tabsShown = { prs: m.prs, tickets: m.tickets, lead: m.lead };
-      if (!tabsShown[current] && current !== 'sessions' && current !== 'settings') choose('sessions');
     }
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') document.body.classList.remove('loading');
