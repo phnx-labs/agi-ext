@@ -298,8 +298,12 @@ const PAGES_SCRIPT = `(() => {
   };
   const match = (q, ...xs) => !q || xs.join(' ').toLowerCase().includes(q);
   // No toast (owner, 2026-11-04 9:42 PM): a refusal takes the hint's place for 4 s.
-  let failUntil = 0;
-  function fail(text) { failUntil = Date.now() + 4000; $('hint').textContent = text; $('hint').classList.add('fail'); setTimeout(() => { if (Date.now() >= failUntil) { $('hint').classList.remove('fail'); draw(); } }, 4000); }
+  let failUntil = 0, failTimer = 0;
+  function fail(text) {
+    const hint = $('hint'); clearTimeout(failTimer);
+    failUntil = Date.now() + 4000; hint.textContent = text; hint.classList.add('fail');
+    failTimer = setTimeout(() => { failUntil = 0; hint.classList.remove('fail'); draw(); }, 4000);
+  }
   function draw() {
     const q = $('q').value.trim().toLowerCase();
     const mod = state.shortcut.startsWith('Ctrl') ? 'Ctrl+' : '⌘';

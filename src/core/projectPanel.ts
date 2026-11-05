@@ -1140,7 +1140,7 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
 export function renderCardPreview(rows: SessionLike[], now: number, opts: SessionListOptions): string {
   const { all, front, card } = cardDrawer(rows, now, opts);
   const live = all.filter((x) => sessionStateOf(x.row) !== 'ended');
-  if (!live.length && !front) return '<div class="cpv"><div class="cpv-head"><b>Preview</b></div><p class="cpv-none">A preview shows once the session stream has a session on this project.</p></div>';
+  if (!live.length && !front) return '<div class="cardpv"><div class="cpv-head"><b>Preview</b></div><p class="cpv-none">A preview shows once the session stream has a session on this project.</p></div>';
   const parts = (r: SessionLike) => {
     const made = opts.madeFor?.(r);
     return [agentLine(r), made?.prs.length || made?.folders.length || r.ticket, (opts.thumbsFor?.(r) ?? []).length, r.doneVerdict, r.startedAs && cleanTitle(r.startedAs) !== cardTitle(r), r.activity].filter(Boolean).length;
@@ -1156,7 +1156,7 @@ export function renderCardPreview(rows: SessionLike[], now: number, opts: Sessio
   const samples = shapes.filter(([, x]) => x && !seen.has(x.row.sessionId) && seen.add(x.row.sessionId)) as [string, NonNullable<ReturnType<typeof pick>>][];
   const list = samples.map(([what, x], i) => `<div class="cpv-s" data-i="${i}" data-what="${escapeHtml(what)}"${i ? ' hidden' : ''}>${card(x)}</div>`).join('');
   const pin = front ? card(front, true) : '<p class="cpv-none">No agent tab is in front, so there is no pinned card to show.</p>';
-  return `<div class="cpv" data-n="${samples.length}">
+  return `<div class="cardpv" data-n="${samples.length}">
     <div class="cpv-head"><b>Preview</b>
       <span class="cpv-seg" role="tablist" aria-label="Which card"><button role="tab" data-cpv-mode="list" aria-selected="true" title="A card in the list">Listed</button><button role="tab" data-cpv-mode="pin" aria-selected="false" title="The front tab's card, pinned on top">Pinned</button></span>
       <span class="cpv-nav"${samples.length > 1 ? '' : ' hidden'}><button data-cpv-step="-1" aria-label="Previous session">‹</button><span class="cpv-n"></span><button data-cpv-step="1" aria-label="Next session">›</button></span>

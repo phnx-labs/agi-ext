@@ -1654,7 +1654,7 @@ ${MADE_CSS}
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
   .settings .shsub { text-transform: none; letter-spacing: 0; margin-left: 4px; }
-  .cpv { position: sticky; bottom: 0; z-index: 2; margin: 14px -2px 0; padding: 8px 8px 7px; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-sideBar-background); box-shadow: 0 -12px 24px -16px rgba(0,0,0,.35); }
+  .cardpv { position: sticky; bottom: 0; z-index: 2; margin: 14px -2px 0; padding: 8px 8px 7px; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-sideBar-background); box-shadow: 0 -12px 24px -16px rgba(0,0,0,.35); }
   .cpv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
   .cpv-head b { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-caption); font-weight: 500; }
   .cpv-seg { display: inline-flex; border: 1px solid var(--r-edge); border-radius: 6px; overflow: hidden; }
@@ -1667,10 +1667,10 @@ ${MADE_CSS}
   .cpv-pane .card { margin: 0; }
   .cpv-cap { min-height: 15px; margin-top: 6px; font-size: 11px; color: var(--r-caption); }
   .cpv-none { margin: 4px 2px; color: var(--r-caption); font-size: 11.5px; }
-  .cpv .cpv-hl, .cpv .cpv-ring { outline: 1.5px solid var(--r-gold-line); outline-offset: 2px; border-radius: 4px; }
+  .cardpv .cpv-hl, .cardpv .cpv-ring { outline: 1.5px solid var(--r-gold-line); outline-offset: 2px; border-radius: 4px; }
   @keyframes cpvRing { from { box-shadow: 0 0 0 0 var(--r-gold-line); } to { box-shadow: 0 0 0 7px transparent; } }
-  .cpv .cpv-ring { animation: cpvRing .9s ease-out 1; }
-  @media (prefers-reduced-motion: reduce) { .cpv .cpv-ring { animation: none; } }
+  .cardpv .cpv-ring { animation: cpvRing .9s ease-out 1; }
+  @media (prefers-reduced-motion: reduce) { .cardpv .cpv-ring { animation: none; } }
   .settings .drow { display: grid; grid-template-columns: 16px minmax(0, 1fr) 22px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .drow input { margin: 0; }
   .settings .dname { min-width: 0; } .settings .dname b { font-weight: 500; margin-right: 6px; }
@@ -2409,7 +2409,7 @@ ${MADE_SCRIPT}
     if (cpv.hl) for (const el of cpvShown(box, cpv.hl)) el.classList.add('cpv-hl');
   }
   function syncPreview() {
-    const box = main.querySelector('.cpv'); if (!box) return;
+    const box = main.querySelector('.cardpv'); if (!box) return;
     const n = Number(box.dataset.n) || 0;
     if (cpv.i >= n) cpv.i = 0;
     for (const b of box.querySelectorAll('[data-cpv-mode]')) b.setAttribute('aria-selected', String(b.dataset.cpvMode === cpv.mode));
@@ -2434,17 +2434,17 @@ ${MADE_SCRIPT}
     const mode = e.target.closest && e.target.closest('[data-cpv-mode]');
     if (mode) { cpv.mode = mode.dataset.cpvMode; syncPreview(); return; }
     const step = e.target.closest && e.target.closest('[data-cpv-step]');
-    if (step) { const n = Number(main.querySelector('.cpv')?.dataset.n) || 1; cpv.i = (cpv.i + Number(step.dataset.cpvStep) + n) % n; syncPreview(); }
+    if (step) { const n = Number(main.querySelector('.cardpv')?.dataset.n) || 1; cpv.i = (cpv.i + Number(step.dataset.cpvStep) + n) % n; syncPreview(); }
   });
   // Pointing at a part's row outlines that part in the preview.
   const pointAt = (e) => {
     const row = e.target.closest && e.target.closest('.settings .srow');
     const part = row ? partOf(row.querySelector('[data-setting]')) : null;
     if (part === cpv.hl) return;
-    cpv.hl = part; const box = main.querySelector('.cpv'); if (box) markPart(box);
+    cpv.hl = part; const box = main.querySelector('.cardpv'); if (box) markPart(box);
   };
   main.addEventListener('mouseover', pointAt); main.addEventListener('focusin', pointAt);
-  main.addEventListener('mouseleave', () => { cpv.hl = null; const box = main.querySelector('.cpv'); if (box) markPart(box); });
+  main.addEventListener('mouseleave', () => { cpv.hl = null; const box = main.querySelector('.cardpv'); if (box) markPart(box); });
   // Settings: each control writes its one key as it changes.
   document.addEventListener('change', (e) => {
     const el = e.target.closest && e.target.closest('[data-setting]');
@@ -2603,7 +2603,12 @@ ${MADE_SCRIPT}
   function kshow(html, waiting) {
     const was = kscrim.hidden;
     klist.dataset.waiting = waiting ? '1' : '';
+    // A row opened in place keeps its node across a stream tick: what you type into its
+    // answer box, and its Sending… or Sent, are never erased by a redraw.
+    const open = was ? null : klist.querySelector('.krow.open');
+    const typing = open && open.contains(document.activeElement) ? document.activeElement : null;
     klist.innerHTML = waiting ? '<div class="kempty kwait">Waiting for the session stream\u2026</div>' : html;
+    if (open) { const fresh = klist.querySelector('.krow[data-session="' + CSS.escape(open.dataset.session) + '"]'); if (fresh) { fresh.replaceWith(open); if (typing) typing.focus(); } }
     observeThumbs(klist);
     // Reopened, ⌘K keeps what you last typed, selected, so it never vanishes and typing replaces it.
     if (was) { kscrim.hidden = false; kpicked = null; }

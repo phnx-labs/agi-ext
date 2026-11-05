@@ -97,7 +97,10 @@ describe('the Pages webview', () => {
   document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<script'));
   const sent: Record<string, unknown>[] = [];
   const script = page.match(/<script[^>]*>([\s\S]*?)<\/script[^>]*>/i)![1];
-  new Function('window', 'document', 'acquireVsCodeApi', script)(window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }));
+  // The page's timers are its window's, so closing the window ends them (a refusal's 4 s
+  // timer otherwise fires into whichever test runs next).
+  new Function('window', 'document', 'acquireVsCodeApi', 'setTimeout', 'clearTimeout', script)(
+    window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }), window.setTimeout.bind(window), window.clearTimeout.bind(window));
   const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));
   const $ = (sel: string) => document.querySelector(sel) as unknown as HTMLElement;
   const click = (el: HTMLElement, meta = false) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, metaKey: meta }) as unknown as Event);
