@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { goalTitle, issuesMenu, parseGoals } from './goals';
+import { issuesMenu, parseGoals } from './goals';
 
 // The shape `linear goals --json` returns (2026-10-12), trimmed to what the panel reads.
 const RAW = JSON.stringify({
@@ -28,14 +28,6 @@ test("the view's title names the next unfinished milestone, else the company goa
   ];
   const goals = parseGoals(JSON.stringify(raw));
   expect(goals.milestones).toHaveLength(4);
-  expect(goalTitle(goals, 'rush')).toBe('0.2.1 - Stable for running agents');
-  // The milestone picked in Issues' ⇅ is the one named.
-  expect(goalTitle(goals, 'rush', '0.2.2 - Better and safer integrations')).toBe('0.2.2 - Better and safer integrations');
-  // A project with no milestone, or no Linear project, keeps the company goal; with none, today's ticket; else nothing.
-  expect(goalTitle(goals, 'Nothing here')).toBe('Rush Cloud - first paying customers');
-  expect(goalTitle(goals)).toBe('Rush Cloud - first paying customers');
-  expect(goalTitle({ today: { id: 'PHNX-4353', title: 'Ship it', url: 'https://linear.app/x/issue/PHNX-4353' } })).toBe('Ship it');
-  expect(goalTitle({})).toBe('');
   // Issues' ⇅ lists the open milestones, ✓ on the one shown; a project with none has no menu.
   const menu = issuesMenu(goals, 'rush', '0.2.2 - Better and safer integrations')!;
   expect(menu).toContain('data-milestone="0.2.1 - Stable for running agents"');

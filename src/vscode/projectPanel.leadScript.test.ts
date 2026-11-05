@@ -40,12 +40,10 @@ const model = (over: Partial<LeadTabModel> = {}): LeadTabModel => ({ project: 'a
 deliver({ type: 'tab', tab: 'lead' });
 deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model()) });
 
-test('the Lead tab comes first and is always shown (owner video, 2026-10-22 6:42 AM)', () => {
-  const tabs = [...document.querySelectorAll('.tabs .tab')].map((t) => (t as unknown as HTMLElement).dataset.tab);
-  expect(tabs).toEqual(['lead', 'sessions', 'prs', 'tickets']);
-  deliver({ type: 'tabs', prs: false, tickets: false });
-  expect(el('.tab[data-tab="lead"]').hidden).toBe(false);
-  expect(el('.tab[data-tab="lead"]').getAttribute('aria-selected')).toBe('true');
+test('the page draws no tab row: the tabs are buttons in VS Code\'s row (owner, 2026-11-05 2:21 AM), so the Lead starts at the top', () => {
+  expect(document.querySelector('.tab, .tabs, [role="tablist"]')).toBeNull();
+  expect(el('.frow').hidden).toBe(true);
+  expect(el('main').getAttribute('aria-label')).toBe('Lead');
 });
 
 test('Enter in the Lead box asks once with the trimmed words; Shift+Enter does not', () => {
@@ -86,10 +84,10 @@ test('a session the Lead named opens through the host', () => {
   expect(sent.filter((m) => m.type === 'leadRef')).toEqual([{ type: 'leadRef', ref: { kind: 'session', id: 'c106a56b-2ccb', title: 'Rush account creation' }, external: false }]);
 });
 
-test('the Lead adds nothing to the tab row: no speaker, no ⟳, only the dimmed ⇅ every tab keeps in place', () => {
+test('the Lead adds no header: no speaker, no ⟳, and ⇅ has nothing to open', () => {
   deliver({ type: 'html', tab: 'lead', html: renderLeadTab(model()) });
-  expect(el('.tabs .sctl').querySelectorAll('button').length).toBe(1);
-  expect(el('.tabs .sctl button').hasAttribute('disabled')).toBe(true);
+  expect(el('.sctl').querySelectorAll('button').length).toBe(1);
+  expect(el('.sctl button').hasAttribute('disabled')).toBe(true);
   expect(document.querySelector('[data-lead-speak], [data-lead-refresh]')).toBeNull();
 });
 

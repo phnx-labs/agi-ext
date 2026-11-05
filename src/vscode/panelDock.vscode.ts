@@ -14,9 +14,11 @@ import * as vscode from 'vscode';
 export interface PanelHost {
   readonly webview: vscode.Webview;
   readonly visible: boolean;
-  /** The view's title (VS Code draws "PROJECT: RUSH"); in a tab, after the tab's name.
+  /** The view's title (VS Code draws "AGI: RUSH"); in a tab, after the tab's name.
    *  A view's description is never drawn while it is its bar's only view. */
   title?: string;
+  /** The number on the bar's icon; a tab has none, so setting it there draws nothing. */
+  badge?: vscode.ViewBadge;
   show(preserveFocus?: boolean): void;
   readonly onDidChangeVisibility: vscode.Event<void>;
 }

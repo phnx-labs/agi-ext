@@ -18,7 +18,8 @@ mock.module('vscode', () => vscodeDouble({
     tabGroups: { all: [], onDidChangeTabs: () => noop, onDidChangeTabGroups: () => noop },
   },
   workspace: { workspaceFolders: undefined, getConfiguration: () => ({ get: (k: string) => (k === 'launch.defaultTarget' ? defaultTarget : undefined) }) },
-  commands: { registerCommand: () => noop, executeCommand: (id: string, args: never) => { ran.push({ id, args }); return Promise.resolve(undefined); } },
+  // The context keys VS Code's row reads are set through executeCommand too; they are not a launch.
+  commands: { registerCommand: () => noop, executeCommand: (id: string, args: never) => { if (id !== 'setContext') ran.push({ id, args }); return Promise.resolve(undefined); } },
   env: { appName: 'VSCodium' },
   Uri: { joinPath: () => ({ toString: () => '' }), file: (p: string) => ({ fsPath: p, toString: () => p }) },
 }));
