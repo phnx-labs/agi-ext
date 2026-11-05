@@ -77,7 +77,7 @@ test('a value in ⋯ copies quietly: the host gets it, "copied" shows on it, and
   expect(sent).toEqual([{ type: 'copy', text: 'claude-opus-5-5' }]);
   expect(el('.card .cmore .cpv[data-copy="claude-opus-5-5"]').classList.contains('copied')).toBe(true);
   expect(more.open).toBe(true);
-  expect(el('.toast').hidden).toBe(true);
+  expect(el('.hnote').hidden).toBe(true);
 });
 
 test('the filter bar keeps only the listed cards that match every word typed, survives a redraw, and Esc clears it (owner video, 2026-10-22 8:50 AM)', () => {
@@ -93,14 +93,19 @@ test('the filter bar keeps only the listed cards that match every word typed, su
   expect(shown()).toEqual(['b']);
   box.value = 'nothing like this';
   box.dispatchEvent(new window.Event('input', { bubbles: true }) as unknown as Event);
-  expect(el('.nofind').hidden).toBe(false);
+  expect(shown()).toEqual([]);
   box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
   expect(box.value).toBe('');
   expect(shown()).toEqual(['a', 'b', 'c']);
 });
 
-test('the tab row is the same on every tab (owner video, 2026-10-27 1:19 PM): 🔍 opens the filter in the row, Esc gives the tabs back, and a tab with nothing to sort keeps a dimmed ⇅ in place', () => {
+test('the tab row is the same on every tab (owner video, 2026-10-27 1:19 PM): on Sessions 🔍 is ⌘K (owner video, 2026-11-04 5:57 PM); elsewhere it opens the filter in the row, Esc gives the tabs back, and a tab with nothing to sort keeps a dimmed ⇅ in place', () => {
   const box = el('.tabs .hfind [data-find]') as unknown as HTMLInputElement;
+  sent.length = 0;
+  box.focus();
+  expect(el('.tabs').classList.contains('finding')).toBe(false);
+  expect(sent).toContainEqual({ type: 'search' });
+  click('.tab[data-tab="prs"]');
   box.focus();
   expect(el('.tabs').classList.contains('finding')).toBe(true);
   box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
@@ -110,11 +115,9 @@ test('the tab row is the same on every tab (owner video, 2026-10-27 1:19 PM): �
   deliver({ type: 'html', tab: 'tickets', html: '<div class="empty">No open tickets in this project.</div>' });
   expect(el('.tabs .sctl [disabled]')).not.toBeNull();
   expect(el('.tabs .hfind [data-find]')).toBe(box as unknown as HTMLElement);
-  expect(box.placeholder).toBe('Filter');
   deliver({ type: 'tab', tab: 'sessions' });
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   expect(el('.tabs .sctl [data-menu]')).not.toBeNull();
-  expect(box.placeholder).toBe('Filter · ⌘K all');
 });
 
 test("filtering hides cards, never a matching card's ⋯; each tab's words come back with it and decide whether the row shows the field", () => {

@@ -422,8 +422,6 @@ test('show, hide and fold: leftover tabs and ended sessions follow Show, a hidde
   expect(folded).toContain('class="grp closed" data-group="here"')
   expect(folded).not.toContain('data-session="live"')
   expect(sessionCount([live, left, row({ phase: 'waiting' })], HERE, prefs())).toEqual({ shown: 2, asks: 1, tabs: 2 })
-  // Closing the last visible session still has somewhere to offer Undo.
-  expect(draw({ hidden: { live: 50 }, showLeftover: false })).toContain('<div class="toast" hidden></div>')
 })
 
 test('the ⇅ menu filters, then sorts; Tab order keeps the tab bar, any other sort puts what asks, then what finished, then what works (owner video, 2026-10-22 6:42 AM)', () => {

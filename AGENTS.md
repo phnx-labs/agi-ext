@@ -134,7 +134,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   project, live and ended; it reads nothing, and its thumbnails are the request's pasted
   images looked up as above. Its Enter is a card's gesture made explicit (`paletteGo`, the
   approved prototype's kpick): a tab here comes forward, a live session elsewhere comes
-  forward where it runs as its ↗ does, and only an ended one resumes, as its ▶ does. A session
+  forward where it runs as its ↗ does, and only an ended one resumes, as its ▶ does; one that
+  nothing here can bring forward (Ghostty or a terminal agents-cli sees no tab for) opens in
+  place with its question to answer (`paletteReach`). A row carries no tab number and no
+  device, only the app it runs in, and its age in one unit (owner, 2026-11-04 9:49 PM); a word
+  one edit away matches only after every direct match, under "Close matches" (`PALETTE_FUZZY`). A session
   whose agent the CLI sees running (`pidAlive`) with no tab on this machine is never resumed:
   `resumeSessionTab` says where it runs and starts nothing (`runningUnshown`), since `agents run
   --resume` would start a second agent on it (owner video, 2026-10-19). No per-selection fetch. A plain shell in
@@ -237,10 +241,12 @@ going on, where, and what came out of it" in one look; text explains only what a
   2026-10-22 8:50 AM; a question's wait ticks where the age sits), where it runs,
   the question or the agent's latest words in two lines, previews of images, and one row of
   chips with each service's own mark that scrolls sideways. Settings > A card shows turns each
-  part off, down to the logo and title on one line (owner video, 2026-10-17).
+  part off, down to the logo and title on one line (owner video, 2026-10-17), with a preview
+  of a real card under those sections that redraws on every check (`renderCardPreview`; owner,
+  2026-11-04 6:01 PM).
   Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
-  Copy is one of them; Add to Favorites is in ⋯ (owner video, 2026-10-27 9:24 AM) and ★ shows
-  after a favorite's title; Favorites (the viewer's own, `globalState` by session id) repeat under the pinned card above every group, each still
+  Copy and ☆ are two of them: ☆ turns ★ in one click, on a card and on ⌘K's selected row (owner
+  video, 2026-11-04 5:57 PM), and ★ shows after a favorite's title; Favorites (the viewer's own, `globalState` by session id) repeat under the pinned card above every group, each still
   in its own group (owner video, 2026-10-19 1:42 AM). A card whose agent has not spoken
   shows your prompt as "You: …", never as its words. Settings > Session list turns the
   Favorites group and the whole list off (only the pinned card; ⌘K finds the rest).
@@ -279,8 +285,10 @@ going on, where, and what came out of it" in one look; text explains only what a
 - **Motion only for liveness and arrival.** The Working dot breathes, a question's dot rings
   slowly, and a question that just arrived glows three times; everything stops under
   `prefers-reduced-motion`. Nothing flashes for as long as it waits. The one answer to a
-  click: what was clicked to open rings once and "Opening …" shows until the host's
-  `opened` (owner video, 2026-10-19 12:58 AM); nothing silently waits.
+  click: what was clicked to open rings once and is busy until the host's `opened` (owner
+  video, 2026-10-19 12:58 AM); nothing silently waits. No toast (owner, 2026-11-04 9:42 PM):
+  Copy turns its icon to ✓, and the only words, an Undo or a refusal, sit in the header
+  row's free space for 6 s (`note`), over nothing and moving nothing.
 - **View, filter, then sort, in one ⇅ menu** at the end of the tab row, with checkmarks,
   as in the AGI Menu (View: Default or Compact, where a listed card is its title row, the
   agent's latest line and what it made, owner, 2026-10-22 1:02 PM; Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
@@ -300,8 +308,9 @@ going on, where, and what came out of it" in one look; text explains only what a
   always writes the container's name first and drops a view's description in a one-view sidebar,
   and ⇄ beside it switches the project. The panel's own header is one row: the tabs as icons,
   ✳ Lead first, then 🔍 and ⇅ in the same place on every tab (owner video, 2026-10-27 1:19 PM:
-  "the view changes … the search is even gone … the placement of the icon also changes"). 🔍
-  turns the row into the filter field for that tab's list until Esc (each tab keeps its words);
+  "the view changes … the search is even gone … the placement of the icon also changes"). On
+  Sessions 🔍 is ⌘K, which reopens holding its last words (owner video, 2026-11-04 5:57 PM); on
+  Review and Issues it turns the row into the filter field for that list until Esc (each tab keeps its words);
   ⇅ is dimmed on a tab with nothing to sort and on Issues picks the milestone it lists (`tabHead`,
   `issuesMenu`). No goal line and no filter row: the list starts under the one row. Settings > Tabs turns Review and Issues off.
   Settings is the gear, last of the panel's title icons; Refresh lives in Settings, and ⌃1–⌃4

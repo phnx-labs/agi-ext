@@ -29,9 +29,11 @@ import {
   prFixPrompt,
   renderPrsProgress,
   paletteMatch,
+  PALETTE_FUZZY,
   saidSnippet,
   renderPalette,
   renderSessions,
+  renderCardPreview,
   nextThatNeedsYou,
   renderTickets, type TicketRowExtras,
   readSessionPrefs,
@@ -50,6 +52,7 @@ import {
   type SessionHere,
   type SessionLike,
   type SessionListPrefs,
+  type SessionListOptions,
   type Ticket,
   type TicketGroup,
   tabHead,
@@ -199,7 +202,7 @@ class ProjectView implements vscode.WebviewViewProvider {
         // Redraw either way, so a write that failed shows the stored value again.
         void this.controller.setSetting(msg.key, msg.value)
           .catch((e) => { void vscode.window.showErrorMessage(`Could not save the setting: ${errorText(e)}`); })
-          .finally(() => { this.post('settings', this.controller.settings(this.devices)); this.postTabs(); });
+          .finally(() => { this.post('settings', this.settingsHtml()); this.postTabs(); });
       }
       else if (msg.type === 'device' && typeof msg.name === 'string' && (msg.field === 'enabled' || msg.field === 'preferred') && typeof msg.value === 'boolean') {
         const name = msg.name;
@@ -269,7 +272,9 @@ class ProjectView implements vscode.WebviewViewProvider {
     const view = this.view;
     if (!view || !view.visible || tab !== this.active) return;
     if (tab === 'settings') {
-      this.post(tab, this.controller.settings(this.devices));
+      this.post(tab, this.settingsHtml());
+      // The card preview draws this project's sessions; it joins the page once the project is known.
+      void this.controller.project().then((p) => { this.settingsProject = p; if (this.active === 'settings') this.post('settings', this.settingsHtml()); }, () => undefined);
       void this.loadDevices(force);
       // The view's title names the project and its milestone on every tab, Settings included.
       this.setTitle();
@@ -496,7 +501,7 @@ class ProjectView implements vscode.WebviewViewProvider {
     }
     if (gen !== this.devicesGen) return;
     this.devices = next;
-    if (this.active === 'settings') this.post('settings', this.controller.settings(this.devices));
+    if (this.active === 'settings') this.post('settings', this.settingsHtml());
   }
 
   private async setDevice(name: string, field: 'enabled' | 'preferred', on: boolean): Promise<void> {
@@ -520,6 +525,11 @@ class ProjectView implements vscode.WebviewViewProvider {
       const html = p ? await this.controller.redrawn(tab, p).catch(() => undefined) : undefined;
       if (html !== undefined && this.active === tab) this.post(tab, html);
     }, 250);
+  }
+
+  private settingsProject: ProjectRef | null = null;
+  private settingsHtml(): string {
+    return this.controller.settings(this.devices, this.controller.cardPreview(this.settingsProject, this.view?.webview));
   }
 
   private post(tab: TabId, html: string): void {
@@ -905,8 +915,9 @@ class ProjectPanelController {
     }
   }
 
-  settings(devices: DevicesState): string {
+  settings(devices: DevicesState, preview?: string): string {
     return renderPanelSettings({
+      preview,
       settings: getSettings(this.context),
       devices,
       defaultAgentTitle: this.context.globalState.get<string>(DEFAULT_AGENT_KEY, PICKABLE_AGENTS[0].title),
@@ -1091,6 +1102,20 @@ class ProjectPanelController {
 
   sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
+    const { rows, opts } = this.listOptions(p, webview);
+    const count = sessionCount(rows, opts.here, opts.prefs, opts.frontId);
+    return { html: renderSessions(rows, Date.now(), opts), count: { shown: count.shown, asks: count.asks } };
+  }
+
+  /** Settings' card preview: the project's own sessions drawn as the list draws them. */
+  cardPreview(p: ProjectRef | null, webview: vscode.Webview | undefined): string | undefined {
+    if (!p || !webview || !sessionPresentationStore.hasSeenReset()) return undefined;
+    const { rows, opts } = this.listOptions(p, webview);
+    return renderCardPreview(rows, Date.now(), opts);
+  }
+
+  /** What the Sessions list and Settings' preview draw from: the rows, and how to draw each one. */
+  private listOptions(p: ProjectRef, webview: vscode.Webview): { rows: SessionLike[]; opts: SessionListOptions } {
     const { rows, byId, blockedIds, frontId, prefs } = this.sessionFacts(p);
     const previewUri = (f: string) => webview.asWebviewUri(vscode.Uri.file(f)).toString();
     const thumbsFor = (s: SessionLike) => {
@@ -1110,8 +1135,7 @@ class ProjectPanelController {
     const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false, chips: cards.made === 'chips' } : null; };
     const here = this.here(webview);
     const subject = currentAgentPanelSubject();
-    const count = sessionCount(rows, here, prefs, frontId);
-    return { html: renderSessions(rows, Date.now(), { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites() }), count: { shown: count.shown, asks: count.asks } };
+    return { rows, opts: { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites() } };
   }
 
   /** Agents: Next Agent That Needs You: fronts the session tab › fronts in
@@ -1155,7 +1179,7 @@ class ProjectPanelController {
       const card = sessionCardFields(r, { sessionId: r.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri });
       return { row, made: sessionMade(card), images: requestImageThumbs(r, { home: os.homedir(), remoteDevice, exists: (f) => fs.existsSync(f), previewUri }) };
     });
-    return renderPalette(entries, Date.now(), this.favorites(), { device: normalizeHost(os.hostname()), localHost: LOCAL_LABEL });
+    return renderPalette(entries, Date.now(), this.favorites(), this.here(webview));
   }
 
   /** Enter in ⌘K (the approved prototype's kpick): a tab here comes forward as a card click
@@ -1539,11 +1563,11 @@ ${MADE_CSS}
   .card .ask .q[data-expand] { cursor: zoom-in; } .card .ask.open .q { display: block; cursor: zoom-out; } .card .ask .q.full { display: block; }
   .card .ask .q.cmdq { font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .card .ask [hidden] { display: none !important; }
-  .card .opts { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
-  .card .opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; text-align: left; font: inherit; font-size: 11.5px; line-height: 1.35; padding: 3px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); color: var(--r-text); cursor: pointer; }
-  .card .opt:hover, .card .opt:focus-visible { background: var(--r-glass-hover); border-color: var(--r-warn); outline: none; }
-  .card .opt .k { flex: none; font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
-  .card .opt .ol { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .opts, .kask .opts { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
+  .card .opt, .kask .opt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; text-align: left; font: inherit; font-size: 11.5px; line-height: 1.35; padding: 3px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); color: var(--r-text); cursor: pointer; }
+  .card .opt:hover, .card .opt:focus-visible, .kask .opt:hover, .kask .opt:focus-visible { background: var(--r-glass-hover); border-color: var(--r-warn); outline: none; }
+  .card .opt .k, .kask .opt .k { flex: none; font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
+  .card .opt .ol, .kask .opt .ol { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .opt small { flex-basis: 100%; padding-left: 13px; color: var(--r-caption); font-size: 11px; }
   .card .alt { display: flex; gap: 12px; margin-top: 4px; }
   .card .draft { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; padding: 4px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); font-size: 11.5px; }
@@ -1552,7 +1576,7 @@ ${MADE_CSS}
   .card .draft .da { flex: none; display: flex; gap: 10px; }
   .card .lnk { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--vscode-textLink-foreground); cursor: pointer; } .card .lnk:hover { text-decoration: underline; }
   .card .aother input { width: 100%; box-sizing: border-box; margin-top: 5px; font: inherit; font-size: 11.5px; padding: 3px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; }
-  .card .asend { margin-top: 5px; font-size: 11.5px; color: var(--r-text-2); } .card .asend.err { color: var(--r-bad); }
+  .card .asend, .kask .asend { margin-top: 5px; font-size: 11.5px; color: var(--r-text-2); } .card .asend.err { color: var(--r-bad); }
   .chip { display: inline-flex; align-items: center; gap: 3px; max-width: 170px; padding: 1px 6px 1px 4px; border-radius: 5px; border: 1px solid var(--r-edge); color: var(--r-caption); font-family: var(--vscode-editor-font-family); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   a.chip { text-decoration: none; cursor: pointer; } a.chip:hover { border-color: var(--r-caption); color: var(--r-text); }
   .chip.pr-ok { color: var(--r-ok); } .chip.pr-bad { color: var(--r-bad); } .chip.pr-warn { color: var(--r-warn); }
@@ -1562,12 +1586,12 @@ ${MADE_CSS}
   .th i { position: absolute; left: 3px; bottom: 3px; font-style: normal; font-size: 9px; background: rgba(0,0,0,.62); color: #fff; border-radius: 3px; padding: 0 3px; }
   .th b { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 11px; }
   .confirm { margin-top: 8px; padding: 8px; border-radius: 7px; background: var(--r-warn-tint); color: var(--r-text-2); font-size: 11.5px; display: grid; gap: 6px; cursor: default; }
-  .confirm .cb { display: flex; gap: 6px; } .confirm button, .bulk button, .toast button { font: inherit; font-size: 11px; border: 1px solid var(--r-edge); background: none; color: var(--r-text); border-radius: 5px; padding: 2px 9px; cursor: pointer; }
+  .confirm .cb { display: flex; gap: 6px; } .confirm button, .bulk button { font: inherit; font-size: 11px; border: 1px solid var(--r-edge); background: none; color: var(--r-text); border-radius: 5px; padding: 2px 9px; cursor: pointer; }
   .confirm .danger { color: var(--r-warn); border-color: var(--r-warn); }
-  .bulk, .toast { position: sticky; bottom: 6px; display: flex; gap: 8px; align-items: center; margin-top: 8px; padding: 6px 8px; border-radius: 9px; font-size: 11.5px; }
+  .bulk { position: sticky; bottom: 6px; display: flex; gap: 8px; align-items: center; margin-top: 8px; padding: 6px 8px; border-radius: 9px; font-size: 11.5px; }
   .bulk { background: var(--vscode-menu-background, var(--vscode-sideBar-background)); border: 1px solid var(--r-faint); box-shadow: 0 8px 22px rgba(0,0,0,.3); }
-  .bulk span, .toast span { flex: 1; } .toast { background: var(--r-text); color: var(--vscode-sideBar-background); } .toast button { color: inherit; border-color: transparent; font-weight: 700; text-decoration: underline; }
-  .bulk[hidden], .toast[hidden], .menu[hidden] { display: none; }
+  .bulk span { flex: 1; }
+  .bulk[hidden], .menu[hidden] { display: none; }
   .reveal { position: fixed; z-index: 20; pointer-events: none; border-radius: 8px; border: 1px solid var(--r-faint); background: var(--vscode-sideBar-background); padding: 3px; display: none; }
   .reveal img { display: block; max-width: 260px; max-height: 180px; border-radius: 5px; } .reveal span { display: block; font-size: 10.5px; color: var(--r-caption); padding: 3px 2px 0; }
   .card .top .hx { width: 14px; height: 14px; border-radius: 3px; }
@@ -1581,6 +1605,11 @@ ${MADE_CSS}
   .ttl-edit { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; font-size: 12.5px; padding: 0 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; outline: none; }
   ${logoCss}
   /* A tab's own controls (☀, search, ⇅) ride the tab row instead of a heading row of their own. */
+  .hnote { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 11px; color: var(--r-text-2); white-space: nowrap; }
+  .hnote span { overflow: hidden; text-overflow: ellipsis; } .hnote[hidden] { display: none; }
+  .hnote button { font: inherit; font-weight: 600; color: var(--r-text); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+  [aria-busy="true"] { cursor: progress; }
+  .act.copied svg { opacity: 0; } .act.copied { position: relative; } .act.copied::after { content: '✓'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--r-text-2); }
   .tabs .sctl { position: relative; display: flex; align-items: center; min-width: 0; }
   .tabs .sctl .shead { margin: 0; gap: 4px; }
   /* Ticket detail and Settings (PHNX-4329). */
@@ -1625,6 +1654,23 @@ ${MADE_CSS}
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
   .settings .shsub { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+  .cpv { position: sticky; bottom: 0; z-index: 2; margin: 14px -2px 0; padding: 8px 8px 7px; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-sideBar-background); box-shadow: 0 -12px 24px -16px rgba(0,0,0,.35); }
+  .cpv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .cpv-head b { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-caption); font-weight: 500; }
+  .cpv-seg { display: inline-flex; border: 1px solid var(--r-edge); border-radius: 6px; overflow: hidden; }
+  .cpv-seg button { font: inherit; font-size: 11px; padding: 2px 9px; border: 0; background: none; color: var(--r-caption); cursor: pointer; }
+  .cpv-seg button + button { border-left: 1px solid var(--r-edge); }
+  .cpv-seg button[aria-selected="true"] { background: var(--r-glass-hover); color: var(--r-text); }
+  .cpv-nav { margin-left: auto; display: flex; align-items: center; gap: 2px; font-size: 11px; color: var(--r-caption); white-space: nowrap; }
+  .cpv-nav button { border: 0; background: none; color: var(--r-text-2); font-size: 14px; width: 20px; height: 20px; border-radius: 5px; cursor: pointer; } .cpv-nav button:hover { background: var(--r-glass-hover); }
+  .cpv-pane { max-height: 42vh; overflow-y: auto; }
+  .cpv-pane .card { margin: 0; }
+  .cpv-cap { min-height: 15px; margin-top: 6px; font-size: 11px; color: var(--r-caption); }
+  .cpv-none { margin: 4px 2px; color: var(--r-caption); font-size: 11.5px; }
+  .cpv .cpv-hl, .cpv .cpv-ring { outline: 1.5px solid var(--r-gold-line); outline-offset: 2px; border-radius: 4px; }
+  @keyframes cpvRing { from { box-shadow: 0 0 0 0 var(--r-gold-line); } to { box-shadow: 0 0 0 7px transparent; } }
+  .cpv .cpv-ring { animation: cpvRing .9s ease-out 1; }
+  @media (prefers-reduced-motion: reduce) { .cpv .cpv-ring { animation: none; } }
   .settings .drow { display: grid; grid-template-columns: 16px minmax(0, 1fr) 22px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--r-edge); }
   .settings .drow input { margin: 0; }
   .settings .dname { min-width: 0; } .settings .dname b { font-weight: 500; margin-right: 6px; }
@@ -1644,14 +1690,27 @@ ${MADE_CSS}
   .kpal { width: 100%; max-width: 640px; max-height: calc(100vh - 52px); display: flex; flex-direction: column; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 16px 44px rgba(0,0,0,.35); overflow: hidden; }
   .kpal input { flex: none; border: 0; border-bottom: 1px solid var(--r-edge); padding: 10px 12px; font: inherit; font-size: 13px; color: var(--vscode-input-foreground); background: transparent; outline: none; }
   .klist { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; padding: 4px; }
-  .krow { display: grid; grid-template-columns: 16px minmax(min(45%, 9em), 1fr) minmax(0, max-content); column-gap: 7px; min-width: 0; row-gap: 3px; align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+  .krow { display: grid; grid-template-columns: 16px minmax(min(45%, 9em), 1fr) minmax(0, max-content); column-gap: 8px; min-width: 0; row-gap: 5px; align-items: center; padding: 9px 10px; border-radius: 8px; cursor: pointer; }
+  .krow + .krow { margin-top: 2px; }
   .krow[hidden] { display: none; }
   .krow:hover { background: var(--r-glass-hover); } .krow[aria-selected="true"] { background: var(--r-selected, var(--r-glass-hover)); box-shadow: inset 2px 0 0 var(--r-gold-line); }
   .krow .hx { width: 14px; height: 14px; border-radius: 3px; grid-row: 1; }
-  .krow .kt { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 12.5px; }
-  .krow .kfav { color: var(--r-gold-line); margin-right: 4px; }
+  .krow .kt { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
+  .kstar { flex: none; width: 20px; height: 20px; margin-right: -4px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--r-faint); font-size: 13px; line-height: 20px; cursor: pointer; opacity: 0; }
+  .krow:hover .kstar, .krow[aria-selected="true"] .kstar, .kstar:focus-visible, .kstar[aria-pressed="true"] { opacity: 1; }
+  .kstar[aria-pressed="true"] { color: var(--r-text-2); } .kstar:hover { background: var(--r-glass-hover); color: var(--r-text); }
+  .krow .kwhere { color: var(--r-text-2); }
+  .krow .ksub > .kwhere + * { margin-left: 4px; }
+  .krow.open { background: var(--r-selected, var(--r-glass-hover)); }
+  .krow .kopen { grid-column: 1 / -1; cursor: default; padding: 4px 0 2px 24px; }
+  .krow .kopen p { margin: 0 0 6px; font-size: 11.5px; line-height: 1.45; color: var(--r-caption); white-space: normal; }
+  .kask { padding: 7px 9px; border-radius: 6px; background: var(--r-warn-tint); font-size: 12px; line-height: 1.4; }
+  .kask .q { white-space: pre-wrap; }
+  .kask [data-ask-input] { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 4px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); color: var(--r-text); font: inherit; font-size: 11.5px; outline: none; }
+  .kask [data-ask-input]:focus { border-color: var(--vscode-focusBorder); }
+  .ksep { padding: 10px 10px 4px; font-size: 10.5px; letter-spacing: .04em; color: var(--r-caption); border-top: 1px solid var(--r-edge); margin-top: 4px; }
   .krow .kmeta { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; justify-self: end; max-width: 100%; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
-  .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--r-caption); }
+  .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--r-caption);  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
   .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .krow .knote mark { background: none; color: var(--r-gold); font-weight: 600; }
   .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1674,6 +1733,7 @@ ${MADE_CSS}
   <button class="tab" role="tab" data-tab="prs" aria-selected="false" title="Review — pull requests"><svg class="ti" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V7a2 2 0 0 0-2-2H7"/></svg><span class="lbl">Review</span></button>
   <button class="tab" role="tab" data-tab="tickets" aria-selected="false" title="Issues"><svg class="ti" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><span class="lbl">Issues</span></button>
   <label class="hfind"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input type="search" data-find placeholder="Filter" aria-label="Filter" spellcheck="false" autocomplete="off"></label>
+  <span class="hnote" role="status" aria-live="polite" hidden></span>
   <div class="sctl">${tabHead(null)}</div>
 </div>
 <main role="tabpanel"><div class="empty">Loading…</div></main>
@@ -1710,12 +1770,13 @@ ${MADE_SCRIPT}
   // the tab lists, and each tab keeps its own words.
   const findBox = document.querySelector('.hfind [data-find]');
   const findWords = {};
-  const FIND_HINT = { sessions: 'Filter · ⌘K all', prs: 'Filter', tickets: 'Filter', lead: 'Filter' };
   function syncFind(tab) {
-    findBox.value = findWords[tab] || ''; findBox.placeholder = FIND_HINT[tab] || 'Filter';
+    findBox.value = findWords[tab] || '';
     // A tab with words shows the field; one without shows the tabs, whatever was focused before.
     document.querySelector('.tabs').classList.toggle('finding', !!findBox.value);
     document.querySelector('.hfind').hidden = tab === 'settings';
+    const words = tab === 'sessions' ? 'Search sessions (\u2318K)' : 'Filter';
+    findBox.setAttribute('aria-label', words); document.querySelector('.hfind').title = words;
   }
   function applyFind() {
     const words = findBox.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1738,7 +1799,14 @@ ${MADE_SCRIPT}
     if (none) none.hidden = !words.length || shown > 0;
   }
   findBox.addEventListener('input', applyFind);
-  findBox.addEventListener('focus', () => document.querySelector('.tabs').classList.add('finding'));
+  // On Sessions 🔍 is ⌘K, the one search (owner video, 2026-11-04 5:57 PM: "it should be the same
+  // search which is the command K based search"); the other tabs filter their own list.
+  function findIsPalette() { return current === 'sessions'; }
+  document.querySelector('.hfind').addEventListener('mousedown', (e) => { if (!findIsPalette()) return; e.preventDefault(); if (kscrim.hidden) vscode.postMessage({ type: 'search' }); else kq.focus(); });
+  findBox.addEventListener('focus', () => {
+    if (findIsPalette()) { findBox.blur(); if (kscrim.hidden) vscode.postMessage({ type: 'search' }); return; }
+    document.querySelector('.tabs').classList.add('finding');
+  });
   findBox.addEventListener('blur', () => { if (!findBox.value) document.querySelector('.tabs').classList.remove('finding'); });
   findBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') { findBox.value = ''; applyFind(); findBox.blur(); e.stopPropagation(); } });
   // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
@@ -1832,7 +1900,7 @@ ${MADE_SCRIPT}
       if (p.state === 'wait') { clearInterval(p.timer); dropped++; }
       if (p.state === 'wait' || p.state === 'sent') pendingAnswer.delete(key);
     }
-    if (dropped) toast('Answer not sent: its card left the list before it went.');
+    if (dropped) note('Answer not sent: its card left the list before it went.');
     for (const key of otherOpen) { if (askEl(key)) drawAsk(key); else otherOpen.delete(key); }
     tickWaits();
   }
@@ -1951,8 +2019,8 @@ ${MADE_SCRIPT}
     // ⌃2/⌃3 to a tab Settings turned off land on Sessions.
     if ((tab === 'prs' || tab === 'tickets') && !tabsShown[tab]) tab = 'sessions';
     if (tab === current) return;
-    if (current === 'prs' && cancelMerges()) toast('Merge cancelled: you left Review before it started.');
-    if (current === 'sessions' && cancelAnswers()) toast('Answer not sent: you left Sessions before it went.');
+    if (current === 'prs' && cancelMerges()) note('Merge cancelled: you left Review before it started.');
+    if (current === 'sessions' && cancelAnswers()) note('Answer not sent: you left Sessions before it went.');
     scroll[current] = main.scrollTop;
     current = tab;
     select(tab);
@@ -1984,9 +2052,7 @@ ${MADE_SCRIPT}
       const actEnd = activityAtEnd(actBox);
       // Measured before the patch: a new turn makes the page taller, so after it the viewer no longer looks at the end.
       const leadEnd = m.tab === 'lead' && same && main.scrollHeight - main.scrollTop - main.clientHeight < 80;
-      // A stream tick must not take away an Undo, a pending "close anyway?" or the open menu.
-      // The patch would draw the toast hidden and empty again, so its words are put back after it.
-      const keepToast = same ? main.querySelector('.toast:not([hidden])')?.innerHTML ?? null : null;
+      // A stream tick must not take away a pending "close anyway?" or the open menu.
       const keepConfirm = same ? [...main.querySelectorAll('.confirm')].map((c) => { const card = c.closest('.card'); return [card.dataset.key, placeOf(card), c]; }) : [];
       const menuOpen = same && openMenu();
       // The tab's heading row (☀, search, ⇅ and its menu) goes into the tab row; the rest into main.
@@ -1994,7 +2060,6 @@ ${MADE_SCRIPT}
       const head = [...page.content.children].find((c) => c.classList.contains('shead')); if (head) head.remove();
       patchChildren(ctl, head ? head.outerHTML : EMPTY_HEAD);
       if (same) patchChildren(main, page.innerHTML); else main.innerHTML = page.innerHTML;
-      if (keepToast !== null) { const t = main.querySelector('.toast'); if (t) { t.innerHTML = keepToast; t.hidden = false; } }
       for (const [key, place, box] of keepConfirm) cardsOf('key', key).find((c) => placeOf(c) === place)?.appendChild(box);
       if (menuOpen) { const mm = anyMenu(); if (mm) { mm.hidden = false; mm.parentElement.querySelector('[data-menu]')?.setAttribute('aria-expanded', 'true'); } }
       main.dataset.tab = m.tab;
@@ -2010,12 +2075,13 @@ ${MADE_SCRIPT}
         const box = activityBox();
         if (box && (box !== actBox || actEnd)) box.scrollTop = box.scrollHeight;
       }
+      if (m.tab === 'settings') syncPreview();
       restoreLocal();
       document.body.classList.remove('loading');
     }
     else if (m.type === 'project') {
       // Only a different project cancels a merge still counting down; every load re-sends the name.
-      if (shownProject !== undefined && m.name !== shownProject && cancelMerges()) toast('Merge cancelled: the project changed before it started.');
+      if (shownProject !== undefined && m.name !== shownProject && cancelMerges()) note('Merge cancelled: the project changed before it started.');
       if (shownProject !== undefined && m.name !== shownProject) peeked = null;
       shownProject = m.name;
     }
@@ -2027,9 +2093,8 @@ ${MADE_SCRIPT}
     else if (m.type === 'loading') document.body.classList.add('loading');
     else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }
-    else if (m.type === 'notice') toast(m.text);
-    // The status stays long enough to read, then goes once the host has acted.
-    else if (m.type === 'opened') { if (busyShown) { busyShown = false; clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, Math.max(0, 700 - (Date.now() - busySince))); } }
+    else if (m.type === 'notice') note(m.text);
+    else if (m.type === 'opened') { for (const b of document.querySelectorAll('[aria-busy="true"]')) b.removeAttribute('aria-busy'); }
     else if (m.type === 'replyResult') showReplyError(main.querySelector('.card.front .reply-box'), m.ok ? '' : (m.error || 'Reply failed'));
     else if (m.type === 'dictation') {
       const box = main.querySelector('.card.front .reply-box');
@@ -2037,6 +2102,8 @@ ${MADE_SCRIPT}
       if (m.error) showReplyError(box, m.error);
     }
     else if (m.type === 'answered') {
+      const kAsk = klist.querySelector('.kask[data-ask="' + CSS.escape(m.key) + '"]');
+      if (kAsk) { const send = kAsk.querySelector('.asend'); send.textContent = m.error ? 'Not sent: ' + m.error : 'Sent. The agent picks it up in its terminal.'; if (m.error) for (const b of kAsk.querySelectorAll('.opt, [data-ask-input]')) b.disabled = false; }
       const p = pendingAnswer.get(m.key); if (!p) return;
       if (m.error) { p.state = 'error'; p.error = m.error; } else p.state = 'sent';
       drawAsk(m.key);
@@ -2055,31 +2122,31 @@ ${MADE_SCRIPT}
   // whose agent is working or waiting asks first; everything else offers Undo.
   const multi = new Set();
   let bulkSure = false;
-  let toastTimer = 0;
+  let noteTimer = 0;
   let undo = null;
   const target = (card) => ({ sessionId: card.dataset.session, host: card.dataset.host });
-  let busyShown = false, busySince = 0;
-  function toast(text, onUndo, hold) {
-    const el = main.querySelector('.toast'); if (!el) return;
-    el.innerHTML = '<span></span>' + (onUndo ? '<button data-undo>Undo</button>' : '');
-    el.firstChild.textContent = text; el.hidden = false; undo = onUndo || null; busyShown = !!hold; busySince = Date.now();
-    clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, hold ? 30000 : 6000);
+  // No toast: what the page must still say (an Undo, a refusal) sits in the header row's free
+  // space for 6 s, over nothing and moving nothing (owner, 2026-11-04 9:42 PM).
+  const hnote = document.querySelector('.hnote');
+  function note(text, onUndo) {
+    hnote.innerHTML = '<span></span>' + (onUndo ? '<button data-undo>Undo</button>' : '');
+    hnote.firstChild.textContent = text; hnote.title = text; hnote.hidden = false; undo = onUndo || null;
+    clearTimeout(noteTimer); noteTimer = setTimeout(hideNote, 6000);
   }
-  // A redraw may have replaced the toast's node, so it is looked up when it goes.
-  function hideToast() { const el = main.querySelector('.toast'); if (el) el.hidden = true; undo = null; busyShown = false; }
-  // A click that opens something rings the thing clicked and says so at once; the host's
-  // 'opened' ends it, so nothing silently waits (owner video, 2026-10-19 12:58 AM).
+  function hideNote() { hnote.hidden = true; undo = null; }
+  // A click that opens something rings the thing clicked and stays busy until the host's
+  // 'opened', so nothing silently waits (owner video, 2026-10-19 12:58 AM); no words.
   // The ring is a Web Animation, not a class: the redraw a click causes rewrites the card's
   // classes, and an animation on the node outlives that.
-  function opening(el, words) {
+  function opening(el) {
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && el.animate) el.animate([
       { boxShadow: '0 0 0 0 color-mix(in srgb, var(--r-gold-line) 70%, transparent)' },
       { boxShadow: '0 0 0 4px color-mix(in srgb, var(--r-gold-line) 30%, transparent)', offset: 0.4 },
       { boxShadow: '0 0 0 0 transparent' },
     ], { duration: 900, easing: 'ease-out' });
-    toast(words, null, true);
+    el.setAttribute('aria-busy', 'true');
+    setTimeout(() => el.removeAttribute('aria-busy'), 30000);
   }
-  function named(el, fallback) { return (el.textContent || '').trim() || fallback; }
   // The pinned card's title renames a Claude session: Enter types /rename into its tab, Esc
   // or leaving the box cancels. The title is data-keep, so a stream update never takes the
   // box away; otherwise it always draws the stream's title (data-ttl), so a new name shows
@@ -2123,7 +2190,7 @@ ${MADE_SCRIPT}
     if (hide.length) vscode.postMessage({ type: 'hide', targets: hide });
     multi.clear(); syncBulk();
     const words = [tabs.length ? 'Closed ' + tabs.length + ' tab' + (tabs.length === 1 ? '' : 's') : '', hide.length ? 'hid ' + hide.length : ''].filter(Boolean).join(', ');
-    toast(words, () => {
+    note(words, () => {
       if (tabs.length) vscode.postMessage({ type: 'reopen', targets: tabs });
       if (hide.length) vscode.postMessage({ type: 'unhide', targets: hide });
     });
@@ -2152,11 +2219,7 @@ ${MADE_SCRIPT}
     const fav = e.target.closest('[data-fav]');
     if (fav) {
       e.preventDefault(); e.stopPropagation();
-      const on = fav.getAttribute('aria-pressed') !== 'true';
-      main.querySelectorAll('[data-fav="' + CSS.escape(fav.dataset.fav) + '"]').forEach((b) => { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Remove from Favorites' : 'Add to Favorites'; });
-      fav.closest('.cmore').open = false;
-      vscode.postMessage({ type: 'favorite', sessionId: fav.dataset.fav, value: on });
-      toast(on ? 'Added to Favorites' : 'Removed from Favorites');
+      toggleFavorite(fav);
       return;
     }
     if (e.target.closest('.ttl-edit')) return;
@@ -2166,7 +2229,7 @@ ${MADE_SCRIPT}
     const copy = e.target.closest('[data-copy]');
     // A value in ⋯ copies quietly: a faint "copied" beside it for a moment, the menu stays open.
     if (copy && copy.hasAttribute('data-quiet')) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); copy.classList.add('copied'); setTimeout(() => copy.classList.remove('copied'), 1200); return; }
-    if (copy) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); toast('Copied'); }
+    if (copy) { e.stopPropagation(); vscode.postMessage({ type: 'copy', text: copy.dataset.copy }); copy.classList.add('copied'); setTimeout(() => copy.classList.remove('copied'), 1200); }
     const more = e.target.closest('.cmore');
     if (copy && !more) return;
     if (more) {
@@ -2180,21 +2243,21 @@ ${MADE_SCRIPT}
     if (step) { if (!step.disabled && step.dataset.session) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true, back: step.hasAttribute('data-back') }); return; }
     // The pinned card's Made shelf: a PR opens on GitHub, a ticket in Issues; files open below.
     const shelfLink = e.target.closest('.fc-made [data-url], .fc-made [data-ticket]');
-    if (shelfLink) { e.preventDefault(); e.stopPropagation(); opening(shelfLink, 'Opening ' + named(shelfLink, shelfLink.dataset.url || shelfLink.dataset.ticket) + '…'); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
+    if (shelfLink) { e.preventDefault(); e.stopPropagation(); opening(shelfLink); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
     if (e.target.closest('[data-open-sidebar]')) { e.preventDefault(); vscode.postMessage({ type: 'openSidebar' }); return; }
     const tab = e.target.closest('.tab');
     if (tab) { choose(tab.dataset.tab); return; }
     // The project button: its menu lists every Linear project (read when it opens).
     // A ticket tile or chip peeks at its row in Issues and opens its Linear page.
     const tk = e.target.closest('[data-open-ticket]');
-    if (tk) { e.preventDefault(); e.stopPropagation(); opening(tk, 'Opening ' + tk.dataset.openTicket + '…'); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
+    if (tk) { e.preventDefault(); e.stopPropagation(); opening(tk); vscode.postMessage({ type: 'ticketTab', id: tk.dataset.openTicket }); return; }
     const merge = e.target.closest('[data-merge-repo]');
     if (merge) {
       e.preventDefault(); e.stopPropagation();
       const key = merge.dataset.mergeRepo + '#' + merge.dataset.mergeNumber;
       if (mergingNow.has(key)) return;
       // A second click inside the window is Undo: nothing was sent yet.
-      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); disarm(merge); toast('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
+      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); disarm(merge); note('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
       let left = 5; pendingMerge.set(key, left); drawUndo(key, left);
       const timer = setInterval(() => {
         left -= 1;
@@ -2260,7 +2323,7 @@ ${MADE_SCRIPT}
     if (e.target.closest('.menu')) return;
     // The front card's reply box handles its own keys and mic; a click there selects nothing.
     if (e.target.closest('.fc-reply')) return;
-    if (e.target.closest('[data-undo]')) { const u = undo; undo = null; main.querySelector('.toast').hidden = true; if (u) u(); return; }
+    if (e.target.closest('[data-undo]')) { const u = undo; undo = null; hideNote(); if (u) u(); return; }
     const bulk = e.target.closest('[data-bulk]');
     if (bulk) {
       if (bulk.dataset.bulk === 'clear') { multi.clear(); syncBulk(); return; }
@@ -2279,13 +2342,13 @@ ${MADE_SCRIPT}
     const act = e.target.closest('[data-act]');
     if (act && card) {
       const kind = act.dataset.act;
-      if (kind === 'focus' || kind === 'resume') { opening(card, (kind === 'resume' ? 'Resuming ' : 'Opening ') + card.dataset.title + '…'); vscode.postMessage({ type: kind, sessionId: card.dataset.session, host: card.dataset.host }); }
+      if (kind === 'focus' || kind === 'resume') { opening(card); vscode.postMessage({ type: kind, sessionId: card.dataset.session, host: card.dataset.host }); }
       else if (kind === 'close') { if (card.dataset.busy === '1') askClose(card); else closeCards([card]); }
       else if (kind === 'hide') closeCards([card]);
       return;
     }
     const th = e.target.closest('.th[data-path]');
-    if (th) { e.preventDefault(); opening(th, 'Opening the image…'); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
+    if (th) { e.preventDefault(); opening(th); vscode.postMessage({ type: 'image', path: th.dataset.path }); return; }
     // Tickets: a row unfolds its peek and a second click folds it; ↗ opens its Linear page.
     // The agent's logo starts that agent on it, once per click.
     const trow = e.target.closest('.trow[data-ticket]');
@@ -2307,13 +2370,13 @@ ${MADE_SCRIPT}
       return;
     }
     const art = e.target.closest('[data-artifact]');
-    if (art && card) { e.preventDefault(); opening(art, 'Opening ' + art.dataset.artifact.split('/').pop() + '…'); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
+    if (art && card) { e.preventDefault(); opening(art); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
-    if (a && a.dataset.url) { e.preventDefault(); opening(a, 'Opening ' + named(a, a.dataset.url) + '…'); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+    if (a && a.dataset.url) { e.preventDefault(); opening(a); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
       if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, place: placeOf(card), top: card.getBoundingClientRect().top, at: Date.now() };
-      if (!card.closest('.front-pin')) opening(card, 'Opening ' + card.dataset.title + '…');
+      if (!card.closest('.front-pin')) opening(card);
       // The rail moves on the click. A card changed here loses its hash, so the host's next draw always patches it back to what the host holds.
       // The pinned copy loses it too, so 1-9 never answers the session clicked away from.
       const rail = (c, on) => { if (c.classList.contains('sel') === on) return; c.classList.toggle('sel', on); c.removeAttribute('data-h'); };
@@ -2326,9 +2389,74 @@ ${MADE_SCRIPT}
     e.preventDefault();
     if (a.hasAttribute('data-pick')) vscode.postMessage({ type: 'pick' });
   });
+  // Settings' card preview (owner, 2026-11-04 6:01 PM): which card shows, which session and what
+  // a setting row points at live in the page, so each redraw after a check keeps them; a part
+  // just turned on rings once where it appeared.
+  const PIN_ONLY = new Set(['activity', 'ends', 'arrows']);
+  const ASK_PARTS = new Set(['asks', 'options', 'question', 'answerUndo']);
+  const PART_SEL = { description: '.said, .line:not(.live), .started, .why, .fc-latest', command: '.line.live', chips: '.cstrip', previews: '.thumbs', machine: '.hst, .fc-where', age: '.age, .fc-where', state: '.pill', verdict: '.vchip', firstMessage: '.started', activity: '.fc-act', ends: '.fc-step.end', arrows: '.fc-step:not(.end)', made: '.cstrip, .fc-made', asks: '.ask', options: '.ask .opts', question: '.ask .q' };
+  const cpv = { mode: 'list', i: 0, hl: null, rang: null };
+  function partOf(el) { const k = el && el.dataset && el.dataset.setting; return k && k.startsWith('cards.') ? k.slice(6) : null; }
+  function cpvPane(box) { return box.querySelector('[data-cpv-pane="' + cpv.mode + '"]'); }
+  function cpvShown(box, part) {
+    const pane = cpvPane(box), sel = PART_SEL[part];
+    if (!pane || !sel) return [];
+    const scope = cpv.mode === 'list' ? pane.querySelector('.cpv-s:not([hidden])') : pane;
+    return scope ? [...scope.querySelectorAll(sel)] : [];
+  }
+  function markPart(box) {
+    for (const el of box.querySelectorAll('.cpv-hl')) el.classList.remove('cpv-hl');
+    if (cpv.hl) for (const el of cpvShown(box, cpv.hl)) el.classList.add('cpv-hl');
+  }
+  function syncPreview() {
+    const box = main.querySelector('.cpv'); if (!box) return;
+    const n = Number(box.dataset.n) || 0;
+    if (cpv.i >= n) cpv.i = 0;
+    for (const b of box.querySelectorAll('[data-cpv-mode]')) b.setAttribute('aria-selected', String(b.dataset.cpvMode === cpv.mode));
+    for (const p of box.querySelectorAll('[data-cpv-pane]')) p.hidden = p.dataset.cpvPane !== cpv.mode;
+    let what = '';
+    for (const c of box.querySelectorAll('.cpv-s')) { const on = Number(c.dataset.i) === cpv.i; c.hidden = !on; if (on) what = c.dataset.what; }
+    const nav = box.querySelector('.cpv-nav'); if (nav) nav.style.visibility = cpv.mode === 'list' && n > 1 ? '' : 'hidden';
+    const num = box.querySelector('.cpv-n'); if (num) num.textContent = (cpv.i + 1) + '/' + n;
+    const shownCard = cpvPane(box)?.querySelector(cpv.mode === 'list' ? '.cpv-s:not([hidden]) .card' : '.card');
+    const whose = shownCard ? (cpv.mode === 'list' ? what + ': ' : 'Front tab: ') + shownCard.dataset.title : '';
+    observeThumbs(box);
+    markPart(box);
+    const cap = box.querySelector('.cpv-cap');
+    const r = cpv.rang;
+    if (r && cap) {
+      const found = cpvShown(box, r.part);
+      if (r.fresh) { r.fresh = false; for (const el of found) { el.classList.remove('cpv-ring'); void el.offsetWidth; el.classList.add('cpv-ring'); setTimeout(() => el.classList.remove('cpv-ring'), 1200); } }
+      cap.textContent = r.label + (r.on === false ? ' off: hidden on every card' : r.on === true ? (found.length ? ' on' : ' on: this session has none to show, so try \u2039 \u203a for another') : ': ' + r.on) + (PIN_ONLY.has(r.part) && cpv.mode === 'pin' ? ' \u00b7 the preview shows the pinned card' : '');
+    } else if (cap) cap.textContent = whose || 'Check or uncheck a part above; the card redraws as you do.';
+  }
+  main.addEventListener('click', (e) => {
+    const mode = e.target.closest && e.target.closest('[data-cpv-mode]');
+    if (mode) { cpv.mode = mode.dataset.cpvMode; syncPreview(); return; }
+    const step = e.target.closest && e.target.closest('[data-cpv-step]');
+    if (step) { const n = Number(main.querySelector('.cpv')?.dataset.n) || 1; cpv.i = (cpv.i + Number(step.dataset.cpvStep) + n) % n; syncPreview(); }
+  });
+  // Pointing at a part's row outlines that part in the preview.
+  const pointAt = (e) => {
+    const row = e.target.closest && e.target.closest('.settings .srow');
+    const part = row ? partOf(row.querySelector('[data-setting]')) : null;
+    if (part === cpv.hl) return;
+    cpv.hl = part; const box = main.querySelector('.cpv'); if (box) markPart(box);
+  };
+  main.addEventListener('mouseover', pointAt); main.addEventListener('focusin', pointAt);
+  main.addEventListener('mouseleave', () => { cpv.hl = null; const box = main.querySelector('.cpv'); if (box) markPart(box); });
   // Settings: each control writes its one key as it changes.
   document.addEventListener('change', (e) => {
     const el = e.target.closest && e.target.closest('[data-setting]');
+    const part = partOf(el);
+    if (part) {
+      const label = el.closest('.srow')?.querySelector('b')?.textContent || part;
+      cpv.rang = { part, label, fresh: el.type !== 'checkbox' || el.checked, on: el.type === 'checkbox' ? el.checked : el.selectedOptions[0]?.textContent };
+      // The preview follows the change: a pinned-card part shows the pinned card, an ask setting a session that asks.
+      if (PIN_ONLY.has(part)) cpv.mode = 'pin';
+      else if (ASK_PARTS.has(part)) { const s = main.querySelector('.cpv-s[data-what="Asks you"]'); if (s) { cpv.mode = 'list'; cpv.i = Number(s.dataset.i); } }
+      else if (cpv.mode === 'pin' && !main.querySelector('[data-cpv-pane="pin"] ' + (PART_SEL[part] || 'x-none'))) cpv.mode = 'list';
+    }
     if (el) vscode.postMessage({ type: 'setting', key: el.dataset.setting, value: el.type === 'checkbox' ? el.checked : el.value });
     const dev = e.target.closest && e.target.closest('[data-device]');
     if (dev) vscode.postMessage({ type: 'device', name: dev.dataset.device, field: 'enabled', value: dev.checked });
@@ -2419,7 +2547,10 @@ ${MADE_SCRIPT}
     const hits = ranked.filter((x) => x.t !== null).sort((a, b) => a.t - b.t || a.i - b.i);
     const shownSet = new Set(hits.slice(0, 60).map((x) => x.r));
     for (const x of ranked) { x.r.hidden = !shownSet.has(x.r); x.r.style.order = String(x.t ?? 0); ksaid(x.r, x.t === 4 && !x.r.hidden ? kq.value : ''); }
-    for (const el of klist.querySelectorAll('.kempty:not(.kwait), .kmore')) el.remove();
+    for (const el of klist.querySelectorAll('.kempty:not(.kwait), .kmore, .ksep')) el.remove();
+    // Rows found only by a typo-tolerant match come after every direct one, under their own heading.
+    const fuzzy = hits.slice(0, 60).filter((x) => x.t === ${PALETTE_FUZZY}).length;
+    if (fuzzy) { const d = document.createElement('div'); d.className = 'ksep'; d.style.order = '${PALETTE_FUZZY}'; d.textContent = (fuzzy === hits.slice(0, 60).length ? 'No exact match \u00b7 close matches for \u201c' : 'Close matches for \u201c') + kq.value.trim() + '\u201d'; klist.prepend(d); }
     if (!hits.length && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
     if (hits.length > 60) { const d = document.createElement('div'); d.className = 'kempty kmore'; d.style.order = '99'; d.textContent = (hits.length - 60) + ' more \u00b7 type to narrow'; klist.append(d); }
     kmark();
@@ -2439,10 +2570,33 @@ ${MADE_SCRIPT}
     m.textContent = cut.hit;
     n.replaceChildren(cut.before, m, cut.after);
   }
+  // One ☆ click, on a card or a ⌘K row: every ☆ for that session turns at once.
+  function toggleFavorite(btn) {
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    const words = on ? 'Remove from Favorites' : 'Add to Favorites';
+    document.querySelectorAll('[data-fav="' + CSS.escape(btn.dataset.fav) + '"]').forEach((b) => { b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '\u2605' : '\u2606'; b.title = words; b.setAttribute('aria-label', words); });
+    vscode.postMessage({ type: 'favorite', sessionId: btn.dataset.fav, value: on });
+  }
+  function kexpand(row, open) {
+    const box = row.querySelector('.kopen');
+    const show = open === undefined ? box.hidden : open;
+    for (const o of klist.querySelectorAll('.krow.open')) if (o !== row) { o.classList.remove('open'); o.querySelector('.kopen').hidden = true; }
+    box.hidden = !show; row.classList.toggle('open', show);
+    if (show) { const first = box.querySelector('.opt, [data-ask-input]'); if (first) first.focus(); row.scrollIntoView({ block: 'nearest' }); } else kq.focus();
+  }
+  function kanswer(box, payload, label) {
+    const send = box.querySelector('.asend');
+    send.hidden = false; send.textContent = 'Sending \u201c' + label + '\u201d\u2026';
+    for (const b of box.querySelectorAll('.opt, [data-ask-input]')) b.disabled = true;
+    vscode.postMessage(Object.assign({ type: 'answer', key: box.dataset.ask }, payload));
+  }
   function kclose() { if (kscrim.hidden) return; kscrim.hidden = true; kql.hidden = true; vscode.postMessage({ type: 'paletteClosed' }); }
   function kpick(row) {
     if (!row) return;
-    opening(row, 'Opening ' + row.dataset.title + '\u2026');
+    // An agent alive where nothing here can bring it forward opens in place: where it runs,
+    // and its question to answer. Enter never resumes it (owner video, 2026-11-04 5:57 PM).
+    if (row.dataset.reach === 'none' && row.querySelector('.kopen')) { kexpand(row); return; }
+    opening(row);
     kclose();
     vscode.postMessage({ type: 'paletteGo', sessionId: row.dataset.session, host: row.dataset.host, here: row.dataset.here === '1' });
   }
@@ -2451,9 +2605,10 @@ ${MADE_SCRIPT}
     klist.dataset.waiting = waiting ? '1' : '';
     klist.innerHTML = waiting ? '<div class="kempty kwait">Waiting for the session stream\u2026</div>' : html;
     observeThumbs(klist);
-    if (was) { kscrim.hidden = false; kq.value = ''; kpicked = null; }
+    // Reopened, ⌘K keeps what you last typed, selected, so it never vanishes and typing replaces it.
+    if (was) { kscrim.hidden = false; kpicked = null; }
     kfilter();
-    if (was) kq.focus();
+    if (was) { kq.focus(); kq.select(); }
     const sel = klist.querySelector('.krow[aria-selected="true"]');
     if (sel && was) sel.scrollIntoView({ block: 'nearest' });
   }
@@ -2479,7 +2634,16 @@ ${MADE_SCRIPT}
       const next = rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
       if (next) { kpicked = next.dataset.session; kmark(); next.scrollIntoView({ block: 'nearest' }); }
     } else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); kpick(klist.querySelector('.krow[aria-selected="true"]')); }
-    else if (e.key === 'Escape') { e.preventDefault(); kclose(); }
+    else if (e.key === 'Escape') { e.preventDefault(); const o = klist.querySelector('.krow.open'); if (o) kexpand(o, false); else kclose(); }
+  });
+  // In a row opened in place: Esc closes it, Enter in the reply box sends what was typed.
+  klist.addEventListener('keydown', (e) => {
+    const row = e.target.closest && e.target.closest('.krow.open');
+    if (!row) return;
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); kexpand(row, false); return; }
+    const input = e.target.closest('[data-ask-input]');
+    if (input && e.key === 'Enter' && input.value.trim()) { e.preventDefault(); kanswer(input.closest('.kask'), { text: input.value.trim() }, input.value.trim()); }
   });
   // A thumbnail opens a quick look; space or esc (or a click) closes it.
   document.addEventListener('keydown', (e) => {
@@ -2490,12 +2654,17 @@ ${MADE_SCRIPT}
     e.stopPropagation();
     if (e.target === kscrim) { kclose(); return; }
     const row = e.target.closest('.krow');
+    const star = e.target.closest('.kstar[data-fav]');
+    if (star) { e.preventDefault(); toggleFavorite(star); return; }
+    const opt = e.target.closest('.kask .opt');
+    if (opt) { e.preventDefault(); kanswer(opt.closest('.kask'), opt.dataset.choice ? { choice: opt.dataset.choice } : { text: opt.dataset.askText }, opt.dataset.label); return; }
+    if (e.target.closest('.kopen')) return;
     const ql = e.target.closest('[data-ql]');
     if (ql) { e.preventDefault(); kql.querySelector('img').src = ql.dataset.ql; kql.querySelector('figcaption').textContent = ql.dataset.name + ' \u00b7 attached by you \u00b7 space or esc closes'; kql.hidden = false; return; }
     const url = e.target.closest('[data-url]');
-    if (url) { e.preventDefault(); opening(url, 'Opening ' + named(url, url.dataset.url) + '\u2026'); kclose(); vscode.postMessage({ type: 'open', url: url.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+    if (url) { e.preventDefault(); opening(url); kclose(); vscode.postMessage({ type: 'open', url: url.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     const art = e.target.closest('[data-artifact]');
-    if (art && row) { e.preventDefault(); opening(art, 'Opening ' + art.dataset.artifact.split('/').pop() + '\u2026'); kclose(); vscode.postMessage({ type: 'artifact', sessionId: row.dataset.session, host: row.dataset.host, path: art.dataset.artifact }); return; }
+    if (art && row) { e.preventDefault(); opening(art); kclose(); vscode.postMessage({ type: 'artifact', sessionId: row.dataset.session, host: row.dataset.host, path: art.dataset.artifact }); return; }
     if (row) kpick(row);
   });
   vscode.postMessage({ type: 'ready' });

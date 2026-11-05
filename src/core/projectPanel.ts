@@ -873,8 +873,7 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string;
   // Close (or Hide, for a card with no tab) lives here, out of a stray click's way (owner video, 2026-10-17).
   const hasTab = place.kind === 'here' || place.kind === 'leftover';
   const close = hasTab ? '<button class="danger" data-act="close">Close the tab</button>' : '<button data-act="hide">Hide until it does something new</button>';
-  const fav = `<button class="favitem" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}">${opts.favorite ? 'Remove from Favorites' : 'Add to Favorites'}</button>`;
-  return `<details class="cmore"><summary class="act" title="Details, favorite, close" aria-label="Details, favorite and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${fav}${close}</div></details>`;
+  return `<details class="cmore"><summary class="act" title="Details and close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${close}</div></details>`;
 }
 
 const STEP_MARK = { first: '⇤', prev: '‹', next: '›', last: '⇥' } as const;
@@ -986,7 +985,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   // Copy: what another agent or a message needs to pick this session up.
   const brief = [title, `Session ${s.sessionId} on ${place.device}${s.cwd ? ` in ${displayHome(s.cwd)}` : ''}`, plain(s.recap?.text ?? '') || said].filter(Boolean).join('\n');
   const copy = `<button class="act" data-copy="${escapeHtml(brief)}" title="Copy its title, session id, machine and recap" aria-label="Copy session details">${glyph('copy')}</button>`;
-  // Favoriting is rare, so it lives in ⋯; ★ shows after the title only on a favorite (owner video, 2026-10-27 9:24 AM).
+  // ☆ is one click beside Copy (owner video, 2026-11-04 5:57 PM: "a quick action button that allows me to favorite this").
+  const favWords = opts.favorite ? 'Remove from Favorites' : 'Add to Favorites';
+  const favBtn = `<button class="act favq" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${favWords}" aria-label="${favWords}">${opts.favorite ? '★' : '☆'}</button>`;
+  // ★ also shows after a favorite's title (owner video, 2026-10-27 9:24 AM); ☆/★ beside Copy turns it.
   const star = opts.favorite ? `<span class="star on" title="Favorite" aria-label="Favorite">★</span>` : '';
   // The pinned card's title renames the session on a click; the page keeps what is typed
   // there (data-keep) and draws the stream's title from data-ttl otherwise.
@@ -995,7 +997,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     ? `<span class="ttl${rename.can ? ' rn' : ''}" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\n${rename.tip}`)}">${escapeHtml(title)}</span>`
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
   // A listed card's title row; the pinned card draws its own two rows in frontBody.
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}<span class="acts">${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}<span class="acts">${favBtn}${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
@@ -1013,7 +1015,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const pos = opts.nav?.at ? `Tab ${opts.nav.at} of ${opts.nav.count}` : s.tabIndex ? `Tab ${s.tabIndex}` : '';
     const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ageWords(s.lastActivityMs, now);
     const where = escapeHtml(shortDevice(place.device));
-    const acts = `<span class="fc-acts">${copy}${cardMenu(s, place, opts)}${go}</span>`;
+    const acts = `<span class="fc-acts">${favBtn}${copy}${cardMenu(s, place, opts)}${go}</span>`;
     const name = `${harnessLogo(s.agentType)}${fork}${ttl}${star}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}`;
     const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     // ‹ the title (up to three lines) and its state ›, then a line of its own for the machine, the tab's place and the
@@ -1103,33 +1105,17 @@ export function nextThatNeedsYou(rows: SessionLike[], opts: SessionListOptions &
  *  moves or removes a card (owner video, 2026-10-19 1:32 AM). Its answer buttons are
  *  on the pinned card only, so they exist once (PHNX-4387); the listed copy shows the
  *  question. An ask leads its own group (PHNX-4369). */
-export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
+/** How the list draws one card: the pinned front card, a listed card and a Favorites copy.
+ *  Settings' preview draws with it too, so the preview is the list's own card. */
+function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) {
   const { here, prefs } = opts;
-  const visible = visibleSessions(rows, here, prefs);
   const today = (r: SessionLike) => onTicket(r, opts.todayId);
-  const onToday = visible.filter(({ row }) => today(row)).length;
   const all = listedSessions(rows, opts);
-  const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
   const blocked = blockedBy(opts);
-  const ball = (r: SessionLike) => (blocked(r) ? 'move' : ballOf(sessionStateOf(r)));
-  const urgency = (r: SessionLike) => urgencyOf(r.attention?.state === 'open' ? r.attention : null);
-  const waitedSince = (r: SessionLike) => { const t = askedAt(r); return Number.isFinite(t) ? t : Infinity; };
-  // Your move leads every group: urgency first; within it a blocked agent (it said it
-  // cannot go on), then the longest wait. The rest keep the viewer's sort.
-  const yourMove = (a: { row: SessionLike }, b: { row: SessionLike }) => urgencyRank(urgency(a.row)) - urgencyRank(urgency(b.row)) || Number(blocked(b.row)) - Number(blocked(a.row))
-    || waitedSince(a.row) - waitedSince(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row));
-  const ordered = (items: { row: SessionLike; place: SessionPlace }[]) => {
-    const sorted = sortRows(items, prefs.sort);
-    return [...sorted.filter((x) => ball(x.row) === 'move').sort(yourMove), ...sorted.filter((x) => ball(x.row) !== 'move')];
-  };
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
   // The front tab's session is pinned on top and keeps its own place in the list too.
   const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
-  // Tabs in this window off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
-  const others = all.filter((x) => prefs.showOpen || !tabHere(x) || ball(x.row) === 'move');
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
-  const quiet = (x: { row: SessionLike; place: SessionPlace }) => cards.finishedGroups && !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
-  const rest = others.filter((x) => !quiet(x));
   const nav = front ? frontNav(cards.arrows, sessionTabs(all), front.row, opts.memory, cardTitle, blocked) : undefined;
   // The listed copy of the front session asks with its question only: its answers are on the pinned card.
   // Compact: the title row, the agent's latest line and what it made; no ask box, no previews.
@@ -1142,9 +1128,69 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, nav: pinned ? nav : undefined, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId),
   });
+  return { all, front, blocked, tabHere, cards, today, card };
+}
+
+/** Settings > A card shows: real sessions drawn by the list's own `cardDrawer` with the
+ *  settings as they stand, so each check or uncheck redraws them (owner, 2026-11-04 6:01 PM:
+ *  "a preview at the bottom … updates in real time as the user checks or unchecks"). Up to
+ *  four listed sessions, one of each shape the settings change (one that asks, one at
+ *  work, a finished turn, the one showing the most parts), and the front tab's pinned card.
+ *  Inert: a click in the preview does nothing. */
+export function renderCardPreview(rows: SessionLike[], now: number, opts: SessionListOptions): string {
+  const { all, front, card } = cardDrawer(rows, now, opts);
+  const live = all.filter((x) => sessionStateOf(x.row) !== 'ended');
+  if (!live.length && !front) return '<div class="cpv"><div class="cpv-head"><b>Preview</b></div><p class="cpv-none">A preview shows once the session stream has a session on this project.</p></div>';
+  const parts = (r: SessionLike) => {
+    const made = opts.madeFor?.(r);
+    return [agentLine(r), made?.prs.length || made?.folders.length || r.ticket, (opts.thumbsFor?.(r) ?? []).length, r.doneVerdict, r.startedAs && cleanTitle(r.startedAs) !== cardTitle(r), r.activity].filter(Boolean).length;
+  };
+  const pick = (want: (r: SessionLike) => boolean) => live.filter((x) => x.row.sessionId !== front?.row.sessionId && want(x.row)).sort((a, b) => parts(b.row) - parts(a.row))[0];
+  const shapes: [string, ReturnType<typeof pick>][] = [
+    ['Shows the most parts', pick(() => true)],
+    ['Asks you', pick((r) => sessionStateOf(r) === 'asks' && r.attention?.state === 'open')],
+    ['At work', pick((r) => sessionStateOf(r) === 'working')],
+    ['Finished, judged', pick((r) => !!r.doneVerdict && sessionStateOf(r) !== 'asks')],
+  ];
+  const seen = new Set<string>();
+  const samples = shapes.filter(([, x]) => x && !seen.has(x.row.sessionId) && seen.add(x.row.sessionId)) as [string, NonNullable<ReturnType<typeof pick>>][];
+  const list = samples.map(([what, x], i) => `<div class="cpv-s" data-i="${i}" data-what="${escapeHtml(what)}"${i ? ' hidden' : ''}>${card(x)}</div>`).join('');
+  const pin = front ? card(front, true) : '<p class="cpv-none">No agent tab is in front, so there is no pinned card to show.</p>';
+  return `<div class="cpv" data-n="${samples.length}">
+    <div class="cpv-head"><b>Preview</b>
+      <span class="cpv-seg" role="tablist" aria-label="Which card"><button role="tab" data-cpv-mode="list" aria-selected="true" title="A card in the list">Listed</button><button role="tab" data-cpv-mode="pin" aria-selected="false" title="The front tab's card, pinned on top">Pinned</button></span>
+      <span class="cpv-nav"${samples.length > 1 ? '' : ' hidden'}><button data-cpv-step="-1" aria-label="Previous session">‹</button><span class="cpv-n"></span><button data-cpv-step="1" aria-label="Next session">›</button></span>
+    </div>
+    <div class="cpv-pane" data-cpv-pane="list" inert>${list || '<p class="cpv-none">No other session on this project to show.</p>'}</div>
+    <div class="cpv-pane" data-cpv-pane="pin" inert hidden>${pin}</div>
+    <div class="cpv-cap" aria-live="polite"></div>
+  </div>`;
+}
+
+export function renderSessions(rows: SessionLike[], now: number, opts: SessionListOptions): string {
+  const { here, prefs } = opts;
+  const { all, front, blocked, tabHere, cards, today, card } = cardDrawer(rows, now, opts);
+  const visible = visibleSessions(rows, here, prefs);
+  const onToday = visible.filter(({ row }) => today(row)).length;
+  const openKind = (r: SessionLike) => (r.attention?.state === 'open' ? r.attention.kind : undefined);
+  const ball = (r: SessionLike) => (blocked(r) ? 'move' : ballOf(sessionStateOf(r)));
+  const urgency = (r: SessionLike) => urgencyOf(r.attention?.state === 'open' ? r.attention : null);
+  const waitedSince = (r: SessionLike) => { const t = askedAt(r); return Number.isFinite(t) ? t : Infinity; };
+  // Your move leads every group: urgency first; within it a blocked agent (it said it
+  // cannot go on), then the longest wait. The rest keep the viewer's sort.
+  const yourMove = (a: { row: SessionLike }, b: { row: SessionLike }) => urgencyRank(urgency(a.row)) - urgencyRank(urgency(b.row)) || Number(blocked(b.row)) - Number(blocked(a.row))
+    || waitedSince(a.row) - waitedSince(b.row) || attentionRank(openKind(a.row)) - attentionRank(openKind(b.row));
+  const ordered = (items: { row: SessionLike; place: SessionPlace }[]) => {
+    const sorted = sortRows(items, prefs.sort);
+    return [...sorted.filter((x) => ball(x.row) === 'move').sort(yourMove), ...sorted.filter((x) => ball(x.row) !== 'move')];
+  };
+  // Tabs in this window off leaves a tab here listed only while it is your move; ‹ › still walk every tab.
+  const others = all.filter((x) => prefs.showOpen || !tabHere(x) || ball(x.row) === 'move');
+  const quiet = (x: { row: SessionLike; place: SessionPlace }) => cards.finishedGroups && !tabHere(x) && (ball(x.row) === 'review' || ball(x.row) === 'idle');
+  const rest = others.filter((x) => !quiet(x));
   // The tab row's two controls, as on every tab; ☀ is a Show item in ⇅. The filter box is the page's own, under the tabs.
   const head = tabHead(menuHtml(prefs, opts.todayId && (onToday || prefs.todayOnly) ? { id: opts.todayId, n: onToday } : undefined));
-  const tail = '<div class="bulk" hidden></div><div class="toast" hidden></div>';
+  const tail = '<div class="bulk" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean };
   const folded = new Set(prefs.folded);
@@ -1174,7 +1220,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     g.items.push(x); byKey.set(x.place.key, g);
   }
   const listed = groups(byKey);
-  return head + pinned + favs + quietGroups + listed + '<div class="nofind" hidden>No session here matches. ⌘K searches every project.</div>' + tail;
+  return head + pinned + favs + quietGroups + listed + tail;
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */
@@ -1426,7 +1472,7 @@ export function renderPrs(m: PrsModel, now: number, opts: ReviewOptions, reading
   const mergedHtml = merged.length ? `<section class="rgrp"><div class="head"><span class="label">Recently merged</span><span class="n">${merged.length}</span></div><ul>${merged.map(({ p, slug }) => `<li class="prli">${prFace(p, opts.avatar)}<a class="prow" href="#" data-url="${escapeHtml(p.url)}"><span class="tm"><span class="t">${escapeHtml(p.title)}</span><span class="sub">#${p.number}${many ? ` · ${escapeHtml(slug.split('/')[1] ?? slug)}` : ''} · merged ${ageWords(Date.parse(p.date), now)}</span></span></a>${prOpenIcon(p)}<span class="pring v-merged" role="img" aria-label="Merged" title="Merged">${RING_SVG(MARK.ok)}</span></li>`).join('')}</ul></section>` : '';
   const none = !body && !readingLine ? `<div class="quiet">No open pull requests${hidden ? ' except drafts' : ''}.</div>` : '';
   const drafts = hidden ? `<button class="more-drafts" data-pref="showDrafts" data-value="true" title="Show the drafts (the ⇅ menu hides them again)">+${hidden} draft${hidden === 1 ? '' : 's'}</button>` : '';
-  return head + partial + readingLine + errors + body + none + drafts + mergedHtml + '<div class="toast" hidden></div>';
+  return head + partial + readingLine + errors + body + none + drafts + mergedHtml;
 }
 
 // ── ⌘K: the session palette ───────────────────────────────────────────────
@@ -1497,37 +1543,76 @@ function paletteSaid(s: SessionLike): string {
   return out;
 }
 
-/** ⌘K's rows, in `paletteOrder`: the harness logo, the title (★ for a favorite), then
- *  right-aligned the state, machine, age and tab; under it the PRs and pages it made,
- *  the images you attached (a click opens a quick look) and its recap's first sentence.
- *  The page filters them as you type (`paletteMatch`), so each row carries its words. */
-export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>, here: Pick<SessionHere, 'device' | 'localHost'>): string {
+/** Where ⌘K says a session runs, and what its Enter can do there: bring its tab forward
+ *  here, bring it forward where it runs (another window, Ghostty), resume it (ended), or
+ *  nothing, for an agent alive in a terminal no window can bring forward. That last one
+ *  is never resumed: `agents run --resume` would start a second agent on it, so Enter
+ *  opens it in place instead (owner video, 2026-11-04 5:57 PM: "why is it trying to resume"). */
+/** Where a ⌘K row's agent runs, as the app that shows it and never the device (owner,
+ *  2026-11-04 9:49 PM: "you don't really need to show the device name"); `far` is the
+ *  sentence an opened row says, which does name it. */
+function paletteReach(s: SessionLike, place: SessionPlace): { where: string; far: string; reach: 'here' | 'focus' | 'resume' | 'none' } {
+  const device = shortDevice(place.device);
+  if (place.kind === 'ended' || place.kind === 'leftover') return { where: '', far: '', reach: s.resumable === false ? 'none' : 'resume' };
+  if (place.kind === 'here') return { where: '', far: '', reach: 'here' };
+  if (place.kind === 'window') return { where: place.name, far: '', reach: 'focus' };
+  // Ghostty known only from the row's terminal app, with no terminal agents-cli sees showing it,
+  // cannot come forward: the focus path would end in a refused resume ("Could not resume …").
+  if (place.kind === 'ghostty') return (s.observers ?? []).some((o) => /ghostty/i.test(o.viewingIn)) ? { where: 'Ghostty', far: '', reach: 'focus' } : { where: 'Ghostty', far: `Ghostty on ${device}`, reach: 'none' };
+  return { where: 'Terminal', far: `a terminal on ${device}`, reach: 'none' };
+}
+
+/** An ask opened in place in ⌘K: the question in full and its choices, each one
+ *  `agents feed answer` click as on a card. */
+function paletteAsk(s: SessionLike): string {
+  const a = s.attention?.state === 'open' ? s.attention : undefined;
+  const text = plain(a?.question?.text || '');
+  if (!a?.key || !text) return '';
+  const opts = askChoices(s).map((c, i) => `<button class="opt" ${c.id ? `data-choice="${escapeHtml(c.id)}"` : `data-ask-text="${escapeHtml(c.label)}"`} data-label="${escapeHtml(c.label)}"${c.description ? ` title="${escapeHtml(c.description)}"` : ''}>${i < 9 ? `<span class="k">${i + 1}</span>` : ''}<span class="ol">${escapeHtml(c.label)}</span></button>`).join('');
+  return `<div class="kask" data-ask="${escapeHtml(a.key)}"><div class="q">${escapeHtml(text)}</div>${opts ? `<div class="opts">${opts}</div>` : ''}<input data-ask-input aria-label="Your reply" placeholder="Or type a reply · Enter sends"><div class="asend" hidden></div></div>`;
+}
+
+/** ⌘K's rows, in `paletteOrder`: the harness logo and title, right-aligned the state and
+ *  age, then ☆ (★ on a favorite) as one click; under it where it runs, the PRs and pages
+ *  it made, the images you attached (a click opens a quick look) and its recap's first
+ *  sentence. No tab number (owner video, 2026-11-04 5:57 PM). The page filters them as you
+ *  type (`paletteMatch`), so each row carries its words. */
+export function renderPalette(entries: PaletteEntry[], now: number, favorites: ReadonlySet<string>, here: SessionHere): string {
   return paletteOrder(entries, favorites).map(({ row: s, made, images }) => {
     const state = sessionStateOf(s);
     const title = cardTitle(s);
     const fav = favorites.has(s.sessionId);
     const asked = askedAt(s);
-    const age = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now);
-    // This machine's rows carry the stream's local label; the row names the machine, as a card does.
-    const device = s.host === here.localHost ? here.device : s.host;
-    const meta = [shortDevice(device), age, s.tabHere && s.tabIndex ? `tab ${s.tabIndex}` : ''].filter(Boolean).map(escapeHtml).join(' · ');
+    // One unit is enough at a glance: "1d", "12h" (owner, 2026-11-04 9:49 PM).
+    const age = ((state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now)).split(' ')[0];
+    const place = sessionPlace(s, here);
+    const { where, far, reach } = paletteReach(s, place);
     const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
     const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);
     const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
     const note = firstSentence(s);
     const ids = [s.sessionId.replace(/^session_/, ''), s.sessionId.replace(/^session_/, '').slice(0, 8)].join(' ');
-    const words = [shortDevice(device), device, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
-    return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}" data-said="${escapeHtml(paletteSaid(s))}">`
-      + `${harnessLogo(s.agentType)}<span class="kt">${fav ? '<span class="kfav" title="Favorite">★</span>' : ''}${escapeHtml(title)}</span>`
-      + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span><span class="kw">${meta}</span></span>`
-      + `<span class="ksub">${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span></div>`;
+    const words = [shortDevice(place.device), place.device, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
+    const star = `<button class="kstar" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${fav}" title="${fav ? 'Remove from Favorites' : 'Add to Favorites'}" aria-label="${fav ? 'Remove from Favorites' : 'Add to Favorites'}">${fav ? '★' : '☆'}</button>`;
+    // Opened in place by Enter when its agent runs where nothing here can bring it forward.
+    const inPlace = reach === 'none' && far && state !== 'ended'
+      ? `<div class="kopen" hidden><p>Running in ${escapeHtml(far)} with no tab here, so ⌘K answers it here and never resumes it.</p>${paletteAsk(s)}</div>` : '';
+    return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-reach="${reach}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}" data-said="${escapeHtml(paletteSaid(s))}">`
+      + `${harnessLogo(s.agentType)}<span class="kt">${escapeHtml(title)}</span>`
+      + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span><span class="kw">${escapeHtml(age)}</span>${star}</span>`
+      + `<span class="ksub">${where ? `<span class="kwhere${reach === 'none' ? ' far' : ''}">${escapeHtml(where)}</span>` : ''}${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span>${inPlace}</div>`;
   }).join('');
 }
 
+/** The tier `paletteMatch` gives a row found only by a typo-tolerant match; the page
+ *  heads these rows "Close matches" so a direct match never hides among them. */
+export const PALETTE_FUZZY = 5;
+
 /** How well a row matches what was typed; lower is better, null for no match. An exact
  *  session id first, then a title that starts with it, a title holding every word, any
- *  other words the row carries, and last what was said in it (`paletteSaid`).
- *  Self-contained: the page's script interpolates it. */
+ *  other words the row carries, what was said in it (`paletteSaid`), and last a title
+ *  or row word one or two typos away from each typed word, "prject" for "project"
+ *  (owner video, 2026-11-04 5:57 PM). Self-contained: the page's script interpolates it. */
 export function paletteMatch(doc: { ids: string; title: string; text: string; said?: string }, query: string): number | null {
   const q = query.trim().toLowerCase();
   if (!q) return 3;
@@ -1539,7 +1624,23 @@ export function paletteMatch(doc: { ids: string; title: string; text: string; sa
   const hay = title + ' ' + doc.text.toLowerCase() + ' ' + doc.ids.toLowerCase();
   if (words.every((w) => hay.includes(w))) return 3;
   const said = hay + ' ' + (doc.said ?? '').toLowerCase();
-  return words.every((w) => said.includes(w)) ? 4 : null;
+  if (words.every((w) => said.includes(w))) return 4;
+  // A word of four or more letters may be a typo: one edit away (two from eight letters)
+  // from a word, or the start of a word, in the title or the row's own words.
+  const tokens = (title + ' ' + doc.text.toLowerCase()).split(/[^a-z0-9]+/).filter((t) => t.length >= 3);
+  const near = (a: string, b: string, max: number) => {
+    if (Math.abs(a.length - b.length) > max) return false;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const row = [i];
+      for (let j = 1; j <= b.length; j++) row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (Math.min(...row) > max) return false;
+      prev = row;
+    }
+    return prev[b.length] <= max;
+  };
+  const close = (w: string) => w.length >= 4 && tokens.some((t) => { const max = w.length >= 8 ? 2 : 1; return near(w, t, max) || (t.length > w.length && near(w, t.slice(0, w.length), max)); });
+  return words.every((w) => hay.includes(w) || close(w)) ? 5 : null; // PALETTE_FUZZY, inlined: the page runs this function's own text
 }
 
 /** The words around what was typed in what was said, so a row matched only there shows

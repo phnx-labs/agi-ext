@@ -33,17 +33,19 @@ test('favorites lead, then asks by urgency and longest wait, running, idle newes
   ])
 })
 
-test('a row: logo and title, then state, machine, age and tab on the right; PRs, pages, attached images and the recap below', () => {
+test('a row: logo and title, then state, age in one unit and ☆ on the right; where it runs (never the device or a tab number), PRs, pages, attached images and the recap below (owner, 2026-11-04 5:57 and 9:49 PM)', () => {
   const html = renderPalette([entry({
     sessionId: 'abcdef12-3456', title: 'Body alignment', tabHere: true, tabIndex: 3, recap: { text: 'Fixed the hips. Then the rest.', at: '2026-10-19T01:00:00Z' }, model: 'claude-opus',
   }, {
     made: { prs: [{ label: '#4325', url: 'https://github.com/o/r/pull/4325' }], ticket: null, folders: [{ name: 'plan', display: '~/plan', files: [{ name: 'plan.html', path: '/h/plan/plan.html' }], images: [] }] },
     images: [{ uri: 'vscode-resource:/h/.agents/.history/attachments/a.png', path: '/h/.agents/.history/attachments/a.png', label: 'a.png' }],
   })], NOW, new Set(['abcdef12-3456']), HERE)
-  expect(html).toContain('data-here="1" data-title="Body alignment" data-ids="abcdef12-3456 abcdef12"')
+  expect(html).toContain('data-here="1" data-reach="here" data-title="Body alignment" data-ids="abcdef12-3456 abcdef12"')
   expect(html).toContain('<i class="hx hx-claude"')
-  expect(html).toContain('<span class="kt"><span class="kfav" title="Favorite">★</span>Body alignment</span>')
-  expect(html).toContain('<span class="kmeta"><span class="pill st-idle"><i></i>Idle</span><span class="kw">s1 · 1m · tab 3</span></span>')
+  expect(html).toContain('<span class="kt">Body alignment</span>')
+  expect(html).toContain('<span class="kmeta"><span class="pill st-idle"><i></i>Idle</span><span class="kw">1m</span><button class="kstar" data-fav="abcdef12-3456" aria-pressed="true"')
+  expect(html).not.toContain('tab 3')
+  expect(html).not.toContain('class="kwhere')
   expect(html).toContain('data-url="https://github.com/o/r/pull/4325"')
   expect(html).toContain('data-artifact="/h/plan/plan.html"')
   expect(html).toContain('<a class="kth" href="#" data-ql="vscode-resource:/h/.agents/.history/attachments/a.png" data-name="a.png"')
@@ -55,9 +57,8 @@ test('a row: logo and title, then state, machine, age and tab on the right; PRs,
   const ended = renderPalette([entry({ sessionId: 'e', phase: 'done', liveStatus: 'closed' })], NOW, new Set(), HERE)
   expect(ended).toContain('<div class="krow ended"')
   expect(ended).toContain('<span class="pill st-ended"><i></i>Ended</span>')
-  expect(renderPalette([entry({ sessionId: 'q', ...ask('k', 'normal', 125_000) })], NOW, new Set(), HERE)).toContain('Asks</span><span class="kw">s1 · 2m 05s')
-  // This machine's rows name the machine, never the stream's local label.
-  expect(renderPalette([entry({ sessionId: 'l', host: 'this-mac' })], NOW, new Set(), HERE)).toContain('<i></i>Idle</span><span class="kw">zion · 1m')
+  expect(renderPalette([entry({ sessionId: 'q', ...ask('k', 'normal', 125_000) })], NOW, new Set(), HERE)).toContain('Asks</span><span class="kw">2m</span>')
+  expect(renderPalette([entry({ sessionId: 'd', lastActivityMs: NOW - 28 * 3_600_000 })], NOW, new Set(), HERE)).toContain('<span class="kw">28h</span>')
 })
 
 test('matching: an exact id, then a title that starts with the words, a title holding them, then any other words', () => {
@@ -124,6 +125,9 @@ test('a machine never carries a dot, alive or ended', () => {
     entry({ sessionId: 'gone', title: 'Gone', host: 'yosemite-s0', phase: 'done', liveStatus: 'closed' }),
   ], NOW, new Set(), HERE)
   const rowOf = (id: string) => html.split('<div class="krow').find((r) => r.includes(`data-session="${id}"`)) ?? ''
-  expect(rowOf('live-ask')).toContain('<span class="kw">s0 · 1m 00s</span>')
+  expect(rowOf('live-ask')).toContain('<span class="kw">1m</span>')
+  // It runs where nothing here shows it: the row names the app, and Enter opens it in place, naming the machine.
+  expect(rowOf('live-ask')).toContain('<span class="kwhere far">Terminal</span>')
+  expect(rowOf('live-ask')).toContain('Running in a terminal on s0 with no tab here')
   expect(html).not.toContain('class="run"')
 })

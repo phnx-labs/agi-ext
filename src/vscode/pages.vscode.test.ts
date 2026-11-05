@@ -121,9 +121,8 @@ describe('the Pages webview', () => {
   test('a click opens in the same tab and ⌘-click in a new one; the setting flips both', () => {
     click($('.face'));
     expect(last()).toEqual({ type: 'open', url: 'https://github.com/acme/app', newTab: false });
-    expect($('#toast').textContent).toBe('Opening …');
+    expect($('#toast')).toBeNull();
     deliver({ type: 'opened' });
-    expect(($('#toast') as unknown as { hidden: boolean }).hidden).toBe(true);
     click($('.face'), true);
     expect(last()).toEqual({ type: 'open', url: 'https://github.com/acme/app', newTab: true });
     state('new');
@@ -160,5 +159,10 @@ describe('the Pages webview', () => {
     q.value = 'news.ycombinator.com';
     key(q as unknown as HTMLElement, 'Enter', true);
     expect(last()).toEqual({ type: 'open', url: 'news.ycombinator.com', newTab: true });
+  });
+  test('no toast (owner, 2026-11-04 9:42 PM): a refusal takes the hint\'s place', () => {
+    deliver({ type: 'opened', error: 'Could not open it' });
+    expect($('#toast')).toBeNull();
+    expect($('#hint').textContent).toBe('Could not open it');
   });
 });
