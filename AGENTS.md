@@ -309,8 +309,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   title), then the panel's buttons: ▣ Sessions, ⑂ Review, ⚙ and ⋯ (owner video, 2026-11-05
   12:23 AM; owner, 2:21 AM: "the sessions panel, the merge request icon, and then settings, and
   then dot dot dot"). Settings > In the header turns on ✳ Lead, ◑ Issues, 🔍, ⇅ and ⇄ like the
-  macOS menu bar (`panelHeader`, `src/core/settings.ts`); Review can go too, and a tab that is off
-  is gone. ⋯ holds View, Filter and Sort…, Switch Project…, Move into New Window and Refresh. A tab
+  macOS menu bar (`panelHeader`, `src/core/settings.ts`); Review can go too. Turning one off
+  hides its button, never the tab: ⌃1–⌃4, a ticket tile and a Lead ask still open it. ⋯ holds View, Filter and Sort…, Switch Project…, Move into New Window and Refresh. A tab
   button is drawn pressed and Sessions carries an amber dot while a session asks, each a variant
   command picked by context key (`agents.project.tab`, `agents.project.asks`,
   `agents.project.show.*`; `HEADER_TAB_COMMANDS`), since an extension's button cannot toggle; the

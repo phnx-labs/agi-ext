@@ -68,24 +68,12 @@ test('the agent logo and an agent in ▾ each send one start; a second click, ev
   expect(sent).toEqual([{ type: 'startTicket', id: 'A-1' }, { type: 'startTicket', id: 'A-2', agent: 'codex', where: 'auto' }]);
 });
 
-test('Settings > In the header turns Lead, Review and Issues off; a tab that is off, or a ⌃ key to one, lands on Sessions', () => {
-  sent.length = 0;
-  deliver({ type: 'tabs', lead: false, prs: false, tickets: false });
-  // Issues was showing and is gone: the panel goes back to Sessions.
-  expect(sent).toContainEqual({ type: 'tab', tab: 'sessions' });
-  for (const tab of ['lead', 'prs', 'tickets']) {
+test('the page opens any tab it is asked for: Settings > In the header hides only a button, so ⌃1–⌃4, a ticket tile and a Lead ask still reach their tab', () => {
+  for (const tab of ['lead', 'sessions', 'prs', 'settings', 'tickets']) {
     sent.length = 0;
     deliver({ type: 'choose', tab });
-    expect(sent).toEqual([]);
+    expect(sent).toEqual([{ type: 'tab', tab }]);
   }
-  deliver({ type: 'tabs', lead: false, prs: true, tickets: false });
-  deliver({ type: 'choose', tab: 'prs' });
-  expect(sent).toContainEqual({ type: 'tab', tab: 'prs' });
-  // Settings always stays: ⚙ is in VS Code's row whatever is checked.
-  deliver({ type: 'choose', tab: 'settings' });
-  expect(sent).toContainEqual({ type: 'tab', tab: 'settings' });
-  deliver({ type: 'tabs', lead: false, prs: true, tickets: true });
-  deliver({ type: 'choose', tab: 'tickets' });
 });
 
 test('a ticket tag colors its session dot for every state tone but the quiet one', async () => {
