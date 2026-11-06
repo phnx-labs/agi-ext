@@ -1000,7 +1000,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
   // A listed card's title row; the pinned card draws its own two rows in frontBody. Its icons
   // sit on the last row, so a hover never shortens the title (owner, 2026-11-06).
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}</div>`;
+  const acts = `<span class="acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>`;
+  // A card shrunk to its title row (no chips, no machine) keeps its icons there.
+  const lastRow = !!(strip || host);
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}${lastRow ? '' : acts}</div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
@@ -1028,7 +1031,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const body = opts.front ? frontBody() : `
     ${top}
     ${text}
-    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}<div class="cbot">${strip}<span class="acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>${host}</div>
+    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${lastRow ? `<div class="cbot">${strip}${acts}${host}</div>` : ''}
   `;
   const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
