@@ -245,10 +245,13 @@ going on, where, and what came out of it" in one look; text explains only what a
   part off, down to the logo and title on one line (owner video, 2026-10-17), with a preview
   of a real card under those sections that redraws on every check (`renderCardPreview`; owner,
   2026-11-04 6:01 PM).
-  Hover only reveals icons; a card never grows under the pointer (owner video, 2026-10-12).
+  Hover only reveals icons, on the card's last row beside the machine with ⋯ last, so the title
+  never shortens; a card never grows under the pointer (owner video, 2026-10-12; owner, 2026-11-06).
   Copy and ☆ are two of them: ☆ turns ★ in one click, on a card and on ⌘K's selected row (owner
   video, 2026-11-04 5:57 PM), and ★ shows after a favorite's title; Favorites (the viewer's own, `globalState` by session id) repeat under the pinned card above every group, each still
-  in its own group (owner video, 2026-10-19 1:42 AM). A card whose agent has not spoken
+  in its own group (owner video, 2026-10-19 1:42 AM). An ended card is its title, its age and
+  its latest words: no state pill (its group says Ended), how long it ran on the age's hover,
+  and no ☆ unless it is already a favorite. A card whose agent has not spoken
   shows your prompt as "You: …", never as its words. Settings > Session list turns the
   Favorites group and the whole list off (only the pinned card; ⌘K finds the rest).
   A finished turn the CLI's done-check judged carries ✓ Done or Not done on its

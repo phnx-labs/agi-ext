@@ -954,16 +954,17 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   // A finished turn the CLI's done-check judged says ✓ Done or Not done on the
   // title row, instead of Idle (owner video, 2026-10-18 8:59 PM: no second idle label, no new row).
   const verdict = opts.blocked || !cards.verdict ? null : verdictChipOf(state, s.doneVerdict);
-  const word = opts.blocked ? 'Blocked' : verdict ? verdict.word : `${SESSION_STATE_WORD[state]}${ran ? ` · ran ${ranFor(ran)}` : ''}`;
+  const word = opts.blocked ? 'Blocked' : verdict ? verdict.word : SESSION_STATE_WORD[state];
   const tip = verdict ? verdict.why : word;
   const pillTitle = state !== 'ended' && counts.total ? ` title="${escapeHtml(`${word}, with its own work running: ${pendingWords(s.pending)}\n${pendHover}`)}"` : '';
   const vchip = verdictChipHtml(verdict);
   // Working and waiting are the dot alone; a word is for what asks something of you or is over (owner video, 2026-10-27 9:24 AM).
   const dotOnly = !opts.blocked && (state === 'working' || state === 'waiting');
-  const pill = !verdict && cards.state ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` role="img" aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
+  // An ended card is its age alone: its group already says Ended, and how long it ran is on the age's hover (owner, 2026-11-06).
+  const pill = !verdict && cards.state && state !== 'ended' ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` role="img" aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
-      : `<span class="age">${ageWords(s.lastActivityMs, now)}</span>`;
+      : `<span class="age"${ran ? ` title="${escapeHtml(`Ran ${ranFor(ran)}: ${ranSpan(s.startedAtMs!, s.lastActivityMs, now)}`)}"` : ''}>${ageWords(s.lastActivityMs, now)}</span>`;
   // The repository only when it is not the one this window has open.
   const repo = s.cwd ? resolveProject(s.cwd) : '';
   const ours = new Set([opts.here.workspace, ...(opts.here.folders ?? [])].map((f) => f.toLowerCase()));
@@ -976,7 +977,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
   const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
   const text = opts.compact ? (cards.description ? preview : '') : cards.description
-    ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}${ran ? `<div class="span">${escapeHtml(ranSpan(s.startedAtMs!, s.lastActivityMs, now))}</div>` : ''}`
+    ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}`
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
   // The repository and the machine share the card's last line; a colored dot there is only ever a state (owner video, 2026-10-27 9:24 AM).
@@ -987,7 +988,8 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const copy = `<button class="act" data-copy="${escapeHtml(brief)}" title="Copy its title, session id, machine and recap" aria-label="Copy session details">${glyph('copy')}</button>`;
   // ☆ is one click beside Copy (owner video, 2026-11-04 5:57 PM: "a quick action button that allows me to favorite this").
   const favWords = opts.favorite ? 'Remove from Favorites' : 'Add to Favorites';
-  const favBtn = `<button class="act favq" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${favWords}" aria-label="${favWords}">${opts.favorite ? '★' : '☆'}</button>`;
+  // An ended session is offered no ☆; a favorite keeps its ★ so it can be removed (owner, 2026-11-06).
+  const favBtn = state === 'ended' && !opts.favorite ? '' : `<button class="act favq" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${favWords}" aria-label="${favWords}">${opts.favorite ? '★' : '☆'}</button>`;
   // ★ also shows after a favorite's title (owner video, 2026-10-27 9:24 AM); ☆/★ beside Copy turns it.
   const star = opts.favorite ? `<span class="star on" title="Favorite" aria-label="Favorite">★</span>` : '';
   // The pinned card's title renames the session on a click; the page keeps what is typed
@@ -996,8 +998,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const ttl = rename
     ? `<span class="ttl${rename.can ? ' rn' : ''}" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\n${rename.tip}`)}">${escapeHtml(title)}</span>`
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
-  // A listed card's title row; the pinned card draws its own two rows in frontBody.
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}<span class="acts">${favBtn}${copy}${cardMenu(s, place, opts)}${go}</span></div>`;
+  // A listed card's title row; the pinned card draws its own two rows in frontBody. Its icons
+  // sit on the last row, so a hover never shortens the title (owner, 2026-11-06).
+  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}</div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
   // the tabs beside it, its ask under the title, its state and where it runs, Claude's
   // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
@@ -1015,7 +1018,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     const pos = opts.nav?.at ? `Tab ${opts.nav.at} of ${opts.nav.count}` : s.tabIndex ? `Tab ${s.tabIndex}` : '';
     const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ageWords(s.lastActivityMs, now);
     const where = escapeHtml(shortDevice(place.device));
-    const acts = `<span class="fc-acts">${favBtn}${copy}${cardMenu(s, place, opts)}${go}</span>`;
+    const acts = `<span class="fc-acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>`;
     const name = `${harnessLogo(s.agentType)}${fork}${ttl}${star}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}`;
     const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
     // ‹ the title (up to three lines) and its state ›, then a line of its own for the machine, the tab's place and the
@@ -1025,7 +1028,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const body = opts.front ? frontBody() : `
     ${top}
     ${text}
-    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${strip || host ? `<div class="cbot">${strip}${host}</div>` : ''}
+    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}<div class="cbot">${strip}<span class="acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>${host}</div>
   `;
   const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;

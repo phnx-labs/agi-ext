@@ -1398,7 +1398,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
      the filter field, while Review or Issues is filtered (⌘K or 🔍), and nothing otherwise. */
   .frow { display: flex; align-items: center; padding: 4px 8px 4px 10px; border-bottom: 1px solid var(--r-edge); flex: none; min-width: 0; } .frow[hidden] { display: none; }
   .tday { margin-left: 4px; font-size: 10.5px; flex: none; }
-  .card .span { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-caption); margin: 2px 0 4px; }
   .reading, .quiet { font-size: 11.5px; color: var(--r-caption); padding: 6px 2px; }
   /* One header row: the goal, then the tabs as icons and their controls (owner video,
      2026-10-18 8:59 PM); the project's name is the view's title. */
@@ -1504,7 +1503,7 @@ ${MADE_CSS}
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
   .acts { display: none; gap: 2px; flex: none; }
-  .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .card:hover .age, .card.sel .age, .card:focus-within .age { display: none; }
+  .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .cbot .acts { margin-left: auto; } .card:is(:hover, .sel, :focus-within, :has(.cmore[open])) .cbot .acts + .hst { margin-left: 0; }
   .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
   .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .act .ic { width: 13px; height: 13px; stroke-width: 1.6; }
@@ -1524,7 +1523,7 @@ ${MADE_CSS}
   .cbot .hst { margin-left: auto; flex: none; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); opacity: .8; }
   .cbot .hst .repo { margin-right: 6px; } .cbot .hst .repo::after { content: '·'; margin-left: 6px; }
   .cmore { position: relative; } .cmore > summary { list-style: none; font-size: 13px; line-height: 18px; text-align: center; } .cmore > summary::-webkit-details-marker { display: none; }
-  .card:has(.cmore[open]) .acts { display: flex; } .card:has(.cmore[open]) .age { display: none; }
+  .card:has(.cmore[open]) .acts { display: flex; }
   .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
   .cmenu dl { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 3px 8px; margin: 0; font-size: 11px; } .cmenu dt { color: var(--r-faint); } .cmenu dd { margin: 0; overflow-wrap: anywhere; }
   .cmenu button { display: block; width: 100%; margin-top: 6px; padding: 3px 4px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-glass-hover); }
