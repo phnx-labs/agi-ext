@@ -126,3 +126,25 @@ test('⇅ > View > Compact draws listed cards as the title row, the latest line 
   expect(full.slice(full.indexOf('data-group="here"'))).toContain('class="thumbs"')
   expect(full).not.toMatch(/class="card [^"]*compact/)
 })
+
+test('an ended card is its title, age and words: no pill, no ☆, how long it ran on the age\'s hover, and its icons on the last row with ⋯ last (owner, 2026-11-06)', () => {
+  const start = NOW - 26 * 3_600_000
+  const ended = row({ sessionId: 'gone', title: 'Closing practice', phase: 'done', liveStatus: 'closed', startedAtMs: start, lastActivityMs: NOW - 3 * 3_600_000, lastResponse: 'Opening it.' })
+  const card = (favs: string[]) => {
+    const html = renderSessions([ended], NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, folded: [] }, favorites: new Set(favs) })
+    return html.slice(html.indexOf('data-session="gone"'))
+  }
+  const html = card([])
+  expect(html).not.toContain('class="pill')
+  expect(html).not.toContain('ran 23h')
+  expect(html).not.toContain('class="span"')
+  expect(html).toContain('<span class="age" title="Ran 23h 0m: ')
+  expect(html).not.toContain('data-fav="gone"')
+  const top = html.slice(html.indexOf('class="top"'), html.indexOf('</div>', html.indexOf('class="top"')))
+  expect(top).not.toContain('class="acts"')
+  const acts = html.slice(html.indexOf('<span class="acts">'), html.indexOf('class="hst"'))
+  expect(acts.indexOf('data-act="resume"')).toBeLessThan(acts.indexOf('class="cmore'))
+  expect(html.indexOf('<span class="acts">')).toBeGreaterThan(html.indexOf('class="cbot"'))
+  // A favorite that ended keeps ★ so it can be unstarred.
+  expect(card(['gone'])).toContain('data-fav="gone" aria-pressed="true"')
+})

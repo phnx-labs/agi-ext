@@ -4,6 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.440] - 2026-11-06
+
+From the owner's 12:05 AM notes on the Project panel's Ended group:
+
+- An ended card no longer says "Ended · ran 1d 1h" or "Nov 4 7:00 PM → yesterday 8:42 PM". The
+  group already says Ended; how long it ran and when are on the age's hover.
+- Hovering a card no longer cuts its title: ☆, Copy, ▶ and ⋯ sit on the card's last row beside
+  the machine, and the age stays put.
+- ⋯ is always the last icon, after ▶ or ↗.
+- An ended session is not offered ☆; one you already starred keeps ★ so you can unstar it.
+
 ## [0.9.439] - 2026-11-05
 
 From the owner's 3:24 AM notes on ⌘K:
