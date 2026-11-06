@@ -1503,7 +1503,7 @@ ${MADE_CSS}
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
   .acts { display: none; gap: 2px; flex: none; }
-  .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .cbot .acts { margin-left: auto; } .card:is(:hover, .sel, :focus-within, :has(.cmore[open])) .cbot .acts + .hst { margin-left: 0; }
+  .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .cbot .acts { margin-left: auto; } .card:is(:hover, .sel, :focus-within, :has(.cmore[open])) .top:has(.acts) .age { display: none; } .card:is(:hover, .sel, :focus-within, :has(.cmore[open])) .cbot .acts + .hst { margin-left: 0; }
   .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
   .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
   .act .ic { width: 13px; height: 13px; stroke-width: 1.6; }

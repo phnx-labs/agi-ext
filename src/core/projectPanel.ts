@@ -962,9 +962,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const dotOnly = !opts.blocked && (state === 'working' || state === 'waiting');
   // An ended card is its age alone: its group already says Ended, and how long it ran is on the age's hover (owner, 2026-11-06).
   const pill = !verdict && cards.state && state !== 'ended' ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` role="img" aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
+  const ranWords = ran ? `Ran ${ranFor(ran)}: ${ranSpan(s.startedAtMs!, s.lastActivityMs, now)}` : '';
   const age = !cards.age ? ''
     : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
-      : `<span class="age"${ran ? ` title="${escapeHtml(`Ran ${ranFor(ran)}: ${ranSpan(s.startedAtMs!, s.lastActivityMs, now)}`)}"` : ''}>${ageWords(s.lastActivityMs, now)}</span>`;
+      : `<span class="age"${ran ? ` title="${escapeHtml(ranWords)}"` : ''}>${ageWords(s.lastActivityMs, now)}</span>`;
   // The repository only when it is not the one this window has open.
   const repo = s.cwd ? resolveProject(s.cwd) : '';
   const ours = new Set([opts.here.workspace, ...(opts.here.folders ?? [])].map((f) => f.toLowerCase()));
@@ -1001,7 +1002,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   // A listed card's title row; the pinned card draws its own two rows in frontBody. Its icons
   // sit on the last row, so a hover never shortens the title (owner, 2026-11-06).
   const acts = `<span class="acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>`;
-  // A card shrunk to its title row (no chips, no machine) keeps its icons there.
+  // A card shrunk to its title row (no chips, no machine) keeps its icons there, the age giving way on hover.
   const lastRow = !!(strip || host);
   const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}${lastRow ? '' : acts}</div>`;
   // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
