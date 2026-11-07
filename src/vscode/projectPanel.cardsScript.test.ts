@@ -48,23 +48,29 @@ const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 deliver({ type: 'tab', tab: 'sessions' });
 deliver({ type: 'html', tab: 'sessions', html: draw() });
 
-test('☆ posts one favorite and turns every copy of that card at once, without selecting it', () => {
+test('a click on the agent\'s logo posts one favorite and turns every copy of that card at once, without selecting it (owner video, 2026-11-07 7:19 AM)', () => {
   sent.length = 0;
-  ($$('[data-fav="b"]')[0]).click();
+  ($$('.lg[data-favlogo="b"]')[0]).click();
   expect(sent).toEqual([{ type: 'favorite', sessionId: 'b', value: true }]);
-  expect($$('[data-fav="b"]').every((b) => b.textContent === '★' && b.getAttribute('aria-pressed') === 'true')).toBe(true);
+  expect($$('[data-favlogo="b"]').every((b) => b.getAttribute('aria-pressed') === 'true')).toBe(true);
+  expect($$('.lg[data-favlogo="b"]').every((b) => b.classList.contains('on'))).toBe(true);
   // The host redraws with the Favorites group; b now shows twice, both starred.
   deliver({ type: 'html', tab: 'sessions', html: draw(['b']) });
   expect($$('[data-group="favorites"] .card').map((c) => c.dataset.session)).toEqual(['b']);
   expect($$('.card[data-session="b"] .star.on')).toHaveLength(2);
-  $$('[data-fav="b"]')[0].click();
+  // ⋯ > Remove from Favorites does the same.
+  $$('.cmenu [data-favlogo="b"]')[0].click();
   expect(sent.at(-1)).toEqual({ type: 'favorite', sessionId: 'b', value: false });
 });
 
-test('the pinned title opens a rename box; a stream update keeps what is typed; Enter sends it once', () => {
+test('the pinned title copies the session; ⋯ > Rename opens a rename box; a stream update keeps what is typed; Enter sends it once', () => {
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   sent.length = 0;
   $('.front-pin .ttl').click();
+  expect(sent.map((m) => m.type)).toEqual(['copy']);
+  expect($('.front-pin .ttl input')).toBeNull();
+  sent.length = 0;
+  $('.front-pin [data-act="rename"]').click();
   const input = $('.front-pin .ttl input.ttl-edit') as HTMLInputElement;
   expect(input.value).toBe('Task a');
   expect(sent).toEqual([]);
@@ -86,17 +92,19 @@ test('the pinned title opens a rename box; a stream update keeps what is typed; 
 test('Esc or leaving the box cancels; a harness without /rename never opens one', () => {
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   sent.length = 0;
-  $('.front-pin .ttl').click();
+  $('.front-pin [data-act="rename"]').click();
   const input = $('.front-pin .ttl input.ttl-edit') as HTMLInputElement;
   input.value = 'Not this';
   input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
   expect($('.front-pin .ttl input')).toBeNull();
   expect($('.front-pin .ttl').textContent).toBe('Task a');
-  $('.front-pin .ttl').click();
+  $('.front-pin [data-act="rename"]').click();
   ($('.front-pin .ttl input') as HTMLInputElement).blur();
   expect($('.front-pin .ttl input')).toBeNull();
   expect(sent).toEqual([]);
+  // Another harness has no /rename: ⋯ offers none, and its title only copies.
   deliver({ type: 'html', tab: 'sessions', html: draw([], { agentType: 'codex' }) });
+  expect($('.front-pin [data-act="rename"]')).toBeNull();
   $('.front-pin .ttl').click();
   expect($('.front-pin .ttl input')).toBeNull();
 });

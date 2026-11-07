@@ -23,7 +23,7 @@ const sent: { type: string; url?: string; id?: string; external?: boolean }[] = 
 const open = page.indexOf('<script');
 const script = page.slice(page.indexOf('>', open) + 1, page.lastIndexOf('</script'));
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
-  window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m) }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
+  window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m), getState: () => ({}), setState: () => undefined }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* the thumbnails are not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
 );
 const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));

@@ -12,7 +12,7 @@ import { ticketFace } from './ticketFaces';
 import { BALL_WORD, SESSION_STATE_WORD, STATE_TONE, ageWords, attentionRank, ballOf, pendingCounts, pendingLines, pendingWords, relTime, sessionStateOf, urgencyOf, urgencyRank, verdictChipHtml, verdictChipOf, waitFor, type DoneVerdict, type SessionPending, type SessionStateKey } from '../shared/sessionState';
 import { replyBoxHtml } from '../shared/replyBox';
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings';
-import { frontNav, nextNeedsYou, type FrontMemory, type FrontNav, type FrontStep } from './frontNav';
+import { nextNeedsYou, type FrontMemory } from './frontNav';
 import { resolveProject } from '../shared/project';
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import { BUILT_IN_AGENTS } from './agents';
@@ -812,36 +812,44 @@ function askChoices(s: SessionLike): { id?: string; label: string; description?:
   return (q?.options ?? []).flatMap((o) => (o.label ? [{ id: o.id, label: o.label, description: o.description }] : []));
 }
 
-/** The Lead's draft under the question: its words, Send (the same `feed answer` a button
- *  sends) and, for words, Edit, which opens Other… holding them. The Lead sends nothing. */
-function leadDraft(d: { text?: string; choiceId?: string; label: string } | undefined): string {
+/** The Lead's draft as one ★ button on the ask's line: the same `feed answer` a choice sends. */
+function recButton(d: { text?: string; choiceId?: string; label: string } | undefined): string {
   if (!d?.label || (!d.text && !d.choiceId)) return '';
   const sends = d.choiceId ? `data-choice="${escapeHtml(d.choiceId)}"` : `data-ask-text="${escapeHtml(d.text!)}"`;
-  const edit = d.choiceId ? '' : `<button class="lnk" data-ask-edit="${escapeHtml(d.text!)}">Edit</button>`;
-  return `<div class="draft"><span class="dl">Lead</span><span class="dt" title="${escapeHtml(d.label)}">${escapeHtml(d.label)}</span><span class="da"><button class="lnk" ${sends} data-label="${escapeHtml(d.label)}">Send</button>${edit}</span></div>`;
+  return `<button class="rec" ${sends} data-label="${escapeHtml(d.label)}" title="${escapeHtml(`The Lead's draft: ${d.label}`)}"><span class="rs">★</span>${escapeHtml(d.label)}</button>`;
 }
 
-/** The ask on a card: its header and question, and, with answers on, one compact
- *  button per choice (keys 1–9), Other… and Try another way. Every button carries
- *  what it sends; the page holds it 5 s with Undo before one `feed answer`. */
-function askBlock(s: SessionLike, cards: CardSettings): string {
+/** The ask on a card, with no label (the card's color says it asks; owner video, 2026-11-07
+ *  0:42): the question and, when the Lead drafted an answer, that answer as one ★ button on
+ *  the same line (two lines when the question is long; owner video, 2026-11-07 0:40, 1:17).
+ *  ▾ opens the full question, every choice (keys 1–9), Other…, Try another way and Edit.
+ *  Without a draft the choices stay on the pinned card as before. A listed card shows the
+ *  question and its ★, which answers that agent from the list without fronting its tab. */
+function askBlock(s: SessionLike, cards: CardSettings, elsewhere = false): string {
   const a = s.attention?.state === 'open' ? s.attention : undefined;
   const q = a?.question ?? s.question ?? undefined;
   const text = plain(q?.text || '');
   if (!text) return '';
   const permission = a?.kind === 'permission';
   const full = cards.question === 'full';
-  const head = `<div class="ah">Asks${q?.header ? ` · ${escapeHtml(plain(q.header))}` : ''}</div>`;
-  const question = `<div class="q${permission ? ' cmdq' : ''}${full ? ' full' : ''}" title="${escapeHtml(text)}"${full ? '' : ' data-expand'}>${escapeHtml(text)}</div>`;
   const key = a?.key;
-  if (cards.asks !== 'answers' || !key) return `<div class="ask">${head}${question}</div>`;
-  const opt = (c: { id?: string; label: string; description?: string }, i: number) => {
+  const answers = cards.asks === 'answers' && !!key;
+  // The pinned card's own listed copy and a Favorites copy show the question only: its ★ exists once.
+  const rec = key && !elsewhere ? recButton(a?.draft) : '';
+  const opts = answers ? askChoices(s).map((c, i) => {
     const sends = c.id ? `data-choice="${escapeHtml(c.id)}"` : `data-ask-text="${escapeHtml(c.label)}"`;
     const detail = cards.options === 'details' && c.description ? `<small>${escapeHtml(c.description)}</small>` : '';
     return `<button class="opt" ${sends} data-label="${escapeHtml(c.label)}"${c.description ? ` title="${escapeHtml(c.description)}"` : ''}>${i < 9 ? `<span class="k">${i + 1}</span>` : ''}<span class="ol">${escapeHtml(c.label)}</span>${detail}</button>`;
-  };
-  const opts = askChoices(s).map(opt).join('');
-  return `<div class="ask" data-ask="${escapeHtml(key)}" data-undo="${cards.answerUndo === 'five' ? 5 : 0}">${head}${question}${leadDraft(a?.draft)}${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button></div><div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div></div>`;
+  }).join('') : '';
+  const more = answers && rec ? `<button class="amore-t" data-expand aria-label="The question, every answer and Other" title="The question, every answer and Other…">▾</button>` : '';
+  const question = `<div class="q${permission ? ' cmdq' : ''}${full ? ' full' : ''}" title="${escapeHtml(text)}"${full ? '' : ' data-expand'}>${escapeHtml(text)}</div>`;
+  const line = `<div class="aline">${question}${rec}${more}</div>`;
+  if (!answers && !rec) return `<div class="ask">${line}</div>`;
+  const tail = `<div class="aother" hidden><input data-ask-input aria-label="Your reply" placeholder="Type a reply · Enter sends"></div><div class="asend" hidden></div>`;
+  if (!answers) return `<div class="ask" data-ask="${escapeHtml(key!)}" data-undo="${cards.answerUndo === 'five' ? 5 : 0}">${line}${tail}</div>`;
+  const edit = a?.draft?.text && !a.draft.choiceId ? `<button class="lnk" data-ask-edit="${escapeHtml(a.draft.text)}">Edit the draft</button>` : '';
+  const rest = `<div class="amore">${opts ? `<div class="opts">${opts}</div>` : ''}<div class="alt"><button class="lnk" data-ask-other>Other…</button><button class="lnk" data-ask-text="${escapeHtml(TRY_ANOTHER_WAY)}" data-label="Try another way" title="${escapeHtml(TRY_ANOTHER_WAY)}">Try another way</button>${edit}</div></div>`;
+  return `<div class="ask${rec ? ' hasrec' : ''}" data-ask="${escapeHtml(key!)}" data-undo="${cards.answerUndo === 'five' ? 5 : 0}">${line}${rest}${tail}</div>`;
 }
 
 /** A thumbnail's markup: no `src` until the webview's cache holds a 480 px copy
@@ -854,39 +862,36 @@ function thumbImg(uri: string, path: string, alt: string): string {
     : `<img data-thumb="${escapeHtml(uri)}" ${size} alt="${escapeHtml(alt)}">`;
 }
 
-/** The card's ⋯ menu: what used to crowd its meta row (tab, model, folder, session
- *  id, account), each on its own line. */
-function cardMenu(s: SessionLike, place: SessionPlace, opts: { project?: string; linearName?: string; here: SessionHere; favorite?: boolean }): string {
+/** What used to fill the ⋯ menu (tab, model, host, folder, session, account, project), as
+ *  lines for the age's tooltip: details show on hover, ⋯ holds only actions (owner video,
+ *  2026-11-07 5:42 AM: "that's just way too much text"). */
+function cardFacts(s: SessionLike, place: SessionPlace, opts: { project?: string; linearName?: string; here: SessionHere }): string[] {
   const tab = place.where.match(/tab \d+/)?.[0];
   const other = opts.project && s.confirmedProject && s.confirmedProject.toLowerCase() !== opts.project.toLowerCase();
   const project = opts.project ? [opts.project, opts.linearName ? `Linear: ${opts.linearName}` : '', other ? `the CLI said ${s.confirmedProject}` : ''].filter(Boolean).join(' · ') : '';
-  // Each value copies on a click (owner video, 2026-10-22 6:42 AM); the shown words and the copied text can differ.
-  const rows: [string, string, string][] = [
-    ['Tab', s.tabHere ? (tab ? `${tab} in this window` : 'in this window') : tab ? `${tab} in ${place.name}` : 'none', ''],
-    ['Model', [s.model, s.effort ? `${s.effort} effort` : '', s.fast ? 'fast' : ''].filter(Boolean).join(' · ') || 'not reported', s.model ?? ''],
-    ['Host', place.device === opts.here.device ? `${place.device} (this one)` : place.device, place.device],
-    ...(s.cwd ? [['Folder', displayHome(s.cwd), s.cwd] as [string, string, string]] : []),
-    ['Session', s.sessionId, s.sessionId],
-    ...(s.account ? [['Account', s.account, s.account] as [string, string, string]] : []),
-    ...(project ? [['Project', project, opts.project!] as [string, string, string]] : []),
-  ];
-  // Close (or Hide, for a card with no tab) lives here, out of a stray click's way (owner video, 2026-10-17).
-  const hasTab = place.kind === 'here' || place.kind === 'leftover';
-  const close = hasTab ? '<button class="danger" data-act="close">Close the tab</button>' : '<button data-act="hide">Hide until it does something new</button>';
-  return `<details class="cmore"><summary class="act" title="Details and close" aria-label="Details and close">⋯</summary><div class="cmenu"><dl>${rows.map(([k, v, c]) => `<dt>${k}</dt><dd>${c ? `<button class="cpv" data-copy="${escapeHtml(c)}" data-quiet title="Copy ${escapeHtml(c)}">${escapeHtml(v)}</button>` : escapeHtml(v)}</dd>`).join('')}</dl>${close}</div></details>`;
+  return [
+    `Host: ${place.device === opts.here.device ? `${place.device} (this one)` : place.device}`,
+    tab ? `Tab: ${s.tabHere ? `${tab} in this window` : `${tab} in ${place.name}`}` : '',
+    `Model: ${[s.model, s.effort ? `${s.effort} effort` : '', s.fast ? 'fast' : ''].filter(Boolean).join(' · ') || 'not reported'}`,
+    s.cwd ? `Folder: ${displayHome(s.cwd)}` : '',
+    s.account ? `Account: ${s.account}` : '',
+    project ? `Project: ${project}` : '',
+  ].filter(Boolean);
 }
 
-const STEP_MARK = { first: '⇤', prev: '‹', next: '›', last: '⇥' } as const;
-
-/** ⇤ ‹ title · state · ● s0 · 2/10 · 4m › ⇥ : the pinned card's one header row (owner, 2026-10-22
- *  1:01 PM). Settings turns ⇤ ⇥ off, and ‹ › Off draws none. In Next-that-needs-you, ‹ is Back. */
-function navButtons(nav: FrontNav | undefined, top: string, ends: boolean): string {
-  const btn = (dir: keyof typeof STEP_MARK, to: FrontStep | undefined) => to?.sessionId
-    ? `<button class="fc-step${dir === 'first' || dir === 'last' ? ' end' : ''}" data-front-step="${dir}"${dir === 'prev' && nav?.mode === 'needs' ? ' data-back' : ''} data-session="${escapeHtml(to.sessionId)}" data-host="${escapeHtml(to.host ?? '')}" title="${escapeHtml(to.tip)}" aria-label="${escapeHtml(to.tip)}">${STEP_MARK[dir]}</button>`
-    : `<button class="fc-step${dir === 'first' || dir === 'last' ? ' end' : ''}" disabled title="${escapeHtml(to?.tip ?? '')}" aria-label="${escapeHtml(to?.tip ?? '')}">${STEP_MARK[dir]}</button>`;
-  const arrows = nav && nav.mode !== 'off';
-  const both = arrows && ends && nav.count > 1;
-  return `<div class="fc-nav${arrows ? '' : ' bare'}">${both ? btn('first', nav.first) : ''}${arrows ? btn('prev', nav.prev) : ''}${top}${arrows ? btn('next', nav.next) : ''}${both ? btn('last', nav.last) : ''}</div>`;
+/** The card's ⋯ menu: actions only. Rename (the pinned card's Claude session), Favorites
+ *  (for a harness with no logo to click), the session id and folder to copy, then Close the
+ *  tab, or Hide for a card with no tab, out of a stray click's way (owner video, 2026-10-17). */
+function cardMenu(s: SessionLike, place: SessionPlace, opts: { favorite?: boolean; rename?: boolean; star?: boolean }): string {
+  const hasTab = place.kind === 'here' || place.kind === 'leftover';
+  const items = [
+    opts.rename ? '<button data-act="rename">Rename…</button>' : '',
+    opts.star ? `<button data-favlogo="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}">${opts.favorite ? 'Remove from Favorites' : 'Add to Favorites'}</button>` : '',
+    `<button data-copy="${escapeHtml(s.sessionId)}">Copy session id</button>`,
+    s.cwd ? `<button data-copy="${escapeHtml(s.cwd)}">Copy folder</button>` : '',
+    hasTab ? '<button class="danger" data-act="close">Close the tab</button>' : '<button data-act="hide">Hide until it does something new</button>',
+  ].join('');
+  return `<details class="cmore"><summary class="act" title="More" aria-label="More">⋯</summary><div class="cmenu">${items}</div></details>`;
 }
 
 /** Claude's recap on the front card, with how old it is; dimmed with "before your
@@ -917,11 +922,11 @@ function activitySteps(s: SessionLike): string {
   return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; nav?: FrontNav; shelf?: object | null; favorite?: boolean; compact?: boolean }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
-  const ask = state === 'asks' && cards.asks !== 'off' ? askBlock(s, cards) : '';
+  const ask = state === 'asks' && cards.asks !== 'off' ? askBlock(s, cards, opts.answeredElsewhere) : '';
   const said = agentLine(s);
   const live = cards.command && state === 'working' && s.activity && !said.startsWith(plain(s.activity).slice(0, 40)) ? s.activity : '';
   const made = opts.made;
@@ -963,78 +968,84 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   // An ended card is its age alone: its group already says Ended, and how long it ran is on the age's hover (owner, 2026-11-06).
   const pill = !verdict && cards.state && state !== 'ended' ? `<span class="pill st-${opts.blocked ? 'blocked' : state}${dotOnly ? ' solo' : ''}"${pillTitle || (dotOnly ? ` title="${escapeHtml(word)}"` : '')}${dotOnly ? ` role="img" aria-label="${escapeHtml(word)}"` : ''}><i></i>${dotOnly ? '' : escapeHtml(word)}</span>` : '';
   const ranWords = ran ? `Ran ${ranFor(ran)}: ${ranSpan(s.startedAtMs!, s.lastActivityMs, now)}` : '';
+  // Why it is urgent, in agents-cli's words, is on the age's hover with where it runs and the
+  // rest of what ⋯ used to list; the card's color already says it needs you (owner video,
+  // 2026-11-07 0:42: "why do we have to say needs you").
+  const urgent = s.attention?.state === 'open' ? s.attention.urgencyReason ?? '' : '';
+  const ageTip = [waited >= 0 ? `Waiting on you${urgent ? `: ${urgent}` : ''}` : ranWords || tip, state !== 'ended' && counts.total ? `Its own work running: ${pendingWords(s.pending)}` : '', ...cardFacts(s, place, opts)].filter(Boolean).join('\n');
   const age = !cards.age ? ''
-    : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="Waiting on you">${waitFor(waited)}</span>`
-      : `<span class="age"${ran ? ` title="${escapeHtml(ranWords)}"` : ''}>${ageWords(s.lastActivityMs, now)}</span>`;
+    : waited >= 0 ? `<span class="age wait" data-since="${asked}" title="${escapeHtml(ageTip)}">${waitFor(waited)}</span>`
+      : `<span class="age" title="${escapeHtml(ageTip)}">${ageWords(s.lastActivityMs, now)}</span>`;
   // The repository only when it is not the one this window has open.
   const repo = s.cwd ? resolveProject(s.cwd) : '';
   const ours = new Set([opts.here.workspace, ...(opts.here.folders ?? [])].map((f) => f.toLowerCase()));
   const repoTag = repo && !ours.has(repo.toLowerCase()) ? `<span class="repo" title="${escapeHtml(displayHome(s.cwd!))}">${escapeHtml(repo)}</span>` : '';
   const fx = `${s.fast ? '<span class="fast" title="Fast mode">⚡</span>' : ''}${s.effort === 'high' || s.effort === 'xhigh' || s.effort === 'max' ? `<span class="hi" title="${escapeHtml(s.effort)} reasoning effort">◆</span>` : ''}`;
-  // Why it is urgent, in agents-cli's words, with how long it has waited.
-  const reason = s.attention?.state === 'open' && s.attention.urgencyReason
-    ? `<div class="why u-${urgencyOf(s.attention)}">${escapeHtml(s.attention.urgencyReason)}${waited >= 0 ? ` · waiting <span data-since="${asked}">${waitFor(waited)}</span>` : ''}</div>` : '';
   const preview = ask || saidLine(s, said);
   // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
   const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
   const text = opts.compact ? (cards.description ? preview : '') : cards.description
-    ? `${started}${reason}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}`
+    ? `${started}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}`
     : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
   // The repository and the machine share the card's last line; a colored dot there is only ever a state (owner video, 2026-10-27 9:24 AM).
   const host = cards.machine ? `<span class="hst" title="${escapeHtml(place.device)}">${repoTag}${escapeHtml(shortDevice(place.device))}</span>` : '';
   const fork = s.forkOf ? `<span class="fork" title="${escapeHtml(`Forked from ${s.forkOf.slice(0, 8)}`)}" aria-label="Fork">⑂</span>` : '';
-  // Copy: what another agent or a message needs to pick this session up.
+  // Copy: what another agent or a message needs to pick this session up. It sits where the
+  // age is and takes its place on hover, top right (owner video, 2026-11-07 7:05 AM).
   const brief = [title, `Session ${s.sessionId} on ${place.device}${s.cwd ? ` in ${displayHome(s.cwd)}` : ''}`, plain(s.recap?.text ?? '') || said].filter(Boolean).join('\n');
-  const copy = `<button class="act" data-copy="${escapeHtml(brief)}" title="Copy its title, session id, machine and recap" aria-label="Copy session details">${glyph('copy')}</button>`;
-  // ☆ is one click beside Copy (owner video, 2026-11-04 5:57 PM: "a quick action button that allows me to favorite this").
+  const copy = `<button class="act cpy" data-copy="${escapeHtml(brief)}" title="Copy its title, session id, machine and recap" aria-label="Copy session details">${glyph('copy')}</button>`;
+  // A click on the agent's logo stars it (owner video, 2026-11-07 7:19 AM); ★ shows on the logo
+  // and after the title. An ended session's logo stars nothing unless it already is one (owner, 2026-11-06).
   const favWords = opts.favorite ? 'Remove from Favorites' : 'Add to Favorites';
-  // An ended session is offered no ☆; a favorite keeps its ★ so it can be removed (owner, 2026-11-06).
-  const favBtn = state === 'ended' && !opts.favorite ? '' : `<button class="act favq" data-fav="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${favWords}" aria-label="${favWords}">${opts.favorite ? '★' : '☆'}</button>`;
-  // ★ also shows after a favorite's title (owner video, 2026-10-27 9:24 AM); ☆/★ beside Copy turns it.
+  const logoMark = harnessLogo(s.agentType);
+  const canStar = state !== 'ended' || !!opts.favorite;
+  const logo = logoMark && canStar
+    ? `<button class="lg${opts.favorite ? ' on' : ''}" data-favlogo="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${favWords}" aria-label="${favWords}">${logoMark}</button>`
+    : logoMark;
   const star = opts.favorite ? `<span class="star on" title="Favorite" aria-label="Favorite">★</span>` : '';
-  // The pinned card's title renames the session on a click; the page keeps what is typed
-  // there (data-keep) and draws the stream's title from data-ttl otherwise.
+  // The pinned card's title copies the session on a click; Rename is in its ⋯ (owner video,
+  // 2026-11-07 7:19 AM). The page keeps what is typed while renaming (data-keep) and draws the
+  // stream's title from data-ttl otherwise.
   const rename = opts.front ? renameOf(s, place, state) : null;
   const ttl = rename
-    ? `<span class="ttl${rename.can ? ' rn' : ''}" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\n${rename.tip}`)}">${escapeHtml(title)}</span>`
+    ? `<span class="ttl cp" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\nClick to copy its title, session id, machine and recap`)}">${escapeHtml(title)}</span>`
     : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
-  // A listed card's title row; the pinned card draws its own two rows in frontBody. Its icons
-  // sit on the last row, so a hover never shortens the title (owner, 2026-11-06).
-  const acts = `<span class="acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>`;
+  const menu = cardMenu(s, place, { favorite: opts.favorite, rename: !!rename?.can, star: canStar });
+  // A listed card's ⋯ and ↗/▶ sit on its last row, so a hover never shortens the title (owner, 2026-11-06).
+  const acts = `<span class="acts">${go}${menu}</span>`;
   // A card shrunk to its title row (no chips, no machine) keeps its icons there, the age giving way on hover.
   const lastRow = !!(strip || host);
-  const top = `<div class="top">${harnessLogo(s.agentType)}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}${lastRow ? '' : acts}</div>`;
-  // The front tab's card, pinned above the list (owner, 2026-10-18 7:02 PM): ‹ › to
-  // the tabs beside it, its ask under the title, its state and where it runs, Claude's
-  // recap (else the agent's latest words), what it made, the last steps, a reply box. Its children never change in number, and
-  // the reply box (data-keep) is never patched, so typing survives every update.
+  const top = `<div class="top">${logo}${fork}${ttl}${star}${pill ? '' : `<span class="sr">${escapeHtml(word)}</span>`}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}${pill}${age}${copy}${lastRow ? '' : acts}</div>`;
+  // An ended card opens in place on a click, with ▶ Resume and how long it ran (owner video,
+  // 2026-11-07 3:11 AM: "I'm clicking on them and nothing is happening").
+  const endedRow = state === 'ended' && !opts.front
+    ? `<div class="ended-x">${s.resumable === false ? '<span>This session cannot be resumed.</span>' : `<button class="rsm" data-act="resume">${glyph('resume')}Resume</button>`}${ranWords ? `<span>${escapeHtml(ranWords)}</span>` : ''}</div>` : '';
+  // The front tab's card, pinned above the list at the height you set (owner video, 2026-11-07
+  // 1:29): the title row, its ask on one line, Claude's recap and the steps in a box that
+  // scrolls, what it made in one row that scrolls sideways, and a reply box at the bottom. It
+  // follows the front tab and nothing else (owner video, 2026-11-07 0:04). Its children never
+  // change in number, and the reply box (data-keep) is never patched, so typing survives every update.
   function frontBody(): string {
     const latest = recapBlock(s, now) || saidLine(s, said);
     // The Made shelf the Active Session sidebar draws (renderMadeShelf), drawn by the page
     // from the shelf's fields; data-keep keeps a scrolled shelf through every update.
     const madeBlock = opts.shelf ? `<div class="fc-made" data-keep data-made="${escapeHtml(JSON.stringify(opts.shelf))}"></div>` : '';
-    // A question from this tab's own agent goes directly under the title, above the recap.
     // Fixed wrappers, so an ask, a live line or a recap coming and going never shifts the
     // Made shelf or the activity box to another position (the patch pairs by position).
-    const detail = `<div class="fc-lead">${reason}${ask}</div><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${madeBlock}${cards.activity ? activitySteps(s) : ''}`;
-    const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Reply… (Enter sends)', false)}</div>`;
-    const pos = opts.nav?.at ? `Tab ${opts.nav.at} of ${opts.nav.count}` : s.tabIndex ? `Tab ${s.tabIndex}` : '';
-    const since = waited >= 0 ? `<span data-since="${asked}">${waitFor(waited)}</span>` : ageWords(s.lastActivityMs, now);
-    const where = escapeHtml(shortDevice(place.device));
-    const acts = `<span class="fc-acts">${favBtn}${copy}${go}${cardMenu(s, place, opts)}</span>`;
-    const name = `${harnessLogo(s.agentType)}${fork}${ttl}${star}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}`;
-    const stateWords = [tip, state !== 'ended' && counts.total ? pendingWords(s.pending) : ''].filter(Boolean).join(' · ');
-    // ‹ the title (up to three lines) and its state ›, then a line of its own for the machine, the tab's place and the
-    // age, with Copy and ⋯ always there (owner video, 2026-10-27 9:24 AM: the full title, 17/17 on another row).
-    return `${navButtons(opts.nav, `<div class="top">${name}${vchip}${pill || `<span class="sr">${escapeHtml(word)}</span>`}</div>`, cards.ends)}<div class="fc-meta"><span class="fc-where" title="${escapeHtml(stateWords)}">${[cards.machine ? where : '', pos, cards.age ? since : ''].filter(Boolean).join(' · ')}</span>${acts}</div><div class="fc-body">${detail}</div>${reply}`;
+    const detail = `<div class="fc-lead">${ask}</div><div class="fc-scroll"><div class="fc-latest">${latest}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}</div>${cards.activity ? activitySteps(s) : ''}</div>${madeBlock}`;
+    const reply = state === 'ended' ? '' : `<div class="fc-reply" data-keep>${replyBoxHtml('Message this agent… (Enter sends)', false)}</div>`;
+    const head = `<div class="top">${logo}${fork}${ttl}${star}${fx ? `<span class="fx">${fx}</span>` : ''}${opts.today ? '<span class="tday" title="On today\'s goal">☀</span>' : ''}${vchip}<span class="sr">${escapeHtml(word)}</span>${age}${copy}<span class="fc-acts">${go}${menu}</span></div>`;
+    return `${head}<div class="fc-body">${detail}</div>${reply}`;
   }
   const body = opts.front ? frontBody() : `
     ${top}
     ${text}
-    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${lastRow ? `<div class="cbot">${strip}${acts}${host}</div>` : ''}
+    ${cards.previews && thumbs.length ? `<div class="thumbs">${thumbs.join('')}</div>` : ''}${lastRow ? `<div class="cbot">${strip}${acts}${host}</div>` : ''}${endedRow}
   `;
-  const cls = `card st-${opts.blocked ? 'blocked' : state}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
+  const rank = state === 'asks' && s.attention?.state === 'open' ? urgencyOf(s.attention) : 'normal';
+  const urgency = rank === 'high' || rank === 'urgent' ? ` u-${rank}` : '';
+  const cls = `card st-${opts.blocked ? 'blocked' : state}${urgency}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
   const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
@@ -1123,7 +1134,6 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
   // The front tab's session is pinned on top and keeps its own place in the list too.
   const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
-  const nav = front ? frontNav(cards.arrows, sessionTabs(all), front.row, opts.memory, cardTitle, blocked) : undefined;
   // The listed copy of the front session asks with its question only: its answers are on the pinned card.
   // Compact: the title row, the agent's latest line and what it made; no ask box, no previews.
   const shown: CardSettings = prefs.view === 'compact' ? { ...cards, asks: 'off', previews: false, firstMessage: false, command: false } : cards;
@@ -1132,8 +1142,8 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false, copy = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, linearName: opts.linearName,
     // The pinned card is where an ask is answered, so it keeps its answers whatever the list shows (owner video, 2026-10-22 8:50 AM).
-    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, nav: pinned ? nav : undefined, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
-    favorite: !!opts.favorites?.has(row.sessionId),
+    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
+    favorite: !!opts.favorites?.has(row.sessionId), answeredElsewhere: !pinned && (copy || (!!front && row.sessionId === front.row.sessionId)),
   });
   return { all, front, blocked, tabHere, cards, today, card };
 }
@@ -1204,14 +1214,20 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const section = (g: Group) => {
     // A folded group opens while it holds the selected session (the front tab included).
     const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
+    // An ended session with no title and nothing said has nothing to open: one line says how
+    // many, with Show (owner video, 2026-11-07 1:06 AM: "why do we have these empty sessions?").
+    const empties = closed || g.copy ? [] : g.items.filter((x) => emptySession(x.row));
+    const kept = empties.length ? g.items.filter((x) => !empties.includes(x)) : g.items;
+    const emptyRow = empties.length ? `<div class="emptyrow">${empties.length} empty session${empties.length === 1 ? '' : 's'} hidden (Untitled, no messages) · <button class="lnk" data-show-empty>Show</button></div><div class="empties" hidden>${ordered(empties).map((x) => card(x)).join('')}</div>` : '';
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
       <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}</div>
-      <div class="items">${closed ? '' : ordered(g.items).map((x) => card(x, false, g.copy)).join('')}</div>
+      <div class="items">${closed ? '' : ordered(kept).map((x) => card(x, false, g.copy)).join('')}${emptyRow}</div>
     </section>`;
   };
   const byBall = (b: 'review' | 'idle') => others.filter((x) => quiet(x) && ball(x.row) === b);
   const ballIcon = (b: 'review' | 'idle') => `<span class="pill st-${b} solo"><i></i></span>`;
-  const pinned = front ? `<div class="front-pin">${card(front, true)}</div>` : '';
+  // The grip under the pinned card sets its height for every session (owner video, 2026-11-07 1:29).
+  const pinned = front ? `<div class="front-pin">${card(front, true)}<div class="fc-grip" role="separator" aria-orientation="horizontal" aria-label="Pinned card height" title="Drag to set the pinned card's height for every session; double-click to reset"></div></div>` : '';
   // Settings > Show the session list off: the front tab's card alone; ⌘K finds the rest.
   if (!cards.list) return head + (pinned || `<div class="empty">The session list is off in Settings. ${escapeHtml(opts.searchKey ?? '⌘K')} finds every session.</div>`) + tail;
   // Starred sessions, on top and still in their own group (owner video, 2026-10-19 1:42 AM).
@@ -1228,6 +1244,11 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   }
   const listed = groups(byKey);
   return head + pinned + favs + quietGroups + listed + tail;
+}
+
+/** An ended session with no title, no words from its agent and no prompt of yours. */
+function emptySession(r: SessionLike): boolean {
+  return sessionStateOf(r) === 'ended' && !r.title.trim() && !agentLine(r) && !plain(r.request?.headline ?? '');
 }
 
 /** The tab's numbers: live sessions, the asks (never an idle turn), tabs held here. */

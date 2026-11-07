@@ -162,10 +162,6 @@ export interface DisplayPreferences {
   showSessionIdInTitles: boolean;
 }
 
-/** Settings > Session cards > ‹ › on the pinned card: walk the tabs in order, go to
- *  the next session that needs you (and back), or draw no arrows. */
-export type ArrowMode = 'tabs' | 'needs' | 'off';
-
 /** Session cards in the Project panel: whether an ask shows its answers, how much
  *  of each option and of the question, what a click does, whether an answer waits
  *  for an Undo, and which parts each card shows (all of them down to logo and title). */
@@ -177,8 +173,6 @@ export interface CardSettings {
   answerUndo: 'off' | 'five';
   /** What the pinned card's Made row draws: one row of chips, or preview tiles. */
   made: 'chips' | 'previews';
-  /** What ‹ › on the pinned card do: walk the tabs, go to the next that needs you, or nothing. */
-  arrows: ArrowMode;
   description: boolean;
   chips: boolean;
   /** Images you attached and images the agent made, three at most. */
@@ -194,8 +188,6 @@ export interface CardSettings {
   command: boolean;
   /** The pinned card's Activity box. */
   activity: boolean;
-  /** ⇤ ⇥ beside ‹ › on the pinned card: the first and the last tab. */
-  ends: boolean;
   /** Starred sessions repeated in a Favorites group under the pinned card (owner video, 2026-10-19 1:42 AM). */
   favorites: boolean;
   /** The session list under the pinned card; off leaves the front tab's card alone and ⌘K finds the rest. */
@@ -206,15 +198,15 @@ export interface CardSettings {
 }
 
 /** The parts a card can leave out, as Settings lists them. */
-export const CARD_PARTS = ['description', 'command', 'chips', 'previews', 'machine', 'age', 'state', 'verdict', 'firstMessage', 'activity', 'ends'] as const;
+export const CARD_PARTS = ['description', 'command', 'chips', 'previews', 'machine', 'age', 'state', 'verdict', 'firstMessage', 'activity'] as const;
 
 /** What Sessions lists under the pinned card, as Settings > Session list toggles it. */
 export const LIST_PARTS = ['list', 'favorites', 'finishedGroups'] as const;
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = {
-  asks: 'question', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips', arrows: 'tabs',
+  asks: 'question', options: 'titles', question: 'two', click: 'front', answerUndo: 'off', made: 'chips',
   description: true, chips: true, previews: true, machine: true, age: true, state: true, verdict: true, firstMessage: false,
-  command: false, activity: true, ends: true, favorites: true, list: true, finishedGroups: false,
+  command: false, activity: true, favorites: true, list: true, finishedGroups: false,
 };
 
 /** The stored card settings with any value this version does not know read as its default. */
@@ -228,9 +220,8 @@ export function cardSettings(v: Partial<CardSettings> | undefined): CardSettings
     click: v?.click === 'show' ? 'show' : d.click,
     answerUndo: v?.answerUndo === 'five' ? 'five' : d.answerUndo,
     made: v?.made === 'previews' ? 'previews' : d.made,
-    arrows: v?.arrows === 'needs' || v?.arrows === 'off' ? v.arrows : d.arrows,
     description: part('description'), chips: part('chips'), previews: part('previews'), machine: part('machine'), age: part('age'), state: part('state'), verdict: part('verdict'), firstMessage: part('firstMessage'),
-    command: part('command'), activity: part('activity'), ends: part('ends'),
+    command: part('command'), activity: part('activity'),
     favorites: part('favorites'), list: part('list'), finishedGroups: part('finishedGroups'),
   };
 }

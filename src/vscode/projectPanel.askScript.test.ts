@@ -28,7 +28,7 @@ document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<
 const sent: { type: string; key?: string; choice?: string; text?: string }[] = [];
 const script = page.match(/<script[^>]*>([\s\S]*?)<\/script>/)![1];
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
-  window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m) }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
+  window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m), getState: () => ({}), setState: () => undefined }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* the thumbnails are not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
 );
 const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));
@@ -88,13 +88,13 @@ test('an answer whose card leaves the list before its 5 s is not sent', async ()
   expect(document.querySelector('.hnote')!.textContent).toContain('Answer not sent: its card left the list before it went.');
 }, 15_000);
 
-test('by default an answer goes at once, and its agent comes to the front through the card\'s own select', () => {
+test('by default an answer goes at once; from the list it selects its agent without changing the tab in front (owner video, 2026-11-07 0:04)', () => {
   deliver({ type: 'html', tab: 'sessions', html: draw(null, { ...DEFAULT_CARD_SETTINGS, asks: 'answers' }) });
   const from = sent.length;
   (ask().querySelector('[data-choice="yes-publish-from-zion"]') as unknown as HTMLElement).click();
   const card = ask().closest('.card') as unknown as HTMLElement;
   expect(sent.slice(from)).toEqual([
-    { type: 'select', sessionId: '9b1f0c2e-publish', host: card.dataset.host, focus: card.dataset.here === '1', answer: true },
+    { type: 'select', sessionId: '9b1f0c2e-publish', host: card.dataset.host, focus: false, answer: true },
     { type: 'answer', key: KEY, choice: 'yes-publish-from-zion', text: undefined },
   ]);
   expect(ask().querySelector('.asend')!.textContent).toBe('Sending “Yes, publish from zion”…');
@@ -112,18 +112,17 @@ test('Close and Hide in a card\'s ⋯ menu do what the old × did, and the menu 
 });
 
 
-test('the Lead\'s draft: Send answers with its words like any button; Edit opens Other… holding them', () => {
+test('the Lead\'s draft: its ★ answers with its words like any button; ▾ > Edit the draft opens Other… holding them', () => {
   const rows = ROWS.map((r: { sessionId: string; attention?: object }) => r.sessionId === 'e4d2a913-cards'
     ? { ...r, attention: { ...r.attention, draft: { text: 'Wait for CI, then publish from zion', label: 'Wait for CI, then publish from zion' } } } : r);
   deliver({ type: 'html', tab: 'sessions', html: renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'answers' } }) });
   const box = () => document.querySelector('.ask[data-ask="yosemite-m6/e4d2a913-cards/b-5a01"]')!;
-  const draft = box().querySelector('.draft')!;
-  (draft.querySelector('[data-ask-edit]') as unknown as HTMLElement).click();
+  (box().querySelector('[data-ask-edit]') as unknown as HTMLElement).click();
   const input = box().querySelector('[data-ask-input]') as unknown as HTMLInputElement;
   expect((box().querySelector('.aother') as unknown as HTMLElement).hidden).toBe(false);
   expect(input.value).toBe('Wait for CI, then publish from zion');
   const from = sent.length;
-  (draft.querySelector('[data-ask-text]') as unknown as HTMLElement).click();
+  (box().querySelector('.rec') as unknown as HTMLElement).click();
   expect(sent.slice(from).filter((m) => m.type === 'answer')).toEqual([{ type: 'answer', key: 'yosemite-m6/e4d2a913-cards/b-5a01', choice: undefined, text: 'Wait for CI, then publish from zion' }]);
-  expect((box().querySelector('.draft') as unknown as HTMLElement).hidden).toBe(true);
+  expect((box().querySelector('.rec') as unknown as HTMLElement).hidden).toBe(true);
 });

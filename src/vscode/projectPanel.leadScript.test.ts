@@ -19,7 +19,7 @@ document.body.innerHTML = page.slice(page.indexOf('<body>') + 6, page.indexOf('<
 const sent: Record<string, unknown>[] = [];
 const script = page.match(/<script[^>]*>([\s\S]*?)<\/script[^>]*>/i)![1];
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
-  window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
+  window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m), getState: () => ({}), setState: () => undefined }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
 );
 const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));

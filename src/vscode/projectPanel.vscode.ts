@@ -113,7 +113,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; step?: unknown; back?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
 }
 
 interface TabState {
@@ -171,8 +171,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') opened(this.openTicketTab(msg.id));
       else if (msg.type === 'image' && typeof msg.path === 'string') opened(this.controller.openImage(msg.path));
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string' && msg.back === true) this.controller.back(msg.sessionId, host);
-      else if (msg.type === 'select' && typeof msg.sessionId === 'string') opened(this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true || msg.step === true ? 'always' : 'card') : 'no'));
+      else if (msg.type === 'select' && typeof msg.sessionId === 'string') opened(this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true ? 'always' : 'card') : 'no'));
       else if (msg.type === 'favorite' && typeof msg.sessionId === 'string' && typeof msg.value === 'boolean') void this.controller.setFavorite(msg.sessionId, msg.value);
       else if (msg.type === 'rename' && typeof msg.sessionId === 'string' && typeof msg.name === 'string') this.controller.rename(msg.sessionId, msg.name);
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
@@ -572,7 +571,7 @@ class ProjectPanelController {
   /** The last Issues read that answered: Start and a ticket's page find a ticket in it. */
   private ticketsSeen: TicketGroup[] = [];
   readonly view: ProjectView;
-  /** Which session tabs this window had in front, and when: Next that needs you and Back read it. */
+  /** Which session tabs this window had in front, and when: Next that needs you reads it. */
   readonly history = new FrontHistory();
 
   private readonly avatars: AvatarCache;
@@ -1167,12 +1166,6 @@ class ProjectPanelController {
     this.select(next.row.sessionId, next.row.host, 'always');
   }
 
-  /** ‹ in Next-that-needs-you: back to the session tab in front before, like Back in a browser. */
-  back(sessionId: string, host: string | undefined): void {
-    this.history.goBack(sessionId);
-    this.select(sessionId, host, 'always');
-  }
-
   /** Show the session in the sidebar; its tab in this window comes forward, wherever its
    *  agent runs (s1, m1…). A card asks through Settings > Card click; ⌘K and an answer
    *  always front it. Nothing is resumed or spawned. */
@@ -1445,23 +1438,24 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card.sel { background: var(--r-glass-hover); border-color: var(--r-faint); box-shadow: inset 2px 0 0 var(--r-gold-line); }
   /* The front tab's card, pinned above the list (owner, 2026-10-18). */
   .front-pin { margin: 2px 0 8px; }
-  .fc-nav { display: flex; align-items: center; gap: 4px; margin: -2px -2px 2px; }
-  .fc-step { width: 22px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--r-text-2); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
-  .fc-step:hover:not([disabled]) { background: var(--r-well); color: var(--r-text); }
-  .fc-step:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-  .fc-step[disabled] { opacity: .3; cursor: default; }
-  .card.front { cursor: default; }
+  /* The pinned card keeps one height for every session: the grip under it sets it (owner video,
+     2026-11-07 1:29). Title row, its ask, then recap and steps scrolling inside, what it made in
+     one row that scrolls sideways, and the reply box at the bottom. */
+  .card.front { cursor: default; height: var(--fc-h, 340px); box-sizing: border-box; display: flex; flex-direction: column; }
   .card.front.st-asks:hover, .card.front.st-stuck:hover, .card.front.st-blocked:hover, .card.front.st-working:hover, .card.front.st-waiting:hover, .card.front.st-idle:hover, .card.front.st-review:hover { filter: none; }
-  .card.front .top { height: auto; min-height: 20px; align-items: flex-start; }
-  .card.front .top .hx { margin-top: 2px; }
-  .card.front .top .vchip { margin-top: 1px; }
-  /* ⇤ ‹ the title, up to three lines, and its state › ⇥; under it the machine, the tab's place, the age, Copy and ⋯ (owner video, 2026-10-27 9:24 AM). */
-  .card.front .fc-nav .top { flex: 1; min-width: 0; }
-  .card.front .fc-nav .ttl { line-height: 17px; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-  .card.front .fc-nav { align-items: flex-start; } .card.front .fc-nav .fc-step { margin-top: 1px; }
-  .fc-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 0 2px 26px; height: 22px; } .fc-nav.bare + .fc-meta { margin-left: 0; }
-  .fc-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); font-variant-numeric: tabular-nums; }
-  .fc-acts { display: flex; gap: 2px; flex: none; margin-left: auto; }
+  .card.front > .top { height: auto; min-height: 20px; align-items: flex-start; flex: none; }
+  .card.front > .top .hx, .card.front > .top .lg { margin-top: 1px; }
+  .card.front > .top .vchip, .card.front > .top .age, .card.front > .top .cpy { margin-top: 1px; }
+  .card.front > .top .ttl { line-height: 17px; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .card.front .ttl.cp { cursor: copy; border-radius: 4px; } .card.front .ttl.cp:hover { background: var(--r-glass-hover); }
+  .fc-acts { display: none; gap: 2px; flex: none; } .card.front:is(:hover, :focus-within, :has(.cmore[open])) .fc-acts { display: flex; }
+  .card.front .fc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .fc-lead { flex: none; max-height: 60%; overflow-y: auto; scrollbar-width: thin; }
+  .fc-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  .card.front .fc-made, .card.front .fc-reply { flex: none; }
+  .fc-grip { height: 10px; margin: 1px 0 0; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
+  .fc-grip::before { content: ''; width: 32px; height: 3px; border-radius: 3px; background: var(--r-edge); }
+  .fc-grip:hover::before { background: var(--r-gold-line); }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
   .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
   .fc-recap .fc-k { color: var(--r-gold-line); }
@@ -1493,7 +1487,7 @@ ${MADE_CSS}
   .fc-made button.mk-open { background: transparent; border: 0; }
   .fc-act ol { max-height: 96px; overflow-y: auto; scrollbar-width: thin; }
   /* About a quarter shorter than it was, so more of the list shows under it (owner video, 2026-10-22 8:50 AM); the recap's full text is its tooltip. */
-  .fc-rt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .fc-rt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .fc-act ol[hidden] { display: none; }
   .fc-act ol:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .fc-act li.fc-earlier { display: block; font-size: 10.5px; color: var(--r-faint); }
@@ -1503,6 +1497,12 @@ ${MADE_CSS}
   .card .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .age { font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); flex: none; }
   .acts { display: none; gap: 2px; flex: none; }
+  /* ⧉ takes the age's place, top right, on hover (owner video, 2026-11-07 7:05 AM), so the title never shortens. */
+  .top .cpy { display: none; flex: none; } .card:is(:hover, :focus-within) .top .cpy { display: grid; } .card:is(:hover, :focus-within) .top .age { display: none; }
+  /* The agent's logo stars the session (owner video, 2026-11-07 7:19 AM). */
+  .lg { position: relative; flex: none; display: inline-grid; place-items: center; padding: 1px; margin: -1px; border: 0; border-radius: 4px; background: none; cursor: pointer; }
+  .lg:hover { background: var(--r-glass-hover); } .lg:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+  .lg.on::after { content: '★'; position: absolute; right: -5px; bottom: -5px; font-size: 8px; line-height: 1; color: var(--r-gold-line); }
   .card:hover .acts, .card.sel .acts, .card:focus-within .acts { display: flex; } .cbot .acts { margin-left: auto; } .card:is(:hover, .sel, :focus-within, :has(.cmore[open])) .top:has(.acts) .age { display: none; } .card:is(:hover, .sel, :focus-within, :has(.cmore[open])) .cbot .acts + .hst { margin-left: 0; }
   .act { width: 22px; height: 20px; display: grid; place-items: center; border: 1px solid transparent; background: none; border-radius: 5px; color: var(--r-caption); cursor: pointer; padding: 0; }
   .act:hover { background: var(--r-glass-hover); border-color: var(--r-edge); color: var(--r-text); }
@@ -1525,10 +1525,9 @@ ${MADE_CSS}
   .cmore { position: relative; } .cmore > summary { list-style: none; font-size: 13px; line-height: 18px; text-align: center; } .cmore > summary::-webkit-details-marker { display: none; }
   .card:has(.cmore[open]) .acts { display: flex; }
   .cmenu { position: absolute; right: 0; top: 22px; z-index: 6; width: 230px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--r-edge); background: var(--vscode-menu-background, var(--vscode-sideBar-background)); box-shadow: 0 8px 22px rgba(0,0,0,.3); cursor: default; }
-  .cmenu dl { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 3px 8px; margin: 0; font-size: 11px; } .cmenu dt { color: var(--r-faint); } .cmenu dd { margin: 0; overflow-wrap: anywhere; }
-  .cmenu button { display: block; width: 100%; margin-top: 6px; padding: 3px 4px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-glass-hover); }
-  .cmenu .cpv { display: inline; width: auto; margin: 0; padding: 0; border: 0; border-radius: 3px; font-size: 11px; text-align: left; overflow-wrap: anywhere; }
-  .cmenu .cpv.copied::after { content: ' copied'; color: var(--r-faint); }
+  .cmenu { width: 200px; padding: 4px; }
+  .cmenu button { display: block; width: 100%; padding: 4px 6px; text-align: left; font: inherit; font-size: 11.5px; border: 0; border-radius: 5px; background: none; color: var(--r-text); cursor: pointer; } .cmenu button:hover { background: var(--r-glass-hover); }
+  .cmenu button.danger { margin-top: 3px; border-top: 1px solid var(--r-edge); border-radius: 0 0 5px 5px; } .cmenu button.copied::after { content: ' ✓'; color: var(--r-faint); }
   .pill.st-blocked { color: var(--r-bad); border-color: var(--r-bad); } .pill.st-blocked i { background: var(--r-bad) !important; }
   .st-ended.pill { opacity: .8; }
   @keyframes breathe { 50% { opacity: .25; } }
@@ -1542,6 +1541,8 @@ ${MADE_CSS}
   /* The card's tint is its state: red asks or blocked, green working, yellow idle. */
   .card.st-stuck, .card.st-blocked { background: color-mix(in srgb, var(--r-bad) 14%, transparent); border-color: color-mix(in srgb, var(--r-bad) 45%, transparent); }
   .card.st-asks { background: color-mix(in srgb, var(--r-warn) 12%, transparent); border-color: color-mix(in srgb, var(--r-warn) 45%, transparent); }
+  /* An ask the CLI ranks high or urgent (a High ticket, a long wait) is red like a blocked one (owner video, 2026-11-07 6:49 AM). */
+  .card.st-asks.u-high, .card.st-asks.u-urgent { background: color-mix(in srgb, var(--r-bad) 14%, transparent); border-color: color-mix(in srgb, var(--r-bad) 45%, transparent); }
   .card.st-working, .card.st-waiting { background: color-mix(in srgb, var(--r-ok) 9%, transparent); border-color: color-mix(in srgb, var(--r-ok) 32%, transparent); }
   /* Amber is only for an ask now, so a finished turn is the plain card (owner video, 2026-10-22 8:50 AM). */
   .card.st-idle, .card.st-review { background: var(--r-glass); border-color: var(--r-edge); }
@@ -1563,10 +1564,19 @@ ${MADE_CSS}
   .card .line.said { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .card.compact .line.said { -webkit-line-clamp: 1; } .card.compact .ask, .card.compact .line.said { margin-top: 3px; }
   .card .line.live { color: var(--r-caption); margin-top: 3px; } .card .line .cmd { font-family: var(--vscode-editor-font-family); font-size: 11px; } .card .line .tool { font-weight: 600; font-size: 11px; }
-  .card .why { margin-top: 2px; font-size: 11px; color: var(--r-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .card .why.u-urgent, .card .why.u-high { color: var(--r-bad); } .card .why [data-since] { font-variant-numeric: tabular-nums; }
   .card .ask { display: block; padding: 6px 8px; border-radius: 6px; background: var(--r-warn-tint); color: var(--r-text); font-size: 12px; line-height: 1.4; cursor: default; }
-  .card .ask .ah { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-warn); margin-bottom: 2px; }
+  /* An ask is one line (two when long): the question, the Lead's ★ draft and ▾; no label, the card's color says it (owner video, 2026-11-07 0:40–1:23). */
+  .card .ask .aline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .card .ask .aline .q { flex: 1 1 150px; min-width: 0; }
+  .card .ask .rec { flex: 0 1 auto; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; min-width: 0; font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--r-gold-line); border-radius: 6px; background: var(--r-glass); color: var(--r-text); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .ask .rec .rs { color: var(--r-gold-line); } .card .ask .rec:hover, .card .ask .rec:focus-visible { background: var(--r-glass-hover); outline: none; }
+  .card .ask .amore-t { flex: none; border: 0; background: none; color: var(--r-caption); cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 4px; } .card .ask .amore-t:hover { background: var(--r-glass-hover); color: var(--r-text); }
+  .card .ask.hasrec:not(.open) .amore { display: none; } .card .ask.open .amore-t { transform: rotate(180deg); }
+  .card:is(.st-stuck, .st-blocked, .u-high, .u-urgent) .ask { background: color-mix(in srgb, var(--r-bad) 14%, transparent); }
+  /* An ended card opens in place: ▶ Resume and how long it ran. Sessions with nothing in them sit behind Show. */
+  .ended-x { display: none; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--r-caption); } .card.open .ended-x { display: flex; }
+  .ended-x .rsm { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--r-edge); border-radius: 6px; background: var(--r-glass); color: var(--r-text); cursor: pointer; } .ended-x .rsm:hover { background: var(--r-glass-hover); } .ended-x .rsm .ic { width: 10px; height: 10px; }
+  .emptyrow { font-size: 11px; color: var(--r-caption); padding: 1px 4px; } .empties { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; } .empties[hidden] { display: none; }
   .card .ask .q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .card .ask .q[data-expand] { cursor: zoom-in; } .card .ask.open .q { display: block; cursor: zoom-out; } .card .ask .q.full { display: block; }
   .card .ask .q.cmdq { font-family: var(--vscode-editor-font-family); font-size: 11px; }
@@ -1578,10 +1588,6 @@ ${MADE_CSS}
   .card .opt .ol, .kask .opt .ol { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .opt small { flex-basis: 100%; padding-left: 13px; color: var(--r-caption); font-size: 11px; }
   .card .alt { display: flex; gap: 12px; margin-top: 4px; }
-  .card .draft { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; padding: 4px 7px; border: 1px solid var(--r-edge); border-radius: 5px; background: var(--r-glass); font-size: 11.5px; }
-  .card .draft .dl { flex: none; padding-top: 1px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--r-caption); }
-  .card .draft .dt { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .card .draft .da { flex: none; display: flex; gap: 10px; }
   .card .lnk { background: none; border: 0; padding: 0; font: inherit; font-size: 11px; color: var(--vscode-textLink-foreground); cursor: pointer; } .card .lnk:hover { text-decoration: underline; }
   .card .aother input { width: 100%; box-sizing: border-box; margin-top: 5px; font: inherit; font-size: 11.5px; padding: 3px 6px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--r-edge)); border-radius: 4px; }
   .card .asend, .kask .asend { margin-top: 5px; font-size: 11.5px; color: var(--r-text-2); } .card .asend.err { color: var(--r-bad); }
@@ -1608,8 +1614,6 @@ ${MADE_CSS}
   .star { flex: none; font-size: 13px; line-height: 1; color: var(--r-gold-line); }
   .fav-ic { color: var(--r-gold-line); font-size: 13px; }
   .card .line.said.you b { font-weight: 600; color: var(--r-caption); margin-right: 2px; }
-  /* The pinned card's title renames a Claude session on a click. */
-  .card.front .ttl.rn { cursor: text; border-radius: 4px; } .card.front .ttl.rn:hover { background: var(--r-glass-hover); }
   .ttl-edit { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; font-size: 12.5px; padding: 0 4px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-focusBorder); border-radius: 4px; outline: none; }
   ${logoCss}
   /* An Undo or a refusal floats at the panel's foot for 6 s, over the list like the reply box. */
@@ -1853,6 +1857,32 @@ ${MADE_SCRIPT}
   // the CLI said stays on the card. Asks whose Other… box is open.
   const pendingAnswer = new Map();
   const otherOpen = new Set();
+  // Ended cards opened in place (▶ Resume, how long it ran), and whether empty sessions show.
+  const endedOpen = new Set();
+  let showEmpty = false;
+  // The pinned card's height, set by its grip and kept for this window's panel (owner video,
+  // 2026-11-07 1:29: "the view size should not change"); none until you drag it.
+  const FC_MIN = 150, FC_MAX = 900;
+  function applyFrontHeight() {
+    const h = (vscode.getState() || {}).fcH;
+    if (h) document.documentElement.style.setProperty('--fc-h', h + 'px'); else document.documentElement.style.removeProperty('--fc-h');
+  }
+  applyFrontHeight();
+  main.addEventListener('pointerdown', (e) => {
+    const grip = e.target.closest && e.target.closest('.fc-grip'); if (!grip) return;
+    const card = grip.parentElement.querySelector('.card.front'); if (!card) return;
+    e.preventDefault();
+    const y0 = e.clientY, h0 = card.getBoundingClientRect().height;
+    let h = h0;
+    grip.setPointerCapture(e.pointerId);
+    const move = (ev) => { h = Math.round(Math.max(FC_MIN, Math.min(FC_MAX, h0 + ev.clientY - y0))); document.documentElement.style.setProperty('--fc-h', h + 'px'); };
+    const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); vscode.setState(Object.assign({}, vscode.getState() || {}, { fcH: h })); };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up);
+  });
+  main.addEventListener('dblclick', (e) => {
+    if (!(e.target.closest && e.target.closest('.fc-grip'))) return;
+    const st = Object.assign({}, vscode.getState() || {}); delete st.fcH; vscode.setState(st); applyFrontHeight();
+  });
   let shownProject;
   ${waitFor}
   // The wait on a question ticks every second; only these numbers change.
@@ -1890,6 +1920,8 @@ ${MADE_SCRIPT}
   }
   function restoreLocal() {
     drawPeek();
+    main.querySelectorAll('.card.st-ended').forEach((c) => c.classList.toggle('open', endedOpen.has(c.dataset.key)));
+    main.querySelectorAll('.empties').forEach((box) => { box.hidden = !showEmpty; const b = box.previousElementSibling && box.previousElementSibling.querySelector('[data-show-empty]'); if (b) b.textContent = showEmpty ? 'Hide' : 'Show'; });
     main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
     for (const [key, left] of pendingMerge) drawUndo(key, left);
     for (const key of mergingNow) drawMerging(key);
@@ -1911,7 +1943,7 @@ ${MADE_SCRIPT}
     const p = pendingAnswer.get(key);
     const busy = !!p && p.state !== 'error';
     el.querySelector('.aother').hidden = busy || !otherOpen.has(key);
-    el.querySelectorAll('.opts, .alt, .draft').forEach((x) => { x.hidden = busy; });
+    el.querySelectorAll('.opts, .alt, .rec, .amore-t').forEach((x) => { x.hidden = busy; });
     const send = el.querySelector('.asend');
     send.hidden = !p;
     if (!p) return;
@@ -1931,7 +1963,9 @@ ${MADE_SCRIPT}
     otherOpen.delete(key);
     const el = askEl(key);
     const card = el && el.closest('.card[data-session]');
-    if (card) vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1', answer: true });
+    // From the pinned card the tab is already in front; from the list the answer goes without
+    // changing the tab you are looking at (owner video, 2026-11-07 0:04).
+    if (card) vscode.postMessage({ type: 'select', sessionId: card.dataset.session, host: card.dataset.host, focus: card.dataset.here === '1' && !!card.closest('.front-pin'), answer: true });
     const wait = Number(el && el.dataset.undo) || 0;
     const p = Object.assign({ left: wait, label, state: wait ? 'wait' : 'sending' }, payload);
     pendingAnswer.set(key, p); drawAsk(key);
@@ -2207,9 +2241,22 @@ ${MADE_SCRIPT}
       toggleFavorite(fav);
       return;
     }
+    // The agent's logo (or ⋯ > Add to Favorites) stars the session; every copy turns at once.
+    const favLogo = e.target.closest('[data-favlogo]');
+    if (favLogo) {
+      e.preventDefault(); e.stopPropagation();
+      const id = favLogo.dataset.favlogo, on = favLogo.getAttribute('aria-pressed') !== 'true';
+      const words = on ? 'Remove from Favorites' : 'Add to Favorites';
+      document.querySelectorAll('[data-favlogo="' + CSS.escape(id) + '"]').forEach((b) => { b.setAttribute('aria-pressed', String(on)); b.classList.toggle('on', on); if (b.closest('.cmenu')) b.textContent = words; else { b.title = words; b.setAttribute('aria-label', words); } });
+      const more = favLogo.closest('.cmore'); if (more) more.open = false;
+      vscode.postMessage({ type: 'favorite', sessionId: id, value: on });
+      return;
+    }
     if (e.target.closest('.ttl-edit')) return;
-    const rn = e.target.closest('.front-pin .ttl[data-rename="1"]');
-    if (rn) { e.preventDefault(); editTitle(rn); return; }
+    // The pinned card's title copies the session, as its ⧉ does (owner video, 2026-11-07 7:19 AM).
+    const ttlCopy = e.target.closest('.front-pin .ttl.cp');
+    if (ttlCopy) { e.preventDefault(); const b = ttlCopy.closest('.card').querySelector('.cpy'); if (b) b.click(); return; }
+    if (e.target.closest('[data-show-empty]')) { showEmpty = !showEmpty; restoreLocal(); return; }
     // Copy, on a card or in its ⋯ menu: the text goes to the clipboard through the host.
     const copy = e.target.closest('[data-copy]');
     // A value in ⋯ copies quietly: a faint "copied" beside it for a moment, the menu stays open.
@@ -2223,9 +2270,6 @@ ${MADE_SCRIPT}
       if (!e.target.closest('.cmenu [data-act]')) return;
       more.open = false;
     }
-    // ‹ › on the pinned card front the tab before or after this one, as a card click would.
-    const step = e.target.closest('[data-front-step]');
-    if (step) { if (!step.disabled && step.dataset.session) vscode.postMessage({ type: 'select', sessionId: step.dataset.session, host: step.dataset.host, focus: true, step: true, back: step.hasAttribute('data-back') }); return; }
     // The pinned card's Made shelf: a PR opens on GitHub, a ticket in Issues; files open below.
     const shelfLink = e.target.closest('.fc-made [data-url], .fc-made [data-ticket]');
     if (shelfLink) { e.preventDefault(); e.stopPropagation(); opening(shelfLink); if (shelfLink.dataset.url) vscode.postMessage({ type: 'open', url: shelfLink.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); else vscode.postMessage({ type: 'ticketTab', id: shelfLink.dataset.ticket }); return; }
@@ -2328,6 +2372,7 @@ ${MADE_SCRIPT}
     if (act && card) {
       const kind = act.dataset.act;
       if (kind === 'focus' || kind === 'resume') { opening(card); vscode.postMessage({ type: kind, sessionId: card.dataset.session, host: card.dataset.host }); }
+      else if (kind === 'rename') { const t = card.querySelector('.ttl[data-rename="1"]'); if (t) editTitle(t); }
       else if (kind === 'close') { if (card.dataset.busy === '1') askClose(card); else closeCards([card]); }
       else if (kind === 'hide') closeCards([card]);
       return;
@@ -2360,6 +2405,8 @@ ${MADE_SCRIPT}
     if (a && a.dataset.url) { e.preventDefault(); opening(a); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
+      // An ended card opens in place with ▶ Resume and how long it ran; a second click folds it.
+      if (card.classList.contains('st-ended') && !card.closest('.front-pin')) { if (endedOpen.has(card.dataset.key)) endedOpen.delete(card.dataset.key); else endedOpen.add(card.dataset.key); card.classList.toggle('open', endedOpen.has(card.dataset.key)); }
       if (!card.closest('.front-pin')) anchor = { key: card.dataset.key, place: placeOf(card), top: card.getBoundingClientRect().top, at: Date.now() };
       if (!card.closest('.front-pin')) opening(card);
       // The rail moves on the click. A card changed here loses its hash, so the host's next draw always patches it back to what the host holds.
@@ -2377,9 +2424,9 @@ ${MADE_SCRIPT}
   // Settings' card preview (owner, 2026-11-04 6:01 PM): which card shows, which session and what
   // a setting row points at live in the page, so each redraw after a check keeps them; a part
   // just turned on rings once where it appeared.
-  const PIN_ONLY = new Set(['activity', 'ends', 'arrows']);
+  const PIN_ONLY = new Set(['activity']);
   const ASK_PARTS = new Set(['asks', 'options', 'question', 'answerUndo']);
-  const PART_SEL = { description: '.said, .line:not(.live), .started, .why, .fc-latest', command: '.line.live', chips: '.cstrip', previews: '.thumbs', machine: '.hst, .fc-where', age: '.age, .fc-where', state: '.pill', verdict: '.vchip', firstMessage: '.started', activity: '.fc-act', ends: '.fc-step.end', arrows: '.fc-step:not(.end)', made: '.cstrip, .fc-made', asks: '.ask', options: '.ask .opts', question: '.ask .q' };
+  const PART_SEL = { description: '.said, .line:not(.live), .started, .fc-latest', command: '.line.live', chips: '.cstrip', previews: '.thumbs', machine: '.hst', age: '.age', state: '.pill', verdict: '.vchip', firstMessage: '.started', activity: '.fc-act', made: '.cstrip, .fc-made', asks: '.ask', options: '.ask .opts', question: '.ask .q' };
   const cpv = { mode: 'list', i: 0, hl: null, rang: null };
   function partOf(el) { const k = el && el.dataset && el.dataset.setting; return k && k.startsWith('cards.') ? k.slice(6) : null; }
   function cpvPane(box) { return box.querySelector('[data-cpv-pane="' + cpv.mode + '"]'); }
@@ -2495,7 +2542,7 @@ ${MADE_SCRIPT}
       const held = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.card[data-session]') : null;
       // A focused or selected card answers its session's ask through whichever of its cards
       // carries the answers: the pinned one, or its own when a Favorites copy shows the question.
-      const opts = (c) => c && c.querySelector('.ask[data-ask] .opts:not([hidden])');
+      const opts = (c) => c && c.querySelector('.ask[data-ask]:not(.hasrec:not(.open)) .opts:not([hidden])');
       const answers = (c) => opts(c) || (c ? cardsOf('key', c.dataset.key).map(opts).find(Boolean) : null);
       const ask = held ? answers(held) : [...main.querySelectorAll('.card.sel')].map(answers).find(Boolean);
       const opt = ask ? ask.querySelectorAll('.opt')[Number(e.key) - 1] : null;

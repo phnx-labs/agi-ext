@@ -1,11 +1,11 @@
 // Next that needs you (owner video, 2026-10-19 1:32 AM; the catch-up prototype's
 // planNext/nextForYou): an unseen ask first, by the CLI's urgency then the longest
 // wait; then a turn that finished since you last had it in front, newest first; then
-// the other asking and idle tabs round-robin; never a working or waiting one. ‹ is Back.
+// the other asking and idle tabs round-robin; never a working or waiting one. The pinned
+// card has no ‹ ›: it follows the front tab (owner video, 2026-11-07 0:04).
 import { expect, test } from 'bun:test';
-import { FrontHistory, frontNav, nextNeedsYou } from './frontNav';
+import { FrontHistory, nextNeedsYou } from './frontNav';
 import { DEFAULT_SESSION_PREFS, nextThatNeedsYou, renderSessions, type SessionLike } from './projectPanel';
-import { DEFAULT_CARD_SETTINGS } from './settings';
 
 const T = Date.parse('2026-10-19T01:00:00Z');
 const min = (m: number) => T + m * 60_000;
@@ -49,61 +49,25 @@ test('then a turn that finished after you last had it in front, newest first; th
   expect(nextNeedsYou([tab('a', 1), tab('w', 2, working)], 'a', h)).toBeUndefined();
 });
 
-test('‹ goes back through the tabs you had in front, like Back in a browser, and going back is not a new step', () => {
-  const h = new FrontHistory();
-  const s = (n: number) => n * 2000;
-  h.front('a', s(1)); h.front('b', s(2)); h.front(undefined, s(3)); h.front('c', s(4));
-  expect(h.backTrail()).toEqual(['b', 'a']);
-  h.goBack('b'); h.front('b', s(5));
-  expect(h.backTrail()).toEqual(['a']);
-  h.goBack('a'); h.front('a', s(6));
-  expect(h.backTrail()).toEqual([]);
-  // The arrow names where it goes, skipping a session whose tab is gone.
-  h.front('b', s(7)); h.front('gone', s(8)); h.front('c', s(9));
-  const nav = frontNav('needs', [tab('a', 1), tab('b', 2), tab('c', 3)], tab('c', 3), h, (r) => r.title);
-  expect(nav.prev).toEqual({ sessionId: 'b', host: 'zion', tip: 'Back: tab 2 · Task b' });
-  expect(frontNav('needs', [tab('c', 3)], tab('c', 3), new FrontHistory(), (r) => r.title).prev).toEqual({ tip: 'Nothing to go back to' });
-});
-
-test('a tab passed through for under 1.5 s (restoring tabs at startup, a quick switch) is neither seen nor a step back', () => {
+test('a tab passed through for under 1.5 s (restoring tabs at startup, a quick switch) is not seen', () => {
   const h = new FrontHistory();
   const tabs = [tab('a', 1, asking(min(-5))), tab('b', 2, { lastActivityMs: min(-3) }), tab('c', 3)];
   // The editor restores three tabs, each in front for a moment.
   h.front('a', min(0)); h.front('b', min(0) + 200); h.front('c', min(0) + 400);
-  expect(h.backTrail()).toEqual([]);
+  expect(h.seenAt('a')).toBeUndefined();
   expect(nextNeedsYou(tabs, 'c', h)?.row.sessionId).toBe('a');
   h.front('a', min(1)); h.front('c', min(2));
-  expect(h.backTrail()).toEqual(['a', 'c']);
   expect(nextNeedsYou(tabs, 'c', h)?.row.sessionId).toBe('b');
 });
 
-test('the pinned card draws each Settings mode: Tab order, Next that needs you (with Back), Off (no arrows)', () => {
+test('the pinned card draws no arrows and no place among the tabs; the command still picks the next that needs you', () => {
   const h = new FrontHistory();
   h.front('a', min(0)); h.front('b', min(1));
   const rows = [tab('a', 1), tab('b', 2), tab('c', 3, asking(min(2)))];
-  const draw = (arrows: 'tabs' | 'needs' | 'off') => { const html = renderSessions(rows, min(5), { selectedId: 'b', frontId: 'b', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, arrows }, memory: h }); return html.slice(html.indexOf('<div class="front-pin">'), html.indexOf('data-group=')); };
-  expect(draw('tabs')).toContain('data-front-step="next" data-session="c" data-host="zion" title="Next tab: tab 3 · Task c"');
-  expect(draw('tabs')).toContain('data-front-step="prev" data-session="a" data-host="zion" title="Previous tab: tab 1 · Task a"');
-  expect(draw('needs')).toContain('data-front-step="next" data-session="c" data-host="zion" title="Next that needs you: tab 3 · Task c"');
-  expect(draw('needs')).toContain('data-front-step="prev" data-back data-session="a" data-host="zion" title="Back: tab 1 · Task a"');
-  expect(draw('off')).not.toContain('fc-step');
-  // Off: no arrows; the title row, with where it runs, is the header alone.
-  expect(draw('off')).toContain('<div class="fc-nav bare"><div class="top">');
-  // The command picks what › names, from a shell or editor in front too.
+  const html = renderSessions(rows, min(5), { selectedId: 'b', frontId: 'b', here: HERE, prefs: DEFAULT_SESSION_PREFS, memory: h });
+  const pin = html.slice(html.indexOf('<div class="front-pin">'), html.indexOf('data-group='));
+  expect(pin).not.toContain('data-front-step');
+  expect(pin).not.toContain('Tab 2 of 3');
+  // The command picks what needs you, from a shell or editor in front too.
   expect(nextThatNeedsYou(rows, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, memory: h })?.row.sessionId).toBe('c');
-});
-
-test('the pinned card says its place among the tabs (2/3) and ⇤ ⇥ front the first and the last tab; Settings turns ⇤ ⇥ off (owner video, 2026-10-22 6:42 AM)', () => {
-  const tabs = [tab('a', 1), tab('b', 2), tab('c', 3)];
-  const nav = frontNav('tabs', tabs, tabs[1], undefined, (r) => r.title);
-  expect(nav).toMatchObject({ at: 2, count: 3, first: { sessionId: 'a' }, last: { sessionId: 'c' } });
-  // From an end, that end's button has nowhere to go.
-  expect(frontNav('needs', tabs, tabs[0], new FrontHistory(), (r) => r.title).first).toEqual({ tip: 'This is the first tab' });
-  expect(frontNav('off', tabs, tabs[2], undefined, (r) => r.title)).toEqual({ mode: 'off', at: 3, count: 3 });
-  const draw = (ends: boolean) => renderSessions(tabs, T, { selectedId: 'b', frontId: 'b', here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, ends } });
-  const html = draw(true);
-  expect(html).toContain('<span class="fc-where" title="Idle">zion · Tab 2 of 3 · now</span>');
-  expect(html).toContain('data-front-step="first" data-session="a"');
-  expect(html).toContain('data-front-step="last" data-session="c"');
-  expect(draw(false)).not.toContain('data-front-step="first"');
 });
