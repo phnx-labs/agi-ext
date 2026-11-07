@@ -25,10 +25,9 @@ const DISPLAY_ROWS: { key: keyof DisplayPreferences; label: string; sub: string 
 /** The Session cards pickers: each key, its words, and its choices in order. */
 const CARD_ROWS: { key: Exclude<keyof CardSettings, (typeof CARD_PARTS)[number] | (typeof LIST_PARTS)[number]>; label: string; sub: string; options: { value: string; label: string }[] }[] = [
   { key: 'click', label: 'Card click', sub: 'What a click on a session card does', options: [{ value: 'front', label: 'Show it and bring its tab forward' }, { value: 'show', label: 'Only show it in the sidebar' }] },
-  { key: 'arrows', label: '‹ › on the pinned card', sub: 'Next that needs you: asks first, then turns that finished since you looked; ‹ goes back', options: [{ value: 'tabs', label: 'Tab order' }, { value: 'needs', label: 'Next that needs you' }, { value: 'off', label: 'Off' }] },
-  { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'Either way the answer brings its agent’s tab forward; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
+  { key: 'answerUndo', label: 'Undo before an answer is sent', sub: 'An answer from the list never changes the tab in front; Off sends it at once', options: [{ value: 'off', label: 'Off: send at once' }, { value: 'five', label: '5 seconds' }] },
   { key: 'made', label: 'What it made', sub: 'PRs, tickets and files, on the pinned card and in the Active Session sidebar', options: [{ value: 'chips', label: 'Chips in one row' }, { value: 'previews', label: 'Previews' }] },
-  { key: 'asks', label: 'Asks on listed cards', sub: 'The pinned card always has the answers; Off leaves only the card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
+  { key: 'asks', label: 'Asks on listed cards', sub: 'The pinned card always has the answers; a listed ask keeps the Lead’s ★ draft; Off leaves only the card and its wait', options: [{ value: 'answers', label: 'With answers' }, { value: 'question', label: 'Question only' }, { value: 'off', label: 'Off' }] },
   { key: 'options', label: 'Answer options', sub: 'Each option’s description shows on hover either way', options: [{ value: 'titles', label: 'Titles only' }, { value: 'details', label: 'Titles and details' }] },
   { key: 'question', label: 'Question text', sub: 'The full question is on hover either way', options: [{ value: 'two', label: 'Two lines' }, { value: 'full', label: 'Full' }] },
 ];
@@ -45,13 +44,12 @@ const CARD_PART_ROWS: Record<(typeof CARD_PARTS)[number], { label: string; sub: 
   verdict: { label: 'Done verdict', sub: 'A finished turn shows ✓ Done or Not done beside its title' },
   firstMessage: { label: 'First message', sub: 'What the session was started with, when its title says something else' },
   activity: { label: 'Activity on the pinned card', sub: 'Its steps with their times, in a box that scrolls' },
-  ends: { label: '⇤ ⇥ on the pinned card', sub: 'Jump to the first and the last tab, beside ‹ ›' },
 };
 
 /** What Sessions lists under the pinned card. */
 const LIST_PART_ROWS: Record<(typeof LIST_PARTS)[number], { label: string; sub: string }> = {
   list: { label: 'Show the session list', sub: 'Off leaves only the front tab’s card and its ask; ⌘K finds every other session' },
-  favorites: { label: 'Favorites group', sub: 'Sessions you starred (☆ on a card), on top as well as in their own group' },
+  favorites: { label: 'Favorites group', sub: 'Sessions you starred (click an agent’s logo), on top as well as in their own group' },
   finishedGroups: { label: 'Ready for review and Idle groups', sub: 'Finished sessions with no tab here in groups of their own; off lists them in their place, after what asks' },
 };
 

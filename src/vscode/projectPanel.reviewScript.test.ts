@@ -23,7 +23,7 @@ const sent: { type: string; repo?: string; number?: number; sha?: string }[] = [
 const open = page.indexOf('<script');
 const script = page.slice(page.indexOf('>', open) + 1, page.lastIndexOf('</script'));
 new Function('window', 'document', 'acquireVsCodeApi', 'CSS', 'IntersectionObserver', 'innerWidth', 'innerHeight', script)(
-  window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m) }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
+  window, document, () => ({ postMessage: (m: { type: string }) => sent.push(m), getState: () => ({}), setState: () => undefined }), { escape: (s: string) => s.replace(/["\\]/g, '\\$&') },
   class { observe() { /* thumbnails are not under test */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }, 800, 600,
 );
 const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));

@@ -4,6 +4,31 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.441] - 2026-11-07
+
+From the owner's 5:56 AM and 8:30 AM videos on the Project panel, after reviewing a prototype:
+
+- The pinned card stays put. It shows the tab you are in and nothing else changes it: ‹ ›, ⇤ ⇥
+  and "Tab 2 of 10" are gone, with their Settings. Agents: Next Agent That Needs You is still a
+  command.
+- The pinned card keeps one height for every session. Drag the grip under it to set the height;
+  double-click to reset. Its recap and steps scroll inside it, what it made stays at the bottom
+  in one row that scrolls sideways, and the reply box is always last.
+- An ask is one line: the question, and the Lead's draft as one ★ button. ▾ opens the full
+  question, every choice, Other… and Edit the draft. Without a draft the choices stay on the
+  card. The "Asks · …" label and the "Blocks a merge · waiting 8m" row are gone: the card's
+  color says it asks, and why is on the age's hover.
+- An ask agents-cli ranks high or urgent (a High ticket, a long wait) is red, like a blocked one.
+- A ★ on a listed card answers that agent from the list without changing the tab in front.
+- ⋯ holds only actions: Rename, Add to Favorites, Copy session id, Copy folder, Close the tab.
+  The host, tab, model, folder, account and project are on the age's hover.
+- Hovering a card turns its age into ⧉ in the same spot. A click on the agent's logo stars the
+  session; ☆ is gone from the hover icons. A click on the pinned title copies the session; Rename
+  is in its ⋯.
+- An ended card opens in place on a click, with ▶ Resume and how long it ran. Ended sessions with
+  no title and nothing said are hidden behind one "N empty sessions hidden · Show" line.
+- The recap on the pinned card shows three lines.
+
 ## [0.9.440] - 2026-11-06
 
 From the owner's 12:05 AM notes on the Project panel's Ended group:

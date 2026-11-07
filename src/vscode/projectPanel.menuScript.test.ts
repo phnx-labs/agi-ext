@@ -68,15 +68,16 @@ test('with nothing to list, ⇅ is in the header so Show can be turned back on',
   expect(sent).toContainEqual({ type: 'prefs', key: 'showOpen', value: 'true' });
 });
 
-test('a value in ⋯ copies quietly: the host gets it, "copied" shows on it, and ⋯ stays open', () => {
+test('⋯ holds actions only: Copy session id copies it, marks itself ✓ and closes ⋯, with no toast (owner video, 2026-11-07 5:42 AM)', () => {
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   const more = document.querySelector('.card .cmore') as unknown as HTMLDetailsElement;
   more.open = true;
   sent.length = 0;
-  click('.card .cmore .cpv[data-copy="claude-opus-5-5"]');
-  expect(sent).toEqual([{ type: 'copy', text: 'claude-opus-5-5' }]);
-  expect(el('.card .cmore .cpv[data-copy="claude-opus-5-5"]').classList.contains('copied')).toBe(true);
-  expect(more.open).toBe(true);
+  expect(el('.card .cmore .cmenu').querySelector('dl')).toBeNull();
+  click('.card .cmore [data-copy="a"]');
+  expect(sent).toEqual([{ type: 'copy', text: 'a' }]);
+  expect(el('.card .cmore [data-copy="a"]').classList.contains('copied')).toBe(true);
+  expect(more.open).toBe(false);
   expect(el('.hnote').hidden).toBe(true);
 });
 

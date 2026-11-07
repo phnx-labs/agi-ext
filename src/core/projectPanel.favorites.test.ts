@@ -26,14 +26,16 @@ const draw = (o: { favorites?: string[]; cards?: Partial<typeof DEFAULT_CARD_SET
 const sectionOf = (html: string, key: string) => html.slice(html.indexOf(`data-group="${key}"`), html.indexOf('</section>', html.indexOf(`data-group="${key}"`)))
 const ids = (html: string) => [...html.matchAll(/class="card [^"]*"[^>]*data-session="([^"]+)"/g)].map((m) => m[1])
 
-test('☆ is one click among a card\'s hover icons, not in ⋯ (owner video, 2026-11-04 5:57 PM); a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
+test('a click on the agent\'s logo stars a session (owner video, 2026-11-07 7:19 AM), and ⋯ says it in words; a favorite shows ★ and leads the list under the pinned card, still in its own group', () => {
   const plain = draw()
-  expect(plain).toContain('<button class="act favq" data-fav="starred" aria-pressed="false" title="Add to Favorites" aria-label="Add to Favorites">☆</button>')
+  expect(plain).toContain('<button class="lg" data-favlogo="starred" aria-pressed="false" title="Add to Favorites" aria-label="Add to Favorites"><i class="hx hx-claude"')
+  expect(plain).toContain('<button data-favlogo="starred" aria-pressed="false">Add to Favorites</button>')
+  expect(plain).not.toContain('class="act favq"')
   expect(plain).not.toContain('class="favitem"')
   expect(plain).not.toContain('class="star')
   expect(plain).not.toContain('data-group="favorites"')
   const html = draw({ favorites: ['starred', 'asker'] })
-  expect(html).toContain('<button class="act favq" data-fav="starred" aria-pressed="true" title="Remove from Favorites" aria-label="Remove from Favorites">★</button>')
+  expect(html).toContain('<button class="lg on" data-favlogo="starred" aria-pressed="true" title="Remove from Favorites" aria-label="Remove from Favorites">')
   expect(html).toContain('<span class="star on" title="Favorite" aria-label="Favorite">★</span>')
   // Pinned card, then Favorites, then the grouping.
   expect(html.indexOf('front-pin')).toBeLessThan(html.indexOf('data-group="favorites"'))
@@ -66,13 +68,15 @@ test('a card whose agent has not spoken yet marks your prompt "You:", on the lis
   expect(spoke).not.toContain('You:')
 })
 
-test('the pinned title renames a Claude session with a tab here; any other title says why it cannot', () => {
+test('the pinned title copies the session (owner video, 2026-11-07 7:19 AM); its ⋯ renames a Claude session with a tab here, and no other', () => {
   const pinned = (o: Partial<SessionLike>) => {
     const html = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1, ...o })], NOW, { selectedId: null, frontId: 'p', here: HERE, prefs: DEFAULT_SESSION_PREFS })
     return html.slice(html.indexOf('front-pin'), html.indexOf('data-group='))
   }
-  expect(pinned({})).toContain('<span class="ttl rn" data-keep data-ttl="T" data-rename="1" title="T\nClick to rename (Claude /rename)">T</span>')
-  expect(pinned({ agentType: 'codex' })).toContain('data-rename="0" title="T\nCodex has no /rename, so its name comes from the session"')
+  expect(pinned({})).toContain('<span class="ttl cp" data-keep data-ttl="T" data-rename="1" title="T\nClick to copy its title, session id, machine and recap">T</span>')
+  expect(pinned({})).toContain('<button data-act="rename">Rename…</button>')
+  expect(pinned({ agentType: 'codex' })).toContain('data-rename="0"')
+  expect(pinned({ agentType: 'codex' })).not.toContain('data-act="rename"')
   // A listed card's title is never editable.
   const listed = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1 })], NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS })
   expect(listed).not.toContain('data-rename')
@@ -139,12 +143,14 @@ test('an ended card is its title, age and words: no pill, no ☆, how long it ra
   expect(html).not.toContain('ran 23h')
   expect(html).not.toContain('class="span"')
   expect(html).toContain('<span class="age" title="Ran 23h 0m: ')
-  expect(html).not.toContain('data-fav="gone"')
+  expect(html).not.toContain('data-favlogo="gone"')
+  // A click opens it in place: ▶ Resume and how long it ran (owner video, 2026-11-07 3:11 AM).
+  expect(html).toContain('<div class="ended-x"><button class="rsm" data-act="resume">')
   const top = html.slice(html.indexOf('class="top"'), html.indexOf('</div>', html.indexOf('class="top"')))
   expect(top).not.toContain('class="acts"')
   const acts = html.slice(html.indexOf('<span class="acts">'), html.indexOf('class="hst"'))
   expect(acts.indexOf('data-act="resume"')).toBeLessThan(acts.indexOf('class="cmore'))
   expect(html.indexOf('<span class="acts">')).toBeGreaterThan(html.indexOf('class="cbot"'))
   // A favorite that ended keeps ★ so it can be unstarred.
-  expect(card(['gone'])).toContain('data-fav="gone" aria-pressed="true"')
+  expect(card(['gone'])).toContain('data-favlogo="gone" aria-pressed="true"')
 })

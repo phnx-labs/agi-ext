@@ -306,7 +306,9 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   expect(html).toContain('class="ttl" title="Health">Health<')
   // The tint says the state and ⌘K's pill sits before the age (owner, 2026-10-22 12:30 PM); Settings > State off leaves the word to screen readers.
   expect(html).toMatch(/^<div class="card st-idle sel"/)
-  expect(html).toContain('<span class="pill st-idle"><i></i>Idle</span><span class="age">')
+  expect(html).toContain('<span class="pill st-idle"><i></i>Idle</span><span class="age" title="Idle\nHost: yosemite-m6')
+  // ⧉ sits right after the age and takes its place on hover, top right (owner video, 2026-11-07 7:05 AM).
+  expect(html).toMatch(/<span class="age"[^>]*>22m<\/span><button class="act cpy"/)
   const quiet = card(s, { cards: { ...DEFAULT_CARD_SETTINGS, state: false } })
   expect(quiet).toContain('<span class="sr">Idle</span>')
   expect(quiet).not.toContain('class="pill')
@@ -317,10 +319,10 @@ test('a card shows one fixed preview: the agent latest words, previews of images
   // Close is in ⋯, out of a stray click's way.
   expect(html).not.toContain('class="act x"')
   expect(html).toContain('<button class="danger" data-act="close">Close the tab</button></div></details>')
-  // The tab and machine moved: the machine sits dimmed at the bottom right, the tab in ⋯.
+  // The tab and machine moved: the machine sits dimmed at the bottom right, the tab on the age's hover.
   expect(html).not.toContain('class="where"')
   expect(html).toContain('<span class="hst" title="yosemite-m6">m6</span></div>')
-  expect(html).toContain('<dt>Tab</dt><dd>tab 3 in this window</dd>')
+  expect(html).toContain('\nTab: tab 3 in this window')
   expect(html).toContain('class="line said">Your trusted publisher is set up correctly.<')
   expect(html).not.toContain('stale reply')
   // No hidden full card: hover changes nothing but the icons.
@@ -358,11 +360,12 @@ test('what a card offers follows where it lives: close a tab here, hide one with
 test('a pending question shows in the card, opens on a click, and says how long it has waited', () => {
   const ask = card(row({ phase: 'waiting', liveStatus: 'input_required', question: { text: 'Run the restart on m2?' } }))
   // No attention key to answer with: the question alone.
-  expect(ask).toContain('<div class="ask"><div class="ah">Asks</div><div class="q" title="Run the restart on m2?" data-expand>Run the restart on m2?</div></div>')
+  expect(ask).toContain('<div class="ask"><div class="aline"><div class="q" title="Run the restart on m2?" data-expand>Run the restart on m2?</div></div></div>')
   const opened = new Date(NOW - 12_000).toISOString()
   const fresh = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: opened } }))
   // The wait ticks where the age sits; the card itself is red.
-  expect(fresh).toContain(`<span class="age wait" data-since="${NOW - 12_000}" title="Waiting on you">12s</span>`)
+  expect(fresh).toContain(`<span class="age wait" data-since="${NOW - 12_000}" title="Waiting on you\nHost: yosemite-m6`)
+  expect(fresh).toContain('>12s</span>')
   expect(fresh).toContain('card st-asks fresh')
   const old = card(row({ phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: new Date(NOW - 3_600_000).toISOString() } }))
   expect(old).not.toContain(' fresh')
@@ -474,14 +477,22 @@ test('stored preferences keep only values this version knows; older ones get End
   expect(readSessionPrefs({ sort: 'last', v: 4 }).sort).toBe('last')
 })
 
-test('a card leads with its harness logo; the model the CLI reported lives in its ⋯ menu', () => {
+test('a card leads with its harness logo, which stars it on a click; the model the CLI reported is on the age\'s hover; ⋯ holds only actions', () => {
   const html = card(row({ agentType: 'claude', model: 'claude-opus-5-5' }))
-  expect(html).toContain('<div class="top"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i><span class="ttl" title="T">')
+  expect(html).toContain('<div class="top"><button class="lg" data-favlogo="s" aria-pressed="false" title="Add to Favorites" aria-label="Add to Favorites"><i class="hx hx-claude" role="img" aria-label="Claude" title="Claude"></i></button><span class="ttl" title="T">')
   expect(html).not.toContain('class="mdl"')
-  expect(html).toContain('<dt>Model</dt><dd><button class="cpv" data-copy="claude-opus-5-5" data-quiet title="Copy claude-opus-5-5">claude-opus-5-5</button></dd>')
+  expect(html).toContain('\nModel: claude-opus-5-5')
+  // ⋯: actions only (owner video, 2026-11-07 5:42 AM: "that's just way too much text").
+  expect(html).toContain('<div class="cmenu"><button data-favlogo="s" aria-pressed="false">Add to Favorites</button><button data-copy="s">Copy session id</button>')
+  expect(html).not.toContain('<dl>')
+  expect(html).not.toContain('class="act favq"')
   const bare = card(row({ agentType: 'amp' }))
   expect(bare).not.toContain('class="hx')
-  expect(bare).toContain('<dt>Model</dt><dd>not reported</dd>')
+  expect(bare).not.toContain('class="lg"')
+  expect(bare).toContain('\nModel: not reported')
+  // A favorite's logo carries ★.
+  const fav = row({ agentType: 'claude' })
+  expect(renderSessionCard(fav, sessionPlace(fav, HERE), NOW, { selected: false, pinned: false, thumbs: [], made: null, here: HERE, favorite: true })).toContain('<button class="lg on" data-favlogo="s" aria-pressed="true" title="Remove from Favorites"')
 })
 
 test('only a question is your move; an idle turn sits after it and before what works; a crashed process is Ended', () => {
@@ -527,21 +538,23 @@ test('the front tab\'s card is pinned above the list, opened up, and keeps its o
   const html = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs() })
   expect(html.indexOf('<div class="front-pin">')).toBeLessThan(html.indexOf('class="card'))
   expect(html).toMatch(/class="card st-working sel front"/)
-  // The title and its state between the arrows; where it runs, its place among the tabs and its age on the line under it (owner video, 2026-10-27 9:24 AM).
-  expect(html).toContain('<span class="pill st-working solo" title="Running" role="img" aria-label="Running"><i></i></span></div><button class="fc-step" disabled')
-  expect(html).toContain('</div><div class="fc-meta"><span class="fc-where" title="Running">m6 · Tab 1 of 1</span><span class="fc-acts">')
-  // Settings > A card shows: Host and State off take them off the pinned card too; a screen reader still hears the state.
-  const bare = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs(), cards: { ...DEFAULT_CARD_SETTINGS, machine: false, state: false } })
-  expect(bare).toContain('<span class="fc-where" title="Running">Tab 1 of 1</span>')
-  expect(bare).toContain('<span class="sr">Running</span></div>')
-  // One tab: no ⇤ ⇥.
-  expect(html).not.toContain('data-front-step="first"')
-  expect(html).not.toContain('fc-state')
+  // One title row: the logo, the title, the age (where it runs and the rest on its hover), ⧉ and ⋯; no ‹ ›, no tab number, no state word (owner video, 2026-11-07).
+  expect(html).toContain('<div class="top"><span class="ttl cp" data-keep data-ttl="T" data-rename="0"')
+  expect(html).toContain('<span class="sr">Running</span><span class="age" title="Running\nHost: yosemite-m6\nTab: tab 1 in this window')
+  expect(html).not.toContain('fc-step')
+  expect(html).not.toContain('fc-where')
+  expect(html).not.toContain('Tab 1 of 1')
+  expect(html.slice(html.indexOf('<div class="front-pin">'), html.indexOf('data-group='))).not.toContain('class="pill')
+  // Its fixed wrappers: the ask, then a box that scrolls (recap, steps), then Made and the reply box; the grip under it sets the height.
+  expect(html).toContain('<div class="fc-body"><div class="fc-lead"></div><div class="fc-scroll">')
+  expect(html).toContain('<div class="fc-grip" role="separator"')
+  // Settings > A card shows: Age off takes it off the pinned card too; a screen reader still hears the state.
+  const bare = renderSessions([live], NOW, { selectedId: 'live', frontId: 'live', here: HERE, prefs: prefs(), cards: { ...DEFAULT_CARD_SETTINGS, age: false, state: false } })
+  expect(bare.slice(bare.indexOf('<div class="front-pin">'), bare.indexOf('data-group='))).not.toContain('class="age')
+  expect(bare).toContain('<span class="sr">Running</span>')
   // Pinned, and still in Open tabs with the selected rail, so switching tabs moves no card.
   expect(html.match(/data-session="live"/g)?.length).toBe(2)
   expect(html.slice(html.indexOf('data-group="here"'))).toMatch(/class="card st-working sel"[^>]*data-session="live"/)
-  // Its only tab here: ‹ › have nowhere to go.
-  expect(html).toContain('<button class="fc-step" disabled title="No previous tab" aria-label="No previous tab">‹</button>')
   // Another session selected from the panel: the front tab stays pinned, without the selection.
   const other = renderSessions([live, row({ sessionId: 'b', tabHere: true, tabIndex: 2 })], NOW, { selectedId: 'b', frontId: 'live', here: HERE, prefs: prefs() })
   expect(other).toMatch(/class="card st-working front"[^>]*data-session="live"/)
@@ -557,15 +570,19 @@ test('the front session asking: its answers are on the pinned card only; its lis
   expect(html.match(/data-ask="zion\/q\/1"/g)?.length).toBe(1)
   expect(html.match(/data-choice="yes"/g)?.length).toBe(1)
   expect(html.match(/Release now\?<\/div>/g)?.length).toBe(2)
+  // The Lead's ★ draft is on the pinned card only, never repeated on its listed copy (owner video, 2026-11-07 1:21).
+  const drafted = { ...asking, attention: { ...asking.attention!, draft: { choiceId: 'yes', label: 'Yes' } } }
+  const both = renderSessions([drafted], NOW, { selectedId: 'q', frontId: 'q', here: HERE, prefs: prefs() })
+  expect(both.match(/class="rec"/g)?.length).toBe(1)
+  expect(both.slice(both.indexOf('<div class="front-pin">'), both.indexOf('data-group='))).toContain('class="rec"')
 })
 
-test('⇅ Show > Open tabs off lists a tab here only while it asks; ‹ › still walk every tab', () => {
+test('⇅ Show > Open tabs off lists a tab here only while it asks', () => {
   const tab = (id: string, n: number, o: Partial<SessionLike> = {}) => row({ sessionId: id, tabHere: true, tabIndex: n, ...o })
   const asking = { phase: 'waiting', liveStatus: 'input_required', attention: { key: 'k', kind: 'question', state: 'open', openedAt: new Date(NOW).toISOString(), question: { text: 'Ship?' } } } as Partial<SessionLike>
   const html = renderSessions([tab('a', 1), tab('b', 2), tab('c', 3, asking), row({ sessionId: 'away' })], NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: prefs({ showOpen: false }) })
   expect(html).toContain('data-session="c"')
   expect(html).not.toMatch(/class="card[^"]*" [^>]*data-session="b"/)
-  expect(html).toContain('data-front-step="next" data-session="b"')
   expect(html).toContain('data-pref="showOpen" data-value="true"')
   expect(readSessionPrefs({}).showOpen).toBe(true)
   // The tab's count is what the list draws: the front tab and the asking tab, not b.
@@ -574,22 +591,14 @@ test('⇅ Show > Open tabs off lists a tab here only while it asks; ‹ › stil
   expect(sessionCount(rows, HERE, prefs(), 'a').shown).toBe(3)
 })
 
-test('‹ › on the pinned card name and front the session tabs before and after it, wrapping around', () => {
-  const tab = (id: string, n: number) => row({ sessionId: id, title: `Task ${id}`, tabHere: true, tabIndex: n })
-  const html = renderSessions([tab('c', 7), tab('a', 2), tab('b', 4), row({ sessionId: 'away' })], NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: prefs() })
-  const pin = html.slice(html.indexOf('<div class="front-pin">'), html.indexOf('data-group='))
-  expect(pin).toContain('data-front-step="prev" data-session="c" data-host="yosemite-m6" title="Previous tab: tab 7 · Task c"')
-  expect(pin).toContain('data-front-step="next" data-session="b" data-host="yosemite-m6" title="Next tab: tab 4 · Task b"')
-})
-
-test('the pinned card: an ask from its own agent comes first, then Claude\'s recap with its age, its Made shelf, every step in a box that scrolls, and a reply box', () => {
+test('the pinned card: an ask from its own agent comes first, then Claude\'s recap with its age and every step in a box that scrolls, then its Made shelf and a reply box at the bottom', () => {
   const at = (min: number) => new Date(NOW - min * 60_000).toISOString()
   const steps = [1, 2, 3, 4, 5].map((i) => ({ text: `step ${i}`, at: at(10 - i), ...(i === 4 ? { source: 'user' } : {}) }))
   const asking = row({ sessionId: 'q', tabHere: true, tabIndex: 3, phase: 'waiting', liveStatus: 'input_required', recap: { text: 'Fixed the save error; next is the release.', at: at(20) }, userTurns: [{ atMs: NOW - 30 * 60_000 }],
     attention: { key: 'zion/q/1', kind: 'question', state: 'open', openedAt: at(5), question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] }, timeline: { steps, earlier: { steps: 12 } } })
   const shelf = { artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-1' } }
   const html = renderSessions([asking], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs(), shelfFor: (s) => (s.sessionId === 'q' ? shelf : null) })
-  const order = ['class="ttl"', 'data-ask="zion/q/1"', 'Recap · 20 min ago', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'Activity', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
+  const order = ['class="ttl', 'data-ask="zion/q/1"', 'Recap · 20 min ago', 'Activity', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
   expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
   expect(html).toMatch(/class="card st-asks front"/)
   expect(html).toContain('data-choice="yes"')
@@ -612,7 +621,7 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   const open = { state: 'open' as const, gaps: ['open-pr', 'keep-moving'], at }
   const idle = row({ sessionId: 'i', phase: 'idle', liveStatus: 'idle', lastActivityMs: NOW - 5 * 60_000, doneVerdict: open })
   const html = card(idle)
-  expect(html).toContain('<span class="sr">Not done</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span><span class="age">5m</span>')
+  expect(html).toContain('<span class="sr">Not done</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span><span class="age" title="Idle · not done: a PR it opened is still open; its checklist has open items\nHost: yosemite-m6')
   expect(html).not.toContain('class="meta"')
   expect(html).toMatch(/^<div class="card st-idle" title="Idle · not done: a PR it opened/)
   // The verdict stands in for the Idle pill: no second label.
@@ -634,8 +643,8 @@ test('a finished turn shows the CLI done verdict on the title row (before the ag
   // The pinned card: right after the title, no new row; the gaps are its tooltip and the detail line's.
   const front = (s: SessionLike) => renderSessions([s], NOW, { selectedId: null, frontId: s.sessionId, here: HERE, prefs: prefs() })
   const pinned = front({ ...idle, tabHere: true, tabIndex: 1 })
-  expect(pinned).toContain('title="T\nThis harness has no /rename, so its name comes from the session">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
-  expect(pinned).toContain('<span class="fc-where" title="Idle · not done: a PR it opened is still open; its checklist has open items">m6 · Tab 1 of 1 · 5m</span>')
+  expect(pinned).toContain('title="T\nClick to copy its title, session id, machine and recap">T</span><span class="vchip v-bad" title="Idle · not done: a PR it opened is still open; its checklist has open items">Not done</span>')
+  expect(pinned).toContain('<span class="age" title="Idle · not done: a PR it opened is still open; its checklist has open items\nHost: yosemite-m6\nTab: tab 1 in this window')
   expect(front(row({ sessionId: 'w', tabHere: true, tabIndex: 1 }))).not.toContain('vchip')
 })
 
@@ -749,7 +758,7 @@ test('an idle session with background work is Running (owner video, 2026-10-22 8
   expect(card(row({ phase: 'idle', liveStatus: 'idle' }))).toMatch(/^<div class="card st-idle"/)
 })
 
-test('a quieter card: the repository only when it is not this window\'s, beside the machine bottom right (owner video, 2026-10-27 9:24 AM), ⚡ and ◆, details in ⋯', () => {
+test('a quieter card: the repository only when it is not this window\'s, beside the machine bottom right (owner video, 2026-10-27 9:24 AM), ⚡ and ◆, details on the age\'s hover', () => {
   const ours = card(row({ cwd: '/Users/me/src/agents/.agents/worktrees/x', host: 'yosemite-m5' }))
   expect(ours).not.toContain('class="repo"')
   expect(ours).toContain('<span class="hst" title="yosemite-m5">m5</span>')
@@ -757,12 +766,9 @@ test('a quieter card: the repository only when it is not this window\'s, beside 
   expect(card(row({ cwd: '/Users/me/src/agents-cli' }))).not.toContain('class="meta"')
   const fx = card(row({ fast: true, effort: 'max', model: 'claude-opus-5-5', account: 'claude#work', cwd: '/home/me/src/agents' }))
   expect(fx).toContain('<span class="fx"><span class="fast" title="Fast mode">⚡</span><span class="hi" title="max reasoning effort">◆</span></span>')
-  // Every value copies on a click; what is copied is the value itself.
-  expect(fx).toContain('<dt>Model</dt><dd><button class="cpv" data-copy="claude-opus-5-5" data-quiet title="Copy claude-opus-5-5">claude-opus-5-5 · max effort · fast</button></dd>')
-  expect(fx).toContain('<dt>Account</dt><dd><button class="cpv" data-copy="claude#work" data-quiet title="Copy claude#work">claude#work</button></dd>')
-  expect(fx).toContain('<dt>Session</dt><dd><button class="cpv" data-copy="s" data-quiet title="Copy s">s</button></dd>')
-  expect(fx).toContain('<dt>Folder</dt><dd><button class="cpv" data-copy="/home/me/src/agents" data-quiet title="Copy /home/me/src/agents">/home/me/src/agents</button></dd>')
-  expect(fx).toContain('<dt>Host</dt><dd><button class="cpv" data-copy="yosemite-m6" data-quiet title="Copy yosemite-m6">yosemite-m6</button></dd>')
+  // The details are lines on the age's hover; ⋯ copies the session id and the folder.
+  expect(fx).toContain('\nModel: claude-opus-5-5 · max effort · fast\nFolder: /home/me/src/agents\nAccount: claude#work')
+  expect(fx).toContain('<button data-copy="s">Copy session id</button><button data-copy="/home/me/src/agents">Copy folder</button>')
   expect(card(row({ effort: 'medium' }))).not.toContain('class="fx"')
   expect(card(row({ effort: 'xhigh' }))).toContain('title="xhigh reasoning effort">◆')
 })
@@ -780,7 +786,7 @@ test('card thumbnails go through the 480 px cache in a fixed box; the card carri
   expect(card(row({ sessionId: 'k', lastResponse: 'other' }), { thumbs }).match(/data-h="([^"]+)"/)![1]).not.toBe(hash)
 })
 
-test('until the CLI maps old project names, a session in one of the project\'s repositories is shown, and its ⋯ says what the CLI said', () => {
+test('until the CLI maps old project names, a session in one of the project\'s repositories is shown, and its age\'s hover says what the CLI said', () => {
   // Misc b062745e: confirmedProject "prix" (the old name), cwd in the agents repo the rush project is checked out at.
   const misc = row({ sessionId: 'b062745e', confirmedProject: 'prix', cwd: '/Users/me/src/agents', lastActivityMs: 3 })
   const wt = row({ sessionId: 'wt', confirmedProject: 'prix', cwd: '/home/me/src/agents/.agents/worktrees/x', lastActivityMs: 2 })
@@ -793,7 +799,7 @@ test('until the CLI maps old project names, a session in one of the project\'s r
   // Without repository paths, only the CLI's word counts, as before.
   expect(projectSessions([misc, mine], 'rush').map((r) => r.sessionId)).toEqual(['r'])
   const html = renderSessionCard(misc, sessionPlace(misc, HERE), NOW, { selected: false, pinned: false, here: HERE, thumbs: [], made: null, project: 'rush' })
-  expect(html).toContain('<dt>Project</dt><dd><button class="cpv" data-copy="rush" data-quiet title="Copy rush">rush · the CLI said prix</button></dd>')
+  expect(html).toContain('\nProject: rush · the CLI said prix')
 })
 
 test('two live projects sharing a repository keep their own sessions; only an unregistered or missing project falls back', () => {

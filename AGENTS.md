@@ -157,8 +157,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`assignTabs`, `src/core/tabIndex.ts`), never by label alone.
 - A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, the
   status bar, the Active Session sidebar and the resume picker. The extension generates no
-  title and reports none back to the CLI; Rename Session and a click on the pinned card's
-  title type Claude's own `/rename` (`renameSession`, `src/vscode/sessionReply.ts`); no other
+  title and reports none back to the CLI; Rename Session and the pinned
+  card's ⋯ > Rename type Claude's own `/rename` (`renameSession`, `src/vscode/sessionReply.ts`); no other
   harness's title is editable.
   A card draws the row's `title` as it comes (`cardTitle`; final since agents-cli 1.23.31),
   never a prompt or request headline, ⑂ for a `forkOf` row; an editor tab shows at most 34
@@ -210,10 +210,11 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   agent's ball, never Your move); `subAgentCount` is cumulative and never decides liveness.
 - A card answers an ask with one `agents feed answer <attention.key> --choice|--text … --json`
   at once, or after a 5 s Undo in the page when Settings > Undo asks for it (`answerArgv`,
-  `src/core/projectPanel.ts`; `data-undo` on the ask), only for a key the stream shows open; the
-  same click fronts that agent's tab through the card's own `select`. The project Lead's
-  `draft` on an ask is one more such button, Send, and Edit opens Other… holding its words
-  (`leadDraft`); the Lead sends nothing itself. The extension posts no notifications of its own; banners are the AGI Menu's.
+  `src/core/projectPanel.ts`; `data-undo` on the ask), only for a key the stream shows open;
+  from the pinned card its tab stays in front, and from the list it selects that session
+  without changing the tab in front (owner video, 2026-11-07 0:04). The project Lead's
+  `draft` on an ask is one more such button, ★ on the question's line, and ▾ > Edit the draft
+  opens Other… holding its words (`recButton`); the Lead sends nothing itself. The extension posts no notifications of its own; banners are the AGI Menu's.
 - Project attribution is the CLI's own `confirmedProject` (`projectSessions`,
   `src/core/projectPanel.ts`); the extension never guesses a project from a cwd. One stopgap
   until agents-cli aliases ship: a row whose checkout is one of the project's own repository
@@ -237,7 +238,8 @@ The owner runs hundreds of sessions and catches up by glancing. Every surface an
 going on, where, and what came out of it" in one look; text explains only what a picture can't.
 
 - **Glance, then detail, with nothing moving.** A card always shows the same preview: the
-  harness logo and title, its state as the card's tint (amber asks, red blocked or stuck, green
+  harness logo and title, its state as the card's tint (amber asks, red blocked or stuck or an
+  ask agents-cli ranks high or urgent (owner video, 2026-11-07 6:49 AM), green
   working or waiting on its own work, a plain card when idle or ready for review; owner video,
   2026-10-22 8:50 AM; a question's wait ticks where the age sits), where it runs,
   the question or the agent's latest words in two lines, previews of images, and one row of
@@ -245,30 +247,40 @@ going on, where, and what came out of it" in one look; text explains only what a
   part off, down to the logo and title on one line (owner video, 2026-10-17), with a preview
   of a real card under those sections that redraws on every check (`renderCardPreview`; owner,
   2026-11-04 6:01 PM).
-  Hover only reveals icons, on the card's last row beside the machine with ⋯ last, so the title
-  never shortens (a card shrunk to its title row keeps them there, over its age); a card never grows under the pointer (owner video, 2026-10-12; owner, 2026-11-06).
-  Copy and ☆ are two of them: ☆ turns ★ in one click, on a card and on ⌘K's selected row (owner
-  video, 2026-11-04 5:57 PM), and ★ shows after a favorite's title; Favorites (the viewer's own, `globalState` by session id) repeat under the pinned card above every group, each still
+  Hover only reveals icons, so the title never shortens: ⧉ takes the age's place, top right,
+  and ↗ or ▶ and ⋯ sit on the card's last row beside the machine, ⋯ last (a card shrunk to its
+  title row keeps them there, over its age); a card never grows under the pointer (owner video,
+  2026-10-12; owner, 2026-11-06; owner video, 2026-11-07 7:05 AM). The age's hover holds the
+  details: why it needs you, the host, the tab, the model, the folder, the account and the
+  project; ⋯ holds only actions (owner video, 2026-11-07 5:42 AM). A click on the agent's logo
+  stars it (owner video, 2026-11-07 7:19 AM; ⋯ > Add to Favorites says it in words, and ⌘K's
+  selected row keeps its ☆), and ★ shows on the logo and after a favorite's title; Favorites (the viewer's own, `globalState` by session id) repeat under the pinned card above every group, each still
   in its own group (owner video, 2026-10-19 1:42 AM). An ended card is its title, its age and
   its latest words: no state pill (its group says Ended), how long it ran on the age's hover,
-  and no ☆ unless it is already a favorite. A card whose agent has not spoken
+  and no star unless it is already a favorite; a click opens it in place with ▶ Resume and how
+  long it ran, and an ended session with no title and nothing said sits behind one "N empty
+  sessions hidden · Show" line (owner video, 2026-11-07 1:06, 3:11 AM). A card whose agent has not spoken
   shows your prompt as "You: …", never as its words. Settings > Session list turns the
   Favorites group and the whole list off (only the pinned card; ⌘K finds the rest).
   A finished turn the CLI's done-check judged carries ✓ Done or Not done on its
   title row (before the age; right after the title on the pinned card) in place of Idle
   (`verdictChipOf`, `src/shared/sessionState.ts`); never a new row, nothing while it works,
   waits or asks, nothing without `doneVerdict`.
-  The question opens to its full text on a click on it. The front tab's card is the one
-  exception: pinned above everything and opened up (⇤ ‹ the title, up to three lines, and its state › ⇥,
-  then a line with its host, its place among the tabs (Tab 2 of 10), its age, Copy and ⋯; owner video,
-  2026-10-27 9:24 AM; its ask first, Claude's recap, the sidebar's own Made shelf, every step in a box that
-  scrolls, a reply box; owner, 2026-10-18), and its card still keeps its place in this window's group
+  An ask has no label and no reason row (the tint says it; owner video, 2026-11-07 0:42): the
+  question in two lines, which opens to its full text on a click, and the Lead's draft as one
+  ★ button on its line; ▾ opens every choice, Other… and Edit the draft (owner video, 2026-11-07
+  0:40, 1:17). The front tab's card is the one exception: pinned above everything at one height
+  for every session, which the grip under it sets for this window's panel (owner video,
+  2026-11-07 1:29): its title row (the title up to two lines, ✓ Done or Not done, the age, ⧉ and
+  ⋯ on hover; a click on the title copies the session), its ask, Claude's recap in three lines
+  and every step in a box that scrolls, the Made shelf in one row that scrolls sideways, and a
+  reply box at the bottom. It follows the front tab and nothing else: no ‹ › and no place among
+  the tabs (owner video, 2026-11-07 0:04); Agents: Next Agent That Needs You (`nextNeedsYou`,
+  `src/core/frontNav.ts`) is a command. Its card still keeps its place in this window's group
   with the selected rail (answers only on the pinned one), so switching tabs never reorders or
   removes a card, and the list never jumps: a clicked card stays where it was on screen
-  (owner video, 2026-10-19 1:32 AM). Settings > ‹ › on the pinned card: Tab order, Next that
-  needs you (`nextNeedsYou`, `src/core/frontNav.ts`: an unseen ask, then a turn finished since
-  you looked, then the rest round-robin; ‹ is Back), or Off. The window remembers only which
-  tabs were in front and when (`FrontHistory`). What a session was started with is a card
+  (owner video, 2026-10-19 1:32 AM). The window remembers only which tabs were in front and
+  when (`FrontHistory`). What a session was started with is a card
   part, First message, off by default and with no "started:" word. No row only for its
   state: the tint says it (owner video, 2026-10-18 8:59 PM). Made is one row of chips or the
   preview tiles, by Settings > What it made, in both panels; no chip row ever wraps.

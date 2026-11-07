@@ -48,10 +48,12 @@ test('with Settings > Ready for review and Idle groups on, a finished turn that 
   expect(html.indexOf('data-group="idle"')).toBeLessThan(html.indexOf('data-session="run-1"'))
 })
 
-test('a compact ask: the reason under the title, the question in two lines, one-line answers with keys, Other… and Try another way', () => {
+test('a compact ask with no label (the card is red for an urgent ask): the question in two lines, one-line answers with keys, Other… and Try another way; why it is urgent is on the age\'s hover', () => {
   const html = card('9b1f0c2e-publish')
-  expect(html).toContain('<div class="why u-urgent">Blocks a release (npm publish) · waiting <span data-since="1791939060000">46m 00s</span></div>')
-  expect(html).toContain('<div class="ask" data-ask="yosemite-m5/9b1f0c2e-publish/b-7f3a" data-undo="0"><div class="ah">Asks · Publish</div>')
+  expect(html).toMatch(/^<div class="card st-asks u-urgent"/)
+  expect(html).not.toContain('class="why')
+  expect(html).not.toContain('class="ah"')
+  expect(html).toContain('<div class="ask" data-ask="yosemite-m5/9b1f0c2e-publish/b-7f3a" data-undo="0"><div class="aline"><div class="q"')
   expect(html).toMatch(/<div class="q" title="The 1\.23\.0 tag is pushed[^"]*" data-expand>/)
   expect(html).toContain('<button class="opt" data-choice="yes-publish-from-zion" data-label="Yes, publish from zion" title="Runs scripts/release.sh 1.23.0 --confirm on zion, where the npm secrets live"><span class="k">1</span><span class="ol">Yes, publish from zion</span></button>')
   expect(html).toContain('<span class="k">3</span><span class="ol">Wait until morning</span>')
@@ -59,23 +61,26 @@ test('a compact ask: the reason under the title, the question in two lines, one-
   expect(html).toContain('<button class="lnk" data-ask-other>Other…</button>')
   expect(html).toContain(`data-ask-text="I can&#39;t answer this right now. Try a different approach that doesn&#39;t need me; if there is none, park this and move to the next task." data-label="Try another way"`)
   // The wait ticks in the age slot; the red card is the state.
-  expect(html).toContain('<span class="age wait" data-since="1791939060000" title="Waiting on you">46m 00s</span>')
+  expect(html).toContain('<span class="age wait" data-since="1791939060000" title="Waiting on you: Blocks a release (npm publish)\nHost: yosemite-m5')
+  expect(html).toContain('>46m 00s</span>')
 })
 
 test('a permission ask shows its command line and Approve, Approve for session and Deny from the CLI choices', () => {
   const html = card('51ac77d0-secrets')
-  expect(html).toContain('<div class="ah">Asks · Approval needed</div><div class="q cmdq" title="Claude needs approval to run Bash: secrets exec prod -- kubectl')
+  expect(html).toContain('<div class="aline"><div class="q cmdq" title="Claude needs approval to run Bash: secrets exec prod -- kubectl')
   expect(html.match(/data-choice="([^"]+)"/g)).toEqual(['data-choice="approve"', 'data-choice="approve-session"', 'data-choice="deny"'])
-  expect(html).toContain('<div class="why u-high">High-priority ticket PHNX-4353 · waiting')
+  // A high-urgency ask is red like a blocked one (owner video, 2026-11-07 6:49 AM); the reason is on the age's hover.
+  expect(html).toMatch(/^<div class="card st-asks u-high"/)
+  expect(html).toContain('title="Waiting on you: High-priority ticket PHNX-4353')
 })
 
 test('Session cards settings: Off leaves the red card and its wait, Question only drops the answers, Full and details show everything', () => {
   const off = card('9b1f0c2e-publish', { ...DEFAULT_CARD_SETTINGS, asks: 'off' })
   expect(off).not.toContain('class="ask"')
-  expect(off).toMatch(/^<div class="card st-asks"/)
-  expect(off).toContain('<span class="age wait" data-since="1791939060000" title="Waiting on you">46m 00s</span>')
+  expect(off).toMatch(/^<div class="card st-asks u-urgent"/)
+  expect(off).toContain('<span class="age wait" data-since="1791939060000" title="Waiting on you: Blocks a release (npm publish)')
   const question = card('9b1f0c2e-publish', { ...DEFAULT_CARD_SETTINGS, asks: 'question' })
-  expect(question).toContain('<div class="ask"><div class="ah">Asks · Publish</div>')
+  expect(question).toContain('<div class="ask"><div class="aline"><div class="q"')
   expect(question).not.toContain('class="opt"')
   expect(question).not.toContain('data-ask-other')
   const full = card('9b1f0c2e-publish', { ...DEFAULT_CARD_SETTINGS, asks: 'answers', options: 'details', question: 'full' })
@@ -93,16 +98,24 @@ test('an answer is one `agents feed answer` argv; what the CLI says about a fail
   expect(answerFailure('{"status":"unknown"}')).toBe('Delivery unconfirmed: no receipt yet')
 })
 
-test('the Lead\'s draft shows under the question with Send (the same feed answer a button sends) and, for words, Edit', () => {
+test('the Lead\'s draft is one ★ button on the question\'s line (the same feed answer a choice sends); ▾ opens every choice, Other… and, for words, Edit (owner video, 2026-11-07 1:17)', () => {
   const asking = byId('51ac77d0-secrets')
   const withDraft = (draft: NonNullable<SessionLike['attention']>['draft']): SessionLike => ({ ...asking, attention: { ...asking.attention!, draft } })
-  const render = (s: SessionLike) => renderSessionCard(s, sessionPlace(s, HERE), NOW, { selected: false, pinned: true, thumbs: [], made: null, here: HERE, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'answers' } })
+  const render = (s: SessionLike, asks: CardSettings['asks'] = 'answers') => renderSessionCard(s, sessionPlace(s, HERE), NOW, { selected: false, pinned: true, thumbs: [], made: null, here: HERE, cards: { ...DEFAULT_CARD_SETTINGS, asks } })
   const words = render(withDraft({ text: 'Use the staging bundle', label: 'Use the staging bundle' }))
-  expect(words).toContain('<div class="draft"><span class="dl">Lead</span>')
-  expect(words).toContain('data-ask-text="Use the staging bundle" data-label="Use the staging bundle">Send</button>')
-  expect(words).toContain('data-ask-edit="Use the staging bundle">Edit</button>')
+  expect(words).toContain('<div class="ask hasrec" data-ask=')
+  expect(words).toContain('<button class="rec" data-ask-text="Use the staging bundle" data-label="Use the staging bundle" title="The Lead&#39;s draft: Use the staging bundle"><span class="rs">★</span>Use the staging bundle</button><button class="amore-t" data-expand')
+  expect(words).toContain('data-ask-edit="Use the staging bundle">Edit the draft</button>')
+  expect(words).toContain('<div class="amore"><div class="opts">')
   const choice = render(withDraft({ choiceId: 'approve', label: 'Approve' }))
-  expect(choice).toContain('data-choice="approve" data-label="Approve">Send</button>')
+  expect(choice).toContain('<button class="rec" data-choice="approve" data-label="Approve"')
   expect(choice).not.toContain('data-ask-edit')
-  expect(render(asking)).not.toContain('class="draft"')
+  // Without a draft the choices stay on the card (owner video, 2026-11-07 5:12 AM: the quick-send choices).
+  expect(render(asking)).not.toContain('class="rec"')
+  expect(render(asking)).not.toContain('hasrec')
+  // A listed card's ask keeps the ★ so that agent is answered from the list.
+  const listed = render(withDraft({ choiceId: 'approve', label: 'Approve' }), 'question')
+  expect(listed).toContain('<div class="ask" data-ask="')
+  expect(listed).toContain('<button class="rec" data-choice="approve"')
+  expect(listed).not.toContain('class="opt"')
 })
