@@ -126,3 +126,22 @@ test('the Lead\'s draft: its ★ answers with its words like any button; ▾ > E
   expect(sent.slice(from).filter((m) => m.type === 'answer')).toEqual([{ type: 'answer', key: 'yosemite-m6/e4d2a913-cards/b-5a01', choice: undefined, text: 'Wait for CI, then publish from zion' }]);
   expect((box().querySelector('.rec') as unknown as HTMLElement).hidden).toBe(true);
 });
+
+test('▾ on a drafted ask stays open through a redraw, and words typed in Other… survive it (review on #215)', () => {
+  const drafted = (lastResponse: string) => ROWS.map((r: { sessionId: string; attention?: object }) => r.sessionId === 'e4d2a913-cards'
+    ? { ...r, lastResponse, attention: { ...r.attention, draft: { choiceId: 'publish-now', label: 'Publish now' } } } : r);
+  const drawn = (lastResponse: string) => renderSessions(drafted(lastResponse), NOW, { selectedId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'answers' } });
+  deliver({ type: 'html', tab: 'sessions', html: drawn('first') });
+  const box = () => document.querySelector('.ask[data-ask="yosemite-m6/e4d2a913-cards/b-5a01"]')!;
+  const card = () => box().closest('.card') as unknown as HTMLElement;
+  (box().querySelector('.amore-t') as unknown as HTMLElement).click();
+  expect(card().classList.contains('ask-open')).toBe(true);
+  (box().querySelector('[data-ask-other]') as unknown as HTMLElement).click();
+  const input = box().querySelector('[data-ask-input]') as unknown as HTMLInputElement;
+  input.value = 'Hold it until the docs land';
+  // The agent says something new: the card's hash changes and it is patched in place.
+  deliver({ type: 'html', tab: 'sessions', html: drawn('second') });
+  expect(card().classList.contains('ask-open')).toBe(true);
+  expect(box().querySelector('[data-ask-input]')).toBe(input);
+  expect(input.value).toBe('Hold it until the docs land');
+});

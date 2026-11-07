@@ -1571,14 +1571,14 @@ ${MADE_CSS}
   .card .ask .rec { flex: 0 1 auto; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; min-width: 0; font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--r-gold-line); border-radius: 6px; background: var(--r-glass); color: var(--r-text); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .ask .rec .rs { color: var(--r-gold-line); } .card .ask .rec:hover, .card .ask .rec:focus-visible { background: var(--r-glass-hover); outline: none; }
   .card .ask .amore-t { flex: none; border: 0; background: none; color: var(--r-caption); cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 4px; } .card .ask .amore-t:hover { background: var(--r-glass-hover); color: var(--r-text); }
-  .card .ask.hasrec:not(.open) .amore { display: none; } .card .ask.open .amore-t { transform: rotate(180deg); }
+  .card:not(.ask-open) .ask.hasrec .amore { display: none; } .card.ask-open .ask .amore-t { transform: rotate(180deg); }
   .card:is(.st-stuck, .st-blocked, .u-high, .u-urgent) .ask { background: color-mix(in srgb, var(--r-bad) 14%, transparent); }
   /* An ended card opens in place: ▶ Resume and how long it ran. Sessions with nothing in them sit behind Show. */
   .ended-x { display: none; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--r-caption); } .card.open .ended-x { display: flex; }
   .ended-x .rsm { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--r-edge); border-radius: 6px; background: var(--r-glass); color: var(--r-text); cursor: pointer; } .ended-x .rsm:hover { background: var(--r-glass-hover); } .ended-x .rsm .ic { width: 10px; height: 10px; }
   .emptyrow { font-size: 11px; color: var(--r-caption); padding: 1px 4px; } .empties { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; } .empties[hidden] { display: none; }
   .card .ask .q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .card .ask .q[data-expand] { cursor: zoom-in; } .card .ask.open .q { display: block; cursor: zoom-out; } .card .ask .q.full { display: block; }
+  .card .ask .q[data-expand] { cursor: zoom-in; } .card.ask-open .ask .q { display: block; cursor: zoom-out; } .card .ask .q.full { display: block; }
   .card .ask .q.cmdq { font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .card .ask [hidden] { display: none !important; }
   .card .opts, .kask .opts { display: flex; flex-direction: column; gap: 3px; margin-top: 5px; }
@@ -1862,7 +1862,7 @@ ${MADE_SCRIPT}
   let showEmpty = false;
   // The pinned card's height, set by its grip and kept for this window's panel (owner video,
   // 2026-11-07 1:29: "the view size should not change"); none until you drag it.
-  const FC_MIN = 150, FC_MAX = 900;
+  const FC_MIN = 220, FC_MAX = 900;
   function applyFrontHeight() {
     const h = (vscode.getState() || {}).fcH;
     if (h) document.documentElement.style.setProperty('--fc-h', h + 'px'); else document.documentElement.style.removeProperty('--fc-h');
@@ -1873,11 +1873,12 @@ ${MADE_SCRIPT}
     const card = grip.parentElement.querySelector('.card.front'); if (!card) return;
     e.preventDefault();
     const y0 = e.clientY, h0 = card.getBoundingClientRect().height;
-    let h = h0;
+    let h = h0, moved = false;
     grip.setPointerCapture(e.pointerId);
-    const move = (ev) => { h = Math.round(Math.max(FC_MIN, Math.min(FC_MAX, h0 + ev.clientY - y0))); document.documentElement.style.setProperty('--fc-h', h + 'px'); };
-    const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); vscode.setState(Object.assign({}, vscode.getState() || {}, { fcH: h })); };
-    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up);
+    const move = (ev) => { moved = true; h = Math.round(Math.max(FC_MIN, Math.min(FC_MAX, h0 + ev.clientY - y0))); document.documentElement.style.setProperty('--fc-h', h + 'px'); };
+    // A click without a drag sets nothing; a cancelled drag keeps where it got to.
+    const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); if (moved) vscode.setState(Object.assign({}, vscode.getState() || {}, { fcH: h })); };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
   });
   main.addEventListener('dblclick', (e) => {
     if (!(e.target.closest && e.target.closest('.fc-grip'))) return;
@@ -1922,7 +1923,9 @@ ${MADE_SCRIPT}
     drawPeek();
     main.querySelectorAll('.card.st-ended').forEach((c) => c.classList.toggle('open', endedOpen.has(c.dataset.key)));
     main.querySelectorAll('.empties').forEach((box) => { box.hidden = !showEmpty; const b = box.previousElementSibling && box.previousElementSibling.querySelector('[data-show-empty]'); if (b) b.textContent = showEmpty ? 'Hide' : 'Show'; });
-    main.querySelectorAll('.card[data-session] .ask').forEach((a) => a.classList.toggle('open', opened.has(a.closest('.card').dataset.session)));
+    // On the keyed card, not the .ask: a patch keeps a keyed card's node whatever its classes,
+    // so an open ask and what is typed in its Other… box survive every redraw.
+    main.querySelectorAll('.card[data-session]').forEach((c) => c.classList.toggle('ask-open', !!c.querySelector('.ask') && opened.has(c.dataset.session)));
     for (const [key, left] of pendingMerge) drawUndo(key, left);
     for (const key of mergingNow) drawMerging(key);
     // An ask that left the list takes its answer along: a sent one is forgotten, and
@@ -2542,7 +2545,7 @@ ${MADE_SCRIPT}
       const held = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.card[data-session]') : null;
       // A focused or selected card answers its session's ask through whichever of its cards
       // carries the answers: the pinned one, or its own when a Favorites copy shows the question.
-      const opts = (c) => c && c.querySelector('.ask[data-ask]:not(.hasrec:not(.open)) .opts:not([hidden])');
+      const opts = (c) => c && (c.classList.contains('ask-open') || !c.querySelector('.ask.hasrec')) ? c.querySelector('.ask[data-ask] .opts:not([hidden])') : null;
       const answers = (c) => opts(c) || (c ? cardsOf('key', c.dataset.key).map(opts).find(Boolean) : null);
       const ask = held ? answers(held) : [...main.querySelectorAll('.card.sel')].map(answers).find(Boolean);
       const opt = ask ? ask.querySelectorAll('.opt')[Number(e.key) - 1] : null;
