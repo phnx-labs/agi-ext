@@ -624,20 +624,20 @@ export function sessionPlace(s: SessionLike, here: SessionHere): SessionPlace {
 export interface SessionMade {
   prs: { label: string; url: string }[];
   ticket: string | null;
-  folders: { name: string; display: string; files: { name: string; path: string }[]; images: { name: string; path: string; uri: string }[] }[];
+  folders: { name: string; display: string; files: { name: string; path: string; title?: string }[]; images: { name: string; path: string; uri: string }[] }[];
 }
 
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
 
 export function sessionMade(card: Pick<SessionCardFields, 'artifacts' | 'plan' | 'pullRequests' | 'linearIssue'>): SessionMade {
   const byDir = new Map<string, SessionMade['folders'][number]>();
-  const files = [...card.artifacts.map((a) => ({ path: a.path, name: a.basename, display: a.display, uri: a.uri })),
-    ...(card.plan && !card.artifacts.some((a) => a.path === card.plan!.path) ? [{ path: card.plan.path, name: baseName(card.plan.path), display: card.plan.display, uri: undefined }] : [])];
+  const files = [...card.artifacts.map((a) => ({ path: a.path, name: a.basename, title: a.title, display: a.display, uri: a.uri })),
+    ...(card.plan && !card.artifacts.some((a) => a.path === card.plan!.path) ? [{ path: card.plan.path, name: baseName(card.plan.path), title: undefined, display: card.plan.display, uri: undefined }] : [])];
   for (const f of files) {
     const dir = f.path.replace(/[\\/][^\\/]*$/, '');
     const folder = byDir.get(dir) ?? { name: baseName(dir), display: f.display.replace(/[\\/][^\\/]*$/, ''), files: [], images: [] };
     if (IMAGE_FILE.test(f.name) && f.uri) folder.images.push({ name: f.name, path: f.path, uri: f.uri });
-    else folder.files.push({ name: f.name, path: f.path });
+    else folder.files.push({ name: f.name, path: f.path, ...(f.title ? { title: f.title } : {}) });
     byDir.set(dir, folder);
   }
   return {
@@ -1616,12 +1616,14 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     const age = ((state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? waitFor(now - asked) : ageWords(s.lastActivityMs, now)).split(' ')[0];
     const place = sessionPlace(s, here);
     const { where, far, reach } = paletteReach(s, place);
-    const prs = (made?.prs ?? []).slice(0, 3).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
-    const pages = (made?.folders ?? []).flatMap((f) => f.files.slice(0, 1)).slice(0, 2).map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" title="${escapeHtml(f.path)}">${glyph('folder')}${escapeHtml(f.name)}</a>`);
-    const thumbs = images.slice(0, 3).map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
+    const prs = (made?.prs ?? []).map((p) => `<a class="chip" href="#" data-url="${escapeHtml(p.url)}" title="Open ${escapeHtml(p.label)} on GitHub">${GITHUB_MARK}${escapeHtml(p.label)}</a>`);
+    const files = (made?.folders ?? []).flatMap((f) => f.files);
+    const pages = files.map((f) => `<a class="chip" href="#" data-artifact="${escapeHtml(f.path)}" data-page="${escapeHtml((f.title ?? '') + ' ' + f.path)}" title="${escapeHtml(f.title ? `${f.title}\n${f.path}` : f.path)}">${glyph('folder')}<span class="kc">${escapeHtml(f.title || f.name)}</span></a>`);
+    const thumbs = images.map((t) => `<a class="kth" href="#" data-ql="${escapeHtml(t.uri)}" data-name="${escapeHtml(t.label)}" title="Attached by you: ${escapeHtml(t.label)} (click for a quick look)">${thumbImg(t.uri, t.path, t.label)}</a>`);
     const note = firstSentence(s);
+    const chips = [...prs, ...pages, ...thumbs];
     const ids = [s.sessionId.replace(/^session_/, ''), s.sessionId.replace(/^session_/, '').slice(0, 8)].join(' ');
-    const words = [shortDevice(place.device), place.device, where, note, ...(made?.prs ?? []).map((p) => p.label), s.ticket ?? '', s.branch ?? ''].join(' ');
+    const words = [shortDevice(place.device), place.device, where, note, ...(made?.prs ?? []).map((p) => p.label), ...files.map((f) => `${f.title ?? ''} ${f.path}`), s.ticket ?? '', s.branch ?? ''].join(' ');
     // The app it runs in is its icon under the agent's logo, its name only on hover (owner,
     // 2026-11-05 3:24 AM: "show it directly under the agent's icon … do not show the name").
     const app = where ? `<span class="kapp${reach === 'none' ? ' far' : ''}" title="${escapeHtml(place.kind === 'window' ? `${where} window` : where)}" role="img" aria-label="${escapeHtml(where)}">${placeIcon(place, here)}</span>` : '';
@@ -1632,7 +1634,7 @@ export function renderPalette(entries: PaletteEntry[], now: number, favorites: R
     return `<div class="krow${state === 'ended' ? ' ended' : ''}" role="option" aria-selected="false" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-here="${s.tabHere && state !== 'ended' ? 1 : 0}" data-reach="${reach}" data-title="${escapeHtml(title)}" data-ids="${escapeHtml(ids)}" data-text="${escapeHtml(words)}" data-said="${escapeHtml(paletteSaid(s))}">`
       + `${harnessLogo(s.agentType)}<span class="kt">${escapeHtml(title)}</span>`
       + `<span class="kmeta"><span class="pill st-${state}"><i></i>${escapeHtml(SESSION_STATE_WORD[state])}</span><span class="kw">${escapeHtml(age)}</span>${star}</span>`
-      + `${app}<span class="ksub">${[...prs, ...pages, ...thumbs].join('')}${note ? `<span class="knote">${escapeHtml(note)}</span>` : ''}</span>${inPlace}</div>`;
+      + `${app}${chips.length ? `<span class="ksub">${chips.join('')}</span>` : ''}${note ? `<span class="knote${chips.length ? ' kalt' : ''}">${escapeHtml(note)}</span>` : ''}${inPlace}</div>`;
   }).join('');
 }
 

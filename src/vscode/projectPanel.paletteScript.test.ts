@@ -147,6 +147,28 @@ test('a word only said in the session finds it and shows where; clearing gives t
   key('Escape');
 });
 
+// Owner screenshot, 2026-11-11 11:18 PM: "where rush sign" finds the session that made the
+// page, and the row says so: the page's chip is marked and a line names it.
+test('a page title finds the session that made it; the row marks the chip and names the page until the words change', () => {
+  const made = renderPalette([{ row: row('eeeeeeee-5', { title: 'Alerts - Better sign ups', recap: { text: 'Shipped the alerts.', at: '' } }), images: [], made: { prs: [{ label: 'agents #6152', url: 'https://github.com/o/agents/pull/6152' }], ticket: null, folders: [
+    { name: 'signups', display: '~/signups', files: [{ name: 'index.html', path: '/h/.agents/artifacts/2026-11-07/signups/index.html', title: 'Where Rush signups come from, and what PostHog misses' }], images: [] },
+  ] } }, { row: row('ffffffff-6', { title: 'Rush sign in page' }), made: null, images: [] }], NOW, new Set(), { device: 'zion', localHost: 'this-mac', workspace: 'agi-ext', editor: 'vscodium', editorName: 'VSCodium', icons: {} });
+  deliver({ type: 'palette', html: made, waiting: false });
+  type('where rush sign');
+  expect(shown()).toEqual(['Alerts - Better sign ups']);
+  const r = '.krow[data-title="Alerts - Better sign ups"]';
+  expect($(r + ' .chip.hit').dataset.artifact).toBe('/h/.agents/artifacts/2026-11-07/signups/index.html');
+  expect($(r + ' .knote').classList.contains('why')).toBe(true);
+  expect($(r + ' .knote').textContent).toBe('Made \u00b7 Where Rush signups come from, and what PostHog misses');
+  expect($(r + ' .knote mark').textContent).toBe('Where Rush sign');
+  // A title match needs no explanation; the recap goes back behind the chips.
+  type('alerts');
+  expect($(r + ' .chip.hit')).toBeNull();
+  expect($(r + ' .knote').classList.contains('why')).toBe(false);
+  expect($(r + ' .knote').textContent).toBe('Shipped the alerts.');
+  key('Escape');
+});
+
 test('an ask nothing here can bring forward opens in place on Enter, and a stream update keeps what you typed in its answer box', () => {
   const asks = renderPalette([{ row: row('dddddddd-4', {
     title: 'Sync latest changes', host: 'yosemite-s0', pidAlive: true, phase: 'waiting', liveStatus: 'waiting',

@@ -137,7 +137,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   forward where it runs as its ↗ does, and only an ended one resumes, as its ▶ does; one that
   nothing here can bring forward (Ghostty or a terminal agents-cli sees no tab for) opens in
   place with its question to answer (`paletteReach`). A row carries no tab number and no
-  device, and its age in one unit (owner, 2026-11-04 9:49 PM); the app it runs in is that app's
+  device, and its age in one unit (owner, 2026-11-04 9:49 PM); every PR, page and image it made
+  in one strip that scrolls sideways, a page by the title the row carries, and it is found by
+  those titles and paths, the matched page's chip outlined with a "Made ·" line (owner,
+  2026-11-11 11:18 PM); the app it runs in is that app's
   icon under the agent's logo, its name only on hover (owner, 2026-11-05 3:24 AM); a word
   one edit away matches only after every direct match, under "Close matches" (`PALETTE_FUZZY`). A session
   whose agent the CLI sees running (`pidAlive`) with no tab on this machine is never resumed:

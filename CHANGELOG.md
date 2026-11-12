@@ -4,6 +4,21 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.443] - 2026-11-12
+
+From the owner's 2026-11-11 11:18 PM screenshots of ⌘K:
+
+- A ⌘K row's PRs, pages and images scroll sideways with two fingers instead of stopping at the
+  panel's edge. Every one the session made is on the row; the side that hides more fades.
+- A page is named by its title ("Where Rush signups come from, and what PostHog misses"), not
+  `index.html`, with its path on hover. The title is the one the stream already carries from the
+  page's `.artifact.json`.
+- ⌘K finds a session by the titles and paths of the pages it made: "where rush sign" finds the
+  session that made that page, and pasting a page's path finds the session that wrote it. Such a
+  row outlines that page's chip, scrolls it into view, and says "Made · <title>" with your words
+  marked, until the words change.
+- A row with chips keeps its recap line for these explanations, so ⌘K stays two lines a row.
+
 ## [0.9.442] - 2026-11-12
 
 - Swipe sideways with two fingers over the pinned card to move to another agent: forward goes to
