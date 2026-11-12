@@ -121,7 +121,9 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   which browser-cli lists as a profile; every agent action still goes through `browser`. A
   connection opens a background blank tab to start its session and closes it once the agent
   opens its own; VS Code shows the session only the tabs created through it. The file format
-  is shared with browser-cli's `editor-discovery.ts` (`src/core/editorBrowser.ts`).
+  is shared with browser-cli's `editor-discovery.ts` (`src/core/editorBrowser.ts`). The
+  command's modal dialogs answer that click (done, quit to apply, or why it refused); the
+  window shows nothing on its own.
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once, and
   the pinned front card's reply box and Made shelf are `data-keep` (a patch updates their

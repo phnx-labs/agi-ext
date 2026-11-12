@@ -80,7 +80,7 @@ if printf '%s\n' "$VSIX_FILES" | grep -q '^extension/\.agents/'; then
     exit 1
 fi
 MISSING=""
-for dep in yaml; do
+for dep in yaml ws jsonc-parser; do
     if ! printf '%s\n' "$VSIX_FILES" | grep -qxF "extension/node_modules/${dep}/package.json"; then
         MISSING="${MISSING} ${dep}"
     fi
@@ -92,6 +92,6 @@ if [ -n "$MISSING" ]; then
     rm -f "$VSIX_OUT"
     exit 1
 fi
-echo "Runtime dependencies present in VSIX (yaml)."
+echo "Runtime dependencies present in VSIX (yaml, ws, jsonc-parser)."
 
 echo "Build complete: $VSIX_OUT"

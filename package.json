@@ -1523,10 +1523,12 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "jsonc-parser": "3.3.1",
     "ws": "8.18.0",
     "yaml": "^2.8.2"
   },
   "bundledDependencies": [
+    "jsonc-parser",
     "ws",
     "yaml"
   ],

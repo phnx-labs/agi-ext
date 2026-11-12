@@ -430,7 +430,8 @@ fi
 
 # --- Publish -------------------------------------------------------------
 
-VSCE_FLAGS=()
+# package.json enables the `browser` API proposal (the built-in browser served to agents).
+VSCE_FLAGS=(--allow-proposed-apis browser)
 if [ -n "$PRE_TAG" ]; then VSCE_FLAGS+=("--pre-release"); fi
 
 if [ $CONFIRM -eq 0 ]; then

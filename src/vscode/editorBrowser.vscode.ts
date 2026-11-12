@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as http from 'http';
 import * as vscode from 'vscode';
-import { WebSocketServer, type WebSocket } from 'ws';
+import type { WebSocket } from 'ws';
 import {
   addProposedApiOptIn,
   argvJsonPath,
@@ -30,53 +30,67 @@ function browserApiAvailable(): boolean {
 async function serveConnection(ws: WebSocket): Promise<void> {
   const queue: CdpMessage[] = [];
   let forward: ((msg: CdpMessage) => void) | undefined;
+  let seed: vscode.BrowserTab | undefined;
+  let session: vscode.BrowserCDPSession | undefined;
+  let seedOpen = false;
+  let closed = false;
+  const closeSeed = () => {
+    if (!seedOpen || !seed) return;
+    seedOpen = false;
+    void seed.close().then(undefined, () => undefined);
+  };
+  // Registered before any await: a client that drops during setup still
+  // releases the seed tab and the session once they exist.
+  const release = () => {
+    closed = true;
+    void session?.close().then(undefined, () => undefined);
+    closeSeed();
+  };
+  ws.on('close', release);
+  ws.on('error', () => ws.terminate());
   ws.on('message', (data) => {
-    let msg: CdpMessage;
+    let msg: unknown;
     try {
       msg = JSON.parse(String(data));
     } catch {
       return;
     }
-    if (forward) forward(msg);
-    else queue.push(msg);
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
+    if (forward) forward(msg as CdpMessage);
+    else queue.push(msg as CdpMessage);
   });
 
-  const seed = await vscode.window.openBrowserTab('about:blank', { preserveFocus: true, background: true });
-  const session = await seed.startCDPSession();
+  seed = await vscode.window.openBrowserTab('about:blank', { preserveFocus: true, background: true });
+  seedOpen = true;
+  session = await seed.startCDPSession();
+  if (closed) return release();
+  const live = session;
+  // The bridge's own calls use ids far below any a CDP client sends.
   const internal = new Map<number, (msg: CdpMessage) => void>();
+  let nextInternal = -0x40000000;
   const createCalls = new Set<number>();
-  let nextInternal = -1;
   let browserSessionId: string | undefined;
-  let seedOpen = true;
 
-  const call = (method: string, params: Record<string, unknown> = {}, sessionId?: string) =>
+  const call = (method: string) =>
     new Promise<CdpMessage>((resolve) => {
       const id = nextInternal--;
       internal.set(id, resolve);
-      void session.sendMessage({ id, method, params, ...(sessionId ? { sessionId } : {}) });
+      void live.sendMessage({ id, method, params: {} });
     });
-  const closeSeed = () => {
-    if (!seedOpen) return;
-    seedOpen = false;
-    void seed.close().then(undefined, () => undefined);
-  };
 
-  session.onDidReceiveMessage((raw) => {
+  live.onDidReceiveMessage((raw) => {
     const msg = raw as CdpMessage;
     if (typeof msg.id === 'number' && internal.has(msg.id)) {
       internal.get(msg.id)!(msg);
       internal.delete(msg.id);
       return;
     }
-    if (typeof msg.id === 'number' && createCalls.delete(msg.id) && msg.result) closeSeed();
-    if (msg.sessionId && msg.sessionId === browserSessionId) delete msg.sessionId;
+    const onRoot = !!browserSessionId && msg.sessionId === browserSessionId;
+    if (onRoot && typeof msg.id === 'number' && createCalls.delete(msg.id) && msg.result) closeSeed();
+    if (onRoot) delete msg.sessionId;
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   });
-  session.onDidClose(() => ws.close());
-  ws.on('close', () => {
-    void session.close().then(undefined, () => undefined);
-    closeSeed();
-  });
+  live.onDidClose(() => ws.close());
 
   const attached = await call('Target.attachToBrowserTarget');
   browserSessionId = attached.result?.sessionId as string | undefined;
@@ -85,14 +99,17 @@ async function serveConnection(ws: WebSocket): Promise<void> {
     return;
   }
   forward = (msg) => {
-    if (!msg.sessionId) msg.sessionId = browserSessionId;
-    if (msg.method === 'Target.createTarget' && typeof msg.id === 'number') createCalls.add(msg.id);
-    void session.sendMessage(msg);
+    if (!msg.sessionId) {
+      msg.sessionId = browserSessionId;
+      if (msg.method === 'Target.createTarget' && typeof msg.id === 'number') createCalls.add(msg.id);
+    }
+    void live.sendMessage(msg);
   };
   for (const msg of queue.splice(0)) forward(msg);
 }
 
 function startBridge(context: vscode.ExtensionContext): void {
+  const { WebSocketServer } = require('ws') as typeof import('ws');
   const token = newBridgeToken();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 * 1024 });
   const server = http.createServer((_req, res) => res.writeHead(404).end());
@@ -128,6 +145,7 @@ function startBridge(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push({
     dispose: () => {
+      for (const client of wss.clients) client.terminate();
       wss.close();
       server.close();
     },
@@ -141,10 +159,27 @@ async function letAgentsUseBrowser(): Promise<void> {
     await vscode.window.showInformationMessage('Agents can already use this editor\'s built-in browser.', { modal: true });
     return;
   }
+  if (vscode.env.remoteName) {
+    await vscode.window.showErrorMessage(
+      `Run this from a local ${vscode.env.appName} window: argv.json belongs to the editor on your machine, not the ${vscode.env.remoteName} host.`,
+      { modal: true },
+    );
+    return;
+  }
   const file = argvJsonPath(vscode.env.appRoot);
-  const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '{\n}\n';
-  const next = addProposedApiOptIn(text);
-  if (next !== null) fs.writeFileSync(file, next);
+  const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  let next: string | null;
+  try {
+    next = addProposedApiOptIn(text);
+  } catch (error) {
+    await vscode.window.showErrorMessage(`${(error as Error).message}: ${file}`, { modal: true });
+    return;
+  }
+  if (next !== null) {
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, next);
+    fs.renameSync(tmp, file);
+  }
   const quit = await vscode.window.showInformationMessage(
     `Agents can use the built-in browser after ${vscode.env.appName} restarts. Reloading the window is not enough.`,
     { modal: true, detail: `Added the Agents extension to "enable-proposed-api" in ${file}.` },

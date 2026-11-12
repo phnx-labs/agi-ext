@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerEditorBrowser } from './editorBrowser.vscode';
 import { PagesPanel } from './pages.vscode';
 import { BUILT_IN_AGENTS, getBuiltInByKey, getBuiltInDefByTitle, getBuiltInByPrefix, isAgentRunner, RunStrategy, buildAgentLaunchCommand, wrapNativeAgentCommand, isDeprecatedAgentKey } from '../core/agents';
 import { shellQuote } from '../core/shellQuote';
@@ -869,7 +870,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // The built-in browser, served to agents as a `browser profiles list` profile
   // (PHNX-4623). Runs only once argv.json enables the `browser` API proposal.
-  const { registerEditorBrowser } = require('./editorBrowser.vscode') as typeof import('./editorBrowser.vscode');
   registerEditorBrowser(context);
 
   // The Lead, docked: ⌥Space overlay, status-bar last update, the Lead tab.
