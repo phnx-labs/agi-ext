@@ -66,13 +66,36 @@ test('a sideways swipe on the pinned card posts one swipe past 60 px, held so th
   wheel(pin, 5);
   expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }]);
   // The rest of the same gesture (the trackpad's momentum) does nothing more, even as it
-  // decays past the 450 ms lock.
+  // keeps coming for a second without the wheel going quiet.
   for (let i = 0; i < 6; i++) expect(wheel(pin, 40)).toBe(true);
   for (let i = 0; i < 9; i++) { await settle(100); expect(wheel(pin, 30)).toBe(true); }
   expect(swipes()).toHaveLength(1);
   await settle(500);
   for (let i = 0; i < 3; i++) wheel(pin, -25);
   expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: -1 }]);
+  await settle(500);
+});
+
+test('swipes follow each other without a pause: momentum that slows never counts, a new swipe 200 ms on does', async () => {
+  const pin = $('.front-pin .card');
+  sent.length = 0;
+  for (let i = 0; i < 3; i++) wheel(pin, 25);
+  expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }]);
+  // The momentum slows down, 16 ms apart, and is never a second swipe.
+  for (const dx of [40, 34, 28, 22, 16, 12, 8, 5, 3, 2]) { await settle(16); expect(wheel(pin, dx)).toBe(true); }
+  expect(swipes()).toHaveLength(1);
+  // The finger swipes again while the tail still runs: it speeds up, and that is the next swipe.
+  await settle(60);
+  for (const dx of [4, 12, 24, 40]) { await settle(16); wheel(pin, dx); }
+  expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: 1 }]);
+  // Turned back 200 ms on, with no quiet in between, it goes back at once.
+  for (const dx of [30, 20, 10]) { await settle(16); wheel(pin, dx); }
+  await settle(160);
+  for (const dx of [-10, -30, -40]) { await settle(16); wheel(pin, dx); }
+  expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: 1 }, { type: 'swipe', dir: -1 }]);
+  // Within 200 ms of a swipe nothing counts, however it moves.
+  for (const dx of [-5, -20, -40, -60]) wheel(pin, dx);
+  expect(swipes()).toHaveLength(3);
   await settle(500);
 });
 
