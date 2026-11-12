@@ -166,6 +166,13 @@ test('a page title finds the session that made it; the row marks the chip and na
   expect($(r + ' .chip.hit')).toBeNull();
   expect($(r + ' .knote').classList.contains('why')).toBe(false);
   expect($(r + ' .knote').textContent).toBe('Shipped the alerts.');
+  // A strip that holds more than fits fades on that side before anyone scrolls it.
+  const strip = $(r + ' .ksub');
+  Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 });
+  Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 300 });
+  type('alert');
+  expect(strip.classList.contains('fr')).toBe(true);
+  expect(strip.classList.contains('fl')).toBe(false);
   key('Escape');
 });
 
