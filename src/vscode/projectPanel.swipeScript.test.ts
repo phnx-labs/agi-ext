@@ -65,8 +65,10 @@ test('a sideways swipe on the pinned card posts one swipe past 60 px, held so th
   expect(swipes()).toEqual([]);
   wheel(pin, 5);
   expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }]);
-  // The rest of the same gesture (the trackpad's momentum) does nothing more.
+  // The rest of the same gesture (the trackpad's momentum) does nothing more, even as it
+  // decays past the 450 ms lock.
   for (let i = 0; i < 6; i++) expect(wheel(pin, 40)).toBe(true);
+  for (let i = 0; i < 9; i++) { await settle(100); expect(wheel(pin, 30)).toBe(true); }
   expect(swipes()).toHaveLength(1);
   await settle(500);
   for (let i = 0; i < 3; i++) wheel(pin, -25);
