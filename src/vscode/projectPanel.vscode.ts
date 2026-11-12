@@ -1855,8 +1855,8 @@ ${MADE_SCRIPT}
   // the tab in front before, and the card follows the front tab as always. Only a swipe more
   // sideways than down counts, never one a row inside that scrolls sideways (the Made shelf,
   // a chip row) can still take, and it is held here so the editor does not go back a page.
-  // After a swipe the card ignores the trackpad's momentum, which only slows down, until the
-  // wheel is quiet for 300 ms; a finger swiping again speeds up or turns back, so after 200 ms
+  // After a swipe the card ignores the trackpad's momentum, which only slows down (give or take a small jitter), until
+  // the wheel is quiet for 300 ms; a finger swiping again speeds up or turns back, so after 200 ms
   // that is the next swipe at once (owner, 2026-11-12: "boom boom boom keep on swiping").
   const SWIPE_PX = 60, SWIPE_MIN_MS = 200, SWIPE_GAP_MS = 300;
   let swipeSum = 0, swipeLast = 0, swipeLocked = 0, swipeAt = 0, swipeDir = 0, swipeAbs = 0, swipeRise = 0, swiped = null;
@@ -1876,7 +1876,7 @@ ${MADE_SCRIPT}
     const now = Date.now();
     const ax = Math.abs(e.deltaX);
     if (now < swipeLocked) {
-      swipeRise = ax > swipeAbs + 2 ? swipeRise + 1 : 0;
+      swipeRise = ax > swipeAbs * 1.25 + 2 ? swipeRise + 1 : 0;
       swipeAbs = ax;
       const again = swipeRise >= 2 || (Math.sign(e.deltaX) === -swipeDir && ax > 4);
       if (now - swipeAt < SWIPE_MIN_MS || !again) { swipeLocked = now + SWIPE_GAP_MS; return; }
@@ -2659,6 +2659,7 @@ ${MADE_SCRIPT}
     if (fuzzy) { const d = document.createElement('div'); d.className = 'ksep'; d.style.order = '${PALETTE_FUZZY}'; d.textContent = (fuzzy === hits.slice(0, 60).length ? 'No exact match \u00b7 close matches for \u201c' : 'Close matches for \u201c') + kq.value.trim() + '\u201d'; klist.prepend(d); }
     if (!hits.length && !klist.dataset.waiting) { const d = document.createElement('div'); d.className = 'kempty'; d.textContent = kq.value.trim() ? 'Nothing matches \u201c' + kq.value.trim() + '\u201d' : 'No sessions yet'; klist.append(d); }
     if (hits.length > 60) { const d = document.createElement('div'); d.className = 'kempty kmore'; d.style.order = '99'; d.textContent = (hits.length - 60) + ' more \u00b7 type to narrow'; klist.append(d); }
+    for (const strip of klist.querySelectorAll('.krow:not([hidden]) .ksub')) kfade(strip);
     kmark();
   }
   // Why a row matched, where its recap line sits: the page it made whose title or path
@@ -2678,7 +2679,7 @@ ${MADE_SCRIPT}
       if (n && n.dataset.was !== undefined) { n.textContent = n.dataset.was; delete n.dataset.was; n.classList.remove('why'); if (!n.textContent) n.remove(); }
       return;
     }
-    if (!n) { n = document.createElement('span'); n.className = 'knote'; r.append(n); }
+    if (!n) { n = document.createElement('span'); n.className = 'knote'; r.insertBefore(n, r.querySelector('.kopen')); }
     if (n.dataset.was === undefined) n.dataset.was = n.textContent;
     n.classList.add('why');
     const m = document.createElement('mark');
@@ -2692,6 +2693,7 @@ ${MADE_SCRIPT}
     strip.classList.toggle('fr', strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2);
   }
   klist.addEventListener('scroll', (e) => { if (e.target.classList && e.target.classList.contains('ksub')) kfade(e.target); }, true);
+  window.addEventListener('resize', () => { for (const strip of klist.querySelectorAll('.krow:not([hidden]) .ksub')) kfade(strip); });
   // One ☆ click, on a card or a ⌘K row: every ☆ for that session turns at once.
   function toggleFavorite(btn) {
     const on = btn.getAttribute('aria-pressed') !== 'true';

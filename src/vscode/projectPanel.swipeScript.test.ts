@@ -76,27 +76,39 @@ test('a sideways swipe on the pinned card posts one swipe past 60 px, held so th
   await settle(500);
 });
 
-test('swipes follow each other without a pause: momentum that slows never counts, a new swipe 200 ms on does', async () => {
-  const pin = $('.front-pin .card');
-  sent.length = 0;
-  for (let i = 0; i < 3; i++) wheel(pin, 25);
-  expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }]);
-  // The momentum slows down, 16 ms apart, and is never a second swipe.
-  for (const dx of [40, 34, 28, 22, 16, 12, 8, 5, 3, 2]) { await settle(16); expect(wheel(pin, dx)).toBe(true); }
-  expect(swipes()).toHaveLength(1);
-  // The finger swipes again while the tail still runs: it speeds up, and that is the next swipe.
-  await settle(60);
-  for (const dx of [4, 12, 24, 40]) { await settle(16); wheel(pin, dx); }
-  expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: 1 }]);
-  // Turned back 200 ms on, with no quiet in between, it goes back at once.
-  for (const dx of [30, 20, 10]) { await settle(16); wheel(pin, dx); }
-  await settle(160);
-  for (const dx of [-10, -30, -40]) { await settle(16); wheel(pin, dx); }
-  expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: 1 }, { type: 'swipe', dir: -1 }]);
-  // Within 200 ms of a swipe nothing counts, however it moves.
-  for (const dx of [-5, -20, -40, -60]) wheel(pin, dx);
-  expect(swipes()).toHaveLength(3);
-  await settle(500);
+test('swipes follow each other without a pause: momentum that slows or jitters never counts, a new swipe 200 ms on does', async () => {
+  // The script's clock, stepped 16 ms a sample as a trackpad sends them, so no threshold
+  // depends on how busy the machine running the test is.
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => clock;
+  const at = (ms: number) => { clock += ms; };
+  try {
+    const pin = $('.front-pin .card');
+    sent.length = 0;
+    for (let i = 0; i < 3; i++) { at(16); wheel(pin, 25); }
+    expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }]);
+    // The momentum slows down, and is never a second swipe.
+    for (const dx of [40, 34, 28, 22, 16, 12, 8, 5, 3, 2]) { at(16); expect(wheel(pin, dx)).toBe(true); }
+    expect(swipes()).toHaveLength(1);
+    // The finger swipes again while the tail still runs: it speeds up, and that is the next swipe.
+    at(60);
+    for (const dx of [4, 12, 24, 40]) { at(16); wheel(pin, dx); }
+    expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: 1 }]);
+    // A momentum tail that jitters up a few pixels at a time is still the same gesture.
+    for (const dx of [30, 28, 31, 34, 29, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 3]) { at(16); wheel(pin, dx); }
+    expect(swipes()).toHaveLength(2);
+    // Turned back, with no quiet in between, it goes back at once.
+    for (const dx of [-10, -30, -40]) { at(16); wheel(pin, dx); }
+    expect(swipes()).toEqual([{ type: 'swipe', dir: 1 }, { type: 'swipe', dir: 1 }, { type: 'swipe', dir: -1 }]);
+    // Within 200 ms of a swipe nothing counts, however it moves.
+    for (const dx of [5, 20, 40, 60]) { at(16); wheel(pin, dx); }
+    expect(swipes()).toHaveLength(3);
+  } finally {
+    Date.now = realNow;
+  }
+  // The real clock catches up with the last lock before the next test swipes.
+  await settle(clock - realNow() + 400);
 });
 
 test('the new front card slides in from the side the swipe went to, once', async () => {
