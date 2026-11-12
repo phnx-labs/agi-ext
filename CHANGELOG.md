@@ -19,6 +19,13 @@ From the owner's 2026-11-11 11:18 PM screenshots of ⌘K:
   marked, until the words change.
 - A row with chips keeps its recap line for these explanations, so ⌘K stays two lines a row.
 
+From the owner on 2026-11-12:
+
+- Swipes over the pinned card can follow each other without a pause. A swipe used to be ignored
+  until the trackpad had been still for 300 ms, so a quick second swipe did nothing; now a new
+  swipe (faster, or the other way) counts 200 ms after the last one, while the trackpad's own
+  momentum still never counts twice.
+
 ## [0.9.442] - 2026-11-12
 
 - Swipe sideways with two fingers over the pinned card to move to another agent: forward goes to

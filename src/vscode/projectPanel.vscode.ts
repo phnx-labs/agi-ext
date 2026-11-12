@@ -1855,9 +1855,11 @@ ${MADE_SCRIPT}
   // the tab in front before, and the card follows the front tab as always. Only a swipe more
   // sideways than down counts, never one a row inside that scrolls sideways (the Made shelf,
   // a chip row) can still take, and it is held here so the editor does not go back a page.
-  // After a swipe the card ignores the wheel for 450 ms and until it has been quiet for 300 ms.
-  const SWIPE_PX = 60, SWIPE_LOCK_MS = 450, SWIPE_GAP_MS = 300;
-  let swipeSum = 0, swipeLast = 0, swipeLocked = 0, swiped = null;
+  // After a swipe the card ignores the trackpad's momentum, which only slows down, until the
+  // wheel is quiet for 300 ms; a finger swiping again speeds up or turns back, so after 200 ms
+  // that is the next swipe at once (owner, 2026-11-12: "boom boom boom keep on swiping").
+  const SWIPE_PX = 60, SWIPE_MIN_MS = 200, SWIPE_GAP_MS = 300;
+  let swipeSum = 0, swipeLast = 0, swipeLocked = 0, swipeAt = 0, swipeDir = 0, swipeAbs = 0, swipeRise = 0, swiped = null;
   function scrollsSideways(el, dx, stop) {
     for (; el && el !== stop; el = el.parentElement) {
       if (el.scrollWidth <= el.clientWidth) continue;
@@ -1872,14 +1874,20 @@ ${MADE_SCRIPT}
     if (!pin || Math.abs(e.deltaX) <= Math.abs(e.deltaY) || scrollsSideways(e.target, e.deltaX, pin)) return;
     e.preventDefault();
     const now = Date.now();
-    // The trackpad's momentum outlasts the lock: it holds until the wheel goes quiet.
-    if (now < swipeLocked) { swipeLocked = Math.max(swipeLocked, now + SWIPE_GAP_MS); return; }
+    const ax = Math.abs(e.deltaX);
+    if (now < swipeLocked) {
+      swipeRise = ax > swipeAbs + 2 ? swipeRise + 1 : 0;
+      swipeAbs = ax;
+      const again = swipeRise >= 2 || (Math.sign(e.deltaX) === -swipeDir && ax > 4);
+      if (now - swipeAt < SWIPE_MIN_MS || !again) { swipeLocked = now + SWIPE_GAP_MS; return; }
+      swipeLocked = 0; swipeSum = 0;
+    }
     if (now - swipeLast > SWIPE_GAP_MS) swipeSum = 0;
     swipeLast = now;
     swipeSum += e.deltaX;
     if (Math.abs(swipeSum) <= SWIPE_PX) return;
     const dir = swipeSum > 0 ? 1 : -1;
-    swipeSum = 0; swipeLocked = now + SWIPE_LOCK_MS;
+    swipeSum = 0; swipeLocked = now + SWIPE_GAP_MS; swipeAt = now; swipeDir = dir; swipeAbs = ax; swipeRise = 0;
     swiped = { dir, from: pin.querySelector('.card')?.dataset.key, at: now };
     vscode.postMessage({ type: 'swipe', dir });
   }, { passive: false });
