@@ -113,7 +113,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown; dir?: unknown;
 }
 
 interface TabState {
@@ -169,6 +169,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'leadConfirmAll' && typeof msg.tokens === 'string') void leadPanel()?.confirmAll(msg.tokens.split(' ').filter(Boolean));
       else if (msg.type === 'leadRef') void leadPanel()?.openRef(msg.ref, msg.external === true);
       else if (msg.type === 'pick') void vscode.commands.executeCommand('agents.project.pick');
+      // A sideways swipe over the pinned card: forward is Next Agent That Needs You, back the tab in front before.
+      else if (msg.type === 'swipe' && (msg.dir === 1 || msg.dir === -1)) void (msg.dir === 1 ? this.controller.nextNeedsYou() : this.controller.previousFront());
       else if (msg.type === 'ticketTab' && typeof msg.id === 'string') opened(this.openTicketTab(msg.id));
       else if (msg.type === 'image' && typeof msg.path === 'string') opened(this.controller.openImage(msg.path));
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') opened(this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true ? 'always' : 'card') : 'no'));
@@ -1166,6 +1168,14 @@ class ProjectPanelController {
     this.select(next.row.sessionId, next.row.host, 'always');
   }
 
+  /** A swipe back over the pinned card: the session tab that was in front before this one
+   *  comes forward, one further back on each swipe (`FrontHistory.back`). */
+  previousFront(): void {
+    const id = this.history.back((s) => !!terminals.getBySessionId(s));
+    if (!id) { vscode.window.setStatusBarMessage('No earlier agent tab in this window', 4000); return; }
+    this.select(id, this.presented().find((r) => r.sessionId === id)?.host, 'always');
+  }
+
   /** Show the session in the sidebar; its tab in this window comes forward, wherever its
    *  agent runs (s1, m1…). A card asks through Settings > Card click; ⌘K and an answer
    *  always front it. Nothing is resumed or spawned. */
@@ -1831,6 +1841,48 @@ ${MADE_SCRIPT}
     if (c) main.scrollTop += c.getBoundingClientRect().top - anchor.top;
     if (main.querySelector('.front-pin .card')?.dataset.key === anchor.key) anchor = null;
   }
+  // A two-finger sideways swipe over the pinned card moves to another session (owner video,
+  // 2026-11-07 5:56 AM, 3:37; again 2026-11-12): forward fronts Next Agent That Needs You, back
+  // the tab in front before, and the card follows the front tab as always. Only a swipe more
+  // sideways than down counts, never one a row inside that scrolls sideways (the Made shelf,
+  // a chip row) can still take, and it is held here so the editor does not go back a page.
+  const SWIPE_PX = 60, SWIPE_LOCK_MS = 450, SWIPE_GAP_MS = 300;
+  let swipeSum = 0, swipeLast = 0, swipeLocked = 0, swiped = null;
+  function scrollsSideways(el, dx, stop) {
+    for (; el && el !== stop; el = el.parentElement) {
+      if (el.scrollWidth <= el.clientWidth) continue;
+      const ox = window.getComputedStyle(el).overflowX;
+      if (ox !== 'auto' && ox !== 'scroll') continue;
+      if (dx > 0 ? el.scrollLeft + el.clientWidth < el.scrollWidth - 1 : el.scrollLeft > 0) return true;
+    }
+    return false;
+  }
+  main.addEventListener('wheel', (e) => {
+    const pin = e.target.closest && e.target.closest('.front-pin');
+    if (!pin || Math.abs(e.deltaX) <= Math.abs(e.deltaY) || scrollsSideways(e.target, e.deltaX, pin)) return;
+    e.preventDefault();
+    const now = Date.now();
+    if (now < swipeLocked) return;
+    if (now - swipeLast > SWIPE_GAP_MS) swipeSum = 0;
+    swipeLast = now;
+    swipeSum += e.deltaX;
+    if (Math.abs(swipeSum) <= SWIPE_PX) return;
+    const dir = swipeSum > 0 ? 1 : -1;
+    swipeSum = 0; swipeLocked = now + SWIPE_LOCK_MS;
+    swiped = { dir, from: pin.querySelector('.card')?.dataset.key, at: now };
+    vscode.postMessage({ type: 'swipe', dir });
+  }, { passive: false });
+  // The card the swipe brought slides in from the side it went to, once.
+  function slideIn() {
+    if (!swiped) return;
+    const card = main.querySelector('.front-pin .card');
+    if (Date.now() - swiped.at > 2000) { swiped = null; return; }
+    if (!card || card.dataset.key === swiped.from) return;
+    const dir = swiped.dir; swiped = null;
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && card.animate) card.animate([
+      { transform: 'translateX(' + (dir * 24) + 'px)', opacity: 0.5 }, { transform: 'none', opacity: 1 },
+    ], { duration: 150, easing: 'ease-out' });
+  }
   function activityBox() { return main.querySelector('.front-pin .fc-act ol'); }
   function activityAtEnd(box) { return !box || box.scrollHeight - box.scrollTop - box.clientHeight < 6; }
   // The front card's reply box: its session's draft, bound once per node, the mic as
@@ -2098,7 +2150,7 @@ ${MADE_SCRIPT}
       if (focused) { const el = cardsOf('key', focused.key).find((c) => placeOf(c) === focused.place); if (el) el.focus({ preventScroll: true }); }
       if (m.tab === 'lead') { syncLeadBox(); if (!same || leadEnd) main.scrollTop = main.scrollHeight; }
       if (m.tab === 'sessions') {
-        syncBulk(); syncFrontReply(typing); drawFrontMade(); syncTitles();
+        syncBulk(); syncFrontReply(typing); drawFrontMade(); syncTitles(); slideIn();
         const box = activityBox();
         if (box && (box !== actBox || actEnd)) box.scrollTop = box.scrollHeight;
       }

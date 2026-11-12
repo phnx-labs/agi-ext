@@ -1,7 +1,8 @@
 // Agents: Next Agent That Needs You (owner video, 2026-10-19 1:32 AM). Every ordering fact
 // comes from stream rows; the only thing this window remembers is which session tabs were in
 // front and when (`FrontHistory`), which is UI state and is never sent anywhere. The pinned
-// card has no ‹ › of its own: it follows the front tab (owner video, 2026-11-07 0:04).
+// card has no ‹ › of its own: it follows the front tab (owner video, 2026-11-07 0:04); a
+// sideways swipe over it fronts the next that needs you, or back the tab in front before.
 
 import type { SessionLike } from './projectPanel';
 import { attentionRank, ballOf, sessionStateOf, urgencyOf, urgencyRank } from '../shared/sessionState';
@@ -14,20 +15,44 @@ export interface FrontMemory {
 
 /** A tab in front for less than this was passed through (a restore, a quick switch): it is not seen. */
 const DWELL_MS = 1500;
+/** How many earlier front tabs a swipe back can walk through. */
+const TRAIL_MAX = 30;
 
 /** A window's own front-tab history: when each session was last in front. */
 export class FrontHistory implements FrontMemory {
   private readonly seen = new Map<string, number>();
   private current: string | undefined;
   private since = 0;
+  /** The sessions in front before this one, most recent last, each once. */
+  private readonly trail: string[] = [];
+  /** The session `back` just picked: when it comes forward, the one it leaves is not pushed,
+   *  so swiping back again walks further back instead of bouncing between two. */
+  private goingBack: string | undefined;
 
   /** The front tab changed; `id` is its session, undefined for a tab with none. */
   front(id: string | undefined, now: number): void {
     if (id === this.current) return;
     const prev = this.current;
     if (prev && now - this.since >= DWELL_MS) this.seen.set(prev, now);
+    if (prev && (id === undefined || id !== this.goingBack)) {
+      const at = this.trail.indexOf(prev);
+      if (at >= 0) this.trail.splice(at, 1);
+      this.trail.push(prev);
+      if (this.trail.length > TRAIL_MAX) this.trail.shift();
+    }
+    this.goingBack = undefined;
     this.current = id;
     this.since = now;
+  }
+
+  /** The session tab in front before this one that `open` still has, walking back one
+   *  further on each call; undefined when there is none. */
+  back(open: (sessionId: string) => boolean): string | undefined {
+    while (this.trail.length) {
+      const id = this.trail.pop()!;
+      if (id !== this.current && open(id)) { this.goingBack = id; return id; }
+    }
+    return undefined;
   }
 
   seenAt(id: string): number | undefined {

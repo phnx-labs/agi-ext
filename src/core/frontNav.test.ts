@@ -71,3 +71,27 @@ test('the pinned card draws no arrows and no place among the tabs; the command s
   // The command picks what needs you, from a shell or editor in front too.
   expect(nextThatNeedsYou(rows, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, memory: h })?.row.sessionId).toBe('c');
 });
+
+test('back walks through the tabs that were in front before, newest first, without bouncing between two, and skips a closed one', () => {
+  const h = new FrontHistory();
+  const open = new Set(['a', 'b', 'c', 'd']);
+  const isOpen = (id: string) => open.has(id);
+  h.front('a', min(0)); h.front('b', min(1)); h.front(undefined, min(2)); h.front('c', min(3)); h.front('d', min(4));
+  expect(h.back(isOpen)).toBe('c');
+  h.front('c', min(5));
+  // Landing on c does not push d, so back again goes further, not to d.
+  expect(h.back(isOpen)).toBe('b');
+  h.front('b', min(6));
+  open.delete('a');
+  expect(h.back(isOpen)).toBeUndefined();
+  // Moving on (a swipe forward, a click) starts the trail again from here.
+  h.front('d', min(7));
+  expect(h.back(isOpen)).toBe('b');
+  // A tab visited twice is in the trail once, at its latest place.
+  const g = new FrontHistory();
+  g.front('a', min(0)); g.front('b', min(1)); g.front('a', min(2)); g.front('c', min(3));
+  expect(g.back(() => true)).toBe('a');
+  g.front('a', min(4));
+  expect(g.back(() => true)).toBe('b');
+  expect(g.back(() => true)).toBeUndefined();
+});

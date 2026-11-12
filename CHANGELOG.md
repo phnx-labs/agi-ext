@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.442] - 2026-11-12
+
+- Swipe sideways with two fingers over the pinned card to move to another agent: forward goes to
+  the next agent that needs you (as Agents: Next Agent That Needs You does), back to the tab you
+  were in before, one further back on each swipe. The card still shows the tab in front and
+  slides in from the side you swiped to. A row inside it that scrolls sideways, like what it
+  made, still scrolls, and the swipe never takes the editor back a page.
+
 ## [0.9.441] - 2026-11-07
 
 From the owner's 5:56 AM and 8:30 AM videos on the Project panel, after reviewing a prototype:
