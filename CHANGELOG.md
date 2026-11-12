@@ -4,6 +4,17 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.444] - 2026-11-12
+
+- Agents can drive this editor's built-in browser with the `browser` CLI they already use. Each
+  open window is a profile in `browser profiles list` (`vscodium-agi-ext`, labeled
+  `VSCodium window "agi-ext"`, with browser-cli 0.2.10 or later), and its pages open as editor
+  tabs beside your work, where you can watch, type a captcha or take over. Nothing picks it on
+  its own: you or your `.agents` rules name it. An agent sees only the tabs it opened, never
+  yours. Run Agents: Let Agents Use the Built-in Browser once: it adds the extension to
+  `enable-proposed-api` in `argv.json` and asks you to quit, since the editor reads that file
+  only at startup.
+
 ## [0.9.443] - 2026-11-12
 
 From the owner's 2026-11-11 11:18 PM screenshots of ⌘K:

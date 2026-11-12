@@ -867,6 +867,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const { registerProjectPanel } = require('./projectPanel.vscode') as typeof import('./projectPanel.vscode');
   registerProjectPanel(context);
 
+  // The built-in browser, served to agents as a `browser profiles list` profile
+  // (PHNX-4623). Runs only once argv.json enables the `browser` API proposal.
+  const { registerEditorBrowser } = require('./editorBrowser.vscode') as typeof import('./editorBrowser.vscode');
+  registerEditorBrowser(context);
+
   // The Lead, docked: ⌥Space overlay, status-bar last update, the Lead tab.
   const { registerLead } = require('./lead.vscode') as typeof import('./lead.vscode');
   registerLead(context);

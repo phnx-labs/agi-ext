@@ -48,6 +48,9 @@
     "onCustomEditor:agents.markdownEditor",
     "onCustomEditor:agents.htmlReader"
   ],
+  "enabledApiProposals": [
+    "browser"
+  ],
   "main": "./out/vscode/extension.js",
   "contributes": {
     "iconThemes": [
@@ -823,6 +826,10 @@
         "title": "Move into New Window",
         "category": "Agents: Project",
         "icon": "$(multiple-windows)"
+      },
+      {
+        "command": "agents.browser.letAgentsUse",
+        "title": "Agents: Let Agents Use the Built-in Browser"
       }
     ],
     "configuration": {
@@ -1510,14 +1517,17 @@
     "@phnx-labs/cli-docs": "0.1.1",
     "@types/node": "^20.x",
     "@types/vscode": "^1.85.0",
+    "@types/ws": "8.5.13",
     "happy-dom": "^21.0.1",
     "knip": "^6.35.1",
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "ws": "8.18.0",
     "yaml": "^2.8.2"
   },
   "bundledDependencies": [
+    "ws",
     "yaml"
   ],
   "bundleDependencies": [

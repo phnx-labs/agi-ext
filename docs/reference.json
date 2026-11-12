@@ -3,7 +3,7 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 138,
+    "commands": 139,
     "settings": 11,
     "keybindings": 51,
     "menuItems": 61,
@@ -718,6 +718,10 @@
         "title": "Move into New Window",
         "category": "Agents: Project",
         "icon": "$(multiple-windows)"
+      },
+      {
+        "command": "agents.browser.letAgentsUse",
+        "title": "Agents: Let Agents Use the Built-in Browser"
       }
     ],
     "configuration": {
