@@ -108,6 +108,22 @@ describe('argv.json opt-in', () => {
     expect(parseJsonc(addProposedApiOptIn('{ "enable-proposed-api": [] }')!)['enable-proposed-api']).toEqual(['swarmify.swarm-ext']);
   });
 
+  test('a commented-out entry does not count, and a brace inside a comment is left alone', () => {
+    const commented = '{\n\t// "enable-proposed-api": ["swarmify.swarm-ext"]\n\t"locale": "en"\n}\n';
+    const after = addProposedApiOptIn(commented)!;
+    expect(parseJsonc(after)).toEqual({ 'enable-proposed-api': ['swarmify.swarm-ext'], locale: 'en' });
+    expect(after).toContain('// "enable-proposed-api": ["swarmify.swarm-ext"]');
+    const braceInComment = '// see {docs} here\n{ "x": 1 }\n';
+    const after2 = addProposedApiOptIn(braceInComment)!;
+    expect(after2.startsWith('// see {docs} here\n')).toBe(true);
+    expect(parseJsonc(after2)).toEqual({ x: 1, 'enable-proposed-api': ['swarmify.swarm-ext'] });
+  });
+
+  test('refuses to touch a file that is not a JSON object', () => {
+    expect(() => addProposedApiOptIn('{ "x": 1 ')).toThrow(/not a JSON object/);
+    expect(() => addProposedApiOptIn('[1]')).toThrow(/not a JSON object/);
+  });
+
   test('an object holding only comments gets no dangling comma, and a missing file a fresh one', () => {
     expect(parseJsonc(addProposedApiOptIn('{\n\t// "disable-hardware-acceleration": true,\n}\n')!)).toEqual({
       'enable-proposed-api': ['swarmify.swarm-ext'],

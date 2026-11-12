@@ -6,8 +6,9 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
 
-export const EXTENSION_ID = 'swarmify.swarm-ext';
+const EXTENSION_ID = 'swarmify.swarm-ext';
 
 export interface EditorEndpoint {
   v: 1;
@@ -71,23 +72,25 @@ export function argvJsonPath(appRoot: string, env: NodeJS.ProcessEnv = process.e
   return path.join(os.homedir(), product.dataFolderName || '.vscode', 'argv.json');
 }
 
-function stripJsonComments(text: string): string {
-  return text.replace(/("(?:\\.|[^"\\])*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (_m, str: string | undefined) => str ?? '');
-}
-
-// Adds this extension to argv.json's `enable-proposed-api`, keeping the file's
-// comments and layout. Returns null when it is already there.
+// Adds this extension to argv.json's `enable-proposed-api` through VS Code's
+// own JSONC library, so comments and layout survive and a commented-out entry
+// never counts. Returns null when it is already enabled; throws rather than
+// write a file the editor could not read.
 export function addProposedApiOptIn(text: string, extensionId = EXTENSION_ID): string | null {
-  const existing = /("enable-proposed-api"\s*:\s*\[)([^\]]*)\]/.exec(text);
-  if (existing) {
-    if (existing[2].includes(`"${extensionId}"`)) return null;
-    const separator = existing[2].trim() ? ', ' : '';
-    const at = existing.index + existing[1].length;
-    return `${text.slice(0, at)}"${extensionId}"${separator}${text.slice(at)}`;
+  const errors: ParseError[] = [];
+  const parsed = (text.trim() ? parse(text, errors, { allowTrailingComma: true }) : {}) as Record<string, unknown> | undefined;
+  if (errors.length || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('argv.json is not a JSON object; fix it by hand, then run the command again');
   }
-  const open = text.indexOf('{');
-  if (open < 0) return `{\n\t"enable-proposed-api": ["${extensionId}"]\n}\n`;
-  const body = stripJsonComments(text.slice(open + 1, text.lastIndexOf('}')));
-  const comma = body.trim() ? ',' : '';
-  return `${text.slice(0, open + 1)}\n\t"enable-proposed-api": ["${extensionId}"]${comma}${text.slice(open + 1)}`;
+  const current = parsed['enable-proposed-api'];
+  const list = Array.isArray(current) ? current.filter((x): x is string => typeof x === 'string') : [];
+  if (list.includes(extensionId)) return null;
+  const base = text.trim() ? text : '{\n}\n';
+  const format = { insertSpaces: false, tabSize: 1, eol: '\n' };
+  const next = applyEdits(base, modify(base, ['enable-proposed-api'], [extensionId, ...list], { formattingOptions: format }));
+  const check = parse(next, [], { allowTrailingComma: true }) as Record<string, unknown>;
+  if (!Array.isArray(check['enable-proposed-api']) || !check['enable-proposed-api'].includes(extensionId)) {
+    throw new Error('Could not add the Agents extension to argv.json');
+  }
+  return next;
 }
