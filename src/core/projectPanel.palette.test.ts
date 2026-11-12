@@ -3,7 +3,7 @@
 // ended sessions last and dimmed; each row aligns its details right and shows what it
 // made and what you attached instead of the model.
 import { expect, test } from 'bun:test'
-import { paletteMatch, paletteOrder, renderPalette, saidSnippet, type PaletteEntry, type SessionHere, type SessionLike } from './projectPanel'
+import { paletteMatch, paletteOrder, renderPalette, saidSnippet, sessionMade, type PaletteEntry, type SessionHere, type SessionLike } from './projectPanel'
 
 const HERE: SessionHere = { device: 'zion', localHost: 'this-mac', workspace: 'agi', editor: 'vscodium', editorName: 'VSCodium', icons: {} }
 
@@ -50,7 +50,9 @@ test('a row: logo and title, then state, age in one unit and ☆ on the right; w
   expect(html).toContain('data-artifact="/h/plan/plan.html"')
   expect(html).toContain('<a class="kth" href="#" data-ql="vscode-resource:/h/.agents/.history/attachments/a.png" data-name="a.png"')
   expect(html).toContain('<img data-thumb="vscode-resource:/h/.agents/.history/attachments/a.png"')
-  expect(html).toContain('<span class="knote">Fixed the hips.</span>')
+  // With chips on the row, the recap waits for a match to explain; without, it is the row's second line.
+  expect(html).toContain('<span class="knote kalt">Fixed the hips.</span>')
+  expect(renderPalette([entry({ sessionId: 'n', recap: { text: 'Fixed the hips.', at: '' } })], NOW, new Set(), HERE)).toContain('<span class="knote">Fixed the hips.</span>')
   // The model is not on the row.
   expect(html).not.toContain('claude-opus')
   // An ended session is dimmed and says so; an ask shows its wait.
@@ -59,6 +61,34 @@ test('a row: logo and title, then state, age in one unit and ☆ on the right; w
   expect(ended).toContain('<span class="pill st-ended"><i></i>Ended</span>')
   expect(renderPalette([entry({ sessionId: 'q', ...ask('k', 'normal', 125_000) })], NOW, new Set(), HERE)).toContain('Asks</span><span class="kw">2m</span>')
   expect(renderPalette([entry({ sessionId: 'd', lastActivityMs: NOW - 28 * 3_600_000 })], NOW, new Set(), HERE)).toContain('<span class="kw">28h</span>')
+})
+
+test('a row carries every PR, page and image, names a page by its title and finds the session by it (owner, 2026-11-11 11:18 PM)', () => {
+  const page = (n: number) => ({ name: 'index.html', path: `/h/.agents/artifacts/2026-11-07/p${n}/index.html`, ...(n === 1 ? { title: 'Where Rush signups come from, and what PostHog misses' } : {}) })
+  const html = renderPalette([entry({ sessionId: 'mk', title: 'Alerts - Better sign ups' }, {
+    made: { prs: [1, 2, 3, 4, 5].map((n) => ({ label: `agents #${n}`, url: `https://github.com/o/agents/pull/${n}` })), ticket: null,
+      folders: [1, 2, 3].map((n) => ({ name: `p${n}`, display: `~/p${n}`, files: [page(n)], images: [] })) },
+  })], NOW, new Set(), HERE)
+  // Nothing is capped out of the strip.
+  expect(html.match(/data-url="/g)?.length).toBe(5)
+  expect(html.match(/data-artifact="/g)?.length).toBe(3)
+  // The title, not the file name, with the path on hover.
+  expect(html).toContain('<span class="kc">Where Rush signups come from, and what PostHog misses</span></a>')
+  expect(html).toContain('title="Where Rush signups come from, and what PostHog misses\n/h/.agents/artifacts/2026-11-07/p1/index.html"')
+  const doc = { ids: 'mk', title: 'Alerts - Better sign ups', text: html.match(/data-text="([^"]*)"/)![1] }
+  expect(paletteMatch(doc, 'where rush sign')).toBe(3)
+  expect(paletteMatch(doc, 'artifacts/2026-11-07/p2')).toBe(3)
+})
+
+test('a page keeps the title the stream row carries from its .artifact.json', () => {
+  const made = sessionMade({ artifacts: [
+    { path: '/h/.agents/artifacts/2026-11-07/signups/index.html', basename: 'index.html', bucket: 'artifacts', title: 'Where Rush signups come from', display: '~/.agents/artifacts/2026-11-07/signups/index.html' },
+    { path: '/h/.agents/artifacts/2026-11-07/notes/notes.md', basename: 'notes.md', bucket: 'artifacts', display: '~/.agents/artifacts/2026-11-07/notes/notes.md' },
+  ] })
+  expect(made.folders.flatMap((f) => f.files)).toEqual([
+    { name: 'index.html', path: '/h/.agents/artifacts/2026-11-07/signups/index.html', title: 'Where Rush signups come from' },
+    { name: 'notes.md', path: '/h/.agents/artifacts/2026-11-07/notes/notes.md' },
+  ])
 })
 
 test('matching: an exact id, then a title that starts with the words, a title holding them, then any other words', () => {
