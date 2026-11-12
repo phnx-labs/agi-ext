@@ -1846,6 +1846,7 @@ ${MADE_SCRIPT}
   // the tab in front before, and the card follows the front tab as always. Only a swipe more
   // sideways than down counts, never one a row inside that scrolls sideways (the Made shelf,
   // a chip row) can still take, and it is held here so the editor does not go back a page.
+  // After a swipe the card ignores the wheel for 450 ms and until it has been quiet for 300 ms.
   const SWIPE_PX = 60, SWIPE_LOCK_MS = 450, SWIPE_GAP_MS = 300;
   let swipeSum = 0, swipeLast = 0, swipeLocked = 0, swiped = null;
   function scrollsSideways(el, dx, stop) {
@@ -1862,7 +1863,8 @@ ${MADE_SCRIPT}
     if (!pin || Math.abs(e.deltaX) <= Math.abs(e.deltaY) || scrollsSideways(e.target, e.deltaX, pin)) return;
     e.preventDefault();
     const now = Date.now();
-    if (now < swipeLocked) return;
+    // The trackpad's momentum outlasts the lock: it holds until the wheel goes quiet.
+    if (now < swipeLocked) { swipeLocked = Math.max(swipeLocked, now + SWIPE_GAP_MS); return; }
     if (now - swipeLast > SWIPE_GAP_MS) swipeSum = 0;
     swipeLast = now;
     swipeSum += e.deltaX;
