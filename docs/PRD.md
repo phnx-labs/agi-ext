@@ -464,6 +464,14 @@ What should happen: a pin never shows a blank icon. It keeps the icon VSCodium s
 
 Pages reads nothing on a timer: the history when the tab shows, an icon once when a page is pinned. Pins live in this extension's global state, so every window shows the same ones. In an editor with no built-in browser, a click says so instead of failing silently.
 
+## Let agents use the built-in browser
+
+You want an agent's web work where you can see it: a page beside the session, where you can watch, type a captcha or take over, instead of a separate browser window that has lost its task.
+
+Each open VS Code or VSCodium window is a profile in `browser profiles list` (`vscodium-agi-ext`, labeled `VSCodium window "agi-ext"`), so `browser start --profile vscodium-agi-ext --url …` opens the page as an editor tab in that window. Nothing picks it on its own: you, or your `.agents` rules, name it. The agent's tabs are its own: it never sees the tabs you opened.
+
+VS Code allows this API only when `argv.json` names the extension, so it is off until you run Agents: Let Agents Use the Built-in Browser once, which adds that line and asks you to quit; reloading the window is not enough. The extension serves the browser on a loopback port with a token it writes, readable only by you, to `~/.agents/browser/run/editors/`, and removes the file when the window closes. A browser page can never reach it.
+
 ## Requirements
 
 **Stream contract.** Exactly one `agents feed watch --json` child exists per machine for all editor windows, owned by the elected leader window, and only while some window demands it: a visible Active Session sidebar or Project Sessions tab, an open Resume Session picker, or a tracked agent tab whose identity the stream has not resolved. When no window demands it the producer is torn down after a short grace period. Every window reads a broadcast projection of that stream. A reset replaces a scope; upserts and removes apply only when newer; a stale event is ignored; a follower that has never seen a reset renders as degraded, never as an authoritative empty state. If a field the UI needs is missing from the stream, the fix is to add it to the CLI's row, never a side-channel fetch. That side channel caused the 2026-08-25 CPU incident.

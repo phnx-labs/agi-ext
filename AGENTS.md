@@ -114,6 +114,14 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   extension's global storage, with the runtime's `node:sqlite`, when the tab shows; it fetches a
   pinned page and its icon once, when the page is pinned (`resolvePageIcon`); and it opens
   pages only through `workbench.action.browser.open` (`browserOpenArgs`, `src/core/pages.ts`).
+  An eleventh: the built-in browser served to agents (`src/vscode/editorBrowser.vscode.ts`) calls
+  no CLI. Once `argv.json` enables the `browser` API proposal (Agents: Let Agents Use the
+  Built-in Browser, the one command that writes it), each window serves a loopback CDP
+  WebSocket and writes `$AGENTS_HOME/browser/run/editors/<id>.json` (0600; port and token),
+  which browser-cli lists as a profile; every agent action still goes through `browser`. A
+  connection opens a background blank tab to start its session and closes it once the agent
+  opens its own; VS Code shows the session only the tabs created through it. The file format
+  is shared with browser-cli's `editor-discovery.ts` (`src/core/editorBrowser.ts`).
 - Both sidebars patch their content in place on every update (`patchChildren`, `PATCH_SCRIPT`
   in `src/shared/sessionCards.ts`); the Active Session sidebar builds the reply box once, and
   the pinned front card's reply box and Made shelf are `data-keep` (a patch updates their

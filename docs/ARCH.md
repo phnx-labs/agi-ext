@@ -96,6 +96,7 @@ The invariants, each checkable against the file named:
 | A missing CLI capability fails as an upgrade error, never a filesystem fallback | rule; `src/core/agentsBin.ts` `resolveAgentsBin` throws when the binary is absent |
 | Publisher and URI authority stay `swarmify.swarm-ext` | `package.json` `publisher`, `name`; the CLI emits `swarm-ext://swarmify.swarm-ext/…` |
 | `src/core` never imports `vscode` | `src/testing/vscodeDouble.test.ts` |
+| The built-in browser is served to agents only over loopback, to a client holding this window's token, and only the tabs that client opens | `src/vscode/editorBrowser.vscode.ts` `startBridge`, `serveConnection`; contract in `src/core/editorBrowser.ts`, read by browser-cli `editor-discovery.ts` |
 
 <a id="components"></a>
 
