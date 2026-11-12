@@ -276,7 +276,10 @@ going on, where, and what came out of it" in one look; text explains only what a
   and every step in a box that scrolls, the Made shelf in one row that scrolls sideways, and a
   reply box at the bottom. It follows the front tab and nothing else: no ‹ › and no place among
   the tabs (owner video, 2026-11-07 0:04); Agents: Next Agent That Needs You (`nextNeedsYou`,
-  `src/core/frontNav.ts`) is a command. Its card still keeps its place in this window's group
+  `src/core/frontNav.ts`) is a command, and a two-finger sideways swipe over the card fronts
+  it, or swiped back the tab in front before (`FrontHistory.back`), the card still following
+  the tab (owner video, 2026-11-07 5:56 AM, 3:37; owner, 2026-11-12); a row inside that
+  scrolls sideways keeps its swipe. Its card still keeps its place in this window's group
   with the selected rail (answers only on the pinned one), so switching tabs never reorders or
   removes a card, and the list never jumps: a clicked card stays where it was on screen
   (owner video, 2026-10-19 1:32 AM). The window remembers only which tabs were in front and
