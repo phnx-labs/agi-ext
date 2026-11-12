@@ -62,7 +62,12 @@ async function serveConnection(ws: WebSocket): Promise<void> {
 
   seed = await vscode.window.openBrowserTab('about:blank', { preserveFocus: true, background: true });
   seedOpen = true;
-  session = await seed.startCDPSession();
+  try {
+    session = await seed.startCDPSession();
+  } catch (error) {
+    closeSeed();
+    throw error;
+  }
   if (closed) return release();
   const live = session;
   // The bridge's own calls use ids far below any a CDP client sends.
