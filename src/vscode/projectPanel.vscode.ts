@@ -1722,8 +1722,17 @@ ${MADE_CSS}
   .kask [data-ask-input]:focus { border-color: var(--vscode-focusBorder); }
   .ksep { padding: 10px 10px 4px; font-size: 10.5px; letter-spacing: .04em; color: var(--r-caption); border-top: 1px solid var(--r-edge); margin-top: 4px; }
   .krow .kmeta { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; justify-self: end; max-width: 100%; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 10.5px; color: var(--r-faint); }
-  .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--r-caption);  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
-  .krow .ksub > * { flex: none; } .krow .knote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* A row's PRs, pages and images scroll sideways; the edge that hides more fades (owner, 2026-11-11 11:18 PM). */
+  .krow .ksub { grid-column: 2 / 4; display: flex; align-items: center; gap: 5px; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; white-space: nowrap; font-size: 11.5px; color: var(--r-caption); }
+  .krow .ksub::-webkit-scrollbar { display: none; }
+  .krow .ksub.fr { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+  .krow .ksub.fl { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
+  .krow .ksub.fl.fr { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+  .krow .ksub > * { flex: none; }
+  .krow .chip.hit { border-color: var(--r-gold-line); color: var(--r-text); }
+  .krow .chip[data-page] { max-width: 220px; } .krow .chip .kc { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .krow .knote { grid-column: 2 / 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--r-caption); }
+  .krow .knote.kalt:not(.why) { display: none; }
   .krow .knote mark { background: none; color: var(--r-gold); font-weight: 600; }
   .krow .kmeta .pill { flex: none; } .krow .kmeta .kw { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* ⌘K palette rows. */
@@ -2581,7 +2590,7 @@ ${MADE_SCRIPT}
     const ranked = [...klist.querySelectorAll('.krow')].map((r, i) => ({ r, i, t: paletteMatch({ ids: r.dataset.ids, title: r.dataset.title, text: r.dataset.text, said: r.dataset.said }, kq.value) }));
     const hits = ranked.filter((x) => x.t !== null).sort((a, b) => a.t - b.t || a.i - b.i);
     const shownSet = new Set(hits.slice(0, 60).map((x) => x.r));
-    for (const x of ranked) { x.r.hidden = !shownSet.has(x.r); x.r.style.order = String(x.t ?? 0); ksaid(x.r, x.t === 4 && !x.r.hidden ? kq.value : ''); }
+    for (const x of ranked) { x.r.hidden = !shownSet.has(x.r); x.r.style.order = String(x.t ?? 0); kwhy(x.r, x.r.hidden ? null : x.t, kq.value); }
     for (const el of klist.querySelectorAll('.kempty:not(.kwait), .kmore, .ksep')) el.remove();
     // Rows found only by a typo-tolerant match come after every direct one, under their own heading.
     const fuzzy = hits.slice(0, 60).filter((x) => x.t === ${PALETTE_FUZZY}).length;
@@ -2590,21 +2599,37 @@ ${MADE_SCRIPT}
     if (hits.length > 60) { const d = document.createElement('div'); d.className = 'kempty kmore'; d.style.order = '99'; d.textContent = (hits.length - 60) + ' more \u00b7 type to narrow'; klist.append(d); }
     kmark();
   }
-  // A row matched only by what was said in it shows those words, the match marked, where
-  // its recap line sits; it gets its own line back when the words change.
-  function ksaid(r, q) {
-    const cut = q ? saidSnippet(r.dataset.said || '', q) : null;
+  // Why a row matched, where its recap line sits: the page it made whose title or path
+  // holds the words (its chip marked and scrolled into view), or what was said in it.
+  // The line goes back to the recap when the words change.
+  function kpage(r, q) {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length || words.every((w) => r.dataset.title.toLowerCase().includes(w))) return null;
+    return [...r.querySelectorAll('.chip[data-page]')].find((c) => words.every((w) => c.dataset.page.toLowerCase().includes(w))) || null;
+  }
+  function kwhy(r, t, q) {
+    for (const c of r.querySelectorAll('.chip.hit')) c.classList.remove('hit');
+    const page = t !== null && t <= 3 ? kpage(r, q) : null;
+    const cut = page ? saidSnippet(page.textContent, q) || { before: page.textContent, hit: '', after: '' } : t === 4 ? saidSnippet(r.dataset.said || '', q) : null;
     let n = r.querySelector('.knote');
     if (!cut) {
-      if (n && n.dataset.was !== undefined) { n.textContent = n.dataset.was; delete n.dataset.was; if (!n.textContent) n.remove(); }
+      if (n && n.dataset.was !== undefined) { n.textContent = n.dataset.was; delete n.dataset.was; n.classList.remove('why'); if (!n.textContent) n.remove(); }
       return;
     }
-    if (!n) { n = document.createElement('span'); n.className = 'knote'; r.querySelector('.ksub').append(n); }
+    if (!n) { n = document.createElement('span'); n.className = 'knote'; r.append(n); }
     if (n.dataset.was === undefined) n.dataset.was = n.textContent;
+    n.classList.add('why');
     const m = document.createElement('mark');
     m.textContent = cut.hit;
-    n.replaceChildren(cut.before, m, cut.after);
+    n.replaceChildren(page ? 'Made \u00b7 ' : '', cut.before, m, cut.after);
+    if (page) { page.classList.add('hit'); const strip = page.parentElement; strip.scrollLeft = Math.max(0, page.offsetLeft - strip.offsetLeft - 24); kfade(strip); }
   }
+  // The strip's fades say which side holds more.
+  function kfade(strip) {
+    strip.classList.toggle('fl', strip.scrollLeft > 2);
+    strip.classList.toggle('fr', strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2);
+  }
+  klist.addEventListener('scroll', (e) => { if (e.target.classList && e.target.classList.contains('ksub')) kfade(e.target); }, true);
   // One ☆ click, on a card or a ⌘K row: every ☆ for that session turns at once.
   function toggleFavorite(btn) {
     const on = btn.getAttribute('aria-pressed') !== 'true';
