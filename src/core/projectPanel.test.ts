@@ -854,6 +854,10 @@ test('Group by topic files live sessions under their agents-cli workstream; off,
   expect(groupOf(byTopic, 'loose')).not.toContain('topic:')
   expect(byTopic.indexOf('data-group="topic:')).toBeLessThan(byTopic.indexOf(groupOf(byTopic, 'loose')!))
   expect(byTopic).toContain('<b>Rush Mac</b> <span class="n">2</span>')
+  // The spelling most sessions use heads the group, whatever the sort.
+  const named = renderSessions([...rows, row({ sessionId: 'mac3', workstream: 'rush mac', tabHere: false, lastActivityMs: NOW - 5_000 })], NOW, { selectedId: null, here: HERE, prefs: prefs({ sort: 'name' }) })
+  expect(named).toContain('<b>rush mac</b> <span class="n">3</span>')
+  expect(renderSessions([row({ sessionId: 'e', workstream: '🚀 Launch', tabHere: false })], NOW, { selectedId: null, here: HERE, prefs: prefs() })).toContain('>🚀</span>')
   expect(byTopic).toContain('aria-checked="true" data-pref="group" data-value="place"><span class="ck">✓</span>Group by topic')
   const byPlace = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'place' }) })
   expect(byPlace).not.toContain('data-group="topic:')

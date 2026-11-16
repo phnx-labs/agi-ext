@@ -714,7 +714,7 @@ function placeIcon(p: SessionPlace, here: SessionHere): string {
 function topicIcon(name: string): string {
   let h = 0;
   for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return `<span class="gi-topic tp${h % 6}" aria-hidden="true">${escapeHtml(name.trim().charAt(0).toUpperCase())}</span>`;
+  return `<span class="gi-topic tp${h % 6}" aria-hidden="true">${escapeHtml(([...name.trim()][0] ?? '').toUpperCase())}</span>`;
 }
 
 const HARNESS_LOGOS = new Set(BUILT_IN_AGENTS.filter((a) => a.key !== 'shell').map((a) => a.key));
@@ -1256,17 +1256,26 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   // groups for what has none yet (and for Ended, which stays one folded group).
   const topicOf = (x: { row: SessionLike; place: SessionPlace }) => (prefs.group === 'topic' && x.place.kind !== 'ended' ? x.row.workstream?.trim() : '') || '';
   const byTopic = new Map<string, Group>();
+  const spellings = new Map<string, Map<string, number>>();
   const byKey = new Map<string, Group>();
   for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
     const topic = topicOf(x);
     if (topic) {
       const key = `topic:${topic.toLowerCase()}`;
-      const g = byTopic.get(key) ?? { key, name: topic, sub: '', icon: topicIcon(topic), items: [] };
+      const g = byTopic.get(key) ?? { key, name: topic, sub: '', icon: '', items: [] };
       g.items.push(x); byTopic.set(key, g);
+      const seen = spellings.get(key) ?? new Map<string, number>();
+      seen.set(topic, (seen.get(topic) ?? 0) + 1); spellings.set(key, seen);
       continue;
     }
     const g = byKey.get(x.place.key) ?? { key: x.place.key, name: x.place.name, sub: x.place.sub, icon: placeIcon(x.place, here), items: [], action: x.place.kind === 'leftover' ? 'close-all' : undefined };
     g.items.push(x); byKey.set(x.place.key, g);
+  }
+  // The header takes the spelling most of its sessions use (ties: capitals first, by code point),
+  // so it never flips with the sort between redraws.
+  for (const [key, g] of byTopic) {
+    g.name = [...spellings.get(key)!].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0][0];
+    g.icon = topicIcon(g.name);
   }
   const listed = groups(byTopic) + groups(byKey);
   return head + pinned + favs + quietGroups + listed + tail;
