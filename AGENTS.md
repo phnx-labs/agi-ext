@@ -325,9 +325,13 @@ going on, where, and what came out of it" in one look; text explains only what a
   Settings shows it; View and Sort are also in Settings > Session list), with checkmarks,
   as in the AGI Menu (View: Default or Compact, where a listed card is its title row, the
   agent's latest line and what it made, owner, 2026-10-22 1:02 PM; Show: Tabs in this window, tabs with no agent, Ended; a tab that asks shows
-  either way; then Sort: Tab order, Last active, Newest, Name). No grouping choice: sessions
+  either way; then Sort: Tab order, Last active, Newest, Name). The one grouping choice is
+  View > Group by topic (also Settings > Session list > Group), on by default (owner, 2026-11-16: "an option to turn it on or off"):
+  a live session joins a group named by its agents-cli `workstream` (the session-title job's
+  name for what it is about, e.g. "Rush Mac", headed by its first letter on a tile), topics
+  first; a session with no workstream yet, an Ended one, and every session with the toggle off
   group by where they live, this window's tabs headed by the editor's icon and the
-  workspace ("agi-ext 5"; owner, 2026-10-22 1:01 PM). Group headers carry the icon, the name and a count; a colored dot only ever
+  workspace ("agi-ext 5"; owner, 2026-10-22 1:01 PM). The extension never names a topic. Group headers carry the icon, the name and a count; a colored dot only ever
   says an agent's state, never beside a machine or as a header's summary, and a working agent is its
   dot without the word (owner video, 2026-10-27 9:24 AM). There is no group of asks: a session that asks is
   a red card leading its own group, by urgency, then wait; then finished turns, then what

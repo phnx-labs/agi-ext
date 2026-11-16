@@ -104,6 +104,12 @@ describe('resolveProject', () => {
     expect(normalizeActiveSession({ ...base, confirmedProject: null } as RawActiveSession, 'zion', FETCHED_AT).confirmedProject).toBeNull();
   });
 
+  test('carries the CLI workstream when the titler named one', () => {
+    const base = { kind: 'claude', status: 'running', cwd: '/x/y/agents-cli', sessionFile: '/x/aaaaaaaa.jsonl' };
+    expect(normalizeActiveSession({ ...base, workstream: 'Rush Mac' } as RawActiveSession, 'zion', FETCHED_AT).workstream).toBe('Rush Mac');
+    expect('workstream' in normalizeActiveSession(base as RawActiveSession, 'zion', FETCHED_AT)).toBe(false);
+  });
+
   test('carries Claude\'s recap with its time, without the CLI hint, only when it has words and a time; and forkOf', () => {
     const base = { kind: 'claude', status: 'idle', cwd: '/x/y/agents', sessionFile: '/x/aaaaaaaa.jsonl' };
     const at = (o: object) => normalizeActiveSession({ ...base, ...o } as RawActiveSession, 'zion', FETCHED_AT);

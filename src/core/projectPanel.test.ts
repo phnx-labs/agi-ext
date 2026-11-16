@@ -838,3 +838,26 @@ test('a card can shrink to its logo and title: every part turns off on its own (
   expect(ask).toContain('data-ask="k" data-undo="0"')
   expect(ask).toContain('data-choice="y"')
 })
+
+test('Group by topic files live sessions under their agents-cli workstream; off, or with none yet, they stay where they run (owner video, 2026-11-14 4:18)', () => {
+  const rows = [
+    row({ sessionId: 'mac1', workstream: 'Rush Mac', tabHere: false, lastActivityMs: NOW - 1_000 }),
+    row({ sessionId: 'seo', workstream: 'Ahrefs SEO', tabHere: false, lastActivityMs: NOW - 2_000 }),
+    row({ sessionId: 'mac2', workstream: 'rush mac', tabHere: false, lastActivityMs: NOW - 3_000 }),
+    row({ sessionId: 'loose', tabHere: false, lastActivityMs: NOW - 4_000 }),
+  ]
+  const groupOf = (html: string, id: string) => html.slice(0, html.indexOf(`data-session="${id}"`)).match(/data-group="([^"]+)"/g)!.pop()
+  const byTopic = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  expect(groupOf(byTopic, 'mac1')).toBe('data-group="topic:rush mac"')
+  expect(groupOf(byTopic, 'mac2')).toBe('data-group="topic:rush mac"')
+  expect(groupOf(byTopic, 'seo')).toBe('data-group="topic:ahrefs seo"')
+  expect(groupOf(byTopic, 'loose')).not.toContain('topic:')
+  expect(byTopic.indexOf('data-group="topic:')).toBeLessThan(byTopic.indexOf(groupOf(byTopic, 'loose')!))
+  expect(byTopic).toContain('<b>Rush Mac</b> <span class="n">2</span>')
+  expect(byTopic).toContain('aria-checked="true" data-pref="group" data-value="place"><span class="ck">✓</span>Group by topic')
+  const byPlace = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ group: 'place' }) })
+  expect(byPlace).not.toContain('data-group="topic:')
+  expect(byPlace).toContain('aria-checked="false" data-pref="group" data-value="topic"><span class="ck"></span>Group by topic')
+  expect(readSessionPrefs({ group: 'place' }).group).toBe('place')
+  expect(readSessionPrefs({}).group).toBe('topic')
+})

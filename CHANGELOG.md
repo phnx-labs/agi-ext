@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.445] - 2026-11-16
+
+- Sessions group by topic. A live session now sits under a group named for what it is about,
+  such as "Rush Mac" or "Ahrefs SEO", so related sessions on different machines and windows
+  read together. The name is the session's `workstream`, which agents-cli 1.23.51 or later
+  writes with its title in one batched call; with an older agents-cli, or until a session is
+  named, it stays in its place group as before. Turn it off with ⇅ > View > Group by topic.
+
 ## [0.9.444] - 2026-11-12
 
 - Agents can drive this editor's built-in browser with the `browser` CLI they already use. Each
