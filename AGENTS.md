@@ -338,7 +338,15 @@ going on, where, and what came out of it" in one look; text explains only what a
   works, then what ended (`TIER`; Name and this window's group under Tab order keep their
   own order after the asks). Under the pinned card come Favorites (when any are
   starred), then the groups; Settings > Ready for review and Idle groups (off) brings back
-  those two groups for sessions with no tab here (owner video, 2026-10-22 6:42 AM).
+  those two groups for sessions with no tab here (owner video, 2026-10-22 6:42 AM). Every
+  section moves with ↑ ↓ on its header's hover (`moveSection`, `arrangeSections`: a placed
+  section takes its slots in the chosen order, a new one keeps its own; Settings resets it), and
+  a header click always folds it, the front tab's group too, since the pinned card shows that
+  session (owner, 2026-11-16 2:43-2:44 AM). Ended is off until Settings > Sessions > Ended
+  sessions asks for the last 10, 25 or all, and a capped Ended counts the rest, which ⌘K finds.
+  Settings is one page in six titled sections (Sessions, Cards, Header, Shortcuts, Pull
+  requests, pages and more, Devices) under a row of jump buttons, each holding only its own
+  settings.
 - **One header row: VS Code's.** The panel draws no header of its own; VS Code's row is "AGI: RUSH",
   the project's name and no milestone (the view is named AGI, so VS Code's own prefix is the
   shortest it can be; it writes "<sidebar>: <title>" and drops the first part only for an empty

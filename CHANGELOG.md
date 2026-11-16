@@ -4,6 +4,20 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.446] - 2026-11-16
+
+- Move a section of the Sessions list up or down: hover its header and use ↑ or ↓. Your order
+  is remembered; a new topic keeps its own place, and Settings > Sessions > Section order resets
+  it.
+- A click on a section's header now always folds it. A section holding your front tab's session
+  used to stay open, so a one-session group ignored the click; that session is still in the
+  pinned card.
+- Ended sessions are off by default. Settings > Sessions > Ended sessions shows the last 10, the
+  last 25 or all of them; a capped list says how many older ones it leaves out, and ⌘K still
+  finds every ended session. ⇅ > Show > Ended turns the last 10 on and off.
+- Settings is organized into six sections (Sessions, Cards, Header, Shortcuts, Pull requests,
+  pages and more, Devices), with jump buttons at the top.
+
 ## [0.9.445] - 2026-11-16
 
 - Sessions group by topic. A live session now sits under a group named for what it is about,

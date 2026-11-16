@@ -154,7 +154,7 @@ function deviceRow(d: SettingsDevice): string {
 }
 
 function renderDevicesSection(state: DevicesState): string {
-  const head = '<div class="sh">Devices <span class="shsub">where Auto places agents</span></div>';
+  const head = '<h3 class="st">Devices <span class="shsub">where Auto places agents</span></h3>';
   if (state === null) return `${head}<p class="foot">Reading devices…</p>`;
   if ('error' in state) return `${head}<p class="foot err">${escapeHtml(state.error)}</p>`;
   const folded = (skip: string) => state.rows.filter((d) => d.autoSkip === skip).map((d) => escapeHtml(d.name)).sort();
@@ -187,7 +187,7 @@ export interface PanelSettingsModel {
   /** Real cards drawn with these settings (`renderCardPreview`), under A card shows. */
   preview?: string;
   /** The session list's View and Sort, this workspace's own (the ⇅ menu's same two choices). */
-  list: { view: string; sort: string; group: string };
+  list: { view: string; sort: string; group: string; ended: string; ordered: boolean };
 }
 
 /** Apply one Settings-tab change to the stored settings; null for a key or value it does not know. */
@@ -244,39 +244,46 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
     return `<div class="krow">${kbd(k)}<span>Quick launch ${k}${model ? ` <small>${escapeHtml(model)}</small>` : ''}</span>${picker(`quickLaunch.${k}`, byKey, q?.agent ?? '', `Quick launch ${k}`)}</div>`;
   };
   const cards = cardSettings(s.cards);
+  const row = (label: string, sub: string, control: string) => `<label class="srow"><span><b>${escapeHtml(label)}</b><small>${escapeHtml(sub)}</small></span>${control}</label>`;
+  const part = (title: string, id: string, body: string) => `<section class="sset" id="${id}"><h3 class="st">${escapeHtml(title)}</h3>${body}</section>`;
+  const listToggle = (k: (typeof LIST_PARTS)[number]) => toggle(`cards.${k}`, LIST_PART_ROWS[k].label, LIST_PART_ROWS[k].sub, cards[k]);
+  const SECTIONS = [['set-sessions', 'Sessions'], ['set-cards', 'Cards'], ['set-header', 'Header'], ['set-keys', 'Shortcuts'], ['set-more', 'More'], ['set-devices', 'Devices']];
   return `<div class="settings">
+  <nav class="sjump" aria-label="Settings sections">${SECTIONS.map(([id, name]) => `<button data-jump="${id}">${name}</button>`).join('')}</nav>
   <div class="srow"><span><b>Refresh</b><small>Read issues, review, goals and devices again; sessions are already live</small></span><button class="rbtn" data-refresh>Refresh</button></div>
-  <div class="sh">In the header <span class="shsub">Sessions, ⚙ and ⋯ are always there</span></div>
-  ${HEADER_ROWS.map((r) => toggle(`header.${r.key}`, r.label, r.sub, panelHeader(s.header)[r.key])).join('')}
-  <div class="sh">Session list</div>
-  <label class="srow"><span><b>View</b><small>Compact: a listed card is its title, the agent's latest line and what it made</small></span>${picker('list.view', [{ value: 'default', label: 'Default' }, { value: 'compact', label: 'Compact' }], m.list.view, 'View')}</label>
-  <label class="srow"><span><b>Sort</b><small>Sessions that ask always lead</small></span>${picker('list.sort', [{ value: 'tab', label: 'Tab order' }, { value: 'last', label: 'Last active' }, { value: 'newest', label: 'Newest' }, { value: 'name', label: 'Name' }], m.list.sort, 'Sort')}</label>
-  <label class="srow"><span><b>Group</b><small>By topic: what each session is about, as agents-cli names it</small></span>${picker('list.group', [{ value: 'topic', label: 'By topic' }, { value: 'place', label: 'By where it runs' }], m.list.group, 'Group')}</label>
-  <div class="sh">Session titles</div>
-  ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}
-  <div class="sh">Shortcuts</div>
-  <div class="krow">${kbd('A')}<span>New agent <small>CLI picks</small></span><span class="auto">Auto</span></div>
-  <div class="krow"><span></span><span>Default agent <small>tickets, splits</small></span>${picker('defaultAgent', byTitle, m.defaultAgentTitle, 'Default agent')}</div>
-  <div class="krow"><span></span><span>Second agent <small>Assign a shortcut in Keyboard Shortcuts</small></span>${picker('secondaryAgent', byTitle, m.secondaryAgentTitle, 'Second agent')}</div>
-  ${SLOTS.map(slot).join('')}
-  <div class="sh">Pull requests</div>
-  <label class="srow"><span><b>Merge with</b><small>One click on Merge uses this; a repository that does not allow it uses one it allows</small></span>${picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with')}</label>
-  <div class="sh">Pages <span class="shsub">${kbd('B')} opens your pages</span></div>
-  <label class="srow"><span><b>A click opens the page in</b><small>${m.modifier.startsWith('⌘') ? '⌘' : 'Ctrl'}-click does the other</small></span>${picker('pages.click', [{ value: 'same', label: 'This tab' }, { value: 'new', label: 'A new tab' }], s.pages?.click ?? 'same', 'A click opens the page in')}</label>
-  <section class="cardset">
-  <div class="sh">Session list</div>
-  ${LIST_PARTS.map((k) => toggle(`cards.${k}`, LIST_PART_ROWS[k].label, LIST_PART_ROWS[k].sub, cards[k])).join('')}
-  <div class="sh">Session cards</div>
-  ${CARD_ROWS.map((r) => `<label class="srow"><span><b>${escapeHtml(r.label)}</b><small>${escapeHtml(r.sub)}</small></span>${picker(`cards.${r.key}`, r.options, cards[r.key], r.label)}</label>`).join('')}
+  ${part('Sessions', 'set-sessions', `
+  <div class="sh">The list</div>
+  ${listToggle('list')}
+  ${row('View', 'Compact: a listed card is its title, the agent\'s latest line and what it made', picker('list.view', [{ value: 'default', label: 'Default' }, { value: 'compact', label: 'Compact' }], m.list.view, 'View'))}
+  ${row('Sort', 'Sessions that ask always lead', picker('list.sort', [{ value: 'tab', label: 'Tab order' }, { value: 'last', label: 'Last active' }, { value: 'newest', label: 'Newest' }, { value: 'name', label: 'Name' }], m.list.sort, 'Sort'))}
+  <div class="sh">Sections</div>
+  ${row('Group', 'By topic: what each session is about, as agents-cli names it', picker('list.group', [{ value: 'topic', label: 'By topic' }, { value: 'place', label: 'By where it runs' }], m.list.group, 'Group'))}
+  ${listToggle('favorites')}
+  ${listToggle('finishedGroups')}
+  ${row('Ended sessions', 'The most recent ones, as the last section; ⌘K finds every one', picker('list.ended', [{ value: 'off', label: 'Off' }, { value: '10', label: 'Last 10' }, { value: '25', label: 'Last 25' }, { value: 'all', label: 'All' }], m.list.ended, 'Ended sessions'))}
+  <div class="srow"><span><b>Section order</b><small>${m.list.ordered ? 'Your order, from ↑ ↓ on a section\'s header' : 'Move a section with ↑ ↓ on its header'}</small></span>${m.list.ordered ? '<button class="rbtn" data-reset-order>Reset</button>' : ''}</div>
+  <div class="sh">Titles</div>
+  ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}`)}
+  ${part('Cards', 'set-cards', `<div class="cardset">
+  <div class="sh">Clicks and answers</div>
+  ${CARD_ROWS.map((r) => row(r.label, r.sub, picker(`cards.${r.key}`, r.options, cards[r.key], r.label))).join('')}
   <div class="sh">A card shows <span class="shsub">all off: logo and title on one line</span></div>
   ${CARD_PARTS.map((k) => toggle(`cards.${k}`, CARD_PART_ROWS[k].label, CARD_PART_ROWS[k].sub, cards[k])).join('')}
   ${m.preview ?? ''}
-  </section>
-  <div class="sh">Lead</div>
-  ${toggle('lead.speak', 'Read answers aloud', 'The Lead speaks each answer on this machine as it arrives', m.leadSpeak)}
-  <div class="sh">Reader</div>
+  </div>`)}
+  ${part('Header', 'set-header', `<div class="sh">Buttons <span class="shsub">Sessions, ⚙ and ⋯ are always there</span></div>
+  ${HEADER_ROWS.map((r) => toggle(`header.${r.key}`, r.label, r.sub, panelHeader(s.header)[r.key])).join('')}`)}
+  ${part('Shortcuts', 'set-keys', `
+  <div class="krow">${kbd('A')}<span>New agent <small>CLI picks</small></span><span class="auto">Auto</span></div>
+  <div class="krow"><span></span><span>Default agent <small>tickets, splits</small></span>${picker('defaultAgent', byTitle, m.defaultAgentTitle, 'Default agent')}</div>
+  <div class="krow"><span></span><span>Second agent <small>Assign a shortcut in Keyboard Shortcuts</small></span>${picker('secondaryAgent', byTitle, m.secondaryAgentTitle, 'Second agent')}</div>
+  ${SLOTS.map(slot).join('')}`)}
+  ${part('Pull requests, pages and more', 'set-more', `
+  ${row('Merge with', 'One click on Merge uses this; a repository that does not allow it uses one it allows', picker('mergeMethod', [{ value: 'squash', label: 'Squash' }, { value: 'rebase', label: 'Rebase' }, { value: 'merge', label: 'Merge commit' }], s.mergeMethod ?? 'squash', 'Merge with'))}
+  <label class="srow"><span><b>A page opens in</b><small>${kbd('B')} opens your pages; ${m.modifier.startsWith('⌘') ? '⌘' : 'Ctrl'}-click does the other</small></span>${picker('pages.click', [{ value: 'same', label: 'This tab' }, { value: 'new', label: 'A new tab' }], s.pages?.click ?? 'same', 'A page opens in')}</label>
   ${toggle('editor.markdownViewerEnabled', 'Open .md and .html in Reader', 'The Reader editor for Markdown and HTML', s.editor?.markdownViewerEnabled ?? true)}
-  ${renderDevicesSection(m.devices)}
+  ${toggle('lead.speak', 'Lead reads answers aloud', 'The Lead speaks each answer on this machine as it arrives', m.leadSpeak)}`)}
+  <section class="sset" id="set-devices">${renderDevicesSection(m.devices)}</section>
   <p class="foot">Banners for asks, with their reminders, come from the AGI Menu. Accounts and projects live in the <code>agents</code> CLI and the AGI Menu.</p>
 </div>`;
 }

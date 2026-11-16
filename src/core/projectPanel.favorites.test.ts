@@ -98,8 +98,8 @@ test('Settings > Session list: both on by default, each a checkbox that writes i
   const s = getDefaultSettings()
   expect(applyPanelSetting(s, 'cards.list', false)?.cards).toMatchObject({ list: false, favorites: true })
   expect(applyPanelSetting(s, 'cards.favorites', 'no')).toBeNull()
-  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧', leadSpeak: false, list: { view: 'default', sort: 'tab', group: 'topic' } })
-  expect(html).toContain('<div class="sh">Session list</div>')
+  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧', leadSpeak: false, list: { view: 'default', sort: 'tab', group: 'topic', ended: 'off', ordered: false } })
+  expect(html).toContain('<h3 class="st">Sessions</h3>')
   expect(html).toContain('<b>Show the session list</b>')
   expect(html).toContain('data-setting="cards.list" checked')
   expect(html).toContain('data-setting="cards.favorites" checked')
@@ -135,7 +135,7 @@ test('an ended card is its title, age and words: no pill, no ☆, how long it ra
   const start = NOW - 26 * 3_600_000
   const ended = row({ sessionId: 'gone', title: 'Closing practice', phase: 'done', liveStatus: 'closed', startedAtMs: start, lastActivityMs: NOW - 3 * 3_600_000, lastResponse: 'Opening it.' })
   const card = (favs: string[]) => {
-    const html = renderSessions([ended], NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, folded: [] }, favorites: new Set(favs) })
+    const html = renderSessions([ended], NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, ended: 'all', folded: [] }, favorites: new Set(favs) })
     return html.slice(html.indexOf('data-session="gone"'))
   }
   const html = card([])
