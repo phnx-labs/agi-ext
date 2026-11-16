@@ -36,6 +36,7 @@ import {
   renderCardPreview,
   nextThatNeedsYou,
   renderTickets, type TicketRowExtras,
+  moveSection,
   readSessionPrefs,
   readReviewPrefs,
   onTicket,
@@ -113,7 +114,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown; dir?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown; dir?: unknown; shown?: unknown;
 }
 
 interface TabState {
@@ -191,6 +192,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'prefs' && typeof msg.key === 'string') void this.controller.setPref(msg.key, msg.value);
       else if (msg.type === 'reviewPrefs' && typeof msg.key === 'string' && typeof msg.value === 'string') void this.controller.setReviewPref(msg.key, msg.value).then((html) => { if (html) this.post('prs', html); });
       else if (msg.type === 'fold' && typeof msg.group === 'string') void this.controller.toggleFold(msg.group);
+      else if (msg.type === 'moveSection' && typeof msg.group === 'string' && (msg.dir === 'up' || msg.dir === 'down') && Array.isArray(msg.shown)) void this.controller.moveSection(msg.group, msg.dir, msg.shown.filter((k: unknown): k is string => typeof k === 'string'));
       else if (msg.type === 'startTicket' && typeof msg.id === 'string') void this.controller.startOnTicket(msg.id, typeof msg.agent === 'string' ? msg.agent : undefined, typeof msg.where === 'string' ? resolveLaunchTarget(msg.where) : undefined);
       else if (msg.type === 'milestone' && typeof msg.name === 'string') void this.pickMilestone(msg.name);
       else if (msg.type === 'fixPr' && typeof msg.repo === 'string' && typeof msg.number === 'number') void this.controller.fixPr(msg.repo, msg.number);
@@ -938,7 +940,7 @@ class ProjectPanelController {
       secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
       modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
       leadSpeak: vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', false),
-      list: { view: this.prefs().view, sort: this.prefs().sort, group: this.prefs().group },
+      list: { view: this.prefs().view, sort: this.prefs().sort, group: this.prefs().group, ended: this.prefs().ended, ordered: this.prefs().order.length > 0 },
     });
   }
 
@@ -957,7 +959,7 @@ class ProjectPanelController {
   /** One Settings-tab change, written where that setting already lives. */
   async setSetting(key: string, value: unknown): Promise<void> {
     // Settings > Session list writes the ⇅ menu's own View and Sort for this workspace.
-    if (key === 'list.view' || key === 'list.sort' || key === 'list.group') { await this.setPref(key.slice(5), value); return; }
+    if (key === 'list.view' || key === 'list.sort' || key === 'list.group' || key === 'list.ended') { await this.setPref(key.slice(5), value); return; }
     if (key === 'defaultAgent' || key === 'secondaryAgent') {
       if (!PICKABLE_AGENTS.some((a) => a.title === value)) return;
       await vscode.commands.executeCommand(key === 'defaultAgent' ? 'agents.setDefaultAgentTitle' : 'agents.setSecondaryAgentTitle', value);
@@ -1028,6 +1030,10 @@ class ProjectPanelController {
     if (!entry || row?.agentType !== 'claude') { void this.view.notice('Rename needs this Claude session’s tab here.'); return; }
     const typed = renameSession(entry.terminal, name);
     if (typed) void this.view.notice(`Typed /rename ${typed} into its tab; the title changes when the session reports it.`);
+  }
+
+  async moveSection(group: string, dir: 'up' | 'down', shown: string[]): Promise<void> {
+    await this.savePrefs({ ...this.prefs(), order: moveSection(shown, group, dir) });
   }
 
   async toggleFold(group: string): Promise<void> {
@@ -1434,6 +1440,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .gh { display: flex; align-items: center; gap: 7px; padding: 4px; border-radius: 6px; cursor: pointer; user-select: none; position: relative; }
   .gh .menu { top: 24px; cursor: default; }
   .gh:hover { background: var(--r-glass-hover); }
+  .gh .gmv { margin-left: auto; display: flex; gap: 2px; opacity: 0; }
+  .gh:is(:hover, :focus-within) .gmv { opacity: 1; }
+  .grp:first-of-type .gh [data-move="up"], .grp:last-of-type .gh [data-move="down"] { visibility: hidden; }
   .gh .car { width: 10px; color: var(--r-faint); font-size: 10px; transition: transform .15s; } .grp.closed .car { transform: rotate(-90deg); }
   .gi-box { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
   .gi-topic { width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; font: 700 9px/1 var(--vscode-font-family); color: #fff; }
@@ -1679,6 +1688,13 @@ ${MADE_CSS}
   .settings .auto { font-size: 11px; color: var(--r-caption); padding-left: 3px; }
   .settings .foot { color: var(--r-caption); font-size: 11px; margin-top: 14px; }
   .settings .shsub { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+  .settings .sjump { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0 8px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--r-edge); }
+  .settings .sjump button { font: inherit; font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--r-edge); background: var(--r-glass); color: var(--r-text-2); cursor: pointer; }
+  .settings .sjump button:hover { background: var(--r-glass-hover); color: var(--r-text); }
+  .settings .sset { margin-top: 18px; scroll-margin-top: 40px; }
+  .settings .st { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--r-text); }
+  .settings .st .shsub { font-size: 11px; font-weight: 400; color: var(--r-faint); }
+  .settings .sset > .sh:first-of-type, .settings .cardset > .sh:first-child { margin-top: 6px; }
   .cardpv { position: sticky; bottom: 0; z-index: 2; margin: 14px -2px 0; padding: 8px 8px 7px; border: 1px solid var(--r-edge); border-radius: 10px; background: var(--vscode-sideBar-background); box-shadow: 0 -12px 24px -16px rgba(0,0,0,.35); }
   .cpv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
   .cpv-head b { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--r-caption); font-weight: 500; }
@@ -2382,6 +2398,9 @@ ${MADE_SCRIPT}
     const rpref = e.target.closest('[data-rpref]');
     if (rpref) { vscode.postMessage({ type: 'reviewPrefs', key: rpref.dataset.rpref, value: rpref.dataset.value }); return; }
     if (e.target.closest('[data-refresh]')) { vscode.postMessage({ type: 'refresh' }); return; }
+    const jump = e.target.closest('[data-jump]');
+    if (jump) { document.getElementById(jump.dataset.jump)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+    if (e.target.closest('[data-reset-order]')) { vscode.postMessage({ type: 'prefs', key: 'order', value: [] }); return; }
     const os = e.target.closest('[data-open-session]');
     if (os) { vscode.postMessage({ type: 'openSession', sessionId: os.dataset.openSession, host: os.dataset.host }); return; }
     // An ask on a card: each answer button carries what it sends (a choice id or words).
@@ -2440,6 +2459,12 @@ ${MADE_SCRIPT}
       closeCards(cards); return;
     }
     if (e.target.closest('[data-act="close-all"]')) { e.stopPropagation(); vscode.postMessage({ type: 'closeAll' }); return; }
+    const mv = e.target.closest('.gh [data-move]');
+    if (mv) {
+      const shown = [...main.querySelectorAll(':scope section.grp[data-group]')].map((g) => g.dataset.group);
+      vscode.postMessage({ type: 'moveSection', group: mv.closest('section.grp').dataset.group, dir: mv.dataset.move, shown });
+      return;
+    }
     const gh = e.target.closest('.gh');
     if (gh) { vscode.postMessage({ type: 'fold', group: gh.parentElement.dataset.group }); return; }
     const card = e.target.closest('.card[data-session]');

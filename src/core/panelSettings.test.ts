@@ -5,7 +5,7 @@ import { join } from 'path'
 import { applyPanelSetting, deviceSettingArgv, parseSettingsDevices, renderPanelSettings } from './panelSettings'
 import { DEFAULT_CARD_SETTINGS, getDefaultSettings, panelHeader } from './settings'
 
-const LIST = { view: 'default', sort: 'tab' }
+const LIST = { view: 'default', sort: 'tab', group: 'topic', ended: 'off', ordered: false }
 
 test('each Settings control writes its own key and nothing else', () => {
   const base = getDefaultSettings()
@@ -36,7 +36,7 @@ test('In the header: Review on, the rest off until checked (owner, 2026-11-05 2:
   expect(DEFAULT_CARD_SETTINGS.made).toBe('chips')
   expect(applyPanelSetting(base, 'cards.made', 'previews')?.cards?.made).toBe('previews')
   expect(applyPanelSetting(base, 'cards.made', 'tiles')).toBeNull()
-  const html = renderPanelSettings({ settings: { ...base, header: { prs: false, search: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: { view: 'compact', sort: 'name', group: 'place' } })
+  const html = renderPanelSettings({ settings: { ...base, header: { prs: false, search: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: { view: 'compact', sort: 'name', group: 'place', ended: '25', ordered: true } })
   expect(html).toContain('<input type="checkbox" data-setting="header.prs">')
   expect(html).toContain('<input type="checkbox" data-setting="header.search" checked>')
   for (const k of ['lead', 'tickets', 'sort', 'pick']) expect(html).toContain(`<input type="checkbox" data-setting="header.${k}">`)
@@ -45,6 +45,9 @@ test('In the header: Review on, the rest off until checked (owner, 2026-11-05 2:
   expect(html).toContain('data-setting="list.view"')
   expect(html).toContain('data-setting="list.group"')
   expect(html).toContain('<option value="place" selected>By where it runs</option>')
+  // Ended is a Settings choice (owner, 2026-11-16 2:44 AM), and a moved order can be reset.
+  expect(html).toMatch(/data-setting="list\.ended"[^>]*>.*<option value="25" selected>Last 25<\/option>/)
+  expect(html).toContain('<button class="rbtn" data-reset-order>Reset</button>')
   expect(html).toContain('data-setting="cards.made"')
 })
 
@@ -66,7 +69,7 @@ test('Session cards: pickers and part toggles write cards.*; banners are the AGI
   expect(applyPanelSetting(base, 'cards.asks', 'loud')).toBeNull()
   expect(applyPanelSetting(base, 'notifications.enabled', true)).toBeNull()
   const html = renderPanelSettings({ devices: null, settings: { ...base, cards: { ...DEFAULT_CARD_SETTINGS, asks: 'question', chips: false } }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: LIST })
-  expect(html).toContain('<div class="sh">Session cards</div>')
+  expect(html).toContain('<h3 class="st">Cards</h3>')
   expect(html).toMatch(/data-setting="cards\.asks"[^>]*><option value="answers">With answers<\/option><option value="question" selected>Question only<\/option><option value="off">Off<\/option>/)
   expect(html).toContain('<option value="titles" selected>Titles only</option>')
   expect(html).toContain('<option value="two" selected>Two lines</option>')
@@ -86,8 +89,11 @@ test('Devices: draws the CLI\'s placement verdict per device and keeps every oth
   expect(byName['yosemite-m5'].autoSkip).toBe('disk-low')
   expect(byName['mark-1']).toMatchObject({ enabled: false, autoSkip: 'off' })
   const html = renderPanelSettings({ settings: getDefaultSettings(), devices: { rows }, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: LIST })
-  // The settings that were there before are all still drawn, in order, above Devices.
-  const order = ['Session titles', 'Shortcuts', 'Pull requests', 'Session cards', 'Reader', 'Devices'].map((h) => html.indexOf(`<div class="sh">${h}`))
+  // One page in six sections, each holding only its own settings (owner, 2026-11-16 2:44 AM:
+  // "make sure the whole settings page is also well organized"), a jump to each at the top.
+  const order = ['Sessions', 'Cards', 'Header', 'Shortcuts', 'Pull requests, pages and more', 'Devices'].map((h) => html.indexOf(`<h3 class="st">${h}`))
+  expect(html.indexOf('data-jump="set-devices"')).toBeLessThan(order[0])
+  expect(html.match(/<h3 class="st">/g)?.length).toBe(6)
   expect(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1]))).toBe(true)
   expect(html).toContain('data-setting="display.autoLabelInTabTitles"')
   // A tab is named by its session; no setting puts harness text back.
@@ -121,7 +127,7 @@ test('Devices: each control is one agents devices verb', () => {
 
 test('Lead: read answers aloud is a Settings switch for agents.lead.speak, not a speaker on the tab row', () => {
   const on = renderPanelSettings({ settings: getDefaultSettings(), devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: true, list: LIST })
-  expect(on).toMatch(/<b>Read answers aloud<\/b>.*<input type="checkbox" data-setting="lead.speak" checked>/)
+  expect(on).toMatch(/<b>Lead reads answers aloud<\/b>.*<input type="checkbox" data-setting="lead.speak" checked>/)
 })
 
 test('Settings > Pages: a click opens the same tab until it is set to a new one; nothing else is accepted', () => {

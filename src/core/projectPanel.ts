@@ -509,7 +509,9 @@ export interface SessionListPrefs {
   /** Tab order keeps this window's tabs as its tab bar has them; every other group reads it as Last active. */
   sort: SessionSort;
   showLeftover: boolean;
-  showEnded: boolean;
+  /** Ended sessions under the groups: none, the most recent 10 or 25, or all (owner, 2026-11-16
+   *  2:44 AM: "we don't really need to show them here"). ⌘K finds every one either way. */
+  ended: EndedShown;
   /** This window's tabs below the pinned card; off keeps only the ones that ask (‹ › still walk them all). */
   showOpen: boolean;
   folded: string[];
@@ -522,45 +524,70 @@ export interface SessionListPrefs {
    *  "group by what they are about"); Where it runs keeps the place groups. A session with no
    *  workstream yet stays in its place group either way. */
   group: 'topic' | 'place';
-  /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded; 4 once Tab order is a sort. */
-  v: 4;
+  /** The viewer's order of the sections under the pinned card, by group key, from ↑ ↓ on a
+   *  section's header (owner, 2026-11-16 2:43 AM). A section not in it keeps its own place. */
+  order: string[];
+  /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded; 4 once Tab order is a sort;
+   *  5 once Ended is a choice of how many, off by default. */
+  v: 5;
 }
 
 const ENDED_GROUP = 'ended';
+type EndedShown = 'off' | '10' | '25' | 'all';
+const ENDED_SHOWN: readonly EndedShown[] = ['off', '10', '25', 'all'];
 /** The Idle group's key (Settings > Ready for review and Idle groups), folded by default. */
 const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, showEnded: true, showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', group: 'topic', v: 4 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, ended: 'off', showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', group: 'topic', order: [], v: 5 };
 
 const SORTS: readonly SessionSort[] = ['tab', 'last', 'newest', 'name'];
 
-/** A stored preference object, keeping only values this version knows. Prefs stored
- *  before v2 saved Ended off as the old default, not as a choice, so they get the
- *  new default: Ended shown and folded. Turning it on was a choice and is kept.
- *  Prefs from before v3 get the Idle group folded. Before v4, Last active still kept
- *  this window's tabs in tab order, which is now the Tab order sort. */
+/** A stored preference object, keeping only values this version knows. Prefs from before
+ *  v3 get the Idle and Ended groups folded. Before v4, Last active still kept this window's
+ *  tabs in tab order, which is now the Tab order sort. Before v5, Ended was shown or not; it
+ *  starts off, the owner's default (2026-11-16 2:44 AM). */
 export function readSessionPrefs(v: unknown): SessionListPrefs {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
   const hidden: Record<string, number> = {};
   if (o.hidden && typeof o.hidden === 'object') {
     for (const [id, ms] of Object.entries(o.hidden as Record<string, unknown>)) if (typeof ms === 'number') hidden[id] = ms;
   }
-  const folded = Array.isArray(o.folded) ? o.folded.filter((k): k is string => typeof k === 'string') : [];
-  const before = o.v !== 2 && o.v !== 3 && o.v !== 4 && o.showEnded !== true;
-  const kept = before ? [...folded, ENDED_GROUP] : folded;
+  const strings = (x: unknown) => (Array.isArray(x) ? x.filter((k): k is string => typeof k === 'string') : []);
+  const folded = strings(o.folded);
   const sort = SORTS.includes(o.sort as SessionSort) ? (o.sort as SessionSort) : DEFAULT_SESSION_PREFS.sort;
   return {
-    sort: o.v !== 4 && sort === 'last' ? 'tab' : sort,
+    sort: o.v !== 4 && o.v !== 5 && sort === 'last' ? 'tab' : sort,
     showLeftover: typeof o.showLeftover === 'boolean' ? o.showLeftover : DEFAULT_SESSION_PREFS.showLeftover,
-    showEnded: before ? true : typeof o.showEnded === 'boolean' ? o.showEnded : DEFAULT_SESSION_PREFS.showEnded,
+    ended: o.v === 5 && ENDED_SHOWN.includes(o.ended as EndedShown) ? (o.ended as EndedShown) : DEFAULT_SESSION_PREFS.ended,
     showOpen: typeof o.showOpen === 'boolean' ? o.showOpen : DEFAULT_SESSION_PREFS.showOpen,
-    folded: o.v === 3 || o.v === 4 ? folded : [...new Set([...kept, IDLE_GROUP])],
+    folded: o.v === 3 || o.v === 4 || o.v === 5 ? folded : [...new Set([...folded, ENDED_GROUP, IDLE_GROUP])],
     hidden,
     todayOnly: o.todayOnly === true,
     view: o.view === 'compact' ? 'compact' : 'default',
     group: o.group === 'place' ? 'place' : 'topic',
-    v: 4,
+    order: [...new Set(strings(o.order))],
+    v: 5,
   };
+}
+
+/** The sections in the viewer's order: the ones they placed take the slots those sections had,
+ *  in the order they chose; every other section keeps its own slot (a new topic appears where
+ *  it would anyway). */
+export function arrangeSections<T extends { key: string }>(natural: T[], order: string[]): T[] {
+  const rank = new Map(order.map((k, i) => [k, i]));
+  const placed = natural.filter((g) => rank.has(g.key)).sort((a, b) => rank.get(a.key)! - rank.get(b.key)!);
+  let next = 0;
+  return natural.map((g) => (rank.has(g.key) ? placed[next++] : g));
+}
+
+/** The order after ↑ or ↓ on one section's header, given the sections as drawn. */
+export function moveSection(shown: string[], key: string, dir: 'up' | 'down'): string[] {
+  const i = shown.indexOf(key);
+  const j = dir === 'up' ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= shown.length) return shown;
+  const out = [...shown];
+  [out[i], out[j]] = [out[j], out[i]];
+  return out;
 }
 
 /** Whether a session works on a ticket: its id in the title, topic, label or latest reply. */
@@ -1072,7 +1099,7 @@ function visibleSessions(rows: SessionLike[], here: SessionHere, prefs: SessionL
   return rows
     .filter((s) => !(s.sessionId in prefs.hidden) || s.lastActivityMs > prefs.hidden[s.sessionId])
     .map((row) => ({ row, place: sessionPlace(row, here) }))
-    .filter(({ place }) => (place.kind !== 'leftover' || prefs.showLeftover) && (place.kind !== 'ended' || prefs.showEnded));
+    .filter(({ place }) => (place.kind !== 'leftover' || prefs.showLeftover) && (place.kind !== 'ended' || prefs.ended !== 'off'));
 }
 
 /** Finished turns come before the agents still at work, and those before the ended
@@ -1098,7 +1125,7 @@ function menuHtml(p: SessionListPrefs, today?: { id: string; n: number }): strin
   const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
   return `<div class="menu" role="menu" hidden>
     <div class="sec">View</div>${item(p.view === 'default', 'Default', 'view', 'default')}${item(p.view === 'compact', 'Compact', 'view', 'compact')}${item(p.group === 'topic', 'Group by topic', 'group', p.group === 'topic' ? 'place' : 'topic')}<hr>
-    <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}${today ? item(p.todayOnly, `Only today's goal (${escapeHtml(today.id)}, ${today.n})`, 'todayOnly', String(!p.todayOnly)) : ''}<hr>
+    <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.ended !== 'off', 'Ended', 'ended', p.ended === 'off' ? '10' : 'off')}${today ? item(p.todayOnly, `Only today's goal (${escapeHtml(today.id)}, ${today.n})`, 'todayOnly', String(!p.todayOnly)) : ''}<hr>
     <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
   </div>`;
 }
@@ -1224,19 +1251,20 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const head = tabHead(menuHtml(prefs, opts.todayId && (onToday || prefs.todayOnly) ? { id: opts.todayId, n: onToday } : undefined));
   const tail = '<div class="bulk" hidden></div>';
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
-  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean };
+  type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean; more?: number };
   const folded = new Set(prefs.folded);
   const section = (g: Group) => {
-    // A folded group opens while it holds the selected session (the front tab included).
-    const closed = folded.has(g.key) && !g.items.some(({ row }) => row.sessionId === opts.selectedId);
+    // A click on the header folds it, even over the front tab's session: the pinned card shows
+    // that one (owner, 2026-11-16 2:44 AM: a one-session group would not fold).
+    const closed = folded.has(g.key);
     // An ended session with no title and nothing said has nothing to open: one line says how
     // many, with Show (owner video, 2026-11-07 1:06 AM: "why do we have these empty sessions?").
     const empties = closed || g.copy ? [] : g.items.filter((x) => emptySession(x.row));
     const kept = empties.length ? g.items.filter((x) => !empties.includes(x)) : g.items;
     const emptyRow = empties.length ? `<div class="emptyrow">${empties.length} empty session${empties.length === 1 ? '' : 's'} hidden (Untitled, no messages) · <button class="lnk" data-show-empty>Show</button></div><div class="empties" hidden>${ordered(empties).map((x) => card(x)).join('')}</div>` : '';
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}</div>
-      <div class="items">${closed ? '' : ordered(kept).map((x) => card(x, false, g.copy)).join('')}${emptyRow}</div>
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length + (g.more ?? 0)}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="gmv"><button class="act" data-move="up" title="Move this section up" aria-label="Move ${escapeHtml(g.name)} up">↑</button><button class="act" data-move="down" title="Move this section down" aria-label="Move ${escapeHtml(g.name)} down">↓</button></span></div>
+      <div class="items">${closed ? '' : ordered(kept).map((x) => card(x, false, g.copy)).join('')}${emptyRow}${!closed && g.more ? `<div class="emptyrow">${g.more} older ended session${g.more === 1 ? '' : 's'} not shown · ${escapeHtml(opts.searchKey ?? '⌘K')} finds them</div>` : ''}</div>
     </section>`;
   };
   const byBall = (b: 'review' | 'idle') => others.filter((x) => quiet(x) && ball(x.row) === b);
@@ -1247,11 +1275,10 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   if (!cards.list) return head + (pinned || `<div class="empty">The session list is off in Settings. ${escapeHtml(opts.searchKey ?? '⌘K')} finds every session.</div>`) + tail;
   // Starred sessions, on top and still in their own group (owner video, 2026-10-19 1:42 AM).
   const favItems = cards.favorites && opts.favorites?.size ? all.filter((x) => opts.favorites!.has(x.row.sessionId)) : [];
-  const favs = favItems.length ? section({ key: 'favorites', name: 'Favorites', sub: '', icon: '<span class="fav-ic">★</span>', items: favItems, copy: true }) : '';
-  const quietGroups = [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
+  const favs: Group[] = favItems.length ? [{ key: 'favorites', name: 'Favorites', sub: '', icon: '<span class="fav-ic">★</span>', items: favItems, copy: true }] : [];
+  const quietGroups: Group[] = [{ key: 'review', name: BALL_WORD.review, sub: '', icon: ballIcon('review'), items: byBall('review') },
       { key: IDLE_GROUP, name: BALL_WORD.idle, sub: 'finished, no tab here', icon: ballIcon('idle'), items: byBall('idle') }]
-      .filter((g) => g.items.length).map(section).join('');
-  const groups = (m: Map<string, Group>) => [...m.values()].map(section).join('');
+      .filter((g) => g.items.length);
   // By topic, a live session joins its workstream's group; topics lead, then the place
   // groups for what has none yet (and for Ended, which stays one folded group).
   const topicOf = (x: { row: SessionLike; place: SessionPlace }) => (prefs.group === 'topic' && x.place.kind !== 'ended' ? x.row.workstream?.trim() : '') || '';
@@ -1277,8 +1304,15 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     g.name = [...spellings.get(key)!].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0][0];
     g.icon = topicIcon(g.name);
   }
-  const listed = groups(byTopic) + groups(byKey);
-  return head + pinned + favs + quietGroups + listed + tail;
+  // Ended shows its most recent N; the rest stay a count, found with ⌘K.
+  const ended = byKey.get(ENDED_GROUP);
+  const cap = prefs.ended === 'all' ? Infinity : Number(prefs.ended);
+  if (ended && ended.items.length > cap) {
+    ended.more = ended.items.length - cap;
+    ended.items = [...ended.items].sort((a, b) => b.row.lastActivityMs - a.row.lastActivityMs).slice(0, cap);
+  }
+  const sections = arrangeSections([...favs, ...quietGroups, ...byTopic.values(), ...byKey.values()], prefs.order);
+  return head + pinned + sections.map(section).join('') + tail;
 }
 
 /** An ended session with no title, no words from its agent and no prompt of yours. */

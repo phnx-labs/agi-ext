@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { DEFAULT_CARD_SETTINGS, type CardSettings } from './settings'
 import {
-  parsePrs, prFixPrompt, parseProjectDetection, parseProjectList, parseTickets,
+  arrangeSections, moveSection, parsePrs, prFixPrompt, parseProjectDetection, parseProjectList, parseTickets,
   activityLine, backgroundKind, preferLive, projectSessions, projectRepoPaths, projectFallback, readSessionPrefs, renderPrs, renderSessionCard, renderSessions, renderTickets,
   sessionCount, sessionMade, sessionPlace, DEFAULT_SESSION_PREFS, displayHome, parseLinearProjects, projectMenu, ranFor, ranSpan, renderPrsProgress,
   DEFAULT_REVIEW_PREFS, applyReviewPref, readReviewPrefs, cleanTitle, sessionTitle,
@@ -398,7 +398,7 @@ test('an ask leads its own group; group by app orders this window, other windows
   expect([at('mine'), at('win'), at('gh'), at('bg'), at('left')]).toEqual([at('mine'), at('win'), at('gh'), at('bg'), at('left')].sort((x, y) => x - y))
   // This window's tabs are named by the workspace beside the editor's icon, then the count (owner, 2026-10-22 1:01 PM);
   // ⇅ is the tab row's, ahead of every group (owner video, 2026-10-27 1:19 PM).
-  expect(html).toContain('alt="VSCodium"></span><span class="gname"><b>agents</b> <span class="n">1</span></span></div>')
+  expect(html).toContain('alt="VSCodium"></span><span class="gname"><b>agents</b> <span class="n">1</span></span><span class="gmv">')
   expect(html.indexOf('data-menu')).toBeLessThan(html.indexOf('data-group='))
   expect(html.match(/data-menu/g)).toHaveLength(1)
   expect(html).toContain('<b>agents-cli</b>')
@@ -417,13 +417,20 @@ test('show, hide and fold: leftover tabs and ended sessions follow Show, a hidde
   const draw = (p: Partial<SessionListPrefs>) => renderSessions([left, ended, live], NOW, { selectedId: null, here: HERE, prefs: prefs(p) })
   expect(draw({})).toContain('data-session="left"')
   expect(draw({})).not.toContain('data-session="ended"')
-  expect(draw({ showLeftover: false, showEnded: true })).not.toContain('data-session="left"')
-  expect(draw({ folded: [] })).toContain('data-session="ended"')
+  expect(draw({ showLeftover: false, ended: '10' })).not.toContain('data-session="left"')
+  // Ended is off until chosen (owner, 2026-11-16 2:44 AM); chosen, it is a folded section.
+  expect(draw({ folded: [] })).not.toContain('data-group="ended"')
+  expect(draw({ folded: [], ended: '10' })).toContain('data-session="ended"')
   expect(draw({ hidden: { live: 50 } })).not.toContain('data-session="live"')
   expect(draw({ hidden: { live: 40 } })).toContain('data-session="live"')
   const folded = draw({ folded: ['here'] })
   expect(folded).toContain('class="grp closed" data-group="here"')
   expect(folded).not.toContain('data-session="live"')
+  // A header click folds even the group holding the selected session: the pinned card shows it
+  // (owner, 2026-11-16 2:44 AM: a one-session group would not fold).
+  const foldedSelected = renderSessions([left, ended, live], NOW, { selectedId: 'live', here: HERE, prefs: prefs({ folded: ['here'] }) })
+  expect(foldedSelected).toContain('class="grp closed" data-group="here"')
+  expect(foldedSelected).not.toContain('data-session="live"')
   expect(sessionCount([live, left, row({ phase: 'waiting' })], HERE, prefs())).toEqual({ shown: 2, asks: 1, tabs: 2 })
 })
 
@@ -462,16 +469,16 @@ test('what the agent made groups by folder; only images this machine can show ge
   expect(made.ticket).toBe('PHNX-1')
 })
 
-test('stored preferences keep only values this version knows; older ones get Ended shown and folded, Idle folded, and Last active as Tab order', () => {
-  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', showEnded: true, folded: ['here', 3], hidden: { a: 5, b: 'x' }, v: 4 }))
-    .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', showEnded: true, folded: ['here'], hidden: { a: 5 } })
+test('stored preferences keep only values this version knows; older ones get Ended off, Idle folded, and Last active as Tab order', () => {
+  expect(readSessionPrefs({ group: 'nonsense', sort: 'name', ended: '25', folded: ['here', 3], hidden: { a: 5, b: 'x' }, order: ['topic:a', 4, 'topic:a'], v: 5 }))
+    .toEqual({ ...DEFAULT_SESSION_PREFS, sort: 'name', ended: '25', folded: ['here'], hidden: { a: 5 }, order: ['topic:a'] })
   expect(readSessionPrefs(undefined)).toEqual(DEFAULT_SESSION_PREFS)
-  // Before v2, Ended off was the old default, not a choice.
-  expect(readSessionPrefs({ showEnded: false, folded: ['here'] })).toMatchObject({ showEnded: true, folded: ['here', 'ended', 'idle'], v: 4 })
-  // v2 folds Idle once; after that, unfolding it is a choice that stays.
-  expect(readSessionPrefs({ showEnded: true, folded: ['ended'], v: 2 }).folded).toEqual(['ended', 'idle'])
-  expect(readSessionPrefs({ showEnded: true, folded: ['ended'], v: 3 }).folded).toEqual(['ended'])
-  expect(readSessionPrefs({ showEnded: false, folded: [], v: 3 })).toMatchObject({ showEnded: false, folded: [] })
+  // Before v5, Ended was shown or not; it starts off (owner, 2026-11-16 2:44 AM).
+  expect(readSessionPrefs({ showEnded: true, folded: ['here'], v: 4 })).toMatchObject({ ended: 'off', folded: ['here'], v: 5 })
+  expect(readSessionPrefs({ ended: 'lots', v: 5 }).ended).toBe('off')
+  // Before v3, Idle and Ended are folded once; after that, unfolding is a choice that stays.
+  expect(readSessionPrefs({ folded: [], v: 2 }).folded).toEqual(['ended', 'idle'])
+  expect(readSessionPrefs({ folded: ['ended'], v: 3 }).folded).toEqual(['ended'])
   // Before v4, Last active still kept Open tabs in tab order: that is the Tab order sort now.
   expect(readSessionPrefs({ sort: 'last', v: 3 }).sort).toBe('tab')
   expect(readSessionPrefs({ sort: 'last', v: 4 }).sort).toBe('last')
@@ -864,4 +871,30 @@ test('Group by topic files live sessions under their agents-cli workstream; off,
   expect(byPlace).toContain('aria-checked="false" data-pref="group" data-value="topic"><span class="ck"></span>Group by topic')
   expect(readSessionPrefs({ group: 'place' }).group).toBe('place')
   expect(readSessionPrefs({}).group).toBe('topic')
+})
+
+test('sections move with ↑ ↓: a placed section takes its slots in the chosen order, a new one keeps its own', () => {
+  const g = (...k: string[]) => k.map((key) => ({ key }))
+  expect(arrangeSections(g('a', 'b', 'c', 'd'), ['c', 'a']).map((x) => x.key)).toEqual(['c', 'b', 'a', 'd'])
+  expect(arrangeSections(g('a', 'new', 'b'), ['b', 'a']).map((x) => x.key)).toEqual(['b', 'new', 'a'])
+  expect(moveSection(['a', 'b', 'c'], 'c', 'up')).toEqual(['a', 'c', 'b'])
+  expect(moveSection(['a', 'b', 'c'], 'a', 'up')).toEqual(['a', 'b', 'c'])
+  const rows = [
+    row({ sessionId: 'x', workstream: 'Rush Cloud', tabHere: false }),
+    row({ sessionId: 'y', workstream: 'Taxes', tabHere: false }),
+  ]
+  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ order: ['topic:taxes', 'topic:rush cloud'] }) })
+  expect(html.indexOf('data-group="topic:taxes"')).toBeLessThan(html.indexOf('data-group="topic:rush cloud"'))
+  expect(html).toContain('data-move="up" title="Move this section up"')
+})
+
+test('Ended shows its most recent N and counts the rest; All shows every one', () => {
+  const ended = Array.from({ length: 13 }, (_, i) => row({ sessionId: `e${i}`, phase: 'done', liveStatus: 'closed', tabHere: false, lastActivityMs: 1000 - i }))
+  const ten = renderSessions(ended, NOW, { selectedId: null, here: HERE, prefs: prefs({ ended: '10', folded: [] }) })
+  expect(ten.match(/data-session="e\d+"/g)?.length).toBe(10)
+  expect(ten).toContain('data-session="e0"')
+  expect(ten).not.toContain('data-session="e12"')
+  expect(ten).toContain('3 older ended sessions not shown')
+  expect(ten).toContain('<b>Ended</b> <span class="n">13</span>')
+  expect(renderSessions(ended, NOW, { selectedId: null, here: HERE, prefs: prefs({ ended: 'all', folded: [] }) }).match(/data-session="e\d+"/g)?.length).toBe(13)
 })
