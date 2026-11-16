@@ -355,6 +355,9 @@ export interface RemoteSession {
   /** The registered agents project this row belongs to (CLI `confirmedProject`), or
    *  null when its cwd is in no defined project. The Project sidebar filters on it. */
   confirmedProject: string | null;
+  /** What the session is about, shared by related sessions (agents-cli `workstream`,
+   *  written by its session-title job); absent until that job has named it. */
+  workstream?: string;
   phase: RemotePhase;
   /** The RAW CLI lifecycle status word, lowercased ('running' | 'idle' |
    *  'orphaned' | 'crashed' | 'abandoned' | 'waiting' | 'closed' | ...), carried
@@ -544,6 +547,7 @@ export interface RawActiveSession {
    *  cwd to resolve (PHNX-3796) — for a cwd-bearing row the resolved cwd wins. */
   project?: string;
   confirmedProject?: string | null;
+  workstream?: string;
   pid?: number;
   sessionId?: string;
   cwd?: string;
@@ -1238,6 +1242,7 @@ export function normalizeActiveSession(
     // "cloud" out of it, so this never invents a project named after a context.
     project: resolveProject(cwd) || asStr(raw.project),
     confirmedProject: asStr(raw.confirmedProject) || null,
+    ...(asStr(raw.workstream) ? { workstream: asStr(raw.workstream) } : {}),
     phase,
     // Raw lifecycle word kept verbatim (phase loses orphaned/crashed). Absent -> ''.
     liveStatus: (status || '').toLowerCase(),

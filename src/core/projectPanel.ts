@@ -331,6 +331,8 @@ export interface SessionLike {
   resumable?: boolean;
   lastActivityMs: number;
   confirmedProject: string | null;
+  /** What the session is about (agents-cli `workstream`); Group by topic files it under it. */
+  workstream?: string;
   /** Where the agent runs; the card names its repository only when it is not this window's. */
   cwd?: string;
   /** Background work still running (CLI `pending`); idle plus pending is Waiting. */
@@ -516,6 +518,10 @@ export interface SessionListPrefs {
   todayOnly: boolean;
   /** Compact cards are the title row, the agent's latest line and what it made (owner, 2026-10-22 1:02 PM). */
   view: 'default' | 'compact';
+  /** Topic files a live session under its agents-cli workstream (owner video, 2026-11-14 4:18:
+   *  "group by what they are about"); Where it runs keeps the place groups. A session with no
+   *  workstream yet stays in its place group either way. */
+  group: 'topic' | 'place';
   /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded; 4 once Tab order is a sort. */
   v: 4;
 }
@@ -524,7 +530,7 @@ const ENDED_GROUP = 'ended';
 /** The Idle group's key (Settings > Ready for review and Idle groups), folded by default. */
 const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, showEnded: true, showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', v: 4 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, showEnded: true, showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', group: 'topic', v: 4 };
 
 const SORTS: readonly SessionSort[] = ['tab', 'last', 'newest', 'name'];
 
@@ -552,6 +558,7 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     hidden,
     todayOnly: o.todayOnly === true,
     view: o.view === 'compact' ? 'compact' : 'default',
+    group: o.group === 'place' ? 'place' : 'topic',
     v: 4,
   };
 }
@@ -701,6 +708,13 @@ function placeIcon(p: SessionPlace, here: SessionHere): string {
   if (p.kind === 'ghostty') return img('ghostty', 'Ghostty') || glyph('terminal', 'gi');
   if (p.kind === 'background') return glyph('cloud', 'gi');
   return glyph('terminal', 'gi');
+}
+
+/** A topic group's mark: its first letter on a tile whose hue the name fixes. */
+function topicIcon(name: string): string {
+  let h = 0;
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `<span class="gi-topic tp${h % 6}" aria-hidden="true">${escapeHtml(name.trim().charAt(0).toUpperCase())}</span>`;
 }
 
 const HARNESS_LOGOS = new Set(BUILT_IN_AGENTS.filter((a) => a.key !== 'shell').map((a) => a.key));
@@ -1078,11 +1092,12 @@ function sortRows(items: { row: SessionLike; place: SessionPlace }[], sort: Sess
   return [...items].sort((a, b) => (sort === 'name' ? 0 : tier(a.row) - tier(b.row)) || by(a.row, b.row));
 }
 
-/** Filter, then sort (owner video, 2026-10-22 6:42 AM: on the list's own header, no grouping). */
+/** Filter, then sort (owner video, 2026-10-22 6:42 AM: on the list's own header, no grouping
+ *  section). Group by topic is one View toggle the owner asked to turn on or off (2026-11-16). */
 function menuHtml(p: SessionListPrefs, today?: { id: string; n: number }): string {
   const item = (on: boolean, label: string, key: string, value: string) => `<button role="menuitemcheckbox" aria-checked="${on}" data-pref="${key}" data-value="${value}"><span class="ck">${on ? '✓' : ''}</span>${label}</button>`;
   return `<div class="menu" role="menu" hidden>
-    <div class="sec">View</div>${item(p.view === 'default', 'Default', 'view', 'default')}${item(p.view === 'compact', 'Compact', 'view', 'compact')}<hr>
+    <div class="sec">View</div>${item(p.view === 'default', 'Default', 'view', 'default')}${item(p.view === 'compact', 'Compact', 'view', 'compact')}${item(p.group === 'topic', 'Group by topic', 'group', p.group === 'topic' ? 'place' : 'topic')}<hr>
     <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.showEnded, 'Ended', 'showEnded', String(!p.showEnded))}${today ? item(p.todayOnly, `Only today's goal (${escapeHtml(today.id)}, ${today.n})`, 'todayOnly', String(!p.todayOnly)) : ''}<hr>
     <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
   </div>`;
@@ -1237,12 +1252,23 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
       { key: IDLE_GROUP, name: BALL_WORD.idle, sub: 'finished, no tab here', icon: ballIcon('idle'), items: byBall('idle') }]
       .filter((g) => g.items.length).map(section).join('');
   const groups = (m: Map<string, Group>) => [...m.values()].map(section).join('');
+  // By topic, a live session joins its workstream's group; topics lead, then the place
+  // groups for what has none yet (and for Ended, which stays one folded group).
+  const topicOf = (x: { row: SessionLike; place: SessionPlace }) => (prefs.group === 'topic' && x.place.kind !== 'ended' ? x.row.workstream?.trim() : '') || '';
+  const byTopic = new Map<string, Group>();
   const byKey = new Map<string, Group>();
   for (const x of [...rest].sort((a, b) => PLACE_ORDER[a.place.kind] - PLACE_ORDER[b.place.kind])) {
+    const topic = topicOf(x);
+    if (topic) {
+      const key = `topic:${topic.toLowerCase()}`;
+      const g = byTopic.get(key) ?? { key, name: topic, sub: '', icon: topicIcon(topic), items: [] };
+      g.items.push(x); byTopic.set(key, g);
+      continue;
+    }
     const g = byKey.get(x.place.key) ?? { key: x.place.key, name: x.place.name, sub: x.place.sub, icon: placeIcon(x.place, here), items: [], action: x.place.kind === 'leftover' ? 'close-all' : undefined };
     g.items.push(x); byKey.set(x.place.key, g);
   }
-  const listed = groups(byKey);
+  const listed = groups(byTopic) + groups(byKey);
   return head + pinned + favs + quietGroups + listed + tail;
 }
 

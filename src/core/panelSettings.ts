@@ -187,7 +187,7 @@ export interface PanelSettingsModel {
   /** Real cards drawn with these settings (`renderCardPreview`), under A card shows. */
   preview?: string;
   /** The session list's View and Sort, this workspace's own (the ⇅ menu's same two choices). */
-  list: { view: string; sort: string };
+  list: { view: string; sort: string; group: string };
 }
 
 /** Apply one Settings-tab change to the stored settings; null for a key or value it does not know. */
@@ -251,6 +251,7 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   <div class="sh">Session list</div>
   <label class="srow"><span><b>View</b><small>Compact: a listed card is its title, the agent's latest line and what it made</small></span>${picker('list.view', [{ value: 'default', label: 'Default' }, { value: 'compact', label: 'Compact' }], m.list.view, 'View')}</label>
   <label class="srow"><span><b>Sort</b><small>Sessions that ask always lead</small></span>${picker('list.sort', [{ value: 'tab', label: 'Tab order' }, { value: 'last', label: 'Last active' }, { value: 'newest', label: 'Newest' }, { value: 'name', label: 'Name' }], m.list.sort, 'Sort')}</label>
+  <label class="srow"><span><b>Group</b><small>By topic: what each session is about, as agents-cli names it</small></span>${picker('list.group', [{ value: 'topic', label: 'By topic' }, { value: 'place', label: 'By where it runs' }], m.list.group, 'Group')}</label>
   <div class="sh">Session titles</div>
   ${DISPLAY_ROWS.map((r) => toggle(`display.${r.key}`, r.label, r.sub, display?.[r.key] === true)).join('')}
   <div class="sh">Shortcuts</div>

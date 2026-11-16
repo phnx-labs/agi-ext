@@ -938,7 +938,7 @@ class ProjectPanelController {
       secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
       modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
       leadSpeak: vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', false),
-      list: { view: this.prefs().view, sort: this.prefs().sort },
+      list: { view: this.prefs().view, sort: this.prefs().sort, group: this.prefs().group },
     });
   }
 
@@ -957,7 +957,7 @@ class ProjectPanelController {
   /** One Settings-tab change, written where that setting already lives. */
   async setSetting(key: string, value: unknown): Promise<void> {
     // Settings > Session list writes the ⇅ menu's own View and Sort for this workspace.
-    if (key === 'list.view' || key === 'list.sort') { await this.setPref(key.slice(5), value); return; }
+    if (key === 'list.view' || key === 'list.sort' || key === 'list.group') { await this.setPref(key.slice(5), value); return; }
     if (key === 'defaultAgent' || key === 'secondaryAgent') {
       if (!PICKABLE_AGENTS.some((a) => a.title === value)) return;
       await vscode.commands.executeCommand(key === 'defaultAgent' ? 'agents.setDefaultAgentTitle' : 'agents.setSecondaryAgentTitle', value);
@@ -1436,6 +1436,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .gh:hover { background: var(--r-glass-hover); }
   .gh .car { width: 10px; color: var(--r-faint); font-size: 10px; transition: transform .15s; } .grp.closed .car { transform: rotate(-90deg); }
   .gi-box { width: 20px; height: 20px; display: grid; place-items: center; flex: none; }
+  .gi-topic { width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; font: 700 9px/1 var(--vscode-font-family); color: #fff; }
+  .gi-topic.tp0 { background: #8a5a14; } .gi-topic.tp1 { background: #2f6f8f; } .gi-topic.tp2 { background: #6a4c9c; }
+  .gi-topic.tp3 { background: #2f7d4f; } .gi-topic.tp4 { background: #a3402e; } .gi-topic.tp5 { background: #4f5b66; }
   .appic { width: 20px; height: 20px; display: block; }
   .gi { width: 14px; height: 14px; fill: none; stroke: var(--r-caption); stroke-width: 1.4; }
   .gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; } .gname b { font-weight: 600; } .gs { color: var(--r-faint); font-size: 11px; }
