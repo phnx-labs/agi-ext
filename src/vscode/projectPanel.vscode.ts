@@ -367,6 +367,11 @@ class ProjectView implements vscode.WebviewViewProvider {
     return coalesceTrailing(this.redraws, 'sessions', () => this.load('sessions', false));
   }
 
+  /** Settings draws the list prefs too (Ended, Section order), so a change redraws it while shown. */
+  redrawSettings(): void {
+    if (this.active === 'settings') this.post('settings', this.settingsHtml());
+  }
+
   /** The title bar's gear and ⌃1–⌃4: the panel comes up on that tab, through the page's own switch. */
   async open(tab: TabId): Promise<void> {
     // Not drawn yet: its ready message asks for the tab, so that is the one it shows.
@@ -1003,6 +1008,7 @@ class ProjectPanelController {
   private async savePrefs(prefs: SessionListPrefs): Promise<void> {
     await this.context.workspaceState.update(SESSION_PREFS_KEY, prefs);
     void this.view.redrawSessions();
+    this.view.redrawSettings();
   }
 
   async setPref(key: string, value: unknown): Promise<void> {
