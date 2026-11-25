@@ -42,8 +42,8 @@ agent at a glance: what it is doing, what it made, and which one is waiting on y
   own reader. Use **Reopen Editor With…** to switch back.
 - **Your disk:** the agents CLI keeps its state in `~/.agents`. Each agent keeps its own
   configuration where it always does, such as `~/.claude` or `~/.codex`.
-- **Permissions:** from agents-cli 1.23.54, `agents add` asks before installing hooks or
-  rules that auto-approve commands. Both start unchecked, and the prompt says what each does.
+- **Permissions:** `agents add` asks before installing hooks or rules that auto-approve
+  commands. Both start unchecked, and the prompt says what each does.
 - **Your code and keys:** agents run on your machine with your own sign-in, and talk to
   their own vendor (Anthropic, OpenAI, Google). This extension sends no telemetry. Its only
   network requests download profile pictures (GitHub, Linear, Gravatar) and pages you pin.
