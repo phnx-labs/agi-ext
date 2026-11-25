@@ -527,6 +527,10 @@ export interface SessionListPrefs {
   /** The viewer's order of the sections under the pinned card, by group key, from ↑ ↓ on a
    *  section's header (owner, 2026-11-16 2:43 AM). A section not in it keeps its own place. */
   order: string[];
+  /** Needs you first: a section holding a session that asks moves above the rest, the most
+   *  urgent and longest wait first; Your order keeps `order` alone (owner video, 2026-11-24
+   *  5:00 PM: "the agents that need my input are shown at the top"). */
+  sections: 'needs' | 'order';
   /** 2 once Ended defaults to shown and folded; 3 once Idle defaults to folded; 4 once Tab order is a sort;
    *  5 once Ended is a choice of how many, off by default. */
   v: 5;
@@ -538,7 +542,7 @@ const ENDED_SHOWN: readonly EndedShown[] = ['off', '10', '25', 'all'];
 /** The Idle group's key (Settings > Ready for review and Idle groups), folded by default. */
 const IDLE_GROUP = 'idle';
 
-export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, ended: 'off', showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', group: 'topic', order: [], v: 5 };
+export const DEFAULT_SESSION_PREFS: SessionListPrefs = { sort: 'tab', showLeftover: true, ended: 'off', showOpen: true, folded: [ENDED_GROUP, IDLE_GROUP], hidden: {}, todayOnly: false, view: 'default', group: 'topic', order: [], sections: 'needs', v: 5 };
 
 const SORTS: readonly SessionSort[] = ['tab', 'last', 'newest', 'name'];
 
@@ -566,6 +570,7 @@ export function readSessionPrefs(v: unknown): SessionListPrefs {
     view: o.view === 'compact' ? 'compact' : 'default',
     group: o.group === 'place' ? 'place' : 'topic',
     order: [...new Set(strings(o.order))],
+    sections: o.sections === 'order' ? 'order' : 'needs',
     v: 5,
   };
 }
@@ -1045,14 +1050,17 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
     ? `<button class="lg${opts.favorite ? ' on' : ''}" data-favlogo="${escapeHtml(s.sessionId)}" aria-pressed="${!!opts.favorite}" title="${favWords}" aria-label="${favWords}">${logoMark}</button>`
     : logoMark;
   const star = opts.favorite ? `<span class="star on" title="Favorite" aria-label="Favorite">★</span>` : '';
-  // The pinned card's title copies the session on a click; Rename is in its ⋯ (owner video,
-  // 2026-11-07 7:19 AM). The page keeps what is typed while renaming (data-keep) and draws the
-  // stream's title from data-ttl otherwise.
-  const rename = opts.front ? renameOf(s, place, state) : null;
-  const ttl = rename
-    ? `<span class="ttl cp" data-keep data-ttl="${escapeHtml(title)}" data-rename="${rename.can ? 1 : 0}" title="${escapeHtml(`${title}\nClick to copy its title, session id, machine and recap`)}">${escapeHtml(title)}</span>`
-    : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
-  const menu = cardMenu(s, place, { favorite: opts.favorite, rename: !!rename?.can, star: canStar });
+  // A click on a title it can rename edits it in place, on every card (owner video, 2026-11-24
+  // 5:00 PM and 5:56 PM: "click on the title and be able to edit the title"); the pinned card's
+  // other titles still copy the session, as its ⧉ does. The page keeps what is typed while
+  // renaming (data-keep) and draws the stream's title from data-ttl otherwise.
+  const rename = renameOf(s, place, state);
+  const ttl = rename.can
+    ? `<span class="ttl rn" data-keep data-ttl="${escapeHtml(title)}" data-rename="1" title="${escapeHtml(`${title}\nClick to rename`)}">${escapeHtml(title)}</span>`
+    : opts.front
+      ? `<span class="ttl cp" data-keep data-ttl="${escapeHtml(title)}" data-rename="0" title="${escapeHtml(`${title}\nClick to copy its title, session id, machine and recap`)}">${escapeHtml(title)}</span>`
+      : `<span class="ttl" title="${escapeHtml(title)}">${escapeHtml(title)}</span>`;
+  const menu = cardMenu(s, place, { favorite: opts.favorite, rename: opts.front && rename.can, star: canStar });
   // A listed card's ⋯ and ↗/▶ sit on its last row, so a hover never shortens the title (owner, 2026-11-06).
   const acts = `<span class="acts">${go}${menu}</span>`;
   // A card shrunk to its title row (no chips, no machine) keeps its icons there, the age giving way on hover.
@@ -1126,7 +1134,8 @@ function menuHtml(p: SessionListPrefs, today?: { id: string; n: number }): strin
   return `<div class="menu" role="menu" hidden>
     <div class="sec">View</div>${item(p.view === 'default', 'Default', 'view', 'default')}${item(p.view === 'compact', 'Compact', 'view', 'compact')}${item(p.group === 'topic', 'Group by topic', 'group', p.group === 'topic' ? 'place' : 'topic')}<hr>
     <div class="sec">Show</div>${item(p.showOpen, 'Tabs in this window', 'showOpen', String(!p.showOpen))}${item(p.showLeftover, 'Tabs with no agent', 'showLeftover', String(!p.showLeftover))}${item(p.ended !== 'off', 'Ended', 'ended', p.ended === 'off' ? '10' : 'off')}${today ? item(p.todayOnly, `Only today's goal (${escapeHtml(today.id)}, ${today.n})`, 'todayOnly', String(!p.todayOnly)) : ''}<hr>
-    <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}
+    <div class="sec">Sort</div>${item(p.sort === 'tab', 'Tab order', 'sort', 'tab')}${item(p.sort === 'last', 'Last active', 'sort', 'last')}${item(p.sort === 'newest', 'Newest', 'sort', 'newest')}${item(p.sort === 'name', 'Name', 'sort', 'name')}<hr>
+    <div class="sec">Sections</div>${item(p.sections === 'needs', 'Needs you first', 'sections', 'needs')}${item(p.sections === 'order', 'Your order', 'sections', 'order')}
   </div>`;
 }
 
@@ -1253,6 +1262,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   if (all.length === 0) return `${head}<div class="empty">No sessions on this project right now.</div>${tail}`;
   type Group = { key: string; name: string; sub: string; icon: string; items: typeof rest; action?: string; copy?: boolean; more?: number };
   const folded = new Set(prefs.folded);
+  const need = (g: Group) => (g.copy ? 0 : g.items.filter((x) => ball(x.row) === 'move').length);
   const section = (g: Group) => {
     // A click on the header folds it, even over the front tab's session: the pinned card shows
     // that one (owner, 2026-11-16 2:44 AM: a one-session group would not fold).
@@ -1263,7 +1273,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const kept = empties.length ? g.items.filter((x) => !empties.includes(x)) : g.items;
     const emptyRow = empties.length ? `<div class="emptyrow">${empties.length} empty session${empties.length === 1 ? '' : 's'} hidden (Untitled, no messages) · <button class="lnk" data-show-empty>Show</button></div><div class="empties" hidden>${ordered(empties).map((x) => card(x)).join('')}</div>` : '';
     return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
-      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length + (g.more ?? 0)}</span></span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="gmv"><button class="act" data-move="up" title="Move this section up" aria-label="Move ${escapeHtml(g.name)} up">↑</button><button class="act" data-move="down" title="Move this section down" aria-label="Move ${escapeHtml(g.name)} down">↓</button></span></div>
+      <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length + (g.more ?? 0)}</span>${need(g) ? `<span class="gneed">${need(g)} need${need(g) === 1 ? 's' : ''} you</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}<span class="gmv"><button class="act" data-move="up" title="Move this section up" aria-label="Move ${escapeHtml(g.name)} up">↑</button><button class="act" data-move="down" title="Move this section down" aria-label="Move ${escapeHtml(g.name)} down">↓</button></span></div>
       <div class="items">${closed ? '' : ordered(kept).map((x) => card(x, false, g.copy)).join('')}${emptyRow}${!closed && g.more ? `<div class="emptyrow">${g.more} older ended session${g.more === 1 ? '' : 's'} not shown · ${escapeHtml(opts.searchKey ?? '⌘K')} finds them</div>` : ''}</div>
     </section>`;
   };
@@ -1311,7 +1321,13 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     ended.more = ended.items.length - cap;
     ended.items = [...ended.items].sort((a, b) => b.row.lastActivityMs - a.row.lastActivityMs).slice(0, cap);
   }
-  const sections = arrangeSections([...favs, ...quietGroups, ...byTopic.values(), ...byKey.values()], prefs.order);
+  const arranged = arrangeSections([...favs, ...quietGroups, ...byTopic.values(), ...byKey.values()], prefs.order);
+  // Needs you first: Favorites stay on top; every section holding your move goes next, the one
+  // whose most pressing ask leads goes first; the others keep the viewer's order.
+  const lead = (g: Group) => ordered(g.items).find((x) => ball(x.row) === 'move');
+  const sections = prefs.sections === 'needs'
+    ? [...arranged.filter((g) => g.copy), ...arranged.filter((g) => !g.copy && lead(g)).sort((a, b) => yourMove(lead(a)!, lead(b)!)), ...arranged.filter((g) => !g.copy && !lead(g))]
+    : arranged;
   return head + pinned + sections.map(section).join('') + tail;
 }
 

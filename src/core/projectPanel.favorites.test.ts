@@ -68,18 +68,22 @@ test('a card whose agent has not spoken yet marks your prompt "You:", on the lis
   expect(spoke).not.toContain('You:')
 })
 
-test('the pinned title copies the session (owner video, 2026-11-07 7:19 AM); its ⋯ renames a Claude session with a tab here, and no other', () => {
+test('a click on the title renames a Claude session with a tab here, on the pinned card and in the list (owner video, 2026-11-24 5:56 PM); any other pinned title copies the session', () => {
   const pinned = (o: Partial<SessionLike>) => {
     const html = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1, ...o })], NOW, { selectedId: null, frontId: 'p', here: HERE, prefs: DEFAULT_SESSION_PREFS })
     return html.slice(html.indexOf('front-pin'), html.indexOf('data-group='))
   }
-  expect(pinned({})).toContain('<span class="ttl cp" data-keep data-ttl="T" data-rename="1" title="T\nClick to copy its title, session id, machine and recap">T</span>')
+  expect(pinned({})).toContain('<span class="ttl rn" data-keep data-ttl="T" data-rename="1" title="T\nClick to rename">T</span>')
   expect(pinned({})).toContain('<button data-act="rename">Rename…</button>')
-  expect(pinned({ agentType: 'codex' })).toContain('data-rename="0"')
+  expect(pinned({ agentType: 'codex' })).toContain('<span class="ttl cp" data-keep data-ttl="T" data-rename="0" title="T\nClick to copy its title, session id, machine and recap">T</span>')
   expect(pinned({ agentType: 'codex' })).not.toContain('data-act="rename"')
-  // A listed card's title is never editable.
-  const listed = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1 })], NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS })
-  expect(listed).not.toContain('data-rename')
+  // A listed card renames the same way; ⋯ > Rename stays the pinned card's.
+  const listed = (o: Partial<SessionLike>) => renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1, ...o })], NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS })
+  expect(listed({})).toContain('<span class="ttl rn" data-keep data-ttl="T" data-rename="1" title="T\nClick to rename">T</span>')
+  expect(listed({})).not.toContain('data-act="rename"')
+  // Another harness, or a Claude session with no tab here, keeps a plain title.
+  expect(listed({ agentType: 'codex' })).not.toContain('data-rename')
+  expect(listed({ tabHere: false, host: 'yosemite-m2', context: 'headless' })).not.toContain('data-rename')
 })
 
 test('Show the session list off leaves the pinned card and its ask; with no agent tab in front it says where the rest are', () => {
@@ -98,7 +102,7 @@ test('Settings > Session list: both on by default, each a checkbox that writes i
   const s = getDefaultSettings()
   expect(applyPanelSetting(s, 'cards.list', false)?.cards).toMatchObject({ list: false, favorites: true })
   expect(applyPanelSetting(s, 'cards.favorites', 'no')).toBeNull()
-  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧', leadSpeak: false, list: { view: 'default', sort: 'tab', group: 'topic', ended: 'off', ordered: false } })
+  const html = renderPanelSettings({ settings: s, devices: null, defaultAgentTitle: 'Claude', secondaryAgentTitle: 'Codex', modifier: '⌘⇧', leadSpeak: false, list: { view: 'default', sort: 'tab', group: 'topic', ended: 'off', sections: 'needs', ordered: false } })
   expect(html).toContain('<h3 class="st">Sessions</h3>')
   expect(html).toContain('<b>Show the session list</b>')
   expect(html).toContain('data-setting="cards.list" checked')

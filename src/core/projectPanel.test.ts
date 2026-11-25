@@ -371,6 +371,27 @@ test('a pending question shows in the card, opens on a click, and says how long 
   expect(old).not.toContain(' fresh')
 })
 
+test('Needs you first (the default) moves a section with an ask above the rest, the longest wait first, and says how many; Your order keeps the viewer\'s order (owner video, 2026-11-24 5:00 PM)', () => {
+  const at = (ms: number) => new Date(NOW - ms).toISOString()
+  const ask = (id: string, ws: string, ms: number) => row({ sessionId: id, workstream: ws, phase: 'waiting', liveStatus: 'input_required', attention: { kind: 'question', state: 'open', openedAt: at(ms) } })
+  const rows = [
+    row({ sessionId: 'calm', workstream: 'Team performance', lastResponse: 'Done.' }),
+    ask('recent', 'Agents CLI', 60_000),
+    ask('old', 'Rush content', 3_600_000), ask('old2', 'Rush content', 120_000),
+  ]
+  const order = ['topic:team performance', 'topic:agents cli', 'topic:rush content']
+  const groups = (html: string) => [...html.matchAll(/data-group="([^"]+)"/g)].map((m) => m[1])
+  const needs = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ order }) })
+  expect(groups(needs)).toEqual(['topic:rush content', 'topic:agents cli', 'topic:team performance'])
+  expect(needs).toContain('<span class="n">2</span><span class="gneed">2 need you</span>')
+  expect(needs).toContain('<span class="n">1</span><span class="gneed">1 needs you</span>')
+  const mine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ order, sections: 'order' }) })
+  expect(groups(mine)).toEqual(order)
+  // The ⇅ menu offers both, checked as set.
+  expect(needs).toContain('<button role="menuitemcheckbox" aria-checked="true" data-pref="sections" data-value="needs">')
+  expect(mine).toContain('<button role="menuitemcheckbox" aria-checked="true" data-pref="sections" data-value="order">')
+})
+
 test('the longest-waiting question leads its urgency', () => {
   const at = (ms: number) => new Date(NOW - ms).toISOString()
   const html = renderSessions([
@@ -389,7 +410,7 @@ test('an ask leads its own group; group by app orders this window, other windows
     row({ sessionId: 'mine', tabHere: true, lastResponse: 'Here.' }),
     row({ sessionId: 'ask', phase: 'waiting', liveStatus: 'input_required', host: 'yosemite-m2', context: 'headless' }),
   ]
-  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs() })
+  const html = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ sections: 'order' }) })
   const at = (id: string) => html.indexOf(`data-session="${id}"`)
   expect(html).not.toContain('class="pinned')
   // The background ask stays in Background, ahead of the session running there.

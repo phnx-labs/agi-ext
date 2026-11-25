@@ -945,7 +945,7 @@ class ProjectPanelController {
       secondaryAgentTitle: this.context.globalState.get<string>(SECONDARY_AGENT_KEY, PICKABLE_AGENTS[1].title),
       modifier: process.platform === 'darwin' ? '⌘⇧' : 'Ctrl+Shift+',
       leadSpeak: vscode.workspace.getConfiguration('agents').get<boolean>('lead.speak', false),
-      list: { view: this.prefs().view, sort: this.prefs().sort, group: this.prefs().group, ended: this.prefs().ended, ordered: this.prefs().order.length > 0 },
+      list: { view: this.prefs().view, sort: this.prefs().sort, group: this.prefs().group, ended: this.prefs().ended, sections: this.prefs().sections, ordered: this.prefs().order.length > 0 },
     });
   }
 
@@ -964,7 +964,7 @@ class ProjectPanelController {
   /** One Settings-tab change, written where that setting already lives. */
   async setSetting(key: string, value: unknown): Promise<void> {
     // Settings > Session list writes the ⇅ menu's own View and Sort for this workspace.
-    if (key === 'list.view' || key === 'list.sort' || key === 'list.group' || key === 'list.ended') { await this.setPref(key.slice(5), value); return; }
+    if (key === 'list.view' || key === 'list.sort' || key === 'list.group' || key === 'list.ended' || key === 'list.sections') { await this.setPref(key.slice(5), value); return; }
     if (key === 'defaultAgent' || key === 'secondaryAgent') {
       if (!PICKABLE_AGENTS.some((a) => a.title === value)) return;
       await vscode.commands.executeCommand(key === 'defaultAgent' ? 'agents.setDefaultAgentTitle' : 'agents.setSecondaryAgentTitle', value);
@@ -1476,6 +1476,10 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card.front > .top .vchip, .card.front > .top .age, .card.front > .top .cpy { margin-top: 1px; }
   .card.front > .top .ttl { line-height: 17px; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .card.front .ttl.cp { cursor: copy; border-radius: 4px; } .card.front .ttl.cp:hover { background: var(--r-glass-hover); }
+  /* A renamable title hugs its words, so the rest of the row still selects the card. */
+  .card .top .ttl.rn { flex: 0 1 auto; margin-right: auto; cursor: text; border-radius: 4px; } .card .ttl.rn:hover { background: var(--r-glass-hover); box-shadow: 0 0 0 2px var(--r-glass-hover); }
+  .card .top .ttl.rn:has(input) { flex: 1; }
+  .gneed { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: var(--r-warn); }
   .fc-acts { display: none; gap: 2px; flex: none; } .card.front:is(:hover, :focus-within, :has(.cmore[open])) .fc-acts { display: flex; }
   .card.front .fc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .fc-lead { flex: none; max-height: 60%; overflow-y: auto; scrollbar-width: thin; }
@@ -2289,14 +2293,14 @@ ${MADE_SCRIPT}
     el.setAttribute('aria-busy', 'true');
     setTimeout(() => el.removeAttribute('aria-busy'), 30000);
   }
-  // The pinned card's title renames a Claude session: Enter types /rename into its tab, Esc
-  // or leaving the box cancels. The title is data-keep, so a stream update never takes the
+  // A card's title renames a Claude session with a tab here: Enter types /rename into its tab,
+  // Esc or leaving the box cancels. The title is data-keep, so a stream update never takes the
   // box away; otherwise it always draws the stream's title (data-ttl), so a new name shows
   // only once the session reports it.
   function syncTitles() {
-    const t = main.querySelector('.front-pin .ttl[data-ttl]');
-    if (!t || t.querySelector('input')) return;
-    if (t.textContent !== t.dataset.ttl) t.textContent = t.dataset.ttl;
+    for (const t of main.querySelectorAll('.ttl[data-ttl]')) {
+      if (!t.querySelector('input') && t.textContent !== t.dataset.ttl) t.textContent = t.dataset.ttl;
+    }
   }
   function editTitle(t) {
     if (t.querySelector('input')) return;
@@ -2376,7 +2380,10 @@ ${MADE_SCRIPT}
       return;
     }
     if (e.target.closest('.ttl-edit')) return;
-    // The pinned card's title copies the session, as its ⧉ does (owner video, 2026-11-07 7:19 AM).
+    // A title it can rename edits in place, and the click selects nothing (owner video, 2026-11-24 5:56 PM).
+    const ttlRename = e.target.closest('.card .ttl[data-rename="1"]');
+    if (ttlRename) { e.preventDefault(); e.stopPropagation(); editTitle(ttlRename); return; }
+    // The pinned card's other titles copy the session, as its ⧉ does (owner video, 2026-11-07 7:19 AM).
     const ttlCopy = e.target.closest('.front-pin .ttl.cp');
     if (ttlCopy) { e.preventDefault(); const b = ttlCopy.closest('.card').querySelector('.cpy'); if (b) b.click(); return; }
     if (e.target.closest('[data-show-empty]')) { showEmpty = !showEmpty; restoreLocal(); return; }

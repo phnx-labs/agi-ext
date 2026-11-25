@@ -4,6 +4,18 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.447] - 2026-11-24
+
+- Rename a session by clicking its title, on the pinned card and on every card in the list.
+  The title turns into a text box; Enter types `/rename` into the session's tab, Esc or
+  clicking away cancels. Only Claude sessions with a tab in this window can be renamed; the
+  pinned card's other titles still copy the session.
+- Sections that need you come first: a section holding a session that asks moves to the top,
+  the longest wait first, and its header says how many need you. ⇅ > Sections and Settings >
+  Sessions > Order switch between Needs you first (the default) and Your order.
+- The pinned card's Activity fills the card: steps show whole, newest first, while they fit,
+  and the list stays on the newest step through redraws and resizes unless you scrolled up.
+
 ## [0.9.446] - 2026-11-16
 
 - Move a section of the Sessions list up or down: hover its header and use ↑ or ↓. Your order

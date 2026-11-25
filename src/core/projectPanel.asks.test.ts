@@ -44,8 +44,9 @@ test('with Settings > Ready for review and Idle groups on, a finished turn that 
   expect(between(html, 'data-group="review"', '</section>')).toContain('data-session="a81c55e2-review"')
   expect(html.indexOf('data-group="review"')).toBeLessThan(html.indexOf('data-group="idle"'))
   expect(list({ ...DEFAULT_CARD_SETTINGS, finishedGroups: true }, [])).toContain('data-session="idle-1"')
-  // Running, Waiting and Ended keep the viewer's grouping below.
-  expect(html.indexOf('data-group="idle"')).toBeLessThan(html.indexOf('data-session="run-1"'))
+  // In Your order, Running, Waiting and Ended keep the viewer's grouping below.
+  const mine = renderSessions(ROWS, NOW, { selectedId: null, here: HERE, prefs: { ...DEFAULT_SESSION_PREFS, sections: 'order' }, cards: { ...DEFAULT_CARD_SETTINGS, finishedGroups: true } })
+  expect(mine.indexOf('data-group="idle"')).toBeLessThan(mine.indexOf('data-session="run-1"'))
 })
 
 test('a compact ask with no label (the card is red for an urgent ask): the question in two lines, one-line answers with keys, Other… and Try another way; why it is urgent is on the age\'s hover', () => {
