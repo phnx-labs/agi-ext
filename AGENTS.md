@@ -170,8 +170,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   (`assignTabs`, `src/core/tabIndex.ts`), never by label alone.
 - A session has one name, `streamTitle` (`src/core/projectPanel.ts`), on its tab, the
   status bar, the Active Session sidebar and the resume picker. The extension generates no
-  title and reports none back to the CLI; Rename Session and the pinned
-  card's ⋯ > Rename type Claude's own `/rename` (`renameSession`, `src/vscode/sessionReply.ts`); no other
+  title and reports none back to the CLI; Rename Session, a click on a card's title and the
+  pinned card's ⋯ > Rename type Claude's own `/rename` (`renameSession`, `src/vscode/sessionReply.ts`); no other
   harness's title is editable.
   A card draws the row's `title` as it comes (`cardTitle`; final since agents-cli 1.23.31),
   never a prompt or request headline, ⑂ for a `forkOf` row; an editor tab shows at most 34
@@ -285,7 +285,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   0:40, 1:17). The front tab's card is the one exception: pinned above everything at one height
   for every session, which the grip under it sets for this window's panel (owner video,
   2026-11-07 1:29): its title row (the title up to two lines, ✓ Done or Not done, the age, ⧉ and
-  ⋯ on hover; a click on the title copies the session), its ask, Claude's recap in three lines
+  ⋯ on hover; a click on the title renames a Claude session with a tab here, as on every card,
+  and otherwise copies the session), its ask, Claude's recap in three lines
   and every step in a box that scrolls, the Made shelf in one row that scrolls sideways, and a
   reply box at the bottom. It follows the front tab and nothing else: no ‹ › and no place among
   the tabs (owner video, 2026-11-07 0:04); Agents: Next Agent That Needs You (`nextNeedsYou`,
@@ -340,7 +341,10 @@ going on, where, and what came out of it" in one look; text explains only what a
   starred), then the groups; Settings > Ready for review and Idle groups (off) brings back
   those two groups for sessions with no tab here (owner video, 2026-10-22 6:42 AM). Every
   section moves with ↑ ↓ on its header's hover (`moveSection`, `arrangeSections`: a placed
-  section takes its slots in the chosen order, a new one keeps its own; Settings resets it), and
+  section takes its slots in the chosen order, a new one keeps its own; Settings resets it).
+  ⇅ > Sections picks Needs you first (the default) or Your order: under Needs you first a
+  section holding your move goes above the rest, the most pressing ask first, its header
+  saying "N need you" beside its count (owner video, 2026-11-24 5:00 PM); and
   a header click always folds it, the front tab's group too, since the pinned card shows that
   session (owner, 2026-11-16 2:43-2:44 AM). Ended is off until Settings > Sessions > Ended
   sessions asks for the last 10, 25 or all, and a capped Ended counts the rest, which ⌘K finds.

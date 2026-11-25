@@ -187,7 +187,7 @@ export interface PanelSettingsModel {
   /** Real cards drawn with these settings (`renderCardPreview`), under A card shows. */
   preview?: string;
   /** The session list's View and Sort, this workspace's own (the ⇅ menu's same two choices). */
-  list: { view: string; sort: string; group: string; ended: string; ordered: boolean };
+  list: { view: string; sort: string; group: string; ended: string; sections: string; ordered: boolean };
 }
 
 /** Apply one Settings-tab change to the stored settings; null for a key or value it does not know. */
@@ -258,6 +258,7 @@ export function renderPanelSettings(m: PanelSettingsModel): string {
   ${row('Sort', 'Sessions that ask always lead', picker('list.sort', [{ value: 'tab', label: 'Tab order' }, { value: 'last', label: 'Last active' }, { value: 'newest', label: 'Newest' }, { value: 'name', label: 'Name' }], m.list.sort, 'Sort'))}
   <div class="sh">Sections</div>
   ${row('Group', 'By topic: what each session is about, as agents-cli names it', picker('list.group', [{ value: 'topic', label: 'By topic' }, { value: 'place', label: 'By where it runs' }], m.list.group, 'Group'))}
+  ${row('Order', 'Needs you first: a section with a session that asks moves to the top', picker('list.sections', [{ value: 'needs', label: 'Needs you first' }, { value: 'order', label: 'Your order' }], m.list.sections, 'Order'))}
   ${listToggle('favorites')}
   ${listToggle('finishedGroups')}
   ${row('Ended sessions', 'The most recent ones, as the last section; ⌘K finds every one', picker('list.ended', [{ value: 'off', label: 'Off' }, { value: '10', label: 'Last 10' }, { value: '25', label: 'Last 25' }, { value: 'all', label: 'All' }], m.list.ended, 'Ended sessions'))}

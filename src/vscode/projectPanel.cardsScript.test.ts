@@ -63,14 +63,10 @@ test('a click on the agent\'s logo posts one favorite and turns every copy of th
   expect(sent.at(-1)).toEqual({ type: 'favorite', sessionId: 'b', value: false });
 });
 
-test('the pinned title copies the session; ⋯ > Rename opens a rename box; a stream update keeps what is typed; Enter sends it once', () => {
+test('a click on the pinned title opens a rename box and copies nothing; a stream update keeps what is typed; Enter sends it once', () => {
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   sent.length = 0;
   $('.front-pin .ttl').click();
-  expect(sent.map((m) => m.type)).toEqual(['copy']);
-  expect($('.front-pin .ttl input')).toBeNull();
-  sent.length = 0;
-  $('.front-pin [data-act="rename"]').click();
   const input = $('.front-pin .ttl input.ttl-edit') as HTMLInputElement;
   expect(input.value).toBe('Task a');
   expect(sent).toEqual([]);
@@ -87,6 +83,23 @@ test('the pinned title copies the session; ⋯ > Rename opens a rename box; a st
   expect($('.front-pin .ttl').textContent).toBe('Body alignment');
   deliver({ type: 'html', tab: 'sessions', html: draw([], { title: 'Renamed again elsewhere' }) });
   expect($('.front-pin .ttl').textContent).toBe('Renamed again elsewhere');
+});
+
+test('a click on a listed card\'s title renames that session in place and selects nothing (owner video, 2026-11-24 5:56 PM)', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  sent.length = 0;
+  const listed = [...document.querySelectorAll('.card[data-session="b"]')].find((c) => !c.closest('.front-pin'))!;
+  (listed.querySelector('.ttl') as HTMLElement).click();
+  const input = listed.querySelector('.ttl input.ttl-edit') as HTMLInputElement;
+  expect(input.value).toBe('Task b');
+  expect(sent).toEqual([]);
+  input.value = 'Listed rename';
+  input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event);
+  expect(sent).toEqual([{ type: 'rename', sessionId: 'b', name: 'Listed rename' }]);
+  // The rest of the card still selects it.
+  sent.length = 0;
+  (listed.querySelector('.line, .said') as HTMLElement | null)?.click();
+  expect(sent.map((m) => m.type)).toContain('select');
 });
 
 test('Esc or leaving the box cancels; a harness without /rename never opens one', () => {

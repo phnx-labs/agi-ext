@@ -36,7 +36,7 @@ test('In the header: Review on, the rest off until checked (owner, 2026-11-05 2:
   expect(DEFAULT_CARD_SETTINGS.made).toBe('chips')
   expect(applyPanelSetting(base, 'cards.made', 'previews')?.cards?.made).toBe('previews')
   expect(applyPanelSetting(base, 'cards.made', 'tiles')).toBeNull()
-  const html = renderPanelSettings({ settings: { ...base, header: { prs: false, search: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: { view: 'compact', sort: 'name', group: 'place', ended: '25', ordered: true } })
+  const html = renderPanelSettings({ settings: { ...base, header: { prs: false, search: true } }, devices: null, defaultAgentTitle: 'CC', secondaryAgentTitle: 'CX', modifier: '⌘⇧', leadSpeak: false, list: { view: 'compact', sort: 'name', group: 'place', ended: '25', sections: 'order', ordered: true } })
   expect(html).toContain('<input type="checkbox" data-setting="header.prs">')
   expect(html).toContain('<input type="checkbox" data-setting="header.search" checked>')
   for (const k of ['lead', 'tickets', 'sort', 'pick']) expect(html).toContain(`<input type="checkbox" data-setting="header.${k}">`)
