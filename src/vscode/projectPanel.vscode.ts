@@ -2273,6 +2273,8 @@ ${MADE_SCRIPT}
       if (m.tab === 'lead') { syncLeadBox(); if (!same || leadEnd) main.scrollTop = main.scrollHeight; }
       if (m.tab === 'sessions') {
         syncBulk(); syncFrontReply(typing); drawFrontMade(); syncTitles(); slideIn();
+        // A patch mid-drag rewrites the card's classes; keep it dimmed, or end the drag if the card is gone.
+        if (dragged) { if (dragged.card.isConnected) dragged.card.classList.add('dragging'); else { dragged = null; clearDrop(); } }
         const box = activityBox();
         if (box !== actBox) { actStick = true; if (actSize) { actSize.disconnect(); if (box) actSize.observe(box); } }
         fitActivity();

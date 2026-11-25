@@ -194,6 +194,10 @@ test('a listed card dragged onto another topic\'s section asks agents-cli to mov
   };
   drag('dragstart', card);
   expect(card.classList.contains('dragging')).toBe(true);
+  // The stream updates the dragged card mid-drag: it stays dimmed.
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(topics.map((r) => (r.sessionId === 'b' ? { ...r, lastResponse: 'Still going.' } : r)), NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor }) });
+  expect(main.querySelector('.card[data-session="b"]')).toBe(card);
+  expect(card.classList.contains('dragging')).toBe(true);
   // Its own section takes no drop; another topic's does, outlined until the drop.
   drag('dragover', card.closest('section.grp')!);
   expect(main.querySelector('section.grp.drop')).toBeNull();
