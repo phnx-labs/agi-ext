@@ -1942,12 +1942,15 @@ ${MADE_SCRIPT}
   function fitActivity() {
     const box = activityBox(); if (!box) return;
     const steps = [...box.querySelectorAll('li:not(.fc-earlier)')];
+    if (!steps.length) return;
+    const back = box.scrollHeight - box.scrollTop;
     for (const li of steps) li.classList.remove('whole');
+    const last = steps[steps.length - 1];
     for (let i = steps.length - 1; i >= 0; i--) {
       steps[i].classList.add('whole');
-      if (box.scrollHeight > box.clientHeight) { steps[i].classList.remove('whole'); break; }
+      if (last.getBoundingClientRect().bottom - steps[i].getBoundingClientRect().top > box.clientHeight) { steps[i].classList.remove('whole'); break; }
     }
-    if (actStick) box.scrollTop = box.scrollHeight;
+    box.scrollTop = actStick ? box.scrollHeight : box.scrollHeight - back;
   }
   const actSize = typeof ResizeObserver === 'function' ? new ResizeObserver(fitActivity) : null;
   // The front card's reply box: its session's draft, bound once per node, the mic as
