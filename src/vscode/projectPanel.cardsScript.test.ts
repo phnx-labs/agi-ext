@@ -178,3 +178,39 @@ test('1-9 answers a selected starred session that asks, whose Favorites copy sho
   document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: '2', bubbles: true }) as unknown as Event);
   expect(sent).toContainEqual({ type: 'answer', key: 'k-c', choice: 'n', text: undefined });
 });
+
+test('a listed card dragged onto another topic\'s section asks agents-cli to move it once, and Undo moves it back (owner video, 2026-11-24 5:00 PM; PHNX-4676)', () => {
+  const topics = rows.map((r) => ({ ...r, workstream: r.sessionId === 'b' ? 'Alpha' : 'Beta' }));
+  deliver({ type: 'html', tab: 'sessions', html: renderSessions(topics, NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor }) });
+  sent.length = 0;
+  const card = main.querySelector('section.grp[data-topic="Alpha"] .card[data-session="b"]') as HTMLElement;
+  expect(card.getAttribute('draggable')).toBe('true');
+  const beta = main.querySelector('section.grp[data-topic="Beta"]') as HTMLElement;
+  // happy-dom drops a DragEvent's dataTransfer, which a browser always sets; attach one.
+  const drag = (type: string, target: Element) => {
+    const ev = new window.DragEvent(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: new window.DataTransfer() });
+    target.dispatchEvent(ev as unknown as Event);
+  };
+  drag('dragstart', card);
+  expect(card.classList.contains('dragging')).toBe(true);
+  // Its own section takes no drop; another topic's does, outlined until the drop.
+  drag('dragover', card.closest('section.grp')!);
+  expect(main.querySelector('section.grp.drop')).toBeNull();
+  drag('dragover', beta.querySelector('.gh')!);
+  expect(beta.classList.contains('drop')).toBe(true);
+  drag('drop', beta.querySelector('.gh')!);
+  drag('dragend', card);
+  expect(sent).toEqual([{ type: 'setTopic', sessionId: 'b', topic: 'Beta', from: 'Alpha' }]);
+  expect(beta.classList.contains('drop')).toBe(false);
+  // The CLI's answer: a note with Undo, which moves it back with one more setTopic.
+  sent.length = 0;
+  deliver({ type: 'topicSet', sessionId: 'b', topic: 'Beta', from: 'Alpha', ok: true });
+  const hnote = document.querySelector('.hnote') as unknown as HTMLElement;
+  expect(hnote.textContent).toContain('Moved to Beta');
+  (hnote.querySelector('[data-undo]') as HTMLElement).click();
+  expect(sent).toEqual([{ type: 'setTopic', sessionId: 'b', topic: 'Alpha' }]);
+  // A refusal shows the CLI's own words.
+  deliver({ type: 'topicSet', sessionId: 'b', topic: 'Beta', from: 'Alpha', ok: false, error: 'Can\'t reach yosemite-s1 to set the topic of b.' });
+  expect(hnote.textContent).toContain('Can\'t reach yosemite-s1');
+});
