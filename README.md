@@ -1,75 +1,63 @@
-# AGI EXT
+# Agents
 
-The VS Code / VSCodium extension for [agents-cli](https://github.com/phnx-labs/agi-cli).
-It turns the editor into an integrated agents environment: every coding agent runs as an
-editor tab, the Active Session sidebar shows what the focused agent is doing, and the Fleet
-dashboard lists every session on every machine and lets you answer the ones that need you.
+Run Claude Code, Codex, Antigravity and other coding agents as editor tabs, and see every
+agent at a glance: what it is doing, what it made, and which one is waiting on you.
 
-The extension is a presentation layer. agents-cli owns every fact and every mechanism; the
-extension renders one `agents feed watch --json` stream and turns each gesture into exactly
-one CLI verb. That is the whole architecture rule.
+![Three agents on one project: one asks a question, two have finished](docs/media/agents-panel.png)
 
-Published on the Marketplace and Open VSX as `swarmify.swarm-ext` (display name "Agents").
-The publisher and name are frozen: changing either orphans the listing and breaks the
-`swarm-ext://` URI authority the CLI emits.
+## What you get
 
-## Docs
+- **Every agent is a tab.** Each agent runs in its own editor tab next to your code, titled
+  by what it is working on.
+- **One card per agent.** The AGI panel shows each agent's state and its latest words. An
+  agent waiting on you turns amber and moves to the top, with its question on the card.
+- **Find any session.** Press Cmd+K (Ctrl+K on Linux) in the AGI panel to search every
+  session on this machine by title, and open the one you want.
 
-- [docs/PRD.md](docs/PRD.md) ([rendered](docs/PRD.html)): what the extension must do and
-  how each user journey should feel.
-- [docs/ARCH.md](docs/ARCH.md) ([rendered](docs/ARCH.html)): how it works, the measured
-  module graph, known debt, and the direction.
-- [docs/reference.html](docs/reference.html) ([JSON](docs/reference.json)): every command,
-  setting, keybinding, menu item and view in `package.json`, and every exported UI component
-  under `ui/` with its props and the pane that shows it. Generated; never edit by hand.
-- [AGENTS.md](AGENTS.md): the contract for coding agents working in this repo.
-- [CHANGELOG.md](CHANGELOG.md): every released version; `scripts/release.sh` requires a
-  section for the version it publishes.
+<img src="docs/media/agent-cards.png" width="360" alt="Cards: an agent asking which status code to return, and two finished agents">
 
-Re-render the docs after editing with `docs/render.sh` (needs `artifacts` on PATH).
-Regenerate the reference with `bun scripts/gen-docs.ts` after changing `package.json`
-`contributes` or a component under `ui/`; `scripts/build.sh` and `bun run test` fail while
-it is stale.
+## Get started
 
-## Layout
+1. **Install this extension.** When it asks to install the agents CLI, click **Install**. It
+   runs `npm install -g @phnx-labs/agents-cli` in a terminal (Node.js 22.5 or newer).
+2. **Set up the CLI and add an agent** in that terminal:
+   ```bash
+   agents setup              # once; press Ctrl+C at the menu of optional extras
+   agents add claude         # or codex, antigravity, cursor, opencode, grok
+   ```
+   Sign the agent in the way you normally would. For Claude Code, run `claude`, then `/login`.
+3. **Register your project** so the AGI panel lists its agents. Run this in the project
+   folder:
+   ```bash
+   agents projects add my-app
+   ```
+4. **Start an agent:** open the Command Palette and run **Agents: New Claude (Local)**. To
+   make **Agents: New Claude** and the new-agent shortcut always start on this machine, set
+   `agents.launch.defaultTarget` to `local`.
 
-```
-src/core       pure presentation logic, no vscode import (launch composition, store, models)
-src/monitor    elected stream leader, demand gate, cross-window broadcast
-src/vscode     commands, terminals, sidebar, webview bridge, URI handler
-src/shared     code shared by the sidebar and Project panel (session cards, state words)
-ui/editor      Reader: Markdown editor and HTML viewer
-assets/ icons/ extension artwork and the file-icon theme
-scripts/       build.sh, install.sh, release.sh: the only entry points
-```
+## What it touches
 
-## Develop
+- **Your editor:** two views in the activity bar (Agents and AGI), a few status bar
+  items, and keyboard shortcuts for new agents. It also opens Markdown and HTML files in its
+  own reader. Use **Reopen Editor With…** to switch back.
+- **Your disk:** the agents CLI keeps its state in `~/.agents`. Each agent keeps its own
+  configuration where it always does, such as `~/.claude` or `~/.codex`.
+- **Permissions:** from agents-cli 1.23.54, `agents add` asks before installing hooks or
+  rules that auto-approve commands. Both start unchecked, and the prompt says what each does.
+- **Your code and keys:** agents run on your machine with your own sign-in, and talk to
+  their own vendor (Anthropic, OpenAI, Google). This extension sends no telemetry. Its only
+  network requests download profile pictures (GitHub, Linear, Gravatar) and pages you pin.
+- **Typing into tabs:** the extension types into an agent's tab only when you answer from a
+  card or send a reply.
 
-```bash
-bun install
-bun run compile:ext          # typecheck + bundle the extension host
-bun test --timeout 30000     # the suite; ui/ tests also run from ui/ with `bun test`
-bun run lint:dead            # knip; scripts/build.sh runs it before compile
-scripts/install.sh           # build a VSIX and install it into the local editor
-```
+## Requirements
 
-Requires Bun, Node, and an installed `agents` CLI on PATH (the extension reads everything
-through it). Tests sit beside their source and exercise real command boundaries; the only
-sanctioned double is `src/testing/vscodeDouble.ts`. Agent-integration tests
-(`bun run test:agent-integration`) need the `agents` binary and hit it for real.
+- VS Code or VSCodium 1.85 or newer, on macOS or Linux
+- Node.js 22.5 or newer for the agents CLI
+- At least one coding agent you can sign in to
 
-## Release
+## Links
 
-```bash
-scripts/build.sh <x.y.z>               # packaged .vsix in dist/, version stamp restored on exit
-scripts/release.sh <x.y.z>             # dry run
-scripts/release.sh <x.y.z> --confirm   # publish to Marketplace + Open VSX
-```
-
-`release.sh` routes itself to the machine holding the `vs-marketplace` secrets bundle
-(`--device <name>` pins it, `--here` refuses to route) and refuses to publish a version
-without a `CHANGELOG.md` section. Never hand-roll `vsce publish` or `ovsx publish`.
-
-## License
-
-MIT
+- [Changelog](CHANGELOG.md)
+- [Report a problem](https://github.com/phnx-labs/agi-ext/issues)
+- [Developing this extension](docs/DEVELOPING.md)

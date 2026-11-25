@@ -6,6 +6,10 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 
 ## [0.9.448] - 2026-11-24
 
+- The Marketplace and Open VSX page is written for someone installing the extension: what it
+  does, two screenshots of real agents, the steps that work today, and what it touches (your
+  editor, your disk, permissions, where code and keys go: no telemetry). The contributor
+  guide moved to `docs/DEVELOPING.md`.
 - Drag a session's card onto another topic's section to move it there. The section you would
   drop on gets a dashed outline; on the drop, agents-cli files the session under that topic on
   the machine it runs on (`agents ps topic`, agents-cli 1.23.54 or later), and the card moves

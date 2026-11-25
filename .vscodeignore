@@ -18,3 +18,4 @@ bun.lockb
 .DS_Store
 out/ui/**/*.map
 out/ui/**/assets/*.js.map
+docs/media/**
