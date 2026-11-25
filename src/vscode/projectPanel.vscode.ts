@@ -1479,7 +1479,11 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-acts { display: none; gap: 2px; flex: none; } .card.front:is(:hover, :focus-within, :has(.cmore[open])) .fc-acts { display: flex; }
   .card.front .fc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .fc-lead { flex: none; max-height: 60%; overflow-y: auto; scrollbar-width: thin; }
-  .fc-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+  /* Steps fill what the card's height leaves (its grip sets it); a card too short for three of them scrolls whole. */
+  .fc-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; }
+  .fc-scroll > .fc-latest { flex: none; }
+  .card.front .fc-act { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .card.front .fc-act ol { flex: 1; min-height: 52px; align-content: start; }
   .card.front .fc-made, .card.front .fc-reply { flex: none; }
   .fc-grip { height: 10px; margin: 1px 0 0; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
   .fc-grip::before { content: ''; width: 32px; height: 3px; border-radius: 3px; background: var(--r-edge); }
@@ -1502,6 +1506,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-act li.user .fc-at { font-style: italic; color: var(--r-caption); }
   .fc-act li .fc-you { font-style: normal; font-weight: 600; color: var(--r-text); }
   .fc-act li.live .fc-at { display: block; color: var(--r-text); }
+  .fc-act li.whole .fc-at { display: block; }
   .fc-now { display: block; margin-top: 1px; font-size: 11px; color: var(--r-ok); }
   .fc-reply { margin-top: 8px; cursor: auto; }
   .fc-reply .reply-box textarea { resize: none; min-height: 32px; border-radius: 8px; }
@@ -1513,7 +1518,7 @@ ${MADE_CSS}
   .fc-made .made.chips { margin: 0; }
   .fc-made button.mk, .fc-made button.mk-open { color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .fc-made button.mk-open { background: transparent; border: 0; }
-  .fc-act ol { max-height: 96px; overflow-y: auto; scrollbar-width: thin; }
+  .fc-act ol { overflow-y: auto; scrollbar-width: thin; }
   /* About a quarter shorter than it was, so more of the list shows under it (owner video, 2026-10-22 8:50 AM); the recap's full text is its tooltip. */
   .fc-rt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .fc-act ol[hidden] { display: none; }
@@ -1929,6 +1934,22 @@ ${MADE_SCRIPT}
   }
   function activityBox() { return main.querySelector('.front-pin .fc-act ol'); }
   function activityAtEnd(box) { return !box || box.scrollHeight - box.scrollTop - box.clientHeight < 6; }
+  // The steps show whole while the box has room, newest first (older ones keep two lines), and
+  // stay on the newest through a redraw or a change of size (the grip, the sidebar, the panel
+  // shown again after a redraw while hidden) until you scroll up.
+  let actStick = true;
+  main.addEventListener('scroll', (e) => { if (e.target === activityBox()) actStick = activityAtEnd(e.target); }, true);
+  function fitActivity() {
+    const box = activityBox(); if (!box) return;
+    const steps = [...box.querySelectorAll('li:not(.fc-earlier)')];
+    for (const li of steps) li.classList.remove('whole');
+    for (let i = steps.length - 1; i >= 0; i--) {
+      steps[i].classList.add('whole');
+      if (box.scrollHeight > box.clientHeight) { steps[i].classList.remove('whole'); break; }
+    }
+    if (actStick) box.scrollTop = box.scrollHeight;
+  }
+  const actSize = typeof ResizeObserver === 'function' ? new ResizeObserver(fitActivity) : null;
   // The front card's reply box: its session's draft, bound once per node, the mic as
   // it stands (a new box asks the host), and the caret back where it was if a move
   // between groups rebuilt the box of the session you were typing to, while this page
@@ -2172,7 +2193,6 @@ ${MADE_SCRIPT}
       const typingIn = same && document.hasFocus() && document.activeElement && document.activeElement.id === 'reply-input' ? document.activeElement : null;
       const typing = typingIn ? { id: typingIn.closest('.card').dataset.session, at: [typingIn.selectionStart, typingIn.selectionEnd] } : null;
       const actBox = activityBox();
-      const actEnd = activityAtEnd(actBox);
       // Measured before the patch: a new turn makes the page taller, so after it the viewer no longer looks at the end.
       const leadEnd = m.tab === 'lead' && same && main.scrollHeight - main.scrollTop - main.clientHeight < 80;
       // A stream tick must not take away a pending "close anyway?" or the open menu.
@@ -2196,7 +2216,8 @@ ${MADE_SCRIPT}
       if (m.tab === 'sessions') {
         syncBulk(); syncFrontReply(typing); drawFrontMade(); syncTitles(); slideIn();
         const box = activityBox();
-        if (box && (box !== actBox || actEnd)) box.scrollTop = box.scrollHeight;
+        if (box !== actBox) { actStick = true; if (actSize) { actSize.disconnect(); if (box) actSize.observe(box); } }
+        fitActivity();
       }
       if (m.tab === 'settings') syncPreview();
       restoreLocal();
