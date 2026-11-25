@@ -968,7 +968,7 @@ function activitySteps(s: SessionLike): string {
   return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean; drag?: boolean }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
@@ -1095,7 +1095,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const rank = state === 'asks' && s.attention?.state === 'open' ? urgencyOf(s.attention) : 'normal';
   const urgency = rank === 'high' || rank === 'urgent' ? ` u-${rank}` : '';
   const cls = `card st-${opts.blocked ? 'blocked' : state}${urgency}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
-  const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"`;
+  const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"${opts.drag ? ' draggable="true"' : ''}`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
 }
@@ -1195,6 +1195,8 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
     // The pinned card is where an ask is answered, so it keeps its answers whatever the list shows (owner video, 2026-10-22 8:50 AM).
     cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId), answeredElsewhere: !pinned && (copy || (!!front && row.sessionId === front.row.sessionId)),
+    // A listed live card drags onto another topic's section (owner video, 2026-11-24 5:00 PM; PHNX-4676).
+    drag: !pinned && !copy && prefs.group === 'topic' && sessionStateOf(row) !== 'ended',
   });
   return { all, front, blocked, tabHere, cards, today, card };
 }
@@ -1272,7 +1274,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
     const empties = closed || g.copy ? [] : g.items.filter((x) => emptySession(x.row));
     const kept = empties.length ? g.items.filter((x) => !empties.includes(x)) : g.items;
     const emptyRow = empties.length ? `<div class="emptyrow">${empties.length} empty session${empties.length === 1 ? '' : 's'} hidden (Untitled, no messages) · <button class="lnk" data-show-empty>Show</button></div><div class="empties" hidden>${ordered(empties).map((x) => card(x)).join('')}</div>` : '';
-    return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}">
+    return `<section class="grp${closed ? ' closed' : ''}" data-group="${escapeHtml(g.key)}"${g.key.startsWith('topic:') ? ` data-topic="${escapeHtml(g.name)}"` : ''}>
       <div class="gh" role="button" tabindex="0" aria-expanded="${!closed}"><span class="car">▾</span><span class="gi-box">${g.icon}</span><span class="gname"><b>${escapeHtml(g.name)}</b>${g.sub ? ` <span class="gs">${escapeHtml(g.sub)}</span>` : ''} <span class="n">${g.items.length + (g.more ?? 0)}</span>${need(g) ? `<span class="gneed">${need(g)} need${need(g) === 1 ? 's' : ''} you</span>` : ''}</span>${g.action ? `<button class="gact" data-act="close-all" title="Close every tab here whose agent is not running">Close all</button>` : ''}${prefs.sections === 'needs' && need(g) ? '' : `<span class="gmv"><button class="act" data-move="up" title="Move this section up" aria-label="Move ${escapeHtml(g.name)} up">↑</button><button class="act" data-move="down" title="Move this section down" aria-label="Move ${escapeHtml(g.name)} down">↓</button></span>`}</div>
       <div class="items">${closed ? '' : ordered(kept).map((x) => card(x, false, g.copy)).join('')}${emptyRow}${!closed && g.more ? `<div class="emptyrow">${g.more} older ended session${g.more === 1 ? '' : 's'} not shown · ${escapeHtml(opts.searchKey ?? '⌘K')} finds them</div>` : ''}</div>
     </section>`;

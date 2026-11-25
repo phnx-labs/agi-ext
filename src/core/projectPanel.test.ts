@@ -396,6 +396,24 @@ test('Needs you first (the default) moves a section with an ask above the rest, 
   expect(mine).toContain('<button role="menuitemcheckbox" aria-checked="true" data-pref="sections" data-value="order">')
 })
 
+test('only a listed live card drags, and only onto a topic\'s section; the pinned card, an ended one, and grouping by place take no part (PHNX-4676)', () => {
+  const rows = [
+    row({ sessionId: 'pin', tabHere: true, tabIndex: 1, workstream: 'Alpha' }),
+    row({ sessionId: 'live', workstream: 'Alpha' }),
+    row({ sessionId: 'gone', workstream: 'Alpha', phase: 'done', liveStatus: 'closed' }),
+  ]
+  const html = renderSessions(rows, NOW, { selectedId: null, frontId: 'pin', here: HERE, prefs: prefs({ ended: 'all' }) })
+  const pinned = html.slice(html.indexOf('front-pin'), html.indexOf('data-group='))
+  expect(html).toContain('data-group="topic:alpha" data-topic="Alpha"')
+  expect(html).toMatch(/data-session="live"[^>]*draggable="true"/)
+  expect(pinned).toContain('data-session="pin"')
+  expect(pinned).not.toContain('draggable')
+  expect(html).not.toMatch(/data-session="gone"[^>]*draggable/)
+  const byPlace = renderSessions(rows, NOW, { selectedId: null, frontId: 'pin', here: HERE, prefs: prefs({ group: 'place' }) })
+  expect(byPlace).not.toContain('draggable')
+  expect(byPlace).not.toContain('data-topic=')
+})
+
 test('the longest-waiting question leads its urgency', () => {
   const at = (ms: number) => new Date(NOW - ms).toISOString()
   const html = renderSessions([

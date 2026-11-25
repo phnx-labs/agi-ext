@@ -114,7 +114,7 @@ const IMAGE_DIRS = () => [path.join(os.homedir(), '.agents', '.history', 'attach
 interface SessionTarget { sessionId: string; host: string }
 interface PanelMessage {
   type?: string; tab?: unknown; url?: unknown; sessionId?: unknown; host?: unknown; path?: unknown;
-  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown; dir?: unknown; shown?: unknown;
+  targets?: SessionTarget[]; tokens?: unknown; ref?: unknown; key?: unknown; value?: unknown; group?: unknown; id?: unknown; text?: unknown; repo?: unknown; number?: unknown; name?: unknown; agent?: unknown; where?: unknown; focus?: unknown; here?: unknown; answer?: unknown; sha?: unknown; choice?: unknown; field?: unknown; external?: unknown; dir?: unknown; shown?: unknown; topic?: unknown; from?: unknown;
 }
 
 interface TabState {
@@ -177,6 +177,10 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'select' && typeof msg.sessionId === 'string') opened(this.controller.select(msg.sessionId, host, msg.focus === true ? (msg.answer === true ? 'always' : 'card') : 'no'));
       else if (msg.type === 'favorite' && typeof msg.sessionId === 'string' && typeof msg.value === 'boolean') void this.controller.setFavorite(msg.sessionId, msg.value);
       else if (msg.type === 'rename' && typeof msg.sessionId === 'string' && typeof msg.name === 'string') this.controller.rename(msg.sessionId, msg.name);
+      else if (msg.type === 'setTopic' && typeof msg.sessionId === 'string' && typeof msg.topic === 'string') {
+        const from = typeof msg.from === 'string' ? msg.from : '';
+        void this.controller.setTopic(msg.sessionId, msg.topic).then((r) => view.webview.postMessage({ type: 'topicSet', sessionId: msg.sessionId, topic: msg.topic, from, ...r }));
+      }
       else if (msg.type === 'openSession' && typeof msg.sessionId === 'string') void this.controller.goToSession(msg.sessionId, host);
       else if (msg.type === 'search') void this.openPalette();
       else if (msg.type === 'paletteClosed') this.paletteOpen = false;
@@ -1038,6 +1042,25 @@ class ProjectPanelController {
     if (typed) void this.view.notice(`Typed /rename ${typed} into its tab; the title changes when the session reports it.`);
   }
 
+  /** A card dropped on another topic's section: one `agents ps topic`, which stores it on the
+   *  machine that owns the session; the card moves when the stream reports the new topic. */
+  async setTopic(sessionId: string, topic: string): Promise<{ ok: boolean; error?: string }> {
+    const answer = (out: string | undefined): { ok: boolean; error?: string } | null => {
+      const line = (out ?? '').trim().split('\n').filter(Boolean).pop();
+      if (!line) return null;
+      try { const r = JSON.parse(line) as { ok?: boolean; error?: string }; return { ok: r.ok === true, ...(r.error ? { error: r.error } : {}) }; } catch { return null; }
+    };
+    try {
+      const { stdout } = await runAgentsArgs(['ps', 'topic', sessionId, topic, '--json'], { timeout: 30_000 });
+      return answer(stdout) ?? { ok: false, error: 'agents ps topic gave no answer' };
+    } catch (e) {
+      const { stdout, stderr } = e as { stdout?: string; stderr?: string };
+      // This CLI, or the one on the machine that owns the session, predates `ps topic`.
+      if (/unknown command 'topic'|too many arguments for 'ps'/.test(`${stderr ?? ''}${errorText(e)}`)) return { ok: false, error: 'Moving a session needs a newer agents-cli where it runs. Run `agents upgrade`.' };
+      return answer(stdout) ?? { ok: false, error: errorText(e).split('\n')[0] || 'agents ps topic failed' };
+    }
+  }
+
   async moveSection(group: string, dir: 'up' | 'down', shown: string[]): Promise<void> {
     await this.savePrefs({ ...this.prefs(), order: moveSection(shown, group, dir) });
   }
@@ -1479,6 +1502,10 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   /* A renamable title hugs its words, so the rest of the row still selects the card. */
   .card .top .ttl.rn { flex: 0 1 auto; margin-right: auto; cursor: text; border-radius: 4px; } .card .ttl.rn:hover { background: var(--r-glass-hover); }
   .card .top .ttl.rn:has(input) { flex: 1; }
+  /* A dragged card, and the topic section it would land in (owner video, 2026-11-24 5:00 PM). */
+  .card.dragging { opacity: .4; }
+  .grp.drop { outline: 1px dashed var(--r-gold-line); outline-offset: 2px; border-radius: 8px; }
+  .grp.drop > .gh::after { content: 'Move here'; margin-left: auto; font-size: 10.5px; font-weight: 500; color: var(--r-gold-line); }
   .gneed { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: var(--r-warn); }
   .fc-acts { display: none; gap: 2px; flex: none; } .card.front:is(:hover, :focus-within, :has(.cmore[open])) .fc-acts { display: flex; }
   .card.front .fc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -2004,6 +2031,30 @@ ${MADE_SCRIPT}
     const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); if (moved) vscode.setState(Object.assign({}, vscode.getState() || {}, { fcH: h })); };
     grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
   });
+  // Drag a listed card onto another topic's section: one setTopic, and the card moves when the
+  // stream reports the new topic (PHNX-4676). Only sections named by a topic take a drop.
+  let dragged = null;
+  const dropOn = (e) => { const g = e.target.closest && e.target.closest('section.grp[data-topic]'); return dragged && g && g.dataset.topic !== dragged.from ? g : null; };
+  const clearDrop = () => main.querySelectorAll('section.grp.drop').forEach((g) => g.classList.remove('drop'));
+  main.addEventListener('dragstart', (e) => {
+    const card = e.target.closest && e.target.closest('.card[draggable="true"]'); if (!card) return;
+    const from = card.closest('section.grp');
+    dragged = { card, sessionId: card.dataset.session, from: (from && from.dataset.topic) || '' };
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', card.dataset.title || '');
+  });
+  main.addEventListener('dragover', (e) => {
+    const g = dropOn(e); if (!g) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    if (!g.classList.contains('drop')) { clearDrop(); g.classList.add('drop'); }
+  });
+  main.addEventListener('dragleave', (e) => { const g = e.target.closest && e.target.closest('section.grp.drop'); if (g && !g.contains(e.relatedTarget)) g.classList.remove('drop'); });
+  main.addEventListener('drop', (e) => {
+    const g = dropOn(e); if (!g) return;
+    e.preventDefault(); clearDrop();
+    vscode.postMessage({ type: 'setTopic', sessionId: dragged.sessionId, topic: g.dataset.topic, from: dragged.from });
+  });
+  main.addEventListener('dragend', () => { if (dragged) dragged.card.classList.remove('dragging'); dragged = null; clearDrop(); });
   main.addEventListener('dblclick', (e) => {
     if (!(e.target.closest && e.target.closest('.fc-grip'))) return;
     const st = Object.assign({}, vscode.getState() || {}); delete st.fcH; vscode.setState(st); applyFrontHeight();
@@ -2240,6 +2291,10 @@ ${MADE_SCRIPT}
     else if (m.type === 'idle') document.body.classList.remove('loading');
     else if (m.type === 'peek') { peeked = m.id; scrollToPeek = true; drawPeek(); }
     else if (m.type === 'notice') note(m.text);
+    else if (m.type === 'topicSet') {
+      if (!m.ok) note(m.error || 'Could not move the session.');
+      else note('Moved to ' + m.topic, m.from ? () => { vscode.postMessage({ type: 'setTopic', sessionId: m.sessionId, topic: m.from }); hideNote(); } : undefined);
+    }
     else if (m.type === 'opened') { for (const b of document.querySelectorAll('[aria-busy="true"]')) b.removeAttribute('aria-busy'); }
     else if (m.type === 'replyResult') showReplyError(main.querySelector('.card.front .reply-box'), m.ok ? '' : (m.error || 'Reply failed'));
     else if (m.type === 'dictation') {

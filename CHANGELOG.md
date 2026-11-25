@@ -4,6 +4,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.448] - 2026-11-24
+
+- Drag a session's card onto another topic's section to move it there. The section you would
+  drop on gets a dashed outline; on the drop, agents-cli files the session under that topic on
+  the machine it runs on (`agents ps topic`, agents-cli 1.23.54 or later), and the card moves
+  when the stream reports it. "Moved to <topic>" with Undo floats at the panel's foot. The topic
+  you pick stays: the title job never changes it back. Cards drag only while sessions are
+  grouped by topic; the pinned card and ended sessions don't move.
+
 ## [0.9.447] - 2026-11-24
 
 - Rename a session by clicking its title, on the pinned card and on every card in the list.

@@ -344,7 +344,12 @@ going on, where, and what came out of it" in one look; text explains only what a
   section takes its slots in the chosen order, a new one keeps its own; Settings resets it).
   ⇅ > Sections picks Needs you first (the default) or Your order: under Needs you first a
   section holding your move goes above the rest, the most pressing ask first, its header
-  saying "N need you" beside its count (owner video, 2026-11-24 5:00 PM); and
+  saying "N need you" beside its count and without ↑ ↓, since the order would not hold
+  (owner video, 2026-11-24 5:00 PM). A listed live card drags onto another topic's section
+  (dashed outline on the target): one `agents ps topic <id> <topic> --json`, which files it
+  there on its owning machine for good, and the card moves when the stream reports it; Undo
+  at the panel's foot moves it back (PHNX-4676). The extension still names no topic: it only
+  passes on the one you dropped onto; and
   a header click always folds it, the front tab's group too, since the pinned card shows that
   session (owner, 2026-11-16 2:43-2:44 AM). Ended is off until Settings > Sessions > Ended
   sessions asks for the last 10, 25 or all, and a capped Ended counts the rest, which ⌘K finds.
