@@ -1477,7 +1477,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .card.front > .top .ttl { line-height: 17px; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .card.front .ttl.cp { cursor: copy; border-radius: 4px; } .card.front .ttl.cp:hover { background: var(--r-glass-hover); }
   /* A renamable title hugs its words, so the rest of the row still selects the card. */
-  .card .top .ttl.rn { flex: 0 1 auto; margin-right: auto; cursor: text; border-radius: 4px; } .card .ttl.rn:hover { background: var(--r-glass-hover); box-shadow: 0 0 0 2px var(--r-glass-hover); }
+  .card .top .ttl.rn { flex: 0 1 auto; margin-right: auto; cursor: text; border-radius: 4px; } .card .ttl.rn:hover { background: var(--r-glass-hover); }
   .card .top .ttl.rn:has(input) { flex: 1; }
   .gneed { margin-left: 6px; font-size: 10.5px; font-weight: 500; color: var(--r-warn); }
   .fc-acts { display: none; gap: 2px; flex: none; } .card.front:is(:hover, :focus-within, :has(.cmore[open])) .fc-acts { display: flex; }
@@ -2381,7 +2381,7 @@ ${MADE_SCRIPT}
     }
     if (e.target.closest('.ttl-edit')) return;
     // A title it can rename edits in place, and the click selects nothing (owner video, 2026-11-24 5:56 PM).
-    const ttlRename = e.target.closest('.card .ttl[data-rename="1"]');
+    const ttlRename = !(e.metaKey || e.ctrlKey || e.shiftKey) && e.target.closest('.card .ttl[data-rename="1"]');
     if (ttlRename) { e.preventDefault(); e.stopPropagation(); editTitle(ttlRename); return; }
     // The pinned card's other titles copy the session, as its ⧉ does (owner video, 2026-11-07 7:19 AM).
     const ttlCopy = e.target.closest('.front-pin .ttl.cp');

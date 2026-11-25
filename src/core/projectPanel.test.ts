@@ -385,6 +385,10 @@ test('Needs you first (the default) moves a section with an ask above the rest, 
   expect(groups(needs)).toEqual(['topic:rush content', 'topic:agents cli', 'topic:team performance'])
   expect(needs).toContain('<span class="n">2</span><span class="gneed">2 need you</span>')
   expect(needs).toContain('<span class="n">1</span><span class="gneed">1 needs you</span>')
+  // A section placed by your move has no ↑ ↓ (the order would not hold); the others keep them.
+  const head = (html: string, g: string) => html.slice(html.indexOf(`data-group="${g}"`), html.indexOf('<div class="items">', html.indexOf(`data-group="${g}"`)))
+  expect(head(needs, 'topic:rush content')).not.toContain('data-move')
+  expect(head(needs, 'topic:team performance')).toContain('data-move="up"')
   const mine = renderSessions(rows, NOW, { selectedId: null, here: HERE, prefs: prefs({ order, sections: 'order' }) })
   expect(groups(mine)).toEqual(order)
   // The ⇅ menu offers both, checked as set.
