@@ -99,6 +99,17 @@ test('the pointer on a card shows it in the panel, and leaving the page gives th
   expect(sent).toEqual([{ type: 'peek', sessionId: 'b', host: 'this-mac' }, { type: 'peek' }]);
 });
 
+test('after the tab hides, the same card peeks again', async () => {
+  const over = () => $$('.card[data-session="c"] .top')[0]!.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }) as unknown as Event);
+  over();
+  await new Promise((r) => setTimeout(r, 200));
+  window.dispatchEvent(new window.Event('blur'));
+  sent.length = 0;
+  over();
+  await new Promise((r) => setTimeout(r, 200));
+  expect(sent).toEqual([{ type: 'peek', sessionId: 'c', host: 'this-mac' }]);
+});
+
 test('a card shows its last three steps, a recap without its label', () => {
   const steps = $$('.card[data-session="b"] .bsteps li').map((li) => li.querySelector('.fc-at')!.textContent);
   expect(steps).toEqual(['Ran 4 commands', 'You Ship it?', 'you asked to ship it, and it is merged.']);
@@ -117,6 +128,10 @@ test('the panel pins the session under the pointer in place of the front tab’s
   const panel = renderSessions(rows, NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, peek: { sessionId: 'c', host: 'this-mac' } });
   expect(panel).toMatch(/<div class="front-pin"><div class="card [^"]*front[^"]*"[^>]*data-session="c"/);
   expect(renderSessions(rows, NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, board: true, peek: { sessionId: 'c', host: 'this-mac' } })).not.toContain('front-pin');
+  // A peek at a session no longer listed (it left the project, or the project changed) gives the pin back to the front tab.
+  const tabs = rows.map((r) => (r.sessionId === 'a' ? { ...r, tabHere: true } : r));
+  expect(renderSessions(tabs, NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, peek: { sessionId: 'gone', host: 'this-mac' } }))
+    .toMatch(/<div class="front-pin"><div class="card [^"]*front[^"]*"[^>]*data-session="a"/);
 });
 
 test('a ready PR’s ring arms Review’s merge (Undo first) and goes nowhere', () => {

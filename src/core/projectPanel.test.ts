@@ -648,7 +648,7 @@ test('the pinned card: an ask from its own agent comes first, then Claude\'s rec
     attention: { key: 'zion/q/1', kind: 'question', state: 'open', openedAt: at(5), question: { text: 'Release now?' }, choices: [{ id: 'yes', label: 'Yes' }] }, timeline: { steps, earlier: { steps: 12 } } })
   const shelf = { artifacts: [], sessionLocal: false, ticket: { id: 'PHNX-1' } }
   const html = renderSessions([asking], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs(), shelfFor: (s) => (s.sessionId === 'q' ? shelf : null) })
-  const order = ['class="ttl', 'data-ask="zion/q/1"', 'Recap · 20 min ago', 'Activity', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
+  const order = ['class="ttl', 'data-ask="zion/q/1"', 'class="fc-recap"', '<time>20m</time>', 'Activity', 'class="fc-made" data-keep data-made="{&quot;artifacts&quot;:[],&quot;sessionLocal&quot;:false,&quot;ticket&quot;:{&quot;id&quot;:&quot;PHNX-1&quot;}}"', 'class="fc-reply" data-keep'].map((x) => html.indexOf(x))
   expect(order.every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
   expect(html).toMatch(/class="card st-asks front"/)
   expect(html).toContain('data-choice="yes"')
@@ -657,9 +657,10 @@ test('the pinned card: an ask from its own agent comes first, then Claude\'s rec
   expect(html).toContain('<ol tabindex="0" aria-label="Activity, newest last"><li class="fc-earlier">12 earlier steps</li>')
   expect([1, 2, 3, 4, 5].map((i) => html.indexOf(`step ${i}<`)).every((x, i, a) => x > 0 && (i === 0 || x > a[i - 1]))).toBe(true)
   expect(html).toContain('<span class="fc-you">You</span> step 4')
-  // You wrote after the recap: it says so.
+  // You wrote after the recap: it is dimmed and its hover says so.
   const stale = renderSessions([{ ...asking, userTurns: [{ atMs: NOW - 60_000 }] }], NOW, { selectedId: null, frontId: 'q', here: HERE, prefs: prefs() })
-  expect(stale).toContain('<div class="fc-recap stale"><div class="fc-k">Recap · 20 min ago<span class="fc-old">before your last message</span>')
+  expect(stale).toContain('<div class="fc-recap stale" title="Claude&#39;s recap, 20 min ago, before your last message')
+  expect(stale).not.toContain('Recap ·')
   // No recap (another harness, or none yet): the agent's latest words, as on every card.
   const plain = renderSessions([row({ sessionId: 'p', tabHere: true, tabIndex: 1, lastResponse: 'Done with the docs.' })], NOW, { selectedId: null, frontId: 'p', here: HERE, prefs: prefs() })
   expect(plain).not.toContain('fc-recap')

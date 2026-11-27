@@ -1,8 +1,9 @@
 // What a session made, as one row of chips that scrolls sideways, on every listed card
-// (owner, 2026-11-26 8:00–8:49 PM, the approved prototype's C3–C8): a page by its headline, every PR with its verdict in words, the PRs its latest
-// reply names first, when the agent last changed each one, whether you have opened it,
-// and a ready PR's merge ring. Pure: the host passes what it read (Review's PR lists) and
-// what this viewer opened.
+// (owner, 2026-11-26 8:00–8:49 PM, the approved prototype's C3–C8): a page by its
+// headline, every PR with its verdict in words, the PRs its latest reply names first,
+// when the agent last changed each one, whether you have opened it, and a ready PR's
+// merge ring. Pure: the host passes what it read (Review's PR lists) and what this
+// viewer opened.
 
 import { escapeHtml, serviceMark } from '../shared/sessionCards';
 import { ageWords } from '../shared/sessionState';
