@@ -61,6 +61,10 @@ describe('parseBrowserHistory', () => {
     expect(recent[1].icon).toBeUndefined();
     expect(recent[1].title).toBe('console.example.com');
   });
+  test('all of it, not the newest 30: the view pages through it', () => {
+    const entries = JSON.stringify({ items: Array.from({ length: 45 }, (_, i) => ({ url: `https://r${i}.example/`, title: `R${i}`, time: 1792500000000 - i })) });
+    expect(parseBrowserHistory(entries, null).length).toBe(45);
+  });
   test('missing or broken storage reads as no history', () => {
     expect(parseBrowserHistory(null, null)).toEqual([]);
     expect(parseBrowserHistory('{not json', null)).toEqual([]);

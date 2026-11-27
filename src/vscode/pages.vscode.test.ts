@@ -254,6 +254,76 @@ describe('the Pages webview', () => {
     Object.defineProperty($('#tiles'), 'clientWidth', { configurable: true, value: 1000 });
     state('same');
   });
+  test('☆ beside a typed address pins it without opening it; a word or a pinned address gets none', () => {
+    state('same');
+    const q = $('#q') as unknown as HTMLInputElement;
+    const type = (v: string) => { q.value = v; q.dispatchEvent(new window.Event('input') as unknown as Event); };
+    const pinq = $('#pinq') as unknown as HTMLButtonElement;
+    type('example.org/docs');
+    expect(pinq.hidden).toBe(false);
+    expect(pinq.title).toBe('Pin https://example.org/docs');
+    click(pinq);
+    expect(last()).toEqual({ type: 'pin', url: 'https://example.org/docs', title: '', icon: undefined });
+    type('console.example.com');
+    click(pinq);
+    expect(last()).toEqual({ type: 'pin', url: 'https://console.example.com/', title: 'Console', icon: undefined });
+    type('console');
+    expect(pinq.hidden).toBe(true);
+    type('github.com/acme/app');
+    expect(pinq.hidden).toBe(true);
+    type('');
+  });
+  test('Recent shows 30 pages and Show more the next 30, focus on the first one it added', () => {
+    const recent = Array.from({ length: 75 }, (_, i) => ({ url: `https://r${i}.example/`, title: `Page ${i}`, time: Date.now() - i * 1000 }));
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', pins: [], recent });
+    const rows = () => document.querySelectorAll('.row').length;
+    expect(rows()).toBe(30);
+    expect($('#more').textContent).toBe('Show 30 more');
+    click($('#more'));
+    expect(rows()).toBe(60);
+    expect((document.activeElement as unknown as HTMLElement).dataset.open).toBe('https://r30.example/');
+    expect($('#more').textContent).toBe('Show 15 more');
+    click($('#more'));
+    expect(rows()).toBe(75);
+    expect($('#more')).toBeNull();
+    // A new filter starts at 30 again; ↓ off the last row reaches Show more and ↑ comes back.
+    const q = $('#q') as unknown as HTMLInputElement;
+    q.value = 'page'; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    expect(rows()).toBe(30);
+    (document.querySelectorAll('.row')[29] as unknown as HTMLElement).focus();
+    key(document.activeElement as unknown as HTMLElement, 'ArrowDown');
+    expect((document.activeElement as unknown as HTMLElement).id).toBe('more');
+    key(document.activeElement as unknown as HTMLElement, 'ArrowUp');
+    expect((document.activeElement as unknown as HTMLElement).dataset.open).toBe('https://r29.example/');
+    q.value = ''; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    state('same');
+  });
+  test('arrow keys walk focus through your pages, across the page edge, into Recent and back to the search box', () => {
+    Object.defineProperty($('#tiles'), 'clientWidth', { configurable: true, value: 222 });
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', recent: [{ url: 'https://console.example.com/', title: 'Console', time: Date.now() }],
+      pins: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => ({ url: `https://${n}.com/`, name: n, title: n })) });
+    const at = () => (document.activeElement as unknown as HTMLElement);
+    const press = (k: string) => key(at(), k);
+    const focusFace = (url: string) => ([...document.querySelectorAll('.face')].find((f) => (f as unknown as HTMLElement).dataset.open === url) as unknown as HTMLElement).focus();
+    ($('#q') as unknown as HTMLInputElement).focus();
+    press('ArrowDown'); expect(at().dataset.open).toBe('https://a.com/');
+    press('ArrowRight'); expect(at().dataset.open).toBe('https://b.com/');
+    press('ArrowDown'); expect(at().dataset.open).toBe('https://d.com/');
+    press('ArrowLeft'); expect(at().dataset.open).toBe('https://c.com/');
+    press('ArrowRight'); press('ArrowRight');
+    expect(at().dataset.open).toBe('https://e.com/');
+    expect($('.dot.on').getAttribute('aria-label')).toBe('Page 2 of 2');
+    press('ArrowDown'); expect(at().dataset.open).toBe('https://console.example.com/');
+    press('ArrowUp'); expect(at().dataset.open).toBe('https://f.com/');
+    press('ArrowUp'); expect(at().id).toBe('q');
+    // ⌥→ still moves the tile, not the focus.
+    click($('.dot')); focusFace('https://a.com/'); key(at(), 'ArrowLeft'); expect(at().dataset.open).toBe('https://a.com/');
+    at().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
+    expect(last()).toEqual({ type: 'move', url: 'https://a.com/', before: 'https://c.com/' });
+    expect(at().dataset.open).toBe('https://a.com/');
+    Object.defineProperty($('#tiles'), 'clientWidth', { configurable: true, value: 1000 });
+    state('same');
+  });
   test('a hostile title or URL from the history is text, never markup', () => {
     deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', pins: [],
       recent: [{ url: 'https://evil.example/"><img src=x onerror=alert(1)>', title: '<img src=x onerror=alert(1)>', time: Date.now() }] });

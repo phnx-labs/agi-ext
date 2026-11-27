@@ -4,6 +4,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.451] - 2026-11-26
+
+- Pages: type an address and press ☆ at the end of the search box to pin it without opening
+  it first.
+- Recent lists the built-in browser's whole history, 30 pages at a time; Show more adds the
+  next 30.
+- Arrow keys move between your pages: ← → in order (turning the page at its edge), ↑ ↓
+  between the two rows, down into Recent and back up to the search box.
+
 ## [0.9.450] - 2026-11-26
 
 - Pages: typing in the search box filters Recent only; your pinned pages always show. Enter on

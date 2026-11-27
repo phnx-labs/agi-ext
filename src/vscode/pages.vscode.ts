@@ -262,6 +262,11 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .row .age { color: var(--r-faint); font-size: 11.5px; white-space: nowrap; }
   .act { width: 26px; height: 26px; border-radius: 7px; border: 1px solid transparent; background: none; color: var(--r-faint); cursor: pointer; opacity: 0; padding: 0; }
   .row:hover .act, .row:focus-within .act { opacity: 1; border-color: var(--r-edge); }
+  .pinq { flex: none; width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--r-edge); background: none; color: var(--r-text-2); cursor: pointer; padding: 0; }
+  .pinq:hover { background: var(--r-glass-hover); color: var(--r-text); } .pinq[hidden] { display: none; }
+  .pinq:focus-visible, .more:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .more { display: block; width: 100%; padding: 8px 12px; border: 0; border-top: 1px solid var(--r-edge); background: none; color: var(--r-text-2); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+  .more:hover { background: var(--r-glass-hover); color: var(--r-text); }
   .empty { color: var(--r-faint); font-size: 12.5px; padding: 10px 2px; }
   .tiles .empty { grid-column: 1 / -1; }
   /* A short last page keeps both rows' height, so Recent never moves when the page turns. */
@@ -282,7 +287,7 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
 </head>
 <body>
 <main>
-  <label class="search"><input id="q" placeholder="Filter Recent, or type a URL and press Enter" autocomplete="off" aria-label="Filter Recent or enter a URL"><span class="hint" id="hint"></span></label>
+  <label class="search"><input id="q" placeholder="Filter Recent, or type a URL and press Enter" autocomplete="off" aria-label="Filter Recent or enter a URL"><span class="hint" id="hint"></span><button class="pinq" id="pinq" hidden>☆</button></label>
   <h2>Your pages<span class="n" id="npin"></span></h2>
   <div class="tiles" id="tiles"></div>
   <nav class="pager" id="pager" hidden aria-label="Pages of pinned pages"></nav>
@@ -296,12 +301,17 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
 
 const ESCAPE = escapeHtml.toString();
 const MOVE_PIN = movePin.toString();
+const NORMALIZE_URL = normalizePageUrl.toString();
 
 /** The Pages webview's behavior: state in, one message per gesture out. */
 const PAGES_SCRIPT = `(() => {
   const vscode = acquireVsCodeApi();
   const escapeHtml = ${ESCAPE};
   const movePin = ${MOVE_PIN};
+  const normalizePageUrl = ${NORMALIZE_URL};
+  // Recent shows 30 pages, and Show more the next 30.
+  const RECENT_STEP = 30;
+  let shown = RECENT_STEP;
   let state = { pins: [], recent: [], click: 'same', shortcut: '' };
   let editing = null;
   // Your pages fill two rows; more go on further pages, ‹ › and the dots between them.
@@ -349,6 +359,10 @@ const PAGES_SCRIPT = `(() => {
     const mod = state.shortcut.startsWith('Ctrl') ? 'Ctrl+' : '⌘';
     if (Date.now() >= failUntil) $('hint').textContent = state.click === 'same' ? 'Enter opens here · ' + mod + 'Enter in a new tab' : 'Enter opens a new tab · ' + mod + 'Enter here';
     $('npin').textContent = state.pins.length ? String(state.pins.length) : '';
+    // A typed address you have not pinned gets ☆ beside it, so it pins without opening first.
+    const typed = normalizePageUrl($('q').value);
+    const pinq = $('pinq'); pinq.hidden = !typed || state.pins.some((p) => p.url === typed);
+    if (typed) { pinq.dataset.url = typed; pinq.title = 'Pin ' + typed; pinq.setAttribute('aria-label', 'Pin ' + typed); }
     // The filter is for Recent: your pages always show (owner, 2026-11-26 5:58 PM).
     const per = perPage(), pages = pageCount();
     page = Math.min(Math.max(page, 0), pages - 1);
@@ -364,13 +378,15 @@ const PAGES_SCRIPT = `(() => {
         ? '<input class="rename" data-rename="' + escapeHtml(p.url) + '" value="' + escapeHtml(p.name) + '" aria-label="Name"><div class="was">' + escapeHtml(p.title) + '</div>'
         : '<div class="tname" data-edit="' + escapeHtml(p.url) + '" title="Click to rename" role="button" tabindex="0">' + escapeHtml(p.name) + '</div>')
       + '<button class="unpin" data-unpin="' + escapeHtml(p.url) + '" title="Unpin" aria-label="Unpin ' + escapeHtml(p.name) + '">✕</button></div>').join('')
-      || '<div class="empty">Pin a page from Recent with ☆, or type a URL above and pin it from Recent once it opens.</div>';
+      || '<div class="empty">Pin a page from Recent with ☆, or type its address above and press ☆ there.</div>';
     const pinned = new Set(state.pins.map((p) => p.url));
-    const recent = state.recent.filter((p) => !pinned.has(p.url) && match(q, p.title, p.url));
+    const matched = state.recent.filter((p) => !pinned.has(p.url) && match(q, p.title, p.url));
+    const recent = matched.slice(0, shown), more = Math.min(RECENT_STEP, matched.length - recent.length);
     $('recent').innerHTML = state.reason ? '<div class="empty">' + escapeHtml(state.reason) + '</div>'
       : recent.length ? '<div class="rows">' + recent.map((p) => '<div class="row" tabindex="0" data-open="' + escapeHtml(p.url) + '" title="' + escapeHtml(p.url) + '">'
         + icon(p, p.title) + '<div class="t">' + escapeHtml(p.title) + '<span>' + escapeHtml(host(p.url)) + '</span></div><div class="age">' + ago(p.time) + '</div>'
-        + '<button class="act" data-pin="' + escapeHtml(p.url) + '" title="Pin" aria-label="Pin ' + escapeHtml(p.title) + '">☆</button></div>').join('') + '</div>'
+        + '<button class="act" data-pin="' + escapeHtml(p.url) + '" title="Pin" aria-label="Pin ' + escapeHtml(p.title) + '">☆</button></div>').join('')
+        + (more > 0 ? '<button class="more" id="more">Show ' + more + ' more</button>' : '') + '</div>'
       : '<div class="empty">' + (q ? 'Nothing recent matches. Enter opens it as a URL.' : 'Pages you open in the built-in browser show here.') + '</div>';
     for (const img of document.querySelectorAll('img[data-ic]')) { if (img.complete) darken(img); else img.addEventListener('load', () => darken(img), { once: true }); }
     const r = document.querySelector('.rename'); if (r) { r.focus(); r.select(); }
@@ -388,12 +404,61 @@ const PAGES_SCRIPT = `(() => {
   document.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('.rename')) return;
+    if (t.closest('#pinq')) { pinTyped(); return; }
+    if (t.closest('#more')) { showMore(); return; }
     const pg = t.closest('[data-page]'); if (pg) { if (!pg.disabled) turnTo(Number(pg.dataset.page), pg); return; }
     const ed = t.closest('[data-edit]'); if (ed) { editing = ed.dataset.edit; draw(); return; }
     const un = t.closest('[data-unpin]'); if (un) { vscode.postMessage({ type: 'unpin', url: un.dataset.unpin }); return; }
     const pn = t.closest('[data-pin]'); if (pn) { const p = state.recent.find((x) => x.url === pn.dataset.pin); if (p) vscode.postMessage({ type: 'pin', url: p.url, title: p.title, icon: p.icon }); return; }
     const op = t.closest('[data-open]'); if (op) open(op.dataset.open, e.metaKey || e.ctrlKey, op.closest('.face') || op);
   });
+  function pinTyped() {
+    const url = $('pinq').dataset.url; if (!url || $('pinq').hidden) return;
+    const seen = state.recent.find((x) => x.url === url);
+    vscode.postMessage({ type: 'pin', url, title: seen ? seen.title : '', icon: seen ? seen.icon : undefined });
+    $('pinq').hidden = true; $('q').focus();
+  }
+  // The first page Show more added takes focus, so the keyboard carries on where it was.
+  function showMore() {
+    const at = document.querySelectorAll('.row[data-open]').length;
+    shown += RECENT_STEP; draw();
+    const row = document.querySelectorAll('.row[data-open]')[at]; if (row) row.focus();
+  }
+  // Arrow keys walk focus: ← → through your pages in order (turning the page at its edge), ↑ ↓ between
+  // the two rows, on into Recent and back up to the search box.
+  function focusPin(i) {
+    const p = state.pins[i]; if (!p) return;
+    const to = Math.floor(i / perPage()); if (to !== page) { page = to; draw(); }
+    const f = [...document.querySelectorAll('.face')].find((x) => x.dataset.open === p.url); if (f) f.focus();
+  }
+  function walk(e) {
+    const k = e.key;
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(k) || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return false;
+    const t = e.target, rows = [...document.querySelectorAll('.row[data-open]')];
+    const firstRow = () => { if (rows[0]) rows[0].focus(); };
+    if (t === $('q')) { if (k !== 'ArrowDown') return false; if (state.pins.length) focusPin(page * perPage()); else firstRow(); return true; }
+    const face = t.closest && t.closest('.face');
+    if (face) {
+      const i = state.pins.findIndex((x) => x.url === face.dataset.open), per = perPage(), cols = per / ROWS;
+      const j = i - page * per, onPage = Math.min(per, state.pins.length - page * per);
+      if (k === 'ArrowLeft') focusPin(i - 1);
+      else if (k === 'ArrowRight') focusPin(i + 1);
+      else if (k === 'ArrowUp') { if (j >= cols) focusPin(i - cols); else $('q').focus(); }
+      else if (j < cols && onPage > cols) focusPin(page * per + Math.min(j + cols, onPage - 1));
+      else firstRow();
+      return true;
+    }
+    const row = t.closest && t.closest('.row[data-open]');
+    if (row && (k === 'ArrowUp' || k === 'ArrowDown')) {
+      const n = rows.indexOf(row) + (k === 'ArrowDown' ? 1 : -1);
+      if (rows[n]) rows[n].focus();
+      else if (n < 0) { if (state.pins.length) focusPin(Math.min(state.pins.length, page * perPage() + perPage()) - 1); else $('q').focus(); }
+      else { const m = $('more'); if (m) m.focus(); }
+      return true;
+    }
+    if (t === $('more') && k === 'ArrowUp') { if (rows.length) rows[rows.length - 1].focus(); return true; }
+    return false;
+  }
   // Drag a tile onto another to put it there; ⌥← ⌥→ on a focused tile moves it past the tile beside it.
   function move(url, before) {
     const pins = movePin(state.pins, url, before); if (pins === state.pins) return;
@@ -474,6 +539,7 @@ const PAGES_SCRIPT = `(() => {
   }).observe($('tiles'));
   $('tiles').addEventListener('dragend', () => { dragged = null; clearDrop(); document.querySelectorAll('.tile.dragging').forEach((t) => t.classList.remove('dragging')); });
   document.addEventListener('keydown', (e) => {
+    if (walk(e)) { e.preventDefault(); return; }
     const face = e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.closest && e.target.closest('.face');
     if (face) {
       e.preventDefault();
@@ -492,7 +558,8 @@ const PAGES_SCRIPT = `(() => {
     if (row && e.key === 'Enter') open(row.dataset.open, e.metaKey || e.ctrlKey, row);
   });
   document.addEventListener('focusout', (e) => { const r = e.target.closest && e.target.closest('.rename'); if (r && editing) commit(r); });
-  $('q').addEventListener('input', draw);
+  // A new filter starts Recent at 30 again.
+  $('q').addEventListener('input', () => { shown = RECENT_STEP; draw(); });
   $('q').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const v = $('q').value.trim(); if (!v) return;
