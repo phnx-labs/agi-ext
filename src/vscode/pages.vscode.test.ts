@@ -99,8 +99,10 @@ describe('the Pages webview', () => {
   const script = page.match(/<script[^>]*>([\s\S]*?)<\/script[^>]*>/i)![1];
   // The page's timers are its window's, so closing the window ends them (a refusal's 4 s
   // timer otherwise fires into whichever test runs next).
-  new Function('window', 'document', 'acquireVsCodeApi', 'setTimeout', 'clearTimeout', script)(
-    window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }), window.setTimeout.bind(window), window.clearTimeout.bind(window));
+  new Function('window', 'document', 'acquireVsCodeApi', 'setTimeout', 'clearTimeout', 'ResizeObserver', script)(
+    window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }), window.setTimeout.bind(window), window.clearTimeout.bind(window), window.ResizeObserver);
+  // happy-dom lays nothing out; a wide box keeps every test's pins on one page.
+  Object.defineProperty(document.getElementById('tiles'), 'clientWidth', { configurable: true, value: 1000 });
   const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));
   const $ = (sel: string) => document.querySelector(sel) as unknown as HTMLElement;
   const click = (el: HTMLElement, meta = false) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, metaKey: meta }) as unknown as Event);
@@ -154,24 +156,27 @@ describe('the Pages webview', () => {
     state('same');
     const names = () => [...document.querySelectorAll('.tname')].map((e) => e.textContent);
     const tile = (i: number) => document.querySelectorAll('.tile')[i] as unknown as HTMLElement;
-    const drag = (type: string, el: HTMLElement, clientX = 0) => {
+    // Aims at a half of the tile's box, whatever geometry this window's elements report.
+    const drag = (type: string, el: HTMLElement, half: 'left' | 'right' = 'left') => {
       const e = new window.Event(type, { bubbles: true, cancelable: true }) as unknown as DragEvent;
-      Object.assign(e, { clientX, dataTransfer: { setData() {}, effectAllowed: '', dropEffect: '' } });
+      const box = el.getBoundingClientRect();
+      Object.assign(e, { clientX: box.left + (half === 'right' ? box.width * 0.75 + 1 : box.width * 0.25 - 1), dataTransfer: carrying });
       el.dispatchEvent(e as unknown as Event);
       return e;
     };
-    // happy-dom lays nothing out: every box is 0 wide, so x > 0 is the right half and x < 0 the left.
+    // One drag's data, as the browser keeps it from dragstart to drop.
+    const carrying = { types: [] as string[], setData(t: string) { if (!this.types.includes(t)) this.types.push(t); }, effectAllowed: '', dropEffect: '' };
     drag('dragstart', tile(0));
     expect(tile(0).classList.contains('dragging')).toBe(true);
-    expect(drag('dragover', tile(1), 5).defaultPrevented).toBe(true);
+    expect(drag('dragover', tile(1), 'right').defaultPrevented).toBe(true);
     expect(tile(1).classList.contains('drop-after')).toBe(true);
-    drag('drop', tile(1), 5);
+    drag('drop', tile(1), 'right');
     drag('dragend', tile(1));
     expect(last()).toEqual({ type: 'move', url: 'https://github.com/acme/app', before: null });
     expect(names()).toEqual(['Plan', 'RUSH']);
     drag('dragstart', tile(1));
-    expect(drag('dragover', tile(1), -5).defaultPrevented).toBe(false);
-    drag('drop', tile(0), -5);
+    expect(drag('dragover', tile(1), 'left').defaultPrevented).toBe(false);
+    drag('drop', tile(0), 'left');
     expect(last()).toEqual({ type: 'move', url: 'https://github.com/acme/app', before: 'file:///Users/me/plan.html' });
     expect(names()).toEqual(['RUSH', 'Plan']);
     const face = $('.face');
@@ -182,20 +187,71 @@ describe('the Pages webview', () => {
     const sentBefore = sent.length;
     $('.tile:last-child .face').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
     expect(sent.length).toBe(sentBefore);
-    // After a drop the drag is over: a drag from outside the page moves nothing.
-    expect(drag('dragover', tile(0), 5).defaultPrevented).toBe(false);
+    // After a drop the drag is over, and a drag from outside the page carries no pin: neither moves anything.
+    expect(drag('dragover', tile(0), 'right').defaultPrevented).toBe(false);
+    carrying.types = ['text/plain'];
+    expect(drag('dragover', tile(0), 'right').defaultPrevented).toBe(false);
     state('same');
   });
-  test('⌥← ⌥→ step past the tile beside it on screen, skipping pins the filter hides', () => {
-    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', recent: [], pins: ['alpha', 'hidden', 'beta'].map((n) => ({ url: `https://${n}.com/`, name: n, title: n })) });
+  test('typing filters Recent only: your pages always show, and Enter on a word opens the first recent match', () => {
+    state('same');
     const q = $('#q') as unknown as HTMLInputElement;
-    q.value = 'a'; q.dispatchEvent(new window.Event('input') as unknown as Event);
-    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['alpha', 'beta']);
-    $('.face').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
-    expect(last()).toEqual({ type: 'move', url: 'https://alpha.com/', before: null });
-    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['beta', 'alpha']);
+    q.value = 'console'; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['RUSH', 'Plan']);
+    expect([...document.querySelectorAll('.row')].map((e) => (e as unknown as HTMLElement).dataset.open)).toEqual(['https://console.example.com/']);
+    q.value = 'zzz'; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['RUSH', 'Plan']);
+    q.value = 'console'; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    key(q as unknown as HTMLElement, 'Enter');
+    expect(last()).toEqual({ type: 'open', url: 'https://console.example.com/', newTab: false });
     q.value = ''; q.dispatchEvent(new window.Event('input') as unknown as Event);
-    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['hidden', 'beta', 'alpha']);
+  });
+  test('your pages fill two rows, then turn pages with ‹ › and the dots; a tile moved past the edge takes the page with it', () => {
+    // Two 104 px columns fit in 222 px, so a page holds four.
+    Object.defineProperty($('#tiles'), 'clientWidth', { configurable: true, value: 222 });
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', recent: [], pins: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => ({ url: `https://${n}.com/`, name: n, title: n })) });
+    const names = () => [...document.querySelectorAll('.tname')].map((e) => e.textContent);
+    expect(names()).toEqual(['a', 'b', 'c', 'd']);
+    expect(document.querySelectorAll('.dot').length).toBe(2);
+    expect(($('.pg') as unknown as HTMLButtonElement).disabled).toBe(true);
+    click($('.pg[title="Next"]'));
+    expect(names()).toEqual(['e', 'f']);
+    expect($('.dot.on').getAttribute('aria-label')).toBe('Page 2 of 2');
+    click($('.dot'));
+    expect(names()).toEqual(['a', 'b', 'c', 'd']);
+    $('.tile:last-child .face').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
+    expect(last()).toEqual({ type: 'move', url: 'https://d.com/', before: 'https://f.com/' });
+    expect(names()).toEqual(['d', 'f']);
+    expect((document.activeElement as unknown as HTMLElement).dataset.open).toBe('https://d.com/');
+    // ‹ keeps focus where it is after turning the page.
+    const prev = $('.pg') as unknown as HTMLButtonElement; prev.focus(); click(prev);
+    expect(names()).toEqual(['a', 'b', 'c', 'e']);
+    expect((document.activeElement as unknown as HTMLElement).classList.contains('dot')).toBe(true);
+    // One sideways swipe turns one page however long its momentum runs; a vertical scroll turns none.
+    const wheel = (dx: number, dy = 0) => $('#tiles').dispatchEvent(new window.WheelEvent('wheel', { deltaX: dx, deltaY: dy, bubbles: true, cancelable: true }) as unknown as Event);
+    wheel(0, 120);
+    expect(names()).toEqual(['a', 'b', 'c', 'e']);
+    wheel(40); wheel(40);
+    expect(names()).toEqual(['d', 'f']);
+    wheel(80); wheel(80);
+    expect($('.dot.on').getAttribute('aria-label')).toBe('Page 2 of 2');
+    // A dragged tile held over ‹ turns the page only once it has rested there.
+    const carrying = { types: ['application/x-agents-pin'], setData() {}, effectAllowed: '', dropEffect: '' };
+    const over = (el: HTMLElement) => { const e = new window.Event('dragover', { bubbles: true, cancelable: true }); Object.assign(e, { dataTransfer: carrying }); el.dispatchEvent(e as unknown as Event); };
+    const start = new window.Event('dragstart', { bubbles: true }); Object.assign(start, { dataTransfer: carrying });
+    $('.tile').dispatchEvent(start as unknown as Event);
+    over($('.pg'));
+    over($('.pg'));
+    expect(names()).toEqual(['d', 'f']);
+    const realNow = Date.now; Date.now = () => realNow() + 600;
+    over($('.pg'));
+    Date.now = realNow;
+    expect(names()).toEqual(['a', 'b', 'c', 'e']);
+    $('#tiles').dispatchEvent(new window.Event('dragend', { bubbles: true }) as unknown as Event);
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', recent: [], pins: ['a', 'b'].map((n) => ({ url: `https://${n}.com/`, name: n, title: n })) });
+    expect(names()).toEqual(['a', 'b']);
+    expect(($('#pager') as unknown as HTMLElement).hidden).toBe(true);
+    Object.defineProperty($('#tiles'), 'clientWidth', { configurable: true, value: 1000 });
     state('same');
   });
   test('a hostile title or URL from the history is text, never markup', () => {
