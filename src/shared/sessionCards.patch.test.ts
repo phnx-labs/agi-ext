@@ -102,15 +102,16 @@ test('the pinned card takes a new recap and step while its reply box keeps the d
   expect(root.querySelector('.fc-act')!.textContent).toContain('step two')
 })
 
-test('a recap older than your last message is dimmed and says so; a newer one is not', () => {
+test('a recap reads as a step with its age and no label; older than your last message, it is dimmed and its hover says so', () => {
   const html = (lastUser: number) => renderSessionCard(row({ sessionId: 'f', tabHere: true, recap: { text: 'R', at: new Date(NOW - 600_000).toISOString() }, userTurns: [{ atMs: lastUser }] }), sessionPlace(row({ tabHere: true }), HERE), NOW, { selected: false, front: true, pinned: true, thumbs: [], made: null, here: HERE })
   const root = document.createElement('main')
   patchChildren(root, html(NOW - 60_000))
   expect(root.querySelector('.fc-recap')!.classList.contains('stale')).toBe(true)
-  expect(root.querySelector('.fc-recap .fc-k')!.textContent).toBe('Recap · 10 min agobefore your last message')
+  expect(root.querySelector('.fc-recap')!.textContent).toBe('10mR')
+  expect(root.querySelector('.fc-recap')!.getAttribute('title')).toBe("Claude's recap, 10 min ago, before your last message\nR")
   patchChildren(root, html(NOW - 900_000))
   expect(root.querySelector('.fc-recap')!.classList.contains('stale')).toBe(false)
-  expect(root.querySelector('.fc-old')).toBeNull()
+  expect(root.querySelector('.fc-recap')!.getAttribute('title')).toBe("Claude's recap, 10 min ago\nR")
 })
 
 // REPLY_SCRIPT, as both panels run it: a draft belongs to its session, so a box the

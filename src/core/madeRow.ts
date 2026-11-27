@@ -1,6 +1,5 @@
-// What a session made, as one row of chips that scrolls sideways, on every listed card and
-// in the Sessions tab's drawer (owner, 2026-11-26 8:00–8:49 PM, the approved prototype's
-// C3–C8): a page by its headline, every PR with its verdict in words, the PRs its latest
+// What a session made, as one row of chips that scrolls sideways, on every listed card
+// (owner, 2026-11-26 8:00–8:49 PM, the approved prototype's C3–C8): a page by its headline, every PR with its verdict in words, the PRs its latest
 // reply names first, when the agent last changed each one, whether you have opened it,
 // and a ready PR's merge ring. Pure: the host passes what it read (Review's PR lists) and
 // what this viewer opened.
@@ -42,8 +41,6 @@ export interface MadeItem {
   merge?: { repo: string; number: number; sha?: string };
   /** Named in its latest reply: first in the row, marked “. */
   mention: boolean;
-  /** An image: the card shows it as a preview, so only the drawer lists it. */
-  image?: boolean;
   atMs?: number;
   read: ReadState;
 }
@@ -83,8 +80,8 @@ export interface MadeInput {
   prs: PullRequestRef[];
   main?: Pick<RemotePrStatus, 'url' | 'number' | 'state' | 'isDraft' | 'checks' | 'mergeable' | 'review' | 'headSha' | 'title'>;
   touched: { url: string; number: number; repo?: string; action: string }[];
-  /** Pages, docs and images (`image`: the card previews those, so only the drawer lists them). */
-  files: { path: string; name: string; title?: string; editedAtMs?: number; image?: boolean }[];
+  /** Pages and docs; images are the card's previews, never chips. */
+  files: { path: string; name: string; title?: string; editedAtMs?: number }[];
   /** Its latest words: the reply, the newest step and the recap. */
   said: string;
   fact: (urlLower: string) => PrFact | undefined;
@@ -125,7 +122,6 @@ export function madeItems(m: MadeInput): MadeItem[] {
   const pages = [...m.files].sort((a, b) => (b.editedAtMs ?? 0) - (a.editedAtMs ?? 0)).map((f): MadeItem => ({
     kind: 'page', key: f.path, path: f.path, label: f.title || f.name,
     tip: `${f.title ? `${f.title}\n` : ''}${f.path}`, mention: false, atMs: f.editedAtMs, read: readState(f.editedAtMs, m.opened(f.path), m.since),
-    ...(f.image ? { image: true } : {}),
   }));
   // Named in its latest reply first, then what it made, newest first.
   return [...prItems.filter((i) => i.mention), ...prItems.filter((i) => !i.mention), ...pages];
@@ -148,21 +144,4 @@ export function madeChip(i: MadeItem, now: number, ring: (merge: NonNullable<Mad
   const attrs = i.kind === 'pr' ? `data-url="${escapeHtml(i.url!)}"` : `data-artifact="${escapeHtml(i.path!)}"`;
   const chip = `<a class="${cls}" href="#" ${attrs} data-made-key="${escapeHtml(i.key)}" title="${escapeHtml(tip)}">${head}${body}${changed ? `<span class="mwhen">${escapeHtml(changed)}</span>` : ''}</a>`;
   return i.merge ? `<span class="mi-pr">${chip}${ring(i.merge)}</span>` : chip;
-}
-
-/** The drawer's Made list: one line per item with its headline, its state in words, when it
- *  changed and whether you opened it ("Never opened", "Changed 10 min ago, after you opened it"). */
-export function madeList(items: MadeItem[], now: number, ring: (merge: NonNullable<MadeItem['merge']>) => string, opened: (key: string) => number | undefined): string {
-  if (!items.length) return '';
-  const line = (i: MadeItem) => {
-    const at = opened(i.key);
-    const seen = i.read === 'new' ? '<b>Never opened</b>' : i.read === 'changed' ? `<b>Changed ${escapeHtml(ageWords(i.atMs!, now))} ago</b>, after you opened it` : at ? `Opened ${escapeHtml(ageWords(at, now))} ago` : '';
-    const meta = [i.word ? `<span class="${i.tone ? `pr-${i.tone}` : ''}">${escapeHtml(i.word)}</span>` : '', i.atMs && i.read !== 'changed' ? `${i.kind === 'pr' ? 'Updated' : 'Changed'} ${escapeHtml(ageWords(i.atMs, now))} ago` : '', seen].filter(Boolean).join(' · ');
-    const attrs = i.kind === 'pr' ? `data-url="${escapeHtml(i.url!)}"` : `data-artifact="${escapeHtml(i.path!)}"`;
-    const name = i.kind === 'pr' ? `${escapeHtml(i.label)} ${escapeHtml(i.tip.split('\n')[0]!.replace(/^[^:]*:\s*/, ''))}` : escapeHtml(i.label);
-    return `<li class="ml r-${i.read}"><a href="#" ${attrs} data-made-key="${escapeHtml(i.key)}">${i.kind === 'pr' ? GITHUB : DOC}<span class="ml-b"><span class="ml-t">${i.read !== 'seen' ? '<i class="rd" aria-hidden="true"></i>' : ''}${i.mention ? '<span class="said-q">“</span>' : ''}${name}</span><span class="ml-m">${meta}</span></span></a>${i.merge ? ring(i.merge) : ''}</li>`;
-  };
-  const named = items.filter((i) => i.mention);
-  const rest = items.filter((i) => !i.mention);
-  return `<div class="dmade">${named.length ? `<div class="fc-k">Named in its latest reply</div><ul>${named.map(line).join('')}</ul>` : ''}${rest.length ? `<div class="fc-k">Made or touched</div><ul>${rest.map(line).join('')}</ul>` : ''}</div>`;
 }

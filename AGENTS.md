@@ -140,9 +140,13 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   `sessionCards.patch.test.ts` runs the real patch in happy-dom).
 - The Sessions tab (⌘⇧K, `ProjectPanelController.openBoard`) is a second `ProjectView` in board
   mode drawing into an editor tab: the same `renderSessions` cards as a grid with no pinned
-  card, the same page script and message handler, Sessions only. A card click opens its
-  drawer (`drawerHtml`) and fronts no tab (an answer from the drawer selects its session, as the
-  pinned card's does); its stream demand is its own
+  card, the same page script and message handler, Sessions only; a card there carries its last
+  three steps under its question (`lastSteps`). One click on a live card goes to the session as
+  ↗ does (`goToSession`; owner, 2026-11-27 9:46 AM: "I have to click twice"); the card the
+  pointer rests on is the Project panel's pinned card in place of the front tab's
+  (`ProjectPanelController.peek`, `SessionListOptions.peek`), and no tab comes forward until a
+  click; leaving the page or hiding the tab gives the pinned card back to the front tab. Its
+  stream demand is its own
   (`setProjectSessionsVisible(…, 'board')`). When the viewer opened each PR and page from a
   Made row lives in `globalState` (`agents.made.opened`, newest 3000), with the first run's
   time as the line before which nothing counts as new (`agents.made.since`).
@@ -298,8 +302,8 @@ going on, where, and what came out of it" in one look; text explains only what a
   for every session, which the grip under it sets for this window's panel (owner video,
   2026-11-07 1:29): its title row (the title up to two lines, ✓ Done or Not done, the age, ⧉ and
   ⋯ on hover; a click on the title renames a Claude session with a tab here, as on every card,
-  and otherwise copies the session), its ask, Claude's recap in three lines
-  and every step in a box that scrolls, the Made shelf in one row that scrolls sideways, and a
+  and otherwise copies the session), its ask, Claude's recap as a step with its age and
+  no label, in two lines (owner, 2026-11-27 9:46 AM), and every step in a box that scrolls, the Made shelf in one row that scrolls sideways, and a
   reply box at the bottom. It follows the front tab and nothing else: no ‹ › and no place among
   the tabs (owner video, 2026-11-07 0:04); Agents: Next Agent That Needs You (`nextNeedsYou`,
   `src/core/frontNav.ts`) is a command, and a two-finger sideways swipe over the card fronts
@@ -316,7 +320,7 @@ going on, where, and what came out of it" in one look; text explains only what a
   card's row (`madeChip`, the approved prototype of 2026-11-26) names every PR with its word and
   every page by its headline, the PRs its latest reply names first, when each changed, and a
   still dot and bold for what you have not opened; the old folder count is gone, and images
-  stay the card's previews (the Sessions tab's drawer lists them all).
+  stay the card's previews.
   Everything else a session made lives in the Active Session sidebar.
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and

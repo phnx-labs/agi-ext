@@ -146,10 +146,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   private leadSub: vscode.Disposable | undefined;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
-  /** The session the Sessions tab's drawer shows; the panel has none. */
-  private drawer: { sessionId: string; host: string } | undefined;
-
-  /** `board`: the Sessions editor tab (⌘⇧K), which draws only Sessions, as a grid with a drawer. */
+  /** `board`: the Sessions editor tab (⌘⇧K), which draws only Sessions, as a grid. */
   constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext, readonly board = false) {
     const saved = board ? 'sessions' : context.workspaceState.get<string>(TAB_KEY);
     this.active = (TABS as readonly string[]).includes(saved ?? '') ? saved as TabId : 'sessions';
@@ -175,8 +172,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'refresh') this.controller.refresh();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
-      // The Sessions tab's drawer: a card click opens it, ✕, Esc or the grid behind closes it.
-      else if (msg.type === 'drawer') { this.drawer = typeof msg.sessionId === 'string' && host ? { sessionId: msg.sessionId, host } : undefined; void this.redrawSessions(); }
+      // The Sessions tab: the card under the pointer is the panel's pinned card until the pointer leaves.
+      else if (msg.type === 'peek') this.controller.peek(typeof msg.sessionId === 'string' && host ? { sessionId: msg.sessionId, host } : undefined);
       else if (msg.type === 'open') opened(openWebviewUrl(msg.url, msg.external === true));
       // The Lead tab: each gesture is one bridge call, which is one `agents lead …` verb.
       else if (msg.type === 'leadAsk' && typeof msg.text === 'string' && msg.text.trim()) void leadPanel()?.ask(msg.text.trim());
@@ -239,7 +236,11 @@ class ProjectView implements vscode.WebviewViewProvider {
         if (this.devices && 'rows' in this.devices && this.devices.rows.some((d) => d.name === name) && !name.startsWith('-')) void this.setDevice(name, msg.field, msg.value);
       }
     });
-    const onVisible = view.onDidChangeVisibility(() => { this.syncDemand(); if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); } });
+    const onVisible = view.onDidChangeVisibility(() => {
+      this.syncDemand();
+      if (view.visible) { void this.load(this.active, false); void this.loadGoals(false); }
+      else if (this.board) this.controller.peek(undefined);
+    });
     this.syncDemand();
     void this.load(this.active, false);
     return {
@@ -249,7 +250,7 @@ class ProjectView implements vscode.WebviewViewProvider {
         this.leadSub?.dispose();
         this.leadSub = undefined;
         this.view = undefined;
-        this.drawer = undefined;
+        if (this.board) this.controller.peek(undefined);
         this.paletteOpen = false;
         for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
         sessionStreamDemand.setProjectSessionsVisible(false, this.board ? 'board' : 'panel');
@@ -355,9 +356,7 @@ class ProjectView implements vscode.WebviewViewProvider {
       this.controller.warmTicketFaces(project);
       // A card's PR words and merge rings come from Review's read, shared the same way (C6–C8).
       this.controller.warmPrs(project);
-      const { html, count } = this.controller.sessions(project, view.webview, this.board ? { board: true, drawer: this.drawer } : {});
-      // A drawer whose session left the project (ended past the cap, hidden, another project) closes for good.
-      if (this.drawer && !html.includes('class="sdrawer"')) this.drawer = undefined;
+      const { html, count } = this.controller.sessions(project, view.webview, this.board ? { board: true } : { peek: this.controller.peeked });
       // VS Code's row has no room for a number: Sessions' icon takes an amber dot, and the
       // count goes on the bar's own icon.
       if (!this.board) {
@@ -616,6 +615,8 @@ class ProjectPanelController {
   /** The Sessions editor tab (⌘⇧K): the same cards for every session in the project, as a grid. */
   readonly board: ProjectView;
   private boardTab: vscode.WebviewPanel | undefined;
+  /** The Sessions tab's card under the pointer, which the panel pins in place of the front tab's. */
+  peeked: { sessionId: string; host: string } | undefined;
   /** Which session tabs this window had in front, and when: Next that needs you reads it. */
   readonly history = new FrontHistory();
 
@@ -1197,7 +1198,7 @@ class ProjectPanelController {
     return { rows, byId, blockedIds, frontId, prefs: this.prefs() };
   }
 
-  sessions(p: ProjectRef, webview: vscode.Webview, extra: Pick<SessionListOptions, 'board' | 'drawer'> = {}): { html: string; count: { shown: number; asks: number } } {
+  sessions(p: ProjectRef, webview: vscode.Webview, extra: Pick<SessionListOptions, 'board' | 'peek'> = {}): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
     const { rows, opts } = this.listOptions(p, webview);
     Object.assign(opts, extra);
@@ -1235,9 +1236,9 @@ class ProjectPanelController {
       const f = fieldsFor(s);
       if (!f) return null;
       const made = sessionMade(f.card);
-      // Every file it made, its plan page included; images are the card's previews, so they list only in the drawer.
+      // Every page it made, its plan included; images are the card's previews.
       const plan = f.card.plan && !f.card.artifacts.some((a) => a.path === f.card.plan!.path) ? [{ path: f.card.plan.path, basename: path.basename(f.card.plan.path), title: undefined, editedAtMs: undefined }] : [];
-      const files = [...f.card.artifacts, ...plan].map((a) => ({ path: a.path, name: a.basename, title: a.title, editedAtMs: a.editedAtMs, ...(IMAGE_FILE.test(a.basename) ? { image: true } : {}) }));
+      const files = [...f.card.artifacts, ...plan].filter((a) => !IMAGE_FILE.test(a.basename)).map((a) => ({ path: a.path, name: a.basename, title: a.title, editedAtMs: a.editedAtMs }));
       const steps = s.timeline?.steps ?? [];
       const said = [s.lastResponse, steps[steps.length - 1]?.text ?? '', s.recap?.text ?? ''].join('\n');
       made.items = madeItems({ prs: f.card.pullRequests ?? [], main: f.live.prStatus, touched: f.live.touchedPrs ?? [], files, said, fact: (k) => facts.get(k), known, opened: openedAt, since });
@@ -1249,7 +1250,7 @@ class ProjectPanelController {
     const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false, chips: cards.made === 'chips' } : null; };
     const here = this.here(webview);
     const subject = currentAgentPanelSubject();
-    return { rows, opts: { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites(), mergeWith: validMergeMethod(getSettings(this.context).mergeMethod) ?? 'squash', openedAt } };
+    return { rows, opts: { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites(), mergeWith: validMergeMethod(getSettings(this.context).mergeMethod) ?? 'squash' } };
   }
 
   /** Agents: Next Agent That Needs You: fronts the session tab › fronts in
@@ -1324,6 +1325,14 @@ class ProjectPanelController {
     try { real = await fs.promises.realpath(path.resolve(filePath)); } catch { return; }
     if (!IMAGE_DIRS().some((dir) => real.startsWith(dir + path.sep))) return;
     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(real), { preview: true });
+  }
+
+  /** The pointer rests on a Sessions tab card, or left them: the panel's pinned card follows
+   *  it and nothing else changes, no tab comes forward (owner, 2026-11-27 9:46 AM). */
+  peek(target: { sessionId: string; host: string } | undefined): void {
+    if (target?.sessionId === this.peeked?.sessionId && target?.host === this.peeked?.host) return;
+    this.peeked = target;
+    void this.view.redrawSessions();
   }
 
   redrawSessions(): Promise<void> {
@@ -1649,23 +1658,25 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-grip::before { content: ''; width: 32px; height: 3px; border-radius: 3px; background: var(--r-edge); }
   .fc-grip:hover::before { background: var(--r-gold-line); }
   .fc-k { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--r-caption); }
-  .fc-recap { margin-top: 6px; padding: 6px 8px 7px; border-radius: 6px; background: var(--r-glass); border: 1px solid var(--r-edge); }
-  .fc-recap .fc-k { color: var(--r-gold-line); }
-  .fc-old { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--r-faint); }
-  .fc-rt { font-size: 12px; line-height: 1.4; color: var(--r-text); }
-  .fc-recap.stale .fc-k { color: var(--r-caption); } .fc-recap.stale .fc-rt { color: var(--r-text-2); }
+  /* The recap reads as a step: its age where a step's clock is, two lines, no label. */
+  .fc-recap { margin-top: 6px; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 6px; }
+  .fc-recap time { padding-top: 2px; font-family: var(--vscode-editor-font-family); font-size: 10px; color: var(--r-gold-line); white-space: nowrap; }
+  .fc-rt { font-size: 12px; line-height: 1.4; color: var(--r-text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .fc-recap.stale time { color: var(--r-faint); } .fc-recap.stale .fc-rt { color: var(--r-text-2); }
   .card.front .ask, .card.front .line.said { margin-top: 6px; }
   .fc-made, .fc-act { margin-top: 7px; }
   .card .fc-made .cstrip, .card .fc-made .thumbs { margin-top: 0; } .fc-made .thumbs { margin-top: 4px; }
   .fc-more { margin-left: auto; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--vscode-textLink-foreground); }
   .fc-more:hover { text-decoration: underline; }
-  .fc-act ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
-  .fc-act li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 6px; font-size: 11.5px; line-height: 1.35; color: var(--r-text-2); }
-  .fc-act li time { padding-top: 1px; font-family: var(--vscode-editor-font-family); font-size: 10px; color: var(--r-faint); white-space: nowrap; }
-  .fc-act li .fc-at { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .fc-act li.user .fc-at { font-style: italic; color: var(--r-caption); }
-  .fc-act li .fc-you { font-style: normal; font-weight: 600; color: var(--r-text); }
-  .fc-act li.live .fc-at { display: block; color: var(--r-text); }
+  .fc-act ol, .bsteps { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+  .bsteps { margin-top: 6px; }
+  :is(.fc-act, .bsteps) li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 6px; font-size: 11.5px; line-height: 1.35; color: var(--r-text-2); }
+  :is(.fc-act, .bsteps) li time { padding-top: 1px; font-family: var(--vscode-editor-font-family); font-size: 10px; color: var(--r-faint); white-space: nowrap; }
+  :is(.fc-act, .bsteps) li .fc-at { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .bsteps li .fc-at { -webkit-line-clamp: 1; }
+  :is(.fc-act, .bsteps) li.user .fc-at { font-style: italic; color: var(--r-caption); }
+  :is(.fc-act, .bsteps) li .fc-you { font-style: normal; font-weight: 600; color: var(--r-text); }
+  :is(.fc-act, .bsteps) li.live .fc-at { display: block; color: var(--r-text); }
   .fc-act li.whole .fc-at { display: block; }
   .fc-now { display: block; margin-top: 1px; font-size: 11px; color: var(--r-ok); }
   .fc-reply { margin-top: 8px; cursor: auto; }
@@ -1699,28 +1710,6 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   body.board .grp .items > .card > .cbot { margin-top: auto; padding-top: 6px; }
   body.board .grp .items > .emptyrow, body.board .grp .items > .empties { grid-column: 1 / -1; }
   body.board .card.sel { box-shadow: none; }
-  .sdrawer-scrim { position: fixed; inset: 0; z-index: 25; background: color-mix(in srgb, var(--vscode-editor-background) 45%, transparent); }
-  .sdrawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 26; width: min(600px, 94vw); box-sizing: border-box; overflow-y: auto; padding: 12px 16px 20px; background: var(--vscode-editor-background); border-left: 1px solid var(--r-edge); box-shadow: -12px 0 32px rgba(0,0,0,.28); }
-  .sdrawer .dx { position: absolute; top: 10px; right: 10px; z-index: 1; font: inherit; color: var(--r-caption); background: none; border: 0; border-radius: 6px; width: 24px; height: 24px; cursor: pointer; }
-  .sdrawer .dx:hover { background: var(--r-glass-hover); color: var(--r-text); }
-  .sdrawer .card.front { height: auto; border: 0; background: none; padding: 0 28px 0 0; }
-  .sdrawer .card.front .fc-body, .sdrawer .fc-scroll { overflow: visible; flex: none; }
-  .sdrawer .fc-rt { display: block; -webkit-line-clamp: unset; overflow: visible; }
-  .sdrawer .card.front .fc-act ol { max-height: 46vh; }
-  .sdrawer .card.front .fc-acts { display: flex; }
-  .sdrawer .dfoot { margin: 10px 0 4px; }
-  .sdrawer .dgo { font: inherit; font-weight: 600; color: var(--r-on-gold); background: var(--r-gold); border: 0; border-radius: 7px; padding: 5px 12px; cursor: pointer; }
-  .dmade { margin-top: 12px; } .dmade .fc-k { margin: 10px 0 4px; }
-  .dmade ul { display: grid; gap: 6px; }
-  .dmade li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--r-edge); border-radius: 9px; padding: 7px 9px; }
-  .dmade li > a { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: flex-start; }
-  .dmade li .ic { margin-top: 3px; }
-  .dmade .ml-b { min-width: 0; display: grid; gap: 2px; }
-  .dmade .ml-t { color: var(--r-text-2); display: flex; align-items: baseline; gap: 5px; } .dmade .ml-t .rd { align-self: center; }
-  .dmade li.r-new .ml-t, .dmade li.r-changed .ml-t { color: var(--r-text); font-weight: 650; }
-  .dmade .ml-m { color: var(--r-caption); font-size: 11px; } .dmade .ml-m b { color: var(--r-text-2); font-weight: 600; }
-  .dmade .pr-ok { color: var(--r-ok); } .dmade .pr-bad { color: var(--r-bad); }
-  .dmade li:hover { background: var(--r-glass-hover); }
 ${REPLY_BOX_CSS}
 ${LEAD_TAB_CSS}
 ${MADE_CSS}
@@ -2009,7 +1998,8 @@ ${MADE_CSS}
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
-  // The Sessions tab (⌘⇧K): a card click opens the drawer; the filter and its views always show.
+  // The Sessions tab (⌘⇧K): a card click goes to its session, the pointer on a card shows it in the
+  // panel's pinned card; the filter and its views always show.
   const BOARD = ${board};
   const ctl = document.querySelector('.sctl');
   const EMPTY_HEAD = ${JSON.stringify(tabHead(null))};
@@ -2098,7 +2088,7 @@ ${MADE_SCRIPT}
   function openMenu() { return document.querySelector('.menu:not([hidden])'); }
   function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
   // A session can show three times: pinned, in Favorites and in its own group.
-  function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.sdrawer') ? 'drawer' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
+  function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
   // On screen: at least a title row's height of it shows.
   function onScreen(el) { const r = el.getBoundingClientRect(), v = main.getBoundingClientRect(); return Math.min(r.bottom, v.bottom) - Math.max(r.top, v.top) >= 24; }
   // Scrolling yourself ends it: a later redraw never undoes your scroll.
@@ -2283,6 +2273,19 @@ ${MADE_SCRIPT}
     const li = e.target.closest && e.target.closest('.tli');
     if (li && !li.contains(e.relatedTarget)) li.classList.remove('mq');
   });
+  // The Sessions tab: the card the pointer rests on shows in the panel's pinned card, and no
+  // tab comes forward; off the page, the pinned card follows the front tab again.
+  if (BOARD) {
+    let peekKey = '', peekTimer = 0;
+    const peekAt = (card) => {
+      const key = card ? card.dataset.key : '';
+      if (key === peekKey) return;
+      peekKey = key; clearTimeout(peekTimer);
+      peekTimer = setTimeout(() => vscode.postMessage(card ? { type: 'peek', sessionId: card.dataset.session, host: card.dataset.host } : { type: 'peek' }), card ? 150 : 0);
+    };
+    main.addEventListener('mouseover', (e) => { const c = e.target.closest && e.target.closest('.card[data-session]'); if (c) peekAt(c); });
+    document.documentElement.addEventListener('mouseleave', () => peekAt(null));
+  }
   function drawPeek() {
     main.querySelectorAll('.tli').forEach((li) => {
       const on = li.querySelector('.trow').dataset.ticket === peeked;
@@ -2362,7 +2365,7 @@ ${MADE_SCRIPT}
     return n;
   }
   // A PR's ring can show more than once (Review, a card, its Favorites copy, another session
-  // that names it, the Sessions tab's drawer): every copy shows the same countdown and result.
+  // that names it): every copy shows the same countdown and result.
   function mergeBtns(key) { const [repo, num] = key.split('#'); return [...main.querySelectorAll('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]')]; }
   // Undo: the ready ring drains one fifth a second (in steps under reduced motion); under the pointer its center is ✕.
   function drawUndo(key, left) {
@@ -2651,7 +2654,6 @@ ${MADE_SCRIPT}
     const ttlCopy = e.target.closest('.front-pin .ttl.cp');
     if (ttlCopy) { e.preventDefault(); const b = ttlCopy.closest('.card').querySelector('.cpy'); if (b) b.click(); return; }
     if (e.target.closest('[data-show-empty]')) { showEmpty = !showEmpty; restoreLocal(); return; }
-    if (e.target.closest('[data-drawer-close]')) { vscode.postMessage({ type: 'drawer' }); return; }
     // A PR or page opened from a Made row is no longer new to you; it still opens below.
     const madeKey = e.target.closest('[data-made-key]');
     if (madeKey) vscode.postMessage({ type: 'seen', key: madeKey.dataset.madeKey });
@@ -2807,14 +2809,14 @@ ${MADE_SCRIPT}
       return;
     }
     const art = e.target.closest('[data-artifact]');
-    // The drawer's Made list sits beside its card: a page there is that session's.
-    const artCard = card || (art && art.closest('.sdrawer') ? art.closest('.sdrawer').querySelector('.card[data-session]') : null);
-    if (art && artCard) { e.preventDefault(); opening(art); vscode.postMessage({ type: 'artifact', sessionId: artCard.dataset.session, host: artCard.dataset.host, path: art.dataset.artifact }); return; }
+    if (art && card) { e.preventDefault(); opening(art); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
     if (a && a.dataset.url) { e.preventDefault(); opening(a); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
-    // The Sessions tab: a card opens its drawer; the drawer's own card does nothing more.
-    if (card && BOARD && !(e.metaKey || e.ctrlKey || e.shiftKey)) {
-      if (!card.closest('.sdrawer')) vscode.postMessage({ type: 'drawer', sessionId: card.dataset.session, host: card.dataset.host });
+    // The Sessions tab: one click goes to a live session, its tab here forward or the agent where it
+    // runs, as ↗ does (owner, 2026-11-27 9:46 AM: "I have to click twice"); an ended one opens in place.
+    if (card && BOARD && !(e.metaKey || e.ctrlKey || e.shiftKey) && !card.classList.contains('st-ended')) {
+      opening(card);
+      vscode.postMessage({ type: 'focus', sessionId: card.dataset.session, host: card.dataset.host });
       return;
     }
     if (card) {
@@ -2967,7 +2969,7 @@ ${MADE_SCRIPT}
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
       next.focus(); choose(next.dataset.tab); return;
     }
-    if (e.key === 'Escape') { const m = openMenu(); if (m) m.hidden = true; if (BOARD && main.querySelector('.sdrawer')) { vscode.postMessage({ type: 'drawer' }); return; } multi.clear(); syncBulk(); return; }
+    if (e.key === 'Escape') { const m = openMenu(); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
     if (e.target.closest && e.target.closest('a, button, summary')) return;
     const gh = e.target.closest && e.target.closest('.gh');
     if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }

@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { madeChip, madeItems, madeList, prMentions, readState, type MadeInput, type PrFact } from './madeRow';
+import { madeChip, madeItems, prMentions, readState, type MadeInput, type PrFact } from './madeRow';
 import { mergeRing, prFacts, parsePrs } from './projectPanel';
 
 const NOW = Date.parse('2026-11-27T12:00:00Z');
@@ -85,22 +85,8 @@ test('a chip draws its word, its age and the still unread dot; a ready PR is fol
   expect(page).toContain('data-artifact="/a/p.html" data-made-key="/a/p.html"');
 });
 
-test('the drawer lists what its latest reply names apart, with each item’s state, change and whether you opened it', () => {
-  const ring = (m: { repo: string; number: number; sha?: string }) => mergeRing(m, 'squash');
-  const items = madeItems(base({ said: 'see #6821', files: [{ path: '/a/p.html', name: 'p.html', title: 'Page', editedAtMs: NOW - 600_000 }], opened: (k) => (k === '/a/p.html' ? NOW - 3600_000 : undefined) }));
-  const html = madeList(items, NOW, ring, (k) => (k === '/a/p.html' ? NOW - 3600_000 : undefined));
-  expect(html).toContain('Named in its latest reply');
-  expect(html).toContain('<span class="pr-bad">Failing</span>');
-  expect(html).toContain('<b>Changed 10m ago</b>, after you opened it');
-  expect(madeList([], NOW, ring, () => undefined)).toBe('');
-});
-
 test('a fact list with no URL or number is dropped', () => {
   const f: PrFact[] = prFacts([{ slug: 'o/r', error: null, branch: null, release: null, open: [{ number: 0, title: '', url: '', isDraft: false, ciState: null, author: '?', avatar: null, date: '', failing: 0, headSha: null, head: null, base: null, failingChecks: [], conflicting: false }], merged: [] }]);
   expect(f).toEqual([]);
 });
 
-test('an image is an item the drawer lists, flagged so the card keeps it as a preview', () => {
-  const items = madeItems(base({ files: [{ path: '/a/shot.png', name: 'shot.png', editedAtMs: NOW - 60_000, image: true }, { path: '/a/plan.html', name: 'plan.html' }] }));
-  expect(items.map((i) => [i.label, !!i.image])).toEqual([['shot.png', true], ['plan.html', false]]);
-});
