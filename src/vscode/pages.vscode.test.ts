@@ -103,6 +103,7 @@ describe('the Pages webview', () => {
     window, document, () => ({ postMessage: (m: Record<string, unknown>) => sent.push(m) }), window.setTimeout.bind(window), window.clearTimeout.bind(window), window.ResizeObserver);
   // happy-dom lays nothing out; a wide box keeps every test's pins on one page.
   Object.defineProperty(document.getElementById('tiles'), 'clientWidth', { configurable: true, value: 1000 });
+  const CONSOLE_ICON = 'data:image/png;base64,Q09OU09MRQ==';
   const deliver = (data: unknown) => window.dispatchEvent(new window.MessageEvent('message', { data }));
   const $ = (sel: string) => document.querySelector(sel) as unknown as HTMLElement;
   const click = (el: HTMLElement, meta = false) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, metaKey: meta }) as unknown as Event);
@@ -111,7 +112,9 @@ describe('the Pages webview', () => {
   const state = (click: 'same' | 'new') => deliver({
     type: 'state', click, shortcut: '⌘⇧B',
     pins: [{ url: 'https://github.com/acme/app', name: 'RUSH', title: 'acme/app', icon: `data:image/png;base64,${PNG.toString('base64')}` }, { url: 'file:///Users/me/plan.html', name: 'Plan', title: 'Plan' }],
-    recent: [{ url: 'https://console.example.com/', title: 'Console', time: Date.now() - 3_600_000 }, { url: 'https://github.com/acme/app', title: 'acme/app', time: Date.now() }],
+    // The host sends each icon once (shareIcons); a page names its place.
+    recent: [{ url: 'https://console.example.com/', title: 'Console', time: Date.now() - 3_600_000, icon: 0 }, { url: 'https://github.com/acme/app', title: 'acme/app', time: Date.now() }],
+    icons: [CONSOLE_ICON],
   });
 
   test('asks for its state once it runs', () => {
@@ -148,7 +151,7 @@ describe('the Pages webview', () => {
   });
   test('☆ pins a recent page with its icon and title; ✕ unpins a tile', () => {
     click($('.row [data-pin]'));
-    expect(last()).toEqual({ type: 'pin', url: 'https://console.example.com/', title: 'Console', icon: undefined });
+    expect(last()).toEqual({ type: 'pin', url: 'https://console.example.com/', title: 'Console', icon: CONSOLE_ICON });
     click($('.unpin'));
     expect(last()).toEqual({ type: 'unpin', url: 'https://github.com/acme/app' });
   });
@@ -266,7 +269,7 @@ describe('the Pages webview', () => {
     expect(last()).toEqual({ type: 'pin', url: 'https://example.org/docs', title: '', icon: undefined });
     type('console.example.com');
     click(pinq);
-    expect(last()).toEqual({ type: 'pin', url: 'https://console.example.com/', title: 'Console', icon: undefined });
+    expect(last()).toEqual({ type: 'pin', url: 'https://console.example.com/', title: 'Console', icon: CONSOLE_ICON });
     type('console');
     expect(pinq.hidden).toBe(true);
     type('github.com/acme/app');

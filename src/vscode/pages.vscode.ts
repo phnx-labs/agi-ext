@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   browserOpenArgs, findIconHref, movePin, normalizePageUrl, PAGES_CLICK_DEFAULT, parseBrowserHistory, pinPage, readPins, renamePin,
-  setPinIcon, unpinPage, type PagePin, type PagesClick, type RecentPage,
+  setPinIcon, shareIcons, unpinPage, type PagePin, type PagesClick, type RecentPage,
 } from '../core/pages';
 import { escapeHtml, RUSH_THEME_CSS } from '../shared/sessionCards';
 import { getSettings } from './agentSettings.vscode';
@@ -164,8 +164,8 @@ export class PagesPanel {
 
   private post(reread = false): void {
     if (reread) this.history = readBrowserHistory(this.context.globalStorageUri, vscode.env.remoteName);
-    const { recent, reason } = this.history;
-    void this.panel?.webview.postMessage({ type: 'state', pins: this.pins(), recent, reason, click: this.click(), shortcut: `${this.modifier}B` });
+    const { recent, icons } = shareIcons(this.history.recent);
+    void this.panel?.webview.postMessage({ type: 'state', pins: this.pins(), recent, icons, reason: this.history.reason, click: this.click(), shortcut: `${this.modifier}B` });
   }
 
   private async handle(m: Inbound): Promise<void> {
@@ -569,7 +569,7 @@ const PAGES_SCRIPT = `(() => {
   });
   window.addEventListener('message', (e) => {
     const m = e.data;
-    if (m.type === 'state') { state = m; draw(); }
+    if (m.type === 'state') { state = { ...m, recent: m.recent.map((p) => (typeof p.icon === 'number' ? { ...p, icon: m.icons[p.icon] } : p)) }; draw(); }
     if (m.type === 'opened' && m.error) fail(m.error);
   });
   vscode.postMessage({ type: 'ready' });
