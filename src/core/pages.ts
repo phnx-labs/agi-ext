@@ -54,6 +54,15 @@ export function renamePin(pins: PagePin[], url: string, name: string): PagePin[]
   return pins.map((p) => (p.url === url ? { ...p, name: name.trim() || p.title } : p));
 }
 
+/** Moves a pin to just before `before`, or to the end when `before` is null or not pinned. */
+export function movePin(pins: PagePin[], url: string, before: string | null): PagePin[] {
+  const moving = pins.find((p) => p.url === url);
+  if (!moving || url === before) return pins;
+  const rest = pins.filter((p) => p !== moving);
+  const at = before === null ? -1 : rest.findIndex((p) => p.url === before);
+  return at < 0 ? [...rest, moving] : [...rest.slice(0, at), moving, ...rest.slice(at)];
+}
+
 export function setPinIcon(pins: PagePin[], url: string, icon: string): PagePin[] {
   return pins.map((p) => (p.url === url ? { ...p, icon } : p));
 }

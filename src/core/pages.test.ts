@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { browserOpenArgs, findIconHref, normalizePageUrl, parseBrowserHistory, pinPage, readPins, renamePin, unpinPage } from './pages';
+import { browserOpenArgs, findIconHref, movePin, normalizePageUrl, parseBrowserHistory, pinPage, readPins, renamePin, unpinPage } from './pages';
 
 const fixture = (name: string) => readFileSync(join(__dirname, 'testdata', 'pages', name), 'utf8');
 
@@ -32,6 +32,15 @@ describe('pins', () => {
     const two = pinPage(pins, { url: 'https://x.com/', title: '' });
     expect(two[1].name).toBe('x.com');
     expect(unpinPage(two, 'https://github.com/acme/app').map((p) => p.url)).toEqual(['https://x.com/']);
+  });
+  test('a pin moves before another, or to the end; an unknown pin or a move onto itself changes nothing', () => {
+    const three = ['https://a.com/', 'https://b.com/', 'https://c.com/'].reduce((ps, url) => pinPage(ps, { url, title: url }), [] as ReturnType<typeof pinPage>);
+    const order = (ps: typeof three) => ps.map((p) => p.url[8]);
+    expect(order(movePin(three, 'https://c.com/', 'https://a.com/'))).toEqual(['c', 'a', 'b']);
+    expect(order(movePin(three, 'https://a.com/', null))).toEqual(['b', 'c', 'a']);
+    expect(order(movePin(three, 'https://a.com/', 'https://c.com/'))).toEqual(['b', 'a', 'c']);
+    expect(movePin(three, 'https://x.com/', null)).toBe(three);
+    expect(movePin(three, 'https://b.com/', 'https://b.com/')).toBe(three);
   });
   test('stored pins drop malformed entries and icons that are not data URIs', () => {
     expect(readPins([{ url: 'https://a.com/', name: 'A', icon: 'https://a.com/i.png' }, { name: 'no url' }, 'x'])).toEqual([{ url: 'https://a.com/', name: 'A', title: 'A' }]);
