@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { browserOpenArgs, findIconHref, movePin, normalizePageUrl, parseBrowserHistory, pinPage, readPins, renamePin, unpinPage } from './pages';
+import { browserOpenArgs, findIconHref, movePin, normalizePageUrl, parseBrowserHistory, pinPage, readPins, renamePin, shareIcons, unpinPage } from './pages';
 
 const fixture = (name: string) => readFileSync(join(__dirname, 'testdata', 'pages', name), 'utf8');
 
@@ -69,6 +69,13 @@ describe('parseBrowserHistory', () => {
     expect(parseBrowserHistory(null, null)).toEqual([]);
     expect(parseBrowserHistory('{not json', null)).toEqual([]);
   });
+});
+
+test('shareIcons sends each icon once; a page names its place', () => {
+  const a = 'data:image/png;base64,AA', b = 'data:image/png;base64,BB';
+  const out = shareIcons([{ url: 'https://x/1', title: '1', time: 3, icon: a }, { url: 'https://x/2', title: '2', time: 2 }, { url: 'https://y/', title: '3', time: 1, icon: b }, { url: 'https://x/3', title: '4', time: 0, icon: a }]);
+  expect(out.icons).toEqual([a, b]);
+  expect(out.recent.map((p) => p.icon)).toEqual([0, undefined, 1, 0]);
 });
 
 test('browserOpenArgs: same tab reuses the last URL Pages opened; a new tab or a first open passes only the URL', () => {

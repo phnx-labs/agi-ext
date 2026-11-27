@@ -95,7 +95,7 @@ function hostOf(url: string): string {
  * holds `{ <scope>: [{ url, title, time, icon }] }` and `browser.history.favicons.global` holds
  * `{ map: { <icon id>: data URI } }` (VSCodium 1.117). Newest visit of each page first; sign-in
  * pages and anything that is not http(s) or file are left out. All of it: VSCodium bounds the
- * list (200 visits in the owner's 1.117 storage), and the view shows 30 at a time.
+ * list itself, and the view shows 30 at a time.
  */
 export function parseBrowserHistory(entriesJson: string | null, faviconsJson: string | null): RecentPage[] {
   let entries: unknown;
@@ -122,6 +122,23 @@ export function parseBrowserHistory(entriesJson: string | null, faviconsJson: st
     }
   }
   return [...newest.values()].sort((a, b) => b.time - a.time);
+}
+
+/**
+ * Recent for the webview, each icon sent once: a page carries its icon's place in `icons`. The
+ * history repeats a site's icon on every visit (133 pages, 33 icons: 747 KB sent whole).
+ */
+export function shareIcons(recent: RecentPage[]): { recent: (Omit<RecentPage, 'icon'> & { icon?: number })[]; icons: string[] } {
+  const icons: string[] = [];
+  const at = new Map<string, number>();
+  return {
+    icons,
+    recent: recent.map(({ icon, ...p }) => {
+      if (!icon) return p;
+      if (!at.has(icon)) { at.set(icon, icons.length); icons.push(icon); }
+      return { ...p, icon: at.get(icon) };
+    }),
+  };
 }
 
 /**
