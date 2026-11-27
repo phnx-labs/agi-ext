@@ -1,7 +1,8 @@
 // The Sessions tab (⌘⇧K, the approved prototype of 2026-11-26): the panel's real script and
-// patch in happy-dom, drawn in board mode. A card opens its drawer and Esc closes it; the four
+// patch in happy-dom, drawn in board mode. One click on a card goes to its session, the pointer
+// on a card shows it in the panel's pinned card; each card carries its last three steps; the four
 // views filter by what each card carries; a PR or page opened from a Made row is reported seen;
-// a ready PR's ring starts Review's merge flow without opening the drawer.
+// a ready PR's ring starts Review's merge flow without going to the session.
 import { afterAll, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { vscodeDouble } from '../testing/vscodeDouble';
@@ -24,7 +25,12 @@ const row = (id: string, i: number, o: Partial<Row> = {}): Row => ({
 });
 const rows: Row[] = [
   row('a', 0, { phase: 'idle', liveStatus: 'waiting', attention: { key: 'k-a', kind: 'question', state: 'open', openedAt: new Date(NOW - 120_000).toISOString(), question: { text: 'Ship it?', options: [{ label: 'Yes' }] } } }),
-  row('b', 1),
+  row('b', 1, { timeline: { steps: [
+    { text: 'Read the plan', at: new Date(NOW - 240_000).toISOString() },
+    { text: 'Ran 4 commands', at: new Date(NOW - 180_000).toISOString() },
+    { text: 'Ship it?', at: new Date(NOW - 150_000).toISOString(), source: 'user' },
+    { text: 'Recap: you asked to ship it, and it is merged.', at: new Date(NOW - 120_000).toISOString() },
+  ] } }),
   row('c', 2),
 ];
 const madeFor = (s: Row) => ({
@@ -35,7 +41,7 @@ const madeFor = (s: Row) => ({
     said: s.sessionId === 'a' ? 'Waiting on you before #7 can go in.' : '', fact: (k) => facts.find((f) => f.url.toLowerCase() === k), known: facts, opened: () => undefined, since: NOW - 86_400_000,
   }),
 });
-const draw = (drawer?: string) => renderSessions(rows, NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, board: true, mergeWith: 'squash', ...(drawer ? { drawer: { sessionId: drawer, host: 'this-mac' } } : {}) });
+const draw = () => renderSessions(rows, NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, board: true, mergeWith: 'squash' });
 
 const window = new Window();
 afterAll(() => window.happyDOM.close());
@@ -77,33 +83,43 @@ test('each view keeps only the cards that carry it', () => {
   expect(shown().sort()).toEqual(['a', 'b', 'c']);
 });
 
-test('a card click asks for its drawer and selects nothing; ✕ and Esc close it', () => {
+test('one click on a card goes to its session', () => {
   sent.length = 0;
   $$('.card[data-session="c"]')[0]!.click();
-  expect(sent).toEqual([{ type: 'drawer', sessionId: 'c', host: 'this-mac' }]);
-  deliver({ type: 'html', tab: 'sessions', html: draw('c') });
-  expect($$('.sdrawer .card.front[data-session="c"]')).toHaveLength(1);
-  sent.length = 0;
-  // The drawer's own card does not ask again.
-  $('.sdrawer .card').click();
-  expect(sent).toEqual([]);
-  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event);
-  expect(sent).toEqual([{ type: 'drawer' }]);
-  sent.length = 0;
-  $('.sdrawer .dx').click();
-  expect(sent).toEqual([{ type: 'drawer' }]);
+  expect(sent).toEqual([{ type: 'focus', sessionId: 'c', host: 'this-mac' }]);
 });
 
-test('a page in the drawer’s Made list opens as that session’s and is reported seen', () => {
+test('the pointer on a card shows it in the panel, and leaving the page gives the front tab back', async () => {
   sent.length = 0;
-  $('.sdrawer .dmade [data-artifact]').click();
+  $$('.card[data-session="b"] .top')[0]!.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }) as unknown as Event);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(sent).toEqual([{ type: 'peek', sessionId: 'b', host: 'this-mac' }]);
+  document.documentElement.dispatchEvent(new window.MouseEvent('mouseleave') as unknown as Event);
+  await new Promise((r) => setTimeout(r, 20));
+  expect(sent).toEqual([{ type: 'peek', sessionId: 'b', host: 'this-mac' }, { type: 'peek' }]);
+});
+
+test('a card shows its last three steps, a recap without its label', () => {
+  const steps = $$('.card[data-session="b"] .bsteps li').map((li) => li.querySelector('.fc-at')!.textContent);
+  expect(steps).toEqual(['Ran 4 commands', 'You Ship it?', 'you asked to ship it, and it is merged.']);
+});
+
+test('a page on a card opens as that session’s and is reported seen', () => {
+  sent.length = 0;
+  $('.card[data-session="c"] [data-artifact]').click();
   expect(sent).toEqual([
     { type: 'seen', key: '/home/me/.agents/artifacts/p/index.html' },
     { type: 'artifact', sessionId: 'c', host: 'this-mac', path: '/home/me/.agents/artifacts/p/index.html' },
   ]);
 });
 
-test('a ready PR’s ring arms Review’s merge (Undo first) and opens no drawer', () => {
+test('the panel pins the session under the pointer in place of the front tab’s', () => {
+  const panel = renderSessions(rows, NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, peek: { sessionId: 'c', host: 'this-mac' } });
+  expect(panel).toMatch(/<div class="front-pin"><div class="card [^"]*front[^"]*"[^>]*data-session="c"/);
+  expect(renderSessions(rows, NOW, { selectedId: null, frontId: null, here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, board: true, peek: { sessionId: 'c', host: 'this-mac' } })).not.toContain('front-pin');
+});
+
+test('a ready PR’s ring arms Review’s merge (Undo first) and goes nowhere', () => {
   deliver({ type: 'html', tab: 'sessions', html: draw() });
   sent.length = 0;
   const ring = $$('.card[data-session="b"] .mi-pr .pring')[0]!;

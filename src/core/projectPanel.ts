@@ -21,7 +21,7 @@ import type { LaunchTarget } from './launchTarget';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
 import { prVerdict, type RemotePrStatus } from './prStatus';
-import { madeChip, madeList, type MadeItem, type PrFact } from './madeRow';
+import { madeChip, type MadeItem, type PrFact } from './madeRow';
 
 export interface ProjectRef {
   name: string;
@@ -718,12 +718,10 @@ export interface SessionListOptions {
   favorites?: ReadonlySet<string>;
   /** The merge method a ready PR's ring uses (Settings > Pull requests). */
   mergeWith?: string;
-  /** The Sessions tab (⌘⇧K): every group as a grid, no pinned card; a click opens the drawer. */
+  /** The Sessions tab (⌘⇧K): every group as a grid, no pinned card, each card with its last steps. */
   board?: boolean;
-  /** The session the Sessions tab's drawer shows, drawn on top of the grid. */
-  drawer?: { sessionId: string; host: string };
-  /** When this viewer last opened a PR or page, by its Made key. */
-  openedAt?: (key: string) => number | undefined;
+  /** The session under the pointer in the Sessions tab: the panel pins it in place of the front tab's. */
+  peek?: { sessionId: string; host: string };
 }
 
 const ACT_ICON = {
@@ -951,15 +949,34 @@ function cardMenu(s: SessionLike, place: SessionPlace, opts: { favorite?: boolea
   return `<details class="cmore"><summary class="act" title="More" aria-label="More">⋯</summary><div class="cmenu">${items}</div></details>`;
 }
 
-/** Claude's recap on the front card, with how old it is; dimmed with "before your
- *  last message" once you have written since. '' without one. */
+/** Claude's recap on the front card: a line like a step's, its age where a step's clock is,
+ *  in two lines with no label (owner, 2026-11-27 9:46 AM: "why do you have a recap prefix");
+ *  dimmed once you have written since, which its hover says. '' without one. */
 function recapBlock(s: Pick<SessionLike, 'recap' | 'userTurns'>, now: number): string {
   const at = s.recap ? Date.parse(s.recap.at) : NaN;
   const text = plain(s.recap?.text ?? '');
   if (!text || !Number.isFinite(at)) return '';
   const turns = s.userTurns ?? [];
   const stale = turns.length > 0 && turns[turns.length - 1]!.atMs > at;
-  return `<div class="fc-recap${stale ? ' stale' : ''}"><div class="fc-k">Recap · ${escapeHtml(relTime(at, now))}${stale ? '<span class="fc-old">before your last message</span>' : ''}</div><div class="fc-rt" title="${escapeHtml(text)}">${escapeHtml(text)}</div></div>`;
+  const tip = `Claude's recap, ${relTime(at, now)}${stale ? ', before your last message' : ''}\n${text}`;
+  return `<div class="fc-recap${stale ? ' stale' : ''}" title="${escapeHtml(tip)}"><time>${escapeHtml(ageWords(at, now))}</time><div class="fc-rt">${escapeHtml(text)}</div></div>`;
+}
+
+type Step = NonNullable<SessionLike['timeline']>['steps'][number];
+
+/** One step with its clock time; a harness's own "Recap:" label is dropped. */
+function stepItem(st: Step): string {
+  const t = Date.parse(st.at ?? '');
+  const you = st.source === 'user';
+  const now = st.live && st.now ? `<span class="fc-now">${escapeHtml(plain(st.now))}</span>` : '';
+  return `<li class="${you ? 'user' : ''}${st.live ? ' live' : ''}"><time>${Number.isFinite(t) ? clock(t) : ''}</time><span class="fc-at">${you ? '<span class="fc-you">You</span> ' : ''}${escapeHtml(plain(st.text).replace(/^recap:\s*/i, ''))}${now}</span></li>`;
+}
+
+/** A Sessions tab card's last three steps under its question (owner, 2026-11-27 9:46 AM:
+ *  "the last two lines or three lines of the activity"). '' without any. */
+function lastSteps(s: SessionLike): string {
+  const steps = (s.timeline?.steps ?? []).filter((st) => plain(st.text)).slice(-3);
+  return steps.length ? `<ol class="bsteps" aria-label="Last steps, newest last">${steps.map(stepItem).join('')}</ol>` : '';
 }
 
 /** The pinned card's activity: every step the row carries with its clock time, newest
@@ -969,17 +986,12 @@ function recapBlock(s: Pick<SessionLike, 'recap' | 'userTurns'>, now: number): s
 function activitySteps(s: SessionLike): string {
   const steps = (s.timeline?.steps ?? []).filter((st) => plain(st.text));
   const earlier = s.timeline?.earlier?.steps ?? 0;
-  const items = steps.map((st) => {
-    const t = Date.parse(st.at ?? '');
-    const you = st.source === 'user';
-    const now = st.live && st.now ? `<span class="fc-now">${escapeHtml(plain(st.now))}</span>` : '';
-    return `<li class="${you ? 'user' : ''}${st.live ? ' live' : ''}"><time>${Number.isFinite(t) ? clock(t) : ''}</time><span class="fc-at">${you ? '<span class="fc-you">You</span> ' : ''}${escapeHtml(plain(st.text))}${now}</span></li>`;
-  }).join('');
+  const items = steps.map(stepItem).join('');
   const before = earlier ? `<li class="fc-earlier">${earlier} earlier step${earlier === 1 ? '' : 's'}</li>` : '';
   return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean; drag?: boolean; mergeWith?: string }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean; drag?: boolean; mergeWith?: string; steps?: boolean }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
@@ -1006,7 +1018,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const thumbs = [...attached, ...madeImages];
   const folderChip = folders.length ? `<a class="chip" href="#" data-artifact="${escapeHtml((folders[0].files[0] ?? folders[0].images[0]).path)}" title="${escapeHtml(folders.map((f) => f.display).join('\n'))}">${glyph('folder')}${folders.length}</a>` : '';
   // Every PR with its word and every page by its headline, one row that scrolls sideways (C3–C8).
-  const items = made?.items?.filter((i) => !i.image);
+  const items = made?.items;
   const ring = (m: NonNullable<MadeItem['merge']>) => mergeRing(m, opts.mergeWith ?? 'squash');
   const chips = items ? [...items.filter((i) => i.mention).map((i) => madeChip(i, now, ring)), ticketChip, ...items.filter((i) => !i.mention).map((i) => madeChip(i, now, ring))].join('') : [prs, ticketChip, folderChip].join('');
   const asked = askedAt(s);
@@ -1044,9 +1056,13 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const preview = ask || saidLine(s, said);
   // What it was started with: a card part, off by default, its words only (owner video, 2026-10-19 1:32 AM).
   const started = cards.firstMessage && s.startedAs && cleanTitle(s.startedAs) !== title ? `<div class="started" title="${escapeHtml(`Started with: ${s.startedAs}`)}">${escapeHtml(plain(s.startedAs))}</div>` : '';
-  const text = opts.compact ? (cards.description ? preview : '') : cards.description
-    ? `${started}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}`
-    : ask;
+  // The Sessions tab: its question, then its last steps in place of the latest line, which is the newest step.
+  const steps = opts.steps && !opts.compact ? lastSteps(s) : '';
+  const text = opts.compact ? (cards.description ? preview : '') : steps
+    ? `${started}${ask}${steps}`
+    : cards.description
+      ? `${started}${preview}${live ? `<div class="line live">${activityLine(live)}</div>` : ''}`
+      : ask;
   const strip = cards.chips && chips ? `<div class="cstrip">${chips}</div>` : '';
   // The repository and the machine share the card's last line; a colored dot there is only ever a state (owner video, 2026-10-27 9:24 AM).
   const host = cards.machine ? `<span class="hst" title="${escapeHtml(place.device)}">${repoTag}${escapeHtml(shortDevice(place.device))}</span>` : '';
@@ -1198,9 +1214,11 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
   const all = listedSessions(rows, opts);
   const blocked = blockedBy(opts);
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
-  // The front tab's session is pinned on top and keeps its own place in the list too.
+  // The front tab's session is pinned on top and keeps its own place in the list too; while
+  // the pointer rests on a card in the Sessions tab, that session is (owner, 2026-11-27 9:46 AM).
   // The Sessions tab pins nothing: every session is a card in its group.
-  const front = opts.frontId && !opts.board ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
+  const peek = opts.peek && !opts.board ? all.find((x) => x.row.sessionId === opts.peek!.sessionId && x.row.host === opts.peek!.host) : undefined;
+  const front = peek ?? (opts.frontId && !opts.board ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
   // The listed copy of the front session asks with its question only: its answers are on the pinned card.
   // Compact: the title row, the agent's latest line and what it made; no ask box, no previews.
@@ -1210,10 +1228,10 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false, copy = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, linearName: opts.linearName,
     // The pinned card is where an ask is answered, so it keeps its answers whatever the list shows (owner video, 2026-10-22 8:50 AM).
-    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned && !opts.board ? opts.shelfFor?.(row) : undefined,
+    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId), answeredElsewhere: !pinned && (copy || (!!front && row.sessionId === front.row.sessionId)),
     // A listed live card drags onto another topic's section (owner video, 2026-11-24 5:00 PM; PHNX-4676).
-    drag: !pinned && !copy && prefs.group === 'topic' && sessionStateOf(row) !== 'ended', mergeWith: opts.mergeWith,
+    drag: !pinned && !copy && prefs.group === 'topic' && sessionStateOf(row) !== 'ended', mergeWith: opts.mergeWith, steps: opts.board,
   });
   return { all, front, blocked, tabHere, cards, today, card };
 }
@@ -1347,24 +1365,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const sections = prefs.sections === 'needs'
     ? [...arranged.filter((g) => g.copy), ...arranged.filter((g) => !g.copy && lead(g)).sort((a, b) => yourMove(lead(a)!, lead(b)!)), ...arranged.filter((g) => !g.copy && !lead(g))]
     : arranged;
-  return head + pinned + sections.map(section).join('') + drawerHtml(rows, now, opts, card) + tail;
-}
-
-/** The Sessions tab's drawer (C2): the card as the pinned card draws it (title, its ask with
- *  every answer, the whole recap, every step, the reply box), a way to its terminal, and every
- *  PR and page it made or named, each with when it changed and whether you opened it. */
-function drawerHtml(rows: SessionLike[], now: number, opts: SessionListOptions, card: ReturnType<typeof cardDrawer>['card']): string {
-  const d = opts.drawer;
-  if (!opts.board || !d) return '';
-  const row = rows.find((r) => r.sessionId === d.sessionId && r.host === d.host) ?? rows.find((r) => r.sessionId === d.sessionId);
-  if (!row) return '';
-  const place = sessionPlace(row, opts.here);
-  const made = opts.madeFor?.(row) ?? null;
-  const ring = (m: NonNullable<MadeItem['merge']>) => mergeRing(m, opts.mergeWith ?? 'squash');
-  const live = sessionStateOf(row) !== 'ended';
-  // Its tab comes forward, or the live agent opens where it runs; an ended one resumes (`goToSession`).
-  const go = row.resumable === false && !live ? '' : `<button class="dgo" data-open-session="${escapeHtml(row.sessionId)}" data-host="${escapeHtml(row.host)}">${live ? 'Focus its terminal' : 'Resume'}</button>`;
-  return `<div class="sdrawer-scrim" data-drawer-close></div><aside class="sdrawer" aria-label="${escapeHtml(cardTitle(row))}"><button class="dx" data-drawer-close title="Close (Esc)" aria-label="Close">✕</button>${card({ row, place }, true)}${go ? `<div class="dfoot">${go}</div>` : ''}${made?.items ? madeList(made.items, now, ring, opts.openedAt ?? (() => undefined)) : ''}</aside>`;
+  return head + pinned + sections.map(section).join('') + tail;
 }
 
 /** An ended session with no title, no words from its agent and no prompt of yours. */

@@ -4,6 +4,16 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.453] - 2026-11-27
+
+- Sessions (⌘⇧K): one click on a card goes to its session; the drawer is gone. Each card
+  shows its last three steps under its question.
+- Resting the pointer on a Sessions card shows that session in the AGI panel's pinned card,
+  without bringing any tab forward. Moving off the page gives it back to the tab in front.
+- The pinned card's recap reads like a step: its age, two lines, no "Recap" label. A step
+  that starts with "Recap:" drops the word.
+- The Sessions tab uses the AGI sidebar's icon.
+
 ## [0.9.452] - 2026-11-27
 
 - Sessions (⌘⇧K, Agents: Sessions): every session in the project as the sidebar's own cards in
