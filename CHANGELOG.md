@@ -4,6 +4,14 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.449] - 2026-11-26
+
+- Pages: drag a pinned page onto another to reorder your pages; a gold line shows where it
+  lands. ⌥← and ⌥→ move the focused page one place. The order is saved, so every window
+  shows it.
+- The Pages tab has its own icon, a grid of four tiles, instead of the editor's blank
+  document icon.
+
 ## [0.9.448] - 2026-11-24
 
 - The Marketplace and Open VSX page is written for someone installing the extension: what it

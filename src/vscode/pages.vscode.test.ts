@@ -150,6 +150,37 @@ describe('the Pages webview', () => {
     click($('.unpin'));
     expect(last()).toEqual({ type: 'unpin', url: 'https://github.com/acme/app' });
   });
+  test('a tile dragged onto another goes before or after it by which half it lands on; ⌥← ⌥→ move a focused tile', () => {
+    state('same');
+    const names = () => [...document.querySelectorAll('.tname')].map((e) => e.textContent);
+    const tile = (i: number) => document.querySelectorAll('.tile')[i] as unknown as HTMLElement;
+    const drag = (type: string, el: HTMLElement, clientX = 0) => {
+      const e = new window.Event(type, { bubbles: true, cancelable: true }) as unknown as DragEvent;
+      Object.assign(e, { clientX, dataTransfer: { setData() {}, effectAllowed: '', dropEffect: '' } });
+      el.dispatchEvent(e as unknown as Event);
+      return e;
+    };
+    // happy-dom lays nothing out: every box is 0 wide, so x > 0 is the right half and x < 0 the left.
+    drag('dragstart', tile(0));
+    expect(tile(0).classList.contains('dragging')).toBe(true);
+    expect(drag('dragover', tile(1), 5).defaultPrevented).toBe(true);
+    expect(tile(1).classList.contains('drop-after')).toBe(true);
+    drag('drop', tile(1), 5);
+    drag('dragend', tile(1));
+    expect(last()).toEqual({ type: 'move', url: 'https://github.com/acme/app', before: null });
+    expect(names()).toEqual(['Plan', 'RUSH']);
+    drag('dragstart', tile(1));
+    expect(drag('dragover', tile(1), -5).defaultPrevented).toBe(false);
+    drag('drop', tile(0), -5);
+    expect(last()).toEqual({ type: 'move', url: 'https://github.com/acme/app', before: 'file:///Users/me/plan.html' });
+    expect(names()).toEqual(['RUSH', 'Plan']);
+    const face = $('.face');
+    face.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
+    expect(last()).toEqual({ type: 'move', url: 'https://github.com/acme/app', before: null });
+    expect(names()).toEqual(['Plan', 'RUSH']);
+    expect((document.activeElement as unknown as HTMLElement).dataset.open).toBe('https://github.com/acme/app');
+    state('same');
+  });
   test('a hostile title or URL from the history is text, never markup', () => {
     deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', pins: [],
       recent: [{ url: 'https://evil.example/"><img src=x onerror=alert(1)>', title: '<img src=x onerror=alert(1)>', time: Date.now() }] });

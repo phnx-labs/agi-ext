@@ -3,7 +3,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
-  browserOpenArgs, findIconHref, normalizePageUrl, PAGES_CLICK_DEFAULT, parseBrowserHistory, pinPage, readPins, renamePin,
+  browserOpenArgs, findIconHref, movePin, normalizePageUrl, PAGES_CLICK_DEFAULT, parseBrowserHistory, pinPage, readPins, renamePin,
   setPinIcon, unpinPage, type PagePin, type PagesClick, type RecentPage,
 } from '../core/pages';
 import { escapeHtml, RUSH_THEME_CSS } from '../shared/sessionCards';
@@ -19,7 +19,8 @@ type Inbound =
   | { type: 'open'; url: string; newTab: boolean }
   | { type: 'pin'; url: string; title: string; icon?: string }
   | { type: 'unpin'; url: string }
-  | { type: 'rename'; url: string; name: string };
+  | { type: 'rename'; url: string; name: string }
+  | { type: 'move'; url: string; before: string | null };
 
 /**
  * The built-in browser's history lives in VSCodium's own storage, beside this extension's
@@ -134,6 +135,10 @@ export class PagesPanel {
     }
     const panel = vscode.window.createWebviewPanel(VIEW_TYPE, 'Pages', vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
     this.panel = panel;
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'pages-light.svg'),
+      dark: vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'pages-dark.svg'),
+    };
     panel.webview.html = pagesShell(panel.webview.cspSource);
     panel.onDidDispose(() => { this.panel = undefined; });
     panel.onDidChangeViewState((e) => { if (e.webviewPanel.visible) this.post(true); });
@@ -204,6 +209,10 @@ export class PagesPanel {
         await this.savePins(renamePin(this.pins(), m.url, m.name));
         this.post();
         return;
+      case 'move':
+        await this.savePins(movePin(this.pins(), m.url, m.before));
+        this.post();
+        return;
     }
   }
 }
@@ -238,6 +247,9 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .was { max-width: 124px; font-size: 10.5px; color: var(--r-faint); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .unpin { position: absolute; top: -6px; right: 10px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--r-edge); background: var(--r-glass-strong); color: var(--r-text-2); font-size: 11px; display: grid; place-items: center; cursor: pointer; opacity: 0; padding: 0; }
   .tile:hover .unpin, .tile:focus-within .unpin { opacity: 1; }
+  .tile.dragging { opacity: .4; }
+  .tile.drop-before::before, .tile.drop-after::after { content: ''; position: absolute; top: 2px; height: 60px; width: 2px; border-radius: 1px; background: var(--r-gold-line); }
+  .tile.drop-before::before { left: -8px; } .tile.drop-after::after { right: -8px; }
   .lt { display: inline-grid; place-items: center; color: #fff; font-weight: 700; font-size: 11px; }
   img.ondark { background: #141829; padding: 3px; }
   .rows { border: 1px solid var(--r-edge); border-radius: 12px; background: var(--r-glass); overflow: hidden; }
@@ -271,11 +283,13 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
 }
 
 const ESCAPE = escapeHtml.toString();
+const MOVE_PIN = movePin.toString();
 
 /** The Pages webview's behavior: state in, one message per gesture out. */
 const PAGES_SCRIPT = `(() => {
   const vscode = acquireVsCodeApi();
   const escapeHtml = ${ESCAPE};
+  const movePin = ${MOVE_PIN};
   let state = { pins: [], recent: [], click: 'same', shortcut: '' };
   let editing = null;
   const $ = (id) => document.getElementById(id);
@@ -310,7 +324,7 @@ const PAGES_SCRIPT = `(() => {
     if (Date.now() >= failUntil) $('hint').textContent = state.click === 'same' ? 'Enter opens here · ' + mod + 'Enter in a new tab' : 'Enter opens a new tab · ' + mod + 'Enter here';
     $('npin').textContent = state.pins.length ? String(state.pins.length) : '';
     const pins = state.pins.filter((p) => match(q, p.name, p.title, p.url));
-    $('tiles').innerHTML = pins.map((p) => '<div class="tile">'
+    $('tiles').innerHTML = pins.map((p) => '<div class="tile" draggable="' + (editing ? 'false' : 'true') + '" data-tile="' + escapeHtml(p.url) + '">'
       + '<button class="face" data-open="' + escapeHtml(p.url) + '" title="' + escapeHtml(p.url) + '" aria-label="Open ' + escapeHtml(p.name) + '">' + icon(p, p.name) + '</button>'
       + (editing === p.url
         ? '<input class="rename" data-rename="' + escapeHtml(p.url) + '" value="' + escapeHtml(p.name) + '" aria-label="Name"><div class="was">' + escapeHtml(p.title) + '</div>'
@@ -345,7 +359,52 @@ const PAGES_SCRIPT = `(() => {
     const pn = t.closest('[data-pin]'); if (pn) { const p = state.recent.find((x) => x.url === pn.dataset.pin); if (p) vscode.postMessage({ type: 'pin', url: p.url, title: p.title, icon: p.icon }); return; }
     const op = t.closest('[data-open]'); if (op) open(op.dataset.open, e.metaKey || e.ctrlKey, op.closest('.face') || op);
   });
+  // Drag a tile onto another to put it there; ⌥← ⌥→ on a focused tile moves it one place.
+  function move(url, before) {
+    const pins = movePin(state.pins, url, before); if (pins === state.pins) return;
+    state.pins = pins;
+    vscode.postMessage({ type: 'move', url, before });
+    draw();
+  }
+  let dragged = null;
+  const clearDrop = () => document.querySelectorAll('.drop-before, .drop-after').forEach((t) => t.classList.remove('drop-before', 'drop-after'));
+  const dropAt = (e) => {
+    const t = e.target.closest && e.target.closest('.tile[data-tile]');
+    if (!dragged || !t || t.dataset.tile === dragged) return null;
+    const box = t.getBoundingClientRect();
+    return { tile: t, after: e.clientX > box.left + box.width / 2 };
+  };
+  $('tiles').addEventListener('dragstart', (e) => {
+    const t = e.target.closest && e.target.closest('.tile[draggable="true"]'); if (!t) return;
+    dragged = t.dataset.tile; t.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragged);
+  });
+  $('tiles').addEventListener('dragover', (e) => {
+    const d = dropAt(e); if (!d) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    const cls = d.after ? 'drop-after' : 'drop-before';
+    if (!d.tile.classList.contains(cls)) { clearDrop(); d.tile.classList.add(cls); }
+  });
+  $('tiles').addEventListener('dragleave', (e) => { const t = e.target.closest && e.target.closest('.tile'); if (t && !t.contains(e.relatedTarget)) t.classList.remove('drop-before', 'drop-after'); });
+  $('tiles').addEventListener('drop', (e) => {
+    const d = dropAt(e); if (!d) return;
+    e.preventDefault(); clearDrop();
+    const i = state.pins.findIndex((x) => x.url === d.tile.dataset.tile);
+    const next = d.after ? state.pins.slice(i + 1).find((x) => x.url !== dragged) : state.pins[i];
+    move(dragged, next ? next.url : null);
+  });
+  $('tiles').addEventListener('dragend', () => { dragged = null; clearDrop(); document.querySelectorAll('.tile.dragging').forEach((t) => t.classList.remove('dragging')); });
   document.addEventListener('keydown', (e) => {
+    const face = e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.closest && e.target.closest('.face');
+    if (face) {
+      e.preventDefault();
+      const url = face.dataset.open, i = state.pins.findIndex((x) => x.url === url);
+      const j = e.key === 'ArrowLeft' ? i - 1 : i + 2;
+      if (i < 0 || j < 0 || j > state.pins.length) return;
+      move(url, j === state.pins.length ? null : state.pins[j].url);
+      const back = [...document.querySelectorAll('.face')].find((f) => f.dataset.open === url); if (back) back.focus();
+      return;
+    }
     const r = e.target.closest && e.target.closest('.rename');
     if (r) { if (e.key === 'Enter') commit(r); else if (e.key === 'Escape') { editing = null; draw(); } return; }
     const ed = e.target.closest && e.target.closest('[data-edit]');
