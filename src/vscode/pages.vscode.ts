@@ -359,12 +359,18 @@ const PAGES_SCRIPT = `(() => {
     const pn = t.closest('[data-pin]'); if (pn) { const p = state.recent.find((x) => x.url === pn.dataset.pin); if (p) vscode.postMessage({ type: 'pin', url: p.url, title: p.title, icon: p.icon }); return; }
     const op = t.closest('[data-open]'); if (op) open(op.dataset.open, e.metaKey || e.ctrlKey, op.closest('.face') || op);
   });
-  // Drag a tile onto another to put it there; ⌥← ⌥→ on a focused tile moves it one place.
+  // Drag a tile onto another to put it there; ⌥← ⌥→ on a focused tile moves it past the tile beside it.
   function move(url, before) {
     const pins = movePin(state.pins, url, before); if (pins === state.pins) return;
     state.pins = pins;
     vscode.postMessage({ type: 'move', url, before });
     draw();
+  }
+  // Puts a pin before or after the tile it was dropped on; a pin the filter hides keeps its place among the rest.
+  function placeBy(url, target, after) {
+    const i = state.pins.findIndex((x) => x.url === target);
+    const next = after ? state.pins.slice(i + 1).find((x) => x.url !== url) : state.pins[i];
+    move(url, next ? next.url : null);
   }
   let dragged = null;
   const clearDrop = () => document.querySelectorAll('.drop-before, .drop-after').forEach((t) => t.classList.remove('drop-before', 'drop-after'));
@@ -389,19 +395,19 @@ const PAGES_SCRIPT = `(() => {
   $('tiles').addEventListener('drop', (e) => {
     const d = dropAt(e); if (!d) return;
     e.preventDefault(); clearDrop();
-    const i = state.pins.findIndex((x) => x.url === d.tile.dataset.tile);
-    const next = d.after ? state.pins.slice(i + 1).find((x) => x.url !== dragged) : state.pins[i];
-    move(dragged, next ? next.url : null);
+    // The redraw replaces the dragged tile, so its dragend never reaches #tiles: the drag ends here.
+    const url = dragged; dragged = null;
+    placeBy(url, d.tile.dataset.tile, d.after);
   });
   $('tiles').addEventListener('dragend', () => { dragged = null; clearDrop(); document.querySelectorAll('.tile.dragging').forEach((t) => t.classList.remove('dragging')); });
   document.addEventListener('keydown', (e) => {
     const face = e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.closest && e.target.closest('.face');
     if (face) {
       e.preventDefault();
-      const url = face.dataset.open, i = state.pins.findIndex((x) => x.url === url);
-      const j = e.key === 'ArrowLeft' ? i - 1 : i + 2;
-      if (i < 0 || j < 0 || j > state.pins.length) return;
-      move(url, j === state.pins.length ? null : state.pins[j].url);
+      const url = face.dataset.open, shown = [...document.querySelectorAll('.face')].map((f) => f.dataset.open);
+      const left = e.key === 'ArrowLeft', beside = shown[shown.indexOf(url) + (left ? -1 : 1)];
+      if (!beside) return;
+      placeBy(url, beside, !left);
       const back = [...document.querySelectorAll('.face')].find((f) => f.dataset.open === url); if (back) back.focus();
       return;
     }

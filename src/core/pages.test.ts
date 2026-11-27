@@ -41,6 +41,8 @@ describe('pins', () => {
     expect(order(movePin(three, 'https://a.com/', 'https://c.com/'))).toEqual(['b', 'a', 'c']);
     expect(movePin(three, 'https://x.com/', null)).toBe(three);
     expect(movePin(three, 'https://b.com/', 'https://b.com/')).toBe(three);
+    expect(movePin(three, 'https://a.com/', 'https://b.com/')).toBe(three);
+    expect(movePin(three, 'https://c.com/', null)).toBe(three);
   });
   test('stored pins drop malformed entries and icons that are not data URIs', () => {
     expect(readPins([{ url: 'https://a.com/', name: 'A', icon: 'https://a.com/i.png' }, { name: 'no url' }, 'x'])).toEqual([{ url: 'https://a.com/', name: 'A', title: 'A' }]);
