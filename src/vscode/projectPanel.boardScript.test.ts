@@ -32,7 +32,7 @@ const madeFor = (s: Row) => ({
   items: madeItems({
     prs: s.sessionId === 'b' ? [{ url: url(7), ownerRepo: 'me/x', number: 7 }] : [], touched: [],
     files: s.sessionId === 'c' ? [{ path: '/home/me/.agents/artifacts/p/index.html', name: 'index.html', title: 'A page', editedAtMs: NOW - 60_000 }] : [],
-    said: '', fact: (k) => facts.find((f) => f.url.toLowerCase() === k), known: facts, opened: () => undefined, since: NOW - 86_400_000,
+    said: s.sessionId === 'a' ? 'Waiting on you before #7 can go in.' : '', fact: (k) => facts.find((f) => f.url.toLowerCase() === k), known: facts, opened: () => undefined, since: NOW - 86_400_000,
   }),
 });
 const draw = (drawer?: string) => renderSessions(rows, NOW, { selectedId: null, frontId: 'a', here: HERE, prefs: DEFAULT_SESSION_PREFS, madeFor, board: true, mergeWith: 'squash', ...(drawer ? { drawer: { sessionId: drawer, host: 'this-mac' } } : {}) });
@@ -63,16 +63,16 @@ test('the Sessions tab pins nothing and always shows its filter with four counte
   expect($$('.front-pin')).toHaveLength(0);
   expect(($('.frow') as unknown as { hidden: boolean }).hidden).toBe(false);
   expect([...document.querySelectorAll('.bseg [data-seg]')].map((b) => `${b.getAttribute('data-seg')} ${b.querySelector('.n')!.textContent}`))
-    .toEqual(['all 3', 'need 1', 'ready 1', 'unread 2']);
+    .toEqual(['all 3', 'need 1', 'ready 2', 'unread 3']);
 });
 
 test('each view keeps only the cards that carry it', () => {
   ($('.bseg [data-seg="need"]')).click();
   expect(shown()).toEqual(['a']);
   ($('.bseg [data-seg="ready"]')).click();
-  expect(shown()).toEqual(['b']);
+  expect(shown().sort()).toEqual(['a', 'b']);
   ($('.bseg [data-seg="unread"]')).click();
-  expect(shown().sort()).toEqual(['b', 'c']);
+  expect(shown().sort()).toEqual(['a', 'b', 'c']);
   ($('.bseg [data-seg="all"]')).click();
   expect(shown().sort()).toEqual(['a', 'b', 'c']);
 });
@@ -115,4 +115,16 @@ test('a ready PR’s ring arms Review’s merge (Undo first) and opens no drawer
   sent.length = 0;
   $$('.card[data-session="b"] .chip.mi.pr')[0]!.click();
   expect(sent).toEqual([{ type: 'seen', key: url(7) }, { type: 'open', url: url(7), external: false }]);
+});
+
+test('one PR’s ring on two cards counts down, stops and lands as one (review on #229)', () => {
+  deliver({ type: 'html', tab: 'sessions', html: draw() });
+  const rings = () => $$('.pring[data-merge-number="7"]');
+  expect(rings()).toHaveLength(2);
+  rings()[1]!.click();
+  expect(rings().every((r) => r.classList.contains('armed'))).toBe(true);
+  rings()[0]!.click();
+  expect(rings().some((r) => r.classList.contains('armed'))).toBe(false);
+  deliver({ type: 'merged', repo: 'me/x', number: 7, error: '', merged: true });
+  expect(rings().every((r) => r.classList.contains('v-merged'))).toBe(true);
 });

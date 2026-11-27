@@ -99,3 +99,8 @@ test('a fact list with no URL or number is dropped', () => {
   const f: PrFact[] = prFacts([{ slug: 'o/r', error: null, branch: null, release: null, open: [{ number: 0, title: '', url: '', isDraft: false, ciState: null, author: '?', avatar: null, date: '', failing: 0, headSha: null, head: null, base: null, failingChecks: [], conflicting: false }], merged: [] }]);
   expect(f).toEqual([]);
 });
+
+test('an image is an item the drawer lists, flagged so the card keeps it as a preview', () => {
+  const items = madeItems(base({ files: [{ path: '/a/shot.png', name: 'shot.png', editedAtMs: NOW - 60_000, image: true }, { path: '/a/plan.html', name: 'plan.html' }] }));
+  expect(items.map((i) => [i.label, !!i.image])).toEqual([['shot.png', true], ['plan.html', false]]);
+});

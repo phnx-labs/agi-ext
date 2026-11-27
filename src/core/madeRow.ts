@@ -42,6 +42,8 @@ export interface MadeItem {
   merge?: { repo: string; number: number; sha?: string };
   /** Named in its latest reply: first in the row, marked “. */
   mention: boolean;
+  /** An image: the card shows it as a preview, so only the drawer lists it. */
+  image?: boolean;
   atMs?: number;
   read: ReadState;
 }
@@ -81,8 +83,8 @@ export interface MadeInput {
   prs: PullRequestRef[];
   main?: Pick<RemotePrStatus, 'url' | 'number' | 'state' | 'isDraft' | 'checks' | 'mergeable' | 'review' | 'headSha' | 'title'>;
   touched: { url: string; number: number; repo?: string; action: string }[];
-  /** Pages and docs, not images (images are the card's previews). */
-  files: { path: string; name: string; title?: string; editedAtMs?: number }[];
+  /** Pages, docs and images (`image`: the card previews those, so only the drawer lists them). */
+  files: { path: string; name: string; title?: string; editedAtMs?: number; image?: boolean }[];
   /** Its latest words: the reply, the newest step and the recap. */
   said: string;
   fact: (urlLower: string) => PrFact | undefined;
@@ -123,6 +125,7 @@ export function madeItems(m: MadeInput): MadeItem[] {
   const pages = [...m.files].sort((a, b) => (b.editedAtMs ?? 0) - (a.editedAtMs ?? 0)).map((f): MadeItem => ({
     kind: 'page', key: f.path, path: f.path, label: f.title || f.name,
     tip: `${f.title ? `${f.title}\n` : ''}${f.path}`, mention: false, atMs: f.editedAtMs, read: readState(f.editedAtMs, m.opened(f.path), m.since),
+    ...(f.image ? { image: true } : {}),
   }));
   // Named in its latest reply first, then what it made, newest first.
   return [...prItems.filter((i) => i.mention), ...prItems.filter((i) => !i.mention), ...pages];

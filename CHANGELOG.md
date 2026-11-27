@@ -16,8 +16,9 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
   Checks running, Draft, Merged), the PRs its latest reply names first and marked “, and each
   page by its headline instead of a folder count. Green means only Ready; red means Failing,
   Conflicts or Changes requested; everything else has no color.
-- Each PR and page says when it last changed. A still dot and bold mark one you have never
-  opened, and "changed" one the agent changed after you opened it. Nothing moves.
+- Each page says when the agent last changed it, and each PR when it opened or merged. A still
+  dot and bold mark one you have never opened, and "changed" one that changed after you
+  opened it. Nothing moves.
 - A Ready PR's chip ends in Review's merge ring: a click merges it with your Settings method
   after the 5-second Undo, then the chip says Merged.
 

@@ -1006,7 +1006,7 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const thumbs = [...attached, ...madeImages];
   const folderChip = folders.length ? `<a class="chip" href="#" data-artifact="${escapeHtml((folders[0].files[0] ?? folders[0].images[0]).path)}" title="${escapeHtml(folders.map((f) => f.display).join('\n'))}">${glyph('folder')}${folders.length}</a>` : '';
   // Every PR with its word and every page by its headline, one row that scrolls sideways (C3–C8).
-  const items = made?.items;
+  const items = made?.items?.filter((i) => !i.image);
   const ring = (m: NonNullable<MadeItem['merge']>) => mergeRing(m, opts.mergeWith ?? 'squash');
   const chips = items ? [...items.filter((i) => i.mention).map((i) => madeChip(i, now, ring)), ticketChip, ...items.filter((i) => !i.mention).map((i) => madeChip(i, now, ring))].join('') : [prs, ticketChip, folderChip].join('');
   const asked = askedAt(s);
@@ -1210,7 +1210,7 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
   const card = ({ row, place }: { row: SessionLike; place: SessionPlace }, pinned = false, copy = false) => renderSessionCard(row, place, now, {
     selected: row.sessionId === opts.selectedId, front: pinned, pinned, here, thumbs: opts.thumbsFor?.(row) ?? [], made: opts.madeFor?.(row) ?? null, today: today(row), blocked: blocked(row), project: opts.project, linearName: opts.linearName,
     // The pinned card is where an ask is answered, so it keeps its answers whatever the list shows (owner video, 2026-10-22 8:50 AM).
-    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
+    cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned && !opts.board ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId), answeredElsewhere: !pinned && (copy || (!!front && row.sessionId === front.row.sessionId)),
     // A listed live card drags onto another topic's section (owner video, 2026-11-24 5:00 PM; PHNX-4676).
     drag: !pinned && !copy && prefs.group === 'topic' && sessionStateOf(row) !== 'ended', mergeWith: opts.mergeWith,
