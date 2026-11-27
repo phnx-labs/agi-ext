@@ -57,7 +57,9 @@ import {
   type Ticket,
   type TicketGroup,
   tabHead,
+  prFacts,
 } from '../core/projectPanel';
+import type { PrFact } from '../core/madeRow';
 import { SESSION_STATE_WORD, relTime, sessionStateOf, waitFor } from '../shared/sessionState';
 import { readRegistry, registrySnapshot } from './projectRegistry.vscode';
 import { currentAgentPanelSubject, followFrontTerminal, revealAgentPanel, setAgentPanelSubjectFromProject } from './agentPanel.vscode';
@@ -80,7 +82,8 @@ import { getSettings, maybeUpdateTerminalTitles, saveSettings } from './agentSet
 import { harnessLogoCss } from './theme.vscode';
 import { rememberTicket, rememberTicketGroups } from '../core/ticketFaces';
 import { notifyAgentPanelSessionUpdate } from './agentPanel.vscode';
-import { PanelDock, type PanelHost } from './panelDock.vscode';
+import { PanelDock, tabHost, type PanelHost } from './panelDock.vscode';
+import { madeItems } from '../core/madeRow';
 
 
 // The Project sidebar panel (PHNX-4289): one view with tabs (Sessions, Issues,
@@ -101,6 +104,12 @@ const SESSION_PREFS_KEY = 'agents.projectPanel.sessionPrefs';
 const REVIEW_PREFS_KEY = 'agents.projectPanel.reviewPrefs';
 /** Starred session ids: a per-user preference, kept across windows and reloads. */
 const FAVORITES_KEY = 'agents.projectPanel.favorites';
+/** When the viewer opened each PR and page from a Made row, and since when that is kept (C5). */
+const MADE_OPENED_KEY = 'agents.made.opened';
+const MADE_SINCE_KEY = 'agents.made.since';
+const MADE_OPENED_MAX = 3000;
+const BOARD_VIEW = 'agents.sessions';
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
 const FRESH_MS = 60_000;
 
 type TabId = 'sessions' | 'tickets' | 'prs' | 'lead' | 'settings';
@@ -137,8 +146,12 @@ class ProjectView implements vscode.WebviewViewProvider {
   private leadSub: vscode.Disposable | undefined;
   private readonly tabs = new Map<TabId, TabState>(TABS.map((t) => [t, { html: undefined, loadedFor: undefined, loadedAt: 0, generation: 0 }]));
 
-  constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext) {
-    const saved = context.workspaceState.get<string>(TAB_KEY);
+  /** The session the Sessions tab's drawer shows; the panel has none. */
+  private drawer: { sessionId: string; host: string } | undefined;
+
+  /** `board`: the Sessions editor tab (⌘⇧K), which draws only Sessions, as a grid with a drawer. */
+  constructor(private readonly controller: ProjectPanelController, private readonly context: vscode.ExtensionContext, readonly board = false) {
+    const saved = board ? 'sessions' : context.workspaceState.get<string>(TAB_KEY);
     this.active = (TABS as readonly string[]).includes(saved ?? '') ? saved as TabId : 'sessions';
     this.syncTabContext();
   }
@@ -148,12 +161,12 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   /** Draws the panel into the sidebar view or the tab it popped out into. */
-  private attach(view: PanelHost): vscode.Disposable {
+  attach(view: PanelHost): vscode.Disposable {
     this.view = view;
     // The editor's app icons ship in assets/; artifact images the agent made live
     // under home, as in the session sidebar.
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'assets'), vscode.Uri.file(os.homedir()), ...IMAGE_DIRS().map((d) => vscode.Uri.file(d))] };
-    view.webview.html = shell(view.webview.cspSource, harnessLogoCss(view.webview, this.context.extensionUri));
+    view.webview.html = shell(view.webview.cspSource, harnessLogoCss(view.webview, this.context.extensionUri), this.board);
     // A click that opens something says "Opening …" in the page until the host has acted.
     const opened = (p: unknown) => { void Promise.resolve(p).finally(() => view.webview.postMessage({ type: 'opened' })); };
     const onMessage = view.webview.onDidReceiveMessage((msg: PanelMessage) => {
@@ -162,6 +175,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       if (msg.type === 'ready') this.onReady();
       else if (msg.type === 'refresh') this.controller.refresh();
       else if (msg.type === 'tab' && typeof msg.tab === 'string' && (TABS as readonly string[]).includes(msg.tab)) void this.show(msg.tab as TabId);
+      // The Sessions tab's drawer: a card click opens it, ✕, Esc or the grid behind closes it.
+      else if (msg.type === 'drawer') { this.drawer = typeof msg.sessionId === 'string' && host ? { sessionId: msg.sessionId, host } : undefined; void this.redrawSessions(); }
       else if (msg.type === 'open') opened(openWebviewUrl(msg.url, msg.external === true));
       // The Lead tab: each gesture is one bridge call, which is one `agents lead …` verb.
       else if (msg.type === 'leadAsk' && typeof msg.text === 'string' && msg.text.trim()) void leadPanel()?.ask(msg.text.trim());
@@ -188,6 +203,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       else if (msg.type === 'copy' && typeof msg.text === 'string') void vscode.env.clipboard.writeText(msg.text);
       else if ((msg.type === 'focus' || msg.type === 'resume') && typeof msg.sessionId === 'string') opened(this.controller.goToSession(msg.sessionId, host));
       else if (msg.type === 'artifact' && typeof msg.sessionId === 'string' && typeof msg.path === 'string') opened(this.controller.openArtifact(msg.sessionId, host, msg.path));
+      // A PR or page opened from a Made row: it is no longer new to you (C5).
+      else if (msg.type === 'seen' && typeof msg.key === 'string') void this.controller.markOpened(msg.key);
       else if (msg.type === 'close') void this.controller.closeSessions(targets);
       else if (msg.type === 'reopen') void this.controller.reopen(targets);
       else if (msg.type === 'hide') void this.controller.hide(targets, true);
@@ -234,7 +251,7 @@ class ProjectView implements vscode.WebviewViewProvider {
         this.view = undefined;
         this.paletteOpen = false;
         for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
-        sessionStreamDemand.setProjectSessionsVisible(false);
+        sessionStreamDemand.setProjectSessionsVisible(false, this.board ? 'board' : 'panel');
       },
     };
   }
@@ -247,7 +264,7 @@ class ProjectView implements vscode.WebviewViewProvider {
   }
 
   private syncDemand(): void {
-    sessionStreamDemand.setProjectSessionsVisible(!!this.view?.visible && this.active === 'sessions');
+    sessionStreamDemand.setProjectSessionsVisible(!!this.view?.visible && this.active === 'sessions', this.board ? 'board' : 'panel');
   }
 
   /** A message posted before the webview's script listens is dropped, so the first
@@ -265,17 +282,19 @@ class ProjectView implements vscode.WebviewViewProvider {
 
   /** Settings > In the header: which icons VS Code's row shows (its menus read these keys). */
   private postTabs(): void {
+    if (this.board) return;
     const header = panelHeader(getSettings(this.context).header);
     for (const k of PANEL_HEADER) void vscode.commands.executeCommand('setContext', `agents.project.show.${k}`, header[k]);
   }
 
   /** The tab buttons in VS Code's row: the one shown is drawn pressed. */
   private syncTabContext(): void {
+    if (this.board) return;
     void vscode.commands.executeCommand('setContext', 'agents.project.tab', this.active);
   }
 
   private async show(tab: TabId): Promise<void> {
-    if (tab === this.active) return;
+    if (tab === this.active || this.board) return;
     this.active = tab;
     void this.context.workspaceState.update(TAB_KEY, tab);
     this.syncTabContext();
@@ -309,8 +328,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       return;
     }
     if (gen !== state.generation) return;
-    // "AGI: RUSH": VS Code's top row names the project.
-    this.projectName = project?.name ?? '';
+    // "AGI: RUSH": VS Code's top row names the project; the Sessions tab is "Sessions".
+    this.projectName = this.board ? '' : project?.name ?? '';
     this.setTitle();
     void view.webview.postMessage({ type: 'project', name: project?.name ?? '', picked: this.controller.picked() });
     if (!project) {
@@ -333,11 +352,15 @@ class ProjectView implements vscode.WebviewViewProvider {
     if (tab === 'sessions') {
       // Ticket tiles show titles from the Issues read; Sessions shares it, once per FRESH_MS.
       this.controller.warmTicketFaces(project);
-      const { html, count } = this.controller.sessions(project, view.webview);
+      // A card's PR words and merge rings come from Review's read, shared the same way (C6–C8).
+      this.controller.warmPrs(project);
+      const { html, count } = this.controller.sessions(project, view.webview, this.board ? { board: true, drawer: this.drawer } : {});
       // VS Code's row has no room for a number: Sessions' icon takes an amber dot, and the
       // count goes on the bar's own icon.
-      void vscode.commands.executeCommand('setContext', 'agents.project.asks', count.asks > 0);
-      view.badge = count.asks ? { value: count.asks, tooltip: `${count.asks} ${count.asks === 1 ? 'session asks' : 'sessions ask'} for you` } : undefined;
+      if (!this.board) {
+        void vscode.commands.executeCommand('setContext', 'agents.project.asks', count.asks > 0);
+        view.badge = count.asks ? { value: count.asks, tooltip: `${count.asks} ${count.asks === 1 ? 'session asks' : 'sessions ask'} for you` } : undefined;
+      }
       // Most stream facts are another project's: the page already shows this list, so a
       // copy of it (hundreds of KB for hundreds of sessions) is neither sent nor parsed.
       if (html !== state.html) this.post(tab, html);
@@ -418,6 +441,8 @@ class ProjectView implements vscode.WebviewViewProvider {
   /** A ticket tile, here or in the session panel: its row peeks in Issues and its Linear
    *  page opens as a tab. */
   async openTicketTab(id: string): Promise<void> {
+    // The Sessions tab has no Issues: the panel peeks at the ticket.
+    if (this.board) return this.controller.view.openTicketTab(id);
     if (this.view) this.view.show(true);
     else await vscode.commands.executeCommand(`${VIEW_ID}.focus`);
     if (this.active !== 'tickets') {
@@ -463,7 +488,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       // click tries again. Turned down here (a closed dialog, a new commit; its warning
       // says why): Review rereads, so the row shows what is true now.
       void this.view?.webview.postMessage({ type: 'merged', repo, number, error, merged });
-      if (!error) await this.load('prs', true);
+      // Review and every card's chips read the PR lists again, so Merged shows where it was Ready.
+      if (!error) await Promise.all([this.load('prs', true), this.controller.prsChanged()]);
     });
     await this.merging;
   }
@@ -584,6 +610,9 @@ class ProjectPanelController {
   /** The last Issues read that answered: Start and a ticket's page find a ticket in it. */
   private ticketsSeen: TicketGroup[] = [];
   readonly view: ProjectView;
+  /** The Sessions editor tab (⌘⇧K): the same cards for every session in the project, as a grid. */
+  readonly board: ProjectView;
+  private boardTab: vscode.WebviewPanel | undefined;
   /** Which session tabs this window had in front, and when: Next that needs you reads it. */
   readonly history = new FrontHistory();
 
@@ -591,6 +620,9 @@ class ProjectPanelController {
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.view = new ProjectView(this, context);
+    this.board = new ProjectView(this, context, true);
+    // Before the first run everything counts as seen, so nothing starts out marked new (C5).
+    if (!context.globalState.get<number>(MADE_SINCE_KEY)) void context.globalState.update(MADE_SINCE_KEY, Date.now());
     this.avatars = new AvatarCache(path.join(os.homedir(), '.agents', '.cache', 'avatars'), () => this.view.avatarsArrived());
   }
 
@@ -752,7 +784,7 @@ class ProjectPanelController {
       const parsed = parseTickets(stdout);
       // A read that lands after a project switch is not the shown project's.
       if (this.tickets?.project === p.name) this.ticketsSeen = parsed;
-      if (rememberTicketGroups(parsed)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
+      if (rememberTicketGroups(parsed)) { void this.redrawSessions(); notifyAgentPanelSessionUpdate(); }
       return parsed;
     })();
     this.tickets = { project: p.name, at: Date.now(), groups };
@@ -884,7 +916,7 @@ class ProjectPanelController {
         if (!url) {
           const { stdout } = await runLinear(['tasks', id, '--json'], project.linearProfile, 60_000);
           const t = parseTicketView(stdout);
-          if (rememberTicket(t)) { void this.view.redrawSessions(); notifyAgentPanelSessionUpdate(); }
+          if (rememberTicket(t)) { void this.redrawSessions(); notifyAgentPanelSessionUpdate(); }
           url = t.url;
         }
       }
@@ -997,7 +1029,7 @@ class ProjectPanelController {
   private projectRows(p: ProjectRef): SessionLike[] {
     const registry = registrySnapshot();
     // The registry answers once; the list redraws then. Until it has, only rows the CLI filed under no project fall back.
-    if (!registry) void readRegistry().then(() => this.view.redrawSessions(), () => undefined);
+    if (!registry) void readRegistry().then(() => this.redrawSessions(), () => undefined);
     return projectSessions(preferLive(this.presented()) as unknown as SessionLike[], p.name, projectFallback(p, registry), (r) => !!terminals.getBySessionId(r.sessionId));
   }
 
@@ -1011,7 +1043,7 @@ class ProjectPanelController {
 
   private async savePrefs(prefs: SessionListPrefs): Promise<void> {
     await this.context.workspaceState.update(SESSION_PREFS_KEY, prefs);
-    void this.view.redrawSessions();
+    void this.redrawSessions();
     this.view.redrawSettings();
   }
 
@@ -1029,7 +1061,7 @@ class ProjectPanelController {
     const favs = this.favorites();
     if (on) favs.add(sessionId); else favs.delete(sessionId);
     await this.context.globalState.update(FAVORITES_KEY, [...favs]);
-    void this.view.redrawSessions();
+    void this.redrawSessions();
   }
 
   /** The pinned card's title: Claude's own /rename, typed into that session's tab here.
@@ -1092,7 +1124,7 @@ class ProjectPanelController {
       const { live, dead } = await terminals.sessionTabs(sessionId);
       terminals.closeTabs([...(live ? [live] : []), ...dead]);
     }
-    void this.view.redrawSessions();
+    void this.redrawSessions();
   }
 
   async reopen(targets: SessionTarget[]): Promise<void> {
@@ -1111,7 +1143,7 @@ class ProjectPanelController {
       if (!live && dead.length) { terminals.closeTabs(dead); closed += dead.length; }
     }
     void this.view.notice(closed ? `Closed ${closed} tab${closed === 1 ? '' : 's'} whose agent was not running` : 'No tab here was left without its agent');
-    void this.view.redrawSessions();
+    void this.redrawSessions();
   }
 
   async openArtifact(sessionId: string, host: string | undefined, filePath: string): Promise<void> {
@@ -1152,9 +1184,10 @@ class ProjectPanelController {
     return { rows, byId, blockedIds, frontId, prefs: this.prefs() };
   }
 
-  sessions(p: ProjectRef, webview: vscode.Webview): { html: string; count: { shown: number; asks: number } } {
+  sessions(p: ProjectRef, webview: vscode.Webview, extra: Pick<SessionListOptions, 'board' | 'drawer'> = {}): { html: string; count: { shown: number; asks: number } } {
     if (!sessionPresentationStore.hasSeenReset()) return { html: '<div class="empty">Waiting for the session stream…</div>', count: { shown: 0, asks: 0 } };
     const { rows, opts } = this.listOptions(p, webview);
+    Object.assign(opts, extra);
     const count = sessionCount(rows, opts.here, opts.prefs, opts.frontId);
     return { html: renderSessions(rows, Date.now(), opts), count: { shown: count.shown, asks: count.asks } };
   }
@@ -1180,14 +1213,28 @@ class ProjectPanelController {
       const remoteDevice = remoteDeviceArg(live.host);
       return { live, card: sessionCardFields(live, { sessionId: live.sessionId, home: os.homedir(), remoteDevice, previewUri: remoteDevice ? undefined : previewUri }) };
     };
-    const madeFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? sessionMade(f.card) : null; };
+    const facts = this.prIndex();
+    const known = [...facts.values()];
+    const opened = this.openedMap();
+    const openedAt = (key: string) => opened[key];
+    const since = this.context.globalState.get<number>(MADE_SINCE_KEY) ?? Date.now();
+    const madeFor = (s: SessionLike) => {
+      const f = fieldsFor(s);
+      if (!f) return null;
+      const made = sessionMade(f.card);
+      const files = f.card.artifacts.filter((a) => !IMAGE_FILE.test(a.basename)).map((a) => ({ path: a.path, name: a.basename, title: a.title, editedAtMs: a.editedAtMs }));
+      const steps = s.timeline?.steps ?? [];
+      const said = [s.lastResponse, steps[steps.length - 1]?.text ?? '', s.recap?.text ?? ''].join('\n');
+      made.items = madeItems({ prs: f.card.pullRequests ?? [], main: f.live.prStatus, touched: f.live.touchedPrs ?? [], files, said, fact: (k) => facts.get(k), known, opened: openedAt, since });
+      return made;
+    };
     const cards = cardSettings(getSettings(this.context).cards);
     // The pinned card's Made shelf is the Active Session sidebar's, with no Share (that lives
     // there), drawn as one row of chips unless Settings asks for previews.
     const shelfFor = (s: SessionLike) => { const f = fieldsFor(s); return f ? { ...madeShelf(f.live, f.card), sessionLocal: false, chips: cards.made === 'chips' } : null; };
     const here = this.here(webview);
     const subject = currentAgentPanelSubject();
-    return { rows, opts: { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites() } };
+    return { rows, opts: { selectedId: subject?.sessionId ?? null, frontId, here, prefs, thumbsFor, madeFor, shelfFor, todayId: this.todayId, blockedIds, project: p.name, linearName: p.linearName ?? undefined, cards, memory: this.history, favorites: this.favorites(), mergeWith: validMergeMethod(getSettings(this.context).mergeMethod) ?? 'squash', openedAt } };
   }
 
   /** Agents: Next Agent That Needs You: fronts the session tab › fronts in
@@ -1216,7 +1263,7 @@ class ProjectPanelController {
    *  always front it. Nothing is resumed or spawned. */
   select(sessionId: string, host: string | undefined, front: 'card' | 'always' | 'no' = 'no'): void {
     setAgentPanelSubjectFromProject(sessionId, host);
-    void this.view.redrawSessions();
+    void this.redrawSessions();
     if (front === 'no' || (front === 'card' && cardSettings(getSettings(this.context).cards).click !== 'front')) return;
     terminals.getBySessionId(sessionId)?.terminal.show(false);
   }
@@ -1265,7 +1312,71 @@ class ProjectPanelController {
   }
 
   redrawSessions(): Promise<void> {
-    return this.view.redrawSessions();
+    return Promise.all([this.view.redrawSessions(), this.board.redrawSessions()]).then(() => undefined);
+  }
+
+  /** Agents: Sessions (⌘⇧K): every session in this project as the sidebar's own cards, in a
+   *  grid, in an editor tab (owner video, 2026-11-26 1:19: "a page like this that can enable us
+   *  to see all of our sessions"). One tab per window; pressing it again brings it forward. */
+  openBoard(): void {
+    if (this.boardTab) { this.boardTab.reveal(); return; }
+    this.adoptBoard(vscode.window.createWebviewPanel(BOARD_VIEW, 'Sessions', vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true }));
+  }
+
+  adoptBoard(tab: vscode.WebviewPanel): void {
+    const previous = this.boardTab;
+    this.boardTab = tab;
+    previous?.dispose();
+    tab.title = 'Sessions';
+    tab.iconPath = { light: vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'sessions-light.svg'), dark: vscode.Uri.joinPath(this.context.extensionUri, 'assets', 'sessions-dark.svg') };
+    const drawing = this.board.attach(tabHost(tab, 'Sessions'));
+    tab.onDidDispose(() => { drawing.dispose(); if (this.boardTab === tab) this.boardTab = undefined; });
+  }
+
+  /** When this viewer opened each PR and page from a Made row, by its key (C5). */
+  private openedMap(): Record<string, number> {
+    return this.context.globalState.get<Record<string, number>>(MADE_OPENED_KEY) ?? {};
+  }
+
+  /** A PR or page opened from a Made row: its dot and bold go, on every card that shows it. */
+  async markOpened(key: string): Promise<void> {
+    const all = { ...this.openedMap(), [key.toLowerCase().startsWith('https://') ? key.toLowerCase() : key]: Date.now() };
+    const keys = Object.keys(all);
+    // The newest MADE_OPENED_MAX; the oldest go first.
+    if (keys.length > MADE_OPENED_MAX) for (const k of keys.sort((a, b) => all[a]! - all[b]!).slice(0, keys.length - MADE_OPENED_MAX)) delete all[k];
+    await this.context.globalState.update(MADE_OPENED_KEY, all);
+    void this.redrawSessions();
+  }
+
+  private prsAt = 0;
+  private prsFor: string | undefined;
+  private prsReading: Promise<void> | undefined;
+
+  /** Review's PR lists, read when Sessions shows too (at most once per FRESH_MS), so a card's
+   *  PR chips carry their word and a ready one its merge ring; never throws. */
+  warmPrs(p: ProjectRef, force = false): Promise<void> {
+    if (this.prsReading) return force ? this.prsReading.then(() => this.warmPrs(p, true)) : this.prsReading;
+    if (!force && this.prsFor === p.name && Date.now() - this.prsAt < FRESH_MS) return Promise.resolve();
+    this.prsAt = Date.now();
+    this.prsFor = p.name;
+    // A failed read waits FRESH_MS like a good one: the redraw after it must not read again at once.
+    const reading = this.reviewByRepo(p, false, () => undefined)
+      .then(() => undefined, () => undefined)
+      .finally(() => { this.prsReading = undefined; void this.redrawSessions(); });
+    this.prsReading = reading;
+    return reading;
+  }
+
+  /** After a merge: the lists again, so the chip that was Ready says Merged. */
+  async prsChanged(): Promise<void> {
+    const p = await this.project().catch(() => null);
+    if (p) await this.warmPrs(p, true);
+  }
+
+  /** Every PR Review's last read holds, by its URL. */
+  private prIndex(): Map<string, PrFact> {
+    const repos = this.prsFor && this.reviewSeen ? [...this.reviewSeen.done.values()] : [];
+    return new Map(prFacts(repos).map((f) => [f.url.toLowerCase(), f]));
   }
 
   /** The command palette's project menu: the same rows as the panel's. */
@@ -1281,8 +1392,10 @@ class ProjectPanelController {
     this.tickets = undefined;
     this.detected = undefined;
     // Tickets and pull requests read are the shown project's; a switch must not keep the last one's.
-    if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; }
+    if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; this.prsFor = undefined; }
+    this.prsAt = 0;
     this.view.refresh();
+    this.board.refresh();
   }
 }
 
@@ -1310,6 +1423,9 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
   controller.history.front(atStart ? terminals.getByTerminal(atStart)?.sessionId || undefined : undefined, Date.now());
   context.subscriptions.push(
     vscode.commands.registerCommand('agents.project.refresh', () => controller.refresh()),
+    vscode.commands.registerCommand('agents.sessions.open', () => controller.openBoard()),
+    // A Sessions tab open when the window closed comes back with it.
+    vscode.window.registerWebviewPanelSerializer(BOARD_VIEW, { deserializeWebviewPanel: async (tab) => controller.adoptBoard(tab) }),
     vscode.commands.registerCommand('agents.project.settings', () => controller.view.open('settings')),
     vscode.commands.registerCommand('agents.project.tab', (tab: unknown) => (TABS as readonly unknown[]).includes(tab) ? controller.view.open(tab as TabId) : undefined),
     // VS Code's row: one button per tab, drawn pressed (.on) or with an ask (.asks) by its
@@ -1339,7 +1455,7 @@ export function registerProjectPanel(context: vscode.ExtensionContext): void {
 }
 
 /** The panel's webview document; exported for the script syntax test. */
-export function shell(cspSource: string, logoCss = ''): string {
+export function shell(cspSource: string, logoCss = '', board = false): string {
   const n = getNonce();
   return /* html */ `<!doctype html>
 <html lang="en">
@@ -1542,6 +1658,56 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .fc-reply { margin-top: 8px; cursor: auto; }
   .fc-reply .reply-box textarea { resize: none; min-height: 32px; border-radius: 8px; }
   .fc-reply .reply-box .reply-mic { top: 4px; right: 4px; }
+  /* A card's Made row (C3–C8): every PR with its word, a page by its headline, when each changed,
+     a still dot and bold for what you have not opened, “ for what its latest reply names. */
+  .chip.mi { max-width: 230px; gap: 4px; font-family: var(--vscode-font-family); font-size: 11px; color: var(--r-text-2); }
+  a.chip.mi .mn { font-family: var(--vscode-editor-font-family); color: var(--r-text); }
+  .chip.mi .mw { color: var(--r-caption); } .chip.mi.pr-ok .mw { color: var(--r-ok); } .chip.mi.pr-bad .mw { color: var(--r-bad); }
+  .chip.mi .mt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .chip.mi .mwhen { color: var(--r-faint); font-size: 10px; flex: none; }
+  .chip.mi.r-new .mt, .chip.mi.r-new .mn, .chip.mi.r-changed .mt, .chip.mi.r-changed .mn { font-weight: 650; color: var(--r-text); }
+  .chip.mi.r-changed .mwhen { color: var(--r-text-2); }
+  .rd { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--r-text); display: inline-block; }
+  .said-q { flex: none; color: var(--r-gold); font-weight: 700; }
+  .mi-pr { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+  .mi-pr .pring { width: 20px; height: 20px; } .mi-pr .pring svg { width: 16px; height: 16px; }
+  /* The Sessions tab (⌘⇧K): the panel's own cards in a grid, the filter and its four views on top. */
+  body.board { background: var(--vscode-editor-background); background-image: radial-gradient(130% 55% at 72% 0%, var(--r-sky), transparent 70%); }
+  body.board main { padding: 0 18px 24px; }
+  body.board .frow { display: flex; padding: 12px 18px 4px; gap: 10px; align-items: center; flex-wrap: wrap; }
+  body.board .frow[hidden] { display: flex; }
+  body.board .hfind { flex: 1 1 320px; }
+  body.board .bseg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--r-edge); border-radius: 8px; }
+  body.board .bseg button { font: inherit; color: var(--r-caption); background: none; border: 0; border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+  body.board .bseg button[aria-pressed="true"] { background: var(--r-glass-hover); color: var(--r-text); }
+  body.board .bseg button .n { margin-left: 4px; }
+  body.board .grp .items { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; align-items: stretch; }
+  body.board .grp .items > .card { display: flex; flex-direction: column; min-height: 132px; box-sizing: border-box; }
+  body.board .grp .items > .card > .cbot { margin-top: auto; padding-top: 6px; }
+  body.board .grp .items > .emptyrow, body.board .grp .items > .empties { grid-column: 1 / -1; }
+  body.board .card.sel { box-shadow: none; }
+  .sdrawer-scrim { position: fixed; inset: 0; z-index: 25; background: color-mix(in srgb, var(--vscode-editor-background) 45%, transparent); }
+  .sdrawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 26; width: min(600px, 94vw); box-sizing: border-box; overflow-y: auto; padding: 12px 16px 20px; background: var(--vscode-editor-background); border-left: 1px solid var(--r-edge); box-shadow: -12px 0 32px rgba(0,0,0,.28); }
+  .sdrawer .dx { position: absolute; top: 10px; right: 10px; z-index: 1; font: inherit; color: var(--r-caption); background: none; border: 0; border-radius: 6px; width: 24px; height: 24px; cursor: pointer; }
+  .sdrawer .dx:hover { background: var(--r-glass-hover); color: var(--r-text); }
+  .sdrawer .card.front { height: auto; border: 0; background: none; padding: 0 28px 0 0; }
+  .sdrawer .card.front .fc-body, .sdrawer .fc-scroll { overflow: visible; flex: none; }
+  .sdrawer .fc-rt { display: block; -webkit-line-clamp: unset; overflow: visible; }
+  .sdrawer .card.front .fc-act ol { max-height: 46vh; }
+  .sdrawer .card.front .fc-acts { display: flex; }
+  .sdrawer .dfoot { margin: 10px 0 4px; }
+  .sdrawer .dgo { font: inherit; font-weight: 600; color: var(--r-on-gold); background: var(--r-gold); border: 0; border-radius: 7px; padding: 5px 12px; cursor: pointer; }
+  .dmade { margin-top: 12px; } .dmade .fc-k { margin: 10px 0 4px; }
+  .dmade ul { display: grid; gap: 6px; }
+  .dmade li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--r-edge); border-radius: 9px; padding: 7px 9px; }
+  .dmade li > a { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: flex-start; }
+  .dmade li .ic { margin-top: 3px; }
+  .dmade .ml-b { min-width: 0; display: grid; gap: 2px; }
+  .dmade .ml-t { color: var(--r-text-2); display: flex; align-items: baseline; gap: 5px; } .dmade .ml-t .rd { align-self: center; }
+  .dmade li.r-new .ml-t, .dmade li.r-changed .ml-t { color: var(--r-text); font-weight: 650; }
+  .dmade .ml-m { color: var(--r-caption); font-size: 11px; } .dmade .ml-m b { color: var(--r-text-2); font-weight: 600; }
+  .dmade .pr-ok { color: var(--r-ok); } .dmade .pr-bad { color: var(--r-bad); }
+  .dmade li:hover { background: var(--r-glass-hover); }
 ${REPLY_BOX_CSS}
 ${LEAD_TAB_CSS}
 ${MADE_CSS}
@@ -1818,9 +1984,9 @@ ${MADE_CSS}
   @media (prefers-reduced-motion: reduce) { .pring.v-run .arc, .pring.merging .arc, .pring.v-merged, .prfix[disabled], .st-waiting.pill i, .st-working.pill i, .ring .arc, .pill.st-asks i::after, .pill.st-stuck i::after, .pill.st-blocked i::after, .card.fresh, .card.flash, .tli.mq .t > span { animation: none; } .gh .car { transition: none; } }
 </style>
 </head>
-<body>
+<body${board ? ' class="board"' : ''}>
 <div class="frow" hidden>
-  <label class="hfind"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input type="search" data-find placeholder="Filter" aria-label="Filter" spellcheck="false" autocomplete="off"></label>
+  <label class="hfind"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input type="search" data-find placeholder="${board ? 'Filter sessions by title, topic, PR or page' : 'Filter'}" aria-label="Filter" spellcheck="false" autocomplete="off"></label>${board ? '<span class="bseg" role="group" aria-label="Show"><button data-seg="all" aria-pressed="true">All<span class="n"></span></button><button data-seg="need" aria-pressed="false">Needs you<span class="n"></span></button><button data-seg="ready" aria-pressed="false">Ready to merge<span class="n"></span></button><button data-seg="unread" aria-pressed="false">Something unread<span class="n"></span></button></span>' : ''}
 </div>
 <div class="sctl">${tabHead(null)}</div>
 <span class="hnote" role="status" aria-live="polite" hidden></span>
@@ -1830,6 +1996,8 @@ ${MADE_CSS}
 <script nonce="${n}">
   const vscode = acquireVsCodeApi();
   const main = document.querySelector('main');
+  // The Sessions tab (⌘⇧K): a card click opens the drawer; the filter and its views always show.
+  const BOARD = ${board};
   const ctl = document.querySelector('.sctl');
   const EMPTY_HEAD = ${JSON.stringify(tabHead(null))};
 ${PATCH_SCRIPT}
@@ -1861,11 +2029,27 @@ ${MADE_SCRIPT}
   const frow = document.querySelector('.frow');
   function syncFind(tab) {
     findBox.value = findWords[tab] || '';
-    // A tab with words shows its field; one without shows none.
-    frow.hidden = !findBox.value;
+    // A tab with words shows its field; one without shows none. The Sessions tab always shows it.
+    frow.hidden = !BOARD && !findBox.value;
+  }
+  for (const b of document.querySelectorAll('.bseg [data-seg]')) b.addEventListener('click', () => { seg = b.dataset.seg; applyFind(); });
+  // The Sessions tab's views (C1, C8): every session, those that need you, those with a PR ready
+  // to merge, those with something you have not opened. Each button counts its listed cards.
+  let seg = 'all';
+  const SEG_ATTR = { need: 'need', ready: 'ready', unread: 'unread' };
+  function countSegs() {
+    if (!BOARD) return;
+    const listed = [...main.querySelectorAll('.grp:not([data-group="favorites"]) .items .card')];
+    for (const b of document.querySelectorAll('.bseg [data-seg]')) {
+      const a = SEG_ATTR[b.dataset.seg];
+      b.querySelector('.n').textContent = String(a ? listed.filter((c) => c.dataset[a] === '1').length : listed.length);
+      b.setAttribute('aria-pressed', String(b.dataset.seg === seg));
+    }
   }
   function applyFind() {
+    countSegs();
     const words = findBox.value.toLowerCase().split(/\s+/).filter(Boolean);
+    const segOk = (c) => !SEG_ATTR[seg] || c.dataset[SEG_ATTR[seg]] === '1';
     findWords[current] = findBox.value;
     const groups = [...main.querySelectorAll(':scope > .grp, :scope > .rgrp, :scope > details, :scope > .lead')];
     const rows = (g) => g.querySelectorAll('.items .card, li.prli, li.tli, .lt');
@@ -1873,12 +2057,12 @@ ${MADE_SCRIPT}
     for (const grp of groups) {
       let left = 0;
       for (const c of rows(grp)) {
-        const hay = ((c.dataset.title || '') + ' ' + c.textContent).toLowerCase();
-        const hit = words.every((w) => hay.includes(w));
+        const hay = ((c.dataset.title || '') + ' ' + c.textContent + ' ' + [...c.querySelectorAll('[title]')].map((t) => t.title).join(' ')).toLowerCase();
+        const hit = words.every((w) => hay.includes(w)) && (!c.classList.contains('card') || segOk(c));
         c.style.display = hit ? '' : 'none';
         if (hit) left++;
       }
-      if (!grp.classList.contains('lead')) grp.style.display = words.length && !left && !grp.classList.contains('closed') ? 'none' : '';
+      if (!grp.classList.contains('lead')) grp.style.display = (words.length || SEG_ATTR[seg]) && !left && !grp.classList.contains('closed') ? 'none' : '';
       shown += left;
     }
     const none = main.querySelector('.nofind');
@@ -1889,17 +2073,18 @@ ${MADE_SCRIPT}
   // Issues, where it filters the list until Esc (owner, 2026-11-05 2:21 AM: "it doesn't show up
   // unless the user says command K").
   function find() {
+    if (BOARD) { findBox.focus(); findBox.select(); return; }
     if (current !== 'prs' && current !== 'tickets') { if (kscrim.hidden) vscode.postMessage({ type: 'search' }); else { kq.focus(); kq.select(); } return; }
     frow.hidden = false; findBox.focus(); findBox.select();
   }
-  findBox.addEventListener('blur', () => { if (!findBox.value) frow.hidden = true; });
+  findBox.addEventListener('blur', () => { if (!findBox.value && !BOARD) frow.hidden = true; });
   findBox.addEventListener('keydown', (e) => { if (e.key === 'Escape') { findBox.value = ''; applyFind(); findBox.blur(); e.stopPropagation(); } });
   // The ⇅ menu sits in the tab row (Review) or on the list's first group header (Sessions).
   function anyMenu() { return ctl.querySelector('.menu') || main.querySelector('.menu'); }
   function openMenu() { return document.querySelector('.menu:not([hidden])'); }
   function cardsOf(attr, value) { return [...main.querySelectorAll('.card[data-' + attr + '="' + CSS.escape(value) + '"]')]; }
   // A session can show three times: pinned, in Favorites and in its own group.
-  function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
+  function placeOf(c) { return c.closest('.front-pin') ? 'pin' : c.closest('.sdrawer') ? 'drawer' : c.closest('.grp[data-group="favorites"]') ? 'fav' : 'list'; }
   // On screen: at least a title row's height of it shows.
   function onScreen(el) { const r = el.getBoundingClientRect(), v = main.getBoundingClientRect(); return Math.min(r.bottom, v.bottom) - Math.max(r.top, v.top) >= 24; }
   // Scrolling yourself ends it: a later redraw never undoes your scroll.
@@ -2444,6 +2629,10 @@ ${MADE_SCRIPT}
     const ttlCopy = e.target.closest('.front-pin .ttl.cp');
     if (ttlCopy) { e.preventDefault(); const b = ttlCopy.closest('.card').querySelector('.cpy'); if (b) b.click(); return; }
     if (e.target.closest('[data-show-empty]')) { showEmpty = !showEmpty; restoreLocal(); return; }
+    if (e.target.closest('[data-drawer-close]')) { vscode.postMessage({ type: 'drawer' }); return; }
+    // A PR or page opened from a Made row is no longer new to you; it still opens below.
+    const madeKey = e.target.closest('[data-made-key]');
+    if (madeKey) vscode.postMessage({ type: 'seen', key: madeKey.dataset.madeKey });
     // Copy, on a card or in its ⋯ menu: the text goes to the clipboard through the host.
     const copy = e.target.closest('[data-copy]');
     // A value in ⋯ copies quietly: a faint "copied" beside it for a moment, the menu stays open.
@@ -2596,9 +2785,16 @@ ${MADE_SCRIPT}
       return;
     }
     const art = e.target.closest('[data-artifact]');
-    if (art && card) { e.preventDefault(); opening(art); vscode.postMessage({ type: 'artifact', sessionId: card.dataset.session, host: card.dataset.host, path: art.dataset.artifact }); return; }
+    // The drawer's Made list sits beside its card: a page there is that session's.
+    const artCard = card || (art && art.closest('.sdrawer') ? art.closest('.sdrawer').querySelector('.card[data-session]') : null);
+    if (art && artCard) { e.preventDefault(); opening(art); vscode.postMessage({ type: 'artifact', sessionId: artCard.dataset.session, host: artCard.dataset.host, path: art.dataset.artifact }); return; }
     const a = e.target.closest('a');
     if (a && a.dataset.url) { e.preventDefault(); opening(a); vscode.postMessage({ type: 'open', url: a.dataset.url, external: e.metaKey || e.ctrlKey || e.altKey }); return; }
+    // The Sessions tab: a card opens its drawer; the drawer's own card does nothing more.
+    if (card && BOARD && !(e.metaKey || e.ctrlKey || e.shiftKey)) {
+      if (!card.closest('.sdrawer')) vscode.postMessage({ type: 'drawer', sessionId: card.dataset.session, host: card.dataset.host });
+      return;
+    }
     if (card) {
       if (e.metaKey || e.ctrlKey || e.shiftKey) { const id = card.dataset.session; if (multi.has(id)) multi.delete(id); else multi.add(id); syncBulk(); return; }
       // An ended card opens in place with ▶ Resume and how long it ran; a second click folds it.
@@ -2749,7 +2945,7 @@ ${MADE_SCRIPT}
       const next = tabs[(tabs.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
       next.focus(); choose(next.dataset.tab); return;
     }
-    if (e.key === 'Escape') { const m = openMenu(); if (m) m.hidden = true; multi.clear(); syncBulk(); return; }
+    if (e.key === 'Escape') { const m = openMenu(); if (m) m.hidden = true; if (BOARD && main.querySelector('.sdrawer')) { vscode.postMessage({ type: 'drawer' }); return; } multi.clear(); syncBulk(); return; }
     if (e.target.closest && e.target.closest('a, button, summary')) return;
     const gh = e.target.closest && e.target.closest('.gh');
     if (gh && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gh.click(); return; }

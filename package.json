@@ -324,6 +324,10 @@
         "title": "Agents: Pages"
       },
       {
+        "command": "agents.sessions.open",
+        "title": "Agents: Sessions"
+      },
+      {
         "command": "agents.pages.refresh",
         "title": "Agents: Refresh Pages"
       },
@@ -1315,7 +1319,7 @@
         "mac": "cmd+shift+j"
       },
       {
-        "command": "agents.spawnWithContext",
+        "command": "agents.sessions.open",
         "key": "ctrl+shift+k",
         "mac": "cmd+shift+k"
       },

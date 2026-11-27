@@ -84,7 +84,10 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   --number N`) on the click for its head commit and whether you may bypass protection
   (`src/vscode/prMerge.vscode.ts`). A Review row's Merge is a click on its ready ring with the Settings
   method after the ring drains for 5 s in the page (`mergeNow`; a PR row ends in one ring that carries its verdict, with no state word on the row, owner 2026-10-27 12:07 PM), and only at the head commit the list read; the sidebar's Merge ▾ reads again after its
-  dialog (`mergeWithMenu`); `--admin` only after its own warning dialog.
+  dialog (`mergeWithMenu`); `--admin` only after its own warning dialog. Review's per-repository
+  read also runs when Sessions shows, in the panel or the Sessions tab, at most once a minute
+  (`warmPrs`), so a card's PR chips carry their word and a Ready one Review's own ring
+  (`mergeRing`, `prFacts`, the Made row in `src/core/madeRow.ts`); after a merge it reads again.
   A sixth: ticket tiles show the title and state a Linear read in this window already returned
   (`src/core/ticketFaces.ts`); the Issues read (`linear tasks --project <id> --json`)
   also runs when Sessions shows, under the same once-a-minute cache. A tile never reads Linear.
@@ -135,6 +138,13 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   not patched); every thumbnail is `<img data-thumb>` filled from `THUMB_SCRIPT`'s 480 px
   cache, never a full-size `src` (the flicker in the 2026-10-13 video;
   `sessionCards.patch.test.ts` runs the real patch in happy-dom).
+- The Sessions tab (⌘⇧K, `ProjectPanelController.openBoard`) is a second `ProjectView` in board
+  mode drawing into an editor tab: the same `renderSessions` cards as a grid with no pinned
+  card, the same page script and message handler, Sessions only. A card click opens its
+  drawer (`drawerHtml`), never selects or fronts a tab; its stream demand is its own
+  (`setProjectSessionsVisible(…, 'board')`). When the viewer opened each PR and page from a
+  Made row lives in `globalState` (`agents.made.opened`, newest 3000), with the first run's
+  time as the line before which nothing counts as new (`agents.made.since`).
 - The Active Session sidebar is the one preview: a Project panel session click sets its
   subject (`setAgentPanelSubjectFromProject`; it redraws an open sidebar and never opens a
   closed one, owner video, 2026-10-22), brings the tab this window binds to the session

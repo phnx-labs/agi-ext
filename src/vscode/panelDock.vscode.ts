@@ -23,7 +23,7 @@ export interface PanelHost {
   readonly onDidChangeVisibility: vscode.Event<void>;
 }
 
-function tabHost(tab: vscode.WebviewPanel, title: string): PanelHost {
+export function tabHost(tab: vscode.WebviewPanel, title: string): PanelHost {
   let named: string | undefined;
   return {
     webview: tab.webview,

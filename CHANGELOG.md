@@ -4,6 +4,23 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.452] - 2026-11-27
+
+- Sessions (⌘⇧K, Agents: Sessions): every session in the project as the sidebar's own cards in
+  an editor tab, in a grid, grouped the sidebar's way, with the filter on top and four views:
+  All, Needs you, Ready to merge, Something unread. A card opens a drawer with its question
+  and answers, the whole recap, every step, the reply box, Focus its terminal, and everything
+  it made or named. Esc closes it. ⌘⇧K no longer runs Spawn with Context, which stays in
+  the command palette.
+- A card's Made row lists every PR with its state in words (Ready, Failing, Conflicts,
+  Checks running, Draft, Merged), the PRs its latest reply names first and marked “, and each
+  page by its headline instead of a folder count. Green means only Ready; red means Failing,
+  Conflicts or Changes requested; everything else has no color.
+- Each PR and page says when it last changed. A still dot and bold mark one you have never
+  opened, and "changed" one the agent changed after you opened it. Nothing moves.
+- A Ready PR's chip ends in Review's merge ring: a click merges it with your Settings method
+  after the 5-second Undo, then the chip says Merged.
+
 ## [0.9.451] - 2026-11-26
 
 - Pages: type an address and press ☆ at the end of the search box to pin it without opening
