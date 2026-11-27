@@ -179,6 +179,23 @@ describe('the Pages webview', () => {
     expect(last()).toEqual({ type: 'move', url: 'https://github.com/acme/app', before: null });
     expect(names()).toEqual(['Plan', 'RUSH']);
     expect((document.activeElement as unknown as HTMLElement).dataset.open).toBe('https://github.com/acme/app');
+    const sentBefore = sent.length;
+    $('.tile:last-child .face').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
+    expect(sent.length).toBe(sentBefore);
+    // After a drop the drag is over: a drag from outside the page moves nothing.
+    expect(drag('dragover', tile(0), 5).defaultPrevented).toBe(false);
+    state('same');
+  });
+  test('⌥← ⌥→ step past the tile beside it on screen, skipping pins the filter hides', () => {
+    deliver({ type: 'state', click: 'same', shortcut: '⌘⇧B', recent: [], pins: ['alpha', 'hidden', 'beta'].map((n) => ({ url: `https://${n}.com/`, name: n, title: n })) });
+    const q = $('#q') as unknown as HTMLInputElement;
+    q.value = 'a'; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['alpha', 'beta']);
+    $('.face').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }) as unknown as Event);
+    expect(last()).toEqual({ type: 'move', url: 'https://alpha.com/', before: null });
+    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['beta', 'alpha']);
+    q.value = ''; q.dispatchEvent(new window.Event('input') as unknown as Event);
+    expect([...document.querySelectorAll('.tname')].map((e) => e.textContent)).toEqual(['hidden', 'beta', 'alpha']);
     state('same');
   });
   test('a hostile title or URL from the history is text, never markup', () => {
