@@ -1,4 +1,4 @@
-// Pages (⌘⇧B): the owner's everyday pages as one row of icons in an editor tab.
+// Pages (⌘⇧B): the owner's everyday pages as two rows of icons in an editor tab.
 // A click opens the page in VSCodium's own browser, in the same tab or a new one.
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -264,6 +264,17 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
   .row:hover .act, .row:focus-within .act { opacity: 1; border-color: var(--r-edge); }
   .empty { color: var(--r-faint); font-size: 12.5px; padding: 10px 2px; }
   .tiles .empty { grid-column: 1 / -1; }
+  /* A short last page keeps both rows' height, so Recent never moves when the page turns. */
+  .tiles.paged { min-height: 192px; align-content: start; }
+  .pager { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px; }
+  .pager[hidden] { display: none; }
+  .pg { width: 24px; height: 24px; border-radius: 7px; border: 1px solid transparent; background: none; color: var(--r-text-2); cursor: pointer; padding: 0; font-size: 14px; }
+  .pg:hover:not(:disabled) { border-color: var(--r-edge); background: var(--r-glass-hover); }
+  .pg:disabled { opacity: .3; cursor: default; }
+  .dot { width: 24px; height: 24px; border: 0; padding: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+  .dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--r-edge-hi); }
+  .dot.on::before { background: var(--r-gold-line); }
+  .pg:focus-visible, .dot:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   .ring { animation: ring .9s ease; }
   @keyframes ring { from { box-shadow: 0 0 0 0 rgba(168,136,74,.55); } to { box-shadow: 0 0 0 10px rgba(168,136,74,0); } }
   @media (prefers-reduced-motion: reduce) { .ring { animation: none; } }
@@ -271,9 +282,10 @@ ${RUSH_THEME_CSS}  body { margin: 0; font-family: var(--vscode-font-family); fon
 </head>
 <body>
 <main>
-  <label class="search"><input id="q" placeholder="Filter your pages, or type a URL and press Enter" autocomplete="off" aria-label="Filter pages or enter a URL"><span class="hint" id="hint"></span></label>
+  <label class="search"><input id="q" placeholder="Filter Recent, or type a URL and press Enter" autocomplete="off" aria-label="Filter Recent or enter a URL"><span class="hint" id="hint"></span></label>
   <h2>Your pages<span class="n" id="npin"></span></h2>
   <div class="tiles" id="tiles"></div>
+  <nav class="pager" id="pager" hidden aria-label="Pages of pinned pages"></nav>
   <h2 id="recentH">Recent<span class="n">from the built-in browser's history</span></h2>
   <div id="recent"></div>
 </main>
@@ -292,6 +304,20 @@ const PAGES_SCRIPT = `(() => {
   const movePin = ${MOVE_PIN};
   let state = { pins: [], recent: [], click: 'same', shortcut: '' };
   let editing = null;
+  // Your pages fill two rows; more go on further pages, ‹ › and the dots between them.
+  let page = 0;
+  const TILE_W = 104, TILE_GAP = 14, ROWS = 2;
+  const perPage = () => ROWS * Math.max(1, Math.floor(($('tiles').clientWidth + TILE_GAP) / (TILE_W + TILE_GAP)));
+  const pageCount = () => Math.max(1, Math.ceil(state.pins.length / perPage()));
+  const pageOf = (url) => Math.floor(Math.max(0, state.pins.findIndex((x) => x.url === url)) / perPage());
+  // The pager is redrawn with the page, so the button pressed gets focus back (‹ › again where it is now disabled, the dot otherwise).
+  function turnTo(to, from) {
+    const focused = !!from && document.activeElement === from;
+    page = to; draw();
+    if (!focused) return;
+    const same = from.classList.contains('dot') ? $('pager').querySelector('.dot[data-page="' + page + '"]') : $('pager').querySelector('.pg[title="' + from.title + '"]');
+    const back = same && !same.disabled ? same : $('pager').querySelector('.dot.on'); if (back) back.focus();
+  }
   const $ = (id) => document.getElementById(id);
   const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
   const host = (u) => { try { const x = new URL(u); return x.protocol === 'file:' ? 'local file' : x.host.replace(/^www\\./, ''); } catch { return u; } };
@@ -323,14 +349,22 @@ const PAGES_SCRIPT = `(() => {
     const mod = state.shortcut.startsWith('Ctrl') ? 'Ctrl+' : '⌘';
     if (Date.now() >= failUntil) $('hint').textContent = state.click === 'same' ? 'Enter opens here · ' + mod + 'Enter in a new tab' : 'Enter opens a new tab · ' + mod + 'Enter here';
     $('npin').textContent = state.pins.length ? String(state.pins.length) : '';
-    const pins = state.pins.filter((p) => match(q, p.name, p.title, p.url));
+    // The filter is for Recent: your pages always show (owner, 2026-11-26 5:58 PM).
+    const per = perPage(), pages = pageCount();
+    page = Math.min(Math.max(page, 0), pages - 1);
+    const pins = state.pins.slice(page * per, page * per + per);
+    $('pager').hidden = pages < 2;
+    $('tiles').classList.toggle('paged', pages > 1);
+    $('pager').innerHTML = pages < 2 ? '' : '<button class="pg" data-page="' + (page - 1) + '"' + (page ? '' : ' disabled') + ' title="Previous" aria-label="Previous">‹</button>'
+      + Array.from({ length: pages }, (_, i) => '<button class="dot' + (i === page ? ' on' : '') + '" data-page="' + i + '" aria-label="Page ' + (i + 1) + ' of ' + pages + '"' + (i === page ? ' aria-current="page"' : '') + '></button>').join('')
+      + '<button class="pg" data-page="' + (page + 1) + '"' + (page < pages - 1 ? '' : ' disabled') + ' title="Next" aria-label="Next">›</button>';
     $('tiles').innerHTML = pins.map((p) => '<div class="tile" draggable="' + (editing ? 'false' : 'true') + '" data-tile="' + escapeHtml(p.url) + '">'
       + '<button class="face" data-open="' + escapeHtml(p.url) + '" title="' + escapeHtml(p.url) + '" aria-label="Open ' + escapeHtml(p.name) + '">' + icon(p, p.name) + '</button>'
       + (editing === p.url
         ? '<input class="rename" data-rename="' + escapeHtml(p.url) + '" value="' + escapeHtml(p.name) + '" aria-label="Name"><div class="was">' + escapeHtml(p.title) + '</div>'
         : '<div class="tname" data-edit="' + escapeHtml(p.url) + '" title="Click to rename" role="button" tabindex="0">' + escapeHtml(p.name) + '</div>')
       + '<button class="unpin" data-unpin="' + escapeHtml(p.url) + '" title="Unpin" aria-label="Unpin ' + escapeHtml(p.name) + '">✕</button></div>').join('')
-      || '<div class="empty">' + (state.pins.length ? 'No pinned page matches.' : 'Pin a page from Recent with ☆, or type a URL above and pin it from Recent once it opens.') + '</div>';
+      || '<div class="empty">Pin a page from Recent with ☆, or type a URL above and pin it from Recent once it opens.</div>';
     const pinned = new Set(state.pins.map((p) => p.url));
     const recent = state.recent.filter((p) => !pinned.has(p.url) && match(q, p.title, p.url));
     $('recent').innerHTML = state.reason ? '<div class="empty">' + escapeHtml(state.reason) + '</div>'
@@ -354,6 +388,7 @@ const PAGES_SCRIPT = `(() => {
   document.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('.rename')) return;
+    const pg = t.closest('[data-page]'); if (pg) { if (!pg.disabled) turnTo(Number(pg.dataset.page), pg); return; }
     const ed = t.closest('[data-edit]'); if (ed) { editing = ed.dataset.edit; draw(); return; }
     const un = t.closest('[data-unpin]'); if (un) { vscode.postMessage({ type: 'unpin', url: un.dataset.unpin }); return; }
     const pn = t.closest('[data-pin]'); if (pn) { const p = state.recent.find((x) => x.url === pn.dataset.pin); if (p) vscode.postMessage({ type: 'pin', url: p.url, title: p.title, icon: p.icon }); return; }
@@ -363,27 +398,31 @@ const PAGES_SCRIPT = `(() => {
   function move(url, before) {
     const pins = movePin(state.pins, url, before); if (pins === state.pins) return;
     state.pins = pins;
+    page = pageOf(url);
     vscode.postMessage({ type: 'move', url, before });
     draw();
   }
-  // Puts a pin before or after the tile it was dropped on; a pin the filter hides keeps its place among the rest.
+  // Puts a pin before or after the tile it was dropped on.
   function placeBy(url, target, after) {
     const i = state.pins.findIndex((x) => x.url === target);
     const next = after ? state.pins.slice(i + 1).find((x) => x.url !== url) : state.pins[i];
     move(url, next ? next.url : null);
   }
+  // Turning the page detaches the dragged tile, so its dragend can be lost: a drag counts only while it carries a pin.
+  const PIN_DRAG = 'application/x-agents-pin';
   let dragged = null;
+  const ours = (e) => !!(dragged && e.dataTransfer && [...(e.dataTransfer.types || [])].includes(PIN_DRAG));
   const clearDrop = () => document.querySelectorAll('.drop-before, .drop-after').forEach((t) => t.classList.remove('drop-before', 'drop-after'));
   const dropAt = (e) => {
     const t = e.target.closest && e.target.closest('.tile[data-tile]');
-    if (!dragged || !t || t.dataset.tile === dragged) return null;
+    if (!ours(e) || !t || t.dataset.tile === dragged) return null;
     const box = t.getBoundingClientRect();
     return { tile: t, after: e.clientX > box.left + box.width / 2 };
   };
   $('tiles').addEventListener('dragstart', (e) => {
     const t = e.target.closest && e.target.closest('.tile[draggable="true"]'); if (!t) return;
     dragged = t.dataset.tile; t.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragged);
+    e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData(PIN_DRAG, dragged); e.dataTransfer.setData('text/plain', dragged);
   });
   $('tiles').addEventListener('dragover', (e) => {
     const d = dropAt(e); if (!d) return;
@@ -399,13 +438,47 @@ const PAGES_SCRIPT = `(() => {
     const url = dragged; dragged = null;
     placeBy(url, d.tile.dataset.tile, d.after);
   });
+  // A tile held over ‹ or › turns the page, so it can be dropped on another one.
+  let holdAt = 0, holdOn = '';
+  $('pager').addEventListener('dragover', (e) => {
+    const pg = ours(e) && e.target.closest && e.target.closest('.pg:not(:disabled)');
+    if (!pg) { holdOn = ''; return; }
+    e.preventDefault();
+    if (holdOn !== pg.title) { holdOn = pg.title; holdAt = Date.now(); return; }
+    if (Date.now() - holdAt < 500) return;
+    holdAt = Date.now(); turnTo(Number(pg.dataset.page), null);
+  });
+  $('pager').addEventListener('dragleave', (e) => { if (!$('pager').contains(e.relatedTarget)) holdOn = ''; });
+  // A sideways two-finger swipe over your pages turns the page.
+  // One gesture turns one page: its momentum is spent until the wheel rests for 200 ms, and drift that pauses starts over.
+  let swipe = 0, lastWheel = 0, spent = false;
+  $('tiles').addEventListener('wheel', (e) => {
+    if (pageCount() < 2 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    const now = Date.now(), gap = now - lastWheel; lastWheel = now;
+    if (gap > 200) { spent = false; swipe = 0; }
+    if (spent) return;
+    if (swipe && Math.sign(swipe) !== Math.sign(e.deltaX)) swipe = 0;
+    swipe += e.deltaX;
+    if (Math.abs(swipe) < 60) return;
+    const to = page + (swipe > 0 ? 1 : -1); spent = true; swipe = 0;
+    if (to >= 0 && to < pageCount()) { page = to; draw(); }
+  }, { passive: false });
+  // A width change (the window, or a scrollbar appearing) re-pages around the first page you were looking at.
+  let lastPer = perPage();
+  new ResizeObserver(() => {
+    const per = perPage(); if (per === lastPer) return;
+    const first = state.pins[page * lastPer]; lastPer = per;
+    if (first) page = pageOf(first.url);
+    draw();
+  }).observe($('tiles'));
   $('tiles').addEventListener('dragend', () => { dragged = null; clearDrop(); document.querySelectorAll('.tile.dragging').forEach((t) => t.classList.remove('dragging')); });
   document.addEventListener('keydown', (e) => {
     const face = e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.closest && e.target.closest('.face');
     if (face) {
       e.preventDefault();
-      const url = face.dataset.open, shown = [...document.querySelectorAll('.face')].map((f) => f.dataset.open);
-      const left = e.key === 'ArrowLeft', beside = shown[shown.indexOf(url) + (left ? -1 : 1)];
+      const url = face.dataset.open, left = e.key === 'ArrowLeft';
+      const beside = (state.pins[state.pins.findIndex((x) => x.url === url) + (left ? -1 : 1)] || {}).url;
       if (!beside) return;
       placeBy(url, beside, !left);
       const back = [...document.querySelectorAll('.face')].find((f) => f.dataset.open === url); if (back) back.focus();
@@ -423,7 +496,7 @@ const PAGES_SCRIPT = `(() => {
   $('q').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const v = $('q').value.trim(); if (!v) return;
-    const first = document.querySelector('[data-open]');
+    const first = document.querySelector('.row[data-open]');
     const looksLikeUrl = /^[a-z][\\w+.-]*:|^[\\w-]+(\\.[\\w-]+)+|^localhost/i.test(v);
     if (looksLikeUrl || !first) open(v, e.metaKey || e.ctrlKey, null); else open(first.dataset.open, e.metaKey || e.ctrlKey, first);
   });

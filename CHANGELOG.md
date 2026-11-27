@@ -4,6 +4,15 @@ All notable changes to AGI EXT (the VS Code extension) are documented here. Form
 [Keep a Changelog](https://keepachangelog.com/); `scripts/release.sh` requires a
 `## [<version>]` section for the version being published.
 
+## [0.9.450] - 2026-11-26
+
+- Pages: typing in the search box filters Recent only; your pinned pages always show. Enter on
+  a word opens the first page Recent matched, never a pinned one.
+- Your pages take at most two rows. More go on further pages: ‹ ›, the dots under them, or a
+  two-finger sideways swipe turn the page. Hold a dragged page over ‹ or › to drop it on
+  another page; ⌥← ⌥→ carry it across the edge. The section keeps its height, so Recent
+  stays put when the page turns.
+
 ## [0.9.449] - 2026-11-26
 
 - Pages: drag a pinned page onto another to reorder your pages; a gold line shows where it
