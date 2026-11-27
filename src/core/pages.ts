@@ -94,9 +94,10 @@ function hostOf(url: string): string {
  * The built-in browser's history, from VSCodium's own storage: `browser.history.entries.global`
  * holds `{ <scope>: [{ url, title, time, icon }] }` and `browser.history.favicons.global` holds
  * `{ map: { <icon id>: data URI } }` (VSCodium 1.117). Newest visit of each page first; sign-in
- * pages and anything that is not http(s) or file are left out.
+ * pages and anything that is not http(s) or file are left out. All of it: VSCodium bounds the
+ * list (200 visits in the owner's 1.117 storage), and the view shows 30 at a time.
  */
-export function parseBrowserHistory(entriesJson: string | null, faviconsJson: string | null, limit = 30): RecentPage[] {
+export function parseBrowserHistory(entriesJson: string | null, faviconsJson: string | null): RecentPage[] {
   let entries: unknown;
   let icons: Record<string, string> = {};
   try {
@@ -120,7 +121,7 @@ export function parseBrowserHistory(entriesJson: string | null, faviconsJson: st
       newest.set(url, { url, title: typeof e.title === 'string' && e.title.trim() ? e.title.trim() : hostOf(url), time: e.time, ...(icon ? { icon } : {}) });
     }
   }
-  return [...newest.values()].sort((a, b) => b.time - a.time).slice(0, limit);
+  return [...newest.values()].sort((a, b) => b.time - a.time);
 }
 
 /**
