@@ -2285,6 +2285,10 @@ ${MADE_SCRIPT}
     };
     main.addEventListener('mouseover', (e) => { const c = e.target.closest && e.target.closest('.card[data-session]'); if (c) peekAt(c); });
     document.documentElement.addEventListener('mouseleave', () => peekAt(null));
+    // The host forgets the peek when the tab hides (a click went to the session), so the same card peeks again on return.
+    const forget = () => { peekKey = ''; clearTimeout(peekTimer); };
+    window.addEventListener('blur', forget);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) forget(); });
   }
   function drawPeek() {
     main.querySelectorAll('.tli').forEach((li) => {
