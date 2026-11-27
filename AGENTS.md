@@ -141,7 +141,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
 - The Sessions tab (⌘⇧K, `ProjectPanelController.openBoard`) is a second `ProjectView` in board
   mode drawing into an editor tab: the same `renderSessions` cards as a grid with no pinned
   card, the same page script and message handler, Sessions only. A card click opens its
-  drawer (`drawerHtml`), never selects or fronts a tab; its stream demand is its own
+  drawer (`drawerHtml`) and fronts no tab (an answer from the drawer selects its session, as the
+  pinned card's does); its stream demand is its own
   (`setProjectSessionsVisible(…, 'board')`). When the viewer opened each PR and page from a
   Made row lives in `globalState` (`agents.made.opened`, newest 3000), with the first run's
   time as the line before which nothing counts as new (`agents.made.since`).
@@ -187,7 +188,8 @@ they are stale) · `scripts/build.sh <ver>` (VSIX) · `scripts/install.sh` (loca
   never a prompt or request headline, ⑂ for a `forkOf` row; an editor tab shows at most 34
   characters of the name (`capTabName`).
 - What a card says is computed once and both sidebars read it: a PR's word is `prVerdict`
-  (`src/core/prStatus.ts`); a state's dot color `STATE_TONE` and the time words are in
+  (`src/core/prStatus.ts`), except a PR Review's list holds, which says what its ring says
+  (`prFacts` from Review's `prState`, so a chip's Ready is exactly when its ring merges); a state's dot color `STATE_TONE` and the time words are in
   `src/shared/sessionState.ts`; the theme tokens and `.card` (`RUSH_THEME_CSS`), the escaper
   and the GitHub and Linear marks are in `src/shared/sessionCards.ts`; harness logos come from
   `harnessLogoCss`. A webview script reuses a host function by interpolating it
@@ -310,7 +312,11 @@ going on, where, and what came out of it" in one look; text explains only what a
   when (`FrontHistory`). What a session was started with is a card
   part, First message, off by default and with no "started:" word. No row only for its
   state: the tint says it (owner video, 2026-10-18 8:59 PM). Made is one row of chips or the
-  preview tiles, by Settings > What it made, in both panels; no chip row ever wraps.
+  preview tiles, by Settings > What it made, in both panels; no chip row ever wraps. A listed
+  card's row (`madeChip`, the approved prototype of 2026-11-26) names every PR with its word and
+  every page by its headline, the PRs its latest reply names first, when each changed, and a
+  still dot and bold for what you have not opened; the old folder count is gone, and images
+  stay the card's previews (the Sessions tab's drawer lists them all).
   Everything else a session made lives in the Active Session sidebar.
 - **Show, don't label.** App icons (VSCodium, Ghostty) plus the workspace name (`agents`,
   `agents-cli`), never "This window" or "Window 2". Thumbnails for images, chips for PRs and

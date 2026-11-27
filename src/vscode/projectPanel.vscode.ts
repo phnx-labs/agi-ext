@@ -249,6 +249,7 @@ class ProjectView implements vscode.WebviewViewProvider {
         this.leadSub?.dispose();
         this.leadSub = undefined;
         this.view = undefined;
+        this.drawer = undefined;
         this.paletteOpen = false;
         for (const t of this.tabs.values()) { t.loadedFor = undefined; t.generation++; }
         sessionStreamDemand.setProjectSessionsVisible(false, this.board ? 'board' : 'panel');
@@ -355,6 +356,8 @@ class ProjectView implements vscode.WebviewViewProvider {
       // A card's PR words and merge rings come from Review's read, shared the same way (C6–C8).
       this.controller.warmPrs(project);
       const { html, count } = this.controller.sessions(project, view.webview, this.board ? { board: true, drawer: this.drawer } : {});
+      // A drawer whose session left the project (ended past the cap, hidden, another project) closes for good.
+      if (this.drawer && !html.includes('class="sdrawer"')) this.drawer = undefined;
       // VS Code's row has no room for a number: Sessions' icon takes an amber dot, and the
       // count goes on the bar's own icon.
       if (!this.board) {
@@ -765,7 +768,16 @@ class ProjectPanelController {
       if (!done.has(r.slug)) done.set(r.slug, { slug: r.slug, error: null, branch: null, release: null, open: [], merged: [] });
       partial(draw());
     }));
+    this.settlePrs(done.values());
     return draw();
+  }
+
+  /** Every repository's last complete read, by slug: cards read their PR words and rings from
+   *  it, so a read in progress (which starts empty) never takes them away, and a repository that
+   *  failed this time keeps what it had. */
+  private prsSettled = new Map<string, PrsModel['repos'][number]>();
+  private settlePrs(repos: Iterable<PrsModel['repos'][number]>): void {
+    for (const r of repos) if (!r.error || !this.prsSettled.has(r.slug)) this.prsSettled.set(r.slug, r);
   }
 
   private async detect(): Promise<ProjectRef | null> {
@@ -808,6 +820,7 @@ class ProjectPanelController {
     }
     const model = parsePrs(stdout);
     this.reviewSeen = { slugs: model.repos.map((r) => r.slug), done: new Map(model.repos.map((r) => [r.slug, r])) };
+    this.settlePrs(model.repos);
     return renderPrs(model, Date.now(), this.reviewOptions());
   }
 
@@ -1222,7 +1235,9 @@ class ProjectPanelController {
       const f = fieldsFor(s);
       if (!f) return null;
       const made = sessionMade(f.card);
-      const files = f.card.artifacts.filter((a) => !IMAGE_FILE.test(a.basename)).map((a) => ({ path: a.path, name: a.basename, title: a.title, editedAtMs: a.editedAtMs }));
+      // Every file it made, its plan page included; images are the card's previews, so they list only in the drawer.
+      const plan = f.card.plan && !f.card.artifacts.some((a) => a.path === f.card.plan!.path) ? [{ path: f.card.plan.path, basename: path.basename(f.card.plan.path), title: undefined, editedAtMs: undefined }] : [];
+      const files = [...f.card.artifacts, ...plan].map((a) => ({ path: a.path, name: a.basename, title: a.title, editedAtMs: a.editedAtMs, ...(IMAGE_FILE.test(a.basename) ? { image: true } : {}) }));
       const steps = s.timeline?.steps ?? [];
       const said = [s.lastResponse, steps[steps.length - 1]?.text ?? '', s.recap?.text ?? ''].join('\n');
       made.items = madeItems({ prs: f.card.pullRequests ?? [], main: f.live.prStatus, touched: f.live.touchedPrs ?? [], files, said, fact: (k) => facts.get(k), known, opened: openedAt, since });
@@ -1357,12 +1372,11 @@ class ProjectPanelController {
   warmPrs(p: ProjectRef, force = false): Promise<void> {
     if (this.prsReading) return force ? this.prsReading.then(() => this.warmPrs(p, true)) : this.prsReading;
     if (!force && this.prsFor === p.name && Date.now() - this.prsAt < FRESH_MS) return Promise.resolve();
-    this.prsAt = Date.now();
     this.prsFor = p.name;
-    // A failed read waits FRESH_MS like a good one: the redraw after it must not read again at once.
+    // The minute runs from when the read ends, failed or not: the redraw after it never reads again at once.
     const reading = this.reviewByRepo(p, false, () => undefined)
       .then(() => undefined, () => undefined)
-      .finally(() => { this.prsReading = undefined; void this.redrawSessions(); });
+      .finally(() => { this.prsAt = Date.now(); this.prsReading = undefined; void this.redrawSessions(); });
     this.prsReading = reading;
     return reading;
   }
@@ -1375,8 +1389,7 @@ class ProjectPanelController {
 
   /** Every PR Review's last read holds, by its URL. */
   private prIndex(): Map<string, PrFact> {
-    const repos = this.prsFor && this.reviewSeen ? [...this.reviewSeen.done.values()] : [];
-    return new Map(prFacts(repos).map((f) => [f.url.toLowerCase(), f]));
+    return new Map(prFacts([...this.prsSettled.values()]).map((f) => [f.url.toLowerCase(), f]));
   }
 
   /** The command palette's project menu: the same rows as the panel's. */
@@ -1392,7 +1405,7 @@ class ProjectPanelController {
     this.tickets = undefined;
     this.detected = undefined;
     // Tickets and pull requests read are the shown project's; a switch must not keep the last one's.
-    if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; this.prsFor = undefined; }
+    if (projectChanged) { this.ticketsSeen = []; this.reviewSeen = undefined; this.prsFor = undefined; this.prsSettled.clear(); }
     this.prsAt = 0;
     this.view.refresh();
     this.board.refresh();
@@ -2057,7 +2070,8 @@ ${MADE_SCRIPT}
     for (const grp of groups) {
       let left = 0;
       for (const c of rows(grp)) {
-        const hay = ((c.dataset.title || '') + ' ' + c.textContent + ' ' + [...c.querySelectorAll('[title]')].map((t) => t.title).join(' ')).toLowerCase();
+        // The Sessions tab also finds a card by the full names its chips carry (a PR's title, a page's path).
+        const hay = ((c.dataset.title || '') + ' ' + c.textContent + (BOARD ? ' ' + [...c.querySelectorAll('.chip.mi[title]')].map((t) => t.title).join(' ') : '')).toLowerCase();
         const hit = words.every((w) => hay.includes(w)) && (!c.classList.contains('card') || segOk(c));
         c.style.display = hit ? '' : 'none';
         if (hit) left++;
@@ -2347,10 +2361,14 @@ ${MADE_SCRIPT}
     for (const [key, p] of pendingAnswer) if (p.state === 'wait') { clearInterval(p.timer); pendingAnswer.delete(key); n++; }
     return n;
   }
-  function mergeBtn(key) { const [repo, num] = key.split('#'); return main.querySelector('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]'); }
+  // A PR's ring can show more than once (Review, a card, its Favorites copy, another session
+  // that names it, the Sessions tab's drawer): every copy shows the same countdown and result.
+  function mergeBtns(key) { const [repo, num] = key.split('#'); return [...main.querySelectorAll('[data-merge-repo="' + CSS.escape(repo) + '"][data-merge-number="' + CSS.escape(num) + '"]')]; }
   // Undo: the ready ring drains one fifth a second (in steps under reduced motion); under the pointer its center is ✕.
   function drawUndo(key, left) {
-    const b = mergeBtn(key); if (!b) return;
+    for (const b of mergeBtns(key)) drawUndoOn(b, left);
+  }
+  function drawUndoOn(b, left) {
     b.classList.remove('v-bad'); b.classList.add('v-ok', 'armed'); b.title = 'Merging in ' + left + ' s. Click to stop'; b.setAttribute('aria-label', b.title);
     const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const arc = b.querySelector('.arc'); if (arc) { arc.style.transition = still ? '' : 'stroke-dashoffset 1s linear'; arc.style.strokeDashoffset = String(53.4 * (6 - left) / 5); }
@@ -2364,7 +2382,9 @@ ${MADE_SCRIPT}
   // Rings sent to the host and not answered yet: a redraw keeps them spinning.
   const mergingNow = new Set();
   function drawMerging(key) {
-    const b = mergeBtn(key); if (!b) return;
+    for (const b of mergeBtns(key)) drawMergingOn(b);
+  }
+  function drawMergingOn(b) {
     // Off for every input, keyboard included, until the host answers: one merge per ring.
     b.classList.remove('armed'); b.classList.add('merging'); b.disabled = true; b.setAttribute('aria-busy', 'true');
     b.title = 'Merging #' + b.dataset.mergeNumber + '…'; b.setAttribute('aria-label', b.title);
@@ -2372,7 +2392,9 @@ ${MADE_SCRIPT}
   // What the host says when a merge finished: violet, or red with the reason in its tooltip.
   function drawMerged(key, error, merged) {
     mergingNow.delete(key);
-    const b = mergeBtn(key); if (!b) return;
+    for (const b of mergeBtns(key)) drawMergedOn(b, error, merged);
+  }
+  function drawMergedOn(b, error, merged) {
     // Turned down here with its own warning: back to a ready ring until Review rereads.
     b.removeAttribute('aria-busy');
     if (!merged && !error) { b.classList.remove('merging'); b.disabled = false; disarm(b); return; }
@@ -2401,7 +2423,7 @@ ${MADE_SCRIPT}
   // Leaving Review cancels a Merge still counting down: its Undo would no longer be on screen.
   function cancelMerges() {
     for (const t of mergeTimers.values()) clearInterval(t);
-    for (const key of pendingMerge.keys()) disarm(mergeBtn(key));
+    for (const key of pendingMerge.keys()) mergeBtns(key).forEach(disarm);
     const n = pendingMerge.size; mergeTimers.clear(); pendingMerge.clear();
     return n;
   }
@@ -2662,7 +2684,7 @@ ${MADE_SCRIPT}
       const key = merge.dataset.mergeRepo + '#' + merge.dataset.mergeNumber;
       if (mergingNow.has(key)) return;
       // A second click inside the window is Undo: nothing was sent yet.
-      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); disarm(merge); note('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
+      if (pendingMerge.has(key)) { clearInterval(mergeTimers.get(key)); mergeTimers.delete(key); pendingMerge.delete(key); mergeBtns(key).forEach(disarm); note('Stopped. #' + merge.dataset.mergeNumber + ' was not merged.'); return; }
       let left = 5; pendingMerge.set(key, left); drawUndo(key, left);
       const timer = setInterval(() => {
         left -= 1;
