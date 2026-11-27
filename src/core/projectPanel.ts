@@ -21,6 +21,7 @@ import type { LaunchTarget } from './launchTarget';
 import { CLI_AGENT_META, type CliAgentId } from './agents.cli';
 import type { SessionCardFields } from './sessionCardFields';
 import { prVerdict, type RemotePrStatus } from './prStatus';
+import { madeChip, madeList, type MadeItem, type PrFact } from './madeRow';
 
 export interface ProjectRef {
   name: string;
@@ -664,6 +665,8 @@ export interface SessionMade {
   prs: { label: string; url: string }[];
   ticket: string | null;
   folders: { name: string; display: string; files: { name: string; path: string; title?: string }[]; images: { name: string; path: string; uri: string }[] }[];
+  /** The card's Made row: every PR with its word, pages by headline, what you have not opened (`madeItems`). */
+  items?: MadeItem[];
 }
 
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
@@ -713,6 +716,14 @@ export interface SessionListOptions {
   memory?: FrontMemory;
   /** Sessions the viewer starred: ★ on their cards, and a Favorites group when Settings shows it. */
   favorites?: ReadonlySet<string>;
+  /** The merge method a ready PR's ring uses (Settings > Pull requests). */
+  mergeWith?: string;
+  /** The Sessions tab (⌘⇧K): every group as a grid, no pinned card; a click opens the drawer. */
+  board?: boolean;
+  /** The session the Sessions tab's drawer shows, drawn on top of the grid. */
+  drawer?: { sessionId: string; host: string };
+  /** When this viewer last opened a PR or page, by its Made key. */
+  openedAt?: (key: string) => number | undefined;
 }
 
 const ACT_ICON = {
@@ -968,7 +979,7 @@ function activitySteps(s: SessionLike): string {
   return `<div class="fc-act"><div class="fc-k">Activity<a href="#" class="fc-more" data-open-sidebar>Open the sidebar ›</a></div><ol tabindex="0" aria-label="Activity, newest last"${items ? '' : ' hidden'}>${before}${items}</ol></div>`;
 }
 
-export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean; drag?: boolean }): string {
+export function renderSessionCard(s: SessionLike, place: SessionPlace, now: number, opts: { selected: boolean; front?: boolean; pinned: boolean; thumbs: CardThumb[]; made: SessionMade | null; here: SessionHere; today?: boolean; blocked?: boolean; project?: string; linearName?: string; cards?: CardSettings; shelf?: object | null; favorite?: boolean; compact?: boolean; answeredElsewhere?: boolean; drag?: boolean; mergeWith?: string }): string {
   const state = sessionStateOf(s);
   const title = cardTitle(s);
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
@@ -994,7 +1005,10 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const madeImages = folders.flatMap((f) => f.images).slice(0, 3 - attached.length).map((i) => `<a class="th" href="#" data-artifact="${escapeHtml(i.path)}" title="Made by the agent: ${escapeHtml(i.name)}">${thumbImg(i.uri, i.path, i.name)}</a>`);
   const thumbs = [...attached, ...madeImages];
   const folderChip = folders.length ? `<a class="chip" href="#" data-artifact="${escapeHtml((folders[0].files[0] ?? folders[0].images[0]).path)}" title="${escapeHtml(folders.map((f) => f.display).join('\n'))}">${glyph('folder')}${folders.length}</a>` : '';
-  const chips = [prs, ticketChip, folderChip].join('');
+  // Every PR with its word and every page by its headline, one row that scrolls sideways (C3–C8).
+  const items = made?.items;
+  const ring = (m: NonNullable<MadeItem['merge']>) => mergeRing(m, opts.mergeWith ?? 'squash');
+  const chips = items ? [...items.filter((i) => i.mention).map((i) => madeChip(i, now, ring)), ticketChip, ...items.filter((i) => !i.mention).map((i) => madeChip(i, now, ring))].join('') : [prs, ticketChip, folderChip].join('');
   const asked = askedAt(s);
   const waited = (state === 'asks' || state === 'stuck') && Number.isFinite(asked) ? Math.max(0, now - asked) : -1;
   // Background work is named on the pill's hover, never a row of its own (owner, 2026-10-22 12:30 PM).
@@ -1095,7 +1109,9 @@ export function renderSessionCard(s: SessionLike, place: SessionPlace, now: numb
   const rank = state === 'asks' && s.attention?.state === 'open' ? urgencyOf(s.attention) : 'normal';
   const urgency = rank === 'high' || rank === 'urgent' ? ` u-${rank}` : '';
   const cls = `card st-${opts.blocked ? 'blocked' : state}${urgency}${opts.compact ? ' compact' : ''}${opts.selected ? ' sel' : ''}${opts.front ? ' front' : ''}${waited >= 0 && waited < FRESH_MS ? ' fresh' : ''}`;
-  const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}" tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"${opts.drag ? ' draggable="true"' : ''}`;
+  // What the Sessions tab's filters read: your move, a PR ready to merge, something you have not opened.
+  const marks = `${opts.blocked || ballOf(state) === 'move' ? ' data-need="1"' : ''}${items?.some((i) => i.merge) ? ' data-ready="1"' : ''}${items?.some((i) => i.read !== 'seen') ? ' data-unread="1"' : ''}`;
+  const attrs = `title="${escapeHtml(tip)}${waited >= 0 ? ` · waiting ${waitFor(waited)}` : ''}"${marks} tabindex="0" data-session="${escapeHtml(s.sessionId)}" data-host="${escapeHtml(s.host)}" data-busy="${busy ? 1 : 0}" data-tab="${hasTab ? 1 : 0}" data-here="${place.kind === 'here' && state !== 'ended' ? 1 : 0}" data-title="${escapeHtml(title)}"${opts.drag ? ' draggable="true"' : ''}`;
   // data-key pairs the card with its node across a redraw; data-h skips one whose markup is unchanged.
   return `<div class="${cls}" ${attrs} data-key="${escapeHtml(`${s.sessionId}@${s.host}`)}" data-h="${fieldsHash(cls + attrs + body)}">${body}</div>`;
 }
@@ -1183,7 +1199,8 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
   const blocked = blockedBy(opts);
   const tabHere = (x: { place: SessionPlace }) => x.place.kind === 'here';
   // The front tab's session is pinned on top and keeps its own place in the list too.
-  const front = opts.frontId ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
+  // The Sessions tab pins nothing: every session is a card in its group.
+  const front = opts.frontId && !opts.board ? all.find((x) => x.row.sessionId === opts.frontId && tabHere(x)) : undefined;
   const cards = opts.cards ?? DEFAULT_CARD_SETTINGS;
   // The listed copy of the front session asks with its question only: its answers are on the pinned card.
   // Compact: the title row, the agent's latest line and what it made; no ask box, no previews.
@@ -1196,7 +1213,7 @@ function cardDrawer(rows: SessionLike[], now: number, opts: SessionListOptions) 
     cards: pinned ? { ...cards, asks: cards.asks === 'off' ? 'off' : 'answers' } : copy || (front && row.sessionId === front.row.sessionId) ? listedCards : shown, compact: !pinned && prefs.view === 'compact', shelf: pinned ? opts.shelfFor?.(row) : undefined,
     favorite: !!opts.favorites?.has(row.sessionId), answeredElsewhere: !pinned && (copy || (!!front && row.sessionId === front.row.sessionId)),
     // A listed live card drags onto another topic's section (owner video, 2026-11-24 5:00 PM; PHNX-4676).
-    drag: !pinned && !copy && prefs.group === 'topic' && sessionStateOf(row) !== 'ended',
+    drag: !pinned && !copy && prefs.group === 'topic' && sessionStateOf(row) !== 'ended', mergeWith: opts.mergeWith,
   });
   return { all, front, blocked, tabHere, cards, today, card };
 }
@@ -1284,7 +1301,7 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   // The grip under the pinned card sets its height for every session (owner video, 2026-11-07 1:29).
   const pinned = front ? `<div class="front-pin">${card(front, true)}<div class="fc-grip" role="separator" aria-orientation="horizontal" aria-label="Pinned card height" title="Drag to set the pinned card's height for every session; double-click to reset"></div></div>` : '';
   // Settings > Show the session list off: the front tab's card alone; ⌘K finds the rest.
-  if (!cards.list) return head + (pinned || `<div class="empty">The session list is off in Settings. ${escapeHtml(opts.searchKey ?? '⌘K')} finds every session.</div>`) + tail;
+  if (!cards.list && !opts.board) return head + (pinned || `<div class="empty">The session list is off in Settings. ${escapeHtml(opts.searchKey ?? '⌘K')} finds every session.</div>`) + tail;
   // Starred sessions, on top and still in their own group (owner video, 2026-10-19 1:42 AM).
   const favItems = cards.favorites && opts.favorites?.size ? all.filter((x) => opts.favorites!.has(x.row.sessionId)) : [];
   const favs: Group[] = favItems.length ? [{ key: 'favorites', name: 'Favorites', sub: '', icon: '<span class="fav-ic">★</span>', items: favItems, copy: true }] : [];
@@ -1330,7 +1347,24 @@ export function renderSessions(rows: SessionLike[], now: number, opts: SessionLi
   const sections = prefs.sections === 'needs'
     ? [...arranged.filter((g) => g.copy), ...arranged.filter((g) => !g.copy && lead(g)).sort((a, b) => yourMove(lead(a)!, lead(b)!)), ...arranged.filter((g) => !g.copy && !lead(g))]
     : arranged;
-  return head + pinned + sections.map(section).join('') + tail;
+  return head + pinned + sections.map(section).join('') + drawerHtml(rows, now, opts, card) + tail;
+}
+
+/** The Sessions tab's drawer (C2): the card as the pinned card draws it (title, its ask with
+ *  every answer, the whole recap, every step, the reply box), a way to its terminal, and every
+ *  PR and page it made or named, each with when it changed and whether you opened it. */
+function drawerHtml(rows: SessionLike[], now: number, opts: SessionListOptions, card: ReturnType<typeof cardDrawer>['card']): string {
+  const d = opts.drawer;
+  if (!opts.board || !d) return '';
+  const row = rows.find((r) => r.sessionId === d.sessionId && r.host === d.host) ?? rows.find((r) => r.sessionId === d.sessionId);
+  if (!row) return '';
+  const place = sessionPlace(row, opts.here);
+  const made = opts.madeFor?.(row) ?? null;
+  const ring = (m: NonNullable<MadeItem['merge']>) => mergeRing(m, opts.mergeWith ?? 'squash');
+  const live = sessionStateOf(row) !== 'ended';
+  // Its tab comes forward, or the live agent opens where it runs; an ended one resumes (`goToSession`).
+  const go = row.resumable === false && !live ? '' : `<button class="dgo" data-open-session="${escapeHtml(row.sessionId)}" data-host="${escapeHtml(row.host)}">${live ? 'Focus its terminal' : 'Resume'}</button>`;
+  return `<div class="sdrawer-scrim" data-drawer-close></div><aside class="sdrawer" aria-label="${escapeHtml(cardTitle(row))}"><button class="dx" data-drawer-close title="Close (Esc)" aria-label="Close">✕</button>${card({ row, place }, true)}${go ? `<div class="dfoot">${go}</div>` : ''}${made?.items ? madeList(made.items, now, ring, opts.openedAt ?? (() => undefined)) : ''}</aside>`;
 }
 
 /** An ended session with no title, no words from its agent and no prompt of yours. */
@@ -1496,8 +1530,30 @@ const MARK = {
 function prRing(p: PrRow, slug: string, mergeWith: string): string {
   const v = prRowVerdict(p);
   const tip = v.st === 'failing' && p.failingChecks.length ? `${v.word}: ${p.failingChecks.join(', ')}` : v.word;
-  if (v.st === 'ready') return `<button class="pring v-ok" data-merge-repo="${escapeHtml(slug)}" data-merge-number="${p.number}"${p.headSha ? ` data-merge-sha="${escapeHtml(p.headSha)}"` : ''} title="${escapeHtml(`Ready to merge. Click to merge #${p.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)`)}" aria-label="Merge #${p.number}">${RING_SVG(MARK.ok)}</button>`;
+  if (v.st === 'ready') return mergeRing({ repo: slug, number: p.number, sha: p.headSha ?? undefined }, mergeWith);
   return `<span class="pring v-${v.tone}" role="img" aria-label="${escapeHtml(tip)}" title="${escapeHtml(tip)}">${RING_SVG(MARK[v.tone])}</span>`;
+}
+
+/** A ready PR's ring, in Review and after a ready PR's chip on a card (owner, 2026-11-26 8:49 PM:
+ *  "a quick action just to merge it from here, like the AGI menu"): the same button, so the
+ *  page's one merge flow (5 s drain with Undo, spin, Merged) runs it wherever it is. */
+export function mergeRing(m: { repo: string; number: number; sha?: string }, mergeWith: string): string {
+  return `<button class="pring v-ok" data-merge-repo="${escapeHtml(m.repo)}" data-merge-number="${m.number}"${m.sha ? ` data-merge-sha="${escapeHtml(m.sha)}"` : ''} title="${escapeHtml(`Ready to merge. Click to merge #${m.number} with ${METHOD_WORD[mergeWith] ?? mergeWith} (change in Settings)`)}" aria-label="Merge #${m.number}">${RING_SVG(MARK.ok)}</button>`;
+}
+
+const FACT_WORD: Record<PrState, string> = { ready: 'Ready', conflict: 'Conflicts', failing: 'Failing', running: 'Checks running', draft: 'Draft' };
+
+/** Every PR Review's last read holds, as a card's chip reads it: its word, green only for
+ *  Ready, red for what blocks it (C6, C7), and whether its ring may merge it. */
+export function prFacts(repos: readonly PrsModel['repos'][number][]): PrFact[] {
+  const at = (d: string) => { const t = Date.parse(d); return Number.isFinite(t) ? t : undefined; };
+  return repos.flatMap((r) => [
+    ...r.open.map((p): PrFact => {
+      const st = prState(p);
+      return { url: p.url, slug: r.slug, number: p.number, title: p.title, word: FACT_WORD[st], tone: st === 'ready' ? 'ok' : st === 'conflict' || st === 'failing' ? 'bad' : '', ready: st === 'ready', headSha: p.headSha, atMs: at(p.date) };
+    }),
+    ...r.merged.map((p): PrFact => ({ url: p.url, slug: r.slug, number: p.number, title: p.title, word: 'Merged', tone: '', ready: false, atMs: at(p.date) })),
+  ]).filter((f) => f.url && f.number > 0);
 }
 
 /** Fix: the agent's logo, shown on the row's hover, starts it in a new tab on the PR with what to fix (`prFixPrompt`). */

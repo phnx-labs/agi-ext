@@ -13,7 +13,8 @@
 
 export class SessionStreamDemand {
   private sidebarVisible = false;
-  private projectSessionsVisible = false;
+  /** The Project panel's Sessions tab and the Sessions editor tab (⌘⇧K), each while shown. */
+  private readonly projectSessions = new Set<'panel' | 'board'>();
   private resumePickerOpen = false;
   private unresolvedTuples = false;
   private readonly listeners = new Set<(demand: boolean) => void>();
@@ -29,7 +30,7 @@ export class SessionStreamDemand {
 
   /** True when this window currently needs the producer. */
   get demand(): boolean {
-    return this.sidebarVisible || this.projectSessionsVisible || this.resumePickerOpen || this.unresolvedTuples;
+    return this.sidebarVisible || this.projectSessions.size > 0 || this.resumePickerOpen || this.unresolvedTuples;
   }
 
   setSidebarVisible(visible: boolean): void {
@@ -38,10 +39,10 @@ export class SessionStreamDemand {
     this.notify();
   }
 
-  /** The Project container's Sessions view draws stream rows (PHNX-4289). */
-  setProjectSessionsVisible(visible: boolean): void {
-    if (this.projectSessionsVisible === visible) return;
-    this.projectSessionsVisible = visible;
+  /** The Project container's Sessions view (PHNX-4289) and the Sessions tab draw stream rows. */
+  setProjectSessionsVisible(visible: boolean, view: 'panel' | 'board' = 'panel'): void {
+    if (this.projectSessions.has(view) === visible) return;
+    if (visible) this.projectSessions.add(view); else this.projectSessions.delete(view);
     this.notify();
   }
 

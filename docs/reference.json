@@ -3,7 +3,7 @@
   "extension": "swarmify.swarm-ext",
   "generatedBy": "bun scripts/gen-docs.ts",
   "counts": {
-    "commands": 139,
+    "commands": 140,
     "settings": 11,
     "keybindings": 51,
     "menuItems": 61,
@@ -214,6 +214,10 @@
       {
         "command": "agents.pages.open",
         "title": "Agents: Pages"
+      },
+      {
+        "command": "agents.sessions.open",
+        "title": "Agents: Sessions"
       },
       {
         "command": "agents.pages.refresh",
@@ -946,7 +950,7 @@
         "mac": "cmd+shift+j"
       },
       {
-        "command": "agents.spawnWithContext",
+        "command": "agents.sessions.open",
         "key": "ctrl+shift+k",
         "mac": "cmd+shift+k"
       },
